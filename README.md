@@ -12,7 +12,7 @@ Backend
 
 Front End
 
-- ***client** - front end web code - TS / Tailwind / React
+- ***client*** - front end web code - TS / Tailwind / React
     - ***native*** - capacitor / electron code for mobile and desktop
     - ***xr*** - unity and threejs code  
 
