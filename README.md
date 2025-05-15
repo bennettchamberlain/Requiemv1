@@ -3,11 +3,23 @@
 
 ### Target Package and Folder Structure
 
-- ***database*** - Everything needed to setup the OpenSearch Database
+Backend
+
 - ***api*** - Feathers API server - OpenAPI and/or GraphQL
-- ***chron*** - schedule server for Data ETL into digital memory, scheduled jobs for questions, insights, actions etc
+    - ***database*** - Everything needed to setup the OpenSearch Database
+    - ***chron*** - schedule server for Data ETL into digital memory, scheduled jobs for questions, insights, actions etc
 - ***agent*** - llm and rag server for making lang queries into the OpenSearch database
+
+Front End
+
+- ***client** - front end web code - TS / Tailwind / React
+    - ***native*** - capacitor / electron code for mobile and desktop
+    - ***xr*** - unity and threejs code  
+
+Other
+
 - ***ops*** - K8s and OS Distro build tools
+    - ***queue** - some worker scheduler
 - ***dev*** - dev setup tools
 
 
