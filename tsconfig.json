@@ -1,7 +1,7 @@
 {
   "files": [],
   "references": [
-    { "path": "./backend" },
+    { "path": "./backend/apps/api" },
     { "path": "./frontend" }
   ],
   "compilerOptions": {
