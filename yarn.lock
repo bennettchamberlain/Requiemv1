@@ -5,6 +5,12 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@ci/backend@workspace:backend":
+  version: 0.0.0-use.local
+  resolution: "@ci/backend@workspace:backend"
+  languageName: unknown
+  linkType: soft
+
 "@ci/ci-server@workspace:.":
   version: 0.0.0-use.local
   resolution: "@ci/ci-server@workspace:."
