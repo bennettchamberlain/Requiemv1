@@ -48,7 +48,7 @@ type ServiceTypes = {
 const app = koa<ServiceTypes>(feathers());
 
 // Use the current folder for static file hosting
-app.use(serveStatic('.'));
+app.use(serveStatic(__dirname));
 // Register the error handle
 app.use(errorHandler());
 // Parse JSON request bodies
