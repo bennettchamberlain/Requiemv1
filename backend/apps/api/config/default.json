@@ -11,6 +11,11 @@
   },
   "postgresql": {
     "client": "pg",
-    "connection": "postgres://companion_intel:comp4nion_1ntel_ftw!@localhost:5432/companion_intel"
+    "connection": {
+      "host": "127.0.0.1",
+      "user": "companion_intel",
+      "password": "comp4nion_1ntel_ftw!",
+      "database": "companion_intel"
+    }
   }
 }
