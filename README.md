@@ -84,11 +84,12 @@ To spin up your local infrastructure you will need Docker and Docker compose ins
 
 Executing the following command will spin up:
 
-* A 2-node OpenSearch cluster
+* A PostgreSQL database
+* An Nginx reverse proxy
 * ... more to come
 
 ```
-docker compose --profile infra up -d
+docker compose --profile local up -d
 ```
 
 You can additionally spin up tooling / monitoring with:
@@ -101,3 +102,11 @@ This will spin up:
 
 * The OpenSearch management dashboard
 * The Open WebUI LLM interface that communicates with the `ollama` service
+
+## Hostfile
+
+You'll want to edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
+
+Once you've done this and you're running both the backend and frontend development servers you will be able to view the application at:
+
+[dev.companionintelligence.com](http://dev.companionintelligence.com)
