@@ -1,18 +1,19 @@
 // For more information about this file see https://dove.feathersjs.com/guides/cli/application.html
 import { feathers } from '@feathersjs/feathers';
-import configuration from '@feathersjs/configuration';
+
 import { koa, rest, bodyParser, errorHandler, parseAuthentication, cors, serveStatic } from '@feathersjs/koa';
 
-import { configurationValidator } from './configuration';
-import type { Application } from './declarations';
+import { postgresql } from './configuration/postgresql';
+import type { Application } from './configuration/types';
+
+import { appConfiguration } from './configuration';
 import { logError } from './hooks/log-error';
-import { postgresql } from './postgresql';
 import { services } from './services/index';
 
 const app: Application = koa(feathers());
 
 // Load our app configuration (see config/ folder)
-app.configure(configuration(configurationValidator));
+app.configure(appConfiguration);
 
 // Set up Koa middleware
 app.use(cors());
@@ -36,6 +37,7 @@ app.hooks({
   after: {},
   error: {},
 });
+
 // Register application setup and teardown hooks here
 app.hooks({
   setup: [],

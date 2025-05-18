@@ -1,7 +1,18 @@
-// For more information about this file see https://dove.feathersjs.com/guides/cli/typescript.html
 import { HookContext as FeathersHookContext, NextFunction } from '@feathersjs/feathers';
 import { Application as FeathersApplication } from '@feathersjs/koa';
-import { ApplicationConfiguration } from './configuration';
+import { Type, defaultAppConfiguration } from '@feathersjs/typebox';
+import type { Static } from '@feathersjs/typebox';
+
+export const configurationSchema = Type.Intersect([
+  defaultAppConfiguration,
+  Type.Object({
+    host: Type.String(),
+    port: Type.Number(),
+    public: Type.String(),
+  }),
+]);
+
+export type ApplicationConfiguration = Static<typeof configurationSchema>;
 
 export type { NextFunction };
 

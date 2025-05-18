@@ -1,6 +1,4 @@
 // For more information about this file see https://dove.feathersjs.com/guides/cli/application.html#configure-functions
-import type { Application } from '../declarations';
+import type { Application } from '../configuration/types';
 
-export function services(app: Application) {
-  // All services will be registered here
-}
+export function services(app: Application) {}

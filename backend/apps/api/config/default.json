@@ -11,6 +11,6 @@
   },
   "postgresql": {
     "client": "pg",
-    "connection": "postgres://postgres:@localhost:5432/feathers-chat"
+    "connection": "postgres://companion_intel:comp4nion_1ntel_ftw!@localhost:5432/companion_intel"
   }
 }

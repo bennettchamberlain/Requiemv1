@@ -1,6 +1,9 @@
 // For more information about this file see https://dove.feathersjs.com/guides/cli/validators.html
 import { Ajv, addFormats } from '@feathersjs/schema';
 import type { FormatsPluginOptions } from '@feathersjs/schema';
+import { getValidator } from '@feathersjs/typebox';
+
+import { configurationSchema } from './types';
 
 const formats: FormatsPluginOptions = [
   'date-time',
@@ -27,3 +30,5 @@ export const queryValidator: Ajv = addFormats(
   }),
   formats,
 );
+
+export const configurationValidator = getValidator(configurationSchema, dataValidator);
