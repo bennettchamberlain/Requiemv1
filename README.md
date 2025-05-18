@@ -1,27 +1,5 @@
 # CI Server
 
-## Proposed folder structure
-
-Backend
-
-- ***api*** - Feathers API server - OpenAPI and/or GraphQL
-    - ***database*** - Everything needed to setup the OpenSearch Database
-    - ***chron*** - schedule server for Data ETL into digital memory, scheduled jobs for questions, insights, actions etc
-- ***agent*** - llm and rag server for making lang queries into the OpenSearch database
-
-Frontend
-
-- ***client*** - front end web code - TS / Tailwind / React
-    - ***native*** - capacitor / electron code for mobile and desktop
-    - ***xr*** - unity and threejs code
-
-Other
-
-- ***ops*** - K8s and OS Distro build tools
-    - ***queue** - some worker scheduler
-- ***dev*** - dev setup tools
-
-
 ## Prerequisites
 
 ### Homebrew
@@ -103,10 +81,42 @@ This will spin up:
 * The OpenSearch management dashboard
 * The Open WebUI LLM interface that communicates with the `ollama` service
 
-## Hostfile
+### Hostfile
 
 You'll want to edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
 
 Once you've done this and you're running both the backend and frontend development servers you will be able to view the application at:
 
 [dev.companionintelligence.com](http://dev.companionintelligence.com)
+
+
+## Running the application
+
+Now that you have prerequisites installed and the local infrastructure running you'll want to run the frontend and backend servers during development.
+
+* Backend [README](backend/apps/api/README.md)
+* Frontend [README](frontend/apps/web/README.md)
+
+
+----------------
+
+## Proposed folder structure
+
+Backend
+
+- ***api*** - Feathers API server - OpenAPI and/or GraphQL
+    - ***database*** - Everything needed to setup the OpenSearch Database
+    - ***chron*** - schedule server for Data ETL into digital memory, scheduled jobs for questions, insights, actions etc
+- ***agent*** - llm and rag server for making lang queries into the OpenSearch database
+
+Frontend
+
+- ***client*** - front end web code - TS / Tailwind / React
+    - ***native*** - capacitor / electron code for mobile and desktop
+    - ***xr*** - unity and threejs code
+
+Other
+
+- ***ops*** - K8s and OS Distro build tools
+    - ***queue** - some worker scheduler
+- ***dev*** - dev setup tools

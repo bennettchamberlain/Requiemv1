@@ -5,16 +5,7 @@ Users will interact with this API using either the SPA webpage or various client
 
 ## Getting started
 
-See the parent README.md for instructions on how to get all the prerequisites installed.
-You'll want to be sure you have the following infrastructure containers running:
-
-* PostgreSQL
-* OpenSearch (currently not used)
-* ... more to come
-
-```
-docker compose --profile infra up -d
-```
+See the [parent README](../../../README.md) for instructions on how to get all the prerequisites installed and how to get the local infrastructure running.
 
 Once you've done this, all you'll need to do in this directory is make sure your migrations are consistent with your checked out hash.
 
