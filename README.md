@@ -85,18 +85,24 @@ This will spin up:
 
 You'll want to edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
 
-Once you've done this and you're running both the backend and frontend development servers you will be able to view the application at:
-
-[dev.companionintelligence.com](http://dev.companionintelligence.com)
-
 
 ## Running the application
 
 Now that you have prerequisites installed and the local infrastructure running you'll want to run the frontend and backend servers during development.
 
-* Backend [README](backend/apps/api/README.md)
-* Frontend [README](frontend/apps/web/README.md)
+* Backend (api) [README](backend/apps/api/README.md)
+* Frontend (web) [README](frontend/apps/web/README.md)
 
+Once you:
+
+* have booted local Docker infrastructure
+* have updated your hostfile
+* are running the backend FeathersJS API server
+* are running the frontend Vite development server
+
+You will be able to view the application at:
+
+[dev.companionintelligence.com](http://dev.companionintelligence.com)
 
 ----------------
 
