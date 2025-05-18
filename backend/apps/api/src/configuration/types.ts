@@ -3,6 +3,8 @@ import { Application as FeathersApplication } from '@feathersjs/koa';
 import { Type, defaultAppConfiguration } from '@feathersjs/typebox';
 import type { Static } from '@feathersjs/typebox';
 
+import { UserService } from '../services/user';
+
 export const configurationSchema = Type.Intersect([
   defaultAppConfiguration,
   Type.Object({
@@ -22,7 +24,9 @@ export interface Configuration extends ApplicationConfiguration {}
 
 // A mapping of service names to types. Will be extended in service files.
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
-export interface ServiceTypes {}
+export interface ServiceTypes {
+  user: UserService;
+}
 
 // The application instance type that will be used everywhere else
 export type Application = FeathersApplication<ServiceTypes, Configuration>;

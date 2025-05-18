@@ -5,7 +5,6 @@ import { koa, rest, bodyParser, errorHandler, parseAuthentication, cors, serveSt
 
 import { postgresql } from './configuration/postgresql';
 import type { Application } from './configuration/types';
-
 import { appConfiguration } from './configuration';
 import { logError } from './hooks/log-error';
 import { services } from './services/index';
