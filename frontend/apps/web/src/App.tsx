@@ -1,11 +1,15 @@
 import { Counter } from '@ci/common';
-import { Counter as CounterThingo } from '@ci/thingo'
+import { Counter as CounterThingo } from '@ci/thingo';
 
 import reactLogo from './assets/react.svg';
 import viteLogo from '/vite.svg';
 import './App.css';
 
+import { useListUsers } from './services/use-list-users';
+
 function App() {
+  const { users, loading } = useListUsers();
+
   return (
     <>
       <div>
@@ -16,17 +20,21 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
       </div>
+
       <h1>Vite + React</h1>
+
       <div className="card">
+        <h2>Current users:</h2>
+        {!loading && users.map((user) => <div key={user.id}>{user.name}</div>)}
+      </div>
+
+      <div className="card">
+        <h2>Yarn Workspaces Test</h2>
+        <p>These counters should maintain separate state.</p>
+
         <Counter />
         <CounterThingo />
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
     </>
   );
 }
