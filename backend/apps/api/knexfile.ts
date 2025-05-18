@@ -4,4 +4,11 @@ import { app } from './src/app';
 // Load our database connection info from the app configuration
 const config = app.get('postgresql');
 
-module.exports = config;
+export default {
+  // The client and connection configuration values are stored in the appropriate environment file in `config/*.json`.
+  ...config,
+  migrations: {
+    tableName: 'migrations',
+    directory: './migrations',
+  },
+};
