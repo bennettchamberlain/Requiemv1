@@ -1,42 +1,35 @@
-# feathers-chat
+# Companion Intelligence — API
 
-> blah
+This service serves as the Digital Memory backend.
+Users will interact with this API using either the SPA webpage or various client apps.
 
-## About
+## Getting started
 
-This project uses [Feathers](http://feathersjs.com). An open source framework for building APIs and real-time applications.
+See the parent README.md for instructions on how to get all the prerequisites installed.
+You'll want to be sure you have the following infrastructure containers running:
 
-## Getting Started
-
-1. Make sure you have [NodeJS](https://nodejs.org/) and [npm](https://www.npmjs.com/) installed.
-2. Install your dependencies
-
-    ```
-    cd path/to/feathers-chat
-    npm install
-    ```
-
-3. Start your app
-
-    ```
-    npm run compile # Compile TypeScript source
-    npm run migrate # Run migrations to set up the database
-    npm start
-    ```
-
-## Testing
-
-Run `npm test` and all your tests in the `test/` directory will be run.
-
-## Scaffolding
-
-This app comes with a powerful command line interface for Feathers. Here are a few things it can do:
+* PostgreSQL
+* OpenSearch (currently not used)
+* ... more to come
 
 ```
-$ npx feathers help                           # Show all commands
-$ npx feathers generate service               # Generate a new Service
+docker compose --profile infra up -d
 ```
 
-## Help
+Once you've done this, all you'll need to do in this directory is make sure your migrations are consistent with your checked out hash.
 
-For more information on all the things you can do with Feathers visit [docs.feathersjs.com](http://docs.feathersjs.com).
+```
+yarn migrate
+```
+
+You can then boot the server.
+
+```
+yarn dev
+```
+
+If you want to prettify the logs you can pipe them through the included command line formatter `pino-pretty` that works in concert with the logging library of choice `pino`.
+
+```
+yarn dev | yarn pino-pretty
+```
