@@ -2,7 +2,7 @@
   "files": [],
   "references": [
     { "path": "./backend/apps/api" },
-    { "path": "./frontend" }
+    { "path": "./frontend/apps/web" }
   ],
   "compilerOptions": {
     "target": "ES2020",
