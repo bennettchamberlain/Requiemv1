@@ -1,4 +1,18 @@
 services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: companion_intel
+      POSTGRES_PASSWORD: comp4nion_1ntel_ftw!
+      POSTGRES_DB: companion_intel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    profiles: [ "all", "infra", "postgres" ]
+
   opensearch-node1:
     image: opensearchproject/opensearch:3
     container_name: opensearch-node1
@@ -80,6 +94,7 @@ volumes:
   opensearch-data1:
   opensearch-data2:
   open-webui:
+  postgres_data:
 
 
 networks:

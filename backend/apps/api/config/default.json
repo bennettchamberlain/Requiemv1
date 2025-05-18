@@ -1,0 +1,21 @@
+{
+  "host": "localhost",
+  "port": 3030,
+  "public": "./public/",
+  "origins": [
+    "http://localhost:3030"
+  ],
+  "paginate": {
+    "default": 10,
+    "max": 50
+  },
+  "postgresql": {
+    "client": "pg",
+    "connection": {
+      "host": "127.0.0.1",
+      "user": "companion_intel",
+      "password": "comp4nion_1ntel_ftw!",
+      "database": "companion_intel"
+    }
+  }
+}
