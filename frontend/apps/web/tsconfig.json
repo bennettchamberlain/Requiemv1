@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    /* Language ------------------------------------------------------------ */
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+
+    /* Module + bundler mode ---------------------------------------------- */
+    "module": "ESNext",
+    "moduleResolution": "bundler",      // keep – Vite recommends this
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    /* Type safety --------------------------------------------------------- */
+    "strict": true,
+    "skipLibCheck": true,
+    "noUncheckedSideEffectImports": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Paths & env typings ------------------------------------------------- */
+    "baseUrl": ".",                     // allows "@/…" imports if you want
+    "paths": { "@/*": ["src/*"] },
+    "types": ["vite/client"],           // import.meta, .svg, .css, …
+    "resolveJsonModule": true
+  },
+  "include": ["src", "vite.config.ts"]
+}
