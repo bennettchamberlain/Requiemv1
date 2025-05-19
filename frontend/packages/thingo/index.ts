@@ -1,1 +1,1 @@
-export { Counter } from "./src/Counter";
+export { Counter } from './src/Counter';

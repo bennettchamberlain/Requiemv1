@@ -7,6 +7,7 @@ import { postgresql } from './configuration/postgresql';
 import type { Application } from './configuration/types';
 import { appConfiguration } from './configuration';
 import { logError } from './hooks/log-error';
+import { logRequest } from './hooks/log-request';
 import { services } from './services/index';
 
 const app: Application = koa(feathers());
@@ -30,7 +31,7 @@ app.configure(services);
 // Register hooks that run on all service methods
 app.hooks({
   around: {
-    all: [logError],
+    all: [logRequest, logError],
   },
   before: {},
   after: {},

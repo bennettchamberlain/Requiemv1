@@ -23,7 +23,6 @@
 
     /* Paths & env typings ------------------------------------------------- */
     "baseUrl": ".",                     // allows "@/…" imports if you want
-    "paths": { "@/*": ["src/*"] },
     "types": ["vite/client"],           // import.meta, .svg, .css, …
     "resolveJsonModule": true
   },

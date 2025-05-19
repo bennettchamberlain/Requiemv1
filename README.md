@@ -1,27 +1,5 @@
 # CI Server
 
-## Proposed folder structure
-
-Backend
-
-- ***api*** - Feathers API server - OpenAPI and/or GraphQL
-    - ***database*** - Everything needed to setup the OpenSearch Database
-    - ***chron*** - schedule server for Data ETL into digital memory, scheduled jobs for questions, insights, actions etc
-- ***agent*** - llm and rag server for making lang queries into the OpenSearch database
-
-Frontend
-
-- ***client*** - front end web code - TS / Tailwind / React
-    - ***native*** - capacitor / electron code for mobile and desktop
-    - ***xr*** - unity and threejs code
-
-Other
-
-- ***ops*** - K8s and OS Distro build tools
-    - ***queue** - some worker scheduler
-- ***dev*** - dev setup tools
-
-
 ## Prerequisites
 
 ### Homebrew
@@ -84,11 +62,12 @@ To spin up your local infrastructure you will need Docker and Docker compose ins
 
 Executing the following command will spin up:
 
-* A 2-node OpenSearch cluster
+* A PostgreSQL database
+* An Nginx reverse proxy
 * ... more to come
 
 ```
-docker compose --profile infra up -d
+docker compose --profile local up -d
 ```
 
 You can additionally spin up tooling / monitoring with:
@@ -101,3 +80,49 @@ This will spin up:
 
 * The OpenSearch management dashboard
 * The Open WebUI LLM interface that communicates with the `ollama` service
+
+### Hostfile
+
+You'll want to edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
+
+
+## Running the application
+
+Now that you have prerequisites installed and the local infrastructure running you'll want to run the frontend and backend servers during development.
+
+* Backend (api) [README](backend/apps/api/README.md)
+* Frontend (web) [README](frontend/apps/web/README.md)
+
+Once you:
+
+* have booted local Docker infrastructure
+* have updated your hostfile
+* are running the backend FeathersJS API server
+* are running the frontend Vite development server
+
+You will be able to view the application at:
+
+[dev.companionintelligence.com](http://dev.companionintelligence.com)
+
+----------------
+
+## Proposed folder structure
+
+Backend
+
+- ***api*** - Feathers API server - OpenAPI and/or GraphQL
+    - ***database*** - Everything needed to setup the OpenSearch Database
+    - ***chron*** - schedule server for Data ETL into digital memory, scheduled jobs for questions, insights, actions etc
+- ***agent*** - llm and rag server for making lang queries into the OpenSearch database
+
+Frontend
+
+- ***client*** - front end web code - TS / Tailwind / React
+    - ***native*** - capacitor / electron code for mobile and desktop
+    - ***xr*** - unity and threejs code
+
+Other
+
+- ***ops*** - K8s and OS Distro build tools
+    - ***queue** - some worker scheduler
+- ***dev*** - dev setup tools

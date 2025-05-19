@@ -2,5 +2,12 @@
   "name": "@ci/common",
   "version": "0.0.0",
   "private": true,
-  "main": "index.ts"
+  "main": "index.ts",
+  "packageManager": "yarn@4.9.1",
+  "dependencies": {
+    "react": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.3"
+  }
 }

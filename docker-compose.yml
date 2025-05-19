@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
-    profiles: [ "all", "infra", "postgres" ]
+    profiles: [ "all", "local", "postgres" ]
 
   opensearch-node1:
     image: opensearchproject/opensearch:3
@@ -38,7 +38,7 @@ services:
       - 9600:9600 # Performance Analyzer
     networks:
       - opensearch-net
-    profiles: [ "all", "infra", "opensearch" ]
+    profiles: [ "all", "opensearch" ]
 
   opensearch-node2:
     image: opensearchproject/opensearch:3
@@ -62,7 +62,18 @@ services:
       - opensearch-data2:/usr/share/opensearch/data
     networks:
       - opensearch-net
-    profiles: [ "all", "infra", "opensearch" ]
+    profiles: [ "all", "opensearch" ]
+
+  dev-proxy:
+    image: nginx:stable
+    container_name: dev-proxy
+    ports:
+      - 80:80
+    volumes:
+      - ./infrastructure/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    profiles: [ "all", "local" ]
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:3 # Make sure the version of opensearch-dashboards matches the version of opensearch installed on other nodes
@@ -88,7 +99,6 @@ services:
     volumes:
       - open-webui:/app/backend/data
     profiles: [ "all", "tools", "llm" ]
-
 
 volumes:
   opensearch-data1:
