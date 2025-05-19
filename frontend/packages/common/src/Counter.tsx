@@ -1,11 +1,9 @@
-import { useState } from "react";
+import { useCallback, useState } from 'react';
 
 export function Counter() {
   const [count, setCount] = useState(0);
 
-  return (
-    <button onClick={() => setCount((count) => count + 1)}>
-      count is {count}
-    </button>
-  );
+  const handleClick = useCallback(() => setCount((count: number) => count + 1), [setCount]);
+
+  return <button onClick={handleClick}>count is {count}</button>;
 }

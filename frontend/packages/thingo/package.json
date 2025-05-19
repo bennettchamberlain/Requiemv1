@@ -2,5 +2,11 @@
   "name": "@ci/thingo",
   "version": "0.0.0",
   "private": true,
-  "main": "index.ts"
+  "main": "index.ts",
+  "dependencies": {
+    "react": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.3"
+  }
 }

@@ -19,11 +19,10 @@ export type ApplicationConfiguration = Static<typeof configurationSchema>;
 export type { NextFunction };
 
 // The types for app.get(name) and app.set(name)
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Configuration extends ApplicationConfiguration {}
 
 // A mapping of service names to types. Will be extended in service files.
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface ServiceTypes {
   user: UserService;
 }
@@ -32,4 +31,4 @@ export interface ServiceTypes {
 export type Application = FeathersApplication<ServiceTypes, Configuration>;
 
 // The context for hook functions - can be typed with a service class
-export type HookContext<S = any> = FeathersHookContext<Application, S>;
+export type HookContext<S = unknown> = FeathersHookContext<Application, S>;

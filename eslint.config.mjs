@@ -6,13 +6,13 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['.yarn', 'dist', 'node_modules', '**/__generated__/**', '.pnp.*'],
+    ignores: ['.yarn', '**/dist/**', '**/node_modules/**', '.pnp.*'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettierConfig,
   {
-    files: ['**/*.ts', '**/*.tsx', 'eslint.config.mjs'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs'],
     languageOptions: {
       parserOptions: {
         ecmaVersion: 'latest',
@@ -25,26 +25,6 @@ export default [
     },
     rules: {
       'prettier/prettier': 'error',
-    },
-  },
-  {
-    files: ['backend/**/*.ts'],
-    languageOptions: {
-      parserOptions: {
-        project: './backend/tsconfig.json',
-        tsconfigRootDir: new URL('.', import.meta.url),
-      },
-      globals: globals.node,
-    },
-  },
-  {
-    files: ['frontend/**/*.ts'],
-    languageOptions: {
-      parserOptions: {
-        project: './frontend/tsconfig.json',
-        tsconfigRootDir: new URL('.', import.meta.url),
-      },
-      globals: globals.browser,
     },
   },
 ];

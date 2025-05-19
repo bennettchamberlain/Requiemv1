@@ -5,8 +5,6 @@ interface User {
   name: string;
 }
 
-async function getUser() {}
-
 export function useListUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -31,7 +29,11 @@ export function useListUsers() {
 
         setUsers(data);
       } catch (err) {
-        setError(err);
+        if (err instanceof Error) {
+          setError(err);
+        } else {
+          setError(new Error(String(err)));
+        }
       } finally {
         setLoading(false);
       }

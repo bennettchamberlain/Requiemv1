@@ -8,6 +8,7 @@ export interface Configuration {
   connection: TransportConnection<ServiceTypes>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ServiceTypes {}
 
 export type ClientApplication = Application<ServiceTypes, Configuration>;
@@ -20,7 +21,7 @@ export type ClientApplication = Application<ServiceTypes, Configuration>;
  * @see https://dove.feathersjs.com/api/client.html
  * @returns The Feathers client application
  */
-export function createClient<Configuration = any>(
+export function createClient(
   connection: TransportConnection<ServiceTypes>,
   authenticationOptions: Partial<AuthenticationClientOptions> = {},
 ) {

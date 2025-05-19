@@ -1,5 +1,5 @@
 import type { Knex } from 'knex';
-import type { Params, ServiceMethods } from '@feathersjs/feathers';
+import type { ServiceMethods } from '@feathersjs/feathers';
 
 interface User {
   id: number;
@@ -13,11 +13,11 @@ interface CreateUserData {
 export class UserService implements Partial<ServiceMethods<User>> {
   constructor(private readonly db: Knex) {}
 
-  async find(params?: Params): Promise<User[]> {
+  async find(): Promise<User[]> {
     return this.db<User>('users').select('*');
   }
 
-  async get(id: number, params?: Params): Promise<User> {
+  async get(id: number): Promise<User> {
     const user = await this.db<User>('users').where({ id }).first();
 
     if (!user) {
@@ -27,13 +27,13 @@ export class UserService implements Partial<ServiceMethods<User>> {
     return user;
   }
 
-  async create(data: CreateUserData, params?: Params): Promise<User> {
+  async create(data: CreateUserData): Promise<User> {
     const [user] = await this.db<User>('users').insert(data).returning('*');
 
     return user;
   }
 
-  async remove(id: number, params?: Params): Promise<User> {
+  async remove(id: number): Promise<User> {
     const [user] = await this.db<User>('users').where({ id }).delete().returning('*');
 
     if (!user) {
