@@ -1,104 +1,85 @@
-import * as React from "react"
-import {
-  AudioWaveform,
-  BookOpen,
-  Bot,
-  Command,
-  Frame,
-  GalleryVerticalEnd,
-  Map,
-  Calendar,
-  PieChart,
-  Settings2,
-  SquareTerminal,
-} from "lucide-react"
+import * as React from 'react';
+import { BookOpen, Bot, Map, Settings2, SquareTerminal } from 'lucide-react';
 
-import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
-import { NavUser } from "@/components/nav-user"
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarRail,
-} from "@/components/ui/sidebar"
+import { NavMain } from '@/components/nav-main';
+import { NavUser } from '@/components/nav-user';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarRail } from '@/components/ui/sidebar';
 
 const exampleUser = {
-  name: "John Smith",
-  email: "John@Smith.com",
-  avatar: "/avatars/shadcn.jpg",
-}
+  name: 'John Smith',
+  email: 'John@Smith.com',
+  avatar: '/avatars/shadcn.jpg',
+};
 
 const navigationChoices = [
   {
-    title: "Dashboard",
-    url: "#",
+    title: 'Dashboard',
+    url: '#',
     icon: SquareTerminal,
-    isActive: true
+    isActive: true,
   },
   {
-    title: "Memory",
-    url: "#",
+    title: 'Memory',
+    url: '#',
     icon: Bot,
     items: [
       {
-        title: "List",
-        url: "#",
+        title: 'List',
+        url: '#',
         icon: Bot,
       },
       {
-        title: "Feed",
-        url: "#",
+        title: 'Feed',
+        url: '#',
         icon: Bot,
       },
       {
-        title: "Map",
-        url: "#",
+        title: 'Map',
+        url: '#',
         icon: Map,
       },
       {
-        title: "Calendar",
-        url: "#",
+        title: 'Calendar',
+        url: '#',
         icon: Bot,
       },
     ],
   },
   {
-    title: "Questions",
-    url: "#",
+    title: 'Questions',
+    url: '#',
     icon: BookOpen,
     items: [
       {
-        title: "Questions",
-        url: "#",
+        title: 'Questions',
+        url: '#',
       },
       {
-        title: "Insights",
-        url: "#",
+        title: 'Insights',
+        url: '#',
       },
     ],
   },
   {
-    title: "Settings",
-    url: "#",
+    title: 'Settings',
+    url: '#',
     icon: Settings2,
     items: [
       {
-        title: "General",
-        url: "#",
+        title: 'General',
+        url: '#',
       },
       {
-        title: "Billing",
-        url: "#",
+        title: 'Billing',
+        url: '#',
       },
       {
-        title: "Privacy",
-        url: "#",
+        title: 'Privacy',
+        url: '#',
       },
     ],
   },
-]
+];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
@@ -111,5 +92,5 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  )
+  );
 }

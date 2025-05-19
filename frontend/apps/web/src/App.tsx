@@ -1,15 +1,15 @@
-import { Counter } from '@ci/common';
-import { Counter as CounterThingo } from '@ci/thingo';
-import { useListUsers } from './services/use-list-users';
+// import { Counter } from '@ci/common';
+// import { Counter as CounterThingo } from '@ci/thingo';
+// import { useListUsers } from './services/use-list-users';
 
 /////////////////////////////////////////////////////////////
 // exercise shadcdn
 
-import { createContext, useContext, useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { LoginForm } from "@/components/login-form"
+import { createContext, useContext, useEffect, useState } from 'react';
+// import { Button } from '@/components/ui/button';
+// import { LoginForm } from '@/components/login-form';
 
-import { AppSidebar } from "@/components/app-sidebar"
+import { AppSidebar } from '@/components/app-sidebar';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,111 +17,100 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
-import { Separator } from "@/components/ui/separator"
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar"
+} from '@/components/ui/breadcrumb';
+import { Separator } from '@/components/ui/separator';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 
-import { ChartAreaInteractive } from "@/components/chart-area-interactive"
-import { DataTable } from "@/components/data-table"
-import { SectionCards } from "@/components/section-cards"
-import { SiteHeader } from "@/components/site-header"
+//import { ChartAreaInteractive } from '@/components/chart-area-interactive';
+//import { DataTable } from '@/components/data-table';
+//import { SectionCards } from '@/components/section-cards';
+// import { SiteHeader } from '@/components/site-header';
 
-import data from "./mockData.json"
+// import data from './mockData.json';
 
 /////////////////////////////////////////////////////////////
 // theme support - @todo move
 
-type Theme = "dark" | "light" | "system"
+type Theme = 'dark' | 'light' | 'system';
 
 type ThemeProviderProps = {
-  children: React.ReactNode
-  defaultTheme?: Theme
-  storageKey?: string
-}
+  children: React.ReactNode;
+  defaultTheme?: Theme;
+  storageKey?: string;
+};
 
 type ThemeProviderState = {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-}
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+};
 
 const initialState: ThemeProviderState = {
-  theme: "system",
+  theme: 'system',
   setTheme: () => null,
-}
+};
 
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
+const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
-  storageKey = "vite-ui-theme",
+  defaultTheme = 'system',
+  storageKey = 'vite-ui-theme',
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-  )
+    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
+  );
 
   useEffect(() => {
-    const root = window.document.documentElement
+    const root = window.document.documentElement;
 
-    root.classList.remove("light", "dark")
+    root.classList.remove('light', 'dark');
 
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light"
+    if (theme === 'system') {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
-      root.classList.add(systemTheme)
-      return
+      root.classList.add(systemTheme);
+      return;
     }
 
-    root.classList.add(theme)
-  }, [theme])
+    root.classList.add(theme);
+  }, [theme]);
 
   const value = {
     theme,
     setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
-      setTheme(theme)
+      localStorage.setItem(storageKey, theme);
+      setTheme(theme);
     },
-  }
+  };
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>
       {children}
     </ThemeProviderContext.Provider>
-  )
+  );
 }
 
 export const useTheme = () => {
-  const context = useContext(ThemeProviderContext)
+  const context = useContext(ThemeProviderContext);
 
-  if (context === undefined)
-    throw new Error("useTheme must be used within a ThemeProvider")
+  if (context === undefined) throw new Error('useTheme must be used within a ThemeProvider');
 
-  return context
-}
+  return context;
+};
 
 /////////////////////////////////////////////////////////////
 // app
 /////////////////////////////////////////////////////////////
 
 function App() {
-  const { users, loading } = useListUsers();
+  //  const { users, loading } = useListUsers();
 
-  const astronautSalvage = () => {
-    alert('You saved the astronaut!!');
-  };
+  //  const astronautSalvage = () => { alert('You saved the astronaut!!'); };
 
   return (
     <>
-
-      <ThemeProvider/>
+      <ThemeProvider />
 
       <SidebarProvider>
         <AppSidebar />
@@ -133,9 +122,7 @@ function App() {
               <Breadcrumb>
                 <BreadcrumbList>
                   <BreadcrumbItem className="hidden md:block">
-                    <BreadcrumbLink href="#">
-                      This is a breadcrumb
-                    </BreadcrumbLink>
+                    <BreadcrumbLink href="#">This is a breadcrumb</BreadcrumbLink>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="hidden md:block" />
                   <BreadcrumbItem>
@@ -155,13 +142,11 @@ function App() {
           </div>
         </SidebarInset>
       </SidebarProvider>
-
     </>
   );
 }
 
 export default App;
-
 
 /*
 
