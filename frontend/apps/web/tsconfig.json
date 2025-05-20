@@ -24,7 +24,19 @@
     /* Paths & env typings ------------------------------------------------- */
     "baseUrl": ".",                     // allows "@/…" imports if you want
     "types": ["vite/client"],           // import.meta, .svg, .css, …
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"],
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
 }

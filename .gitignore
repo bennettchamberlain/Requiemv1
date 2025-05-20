@@ -17,3 +17,4 @@ node_modules
 
 #!.yarn/cache
 .pnp.*
+.aider*
