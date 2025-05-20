@@ -338,6 +338,7 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.4.0"
     globals: "npm:^16.1.0"
     prettier: "npm:^3.5.3"
+    react-router-dom: "npm:^7.6.0"
     typescript: "npm:^5.8.3"
     typescript-eslint: "npm:^8.32.1"
   languageName: unknown
