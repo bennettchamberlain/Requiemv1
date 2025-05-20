@@ -1,15 +1,17 @@
 import { HookContext as FeathersHookContext, NextFunction } from '@feathersjs/feathers';
+import { type AuthenticationService } from '@feathersjs/authentication';
 import { Application as FeathersApplication } from '@feathersjs/koa';
 import { Type, defaultAppConfiguration } from '@feathersjs/typebox';
 import type { Static } from '@feathersjs/typebox';
 
-import { UserService } from '../services/user';
+import { UserService } from '../services';
+import { SignupService } from '../services/signup-service';
 
 export const configurationSchema = Type.Object({
   ...defaultAppConfiguration.properties,
-    host: Type.String(),
-    port: Type.Number(),
-    authentication: Type.Object({
+  host: Type.String(),
+  port: Type.Number(),
+  authentication: Type.Object({
     secret: Type.String(),
     authStrategies: Type.Array(Type.String()),
     service: Type.String(),
@@ -26,8 +28,8 @@ export const configurationSchema = Type.Object({
     local: Type.Object({
       usernameField: Type.String(),
       passwordField: Type.String(),
+    }),
   }),
-}),
 });
 
 export type ApplicationConfiguration = Static<typeof configurationSchema>;
@@ -40,7 +42,9 @@ export interface Configuration extends ApplicationConfiguration {}
 
 // A mapping of service names to types. Will be extended in service files.
 export interface ServiceTypes {
-  user: UserService;
+  users: UserService;
+  authenticate: AuthenticationService;
+  signup: SignupService;
 }
 
 // The application instance type that will be used everywhere else

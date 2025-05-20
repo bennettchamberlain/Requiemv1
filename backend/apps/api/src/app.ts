@@ -1,7 +1,5 @@
-// For more information about this file see https://dove.feathersjs.com/guides/cli/application.html
 import { feathers } from '@feathersjs/feathers';
-
-import { koa, rest, bodyParser, errorHandler, parseAuthentication, cors, serveStatic } from '@feathersjs/koa';
+import { koa, rest, bodyParser, errorHandler, parseAuthentication, cors } from '@feathersjs/koa';
 
 import { postgresql } from './configuration/postgresql';
 import type { Application } from './configuration/types';
