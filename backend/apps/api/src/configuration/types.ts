@@ -5,14 +5,30 @@ import type { Static } from '@feathersjs/typebox';
 
 import { UserService } from '../services/user';
 
-export const configurationSchema = Type.Intersect([
-  defaultAppConfiguration,
-  Type.Object({
+export const configurationSchema = Type.Object({
+  ...defaultAppConfiguration.properties,
     host: Type.String(),
     port: Type.Number(),
-    public: Type.String(),
+    authentication: Type.Object({
+    secret: Type.String(),
+    authStrategies: Type.Array(Type.String()),
+    service: Type.String(),
+    entity: Type.String(),
+    jwtOptions: Type.Object({
+      header: Type.Object({
+        typ: Type.String(),
+      }),
+      expiresIn: Type.String(),
+      algorithm: Type.String(),
+      audience: Type.String(),
+      issuer: Type.String(),
+    }),
+    local: Type.Object({
+      usernameField: Type.String(),
+      passwordField: Type.String(),
   }),
-]);
+}),
+});
 
 export type ApplicationConfiguration = Static<typeof configurationSchema>;
 
