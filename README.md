@@ -88,19 +88,38 @@ You'll want to edit your hostfile so that `dev.companionintelligence.com` resolv
 
 ## Running the application
 
-Now that you have prerequisites installed and the local infrastructure running you'll want to run the frontend and backend servers during development.
+Now that you have prerequisites installed and the local infrastructure running you should be able to run:
+
+```bash
+make init
+```
+
+To initialize the repository requirements.
+
+```bash
+make install
+```
+
+To install repository dependencies.
+
+```bash
+make migrate
+```
+
+To execute any database migrations.
+
+```bash
+make dev
+```
+
+To boot the development environment.
+
+You may additionally want to check the README files for each of our development services.
 
 * Backend (api) [README](backend/apps/api/README.md)
 * Frontend (web) [README](frontend/apps/web/README.md)
 
-Once you:
-
-* have booted local Docker infrastructure
-* have updated your hostfile
-* are running the backend FeathersJS API server
-* are running the frontend Vite development server
-
-You will be able to view the application at:
+You should now be able to view the application at:
 
 [dev.companionintelligence.com](http://dev.companionintelligence.com)
 
