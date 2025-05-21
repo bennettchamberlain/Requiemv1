@@ -179,20 +179,20 @@ exports.up = async function (knex: Knex): Promise<void> {
 
 exports.down = async function (knex: Knex): Promise<void> {
   return knex.raw(`
-    DROP TABLE EVENT;
-    DROP TYPE event_type;
-    DROP TABLE Contact;
-    DROP TABLE Location;
-    DROP TABLE Place;
-    DROP TYPE geo_format_type;
-    DROP TABLE Thing;
-    DROP TYPE thing_type;
-    DROP TABLE Content;
-    DROP TYPE content_type;
-    DROP TABLE SavedSearch;
-    DROP TABLE Tag;
-    DROP TABLE Person;
-    DROP TABLE Connection;
-    DROP TABLE Provider;
+    DROP TABLE IF EXISTS "Event";
+    DROP TYPE IF EXISTS event_type;
+    DROP TABLE IF EXISTS "Contact";
+    DROP TABLE IF EXISTS "Location";
+    DROP TABLE IF EXISTS "Place";
+    DROP TYPE IF EXISTS geo_format_type;
+    DROP TABLE IF EXISTS "Thing";
+    DROP TYPE IF EXISTS thing_type;
+    DROP TABLE IF EXISTS "Content";
+    DROP TYPE IF EXISTS content_type;
+    DROP TABLE IF EXISTS "SavedSearch";
+    DROP TABLE IF EXISTS "Tag";
+    DROP TABLE IF EXISTS "Person";
+    DROP TABLE IF EXISTS "Connection";
+    DROP TABLE IF EXISTS "Providers";
   `);
 };
