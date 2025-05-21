@@ -65,7 +65,9 @@ exports.up = async function (knex: Knex): Promise<void> {
         created timestamp,
         hidden boolean,
         tags uuid[],
-        contact_ids uuid[]
+        contact_ids uuid[],
+        gender text,
+        middle_name text
     );
     create table tag (
         _id uuid primary key,

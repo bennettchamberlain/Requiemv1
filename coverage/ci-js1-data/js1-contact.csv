@@ -1,3 +1,3 @@
 id,avatar_url,connection_id,created,handle,hidden,identifier,name,provider_id,provider_name,remote_id,tags,updated,user_id
-1,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:01Z,marysmith,FALSE,john.smith@acme.com,Mary Smith ‑ Work Email,prov-email,Email,js@acme,"work email",2025-03-01T12:00:00Z,1
-2,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:22Z,johnhome,FALSE,john.smith@gmail.com,Mary Smith ‑ Personal Email,prov-gmail,Email,john.smith,"personal email",2025-03-01T12:00:00Z,1
+1,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:01Z,marysmith,FALSE,john.smith@acme.com,Mary Smith ‑ Work Email,prov-email,Email,js@acme,"work email",2025-03-01T12:00:00Z,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
+2,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:22Z,johnhome,FALSE,john.smith@gmail.com,Mary Smith ‑ Personal Email,prov-gmail,Email,john.smith,"personal email",2025-03-01T12:00:00Z,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b

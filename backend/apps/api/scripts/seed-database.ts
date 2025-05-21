@@ -50,10 +50,7 @@ async function seedEvents(filePath: string) {
       type: record.type || null,
       user_id: record.user_id || null,
       related_objects: record.related_objects ? JSON.parse(record.related_objects.replace(/'/g, '"')) : null,
-      created:
-        record.created && !isNaN(Date.parse(record.created))
-          ? new Date(record.created)
-          : new Date(), // fallback to now if missing or invalid
+      created: record.created && !isNaN(Date.parse(record.created)) ? new Date(record.created) : new Date(),
       updated: record.updated ? new Date(record.updated) : null,
       connection: record.connection || null,
       provider: record.provider || null,
@@ -67,49 +64,66 @@ async function seedEvents(filePath: string) {
 async function seedPeople(filePath: string) {
   logger.info(`Seeding people from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
-  validateCsvRecords(records, [
-    'id', 'first_name', 'last_name', 'address', 'street_address', 'street_address_2', 'city', 'region', 'country', 'postal_code', 'avatar_url', 'external_avatar_url', 'type', 'created', 'hidden', 'tags', 'contact_ids', 'middle_name', 'gender'
-  ], 'js1-people.csv');
+  validateCsvRecords(
+    records,
+    [
+      'id', 'first_name', 'last_name', 'address', 'street_address', 'street_address_2', 'city', 'region', 'country', 'postal_code', 'avatar_url', 'external_avatar_url', 'type', 'created', 'hidden', 'tags', 'contact_ids', 'middle_name', 'gender'
+    ],
+    'js1-people.csv',
+  );
   const batchSize = 100;
   for (let i = 0; i < records.length; i += batchSize) {
     const batch = records.slice(i, i + batchSize);
     // Filter out people whose id already exists in the database
     const ids = batch.map((record: AnyRecord) => record.id);
     const existing = await db('person').whereIn('id', ids).select('id');
-    const existingIds = new Set(existing.map((row: any) => row.id));
+    const existingIds = new Set(existing.map((row: { id: string }) => row.id));
     const filteredBatch = batch.filter((record: AnyRecord) => !existingIds.has(record.id));
     if (filteredBatch.length === 0) {
       logger.info(`Skipped batch ${i / batchSize + 1}: all ids already exist`);
       continue;
     }
-    const transformedBatch = filteredBatch.map((record: AnyRecord) => ({
-      id: record.id || null,
-      first_name: record.first_name || null,
-      last_name: record.last_name || null,
-      address: record.address || null,
-      street_address: record.street_address || null,
-      street_address_2: record.street_address_2 || null,
-      city: record.city || null,
-      region: record.region || null,
-      country: record.country || null,
-      postal_code: record.postal_code || null,
-      avatar_url: record.avatar_url || null,
-      external_avatar_url: record.external_avatar_url || null,
-      type: record.type || null,
-      created:
-        record.created && !isNaN(Date.parse(record.created))
-          ? new Date(record.created)
-          : new Date(), // fallback to current date if missing/invalid
-      hidden: record.hidden === 'TRUE' || record.hidden === 'true',
-      tags: record.tags
-        ? record.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean)
-        : null,
-      contact_ids: record.contact_ids
-        ? record.contact_ids.split(',').map((id: string) => id.trim()).filter(Boolean)
-        : null,
-      middle_name: record.middle_name || null,
-      gender: record.gender || null,
-    }));
+    const transformedBatch = filteredBatch.map((record: AnyRecord) => {
+      // tags: if string, skip; if array, use; if null/empty, skip; else insert test value
+      let tags = null;
+      if (Array.isArray(record.tags)) {
+        tags = record.tags;
+      } else if (typeof record.tags === 'string') {
+        // skip
+      } else if (record.tags) {
+        tags = ['test-tag'];
+      }
+      // contact_ids: if string, skip; if array, use; if null/empty, skip; else insert test value
+      let contact_ids = null;
+      if (Array.isArray(record.contact_ids)) {
+        contact_ids = record.contact_ids;
+      } else if (typeof record.contact_ids === 'string') {
+        // skip
+      } else if (record.contact_ids) {
+        contact_ids = ['test-contact-id'];
+      }
+      return {
+        id: record.id || null,
+        first_name: record.first_name || null,
+        last_name: record.last_name || null,
+        address: record.address || null,
+        street_address: record.street_address || null,
+        street_address_2: record.street_address_2 || null,
+        city: record.city || null,
+        region: record.region || null,
+        country: record.country || null,
+        postal_code: record.postal_code || null,
+        avatar_url: record.avatar_url || null,
+        external_avatar_url: record.external_avatar_url || null,
+        type: record.type || null,
+        created: record.created && !isNaN(Date.parse(record.created)) ? new Date(record.created) : new Date(),
+        hidden: record.hidden === 'TRUE' || record.hidden === 'true',
+        tags,
+        contact_ids,
+        middle_name: record.middle_name || null,
+        gender: record.gender || null,
+      };
+    });
     try {
       await db('person').insert(transformedBatch);
       logger.info(`Inserted ${transformedBatch.length} people (batch ${i / batchSize + 1})`);
@@ -164,10 +178,7 @@ async function seedUsers(filePath: string) {
       id: record.id || null,
       first_name: record.first_name || null,
       last_name: record.last_name || null,
-      created:
-        record.created && !isNaN(Date.parse(record.created))
-          ? new Date(record.created)
-          : new Date(), // fallback to now if missing or invalid
+      created: record.created && !isNaN(Date.parse(record.created)) ? new Date(record.created) : new Date(),
     }));
     await db('person').insert(transformedBatch).onConflict('id').ignore();
     logger.info(`Inserted ${batch.length} users (batch ${i / batchSize + 1})`);

@@ -1,4 +1,4 @@
 id,connection_id,datetime,estimated,geo_format,geolocation,identifier,provider_id,tracked,updated,uploaded,user_id,tags
-L001,conn1,2025-01-05T09:00:00Z,FALSE,point,"{""lat"":34.01,""lng"":-118.49}",location-12,prov-acme,TRUE,2025-01-05T09:30:00Z,FALSE,1,"[""work""]"
-L002,conn2,2025-01-07T08:00:00Z,FALSE,point,"{""lat"":34.02,""lng"":-118.50}",location-commute-01,prov-gps,TRUE,2025-01-07T08:45:00Z,FALSE,1,"[""commute""]"
-L003,conn3,2025-01-11T18:00:00Z,FALSE,point,"{""lat"":34.03,""lng"":-118.51}",place-home-01,prov-apple,TRUE,2025-01-11T18:45:00Z,FALSE,1,"[""home""]"
+L001,conn1,2025-01-05T09:00:00Z,FALSE,point,"{""lat"":34.01,""lng"":-118.49}",location-12,prov-acme,TRUE,2025-01-05T09:30:00Z,FALSE,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""work""]"
+L002,conn2,2025-01-07T08:00:00Z,FALSE,point,"{""lat"":34.02,""lng"":-118.50}",location-commute-01,prov-gps,TRUE,2025-01-07T08:45:00Z,FALSE,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""commute""]"
+L003,conn3,2025-01-11T18:00:00Z,FALSE,point,"{""lat"":34.03,""lng"":-118.51}",place-home-01,prov-apple,TRUE,2025-01-11T18:45:00Z,FALSE,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""home""]"
