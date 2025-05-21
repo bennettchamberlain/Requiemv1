@@ -159,10 +159,13 @@ async function seedPeople(filePath: string) {
       };
     });
     try {
-      await db('person').insert(transformedBatch);
-      logger.info(`Inserted ${transformedBatch.length} people (batch ${i / batchSize + 1})`);
+      await db('person')
+        .insert(transformedBatch)
+        .onConflict('id')
+        .merge(); // upsert: update on conflict
+      logger.info(`Upserted ${transformedBatch.length} people (batch ${i / batchSize + 1})`);
     } catch (err) {
-      logger.error('Error inserting people batch:', err);
+      logger.error('Error upserting people batch:', err);
       logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
       throw err;
     }
@@ -172,33 +175,108 @@ async function seedPeople(filePath: string) {
 async function seedPlaces(filePath: string) {
   logger.info(`Seeding places from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
-  // Implement transformation and insertion logic similar to above
+  const batchSize = 100;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    const transformedBatch = batch.map((record: AnyRecord) => ({
+      id: isValidUUID(record.id) ? record.id : uuidv4(),
+      // Add more fields and validation as needed
+    }));
+    try {
+      await db('place').insert(transformedBatch).onConflict('id').merge();
+      logger.info(`Upserted ${transformedBatch.length} places (batch ${i / batchSize + 1})`);
+    } catch (err) {
+      logger.error('Error upserting places batch:', err);
+      logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
+      // Continue on error
+    }
+  }
 }
 
 async function seedLocations(filePath: string) {
   logger.info(`Seeding locations from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
-  // Implement transformation and insertion logic similar to above
+  const batchSize = 100;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    const transformedBatch = batch.map((record: AnyRecord) => ({
+      id: isValidUUID(record.id) ? record.id : uuidv4(),
+      // Add more fields and validation as needed
+    }));
+    try {
+      await db('location').insert(transformedBatch).onConflict('id').merge();
+      logger.info(`Upserted ${transformedBatch.length} locations (batch ${i / batchSize + 1})`);
+    } catch (err) {
+      logger.error('Error upserting locations batch:', err);
+      logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
+      // Continue on error
+    }
+  }
 }
 
 async function seedContacts(filePath: string) {
   logger.info(`Seeding contacts from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
-  // Implement transformation and insertion logic similar to above
+  const batchSize = 100;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    const transformedBatch = batch.map((record: AnyRecord) => ({
+      id: isValidUUID(record.id) ? record.id : uuidv4(),
+      // Add more fields and validation as needed
+    }));
+    try {
+      await db('contact').insert(transformedBatch).onConflict('id').merge();
+      logger.info(`Upserted ${transformedBatch.length} contacts (batch ${i / batchSize + 1})`);
+    } catch (err) {
+      logger.error('Error upserting contacts batch:', err);
+      logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
+      // Continue on error
+    }
+  }
 }
 
 async function seedContent(filePath: string) {
   logger.info(`Seeding content from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
   validateCsvRecords(records, ['type', 'title'], 'jsi-content.csv');
-  // Implement transformation and insertion logic similar to above
+  const batchSize = 100;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    const transformedBatch = batch.map((record: AnyRecord) => ({
+      id: isValidUUID(record.id) ? record.id : uuidv4(),
+      // Add more fields and validation as needed
+    }));
+    try {
+      await db('content').insert(transformedBatch).onConflict('id').merge();
+      logger.info(`Upserted ${transformedBatch.length} content (batch ${i / batchSize + 1})`);
+    } catch (err) {
+      logger.error('Error upserting content batch:', err);
+      logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
+      // Continue on error
+    }
+  }
 }
 
 async function seedThings(filePath: string) {
   logger.info(`Seeding things from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
   validateCsvRecords(records, ['type', 'name'], 'js1-things.csv');
-  // Implement transformation and insertion logic similar to above
+  const batchSize = 100;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    const transformedBatch = batch.map((record: AnyRecord) => ({
+      id: isValidUUID(record.id) ? record.id : uuidv4(),
+      // Add more fields and validation as needed
+    }));
+    try {
+      await db('thing').insert(transformedBatch).onConflict('id').merge();
+      logger.info(`Upserted ${transformedBatch.length} things (batch ${i / batchSize + 1})`);
+    } catch (err) {
+      logger.error('Error upserting things batch:', err);
+      logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
+      // Continue on error
+    }
+  }
 }
 
 async function seedUsers(filePath: string) {
