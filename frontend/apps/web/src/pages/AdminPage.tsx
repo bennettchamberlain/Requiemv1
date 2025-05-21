@@ -30,8 +30,8 @@ export function AdminPage() {
         throw new Error('Authentication token not found');
       }
       
-      console.log('AdminPage: Making API request to /api/users');
-      const response = await fetch('/api/users', {
+      console.log('AdminPage: Making API request to http://dev.companionintelligence.com/api');
+      const response = await fetch('http://dev.companionintelligence.com/api', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
