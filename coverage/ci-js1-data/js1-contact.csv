@@ -1,20 +1,3 @@
 id,avatar_url,connection_id,created,handle,hidden,identifier,name,provider_id,provider_name,remote_id,tags,updated,user_id
-C001,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:01Z,marysmith,FALSE,john.smith@acme.com,Mary Smith ‑ Work Email,prov-email,Email,js@acme,"[\"work\",\"email\"]",2025-03-01T12:00:00Z,1
-C002,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:22Z,johnhome,FALSE,john.smith@gmail.com,Mary Smith ‑ Personal Email,prov-gmail,Email,john.smith,"[\"personal\",\"email\"]",2025-03-01T12:00:00Z,1
-C003,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:45Z,13105551234,FALSE,G8 1‑310‑555‑1234,Mary Smith ‑ Mobile,prov-phone,Phone,3105551234,"[\"mobile\"]",2025-03-01T12:00:00Z,1
-C004,https://pics.example.com/john.jpg,conn1,2025-01-02T08:17:05Z,john‑smith,FALSE,linkedin.com/in/john‑smith,LinkedIn,prov-linkedin,LinkedIn,123456,"[\"professional\"]",2025-03-01T12:00:00Z,1
-C005,https://pics.example.com/john.jpg,conn1,2025-01-02T08:17:19Z,johnbeats,FALSE,spotify.com/user/johnbeats,Spotify Profile,prov-spotify,Spotify,998877,"[\"music\",\"streaming\"]",2025-03-01T12:00:00Z,1
-C006,https://pics.example.com/mary.jpg,conn2,2025-01-02T08:18:00Z,marysmith,FALSE,mary.smith@gmail.com,Mary Smith ‑ Email,prov-gmail,Email,mary.smith,"[\"family\",\"email\"]",2025-02-15T09:00:00Z,1
-C007,https://pics.example.com/mary.jpg,conn2,2025-01-02T08:18:25Z,13105551235,FALSE,1‑310‑555‑1235,Mary Smith ‑ Mobile,prov-phone,Phone,3105551235,"[\"family\",\"mobile\"]",2025-02-15T09:00:00Z,1
-C008,https://pics.example.com/mary.jpg,conn2,2025-01-02T08:18:49Z,@marysclass,FALSE,instagram.com/marysclass,Instagram,prov-ig,Instagram,ig7766,"[\"social\"]",2025-02-15T09:00:00Z,1
-C009,https://pics.example.com/mike.jpg,conn3,2025-01-02T08:19:30Z,mike.smith,FALSE,mike.smith@school.edu,Mike ‑ School Email,prov-email,Email,ms777,"[\"school\"]",2025-03-05T08:00:00Z,1
-C010,https://pics.example.com/mike.jpg,conn3,2025-01-02T08:19:51Z,13105551236,FALSE,1‑310‑555‑1236,Mike ‑ Phone,prov-phone,Phone,3105551236,"[\"child\"]",2025-03-05T08:00:00Z,1
-C011,https://pics.example.com/tina.jpg,conn4,2025-01-02T08:20:12Z,tina.smith,FALSE,tina.smith@school.edu,Tina ‑ School Email,prov-email,Email,ts888,"[\"school\"]",2025-03-05T08:00:00Z,1
-C012,https://pics.example.com/tina.jpg,conn4,2025-01-02T08:20:34Z,13105551237,FALSE,1‑310‑555‑1237,Tina ‑ Phone,prov-phone,Phone,3105551237,"[\"child\"]",2025-03-05T08:00:00Z,1
-C013,https://pics.example.com/tina.jpg,conn4,2025-01-02T08:20:55Z,@tinyballet,FALSE,instagram.com/tinyballet,Instagram,prov-ig,Instagram,ig8899,"[\"social\"]",2025-03-05T08:00:00Z,1
-C014,https://pics.example.com/sarah.jpg,conn5,2025-01-03T09:06:00Z,sarahj,FALSE,sarah.j@acme.com,Sarah ‑ Email,prov-email,Email,sj‑email,"[\"work\"]",2025-02-20T11:00:00Z,1
-C015,https://pics.example.com/sarah.jpg,conn5,2025-01-03T09:06:20Z,14245551000,FALSE,1‑424‑555‑1000,Sarah ‑ Work Phone,prov-phone,Phone,4245551000,"[\"work\"]",2025-02-20T11:00:00Z,1
-C016,https://pics.example.com/dave.jpg,conn6,2025-01-03T09:07:10Z,dave.lee,FALSE,dave.lee@acme.com,Dave ‑ Email,prov-email,Email,dl‑email,"[\"work\"]",2025-02-20T11:00:00Z,1
-C017,https://pics.example.com/dave.jpg,conn6,2025-01-03T09:07:33Z,14245551001,FALSE,1‑424‑555‑1001,Dave ‑ Phone,prov-phone,Phone,4245551001,"[\"work\"]",2025-02-20T11:00:00Z,1
-C018,https://pics.example.com/alex.jpg,conn7,2025-01-04T19:23:10Z,alexb,FALSE,alex.b@gmail.com,Alex ‑ Email,prov-gmail,Email,ab‑mail,"[\"music\"]",2025-03-10T10:30:00Z,1
-C019,https://pics.example.com/alex.jpg,conn7,2025-01-04T19:23:30Z,alexb‑sounds,FALSE,soundcloud.com/alexb,SoundCloud,prov-sc,SoundCloud,sc4433,"[\"music\"]",2025-03-10T10:30:00Z,1
+1,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:01Z,marysmith,FALSE,john.smith@acme.com,Mary Smith ‑ Work Email,prov-email,Email,js@acme,"work email",2025-03-01T12:00:00Z,1
+2,https://pics.example.com/john.jpg,conn1,2025-01-02T08:16:22Z,johnhome,FALSE,john.smith@gmail.com,Mary Smith ‑ Personal Email,prov-gmail,Email,john.smith,"personal email",2025-03-01T12:00:00Z,1

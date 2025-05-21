@@ -82,12 +82,12 @@ async function seedPeople(filePath: string) {
       country: record.country || null,
       postal_code: record.postal_code || null,
       avatar_url: record.avatar_url || null,
-      contact_ids: record.contact_ids ? JSON.parse(record.contact_ids.replace(/'/g, '"')) : null,
+      contact_ids: record.contact_ids ? record.contact_ids.split(',').map((id: string) => id.trim()) : null,
       type: record.type || null,
       created: record.created ? new Date(record.created) : null,
       external_avatar_url: record.external_avatar_url || null,
       hidden: record.hidden === 'TRUE' || record.hidden === 'true',
-      tags: record.tags ? JSON.parse(record.tags.replace(/'/g, '"')) : null,
+      tags: record.tags ? record.tags.split(',').map((tag: string) => tag.trim()) : null,
     }));
     await db('Person').insert(transformedBatch).onConflict('id').ignore();
     logger.info(`Inserted ${batch.length} people (batch ${i / batchSize + 1})`);
