@@ -50,7 +50,7 @@ CREATE TABLE "Person" (
     "tags" TEXT[] -- Assuming array of tag strings or FKs to a Tag table
 );
 
-CREATE TABLE "Providers" (
+CREATE TABLE "Provider" (
     "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "coming_soon" BOOLEAN,
     "enabled" BOOLEAN,
@@ -76,7 +76,7 @@ CREATE TABLE "Connection" (
     "name" TEXT,
     "oauth_app_name" TEXT,
     "permissions" JSONB,
-    "provider_id" UUID REFERENCES "Providers"("id"), -- Assuming FK to Providers.id
+    "provider_id" UUID REFERENCES "Provider"("id"), -- Assuming FK to Provider.id
     "provider_name" TEXT,
     "remote_connection_id" TEXT -- Assuming Buffer is TEXT
 );
@@ -89,7 +89,7 @@ CREATE TABLE "Event" (
     "created" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     "updated" TIMESTAMP WITH TIME ZONE,
     "connection" TEXT REFERENCES "Connection"("id"),
-    "provider" UUID REFERENCES "Providers"("id"),
+    "provider" UUID REFERENCES "Provider"("id"),
     "data_source" TEXT
 );
 
@@ -100,7 +100,7 @@ CREATE TABLE "Place" (
     "geo_format" geo_format_enum,
     "geolocation" JSONB, -- GeoJSON stored as JSONB
     "identifier" TEXT,
-    "provider_id" UUID REFERENCES "Providers"("id"),
+    "provider_id" UUID REFERENCES "Provider"("id"),
     "tracked" BOOLEAN,
     "updated" TIMESTAMP WITH TIME ZONE,
     "uploaded" BOOLEAN,
@@ -119,7 +119,7 @@ CREATE TABLE "Location" (
     "geo_format" geo_format_enum,
     "geolocation" JSONB, -- Hash/JSON for lat, long, alt, orientation
     "identifier" TEXT,
-    "provider_id" UUID REFERENCES "Providers"("id"),
+    "provider_id" UUID REFERENCES "Provider"("id"),
     "tracked" BOOLEAN,
     "updated" TIMESTAMP WITH TIME ZONE,
     "uploaded" BOOLEAN,
@@ -137,7 +137,7 @@ CREATE TABLE "Contact" (
     "identifier" TEXT,
     "name" TEXT,
     "people_id" TEXT REFERENCES "Person"("id"), -- Assuming Buffer/(FK to Person)
-    "provider_id" UUID REFERENCES "Providers"("id"), -- Assuming Buffer/(FK to Providers)
+    "provider_id" UUID REFERENCES "Provider"("id"), -- Assuming Buffer/(FK to Provider)
     "provider_name" TEXT,
     "remote_id" TEXT,
     "self" BOOLEAN,
@@ -164,7 +164,7 @@ CREATE TABLE "Content" (
     "identifier" TEXT,
     "mimetype" TEXT,
     "price" NUMERIC,
-    "provider_id" UUID REFERENCES "Providers"("id"), -- Assuming Buffer/(FK to Providers)
+    "provider_id" UUID REFERENCES "Provider"("id"), -- Assuming Buffer/(FK to Provider)
     "provider_name" TEXT,
     "remote_id" TEXT,
     "tags" TEXT[], -- Assuming array of tag strings or FKs

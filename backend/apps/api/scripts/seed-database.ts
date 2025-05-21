@@ -125,10 +125,30 @@ async function seedThings(filePath: string) {
   // Implement transformation and insertion logic similar to above
 }
 
+async function seedUsers(filePath: string) {
+  logger.info(`Seeding users from ${filePath}`);
+  const records: AnyRecord[] = readCsv(filePath);
+  validateCsvRecords(records, ['id', 'first_name', 'last_name', 'email', 'created'], 'user.csv');
+  const batchSize = 100;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    const transformedBatch = batch.map((record: AnyRecord) => ({
+      id: record.id || null,
+      first_name: record.first_name || null,
+      last_name: record.last_name || null,
+      email: record.email || null,
+      created: record.created ? new Date(record.created) : null,
+    }));
+    await db('Person').insert(transformedBatch).onConflict('id').ignore();
+    logger.info(`Inserted ${batch.length} users (batch ${i / batchSize + 1})`);
+  }
+}
+
 async function seedDatabase() {
   try {
     logger.info('Starting database seeding process');
     const dataDir = path.resolve(__dirname, '../../../../coverage/ci-js1-data');
+    await seedUsers(path.join(dataDir, 'user.csv'));
     await seedEvents(path.join(dataDir, 'js1-events.csv'));
     await seedPeople(path.join(dataDir, 'js1-people.csv'));
     await seedPlaces(path.join(dataDir, 'js1-place.csv'));

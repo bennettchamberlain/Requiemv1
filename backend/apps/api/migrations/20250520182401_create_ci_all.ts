@@ -2,7 +2,7 @@ import { Knex } from 'knex';
 
 exports.up = async function (knex: Knex): Promise<void> {
   return knex.raw(`
-    CREATE TABLE Providers (
+    CREATE TABLE Provider (
         id UUID PRIMARY KEY,
         coming_soon BOOLEAN,
         enabled BOOLEAN,
@@ -27,7 +27,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         name TEXT,
         oauth_app_name TEXT,
         permissions JSONB,
-        provider_id UUID REFERENCES Providers(id),
+        provider_id UUID REFERENCES Provider(id),
         provider_name TEXT,
         remote_connection_id UUID
     );
@@ -84,7 +84,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         identifier TEXT,
         mimetype TEXT,
         price NUMERIC,
-        provider_id UUID REFERENCES Providers(id),
+        provider_id UUID REFERENCES Provider(id),
         provider_name TEXT,
         remote_id TEXT,
         tags UUID[],
@@ -117,7 +117,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         geo_format geo_format_type,
         geolocation JSONB,
         identifier TEXT,
-        provider_id UUID REFERENCES Providers(id),
+        provider_id UUID REFERENCES Provider(id),
         tracked BOOLEAN,
         updated TIMESTAMP,
         uploaded BOOLEAN,
@@ -135,7 +135,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         geo_format geo_format_type,
         geolocation JSONB,
         identifier TEXT,
-        provider_id UUID REFERENCES Providers(id),
+        provider_id UUID REFERENCES Provider(id),
         tracked BOOLEAN,
         updated TIMESTAMP,
         uploaded BOOLEAN,
@@ -152,7 +152,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         identifier TEXT,
         name TEXT,
         people_id UUID REFERENCES Person(id),
-        provider_id UUID REFERENCES Providers(id),
+        provider_id UUID REFERENCES Provider(id),
         provider_name TEXT,
         remote_id TEXT,
         self BOOLEAN,
@@ -170,7 +170,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         created TIMESTAMP,
         updated TIMESTAMP,
         connection UUID REFERENCES Connection(id),
-        provider UUID REFERENCES Providers(id),
+        provider UUID REFERENCES Provider(id),
         data_source TEXT,
         tags UUID[]
     );
@@ -193,6 +193,6 @@ exports.down = async function (knex: Knex): Promise<void> {
     DROP TABLE IF EXISTS "Tag";
     DROP TABLE IF EXISTS "Person";
     DROP TABLE IF EXISTS "Connection";
-    DROP TABLE IF EXISTS "Providers";
+    DROP TABLE IF EXISTS "Provider";
   `);
 };
