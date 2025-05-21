@@ -13,6 +13,7 @@ interface User {
 
 export function AdminPage() {
   const { user } = useAuth();
+  console.log(user);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,18 +25,18 @@ export function AdminPage() {
       setError(null);
       // Get the token from localStorage
       const token = localStorage.getItem('feathers-jwt');
-      
+
       if (!token) {
         console.error('AdminPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
-      
+
       console.log('AdminPage: Making API request to http://dev.companionintelligence.com/api/users');
       const response = await fetch('http://dev.companionintelligence.com/api/users', {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!response.ok) {
@@ -56,12 +57,12 @@ export function AdminPage() {
 
       console.log('AdminPage: API request successful, parsing response');
       const data = await response.json();
-      
+
       if (!Array.isArray(data)) {
         console.error('AdminPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of users');
       }
-      
+
       console.log(`AdminPage: Successfully fetched ${data.length} users`, data);
       setUsers(data);
     } catch (err) {
@@ -77,7 +78,7 @@ export function AdminPage() {
   useEffect(() => {
     console.log('AdminPage: Component mounted, fetching users');
     fetchUsers();
-    
+
     return () => {
       console.log('AdminPage: Component unmounting');
     };
@@ -88,13 +89,7 @@ export function AdminPage() {
       <Card className="w-full">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-2xl">Admin Panel</CardTitle>
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={fetchUsers} 
-            disabled={loading}
-            title="Refresh users"
-          >
+          <Button variant="outline" size="icon" onClick={fetchUsers} disabled={loading} title="Refresh users">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
         </CardHeader>
@@ -110,12 +105,7 @@ export function AdminPage() {
               <div>
                 <h3 className="font-medium">Error loading users</h3>
                 <p className="text-sm">{error}</p>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="mt-2" 
-                  onClick={fetchUsers}
-                >
+                <Button variant="outline" size="sm" className="mt-2" onClick={fetchUsers}>
                   Try Again
                 </Button>
               </div>
@@ -148,9 +138,7 @@ export function AdminPage() {
                   )}
                 </TableBody>
               </Table>
-              <div className="text-xs text-muted-foreground mt-4">
-                Total users: {users.length}
-              </div>
+              <div className="text-xs text-muted-foreground mt-4">Total users: {users.length}</div>
             </>
           )}
         </CardContent>

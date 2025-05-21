@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // For now, we'll just assume it's valid if it exists
       setUser({ id: '1', email: 'user@example.com' }); // Placeholder user
     } catch (error) {
-      console.error('Token validation failed:', error);
+      console.error('Token validation failed:', error, token);
       localStorage.removeItem('feathers-jwt');
     } finally {
       setIsLoading(false);
@@ -53,8 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           strategy: 'local',
           email,
-          password
-        })
+          password,
+        }),
       });
 
       if (!res.ok) {
@@ -64,12 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await res.json();
       localStorage.setItem('feathers-jwt', data.accessToken);
-      
+
       // Set user data
-      setUser({ 
-        id: data.user?.id || '1', 
+      setUser({
+        id: data.user?.id || '1',
         email: email,
-        name: data.user?.name
+        name: data.user?.name,
       });
     } catch (error) {
       console.error('Login failed:', error);
@@ -88,8 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           name,
           email,
-          password
-        })
+          password,
+        }),
       });
 
       if (!res.ok) {
@@ -99,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await res.json();
       localStorage.setItem('feathers-jwt', data.accessToken);
-      
+
       // After signup, automatically log in
       await login(email, password);
     } catch (error) {
@@ -123,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         signup,
-        logout
+        logout,
       }}
     >
       {children}

@@ -1,4 +1,3 @@
-
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
 // Import contexts
@@ -15,15 +14,15 @@ import { AdminPage } from '@/pages/AdminPage';
 // Protected route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
-  
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-svh">Loading...</div>;
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -36,21 +35,21 @@ function App() {
             <Route path="/" element={<SplashPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
-            <Route 
-              path="/dashboard" 
+            <Route
+              path="/dashboard"
               element={
                 <ProtectedRoute>
                   <DashboardPage />
                 </ProtectedRoute>
-              } 
+              }
             />
-            <Route 
-              path="/admin" 
+            <Route
+              path="/admin"
               element={
                 <ProtectedRoute>
                   <AdminPage />
                 </ProtectedRoute>
-              } 
+              }
             />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
@@ -61,6 +60,3 @@ function App() {
 }
 
 export default App;
-
-
-

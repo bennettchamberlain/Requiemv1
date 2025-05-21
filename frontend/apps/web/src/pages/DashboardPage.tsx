@@ -41,11 +41,9 @@ export function DashboardPage() {
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
-            
+
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-sm font-medium">
-                Welcome, {user?.name || user?.email}
-              </span>
+              <span className="text-sm font-medium">Welcome, {user?.name || user?.email}</span>
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 Logout
               </Button>
