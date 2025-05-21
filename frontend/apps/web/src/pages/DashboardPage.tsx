@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Separator } from '@/components/ui/separator';
 
-export function DashboardPage() {
+export default function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
