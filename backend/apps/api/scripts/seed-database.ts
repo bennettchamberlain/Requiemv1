@@ -50,13 +50,16 @@ async function seedEvents(filePath: string) {
       type: record.type || null,
       user_id: record.user_id || null,
       related_objects: record.related_objects ? JSON.parse(record.related_objects.replace(/'/g, '"')) : null,
-      created: record.created ? new Date(record.created) : null,
+      created:
+        record.created && !isNaN(Date.parse(record.created))
+          ? new Date(record.created)
+          : new Date(), // fallback to now if missing or invalid
       updated: record.updated ? new Date(record.updated) : null,
       connection: record.connection || null,
       provider: record.provider || null,
       data_source: record.data_source || null,
     }));
-    await db('Event').insert(transformedBatch).onConflict('id').ignore();
+    await db('event').insert(transformedBatch).onConflict('id').ignore();
     logger.info(`Inserted ${batch.length} events (batch ${i / batchSize + 1})`);
   }
 }
@@ -68,7 +71,16 @@ async function seedPeople(filePath: string) {
   const batchSize = 100;
   for (let i = 0; i < records.length; i += batchSize) {
     const batch = records.slice(i, i + batchSize);
-    const transformedBatch = batch.map((record: AnyRecord) => ({
+    // Filter out people whose id already exists in the database
+    const ids = batch.map((record: AnyRecord) => record.id);
+    const existing = await db('person').whereIn('id', ids).select('id');
+    const existingIds = new Set(existing.map((row: any) => row.id));
+    const filteredBatch = batch.filter((record: AnyRecord) => !existingIds.has(record.id));
+    if (filteredBatch.length === 0) {
+      logger.info(`Skipped batch ${i / batchSize + 1}: all ids already exist`);
+      continue;
+    }
+    const transformedBatch = filteredBatch.map((record: AnyRecord) => ({
       id: record.id || null,
       first_name: record.first_name || null,
       last_name: record.last_name || null,
@@ -82,15 +94,38 @@ async function seedPeople(filePath: string) {
       country: record.country || null,
       postal_code: record.postal_code || null,
       avatar_url: record.avatar_url || null,
-      contact_ids: record.contact_ids ? record.contact_ids.split(',').map((id: string) => id.trim()) : null,
+      contact_ids: record.contact_ids
+        ? record.contact_ids
+            .split(',')
+            .map((id: string) => id.trim())
+            .filter(Boolean)
+        : null,
       type: record.type || null,
-      created: record.created ? new Date(record.created) : null,
+      created:
+        record.created && !isNaN(Date.parse(record.created))
+          ? new Date(record.created)
+          : new Date(), // fallback to current date if missing/invalid
       external_avatar_url: record.external_avatar_url || null,
       hidden: record.hidden === 'TRUE' || record.hidden === 'true',
-      tags: record.tags ? record.tags.split(',').map((tag: string) => tag.trim()) : null,
+      tags: record.tags
+        ? record.tags
+            .split(',')
+            .map((tag: string) => tag.trim())
+            .filter(Boolean)
+        : null,
+      email:
+        record.email && record.email.trim() !== ''
+          ? record.email
+          : `person_${record.id || Math.random().toString(36).substring(2)}@placeholder.local`,
     }));
-    await db('Person').insert(transformedBatch).onConflict('id').ignore();
-    logger.info(`Inserted ${batch.length} people (batch ${i / batchSize + 1})`);
+    try {
+      await db('person').insert(transformedBatch);
+      logger.info(`Inserted ${transformedBatch.length} people (batch ${i / batchSize + 1})`);
+    } catch (err) {
+      logger.error('Error inserting people batch:', err);
+      logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
+      throw err;
+    }
   }
 }
 
@@ -137,10 +172,16 @@ async function seedUsers(filePath: string) {
       id: record.id || null,
       first_name: record.first_name || null,
       last_name: record.last_name || null,
-      email: record.email || null,
-      created: record.created ? new Date(record.created) : null,
+      email:
+        record.email && record.email.trim() !== ''
+          ? record.email
+          : `person_${record.id || Math.random().toString(36).substring(2)}@placeholder.local`,
+      created:
+        record.created && !isNaN(Date.parse(record.created))
+          ? new Date(record.created)
+          : new Date(), // fallback to now if missing or invalid
     }));
-    await db('Person').insert(transformedBatch).onConflict('id').ignore();
+    await db('person').insert(transformedBatch).onConflict('id').ignore();
     logger.info(`Inserted ${batch.length} users (batch ${i / batchSize + 1})`);
   }
 }

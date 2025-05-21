@@ -2,11 +2,11 @@ import { Knex } from 'knex';
 
 exports.up = async function (knex: Knex): Promise<void> {
   // Drop tables if they exist to ensure a clean slate
-  await knex.schema.dropTableIfExists('Contact');
-  await knex.schema.dropTableIfExists('Person');
+  await knex.schema.dropTableIfExists('contact');
+  await knex.schema.dropTableIfExists('person');
 
-  // Create Person table to match js1-user.csv and js1-people.csv
-  await knex.schema.createTable('Person', (table) => {
+  // Create person table to match js1-user.csv and js1-people.csv
+  await knex.schema.createTable('person', (table) => {
     table.string('id').primary();
     table.string('first_name').notNullable();
     table.string('last_name').notNullable();
@@ -29,8 +29,8 @@ exports.up = async function (knex: Knex): Promise<void> {
     table.specificType('tags', 'text[]');
   });
 
-  // Create Contact table to match js1-contact.csv
-  await knex.schema.createTable('Contact', (table) => {
+  // Create contact table to match js1-contact.csv
+  await knex.schema.createTable('contact', (table) => {
     table.string('id').primary();
     table.string('avatar_url');
     table.string('connection_id');
@@ -49,6 +49,6 @@ exports.up = async function (knex: Knex): Promise<void> {
 };
 
 exports.down = async function (knex: Knex): Promise<void> {
-  await knex.schema.dropTableIfExists('Contact');
-  await knex.schema.dropTableIfExists('Person');
+  await knex.schema.dropTableIfExists('contact');
+  await knex.schema.dropTableIfExists('person');
 };

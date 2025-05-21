@@ -2,100 +2,117 @@ import { Knex } from 'knex';
 
 exports.up = async function (knex: Knex): Promise<void> {
   return knex.raw(`
-    CREATE TABLE Provider (
-        id UUID PRIMARY KEY,
-        coming_soon BOOLEAN,
-        enabled BOOLEAN,
-        login BOOLEAN,
-        name TEXT,
-        oauth_app UUID,
-        remote_map_id UUID,
-        sources JSONB
+    -- Drop all tables and types if they exist to avoid conflicts
+    drop table if exists event cascade;
+    drop table if exists contact cascade;
+    drop table if exists location cascade;
+    drop table if exists place cascade;
+    drop table if exists thing cascade;
+    drop table if exists content cascade;
+    drop table if exists savedsearch cascade;
+    drop table if exists tag cascade;
+    drop table if exists person cascade;
+    drop table if exists connection cascade;
+    drop table if exists provider cascade;
+    drop type if exists event_type cascade;
+    drop type if exists content_type cascade;
+    drop type if exists thing_type cascade;
+    drop type if exists geo_format_type cascade;
+
+    create table provider (
+        id uuid primary key,
+        coming_soon boolean,
+        enabled boolean,
+        login boolean,
+        name text,
+        oauth_app uuid,
+        remote_map_id uuid,
+        sources jsonb
     );
-    CREATE TABLE Connection (
-        id UUID PRIMARY KEY,
-        auth_status TEXT,
-        authorized BOOLEAN,
-        complete BOOLEAN,
-        redirectURL TEXT,
-        browser TEXT,
-        enabled BOOLEAN,
-        endpoint_date TIMESTAMP,
-        frequency INTEGER,
-        last_run TIMESTAMP,
-        last_successful_run TIMESTAMP,
-        name TEXT,
-        oauth_app_name TEXT,
-        permissions JSONB,
-        provider_id UUID REFERENCES Provider(id),
-        provider_name TEXT,
-        remote_connection_id UUID
+    create table connection (
+        id uuid primary key,
+        auth_status text,
+        authorized boolean,
+        complete boolean,
+        redirecturl text,
+        browser text,
+        enabled boolean,
+        endpoint_date timestamp,
+        frequency integer,
+        last_run timestamp,
+        last_successful_run timestamp,
+        name text,
+        oauth_app_name text,
+        permissions jsonb,
+        provider_id uuid references provider(id),
+        provider_name text,
+        remote_connection_id uuid
     );
-    CREATE TABLE Person (
-        id UUID PRIMARY KEY,
-        address TEXT,
-        street_address TEXT,
-        street_address_2 TEXT,
-        city TEXT,
-        region TEXT,
-        country TEXT,
-        postal_code TEXT,
-        avatar_url TEXT,
-        external_avatar_url TEXT,
-        type TEXT, -- Consider ENUM if fixed categories
-        created TIMESTAMP,
-        hidden BOOLEAN,
-        tags UUID[],
-        contact_ids UUID[]
+    create table person (
+        id uuid primary key,
+        address text,
+        street_address text,
+        street_address_2 text,
+        city text,
+        region text,
+        country text,
+        postal_code text,
+        avatar_url text,
+        external_avatar_url text,
+        type text,
+        created timestamp,
+        hidden boolean,
+        tags uuid[],
+        contact_ids uuid[]
     );
-    CREATE TABLE Tag (
-        _id UUID PRIMARY KEY,
-        id TEXT,
-        created TIMESTAMP,
-        tag TEXT,
-        share TEXT,
-        passcode TEXT,
-        updated TIMESTAMP,
-        user_id UUID REFERENCES Person(id)
+    create table tag (
+        _id uuid primary key,
+        id text,
+        created timestamp,
+        tag text,
+        share text,
+        passcode text,
+        updated timestamp,
+        user_id uuid references person(id)
     );
-    CREATE TABLE SavedSearch (
-        id TEXT PRIMARY KEY,
-        count INTEGER,
-        favorited BOOLEAN,
-        filters_data JSONB,
-        filters_name TEXT,
-        filters_type TEXT,
-        hash TEXT,
-        icon_color TEXT,
-        last_run TIMESTAMP,
-        name TEXT,
-        query TEXT,
-        user_id UUID REFERENCES Person(id)
+    create table savedsearch (
+        id text primary key,
+        count integer,
+        favorited boolean,
+        filters_data jsonb,
+        filters_name text,
+        filters_type text,
+        hash text,
+        icon_color text,
+        last_run timestamp,
+        name text,
+        query text,
+        user_id uuid references person(id)
     );
-    CREATE TYPE content_type AS ENUM ('Photo', 'Video', 'Audio', 'Text', 'Code', 'Game', 'Web Page', 'File');
-    CREATE TABLE Content (
-        id TEXT PRIMARY KEY,
-        connection_id UUID REFERENCES Connection(id),
-        created TIMESTAMP,
-        embed_content TEXT,
-        embed_format TEXT,
-        embed_thumbnail TEXT,
-        hidden BOOLEAN,
-        identifier TEXT,
-        mimetype TEXT,
-        price NUMERIC,
-        provider_id UUID REFERENCES Provider(id),
-        provider_name TEXT,
-        remote_id TEXT,
-        tags UUID[],
-        text TEXT,
-        title TEXT,
+    create type content_type as enum ('Photo', 'Video', 'Audio', 'Text', 'Code', 'Game', 'Web Page', 'File');
+    create table content (
+        id text primary key,
+        connection_id uuid references connection(id),
+        created timestamp,
+        embed_content text,
+        embed_format text,
+        embed_thumbnail text,
+        hidden boolean,
+        identifier text,
+        mimetype text,
+        price numeric,
+        provider_id uuid references provider(id),
+        provider_name text,
+        remote_id text,
+        tags uuid[],
+        text text,
+        title text,
         type content_type,
-        updated TIMESTAMP,
-        url TEXT,
-        user_id UUID REFERENCES Person(id)
+        updated timestamp,
+        url text,
+        user_id uuid references person(id)
     );
-    CREATE TYPE thing_type AS ENUM (
+    create type thing_type as enum (
         'Apparel', 'Footwear', 'Electronics', 'Furniture', 'Kitchenware and Cooking Equipment',
         'Vehicles', 'Books and Magazines', 'Jewelry and Accessories', 'Personal Care', 'Appliances',
         'Sporting and Fitness', 'Tools and Home Improvement Items', 'Toys and Games',
@@ -103,96 +120,96 @@ exports.up = async function (knex: Knex): Promise<void> {
         'Art', 'Office', 'Pet Supplies', 'Food', 'Cleaning', 'Medical', 'Travel', 'Collectibles',
         'Eyewear', 'Watches', 'Photography', 'Organizational'
     );
-    CREATE TABLE Thing (
-        id TEXT PRIMARY KEY,
-        connection UUID REFERENCES Connection(id),
+    create table thing (
+        id text primary key,
+        connection uuid references connection(id),
         type thing_type,
-        tags UUID[]
+        tags uuid[]
     );
-    CREATE TYPE geo_format_type AS ENUM ('point', 'radius', 'triangle');
-    CREATE TABLE Place (
-        id UUID PRIMARY KEY,
-        connection_id UUID REFERENCES Connection(id),
-        estimated BOOLEAN,
+    create type geo_format_type as enum ('point', 'radius', 'triangle');
+    create table place (
+        id uuid primary key,
+        connection_id uuid references connection(id),
+        estimated boolean,
         geo_format geo_format_type,
-        geolocation JSONB,
-        identifier TEXT,
-        provider_id UUID REFERENCES Provider(id),
-        tracked BOOLEAN,
-        updated TIMESTAMP,
-        uploaded BOOLEAN,
-        user_id UUID REFERENCES Person(id),
-        parent_place UUID REFERENCES Place(id),
-        location_boundary JSONB,
-        tags UUID[],
-        type TEXT
+        geolocation jsonb,
+        identifier text,
+        provider_id uuid references provider(id),
+        tracked boolean,
+        updated timestamp,
+        uploaded boolean,
+        user_id uuid references person(id),
+        parent_place uuid references place(id),
+        location_boundary jsonb,
+        tags uuid[],
+        type text
     );
-    CREATE TABLE Location (
-        id UUID PRIMARY KEY,
-        connection_id UUID REFERENCES Connection(id),
-        datetime TIMESTAMP,
-        estimated BOOLEAN,
+    create table location (
+        id uuid primary key,
+        connection_id uuid references connection(id),
+        datetime timestamp,
+        estimated boolean,
         geo_format geo_format_type,
-        geolocation JSONB,
-        identifier TEXT,
-        provider_id UUID REFERENCES Provider(id),
-        tracked BOOLEAN,
-        updated TIMESTAMP,
-        uploaded BOOLEAN,
-        user_id UUID REFERENCES Person(id),
-        tags UUID[]
+        geolocation jsonb,
+        identifier text,
+        provider_id uuid references provider(id),
+        tracked boolean,
+        updated timestamp,
+        uploaded boolean,
+        user_id uuid references person(id),
+        tags uuid[]
     );
-    CREATE TABLE Contact (
-        id TEXT PRIMARY KEY,
-        avatar_url TEXT,
-        connection_id UUID REFERENCES Connection(id),
-        created TIMESTAMP,
-        handle TEXT,
-        hidden BOOLEAN,
-        identifier TEXT,
-        name TEXT,
-        people_id UUID REFERENCES Person(id),
-        provider_id UUID REFERENCES Provider(id),
-        provider_name TEXT,
-        remote_id TEXT,
-        self BOOLEAN,
-        tags UUID[],
-        updated TIMESTAMP,
-        user_id UUID REFERENCES Person(id)
+    create table contact (
+        id text primary key,
+        avatar_url text,
+        connection_id uuid references connection(id),
+        created timestamp,
+        handle text,
+        hidden boolean,
+        identifier text,
+        name text,
+        people_id uuid references person(id),
+        provider_id uuid references provider(id),
+        provider_name text,
+        remote_id text,
+        self boolean,
+        tags uuid[],
+        updated timestamp,
+        user_id uuid references person(id)
     );
-    CREATE TYPE event_type AS ENUM ('View', 'Play', 'Message', 'Comment', 'Create', 'Edit', 'Call', 'Visit', 'Travel', 'Eat', 'Transactions', 'Sleep', 'Exercise');
-    CREATE TABLE Event (
-        id UUID PRIMARY KEY,
-        start TIMESTAMP,
+    create type event_type as enum ('View', 'Play', 'Message', 'Comment', 'Create', 'Edit', 'Call', 'Visit', 'Travel', 'Eat', 'Transactions', 'Sleep', 'Exercise');
+    create table event (
+        id uuid primary key,
+        start timestamp,
         type event_type,
-        user_id UUID REFERENCES Person(id),
-        related_objects UUID[],
-        created TIMESTAMP,
-        updated TIMESTAMP,
-        connection UUID REFERENCES Connection(id),
-        provider UUID REFERENCES Provider(id),
-        data_source TEXT,
-        tags UUID[]
+        user_id uuid references person(id),
+        related_objects uuid[],
+        created timestamp,
+        updated timestamp,
+        connection uuid references connection(id),
+        provider uuid references provider(id),
+        data_source text,
+        tags uuid[]
     );
   `);
 };
 
 exports.down = async function (knex: Knex): Promise<void> {
   return knex.raw(`
-    DROP TABLE IF EXISTS "Event";
-    DROP TYPE IF EXISTS event_type;
-    DROP TABLE IF EXISTS "Contact";
-    DROP TABLE IF EXISTS "Location";
-    DROP TABLE IF EXISTS "Place";
-    DROP TYPE IF EXISTS geo_format_type;
-    DROP TABLE IF EXISTS "Thing";
-    DROP TYPE IF EXISTS thing_type;
-    DROP TABLE IF EXISTS "Content";
-    DROP TYPE IF EXISTS content_type;
-    DROP TABLE IF EXISTS "SavedSearch";
-    DROP TABLE IF EXISTS "Tag";
-    DROP TABLE IF EXISTS "Person";
-    DROP TABLE IF EXISTS "Connection";
-    DROP TABLE IF EXISTS "Provider";
+    drop table if exists event;
+    drop type if exists event_type;
+    drop table if exists contact;
+    drop table if exists location;
+    drop table if exists place;
+    drop type if exists geo_format_type;
+    drop table if exists thing;
+    drop type if exists thing_type;
+    drop table if exists content;
+    drop type if exists content_type;
+    drop table if exists savedsearch;
+    drop table if exists tag;
+    drop table if exists person;
+    drop table if exists connection;
+    drop table if exists provider;
   `);
 };

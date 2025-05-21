@@ -1,2 +1,2 @@
-id,tags,connection,type,name,description,Dimensions (LxWxH),Weight (kg)
-T001,"work, acme, engineering, project",USER_JOHN_SMITH,Digital Device,Work Laptop (Dell Precision 7560),"Primary laptop for civil engineering tasks, CAD software, project plans.",36cm x 24cm x 2.5cm,2.5kg
+id,connection,type,name,tags
+t001,conn1,apparel,shirt,"[""clothing""]"

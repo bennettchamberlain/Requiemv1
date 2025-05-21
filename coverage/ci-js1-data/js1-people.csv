@@ -1,4 +1,3 @@
-id,first_name,last_name,email,created,middle_name,gender,address,street_address,street_address_2,city,region,country,postal_code,avatar_url,contact_ids,type,external_avatar_url,hidden,tags
-1,John,Smith,,2025-01-02T08:15:43Z,,Male,"123 Main St, Anytown, USA",123 Main St,,Anytown,CA,USA,90001,https://pics.example.com/john.jpg,"1,2,3",User,,FALSE,"self,engineer,music,fitness"
-2,Jonathan,Morgan,,2025‑01‑02T08:15:43Z,,Female,"123 Ocean Ave, Santa Monica, CA 90401, USA",123 Ocean Ave,,Santa Monica,CA,USA,90401,https://pics.example.com/john.jpg,"1,2,3",User,,FALSE,"self,engineer,music,fitness, family"
-3,Rose,Lopez,,2025‑01‑02T08:17:10Z,,Male,"123 Ocean Ave #A, Santa Monica, CA 90401, USA",123 Ocean Ave,#A,Santa Monica,CA,USA,90401,https://pics.example.com/mary.jpg,"1,2,3",Spouse,,FALSE,"self,engineer,music,fitness,family,friends"
+id,first_name,last_name,email,created,type
+1,jane,doe,jane.doe@example.com,2025-05-20t00:00:00z,person
+2,bob,brown,bob.brown@example.com,2025-05-20t00:00:00z,person

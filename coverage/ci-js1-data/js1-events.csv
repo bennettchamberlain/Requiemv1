@@ -1,20 +1,20 @@
-id (UUID),type,user_id (FK),related_objects (FK Array),created,updated,connection (FK),provider (FK),data_source
-E001,Visit,1,"[place-worksite-01,location-12]",2025-01-05T09:00:00Z,2025-01-05T09:30:00Z,conn1,prov-acme,field-logs
-E002,Edit,1,"[place-office-01]",2025-01-05T11:00:00Z,2025-01-05T11:10:00Z,conn1,prov-acme,internal-doc-editor
-E003,Call,1,"[contact-surveyor-01]",2025-01-06T14:30:00Z,2025-01-06T14:45:00Z,conn2,prov-zoom,zoom
-E004,Create,1,"[doc-bridge-sketch-01]",2025-01-06T16:00:00Z,2025-01-06T16:05:00Z,conn1,prov-cadapp,CAD
-E005,Travel,1,"[location-commute-01]",2025-01-07T08:00:00Z,2025-01-07T08:45:00Z,conn3,prov-gps,Google Maps
-E006,Message,1,"[person-city-council]",2025-01-07T12:10:00Z,2025-01-07T12:10:00Z,conn4,prov-gmail,Gmail
-E007,Edit,1,"[doc-bridge-design-01]",2025-01-08T10:00:00Z,2025-01-08T10:40:00Z,conn1,prov-cadapp,CAD Software
-E008,Visit,1,"[place-office-01]",2025-01-08T09:00:00Z,2025-01-08T17:00:00Z,conn1,prov-acme,badge-swipe-logs
-E009,Call,1,"[person-junior-eng-01]",2025-01-09T13:00:00Z,2025-01-09T13:30:00Z,conn5,prov-ms-teams,Microsoft Teams
-E010,View,1,"[doc-soil-report-01]",2025-01-10T15:00:00Z,2025-01-10T15:05:00Z,conn6,prov-sharepoint,SharePoint
-E011,Eat,1,"[place-home-01]",2025-01-11T18:00:00Z,2025-01-11T18:45:00Z,conn7,prov-apple,Apple Health
-E012,Sleep,1,"[device-bed-monitor-01]",2025-01-12T23:00:00Z,2025-01-13T06:00:00Z,conn8,prov-fitbit,Sleep Tracker
-E013,Create,1,"[doc-science-project-tina]",2025-01-13T17:00:00Z,2025-01-13T18:00:00Z,conn9,prov-notes,Notes app
-E014,Call,1,"[mary-smith]",2025-01-14T10:30:00Z,2025-01-14T10:50:00Z,conn10,prov-att,Mobile Call Log
-E015,Comment,1,"[group-soccer-01,message-03]",2025-01-14T18:00:00Z,2025-01-14T18:01:00Z,conn11,prov-whatsapp,WhatsApp
-E016,Visit,1,"[place-school-01]",2025-01-15T17:30:00Z,2025-01-15T19:00:00Z,conn12,prov-checkin,Check-in app
-E017,Edit,1,"[calendar-family-chores]",2025-01-16T08:00:00Z,2025-01-16T08:10:00Z,conn13,prov-google,Google Calendar
-E018,Message,1,"[mary-smith]",2025-01-17T15:00:00Z,2025-01-17T15:01:00Z,conn14,prov-apple,iMessage
-E019,View,1,"[album-family-photos]",2025-01-17T20:00:00Z,2025-01-17T20:15:00Z,conn15,prov-google,Smart Display
+id,type,user_id,related_objects,created,updated,connection,provider,data_source
+e001,visit,1,"[""place-worksite-01"",""location-12""]",2025-01-05t09:00:00z,2025-01-05t09:30:00z,conn1,prov-acme,field-logs
+e002,edit,1,"[""place-office-01""]",2025-01-05t11:00:00z,2025-01-05t11:10:00z,conn1,prov-acme,internal-doc-editor
+e003,call,1,"[""contact-surveyor-01""]",2025-01-06t14:30:00z,2025-01-06t14:45:00z,conn2,prov-zoom,zoom
+e004,create,1,"[""doc-bridge-sketch-01""]",2025-01-06t16:00:00z,2025-01-06t16:05:00z,conn1,prov-cadapp,cad
+e005,travel,1,"[""location-commute-01""]",2025-01-07t08:00:00z,2025-01-07t08:45:00z,conn3,prov-gps,google maps
+e006,message,1,"[""person-city-council""]",2025-01-07t12:10:00z,2025-01-07t12:10:00z,conn4,prov-gmail,gmail
+e007,edit,1,"[""doc-bridge-design-01""]",2025-01-08t10:00:00z,2025-01-08t10:40:00z,conn1,prov-cadapp,cad software
+e008,visit,1,"[""place-office-01""]",2025-01-08t09:00:00z,2025-01-08t17:00:00z,conn1,prov-acme,badge-swipe-logs
+e009,call,1,"[""person-junior-eng-01""]",2025-01-09t13:00:00z,2025-01-09t13:30:00z,conn5,prov-ms-teams,microsoft teams
+e010,view,1,"[""doc-soil-report-01""]",2025-01-10t15:00:00z,2025-01-10t15:05:00z,conn6,prov-sharepoint,sharepoint
+e011,eat,1,"[""place-home-01""]",2025-01-11t18:00:00z,2025-01-11t18:45:00z,conn7,prov-apple,apple health
+e012,sleep,1,"[""device-bed-monitor-01""]",2025-01-12t23:00:00z,2025-01-13t06:00:00z,conn8,prov-fitbit,sleep tracker
+e013,create,1,"[""doc-science-project-tina""]",2025-01-13t17:00:00z,2025-01-13t18:00:00z,conn9,prov-notes,notes app
+e014,call,1,"[""mary-smith""]",2025-01-14t10:30:00z,2025-01-14t10:50:00z,conn10,prov-att,mobile call log
+e015,comment,1,"[""group-soccer-01"",""message-03""]",2025-01-14t18:00:00z,2025-01-14t18:01:00z,conn11,prov-whatsapp,whatsapp
+e016,visit,1,"[""place-school-01""]",2025-01-15t17:30:00z,2025-01-15t19:00:00z,conn12,prov-checkin,check-in app
+e017,edit,1,"[""calendar-family-chores""]",2025-01-16t08:00:00z,2025-01-16t08:10:00z,conn13,prov-google,google calendar
+e018,message,1,"[""mary-smith""]",2025-01-17t15:00:00z,2025-01-17t15:01:00z,conn14,prov-apple,imessage
+e019,view,1,"[""album-family-photos""]",2025-01-17t20:00:00z,2025-01-17t20:15:00z,conn15,prov-google,smart display

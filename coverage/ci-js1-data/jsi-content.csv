@@ -1,4 +1,4 @@
 id,connection_id,created,embed_content,embed_format,embed_thumbnail,hidden,identifier,mimetype,price,provider_id,provider_name,remote_id,tags,text,title,type,updated,url,user_id
-C001,conn1,2025-01-05T09:00:00Z,,text,,FALSE,doc-bridge-sketch-01,text/plain,0,prov-cadapp,CAD,remote-001,"[\"work\"]","Bridge sketch","Bridge Sketch","Text",2025-01-05T09:30:00Z,http://example.com/bridge-sketch,1
-C002,conn2,2025-01-10T15:00:00Z,,text,,FALSE,doc-soil-report-01,text/plain,0,prov-sharepoint,SharePoint,remote-002,"[\"work\"]","Soil report","Soil Report","Text",2025-01-10T15:05:00Z,http://example.com/soil-report,1
-C003,conn3,2025-01-13T17:00:00Z,,text,,FALSE,doc-science-project-tina,text/plain,0,prov-notes,Notes,remote-003,"[\"school\"]","Science project notes","Science Project","Text",2025-01-13T18:00:00Z,http://example.com/science-project,1
+C001,conn1,2025-01-05T09:00:00Z,,text,,FALSE,doc-bridge-sketch-01,text/plain,0,prov-cadapp,CAD,remote-001,"[""work""]","Bridge sketch","Bridge Sketch","Text",2025-01-05T09:30:00Z,http://example.com/bridge-sketch,1
+C002,conn2,2025-01-10T15:00:00Z,,text,,FALSE,doc-soil-report-01,text/plain,0,prov-sharepoint,SharePoint,remote-002,"[""work""]","Soil report","Soil Report","Text",2025-01-10T15:05:00Z,http://example.com/soil-report,1
+C003,conn3,2025-01-13T17:00:00Z,,text,,FALSE,doc-science-project-tina,text/plain,0,prov-notes,Notes,remote-003,"[""school""]","Science project notes","Science Project","Text",2025-01-13T18:00:00Z,http://example.com/science-project,1
