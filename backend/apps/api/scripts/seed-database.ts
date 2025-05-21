@@ -113,10 +113,6 @@ async function seedPeople(filePath: string) {
             .map((tag: string) => tag.trim())
             .filter(Boolean)
         : null,
-      email:
-        record.email && record.email.trim() !== ''
-          ? record.email
-          : `person_${record.id || Math.random().toString(36).substring(2)}@placeholder.local`,
     }));
     try {
       await db('person').insert(transformedBatch);
