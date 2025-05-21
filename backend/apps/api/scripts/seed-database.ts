@@ -116,16 +116,8 @@ async function seedPeople(filePath: string) {
   const batchSize = 100;
   for (let i = 0; i < records.length; i += batchSize) {
     const batch = records.slice(i, i + batchSize);
-    // Filter out people whose id already exists in the database
-    const ids = batch.map((record: AnyRecord) => record.id);
-    const existing = await db('person').whereIn('id', ids).select('id');
-    const existingIds = new Set(existing.map((row: { id: string }) => row.id));
-    const filteredBatch = batch.filter((record: AnyRecord) => !existingIds.has(record.id));
-    if (filteredBatch.length === 0) {
-      logger.info(`Skipped batch ${i / batchSize + 1}: all ids already exist`);
-      continue;
-    }
-    const transformedBatch = filteredBatch.map((record: AnyRecord) => {
+    // No need to check for existing IDs since we always generate new UUIDs
+    const transformedBatch = batch.map((record: AnyRecord) => {
       // tags: if string, skip; if array, use; if null/empty, skip; else insert test value
       let tags = null;
       if (Array.isArray(record.tags)) {
