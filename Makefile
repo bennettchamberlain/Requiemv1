@@ -56,7 +56,7 @@ dev:
 	tmux attach -t $$SESSION
 
 init: ## Initialize repository after checkout
-	@printf "🏗️  Initializing repository...\n\n"
+	@printf "🏗️ Initializing repository...\n\n"
 
 	@which node >/dev/null || { printf "$(RED)✗$(RESET) You do not have NodeJS installed. Please install NodeJS v$(shell cat .nvmrc 2>/dev/null || echo '[unknown]') first.\n\n"; exit 1; }
 
@@ -84,9 +84,9 @@ init: ## Initialize repository after checkout
 	@hash -r
 
 	@printf "\n"
-
+	@yarn install
+	@printf "\n"
 	@yarn dlx @yarnpkg/sdks vscode
-
 	@printf "\nRepository initialized.\n"
 
 install: ## Install project dependencies
@@ -95,6 +95,6 @@ install: ## Install project dependencies
 	@printf "\nDependencies successfully installed.\n"
 
 migrate: ## Run database migrations
-	@printf "🪿  Running database migrations...\n\n"
+	@printf "🪿 Running database migrations...\n\n"
 	@cd backend/apps/api && yarn migrate
 	@printf "\nMigrations successfully run.\n"
