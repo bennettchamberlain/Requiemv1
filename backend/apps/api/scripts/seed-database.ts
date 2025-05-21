@@ -3,6 +3,7 @@ import path from 'path';
 import { parse } from 'csv-parse/sync';
 import { app } from '../src/app';
 import { LoggingService } from '../src/logging';
+import { v4 as uuidv4 } from 'uuid';
 
 declare const __dirname: string;
 declare const process: any;
@@ -38,6 +39,11 @@ function validateCsvRecords(records: AnyRecord[], requiredFields: string[], file
   }
 }
 
+function isValidUUID(value: string | null | undefined): boolean {
+  if (!value || typeof value !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 async function seedEvents(filePath: string) {
   logger.info(`Seeding events from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
@@ -45,17 +51,53 @@ async function seedEvents(filePath: string) {
   const batchSize = 100;
   for (let i = 0; i < records.length; i += batchSize) {
     const batch = records.slice(i, i + batchSize);
-    const transformedBatch = batch.map((record: AnyRecord) => ({
-      id: record.id || null,
-      type: record.type || null,
-      user_id: record.user_id || null,
-      related_objects: record.related_objects ? JSON.parse(record.related_objects.replace(/'/g, '"')) : null,
-      created: record.created && !isNaN(Date.parse(record.created)) ? new Date(record.created) : new Date(),
-      updated: record.updated ? new Date(record.updated) : null,
-      connection: record.connection || null,
-      provider: record.provider || null,
-      data_source: record.data_source || null,
-    }));
+    const transformedBatch = batch.map((record: AnyRecord) => {
+      let related_objects = null;
+      if (record.related_objects) {
+        try {
+          const arr = JSON.parse(record.related_objects.replace(/'/g, '"'));
+          if (Array.isArray(arr)) {
+            const filtered = arr.filter(isValidUUID);
+            if (filtered.length > 0) {
+              related_objects = filtered;
+            }
+          }
+        } catch {
+          // skip if not valid JSON array
+        }
+      }
+      // Only insert valid enum values for type, else set to null
+      let eventType = null;
+      const validEventTypes = [
+        'View',
+        'Play',
+        'Message',
+        'Comment',
+        'Create',
+        'Edit',
+        'Call',
+        'Visit',
+        'Travel',
+        'Eat',
+        'Transactions',
+        'Sleep',
+        'Exercise',
+      ];
+      if (typeof record.type === 'string' && validEventTypes.includes(record.type)) {
+        eventType = record.type;
+      }
+      return {
+        id: uuidv4(),
+        type: eventType,
+        user_id: isValidUUID(record.user_id) ? record.user_id : null,
+        related_objects,
+        created: record.created && !isNaN(Date.parse(record.created)) ? new Date(record.created) : new Date(),
+        updated: record.updated ? new Date(record.updated) : null,
+        connection: isValidUUID(record.connection) ? record.connection : null,
+        provider: isValidUUID(record.provider) ? record.provider : null,
+        data_source: record.data_source || null,
+      };
+    });
     await db('event').insert(transformedBatch).onConflict('id').ignore();
     logger.info(`Inserted ${batch.length} events (batch ${i / batchSize + 1})`);
   }
@@ -103,7 +145,7 @@ async function seedPeople(filePath: string) {
         contact_ids = ['test-contact-id'];
       }
       return {
-        id: record.id || null,
+        id: uuidv4(), // always generate a new UUID for id
         first_name: record.first_name || null,
         last_name: record.last_name || null,
         address: record.address || null,
