@@ -50,6 +50,8 @@ exports.up = async function (knex: Knex): Promise<void> {
     );
     create table person (
         id uuid primary key,
+        first_name text,
+        last_name text,
         address text,
         street_address text,
         street_address_2 text,

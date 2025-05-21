@@ -67,7 +67,9 @@ async function seedEvents(filePath: string) {
 async function seedPeople(filePath: string) {
   logger.info(`Seeding people from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
-  validateCsvRecords(records, ['first_name', 'last_name', 'type'], 'js1-people.csv');
+  validateCsvRecords(records, [
+    'id', 'first_name', 'last_name', 'address', 'street_address', 'street_address_2', 'city', 'region', 'country', 'postal_code', 'avatar_url', 'external_avatar_url', 'type', 'created', 'hidden', 'tags', 'contact_ids', 'middle_name', 'gender'
+  ], 'js1-people.csv');
   const batchSize = 100;
   for (let i = 0; i < records.length; i += batchSize) {
     const batch = records.slice(i, i + batchSize);
@@ -84,8 +86,6 @@ async function seedPeople(filePath: string) {
       id: record.id || null,
       first_name: record.first_name || null,
       last_name: record.last_name || null,
-      middle_name: record.middle_name || null,
-      gender: record.gender || null,
       address: record.address || null,
       street_address: record.street_address || null,
       street_address_2: record.street_address_2 || null,
@@ -94,25 +94,21 @@ async function seedPeople(filePath: string) {
       country: record.country || null,
       postal_code: record.postal_code || null,
       avatar_url: record.avatar_url || null,
-      contact_ids: record.contact_ids
-        ? record.contact_ids
-            .split(',')
-            .map((id: string) => id.trim())
-            .filter(Boolean)
-        : null,
+      external_avatar_url: record.external_avatar_url || null,
       type: record.type || null,
       created:
         record.created && !isNaN(Date.parse(record.created))
           ? new Date(record.created)
           : new Date(), // fallback to current date if missing/invalid
-      external_avatar_url: record.external_avatar_url || null,
       hidden: record.hidden === 'TRUE' || record.hidden === 'true',
       tags: record.tags
-        ? record.tags
-            .split(',')
-            .map((tag: string) => tag.trim())
-            .filter(Boolean)
+        ? record.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean)
         : null,
+      contact_ids: record.contact_ids
+        ? record.contact_ids.split(',').map((id: string) => id.trim()).filter(Boolean)
+        : null,
+      middle_name: record.middle_name || null,
+      gender: record.gender || null,
     }));
     try {
       await db('person').insert(transformedBatch);
@@ -168,10 +164,6 @@ async function seedUsers(filePath: string) {
       id: record.id || null,
       first_name: record.first_name || null,
       last_name: record.last_name || null,
-      email:
-        record.email && record.email.trim() !== ''
-          ? record.email
-          : `person_${record.id || Math.random().toString(36).substring(2)}@placeholder.local`,
       created:
         record.created && !isNaN(Date.parse(record.created))
           ? new Date(record.created)

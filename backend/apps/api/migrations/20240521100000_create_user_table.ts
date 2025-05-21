@@ -5,7 +5,6 @@ exports.up = async function (knex: Knex): Promise<void> {
     table.string('id').primary();
     table.string('first_name').notNullable();
     table.string('last_name').notNullable();
-    table.string('email').notNullable();
     table.timestamp('created').notNullable();
   });
 };
