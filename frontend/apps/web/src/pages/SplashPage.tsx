@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import balloonImage from '@/assets/balloon-bouquet.jpg';
 
-export function SplashPage() {
+export default function SplashPage() {
   return (
     <div className="flex flex-col md:flex-row min-h-svh">
       {/* Image Section */}

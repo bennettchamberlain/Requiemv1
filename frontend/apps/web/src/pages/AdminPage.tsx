@@ -11,7 +11,7 @@ interface User {
   email: string;
 }
 
-export function AdminPage() {
+export default function AdminPage() {
   const { user } = useAuth();
   console.log(user);
   const [users, setUsers] = useState<User[]>([]);
