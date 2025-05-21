@@ -10,6 +10,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { ChatPage } from '@/pages/ChatPage';
 
 // Protected route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -35,6 +36,14 @@ function App() {
             <Route path="/" element={<SplashPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route
+              path="/chat"
+              element={
+                <ProtectedRoute>
+                  <ChatPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/dashboard"
               element={
