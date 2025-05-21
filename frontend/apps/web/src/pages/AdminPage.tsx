@@ -19,15 +19,18 @@ export function AdminPage() {
 
   const fetchUsers = async () => {
     try {
+      console.log('AdminPage: Starting to fetch users');
       setLoading(true);
       setError(null);
       // Get the token from localStorage
       const token = localStorage.getItem('feathers-jwt');
       
       if (!token) {
+        console.error('AdminPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
-
+      
+      console.log('AdminPage: Making API request to /api/users');
       const response = await fetch('/api/users', {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -37,6 +40,7 @@ export function AdminPage() {
 
       if (!response.ok) {
         // Handle different HTTP error codes
+        console.error(`AdminPage: API request failed with status ${response.status}: ${response.statusText}`);
         if (response.status === 401) {
           throw new Error('Unauthorized: You do not have permission to access this resource');
         } else if (response.status === 403) {
@@ -50,23 +54,33 @@ export function AdminPage() {
         }
       }
 
+      console.log('AdminPage: API request successful, parsing response');
       const data = await response.json();
       
       if (!Array.isArray(data)) {
+        console.error('AdminPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of users');
       }
       
+      console.log(`AdminPage: Successfully fetched ${data.length} users`, data);
       setUsers(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-      console.error('Error fetching users:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error('AdminPage: Error in fetchUsers():', errorMessage, err);
+      setError(errorMessage);
     } finally {
+      console.log('AdminPage: Fetch operation completed');
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    console.log('AdminPage: Component mounted, fetching users');
     fetchUsers();
+    
+    return () => {
+      console.log('AdminPage: Component unmounting');
+    };
   }, []);
 
   return (
