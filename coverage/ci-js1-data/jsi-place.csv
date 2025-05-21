@@ -1,0 +1,64 @@
+id,connection_id,estimated,geo_format,geolocation,identifier,provider_id,tracked,updated,uploaded,user_id,parent_place,location_boundary,tags,type
+,,TRUE,point,"{'lat': 34.007935, 'lon': -118.498326, 'alt': 7.78}",place_1,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-03-04 18:29:10,FALSE,,,[],['work'],Home
+,,FALSE,radius,"{'lat': 34.041578, 'lon': -118.499865, 'alt': 13.09}",place_2,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-02-10 0:31:45,FALSE,,,[],['family'],Gym
+,,FALSE,point,"{'lat': 34.005222, 'lon': -118.46844, 'alt': 19.49}",place_3,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,FALSE,2025-03-25 2:11:00,TRUE,,,[],['fitness'],Clinic
+,,FALSE,point,"{'lat': 34.049869, 'lon': -118.454499, 'alt': 4.29}",place_4,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-03-18 5:57:49,TRUE,,,[],['home'],Work Site
+,,TRUE,point,"{'lat': 34.02045, 'lon': -118.463387, 'alt': 9.53}",place_5,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-03-21 23:17:32,FALSE,,,[],['fitness'],Clinic
+,,FALSE,radius,"{'lat': 34.005949, 'lon': -118.49511, 'alt': 29.09}",place_6,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-03-12 19:02:08,TRUE,,,[],['family'],Music Studio
+,,FALSE,point,"{'lat': 33.996748, 'lon': -118.471949, 'alt': 7.4}",place_7,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-01-04 18:51:57,TRUE,,,[],['music'],Music Studio
+,,TRUE,point,"{'lat': 34.009594, 'lon': -118.49982, 'alt': 7.05}",place_8,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-02-09 21:08:52,TRUE,,,[],['fitness'],Clinic
+,,TRUE,radius,"{'lat': 33.990009, 'lon': -118.473709, 'alt': 7.66}",place_9,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,FALSE,2025-03-20 1:14:56,TRUE,,,[],['work'],Work Site
+,,FALSE,point,"{'lat': 34.032695, 'lon': -118.496525, 'alt': 45.54}",place_10,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-02-01 18:55:01,FALSE,,,[],['work'],Gym
+,,TRUE,radius,"{'lat': 34.046953, 'lon': -118.460672, 'alt': 48.7}",place_11,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,FALSE,2025-03-27 17:36:50,TRUE,,,[],['family'],Park
+,,TRUE,radius,"{'lat': 34.027056, 'lon': -118.471069, 'alt': 42.23}",place_12,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-02-21 2:54:31,FALSE,,,[],['family'],Work Site
+,,FALSE,point,"{'lat': 34.010937, 'lon': -118.508852, 'alt': 47.82}",place_13,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,TRUE,2025-01-13 13:53:16,FALSE,,,[],['family'],Home
+,,TRUE,point,"{'lat': 33.991395, 'lon': -118.472243, 'alt': 5.03}",place_14,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-01-18 16:25:17,FALSE,,,[],['work'],Conference Center
+,,TRUE,triangle,"{'lat': 33.992309, 'lon': -118.504196, 'alt': 47.41}",place_15,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-01-20 18:00:44,TRUE,,,[],['music'],School
+,,FALSE,radius,"{'lat': 34.031064, 'lon': -118.495344, 'alt': 48.83}",place_16,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-01-04 17:17:03,FALSE,,,[],['work'],Work Site
+,,TRUE,radius,"{'lat': 33.998429, 'lon': -118.464188, 'alt': 16.83}",place_17,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-03-04 9:49:19,FALSE,,,[],['work'],Park
+,,FALSE,triangle,"{'lat': 34.001188, 'lon': -118.451836, 'alt': 28.2}",place_18,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-02-26 3:40:19,TRUE,,,[],['family'],School
+,,TRUE,point,"{'lat': 34.041697, 'lon': -118.492042, 'alt': 2.3}",place_19,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-01-24 16:09:02,FALSE,,,[],['home'],Conference Center
+,,TRUE,point,"{'lat': 34.040124, 'lon': -118.473435, 'alt': 9.11}",place_20,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-02-12 22:29:55,TRUE,,,[],['music'],Clinic
+,,FALSE,triangle,"{'lat': 33.991309, 'lon': -118.482269, 'alt': 20.07}",place_21,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-02-25 5:46:23,TRUE,,,[],['fitness'],Clinic
+,,TRUE,radius,"{'lat': 34.019794, 'lon': -118.484702, 'alt': 29.35}",place_22,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-02-06 0:40:43,TRUE,,,[],['work'],Conference Center
+,,FALSE,point,"{'lat': 34.044401, 'lon': -118.452686, 'alt': 26.6}",place_23,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-01-29 2:39:49,FALSE,,,[],['work'],Conference Center
+,,TRUE,triangle,"{'lat': 33.994592, 'lon': -118.50558, 'alt': 1.4}",place_24,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,FALSE,2025-01-21 4:51:25,TRUE,,,[],['work'],Music Studio
+,,TRUE,radius,"{'lat': 33.997373, 'lon': -118.470957, 'alt': 30.7}",place_25,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,TRUE,2025-02-12 18:05:39,FALSE,,,[],['family'],Park
+,,TRUE,triangle,"{'lat': 33.99911, 'lon': -118.4751, 'alt': 28.64}",place_26,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-02-23 18:47:41,FALSE,,,[],['fitness'],Music Studio
+,,FALSE,point,"{'lat': 34.030576, 'lon': -118.478376, 'alt': 49.97}",place_27,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-01-06 5:15:19,FALSE,,,[],['home'],Music Studio
+,,TRUE,point,"{'lat': 34.042501, 'lon': -118.482755, 'alt': 3.48}",place_28,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-02-04 11:42:10,TRUE,,,[],['music'],Work Site
+,,TRUE,triangle,"{'lat': 34.044514, 'lon': -118.498636, 'alt': 48.18}",place_29,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-01-10 3:43:35,TRUE,,,[],['home'],School
+,,FALSE,triangle,"{'lat': 33.995926, 'lon': -118.479863, 'alt': 38.28}",place_30,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-01-29 8:17:15,FALSE,,,[],['home'],Park
+,,TRUE,triangle,"{'lat': 34.00092, 'lon': -118.462162, 'alt': 32.42}",place_31,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,TRUE,2025-01-17 22:26:32,FALSE,,,[],['music'],Music Studio
+,,FALSE,triangle,"{'lat': 34.043038, 'lon': -118.467149, 'alt': 40.62}",place_32,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,FALSE,2025-02-03 0:01:21,FALSE,,,[],['music'],Clinic
+,,FALSE,radius,"{'lat': 34.041135, 'lon': -118.503952, 'alt': 44.13}",place_33,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-03-18 12:29:03,FALSE,,,[],['work'],Music Studio
+,,FALSE,point,"{'lat': 34.018834, 'lon': -118.488877, 'alt': 23.9}",place_34,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-02-03 4:17:43,TRUE,,,[],['music'],Home
+,,FALSE,triangle,"{'lat': 34.032988, 'lon': -118.473816, 'alt': 36.63}",place_35,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-01-09 20:52:26,TRUE,,,[],['work'],Gym
+,,FALSE,triangle,"{'lat': 34.026513, 'lon': -118.458245, 'alt': 8.1}",place_36,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-02-04 21:18:15,FALSE,,,[],['home'],Clinic
+,,TRUE,radius,"{'lat': 34.008143, 'lon': -118.45321, 'alt': 15.4}",place_37,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,TRUE,2025-02-09 12:10:43,TRUE,,,[],['home'],Music Studio
+,,FALSE,point,"{'lat': 33.995372, 'lon': -118.503933, 'alt': 49.87}",place_38,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,FALSE,2025-03-16 16:32:07,FALSE,,,[],['home'],Gym
+,,FALSE,radius,"{'lat': 34.02854, 'lon': -118.450105, 'alt': 31.54}",place_39,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-01-31 18:30:05,FALSE,,,[],['work'],School
+,,TRUE,radius,"{'lat': 34.035948, 'lon': -118.466082, 'alt': 37.83}",place_40,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-01-12 16:44:56,TRUE,,,[],['fitness'],Park
+,,FALSE,triangle,"{'lat': 34.00229, 'lon': -118.509706, 'alt': 18.83}",place_41,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-01-21 1:31:48,TRUE,,,[],['home'],Clinic
+,,TRUE,point,"{'lat': 33.994215, 'lon': -118.476144, 'alt': 31.48}",place_42,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-02-09 12:58:31,FALSE,,,[],['fitness'],Conference Center
+,,TRUE,radius,"{'lat': 34.00272, 'lon': -118.469848, 'alt': 7.54}",place_43,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-01-23 22:35:53,FALSE,,,[],['fitness'],School
+,,FALSE,triangle,"{'lat': 33.997692, 'lon': -118.485393, 'alt': 4.36}",place_44,993061c0-a2cd-4970-bb9c-69e33517c4fc,FALSE,2025-02-25 19:30:51,TRUE,,,[],['work'],Clinic
+,,TRUE,point,"{'lat': 33.995299, 'lon': -118.504771, 'alt': 43.86}",place_45,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-02-05 21:23:51,FALSE,,,[],['family'],Clinic
+,,FALSE,radius,"{'lat': 34.046457, 'lon': -118.45547, 'alt': 38.45}",place_46,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,TRUE,2025-02-20 13:46:25,FALSE,,,[],['home'],School
+,,TRUE,point,"{'lat': 34.018099, 'lon': -118.507206, 'alt': 17.2}",place_47,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-02-15 13:18:50,FALSE,,,[],['home'],Work Site
+,,TRUE,radius,"{'lat': 34.039571, 'lon': -118.504479, 'alt': 3.83}",place_48,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,TRUE,2025-01-24 5:27:08,TRUE,,,[],['work'],Home
+,,FALSE,radius,"{'lat': 34.029277, 'lon': -118.457249, 'alt': 14.31}",place_49,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-01-20 12:11:45,TRUE,,,[],['music'],Home
+,,TRUE,triangle,"{'lat': 34.007747, 'lon': -118.461477, 'alt': 1.37}",place_50,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-03-09 1:10:31,TRUE,,,[],['work'],Clinic
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",John Smith's Residence,user_defined_manual,TRUE,2025-01-01T10:00:00Z,TRUE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.4905, 34.0195],[-118.4895, 34.0195],[-118.4895, 34.0205],[-118.4905, 34.0205],[-118.4905, 34.0195]]]}","[""home"", ""family"", ""residential""]",residence_home
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-118.4800, 34.0300, 15]}",Acme Construction HQ,osm_import,TRUE,2025-01-02T08:00:00Z,FALSE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.4805, 34.0295],[-118.4795, 34.0295],[-118.4795, 34.0305],[-118.4805, 34.0305],[-118.4805, 34.0295]]]}","[""work"", ""office"", ""acme_const""]",office_building
+,,TRUE,polygon,"{""type"":""Point"", ""coordinates"":[-118.5100, 34.0400, 20]}",Highway Overpass Project Site A,user_defined_manual,TRUE,2025-01-10T14:00:00Z,TRUE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.5110, 34.0390],[-118.5090, 34.0390],[-118.5090, 34.0410],[-118.5110, 34.0410],[-118.5110, 34.0390]]]}","[""work"", ""field_site"", ""project""]",construction_site
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-118.4950, 34.0150, 8]}",Santa Monica Fitness Gym,google_places_api,TRUE,2025-02-01T17:00:00Z,FALSE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.4955, 34.0145],[-118.4945, 34.0145],[-118.4945, 34.0155],[-118.4955, 34.0155],[-118.4955, 34.0145]]]}","[""health"", ""fitness"", ""gym""]",gym
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-118.4980, 34.0100, 3]}",Ocean View Park,osm_import,TRUE,2025-01-05T07:00:00Z,FALSE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.5000, 34.0080],[-118.4960, 34.0080],[-118.4960, 34.0120],[-118.5000, 34.0120],[-118.5000, 34.0080]]]}","[""health"", ""outdoor"", ""running""]",park
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-118.4850, 34.0250, 12]}",St. Michael's Private School,user_defined_manual,TRUE,2025-01-06T08:00:00Z,TRUE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.4855, 34.0245],[-118.4845, 34.0245],[-118.4845, 34.0255],[-118.4855, 34.0255],[-118.4855, 34.0245]]]}","[""family"", ""education"", ""school""]",school
+,,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4700, 34.0350, 10]}",SoundWave Studios,user_defined_manual,TRUE,2025-02-10T18:00:00Z,TRUE,,,"{""type"":""Point"",""coordinates"":[-118.4700, 34.0350]}","[""music"", ""studio"", ""recording""]",music_studio
+,,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4750, 34.0320, 7]}",The Rhythm Room (Venue),google_places_api,TRUE,2025-03-15T19:00:00Z,FALSE,,,"{""type"":""Point"",""coordinates"":[-118.4750, 34.0320]}","[""music"", ""venue"", ""performance""]",music_venue
+,,FALSE,radius,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",John's Home Music Nook,user_defined_manual,TRUE,2025-01-03T20:00:00Z,TRUE,,,"{""type"":""Point"",""coordinates"":[-118.4902, 34.0201], ""radius_meters"": 5}","[""music"", ""home"", ""studio""]",room
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-118.5050, 34.0180, 4]}",Westside Park Soccer Field,osm_import,TRUE,2025-01-12T15:00:00Z,FALSE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.5060, 34.0175],[-118.5040, 34.0175],[-118.5040, 34.0185],[-118.5060, 34.0185],[-118.5060, 34.0175]]]}","[""family"", ""sports"", ""kids""]",sports_field
+,,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4880, 34.0280, 9]}",Tina's Ballet Academy,user_defined_manual,TRUE,2025-01-13T16:00:00Z,TRUE,,,"{""type"":""Point"",""coordinates"":[-118.4880, 34.0280]}","[""family"", ""arts"", ""kids""]",dance_studio
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-118.2437, 34.0522, 50]}",GreenBuild Conference Center LA,event_provided,FALSE,2025-03-10T09:00:00Z,FALSE,,,"{""type"":""Polygon"",""coordinates"":[[[-118.2447, 34.0512],[-118.2427, 34.0512],[-118.2427, 34.0532],[-118.2447, 34.0532],[-118.2447, 34.0512]]]}","[""work"", ""conference"", ""travel""]",conference_center
+,,FALSE,polygon,"{""type"":""Point"", ""coordinates"":[-116.5453, 33.8303, 146]}",Palm Springs Getaway Hotel,booking_com,FALSE,2025-03-22T15:00:00Z,FALSE,,,"{""type"":""Polygon"",""coordinates"":[[[-116.5463, 33.8293],[-116.5443, 33.8293],[-116.5443, 33.8313],[-116.5463, 33.8313],[-116.5463, 33.8293]]]}","[""family"", ""vacation"", ""leisure""]",hotel

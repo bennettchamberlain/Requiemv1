@@ -1,0 +1,251 @@
+id,tags,connection,type,name,description,Dimensions (LxWxH),Weight (kg)
+,"work, acme, engineering, project",USER_JOHN_SMITH,Digital Device,Work Laptop (Dell Precision 7560),"Primary laptop for civil engineering tasks, CAD software, project plans.",36cm x 24cm x 2.5cm,2.5kg
+,"work, acme, safety, site",USER_JOHN_SMITH,Safety Gear,Hard Hat (Yellow),Standard safety hard hat for construction site visits.,30cm x 22cm x 16cm,0.4kg
+,"work, acme, safety, site",USER_JOHN_SMITH,Safety Gear,Safety Vest (Hi-Vis Orange),High-visibility vest for site work., (foldable),0.2kg
+,"work, acme, communication",USER_JOHN_SMITH,Digital Device,Company Smartphone (iPhone 15),"For work calls, emails, and site coordination.",14.7cm x 7.1cm x 0.8cm,0.19kg
+,"work, acme, site, engineering",USER_JOHN_SMITH,Digital Device,"Tablet for Site Visits (iPad Pro 11"")",Used for accessing blueprints and notes on site.,24.8cm x 17.9cm x 0.6cm,0.47kg
+,"work, acme, inspection, tool",PROJECT_HIGHWAY_01,Tool,Bridge Inspection Drone (DJI Mavic 3E),Drone for visual inspections of bridge structures.,34.7cm x 28.3cm x 10.7cm,0.95kg
+,"work, acme, tool, site",USER_JOHN_SMITH,Tool,Laser Distance Measurer (Bosch),For taking precise measurements on site.,12cm x 5cm x 3cm,0.2kg
+,"work, acme, project, document",PROJECT_HIGHWAY_01,Document,Blueprints (Highway Overpass Project),Rolled set of physical blueprints for current project.,90cm x 60cm (rolled),1.5kg
+,"work, acme, software",LICENSE_CAD_001,Software,Engineering CAD Software (AutoCAD License),License for computer-aided design software on work laptop.,,
+,"work, acme, office",WORK_OFFICE_001,Furniture,Office Desk (at Acme),John's primary desk at the Acme Construction office.,150cm x 75cm x 75cm,40kg
+,"work, acme, office",WORK_OFFICE_001,Furniture,Ergonomic Office Chair (Herman Miller),Chair at his Acme office desk.,60cm x 60cm x 100cm,18kg
+,"work, acme, travel, accessory",USER_JOHN_SMITH,Bag,Leather Briefcase,"Used for carrying laptop, documents to/from work and meetings.",40cm x 30cm x 10cm,1.2kg
+,"music, hobby, instrument",USER_JOHN_SMITH,Musical Instrument,Electric Guitar (Fender Stratocaster),"Sunburst Fender Stratocaster, used for recording and practice.",100cm x 33cm x 5cm,3.5kg
+,"music, hobby, instrument",USER_JOHN_SMITH,Musical Instrument,Acoustic Guitar (Taylor GS Mini),Smaller body acoustic guitar for songwriting and casual play.,93cm x 36cm x 10cm,1.8kg
+,"music, hobby, software, production",LICENSE_ABLETON_01,Software,Ableton Live Suite License,Digital Audio Workstation software for music production.,,
+,"music, hobby, software, production",LICENSE_LOGIC_01,Software,Logic Pro X License,Digital Audio Workstation software for music production on Mac.,,
+,"music, hobby, tool, production",USER_JOHN_SMITH,Musical Instrument,MIDI Keyboard (Arturia KeyLab 49),49-key MIDI controller for composing and inputting melodies.,79cm x 29cm x 7cm,6.5kg
+,"music, hobby, tool, production",USER_JOHN_SMITH,Electronics,Audio Interface (Focusrite Scarlett 2i2),Connects instruments and mics to computer for recording.,17.5cm x 10cm x 4.5cm,0.5kg
+,"music, hobby, tool, production",USER_JOHN_SMITH,Electronics,Studio Headphones (Audio-Technica ATH-M50x),Closed-back headphones for monitoring and mixing music.,20cm x 18cm x 10cm,0.28kg
+,"music, hobby, tool, production, recording",USER_JOHN_SMITH,Musical Instrument,Condenser Microphone (Rode NT1),Studio microphone for recording vocals and acoustic instruments.,19cm x 5cm x 5cm,0.4kg
+,"music, hobby, instrument, amplification",USER_JOHN_SMITH,Electronics,Guitar Amplifier (Fender Blues Junior),15-watt tube amplifier for electric guitar.,45cm x 40cm x 25cm,14kg
+,"music, hobby, tool, effects",USER_JOHN_SMITH,Electronics,Guitar Pedalboard (custom),"Board with various effects pedals (overdrive, delay, reverb).",60cm x 30cm x 10cm,5kg
+,"music, hobby, production, personal",USER_JOHN_SMITH,Digital Device,"Macbook Pro 16"" (for music)",Dedicated laptop for music production with Ableton and Logic.,35.8cm x 24.6cm x 1.6cm,2.1kg
+,"home, family, infrastructure",FAMILY_SMITH_01,Infrastructure,Suburban Home (Santa Monica),The Smith family residence.,Approx 2000 sq ft,
+,"home, family, vehicle, transport",FAMILY_SMITH_01,Vehicle,Family Car (Honda Odyssey),"Minivan used for family trips, school runs, and errands.",5.2m x 2m x 1.75m,2000kg
+,"personal, vehicle, transport, work",USER_JOHN_SMITH,Vehicle,John's Car (Tesla Model 3),John's primary vehicle for commuting and personal use.,4.7m x 1.85m x 1.44m,1800kg
+,"home, family, furniture, living room",FAMILY_SMITH_01,Furniture,Living Room Sofa (Sectional),Main sofa in the family living room.,280cm x 160cm x 85cm,90kg
+,"home, family, electronics, entertainment",FAMILY_SMITH_01,Electronics,"65"" Smart TV (Samsung QLED)",Main television in the living room.,145cm x 83cm x 6cm,25kg
+,"home, family, appliance, kitchen",FAMILY_SMITH_01,Appliance,Refrigerator (LG Smart Fridge),Kitchen refrigerator with smart features.,91cm x 178cm x 73cm,130kg
+,"home, family, appliance, kitchen",FAMILY_SMITH_01,Appliance,Coffee Maker (Keurig K-Elite),Single-serve coffee machine.,33cm x 25cm x 33cm,3.5kg
+,"home, personal, furniture, bedroom",USER_JOHN_MARY_01,Furniture,King Size Bed (Master Bedroom),John and Mary's bed.,203cm x 193cm x 30cm (mattress),70kg (mattress+frame)
+,"kids, mike, sports, family",CHILD_MIKE_01,Sports Equipment,Mike's Soccer Ball (Size 4),Soccer ball for Mike's practice and games.,21cm diameter,0.4kg
+,"kids, tina, sports, family",CHILD_TINA_01,Sports Equipment,Tina's Ballet Shoes (Size 2),Ballet slippers for Tina's dance classes.,,0.1kg
+,"kids, mike, school",CHILD_MIKE_01,Bag,Mike's School Backpack,Backpack for carrying school books and supplies.,45cm x 30cm x 20cm,0.8kg
+,"kids, tina, school",CHILD_TINA_01,Bag,Tina's School Backpack,Backpack for carrying school books and supplies.,40cm x 28cm x 18cm,0.7kg
+,"gaming, family, electronics",FAMILY_SMITH_01,Gaming Console,Nintendo Switch Console,"Family gaming console, used for Mario Kart, etc.",10.2cm x 23.9cm x 1.4cm (with Joy-Cons),0.4kg
+,"gaming, family, electronics, john",FAMILY_SMITH_01,Gaming Console,PlayStation 5 Console,"Gaming console John uses, also for family games.",39cm x 10.4cm x 26cm,4.5kg
+,"gaming, family, electronics",FAMILY_SMITH_01,Gaming Console,Xbox Series X Console,Gaming console for exclusives and online play.,15.1cm x 15.1cm x 30.1cm,4.4kg
+,"gaming, john, personal, electronics, vr",USER_JOHN_SMITH,Digital Device,VR Headset (Meta Quest 3),Virtual reality headset for immersive gaming.,18.4cm x 16cm x 9.8cm (headset),0.5kg
+,"gaming, work, music, pc, electronics",USER_JOHN_SMITH,Digital Device,Home PC (Custom Built),"John's desktop computer for work, music, and family gaming.",50cm x 22cm x 48cm (tower),12kg
+,"gaming, family, nintendo, switch, media",FAMILY_SMITH_01,Game,Mario Kart 8 Deluxe (Switch Game Card),Physical game cartridge for Nintendo Switch., (cartridge),<0.05kg
+,"gaming, family, pc, xbox, media",FAMILY_SMITH_01,Game,Minecraft (Digital License),"Digital license for Minecraft, played on PC/Xbox.",,
+,"health, fitness, personal, wearable",USER_JOHN_SMITH,Sports Equipment,Running Shoes (Brooks Ghost 15),John's shoes for morning runs and gym.,,0.6kg (pair)
+,"health, fitness, personal, wearable, tech",USER_JOHN_SMITH,Wearable,Smartwatch (Apple Watch Series 9),"Tracks daily steps, heart rate, runs, and notifications.",4.5cm x 3.8cm x 1.07cm,0.05kg
+,"health, fitness, personal",USER_JOHN_SMITH,Bag,Gym Bag,"Bag for carrying gym clothes, water bottle, etc.",50cm x 25cm x 25cm,0.5kg
+,"health, fitness, personal, home",USER_JOHN_SMITH,Sports Equipment,Adjustable Dumbbell Set (Bowflex SelectTech),Set of adjustable dumbbells for strength training at home.,40cm x 20cm x 23cm (each),24kg (each)
+,"health, fitness, personal, home",USER_JOHN_SMITH,Sports Equipment,Yoga Mat,For stretching and occasional yoga.,180cm x 60cm x 0.5cm (rolled),1.2kg
+,"personal, communication, tech",USER_JOHN_SMITH,Digital Device,Personal Smartphone (iPhone 15 Pro),John's personal mobile phone.,14.7cm x 7.1cm x 0.8cm,0.19kg
+,"personal, finance, accessory",USER_JOHN_SMITH,Personal Care,Leather Wallet,John's wallet for cards and cash.,11cm x 9cm x 2cm,0.1kg
+,"personal, home, security",FAMILY_SMITH_01,Tool,House & Car Keys Set,"Set of keys for home, cars, and office.",,0.15kg
+,"Home, Furniture",FAMILY_SMITH_01,Infrastructure,Family Sofa,Grey sectional sofa in living room,250 x 100 x 85,45
+,"Home, Kitchen",FAMILY_SMITH_01,Appliance,Refrigerator,"Stainless steel, double-door fridge",90 x 75 x 175,95
+,"Music, Electronics",FAMILY_SMITH_01,Media,Electric Guitar,"Fender Stratocaster, sunburst finish",100 x 35 x 5,3.5
+,"Music, Electronics",USER_JOHN_MARY_02,Media,Acoustic Guitar,"Yamaha acoustic guitar, natural wood finish",105 x 40 x 15,2.8
+,"Health, Wearable",CHILD_MIKE_02,Wearable,Fitbit Versa 3,Fitness tracking smartwatch,4 x 4 x 1,0.05
+,"Electronics, Work",CHILD_TINA_02,Infrastructure,Laptop (Dell XPS 15),Work-issued laptop for engineering tasks,34 x 23 x 1.8,1.8
+,"Gaming, Electronics",CHILD_MIKE_02,Media,Nintendo Switch,Portable gaming console,24 x 10 x 1.4,0.3
+,"Gaming, Electronics",CHILD_TINA_02,Media,PlayStation 5,Gaming console in living room,39 x 10 x 26,4.5
+,"Gaming, Electronics",FAMILY_SMITH_01,Media,Xbox Series X,Family gaming console,30 x 15 x 15,4.45
+,"Gaming, Electronics",FAMILY_SMITH_01,Media,VR Headset (Valve Index),Immersive VR gaming headset,20 x 12 x 10,0.8
+,"Home, Furniture",FAMILY_SMITH_01,Infrastructure,Dining Table,"Oak dining table, seats 6",180 x 90 x 75,35
+,"Home, Kitchen",USER_JOHN_SMITH,Appliance,Coffee Machine,Breville espresso maker,30 x 30 x 40,9
+,"Home, Furniture",USER_JOHN_SMITH,Infrastructure,Bed Frame (Master Bedroom),"Queen-sized bed, wooden frame",200 x 160 x 40,50
+,"Home, Furniture",FAMILY_SMITH_01,Infrastructure,Bookshelf,"Wall-mounted bookshelf, living room",180 x 30 x 200,60
+,"Home, Furniture",FAMILY_SMITH_01,Infrastructure,Office Desk,Home office desk for music & work,150 x 70 x 75,30
+,"Home, Electronics",USER_JOHN_SMITH,Media,"TV (Samsung 65"" OLED)",Living room entertainment system,145 x 5 x 85,25
+,"Health, Sports",USER_JOHN_SMITH,Wearable,Running Shoes,Nike Pegasus running shoes,30 x 10 x 12,0.7
+,"Home, Electronics",USER_JOHN_SMITH,Media,Bluetooth Speaker,JBL Charge 5 portable speaker,22 x 10 x 10,0.96
+,"Home, Electronics",USER_JOHN_SMITH,Appliance,Air Purifier,Philips air purifier in bedroom,30 x 30 x 60,6
+,"Health, Sports",USER_JOHN_SMITH,Wearable,Dumbbell Set,Adjustable dumbbell set,45 x 25 x 25,15
+,"Music, Electronics",USER_JOHN_SMITH,Media,MIDI Keyboard,"Akai MPK Mini, used for music production",32 x 18 x 5,0.75
+,"Home, Electronics",USER_JOHN_SMITH,Appliance,Washing Machine,LG front-loading washing machine,60 x 60 x 85,70
+,"Music, Electronics",FAMILY_SMITH_02,Media,Audio Interface,Focusrite Scarlett 2i2,18 x 12 x 4.5,0.5
+,"Health, Electronics",FAMILY_SMITH_01,Wearable,Blood Pressure Monitor,Omron home blood pressure monitor,14 x 12 x 6,0.4
+,"Home, Electronics",FAMILY_SMITH_01,Appliance,Vacuum Cleaner,Dyson V11 cordless vacuum,125 x 25 x 26,3
+,"Games, Board",FAMILY_SMITH_01,Media,Board Game - Catan,Family board game for game nights,30 x 30 x 7,1.2
+,"Games, Board",USER_JOHN_MARY_03,Media,Monopoly,Classic board game,40 x 27 x 5,1.1
+,"Home, Electronics",CHILD_MIKE_03,Appliance,Microwave,Kitchen appliance,50 x 40 x 30,15
+,"Health, Sports",CHILD_TINA_03,Wearable,Yoga Mat,Thick foam yoga mat for workouts,183 x 60 x 1,1.2
+,"Gaming, Electronics",CHILD_MIKE_03,Media,PC Gaming Monitor,Dell 27” 4K monitor,62 x 20 x 45,4.5
+,"Home, Furniture",CHILD_TINA_03,Infrastructure,Desk Chair,Ergonomic office chair,70 x 70 x 110,14
+,"Home, Electronics",FAMILY_SMITH_01,Appliance,Toaster,Breville two-slice toaster,30 x 20 x 20,2.2
+,"Music, Electronics",FAMILY_SMITH_01,Media,Headphones (Sony WH-1000XM4),Noise-canceling wireless headphones,20 x 15 x 8,0.25
+,"Gaming, Electronics",FAMILY_SMITH_01,Media,Game Controller,PS5 DualSense wireless controller,16 x 11 x 6,0.28
+,"Home, Furniture",FAMILY_SMITH_01,Infrastructure,Children's Bunk Bed,Wooden bunk beds for Mike & Tina,210 x 100 x 170,55
+,"Home, Furniture",USER_JOHN_MARY_02,Infrastructure,Patio Set,Outdoor patio furniture set,250 x 180 x 75,45
+,"Home, Electronics",CHILD_MIKE_02,Appliance,Blender,Ninja countertop blender,20 x 20 x 45,4.5
+,"Home, Electronics",CHILD_TINA_02,Appliance,Dishwasher,Built-in kitchen dishwasher,60 x 60 x 85,50
+,"Music, Electronics",CHILD_MIKE_02,Media,USB Microphone,Blue Yeti microphone for home recording,12 x 12 x 29,0.55
+,"Health, Sports",CHILD_TINA_02,Wearable,Foam Roller,For muscle recovery after workouts,33 x 14 x 14,0.6
+,"Home, Electronics",FAMILY_SMITH_01,Appliance,Oven,"Electric oven, kitchen appliance",90 x 70 x 90,80
+,"Home, Furniture",FAMILY_SMITH_01,Infrastructure,Wardrobe,Master bedroom wardrobe,200 x 60 x 220,70
+,"Health, Electronics",FAMILY_SMITH_01,Wearable,Scale,Digital bathroom scale,30 x 30 x 3,1.5
+,"work, acme, tool, site, survey",PROJECT_HIGHWAY_01,Tool,Site Survey Theodolite,Optical instrument for measuring angles in surveying.,35cm x 20cm x 18cm,5.5kg
+,"work, acme, tool, site, geotechnical",PROJECT_HIGHWAY_01,Tool,Geotechnical Soil Testing Kit,For on-site soil sample analysis.,45cm x 30cm x 20cm (case),8kg
+,"work, acme, software, project management",LICENSE_MSPROJ_01,Software,Project Management Software (MS Project License),For planning and tracking project timelines and resources.,,
+,"work, acme, professional, document",USER_JOHN_SMITH,Tool,Professional Engineering Stamp,Official stamp for certifying engineering documents.,7cm x 4cm x 3cm,0.2kg
+,"work, acme, reference, books",USER_JOHN_SMITH,Document,Technical Reference Manuals (Set),Collection of civil engineering handbooks and codes.,30cm x 25cm x 20cm (stack),7kg
+,"work, home office, planning",USER_JOHN_SMITH,Furniture,Whiteboard (Home Office),Large whiteboard in home office for brainstorming and notes.,120cm x 90cm x 2cm,10kg
+,"work, office, focus, personal",USER_JOHN_SMITH,Electronics,Noise-Cancelling Headphones (Bose QC45),For focused work in the office or during travel.,20cm x 16cm x 8cm,0.24kg
+,"work, acme, data, backup",USER_JOHN_SMITH,Digital Device,Portable Hard Drive (Seagate 2TB),External HDD for backing up large project files.,12cm x 8cm x 2cm,0.25kg
+,"work, acme, networking",USER_JOHN_SMITH,Office Supply,Business Cards (Acme Construction),Pack of John's professional business cards.,9cm x 5cm (pack 2cm thick),0.1kg
+,"work, acme, project, document, official",PROJECT_HIGHWAY_01,Document,City Council Submission Binder,Final project design documentation submitted for approval.,30cm x 25cm x 8cm,2.5kg
+,"work, conference, travel, networking",EVENT_GREENCONF_01,Document,Conference Badge (Green Building Techniques),Name badge for professional conference.,10cm x 7cm,<0.05kg
+,"work, acme, mentoring, professional",USER_JOHN_SMITH,Book,Mentoring Guidebook for Junior Engineer,Resource for guiding a junior colleague.,22cm x 15cm x 1.5cm,0.4kg
+,"work, presentation, tool",USER_JOHN_SMITH,Tool,Laser Pointer,For use during presentations at work or conferences.,15cm x 1.5cm x 1.5cm,0.05kg
+,"work, acme, tool, drafting",USER_JOHN_SMITH,Tool,Engineering Scale Ruler Set,Set of triangular scale rulers for blueprint reading.,33cm x 3cm x 3cm (set),0.3kg
+,"work, acme, tool, drafting",USER_JOHN_SMITH,Tool,Drafting Compass Set,Precision compass for drawing circles and arcs.,20cm x 8cm x 2cm (case),0.2kg
+,"music, hobby, guitar, accessory",USER_JOHN_SMITH,Musical Instrument,Guitar Capo,Clamp device to change the pitch of guitar strings.,8cm x 7cm x 1cm,0.06kg
+,"music, hobby, guitar, accessory",USER_JOHN_SMITH,Musical Instrument,Assorted Guitar Picks (Pack of 20),Various gauges and materials., (small pack),<0.05kg
+,"music, hobby, guitar, accessory",USER_JOHN_SMITH,Musical Instrument,Guitar Tuner (Clip-on Snark),Electronic tuner that clips onto guitar headstock.,5cm x 3cm x 3cm,0.03kg
+,"music, hobby, guitar, maintenance",USER_JOHN_SMITH,Musical Instrument,Spare Guitar Strings (Set - Electric),Replacement strings for electric guitar.,12cm x 12cm x 0.5cm,0.05kg
+,"music, hobby, practice, accessory",USER_JOHN_SMITH,Furniture,Sheet Music Stand,Collapsible stand for holding sheet music or lyric sheets.,50cm x 30cm (folded 50cm long),1.5kg
+,"music, hobby, recording, cables",USER_JOHN_SMITH,Electronics,"XLR Cables (Set of 3, 10ft each)",For connecting microphones to audio interface., (coiled),0.6kg (total)
+,"music, hobby, recording, accessory",USER_JOHN_SMITH,Musical Instrument,Pop Filter for Microphone,Reduces plosive sounds during vocal recording.,15cm diameter screen,0.2kg
+,"music, hobby, studio, furniture",USER_JOHN_SMITH,Furniture,Studio Monitor Stands (Pair),Adjustable stands for positioning studio speakers.,30cm x 30cm x 90cm (each),8kg (pair)
+,"music, hobby, listening, electronics",FAMILY_SMITH_01,Electronics,Vinyl Record Player (Audio-Technica AT-LP120XUSB),Turntable for playing John's record collection.,45cm x 35cm x 15cm,10kg
+,"music, hobby, listening, media, collection",USER_JOHN_SMITH,Media,Vinyl Record Collection (Approx. 50 LPs),"Assortment of Funk, R&B, Classic Rock albums.",32cm x 32cm x 20cm (box),15kg
+,"music, hobby, listening, digital",USER_JOHN_SMITH,Digital Device,Spotify Access Device (e.g. old phone),Device primarily used for streaming Spotify in music setup.,14cm x 7cm x 0.8cm,0.15kg
+,"music, hobby, listening, digital",USER_JOHN_SMITH,Digital Device,SoundCloud Access Device (e.g. tablet),Tablet often used for SoundCloud exploration and listening.,20cm x 13cm x 0.7cm,0.3kg
+,"music, hobby, production, controller, ableton",USER_JOHN_SMITH,Musical Instrument,Ableton Push 2,Hardware instrument controller for Ableton Live.,37.8cm x 30.4cm x 4.2cm,2.7kg
+,"music, hobby, production, software, synth",LICENSE_SERUM_01,Software,Synthesizer VST Plugin (Xfer Serum License),Wavetable synthesizer plugin for EDM production.,,
+,"music, hobby, recording, guitar, tool",USER_JOHN_SMITH,Electronics,DI Box (Direct Input Box),For connecting guitar directly to audio interface or mixer.,12cm x 8cm x 5cm,0.5kg
+,"home, family, appliance, laundry",FAMILY_SMITH_01,Appliance,Washing Machine (LG Front Load),Family washing machine.,60cm x 85cm x 65cm,70kg
+,"home, family, appliance, laundry",FAMILY_SMITH_01,Appliance,Clothes Dryer (LG Electric),Family clothes dryer.,60cm x 85cm x 68cm,55kg
+,"home, family, appliance, kitchen",FAMILY_SMITH_01,Appliance,Dishwasher (Bosch),Built-in kitchen dishwasher.,60cm x 82cm x 58cm,45kg
+,"home, family, appliance, kitchen",FAMILY_SMITH_01,Appliance,Microwave Oven (Panasonic),Countertop microwave for quick heating.,50cm x 30cm x 40cm,15kg
+,"home, family, appliance, kitchen",FAMILY_SMITH_01,Appliance,Toaster Oven,Small oven for toasting and baking small items.,40cm x 25cm x 22cm,5kg
+,"home, family, appliance, kitchen",FAMILY_SMITH_01,Appliance,Blender (Vitamix A3500),High-powered blender for smoothies and cooking.,20cm x 43cm x 28cm,6.8kg
+,"home, family, appliance, kitchen, mary",FAMILY_SMITH_01,Appliance,Stand Mixer (KitchenAid Artisan),"Mary's stand mixer, used for baking.",24cm x 37cm x 36cm,10kg
+,"home, family, kitchenware",FAMILY_SMITH_01,Kitchenware,Cookware Set (All-Clad Stainless Steel),Set of pots and pans for daily cooking., (various sizes),12kg (set)
+,"home, family, kitchenware, tool",FAMILY_SMITH_01,Kitchenware,Chef's Knife Set (Wüsthof Classic),Set of kitchen knives with a block., (various sizes),3kg (set with block)
+,"home, family, furniture, dining",FAMILY_SMITH_01,Furniture,Dining Table and Chairs (6-seater),Wooden dining table with six matching chairs.,Table: 180cm x 90cm x 76cm,60kg (table)
+,"home, family, furniture, storage, books",FAMILY_SMITH_01,Furniture,"Bookshelf (Living Room, Tall)","Used for books, photos, and decor.",90cm x 180cm x 30cm,30kg
+,"home, family, appliance, cleaning",FAMILY_SMITH_01,Appliance,Vacuum Cleaner (Dyson V11 Cordless),Main vacuum cleaner for the house.,25cm x 120cm x 26cm,3kg
+,"home, family, appliance, laundry",FAMILY_SMITH_01,Appliance,Iron and Ironing Board,For pressing clothes.,Board: 120cm x 38cm (folded),5kg (board)
+,"home, family, health, safety",FAMILY_SMITH_01,Medical,Home First Aid Kit,Comprehensive kit for minor injuries.,30cm x 20cm x 15cm,1.5kg
+,"home, tool, repair",FAMILY_SMITH_01,Tool,Toolbox (Basic Home Repair Kit),"Hammer, screwdrivers, pliers, wrench set, etc.",45cm x 25cm x 22cm,7kg
+,"home, tool, repair",FAMILY_SMITH_01,Tool,Ladder (6-foot A-frame Aluminum),For reaching high places in and around the house.,180cm (height) x 50cm (base),8kg
+,"home, family, outdoor, cooking",FAMILY_SMITH_01,Appliance,Outdoor Grill (Weber Genesis Gas Grill),Used for family barbecues.,150cm x 75cm x 120cm,70kg
+,"home, family, outdoor, furniture",FAMILY_SMITH_01,Furniture,"Patio Furniture Set (Table, 4 chairs, umbrella)",For outdoor relaxation and dining., (set),50kg (total)
+,"home, decor, plants",FAMILY_SMITH_01,Decor,Indoor Plants (Assorted Potted),Various houseplants for decoration and air quality., (various sizes),
+,"home, decor, living room",FAMILY_SMITH_01,Decor,Wall Art (Abstract Canvas Print),Large canvas print in the living room.,100cm x 70cm x 4cm,3kg
+,"home, personal, furniture, bedroom, lighting",USER_JOHN_MARY_01,Furniture,"Bedside Lamps (Master Bedroom, Pair)",Matching lamps for nightstands.,"25cm base, 60cm height (each)",2kg (each)
+,"home, personal, furniture, bedroom, storage",USER_JOHN_MARY_01,Furniture,"Dresser (Master Bedroom, 6-drawer)",For clothing storage.,150cm x 50cm x 80cm,60kg
+,"home, personal, furniture, bedroom, storage",USER_JOHN_MARY_01,Furniture,Wardrobe Organizer System (ClosetMaid),Shelving and rods in master closet., (custom fit),20kg
+,"kids, mike, sports, outdoor, bike",CHILD_MIKE_01,Sports Equipment,Mike's Bike (20-inch BMX Style),Mike's bicycle for playing outdoors.,140cm x 60cm x 80cm,12kg
+,"kids, tina, sports, outdoor, bike",CHILD_TINA_01,Sports Equipment,Tina's Bike (16-inch with removable training wheels),Tina's bicycle.,110cm x 55cm x 70cm,9kg
+,"kids, family, sports, outdoor, safety, bike",FAMILY_SMITH_01,Safety Gear,Bike Helmets (Set of 4),"Two adult size, two child size helmets.", (various sizes),2kg (total)
+,"kids, mike, sports, outdoor, toy",CHILD_MIKE_01,Toy,Scooter (Razor A5 Lux),Mike's kick scooter.,86cm x 106cm x 48cm,3.8kg
+,"kids, tina, hobby, art, school",CHILD_TINA_01,Toy,Art Supplies Caddy (Crayola),"Contains markers, crayons, colored pencils, safety scissors, glue.",30cm x 20cm x 15cm,1.5kg
+,"kids, family, toy, creative",FAMILY_SMITH_01,Toy,LEGO Classic Large Creative Brick Box,Large box of assorted LEGO bricks for imaginative building.,37cm x 26cm x 18cm,1.6kg
+,"kids, family, gaming, board game",FAMILY_SMITH_01,Game,Board Game: Settlers of Catan,Strategy board game for family game nights.,30cm x 24cm x 8cm,1.2kg
+,"kids, family, gaming, board game",FAMILY_SMITH_01,Game,Board Game: Ticket to Ride,Cross-country train adventure board game.,30cm x 30cm x 7.5cm,1.5kg
+,"kids, family, gaming, puzzle",FAMILY_SMITH_01,Game,"Jigsaw Puzzles (Assorted, 3x 500-piece)",Collection of family-friendly jigsaw puzzles.,25cm x 20cm x 5cm (each box),0.5kg (each)
+,"kids, family, education, books",FAMILY_SMITH_01,Book,Children's Story Books Collection (approx 30),Variety of picture books and early readers for Mike and Tina., (various sizes),8kg (total)
+,"kids, mike, sports, soccer",CHILD_MIKE_01,Sports Equipment,Mike's Soccer Cleats (Nike Jr. Mercurial),Cleats for soccer practice and tournament.,,0.4kg (pair)
+,"kids, tina, sports, ballet, clothing",CHILD_TINA_01,Clothing,"Tina's Leotard (Pink, for Ballet)",Leotard for ballet class and recital practice.,,0.1kg
+,"family, memories, photos",FAMILY_SMITH_01,Document,Family Photo Albums (3 Physical Albums),Contains printed photos from vacations and family events.,33cm x 30cm x 5cm (each),2kg (each)
+,"family, outdoor, beach, summer",FAMILY_SMITH_01,Textile,"Beach Towels (Set of 4, Striped)",Large towels for beach outings or pool.,150cm x 75cm (each),0.6kg (each)
+,"family, outdoor, picnic, food",FAMILY_SMITH_01,Kitchenware,Picnic Basket & Blanket Set,Wicker basket with settings for four and a matching blanket.,45cm x 30cm x 25cm (basket),3.5kg
+,"kids, school, food",CHILD_MIKE_TINA_01,Kitchenware,"School Lunch Boxes (2, Bentgo Kids)",Reusable lunch containers for Mike and Tina.,22cm x 18cm x 6cm (each),0.5kg (each)
+,"kids, school, health",CHILD_MIKE_TINA_01,Kitchenware,"Water Bottles for School (2, Hydro Flask Kids)",Insulated water bottles for kids.,"8cm diameter, 18cm height",0.3kg (each)
+,"mary, work, tech, personal",USER_MARY_SMITH_01,Digital Device,"Mary's Laptop (MacBook Air 13"")","Mary's personal laptop, used for school work and personal tasks.",30.4cm x 21.2cm x 1.6cm,1.29kg
+,"mary, hobby, books, reading",USER_MARY_SMITH_01,Book,"Collection of Novels (Mary's, approx. 20)",Mary's personal reading collection., (various sizes),10kg (total)
+,"mary, work, school, accessory",USER_MARY_SMITH_01,Bag,Teacher's Bag (Large Tote),"Bag Mary uses to carry teaching supplies, papers, and laptop.",40cm x 30cm x 15cm,1kg
+,"home, family, outdoor, garden, tool, mary",FAMILY_SMITH_01,Tool,"Gardening Tools Set (Trowel, Cultivator, Gloves)","Shared set, Mary enjoys gardening.", (set),1.5kg
+,"gaming, family, nintendo, switch, accessory",FAMILY_SMITH_01,Electronics,"Extra Nintendo Switch Joy-Cons (Pair, Neon Red/Blue)",Additional controllers for multiplayer.,10.1cm x 3.6cm x 2.8cm (each),0.05kg (each)
+,"gaming, family, nintendo, switch, accessory",FAMILY_SMITH_01,Electronics,Nintendo Switch Pro Controller,More traditional controller for Switch.,10.6cm x 15.2cm x 6cm,0.25kg
+,"gaming, family, ps5, accessory",FAMILY_SMITH_01,Electronics,"PS5 DualSense Controller (Extra, White)",Additional controller for PlayStation 5.,16cm x 10.6cm x 6.6cm,0.28kg
+,"gaming, family, xbox, accessory",FAMILY_SMITH_01,Electronics,"Xbox Wireless Controller (Extra, Carbon Black)",Additional controller for Xbox Series X.,15.3cm x 10.2cm x 6.1cm,0.28kg
+,"gaming, personal, pc, console, accessory",USER_JOHN_SMITH,Electronics,Gaming Headset (HyperX Cloud II),Headset with microphone for immersive gaming and online chat.,19.5cm x 18cm x 9cm,0.32kg
+,"gaming, family, pc, media",FAMILY_SMITH_01,Game,Stardew Valley (PC Game - Steam Digital Key),Cozy farming simulation game on PC.,,
+,"gaming, family, nintendo, switch, media",FAMILY_SMITH_01,Game,Overcooked! 2 (Switch Game - eShop Download),Cooperative cooking game on Switch.,,
+,"gaming, family, ps5, media",FAMILY_SMITH_01,Game,Ratchet & Clank: Rift Apart (PS5 Blu-ray Disc),Action platformer game for PS5., (disc case),0.08kg
+,"gaming, family, xbox, media",FAMILY_SMITH_01,Game,Forza Horizon 5 (Xbox Blu-ray Disc),Open-world racing game for Xbox., (disc case),0.08kg
+,"gaming, family, nintendo, switch, media",FAMILY_SMITH_01,Game,Just Dance 2025 (Switch Game - eShop Download),Dance game for family fun.,,
+,"gaming, family, ps5, media, sports",FAMILY_SMITH_01,Game,FIFA 25 (PS5 Blu-ray Disc),"Soccer simulation game, for John and Mike.", (disc case),0.08kg
+,"health, fitness, personal, home, equipment",USER_JOHN_SMITH,Sports Equipment,Resistance Bands Set (5 levels),For strength training and stretching., (bands in a bag),0.5kg
+,"health, fitness, personal, home, recovery",USER_JOHN_SMITH,Sports Equipment,Foam Roller (High Density),For muscle recovery and massage.,"45cm long, 15cm diameter",0.6kg
+,"health, fitness, personal, home, tracking",FAMILY_SMITH_01,Medical,Digital Bathroom Scale (Withings Body+),Tracks weight and body composition.,32.7cm x 32.7cm x 2.3cm,2kg
+,"health, personal, home, medical",FAMILY_SMITH_01,Medical,Blood Pressure Monitor (Omron Upper Arm),For home blood pressure checks.,12cm x 16cm x 9cm (cuff),0.4kg
+,"health, personal, outdoor, skincare",FAMILY_SMITH_01,Personal Care,"Sunscreen (SPF 50, Family Size Bottle)",For sun protection during outdoor activities.,8cm x 20cm x 4cm,0.3kg
+,"health, fitness, personal, gym, hydration",USER_JOHN_SMITH,Sports Equipment,Water Bottle for Gym (1 Liter Nalgene),Large capacity water bottle for workouts.,"9cm diameter, 21cm height",0.18kg
+,"health, fitness, personal, tracking",USER_JOHN_SMITH,Document,Fitness Journal/Logbook,"Notebook for tracking workouts, meals, and progress.",21cm x 15cm x 1cm,0.2kg
+,"health, fitness, personal, nutrition",USER_JOHN_SMITH,Consumable,Whey Protein Powder Container (Optimum Nutrition),Supplement for post-workout recovery.,"20cm diameter, 28cm height",2.3kg (full)
+,"clothing, john, work, formal",USER_JOHN_SMITH,Clothing,"Business Suits (2, Navy & Charcoal)",For formal work events and conferences.,,1.5kg (each)
+,"clothing, john, work, casual",USER_JOHN_SMITH,Clothing,"Dress Shirts (Assorted Colors, 5)",For work and smart casual occasions.,,0.3kg (each)
+,"clothing, john, casual",USER_JOHN_SMITH,Clothing,"Jeans (Levi's 501, 3 pairs)",Casual denim jeans.,,0.7kg (each)
+,"clothing, john, fitness, sports",USER_JOHN_SMITH,Clothing,"Running Shorts (Nike Dri-FIT, 3 pairs)",For running and gym workouts.,,0.15kg (each)
+,"clothing, john, fitness, sports",USER_JOHN_SMITH,Clothing,"Athletic T-shirts (Under Armour Tech, 5)",Moisture-wicking t-shirts for exercise.,,0.2kg (each)
+,"clothing, john, casual, outerwear",USER_JOHN_SMITH,Clothing,"Leather Jacket (Brown, Bomber Style)",Casual jacket for cooler evenings.,,1.8kg
+,"travel, personal, conference, family",USER_JOHN_SMITH,Bag,Carry-on Suitcase (Samsonite Spinner),"Hardshell suitcase for short trips (conference, weekend getaway).",55cm x 35cm x 22cm,3kg
+,"Tools, Work",null,Infrastructure,Laser Distance Measurer,Bosch device for quick site measurements,12 x 5 x 3,0.3
+,"Tools, Work",null,Infrastructure,Hard Hat,Acme Construction-branded yellow hard hat,28 x 24 x 14,0.5
+,"Music, Electronics",null,Media,Studio Monitor Speakers,Yamaha HS5 studio monitors (pair),17 x 28 x 22,10
+,"Health, Apparel",null,Wearable,Compression Shirt,Under Armour workout shirt for strength training,70 x 50 x 1,0.25
+,"Games, Family",null,Media,Uno Card Game,Family-friendly travel game,10 x 7 x 2,0.3
+,"Home, Electronics",null,Appliance,Smart Thermostat,Nest learning thermostat,8 x 8 x 3,0.2
+,"Home, Decor",null,Infrastructure,Framed Wedding Photo,Living room decoration,40 x 30 x 3,1.2
+,Personal Care,null,Wearable,Electric Toothbrush,Oral-B with smart timer,25 x 3 x 3,0.4
+,"Music, Media",Spotify,Media,Vinyl Collection,John’s vinyl records (classic rock/funk),33 x 33 x 33,10
+,"Music, Media",SoundCloud,Media,Private Demo Mixes,10 private demo tracks on SoundCloud,N/A,N/A
+,"Health, Apparel",null,Wearable,Gym Bag,Nike duffle bag for workouts,50 x 30 x 30,1.5
+,"Games, Family",null,Media,LEGO Minecraft Set,"Mike’s birthday gift, built with John",35 x 25 x 8,2
+,"Games, Board",null,Media,Clue Board Game,Mystery-solving family game,40 x 27 x 5,1
+,"Tools, Work",null,Infrastructure,Drafting Compass Set,Engineering drawing tools,15 x 8 x 2,0.3
+,Kitchenware,null,Appliance,Rice Cooker,Small countertop cooker,30 x 25 x 25,4
+,"Office, Furniture",null,Infrastructure,Filing Cabinet,Two-drawer metal cabinet,45 x 60 x 75,20
+,"Toys, Family",null,Media,Remote Control Car (Mike's),Mike's birthday gift,30 x 15 x 10,1
+,"Home, Decor",null,Infrastructure,Indoor Plant (Snake Plant),Potted plant in living room,20 x 20 x 80,3
+,"Tools, Home",null,Infrastructure,Electric Drill,Cordless drill with bits,35 x 10 x 25,2
+,"Tools, Home",null,Infrastructure,Screwdriver Set,Mixed screwdrivers (flat & Phillips),20 x 10 x 5,1.5
+,Kitchenware,null,Appliance,Stand Mixer,"KitchenAid stand mixer, silver",35 x 25 x 35,10
+,"Music, Media",null,Media,Song Notebook,John's handwritten lyric journal,30 x 20 x 1,0.4
+,"Music, Accessories",null,Media,Capo,Guitar accessory,5 x 2 x 2,0.1
+,"Music, Accessories",null,Media,Guitar Pedal Board,Board with effects pedals,60 x 25 x 10,4
+,"Music, Accessories",null,Media,Guitar Stand,Wooden A-frame for acoustic guitar,40 x 40 x 60,2
+,Kitchenware,null,Appliance,Toaster Oven,Compact oven for quick meals,40 x 30 x 25,6
+,"Home, Storage",null,Infrastructure,Garage Tool Rack,Wall-mounted for tools,100 x 20 x 40,8
+,Pet Supplies,null,Infrastructure,Dog Bed,"For family’s Labrador, Max",90 x 70 x 15,3.5
+,"Toys, Family",null,Media,Barbie Dreamhouse (Tina's),Tina’s dollhouse with accessories,80 x 40 x 100,8
+,"Travel, Gear",null,Infrastructure,Suitcase,Large roller bag for family trips,70 x 50 x 30,6
+,"Travel, Gear",null,Infrastructure,Hiking Backpack,For John’s day hikes and travel,55 x 35 x 20,2.5
+,"Health, Sports",null,Wearable,Resistance Bands Set,For home strength workouts,30 x 20 x 5,1.2
+,"Health, Sports",null,Wearable,Jump Rope,Adjustable speed rope,25 x 5 x 5,0.3
+,"Health, Electronics",null,Wearable,Smart Scale,With Bluetooth sync for health app,32 x 32 x 2,1.8
+,"Games, Board",null,Media,Jenga,Tower-block game for game nights,30 x 10 x 10,1.5
+,"Music, Electronics",null,Media,Audio Mixer,Used in home studio setup,40 x 30 x 7,3.5
+,"Home, Electronics",null,Appliance,Slow Cooker,"Crock-Pot, used for family meals",35 x 25 x 30,5
+,"Toys, Family",null,Media,Nerf Blasters,For weekend backyard fun,50 x 20 x 15,1.3
+,"Toys, Family",null,Media,Puzzle Sets,1000-piece scenic puzzles,40 x 30 x 5,1.2
+,Kitchenware,null,Appliance,Electric Kettle,Stainless steel with auto shutoff,25 x 20 x 20,2.3
+,"Home, Decor",null,Infrastructure,Family Photo Wall Frame,Holds 10 rotating photos,80 x 60 x 4,3
+,Kitchenware,null,Appliance,Spice Rack,Rotating countertop rack,25 x 25 x 30,2.2
+,Personal Care,null,Wearable,Beard Trimmer,Rechargeable grooming tool,20 x 5 x 5,0.4
+,"Health, Sports",null,Wearable,Foam Balance Pad,For injury prevention and core workouts,40 x 30 x 5,1
+,"Music, Accessories",null,Media,Extra Guitar Strings,Backup packs for acoustic & electric,12 x 12 x 1,0.2
+,"Office, Electronics",null,Infrastructure,Document Scanner,Portable desktop scanner,35 x 15 x 10,2
+,"Music, Decor",null,Infrastructure,Framed Festival Poster,From first local show,50 x 70 x 3,1.5
+,Personal Care,null,Wearable,Massage Gun,Rechargeable percussive therapy device,25 x 20 x 10,1.8
+,"Games, Digital",null,Media,Digital Game Library (Steam),"Includes Stardew Valley, Among Us",N/A,N/A
+,"Music, Media",YouTube,Media,Music Video Playlist,John's collection of favorite live performances,N/A,N/A
+,"Music, Electronics",Logic,Media,Audio Plugin Licenses,Purchased VSTs for DAW,N/A,N/A
+,"Home, Lighting",null,Appliance,Smart LED Bulbs,Controlled via mobile app,6 x 6 x 12,0.2
+,"Home, Decor",null,Infrastructure,Holiday Decor Storage Bin,Organized bin of seasonal lights and items,60 x 40 x 35,6
+,"Travel, Gear",null,Infrastructure,Camping Tent,Family 4-person dome tent,60 x 20 x 20,4
+,"Travel, Gear",null,Infrastructure,Cooler,Used for picnics and road trips,60 x 40 x 45,5.5
+,"Music, Accessories",null,Media,Audio Cables,Studio-grade cables for mixing,15 x 15 x 3,0.7
+,"Music, Decor",null,Infrastructure,Guitar Wall Mount,Displays electric guitar in office,10 x 5 x 20,1
