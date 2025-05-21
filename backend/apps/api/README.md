@@ -24,3 +24,9 @@ If you want to prettify the logs you can pipe them through the included command 
 ```
 yarn dev | yarn pino-pretty
 ```
+
+
+### Add test data
+```
+npx ts-node scripts/seed-database.ts
+```

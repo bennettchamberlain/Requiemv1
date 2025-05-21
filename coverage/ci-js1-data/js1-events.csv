@@ -1,0 +1,20 @@
+id,type,user_id,related_objects,created,updated,connection,provider,data_source
+e001,visit,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""place-worksite-01"",""location-12""]",2025-01-05t09:00:00z,2025-01-05t09:30:00z,conn1,prov-acme,field-logs
+e002,edit,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""place-office-01""]",2025-01-05t11:00:00z,2025-01-05t11:10:00z,conn1,prov-acme,internal-doc-editor
+e003,call,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""contact-surveyor-01""]",2025-01-06t14:30:00z,2025-01-06t14:45:00z,conn2,prov-zoom,zoom
+e004,create,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""doc-bridge-sketch-01""]",2025-01-06t16:00:00z,2025-01-06t16:05:00z,conn1,prov-cadapp,cad
+e005,travel,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""location-commute-01""]",2025-01-07t08:00:00z,2025-01-07t08:45:00z,conn3,prov-gps,google maps
+e006,message,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""person-city-council""]",2025-01-07t12:10:00z,2025-01-07t12:10:00z,conn4,prov-gmail,gmail
+e007,edit,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""doc-bridge-design-01""]",2025-01-08t10:00:00z,2025-01-08t10:40:00z,conn1,prov-cadapp,cad software
+e008,visit,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""place-office-01""]",2025-01-08t09:00:00z,2025-01-08t17:00:00z,conn1,prov-acme,badge-swipe-logs
+e009,call,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""person-junior-eng-01""]",2025-01-09t13:00:00z,2025-01-09t13:30:00z,conn5,prov-ms-teams,microsoft teams
+e010,view,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""doc-soil-report-01""]",2025-01-10t15:00:00z,2025-01-10t15:05:00z,conn6,prov-sharepoint,sharepoint
+e011,eat,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""place-home-01""]",2025-01-11t18:00:00z,2025-01-11t18:45:00z,conn7,prov-apple,apple health
+e012,sleep,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""device-bed-monitor-01""]",2025-01-12t23:00:00z,2025-01-13t06:00:00z,conn8,prov-fitbit,sleep tracker
+e013,create,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""doc-science-project-tina""]",2025-01-13t17:00:00z,2025-01-13t18:00:00z,conn9,prov-notes,notes app
+e014,call,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""mary-smith""]",2025-01-14t10:30:00z,2025-01-14t10:50:00z,conn10,prov-att,mobile call log
+e015,comment,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""group-soccer-01"",""message-03""]",2025-01-14t18:00:00z,2025-01-14t18:01:00z,conn11,prov-whatsapp,whatsapp
+e016,visit,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""place-school-01""]",2025-01-15t17:30:00z,2025-01-15t19:00:00z,conn12,prov-checkin,check-in app
+e017,edit,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""calendar-family-chores""]",2025-01-16t08:00:00z,2025-01-16t08:10:00z,conn13,prov-google,google calendar
+e018,message,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""mary-smith""]",2025-01-17t15:00:00z,2025-01-17t15:01:00z,conn14,prov-apple,imessage
+e019,view,b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b,"[""album-family-photos""]",2025-01-17t20:00:00z,2025-01-17t20:15:00z,conn15,prov-google,smart display

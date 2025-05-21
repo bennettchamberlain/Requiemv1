@@ -1,0 +1,5 @@
+id,connection_id,estimated,geo_format,geolocation,identifier,provider_id,tracked,updated,uploaded,user_id,parent_place,location_boundary,tags,type
+P001,conn1,FALSE,point,"{\"lat\":34.01,\"lng\":-118.49}",place-worksite-01,prov-acme,TRUE,2025-01-05T09:30:00Z,FALSE,1,,"{}","[\"work\"]",worksite
+P002,conn1,FALSE,point,"{\"lat\":34.02,\"lng\":-118.50}",place-office-01,prov-acme,TRUE,2025-01-08T17:00:00Z,FALSE,1,,"{}","[\"office\"]",office
+P003,conn2,FALSE,point,"{\"lat\":34.03,\"lng\":-118.51}",place-home-01,prov-apple,TRUE,2025-01-11T18:45:00Z,FALSE,1,,"{}","[\"home\"]",home
+P004,conn3,FALSE,point,"{\"lat\":34.04,\"lng\":-118.52}",place-school-01,prov-checkin,TRUE,2025-01-15T19:00:00Z,FALSE,1,,"{}","[\"school\"]",school

@@ -1,0 +1,5 @@
+id,first_name,last_name,address,street_address,street_address_2,city,region,country,postal_code,avatar_url,external_avatar_url,type,created,hidden,tags,contact_ids,middle_name,gender
+b3b1c2e0-1234-4a5b-8c6d-123456789abc,Jane,Doe,123 Main St,123 Main St,,Springfield,IL,USA,62704,https://pics.example.com/jane.jpg,,employee,2025-05-20T00:00:00Z,FALSE,"friend,team",,Marie,F
+7e2a1d4f-5678-4c2b-9e1f-abcdef123456,Bob,Brown,456 Oak Ave,456 Oak Ave,Unit 2,Metropolis,NY,USA,10001,https://pics.example.com/bob.jpg,,contractor,2025-05-20T00:00:00Z,TRUE,"vendor",,Allen,M
+c1d2e3f4-2345-4b6c-8d7e-23456789abcd,Alice,Smith,789 Pine Rd,789 Pine Rd,,Smalltown,CA,USA,90210,https://pics.example.com/alice.jpg,,manager,2025-05-21T00:00:00Z,FALSE,"leadership",,Elizabeth,F
+f4e3d2c1-3456-4c7d-8e9f-3456789abcde,Tom,Johnson,321 Maple St,321 Maple St,,Lakeside,TX,USA,75001,https://pics.example.com/tom.jpg,,employee,2025-05-21T00:00:00Z,FALSE,"team",,Lee,M
