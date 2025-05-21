@@ -1,169 +1,20 @@
 id (UUID),type,user_id (FK),related_objects (FK Array),created,updated,connection (FK),provider (FK),data_source
-E001,Visit,1,"[place-worksite-01,location-12]",2025-01-05 9:00:00,2025-01-05 9:30:00,conn1,prov-acme,field-logs
-E002,Edit,1,"[place-office-01]",2025-01-05 11:00:00,2025-01-05 11:10:00,conn1,prov-acme,internal-doc-editor
-E003,Call,1,"[contact-surveyor-01]",2025-01-06 14:30:00,2025-01-06 14:45:00,conn2,prov-zoom,zoom
-E004,Create,1,"[doc-bridge-sketch-01]",2025-01-06 16:00:00,2025-01-06 16:05:00,conn1,prov-cadapp,CAD
-E005,Travel,1,"[location-commute-01]",2025-01-07 8:00:00,2025-01-07 8:45:00,conn3,prov-gps,Google Maps
-E006,Message,1,"[person-city-council]",2025-01-07 12:10:00,2025-01-07 12:10:00,conn4,prov-gmail,Gmail
-E007,Edit,1,"[doc-bridge-design-01]",2025-01-08 10:00:00,2025-01-08 10:40:00,conn1,prov-cadapp,CAD Software
-E008,Visit,1,"[place-office-01]",2025-01-08 9:00:00,2025-01-08 17:00:00,conn1,prov-acme,badge-swipe-logs
-E009,Call,1,"[person-junior-eng-01]",2025-01-09 13:00:00,2025-01-09 13:30:00,conn5,prov-ms-teams,Microsoft Teams
-E010,View,1,"[doc-soil-report-01]",2025-01-10 15:00:00,2025-01-10 15:05:00,conn6,prov-sharepoint,SharePoint
-E011,Eat,1,"[place-home-01]",2025-01-11 18:00:00,2025-01-11 18:45:00,conn7,prov-apple,Apple Health
-E012,Sleep,1,"[device-bed-monitor-01]",2025-01-12 23:00:00,2025-01-13 6:00:00,conn8,prov-fitbit,Sleep Tracker
-E013,Create,1,"[doc-science-project-tina]",2025-01-13 17:00:00,2025-01-13 18:00:00,conn9,prov-notes,Notes app
-E014,Call,1,"[mary-smith]",2025-01-14 10:30:00,2025-01-14 10:50:00,conn10,prov-att,Mobile Call Log
-E015,Comment,1,"[group-soccer-01,message-03]",2025-01-14 18:00:00,2025-01-14 18:01:00,conn11,prov-whatsapp,WhatsApp
-E016,Visit,1,"[place-school-01]",2025-01-15 17:30:00,2025-01-15 19:00:00,conn12,prov-checkin,Check-in app
-E017,Edit,1,"[calendar-family-chores]",2025-01-16 8:00:00,2025-01-16 8:10:00,conn13,prov-google,Google Calendar
-E018,Message,1,"[mary-smith]",2025-01-17 15:00:00,2025-01-17 15:01:00,conn14,prov-apple,iMessage
-E019,View,1,"[album-family-photos]",2025-01-17 20:00:00,2025-01-17 20:15:00,conn15,prov-google,Smart Display
-,View,1,"[doc_bridge_plans_rev1, loc_js_00002, place_js_work_002]",2025-01-02T09:15:00Z,2025-01-02T09:15:00Z,,acme_doc_system,Acme Internal Drive
-,Edit,1,"[doc_bridge_plans_rev1, loc_js_00002, place_js_work_002]",2025-01-02T10:00:00Z,2025-01-02T10:00:00Z,,acme_doc_system,MS Word via Acme PC
-,Play,1,"[track_id_funkadelic001, playlist_funkyFriday, loc_js_00003, place_js_hmusic_009]",2025-01-03T20:30:00Z,2025-01-03T20:30:00Z,spotify_jsmith,spotify_playback_api,Spotify Desktop App
-,Create,1,"[track_lofi_chill01, software_ableton_live, loc_js_00004, place_js_hmusic_009]",2025-01-04T21:00:00Z,2025-01-04T21:00:00Z,ableton_jsmith,ableton_cloud_sync,Ableton Live 11
-,Visit,1,"[place_js_school_006, loc_js_00005, person_mike_smith, person_tina_smith]",2025-01-06T08:30:00Z,2025-01-06T08:30:00Z,,phone_gps_android,Google Maps Timeline
-,Visit,1,"[place_js_site_003, loc_js_00006, project_hwy_overpass]",2025-01-10T14:30:00Z,2025-01-10T14:30:00Z,,phone_gps_android,Acme Field App
-,Visit,1,"[place_js_soccer_010, loc_js_00007, person_mike_smith, event_soccer_practice]",2025-01-12T15:30:00Z,2025-01-12T15:30:00Z,,phone_calendar_sync,Family Calendar App
-,Visit,1,"[place_js_ballet_011, loc_js_00008, person_tina_smith, event_ballet_class]",2025-01-13T16:45:00Z,2025-01-13T16:45:00Z,,phone_calendar_sync,Family Calendar App
-,Play,1,"[game_mario_kart_deluxe, console_nintendo_switch, loc_js_00009, place_js_home_001]",2025-01-18T19:00:00Z,2025-01-18T19:05:00Z,nintendo_jsmith,nintendo_presence_api,Nintendo Switch Log
-,Play,1,"[track_led_zep_IV, loc_js_00010, place_js_work_002]",2025-01-20T12:30:00Z,2025-01-20T12:30:00Z,ytmusic_jsmith,youtube_api,YouTube Music Web
-,Message,1,"[email_to_rhythm_room, email_subject_open_mic, loc_js_00003, place_js_hmusic_009]",2025-01-05T11:00:00Z,2025-01-05T11:00:00Z,gmail_jsmith,google_api,Gmail Sent Folder
-,Call,1,"[contact_music_friend_dave, duration_45_min, loc_js_00003, place_js_hmusic_009]",2025-01-07T19:00:00Z,2025-01-07T19:00:00Z,skype_jsmith,skype_api,Skype Call Log
-,Transaction,1,"[store_local_market, amount_usd_85.50, payment_visa_xxxx, loc_js_00031]",2025-01-15T11:15:00Z,2025-01-15T11:15:00Z,amex_jsmith,amex_api,Amex Mobile App
-,Visit,1,"[place_clinic_sm, loc_js_00036, reason_annual_checkup]",2025-01-25T09:00:00Z,2025-01-25T09:00:00Z,,manual_entry_calendar,Personal Calendar
-,Sleep,1,"[place_js_home_001, duration_7h_15m, quality_good]",2025-01-26T06:30:00Z,2025-01-26T06:30:00Z,fitbit_jsmith,fitbit_api,Fitbit Wearable
-,Exercise,1,"[activity_running, loc_js_00011, place_js_park_005, steps_10052]",2025-02-02T07:10:00Z,2025-02-02T07:10:00Z,fitbit_jsmith,fitbit_api,Fitbit Wearable
-,Exercise,1,"[activity_strength_training, loc_js_00012, place_js_gym_004, duration_1h]",2025-02-03T18:30:00Z,2025-02-03T18:30:00Z,fitbit_jsmith,fitbit_api,Fitbit Manual Log
-,Visit,1,"[place_js_work_002, loc_js_00013, meeting_geo_team, attendees_5]",2025-02-05T10:00:00Z,2025-02-05T10:00:00Z,,outlook_calendar,Acme Corp Calendar
-,Play,1,"[track_id_edm_discovery07, loc_js_00014, place_js_home_001]",2025-02-08T16:00:00Z,2025-02-08T16:00:00Z,soundcloud_jsmith,soundcloud_api,SoundCloud App
-,Visit,1,"[place_js_school_006, loc_js_00015, event_parent_teacher_conf]",2025-02-11T19:00:00Z,2025-02-11T19:00:00Z,,school_comms_app,St. Michael's Portal
-,Visit,1,"[place_js_site_003, loc_js_00016, task_site_inspection]",2025-02-15T11:00:00Z,2025-02-15T11:00:00Z,,acme_field_logger,Acme Project Tracker
-,Edit,1,"[track_lofi_chill01, task_mixing, loc_js_00017, place_js_rstudi_007]",2025-02-17T14:30:00Z,2025-02-17T14:30:00Z,,studio_booking_system,SoundWave Studios Log
-,Create,1,"[doc_lyrics_new_song_v1, loc_js_00018, place_js_hmusic_009]",2025-02-20T22:30:00Z,2025-02-20T22:30:00Z,,local_pc_save,John's Macbook Pro
-,Exercise,1,"[activity_gym_workout, loc_js_00019, place_js_gym_004, calories_500]",2025-02-25T18:45:00Z,2025-02-25T18:45:00Z,fitbit_jsmith,fitbit_api,Fitbit Wearable
-,Play,1,"[playlist_rnb_drive, loc_js_00032, vehicle_suv_CA12345]",2025-02-10T08:15:00Z,2025-02-10T08:15:00Z,spotify_jsmith,spotify_playback_api,Spotify Car Connect
-,Eat,1,"[restaurant_cafe_near_work, loc_js_00033, person_colleague_bob]",2025-02-18T13:00:00Z,2025-02-18T13:15:00Z,,manual_entry,Personal Diary App
-,Transaction,1,"[service_studio_booking, place_js_rstudi_007, amount_usd_200]",2025-02-10T10:00:00Z,2025-02-10T10:00:00Z,paypal_jsmith,paypal_api,PayPal Email Receipt
-,Visit,1,"[place_js_soccer_010, person_mike_smith, event_soccer_tournament_game1]",2025-02-22T10:00:00Z,2025-02-22T10:00:00Z,,team_snap_app,Mike's Soccer TeamApp
-,Call,1,"[person_junior_engineer_sara, topic_mentoring, loc_js_00020, place_js_work_002]",2025-03-01T10:15:00Z,2025-03-01T10:15:00Z,msteams_acme,msteams_api,MS Teams Call Log
-,Exercise,1,"[activity_running, loc_js_00021, place_js_park_005, duration_45m, dist_7km]",2025-03-03T06:50:00Z,2025-03-03T06:50:00Z,fitbit_jsmith,fitbit_api,Fitbit Wearable
-,Travel,1,"[from_place_js_home_001, to_place_js_confLA_012, loc_js_00022, method_car]",2025-03-05T13:00:00Z,2025-03-05T14:00:00Z,,Maps_nav,Google Maps Timeline
-,View,1,"[presentation_green_materials_pdf, loc_js_00023, place_js_confLA_012]",2025-03-06T10:30:00Z,2025-03-06T10:30:00Z,,conference_app_dl,GreenBuild Conf App
-,Visit,1,"[place_js_school_006, loc_js_00024, event_family_day, family_members_4]",2025-03-08T11:00:00Z,2025-03-08T11:00:00Z,,phone_photo_geotag,Google Photos
-,Play,1,"[instrument_guitar, song_original_tune1, loc_js_00025, place_js_hmusic_009]",2025-03-10T20:00:00Z,2025-03-10T20:00:00Z,,manual_log,Music Practice Log App
-,Play,1,"[song_original_tune1, loc_js_00026, place_js_venue_008, event_open_mic]",2025-03-15T20:30:00Z,2025-03-15T20:30:00Z,,venue_signup_sheet,The Rhythm Room Guest
-,Travel,1,"[from_place_js_home_001, to_place_js_getawy_013, loc_js_00027, occasion_mary_bday]",2025-03-22T14:00:00Z,2025-03-22T16:00:00Z,,Maps_nav,Google Maps Timeline
-,Visit,1,"[place_js_getawy_013, loc_js_00028, activity_poolside_relax]",2025-03-23T10:00:00Z,2025-03-23T10:00:00Z,,phone_gps_android,Google Maps Timeline
-,Play,1,"[game_ratchet_clank_ps5, console_ps5, loc_js_00029, place_js_home_001]",2025-03-25T19:30:00Z,2025-03-25T19:30:00Z,psn_jsmith,sony_psn_api,PlayStation Network Log
-,Exercise,1,"[activity_running, loc_js_00030, place_js_park_005, hr_zone_cardio]",2025-03-28T07:00:00Z,2025-03-28T07:00:00Z,fitbit_jsmith,fitbit_api,Fitbit Wearable
-,Play,1,"[game_minecraft, person_mike_smith, person_tina_smith, loc_js_00034, place_js_home_001]",2025-03-12T17:00:00Z,2025-03-12T17:00:00Z,xbox_live_kids,microsoft_xbox_api,Xbox Family Account
-,Edit,1,"[track_lofi_album_arrangements, software_logic_pro_x, loc_js_00035, place_js_hmusic_009]",2025-03-18T21:30:00Z,2025-03-18T21:30:00Z,apple_icloud,apple_icloud_sync,Logic Pro X Autosave
-,Edit,1,"[doc_final_project_design_v3, loc_js_00037, place_js_work_002]",2025-03-30T14:00:00Z,2025-03-30T14:00:00Z,,acme_doc_system_vcs,Acme Version Control
-,Submit,1,"[doc_final_project_design_v3, recipient_city_council, place_city_hall_sm]",2025-03-31T11:00:00Z,2025-03-31T11:00:00Z,,city_portal_upload,City Council Portal
-,Eat,1,"[restaurant_palm_springs_fine_dining, occasion_mary_bday_dinner, place_js_getawy_013]",2025-03-22T20:00:00Z,2025-03-22T20:00:00Z,,credit_card_pos,Amex Statement
-,Transaction,1,"[service_hotel_booking_ps, place_js_getawy_013, amount_usd_550]",2025-03-20T10:00:00Z,2025-03-20T10:00:00Z,booking_com,booking_api,Booking.com Receipt
-,Transaction,1,"[service_conference_reg, place_js_confLA_012, amount_usd_300]",2025-02-15T09:00:00Z,2025-02-15T09:00:00Z,amex_jsmith,amex_api,Conference Reg Email
-,Visit,1,"[place_js_ballet_011, person_tina_smith, event_ballet_recital_practice]",2025-03-14T17:00:00Z,2025-03-14T17:00:00Z,,phone_calendar_sync,Family Calendar App
-,Call,1,"[contact_stakeholder_b_acme, topic_budget_adjustment, place_js_work_002]",2025-01-15T16:00:00Z,2025-01-15T16:00:00Z,office_voip,acme_telco_log,Acme Phone System
-,Sleep,1,"[place_js_getawy_013, duration_6h_30m, quality_fair]",2025-03-23T05:30:00Z,2025-03-23T05:30:00Z,fitbit_jsmith,fitbit_api,Fitbit Wearable
-,Play,1,[thing007],2025-03-10T18:00:00Z,2025-03-10T18:00:00Z,Nintendo,Nintendo,Nintendo Switch
-,Create,1,[thing065],2025-03-02T20:12:00Z,2025-03-02T20:15:00Z,,,Handwritten
-,Exercise,1,"[thing017, thing075]",2025-03-04T06:30:00Z,2025-03-04T06:45:00Z,Fitbit,Fitbit,Fitbit Versa
-,View,1,[thing093],2025-03-08T21:15:00Z,2025-03-08T21:20:00Z,YouTube,YouTube,YouTube Playlist
-,Sleep,1,"[thing013, thing043]",2025-03-05T23:00:00Z,2025-03-06T07:00:00Z,,,Smart Scale
-,Call,1,[thing006],2025-02-15T14:00:00Z,2025-02-15T14:45:00Z,Work,Zoom,Dell Laptop
-,Play,1,[thing026],2025-03-01T19:00:00Z,2025-03-01T20:00:00Z,,Hasbro,Physical Board Game
-,Travel,1,[thing073],2025-02-24T09:00:00Z,2025-02-24T17:00:00Z,,,Family Trip
-,Visit,1,[thing097],2025-02-10T10:00:00Z,2025-02-10T14:00:00Z,,,Camping Site
-,Play,1,[thing005],2025-03-12T07:30:00Z,2025-03-12T08:00:00Z,Fitbit,Fitbit,Fitbit Versa
-,Edit,1,"[thing003, thing021]",2025-03-06T21:00:00Z,2025-03-06T23:00:00Z,Ableton,Ableton,MIDI + Guitar
-,Create,1,[thing094],2025-03-11T22:00:00Z,2025-03-11T22:45:00Z,Logic,Logic Pro X,Plugin Tools
-,Eat,1,"[thing012, thing064]",2025-03-03T07:30:00Z,2025-03-03T08:00:00Z,,,Kitchen
-,Exercise,1,[thing029],2025-02-28T06:00:00Z,2025-02-28T06:45:00Z,,,Yoga Mat
-,Transactions,1,[thing033],2025-02-01T12:15:00Z,2025-02-01T12:16:00Z,Amazon,Sony,Purchase
-,Message,1,[thing006],2025-02-14T09:00:00Z,2025-02-14T09:02:00Z,Work,Gmail,Work Email
-,Play,1,[thing034],2025-02-22T20:00:00Z,2025-02-22T22:00:00Z,PlayStation,Sony,Family Game Night
-,View,1,[thing052],2025-02-05T18:00:00Z,2025-02-05T18:30:00Z,Spotify,Spotify,Listening Session
-,Comment,1,[thing053],2025-02-08T15:00:00Z,2025-02-08T15:05:00Z,SoundCloud,SoundCloud,Demo Feedback
-,Eat,1,[thing028],2025-01-21T07:00:00Z,2025-01-21T07:20:00Z,,,Toaster Use
-,Exercise,1,[thing040],2025-03-10T06:15:00Z,2025-03-10T06:45:00Z,,,Foam Roller
-,Create,1,[thing090],2025-03-01T13:00:00Z,2025-03-01T13:30:00Z,,,Framing Poster
-,Play,1,[thing009],2025-02-19T21:00:00Z,2025-02-19T22:30:00Z,Xbox,Microsoft,Sea of Thieves
-,Visit,1,[thing084],2025-01-30T20:00:00Z,2025-01-30T20:30:00Z,,,Family Gallery
-,Transactions,1,[thing087],2025-02-10T10:45:00Z,2025-02-10T10:46:00Z,Amazon,Amazon Basics,Balance Pad
-,Travel,1,[thing098],2025-03-12T10:00:00Z,2025-03-12T14:00:00Z,,,Picnic Day
-,Sleep,1,[thing035],2025-02-26T20:30:00Z,2025-02-27T07:00:00Z,,,Kids’ Bunk Night
-,Message,1,[thing006],2025-01-15T11:00:00Z,2025-01-15T11:05:00Z,Work,Slack,Team Coordination
-,Play,1,[thing030],2025-03-14T18:00:00Z,2025-03-14T20:00:00Z,Steam,Valve,PC Game Night
-,Eat,1,[thing070],2025-02-17T13:00:00Z,2025-02-17T13:30:00Z,,,BBQ Tools
-,Exercise,1,[thing076],2025-03-03T07:00:00Z,2025-03-03T07:15:00Z,,,Jump Rope Session
-,Play,1,[thing039],2025-02-25T21:00:00Z,2025-02-25T22:15:00Z,Logic,Logic Pro X,Vocal Recording
-,Eat,1,[thing080],2025-02-08T17:30:00Z,2025-02-08T18:15:00Z,,Crock-Pot,Dinner Night
-,Visit,1,[thing042],2025-01-28T08:00:00Z,2025-01-28T08:15:00Z,,,Wardrobe Clean-Up
-,Play,1,[thing055],2025-02-03T15:00:00Z,2025-02-03T15:45:00Z,,LEGO,Building Together
-,View,1,[thing096],2025-01-07T12:00:00Z,2025-01-07T12:10:00Z,,,Decorations Check
-,Create,1,[thing059],2025-01-12T10:00:00Z,2025-01-12T10:20:00Z,,,Filing Project Docs
-,Edit,1,[thing079],2025-02-11T20:00:00Z,2025-02-11T21:30:00Z,,Focusrite,Mixing Session
-,Eat,1,[thing037],2025-02-14T08:00:00Z,2025-02-14T08:30:00Z,,Ninja,Smoothie Prep
-,Exercise,1,[thing086],2025-03-06T09:00:00Z,2025-03-06T09:10:00Z,,Braun,Grooming Session
-,Sleep,1,[thing043],2025-03-04T22:45:00Z,2025-03-05T06:30:00Z,,Withings,Sleep Data
-,Visit,1,[thing044],2025-02-15T10:00:00Z,2025-02-15T10:05:00Z,Acme,Bosch,Site Measurement
-,Transactions,1,[thing077],2025-03-08T16:00:00Z,2025-03-08T16:01:00Z,Apple,Withings,Smart Scale Order
-,Travel,1,[thing074],2025-03-05T07:00:00Z,2025-03-05T08:30:00Z,,,Hiking in Malibu
-,Play,1,[thing008],2025-02-18T19:00:00Z,2025-02-18T21:00:00Z,PlayStation,Sony,Sackboy Session
-,Call,1,[thing006],2025-01-13T13:00:00Z,2025-01-13T13:30:00Z,Work,Teams,Client Meeting
-,Create,1,"[thing065, thing066]",2025-03-13T22:00:00Z,2025-03-13T23:30:00Z,Ableton,Ableton,Songwriting Night
-,Play,1,[thing056],2025-03-09T16:00:00Z,2025-03-09T17:00:00Z,,Hasbro,Clue Mystery Game
-,View,1,[thing100],2025-02-20T18:00:00Z,2025-02-20T18:05:00Z,,,Guitar Wall Setup
-,Transactions,1,[thing089],2025-02-06T12:45:00Z,2025-02-06T12:46:00Z,Amazon,Canon,Document Scanner Buy
-,Edit,1,['THING_JS_001'],2025-01-05T09:30:00Z,2025-01-05T09:35:00Z,PROJECT_HWAY1,PROV_ACME_IT,WorkLogSync
-,Visit,1,"['THING_JS_002', 'THING_JS_003', 'THING_JS_160']",2025-01-08T14:00:00Z,2025-01-08T14:00:00Z,PROJECT_HWAY1,N/A,ManualAppEntry
-,Play,1,"['THING_JS_013', 'THING_JS_021']",2025-01-10T20:00:00Z,2025-01-10T20:00:00Z,N/A,N/A,ManualAppEntry
-,Create,1,"['THING_JS_015', 'THING_JS_023', 'THING_JS_018']",2025-01-12T21:00:00Z,2025-01-12T23:30:00Z,MUSIC_ALBUM1,PROV_ABLETON,MusicAppDAW
-,Travel,1,['THING_JS_026'],2025-01-15T08:00:00Z,2025-01-15T08:00:00Z,N/A,PROV_TESLA_NAV,VehicleLogSync
-,Play,1,"['THING_JS_036', 'THING_JS_041', 'THING_JS_125']",2025-01-18T18:30:00Z,2025-01-18T18:30:00Z,FAMILY_GAME,PROV_NINTENDO,GamingConsoleLog
-,Exercise,1,"['THING_JS_043', 'THING_JS_044']",2025-01-20T07:00:00Z,2025-01-20T07:00:00Z,N/A,PROV_APPLE_HEALTH,HealthAppSync
-,Call,1,['THING_JS_004'],2025-01-22T11:15:00Z,2025-01-22T11:15:00Z,PROJECT_HWAY1,PROV_VERIZON_WORK,PhoneLogSync
-,View,1,['THING_JS_008'],2025-01-25T10:00:00Z,2025-01-25T10:00:00Z,PROJECT_HWAY1,N/A,ManualAppEntry
-,Create,1,"['THING_JS_001', 'THING_JS_009']",2025-02-01T14:30:00Z,2025-02-01T16:00:00Z,PROJECT_HWAY1,PROV_AUTODESK,WorkSoftwareUsage
-,Visit,1,"['THING_JS_006', 'THING_JS_005']",2025-02-05T13:00:00Z,2025-02-05T13:00:00Z,PROJECT_HWAY1,PROV_ACME_ASSETS,DroneLogSync
-,Edit,1,"['THING_JS_015', 'THING_JS_023', 'THING_JS_078']",2025-02-08T22:00:00Z,2025-02-08T23:55:00Z,MUSIC_ALBUM1,PROV_ABLETON,MusicAppDAW
-,Transaction,1,['THING_JS_228'],2025-02-10T17:00:00Z,2025-02-10T17:00:00Z,N/A,PROV_MICROSOFT_XBOX,WalletApp
-,Play,1,"['THING_JS_074', 'THING_JS_075']",2025-02-12T19:30:00Z,2025-02-12T19:30:00Z,N/A,N/A,ManualAppEntry
-,Exercise,1,"['THING_JS_046', 'THING_JS_044']",2025-02-15T18:00:00Z,2025-02-15T18:00:00Z,N/A,PROV_APPLE_HEALTH,HealthAppSync
-,View,1,['THING_JS_207'],2025-02-18T15:00:00Z,2025-02-18T15:00:00Z,MIKE_SOCCER,N/A,ManualAppEntry
-,Travel,1,"['THING_JS_150', 'THING_JS_026']",2025-03-01T10:00:00Z,2025-03-01T10:00:00Z,CONF_GREENBLD,N/A,CalendarApp
-,View,1,['THING_JS_155'],2025-03-03T14:00:00Z,2025-03-03T14:00:00Z,CONF_GREENBLD,N/A,ManualAppEntry
-,Play,1,"['THING_JS_173', 'THING_JS_013']",2025-03-08T20:30:00Z,2025-03-08T20:30:00Z,OPEN_MIC_01,N/A,ManualAppEntry
-,View,1,['THING_JS_208'],2025-03-15T16:00:00Z,2025-03-15T16:00:00Z,TINA_BALLET,N/A,ManualAppEntry
-,Eat,1,['THING_JS_097'],2025-03-20T18:30:00Z,2025-03-20T18:30:00Z,MARY_BDAY,N/A,ManualAppEntry
-,Exercise,1,"['THING_JS_236', 'THING_JS_044']",2025-03-22T07:30:00Z,2025-03-22T07:30:00Z,N/A,PROV_APPLE_HEALTH,HealthAppSync
-,Transaction,1,['THING_JS_079'],2025-03-25T11:00:00Z,2025-03-25T11:00:00Z,MUSIC_ALBUM1,PROV_XFERRECORDS,BankStatement
-,View,1,['THING_JS_200'],2025-04-01T09:00:00Z,2025-04-01T09:00:00Z,N/A,PROV_RING,SecurityAppAlert
-,Travel,1,"['THING_JS_025', 'THING_JS_250']",2025-04-05T14:00:00Z,2025-04-05T14:00:00Z,FAMILY_TRIP_A,N/A,CalendarApp
-,Create,1,['THING_JS_175'],2025-04-08T21:15:00Z,2025-04-08T21:15:00Z,MUSIC_ALBUM1,N/A,ManualAppEntry
-,Play,1,"['THING_JS_037', 'THING_JS_135', 'THING_JS_129']",2025-04-12T19:00:00Z,2025-04-12T19:00:00Z,MIKE_GAMING,PROV_SONY_PSN,GamingConsoleLog
-,Edit,1,['THING_JS_060'],2025-04-15T16:30:00Z,2025-04-15T17:00:00Z,PROJECT_HWAY1,PROV_ACME_IT,WorkLogSync
-,Exercise,1,"['THING_JS_043', 'THING_JS_242']",2025-04-18T07:10:00Z,2025-04-18T07:10:00Z,N/A,PROV_STRAVA,HealthAppSync
-,Eat,1,['THING_JS_177'],2025-04-20T18:00:00Z,2025-04-20T18:00:00Z,N/A,N/A,ManualAppEntry
-,Use,1,['THING_JS_081'],2025-04-22T10:00:00Z,2025-04-22T10:00:00Z,N/A,PROV_LG_THINQ,SmartApplianceLog
-,Play,1,['THING_JS_232'],2025-04-25T20:00:00Z,2025-04-25T20:00:00Z,FAMILY_GAME,N/A,ManualAppEntry
-,Visit,1,"['THING_JS_051', 'THING_JS_158']",2025-04-28T11:30:00Z,2025-04-28T11:30:00Z,PROJECT_SITE_B,N/A,WorkLogSync
-,Create,1,"['THING_JS_016', 'THING_JS_023', 'THING_JS_020']",2025-05-01T22:00:00Z,2025-05-01T23:59:00Z,MUSIC_ALBUM1,PROV_APPLE_LOGIC,MusicAppDAW
-,Use,1,"['THING_JS_196', 'THING_JS_001']",2025-05-03T15:00:00Z,2025-05-03T15:00:00Z,N/A,PROV_HP_SMART,PrinterLog
-,View,1,"['THING_JS_211', 'THING_JS_212']",2025-05-04T19:30:00Z,2025-05-04T19:30:00Z,FAMILY_READING,N/A,ManualAppEntry
-,Exercise,1,"['THING_JS_104', 'THING_JS_106']",2025-05-05T17:00:00Z,2025-05-05T17:00:00Z,MIKE_BIKE,N/A,ManualAppEntry
-,Call,1,['THING_JS_048'],2025-05-06T18:45:00Z,2025-05-06T18:45:00Z,FRIEND_MUSIC,PROV_ATT_PERSONAL,PhoneLogSync
-,Transaction,1,['THING_JS_143'],2025-05-07T10:00:00Z,2025-05-07T10:00:00Z,N/A,PROV_AMAZON,EmailReceipt
-,Play,1,"['THING_JS_038', 'THING_JS_042', 'THING_JS_040']",2025-05-08T16:00:00Z,2025-05-08T16:00:00Z,FAMILY_GAME,PROV_MICROSOFT_XBOX,GamingConsoleLog
-,Use,1,"['THING_JS_248', 'THING_JS_249']",2025-05-10T11:00:00Z,2025-05-10T11:00:00Z,BEACH_TRIP_1,N/A,ManualAppEntry
-,Edit,1,"['THING_JS_161', 'THING_JS_001']",2025-05-11T09:15:00Z,2025-05-11T09:15:00Z,N/A,N/A,ManualAppEntry
-,Eat,1,['THING_JS_030'],2025-05-12T07:00:00Z,2025-05-12T07:00:00Z,N/A,N/A,ManualAppEntry
-,View,1,['THING_JS_163'],2025-05-13T19:00:00Z,2025-05-13T19:00:00Z,N/A,PROV_ASCE,DigitalSubscriptionLog
-,Exercise,1,"['THING_JS_047', 'THING_JS_044']",2025-05-14T06:30:00Z,2025-05-14T06:30:00Z,N/A,PROV_APPLE_HEALTH,HealthAppSync
-,Create,1,"['THING_JS_001', 'THING_JS_154']",2025-05-15T10:30:00Z,2025-05-15T11:30:00Z,PROJECT_REVIEW,PROV_MS_OFFICE,WorkLogSync
-,Use,1,['THING_JS_189'],2025-05-16T00:00:00Z,2025-05-16T00:00:00Z,N/A,N/A,DeviceSelfCheckLog
-,Play,1,"['THING_JS_039', 'THING_JS_NEW_VR_GAME']",2025-05-17T20:00:00Z,2025-05-17T20:00:00Z,N/A,PROV_META_QUEST,GamingConsoleLog
-,Travel,1,['THING_JS_026'],2025-05-18T08:30:00Z,2025-05-18T08:30:00Z,N/A,PROV_TESLA_NAV,VehicleLogSync
-,Message,1,['THING_JS_048'],2025-05-18T10:15:00Z,2025-05-18T10:15:00Z,FAMILY_CHAT,PROV_WHATSAPP,MessagingAppLog
+E001,Visit,1,"[place-worksite-01,location-12]",2025-01-05T09:00:00Z,2025-01-05T09:30:00Z,conn1,prov-acme,field-logs
+E002,Edit,1,"[place-office-01]",2025-01-05T11:00:00Z,2025-01-05T11:10:00Z,conn1,prov-acme,internal-doc-editor
+E003,Call,1,"[contact-surveyor-01]",2025-01-06T14:30:00Z,2025-01-06T14:45:00Z,conn2,prov-zoom,zoom
+E004,Create,1,"[doc-bridge-sketch-01]",2025-01-06T16:00:00Z,2025-01-06T16:05:00Z,conn1,prov-cadapp,CAD
+E005,Travel,1,"[location-commute-01]",2025-01-07T08:00:00Z,2025-01-07T08:45:00Z,conn3,prov-gps,Google Maps
+E006,Message,1,"[person-city-council]",2025-01-07T12:10:00Z,2025-01-07T12:10:00Z,conn4,prov-gmail,Gmail
+E007,Edit,1,"[doc-bridge-design-01]",2025-01-08T10:00:00Z,2025-01-08T10:40:00Z,conn1,prov-cadapp,CAD Software
+E008,Visit,1,"[place-office-01]",2025-01-08T09:00:00Z,2025-01-08T17:00:00Z,conn1,prov-acme,badge-swipe-logs
+E009,Call,1,"[person-junior-eng-01]",2025-01-09T13:00:00Z,2025-01-09T13:30:00Z,conn5,prov-ms-teams,Microsoft Teams
+E010,View,1,"[doc-soil-report-01]",2025-01-10T15:00:00Z,2025-01-10T15:05:00Z,conn6,prov-sharepoint,SharePoint
+E011,Eat,1,"[place-home-01]",2025-01-11T18:00:00Z,2025-01-11T18:45:00Z,conn7,prov-apple,Apple Health
+E012,Sleep,1,"[device-bed-monitor-01]",2025-01-12T23:00:00Z,2025-01-13T06:00:00Z,conn8,prov-fitbit,Sleep Tracker
+E013,Create,1,"[doc-science-project-tina]",2025-01-13T17:00:00Z,2025-01-13T18:00:00Z,conn9,prov-notes,Notes app
+E014,Call,1,"[mary-smith]",2025-01-14T10:30:00Z,2025-01-14T10:50:00Z,conn10,prov-att,Mobile Call Log
+E015,Comment,1,"[group-soccer-01,message-03]",2025-01-14T18:00:00Z,2025-01-14T18:01:00Z,conn11,prov-whatsapp,WhatsApp
+E016,Visit,1,"[place-school-01]",2025-01-15T17:30:00Z,2025-01-15T19:00:00Z,conn12,prov-checkin,Check-in app
+E017,Edit,1,"[calendar-family-chores]",2025-01-16T08:00:00Z,2025-01-16T08:10:00Z,conn13,prov-google,Google Calendar
+E018,Message,1,"[mary-smith]",2025-01-17T15:00:00Z,2025-01-17T15:01:00Z,conn14,prov-apple,iMessage
+E019,View,1,"[album-family-photos]",2025-01-17T20:00:00Z,2025-01-17T20:15:00Z,conn15,prov-google,Smart Display

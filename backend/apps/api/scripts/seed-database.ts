@@ -41,11 +41,12 @@ function validateCsvRecords(records: AnyRecord[], requiredFields: string[], file
 async function seedEvents(filePath: string) {
   logger.info(`Seeding events from ${filePath}`);
   const records: AnyRecord[] = readCsv(filePath);
-  validateCsvRecords(records, ['type', 'user_id', 'created'], 'js1-events.csv');
+  validateCsvRecords(records, ['id', 'type', 'user_id', 'created'], 'js1-events.csv');
   const batchSize = 100;
   for (let i = 0; i < records.length; i += batchSize) {
     const batch = records.slice(i, i + batchSize);
     const transformedBatch = batch.map((record: AnyRecord) => ({
+      id: record.id || null,
       type: record.type || null,
       user_id: record.user_id || null,
       related_objects: record.related_objects ? JSON.parse(record.related_objects.replace(/'/g, '"')) : null,
@@ -53,10 +54,10 @@ async function seedEvents(filePath: string) {
       updated: record.updated ? new Date(record.updated) : null,
       connection: record.connection || null,
       provider: record.provider || null,
-      data_source: record.data_source || null
+      data_source: record.data_source || null,
     }));
-    await db('Event').insert(transformedBatch).onConflict().ignore();
-    logger.info(`Inserted ${batch.length} events (batch ${i/batchSize + 1})`);
+    await db('Event').insert(transformedBatch).onConflict('id').ignore();
+    logger.info(`Inserted ${batch.length} events (batch ${i / batchSize + 1})`);
   }
 }
 
@@ -86,10 +87,10 @@ async function seedPeople(filePath: string) {
       created: record.created ? new Date(record.created) : null,
       external_avatar_url: record.external_avatar_url || null,
       hidden: record.hidden === 'TRUE' || record.hidden === 'true',
-      tags: record.tags ? JSON.parse(record.tags.replace(/'/g, '"')) : null
+      tags: record.tags ? JSON.parse(record.tags.replace(/'/g, '"')) : null,
     }));
     await db('Person').insert(transformedBatch).onConflict('id').ignore();
-    logger.info(`Inserted ${batch.length} people (batch ${i/batchSize + 1})`);
+    logger.info(`Inserted ${batch.length} people (batch ${i / batchSize + 1})`);
   }
 }
 
