@@ -1,7 +1,7 @@
 id,tags,connection,type,name,description,Dimensions (LxWxH),Weight (kg)
-,"work, acme, engineering, project",USER_JOHN_SMITH,Digital Device,Work Laptop (Dell Precision 7560),"Primary laptop for civil engineering tasks, CAD software, project plans.",36cm x 24cm x 2.5cm,2.5kg
-,"work, acme, safety, site",USER_JOHN_SMITH,Safety Gear,Hard Hat (Yellow),Standard safety hard hat for construction site visits.,30cm x 22cm x 16cm,0.4kg
-,"work, acme, safety, site",USER_JOHN_SMITH,Safety Gear,Safety Vest (Hi-Vis Orange),High-visibility vest for site work., (foldable),0.2kg
+T001,"work, acme, engineering, project",USER_JOHN_SMITH,Digital Device,Work Laptop (Dell Precision 7560),"Primary laptop for civil engineering tasks, CAD software, project plans.",36cm x 24cm x 2.5cm,2.5kg
+T002,"work, acme, safety, site",USER_JOHN_SMITH,Safety Gear,Hard Hat (Yellow),Standard safety hard hat for construction site visits.,30cm x 22cm x 16cm,0.4kg
+T003,"work, acme, safety, site",USER_JOHN_SMITH,Safety Gear,Safety Vest (Hi-Vis Orange),High-visibility vest for site work., (foldable),0.2kg
 ,"work, acme, communication",USER_JOHN_SMITH,Digital Device,Company Smartphone (iPhone 15),"For work calls, emails, and site coordination.",14.7cm x 7.1cm x 0.8cm,0.19kg
 ,"work, acme, site, engineering",USER_JOHN_SMITH,Digital Device,"Tablet for Site Visits (iPad Pro 11"")",Used for accessing blueprints and notes on site.,24.8cm x 17.9cm x 0.6cm,0.47kg
 ,"work, acme, inspection, tool",PROJECT_HIGHWAY_01,Tool,Bridge Inspection Drone (DJI Mavic 3E),Drone for visual inspections of bridge structures.,34.7cm x 28.3cm x 10.7cm,0.95kg
@@ -249,3 +249,6 @@ id,tags,connection,type,name,description,Dimensions (LxWxH),Weight (kg)
 ,"Travel, Gear",null,Infrastructure,Cooler,Used for picnics and road trips,60 x 40 x 45,5.5
 ,"Music, Accessories",null,Media,Audio Cables,Studio-grade cables for mixing,15 x 15 x 3,0.7
 ,"Music, Decor",null,Infrastructure,Guitar Wall Mount,Displays electric guitar in office,10 x 5 x 20,1
+T001,conn1,Apparel,"[\"work\"]"
+T002,conn2,Electronics,"[\"home\"]"
+T003,conn3,Book,"[\"school\"]"

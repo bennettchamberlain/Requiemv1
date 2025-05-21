@@ -1,4 +1,8 @@
 id,connection_id,estimated,geo_format,geolocation,identifier,provider_id,tracked,updated,uploaded,user_id,parent_place,location_boundary,tags,type
+P001,conn1,FALSE,point,"{\"lat\":34.01,\"lng\":-118.49}",place-worksite-01,prov-acme,TRUE,2025-01-05T09:30:00Z,FALSE,1,,"{}","[\"work\"]",worksite
+P002,conn1,FALSE,point,"{\"lat\":34.02,\"lng\":-118.50}",place-office-01,prov-acme,TRUE,2025-01-08T17:00:00Z,FALSE,1,,"{}","[\"office\"]",office
+P003,conn2,FALSE,point,"{\"lat\":34.03,\"lng\":-118.51}",place-home-01,prov-apple,TRUE,2025-01-11T18:45:00Z,FALSE,1,,"{}","[\"home\"]",home
+P004,conn3,FALSE,point,"{\"lat\":34.04,\"lng\":-118.52}",place-school-01,prov-checkin,TRUE,2025-01-15T19:00:00Z,FALSE,1,,"{}","[\"school\"]",school
 ,,TRUE,point,"{'lat': 34.007935, 'lon': -118.498326, 'alt': 7.78}",place_1,14625fbc-0a0c-4514-ba6b-b21c9e34cbe3,FALSE,2025-03-04 18:29:10,FALSE,,,[],['work'],Home
 ,,FALSE,radius,"{'lat': 34.041578, 'lon': -118.499865, 'alt': 13.09}",place_2,993061c0-a2cd-4970-bb9c-69e33517c4fc,TRUE,2025-02-10 0:31:45,FALSE,,,[],['family'],Gym
 ,,FALSE,point,"{'lat': 34.005222, 'lon': -118.46844, 'alt': 19.49}",place_3,68fc3ac7-9811-4b5e-a024-5b003b7a73d8,FALSE,2025-03-25 2:11:00,TRUE,,,[],['fitness'],Clinic

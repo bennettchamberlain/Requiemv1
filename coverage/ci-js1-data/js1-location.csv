@@ -1,88 +1,91 @@
-id,connection_id,datetime,estimated,geo_format,geolocation,identifier,provider_id,tracked,updated,uploaded,user_id,tags
-,,2025-01-21 19:31:41,FALSE,radius,"{'lat': 33.9991, 'lon': -118.457745, 'alt': 30.47, 'orientation': 58}",loc_1,user_defined_manual,FALSE,2025-01-19 23:08:46,TRUE,,['work']
-,,2025-03-23 7:22:31,FALSE,radius,"{'lat': 34.012121, 'lon': -118.463221, 'alt': 16.03, 'orientation': 42}",loc_2,google_places_api,FALSE,2025-01-05 18:21:31,TRUE,,['leisure']
-,,2025-02-21 19:07:04,FALSE,point,"{'lat': 34.046203, 'lon': -118.489596, 'alt': 21.52, 'orientation': 233}",loc_3,osm_import,FALSE,2025-03-04 5:12:46,FALSE,,['work']
-,,2025-01-27 3:00:56,TRUE,triangle,"{'lat': 34.007614, 'lon': -118.503148, 'alt': 5.1, 'orientation': 343}",loc_4,user_defined_manual,TRUE,2025-02-18 17:40:01,FALSE,,['running']
-,,2025-03-16 3:45:06,FALSE,point,"{'lat': 34.019642, 'lon': -118.491633, 'alt': 11.6, 'orientation': 55}",loc_5,user_defined_manual,FALSE,2025-02-08 18:07:32,FALSE,,['school']
-,,2025-03-27 17:10:42,TRUE,triangle,"{'lat': 33.993633, 'lon': -118.472113, 'alt': 46.83, 'orientation': 218}",loc_6,google_places_api,FALSE,2025-02-28 22:55:04,TRUE,,['work']
-,,2025-01-07 2:41:20,TRUE,point,"{'lat': 34.021919, 'lon': -118.480501, 'alt': 23.49, 'orientation': 255}",loc_7,user_defined_manual,FALSE,2025-01-12 21:11:32,FALSE,,['commute']
-,,2025-03-02 17:43:55,FALSE,radius,"{'lat': 34.017151, 'lon': -118.505544, 'alt': 45.21, 'orientation': 288}",loc_8,osm_import,TRUE,2025-03-24 0:44:15,TRUE,,['work']
-,,2025-03-21 5:05:17,TRUE,point,"{'lat': 34.003319, 'lon': -118.500813, 'alt': 14.68, 'orientation': 196}",loc_9,user_defined_manual,FALSE,2025-03-25 19:49:40,FALSE,,['school']
-,,2025-03-21 1:31:56,FALSE,triangle,"{'lat': 34.0388, 'lon': -118.476797, 'alt': 46.84, 'orientation': 207}",loc_10,event_provided,TRUE,2025-03-10 21:40:00,FALSE,,['work']
-,,2025-01-29 15:51:47,TRUE,triangle,"{'lat': 34.023378, 'lon': -118.46757, 'alt': 8.12, 'orientation': 92}",loc_11,booking_com,TRUE,2025-03-09 21:23:13,FALSE,,['leisure']
-,,2025-01-04 7:23:46,TRUE,triangle,"{'lat': 34.015747, 'lon': -118.456718, 'alt': 14.62, 'orientation': 36}",loc_12,user_defined_manual,TRUE,2025-02-05 23:45:56,FALSE,,['leisure']
-,,2025-01-15 19:13:24,TRUE,triangle,"{'lat': 34.002804, 'lon': -118.481791, 'alt': 46.53, 'orientation': 170}",loc_13,osm_import,TRUE,2025-02-02 2:13:28,TRUE,,['work']
-,,2025-01-24 3:22:42,TRUE,triangle,"{'lat': 34.001273, 'lon': -118.476453, 'alt': 46.76, 'orientation': 187}",loc_14,user_defined_manual,TRUE,2025-03-23 17:52:59,TRUE,,['school']
-,,2025-01-16 10:55:33,FALSE,point,"{'lat': 34.035707, 'lon': -118.462315, 'alt': 25.29, 'orientation': 71}",loc_15,google_places_api,FALSE,2025-03-04 17:30:15,TRUE,,['running']
-,,2025-01-01 3:02:02,TRUE,triangle,"{'lat': 34.034361, 'lon': -118.467625, 'alt': 20.53, 'orientation': 357}",loc_16,osm_import,FALSE,2025-03-02 8:03:13,FALSE,,['commute']
-,,2025-02-08 21:12:37,FALSE,radius,"{'lat': 34.044378, 'lon': -118.48484, 'alt': 38.09, 'orientation': 68}",loc_17,user_defined_manual,FALSE,2025-01-21 8:42:48,FALSE,,['leisure']
-,,2025-02-21 19:59:40,TRUE,triangle,"{'lat': 34.016418, 'lon': -118.49271, 'alt': 45.26, 'orientation': 175}",loc_18,user_defined_manual,FALSE,2025-03-12 11:24:44,TRUE,,['school']
-,,2025-01-14 4:38:43,FALSE,radius,"{'lat': 33.998211, 'lon': -118.486452, 'alt': 2.07, 'orientation': 63}",loc_19,google_places_api,FALSE,2025-03-12 18:56:38,FALSE,,['leisure']
-,,2025-02-27 4:47:05,TRUE,triangle,"{'lat': 34.042862, 'lon': -118.508513, 'alt': 34.23, 'orientation': 177}",loc_20,user_defined_manual,FALSE,2025-02-27 19:50:24,FALSE,,['commute']
-,,2025-03-09 5:40:31,FALSE,triangle,"{'lat': 33.998577, 'lon': -118.464554, 'alt': 2.48, 'orientation': 97}",loc_21,osm_import,TRUE,2025-02-11 7:24:28,TRUE,,['commute']
-,,2025-02-07 13:06:36,TRUE,point,"{'lat': 34.043595, 'lon': -118.478236, 'alt': 49.28, 'orientation': 104}",loc_22,user_defined_manual,TRUE,2025-03-22 12:37:48,TRUE,,['commute']
-,,2025-02-21 14:20:21,FALSE,point,"{'lat': 34.014731, 'lon': -118.461078, 'alt': 20.23, 'orientation': 37}",loc_23,event_provided,TRUE,2025-02-09 15:32:47,FALSE,,['school']
-,,2025-01-18 9:30:09,TRUE,triangle,"{'lat': 34.005345, 'lon': -118.475703, 'alt': 48.75, 'orientation': 237}",loc_24,booking_com,FALSE,2025-01-14 19:37:41,TRUE,,['school']
-,,2025-02-16 7:20:02,FALSE,triangle,"{'lat': 34.034477, 'lon': -118.479834, 'alt': 18.48, 'orientation': 280}",loc_25,user_defined_manual,TRUE,2025-01-16 20:43:31,TRUE,,['leisure']
-,,2025-02-06 0:27:30,FALSE,point,"{'lat': 34.022411, 'lon': -118.452133, 'alt': 28.22, 'orientation': 282}",loc_26,osm_import,TRUE,2025-02-19 19:08:00,TRUE,,['leisure']
-,,2025-02-27 8:15:19,TRUE,radius,"{'lat': 34.017858, 'lon': -118.504763, 'alt': 45.88, 'orientation': 331}",loc_27,user_defined_manual,TRUE,2025-01-22 21:26:30,FALSE,,['leisure']
-,,2025-03-17 21:01:46,TRUE,radius,"{'lat': 34.031929, 'lon': -118.504273, 'alt': 45.14, 'orientation': 125}",loc_28,google_places_api,TRUE,2025-01-27 20:56:33,TRUE,,['work']
-,,2025-03-14 5:45:13,FALSE,triangle,"{'lat': 34.021109, 'lon': -118.49815, 'alt': 43.01, 'orientation': 353}",loc_29,osm_import,TRUE,2025-03-11 11:08:46,FALSE,,['work']
-,,2025-03-23 7:10:46,TRUE,triangle,"{'lat': 34.000545, 'lon': -118.466833, 'alt': 18.66, 'orientation': 198}",loc_30,user_defined_manual,TRUE,2025-03-04 11:08:28,TRUE,,['running']
-,,2025-02-04 2:12:59,TRUE,triangle,"{'lat': 34.017947, 'lon': -118.466019, 'alt': 13.58, 'orientation': 162}",loc_31,user_defined_manual,TRUE,2025-01-31 4:58:09,TRUE,,['running']
-,,2025-01-15 8:43:45,FALSE,radius,"{'lat': 34.02569, 'lon': -118.489375, 'alt': 9.3, 'orientation': 273}",loc_32,google_places_api,FALSE,2025-03-06 13:30:30,TRUE,,['running']
-,,2025-02-12 6:16:52,FALSE,triangle,"{'lat': 34.042423, 'lon': -118.469741, 'alt': 27.61, 'orientation': 5}",loc_33,user_defined_manual,TRUE,2025-03-09 15:22:07,TRUE,,['work']
-,,2025-03-19 18:50:27,FALSE,triangle,"{'lat': 34.012672, 'lon': -118.488169, 'alt': 16.24, 'orientation': 327}",loc_34,osm_import,FALSE,2025-01-29 22:53:10,TRUE,,['school']
-,,2025-02-06 1:21:40,TRUE,triangle,"{'lat': 34.049372, 'lon': -118.484044, 'alt': 7.2, 'orientation': 163}",loc_35,user_defined_manual,FALSE,2025-03-23 18:43:32,FALSE,,['running']
-,,2025-01-12 10:00:23,FALSE,radius,"{'lat': 34.016317, 'lon': -118.472731, 'alt': 8.61, 'orientation': 207}",loc_36,event_provided,TRUE,2025-01-11 1:06:46,FALSE,,['running']
-,,2025-02-04 20:39:26,FALSE,radius,"{'lat': 33.991232, 'lon': -118.492218, 'alt': 3.58, 'orientation': 306}",loc_37,booking_com,TRUE,2025-03-24 6:52:10,TRUE,,['school']
-,,2025-03-07 19:08:44,TRUE,radius,"{'lat': 34.025109, 'lon': -118.488897, 'alt': 40.64, 'orientation': 41}",loc_38,user_defined_manual,TRUE,2025-02-12 6:39:50,TRUE,,['commute']
-,,2025-03-06 17:57:32,FALSE,radius,"{'lat': 34.048034, 'lon': -118.454808, 'alt': 6.87, 'orientation': 101}",loc_39,osm_import,FALSE,2025-01-07 18:09:19,TRUE,,['school']
-,,2025-03-01 16:29:09,FALSE,point,"{'lat': 34.02262, 'lon': -118.487216, 'alt': 17.21, 'orientation': 47}",loc_40,user_defined_manual,FALSE,2025-01-25 16:08:41,TRUE,,['running']
-,,2025-01-02 2:38:34,TRUE,triangle,"{'lat': 34.009295, 'lon': -118.50626, 'alt': 41.4, 'orientation': 124}",loc_41,google_places_api,TRUE,2025-02-25 8:24:07,FALSE,,['commute']
-,,2025-03-08 3:18:36,TRUE,point,"{'lat': 34.047748, 'lon': -118.454466, 'alt': 38.79, 'orientation': 122}",loc_42,osm_import,TRUE,2025-03-09 20:39:55,FALSE,,['work']
-,,2025-01-19 18:21:37,TRUE,radius,"{'lat': 34.020877, 'lon': -118.471363, 'alt': 8.27, 'orientation': 202}",loc_43,user_defined_manual,TRUE,2025-01-17 11:03:50,FALSE,,['leisure']
-,,2025-02-15 4:40:06,FALSE,radius,"{'lat': 34.00363, 'lon': -118.503868, 'alt': 39.6, 'orientation': 356}",loc_44,user_defined_manual,TRUE,2025-02-11 4:11:44,FALSE,,['school']
-,,2025-03-28 3:51:03,TRUE,triangle,"{'lat': 34.028133, 'lon': -118.482722, 'alt': 49.35, 'orientation': 288}",loc_45,google_places_api,TRUE,2025-02-27 1:32:02,FALSE,,['running']
-,,2025-03-02 23:06:07,TRUE,triangle,"{'lat': 33.996004, 'lon': -118.476482, 'alt': 1.96, 'orientation': 232}",loc_46,user_defined_manual,FALSE,2025-02-06 21:44:52,TRUE,,['running']
-,,2025-03-09 23:43:22,FALSE,triangle,"{'lat': 34.046828, 'lon': -118.463996, 'alt': 8.84, 'orientation': 221}",loc_47,osm_import,FALSE,2025-01-13 22:15:00,FALSE,,['school']
-,,2025-02-21 17:31:09,FALSE,radius,"{'lat': 34.018819, 'lon': -118.495946, 'alt': 43.48, 'orientation': 271}",loc_48,user_defined_manual,TRUE,2025-01-19 0:19:05,TRUE,,['school']
-,,2025-03-14 10:07:27,TRUE,triangle,"{'lat': 34.035535, 'lon': -118.493473, 'alt': 49.98, 'orientation': 170}",loc_49,event_provided,TRUE,2025-03-23 10:40:47,TRUE,,['school']
-,,2025-03-21 12:52:21,TRUE,point,"{'lat': 34.017277, 'lon': -118.507225, 'alt': 28.57, 'orientation': 175}",loc_50,booking_com,FALSE,2025-02-24 17:30:28,FALSE,,['leisure']
-,,2025-01-02T07:05:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4975, 34.0105, 3], ""orientation"": 90}",Morning Run - Ocean View Park,wearable_gps_fitbit,TRUE,2025-01-02T07:05:00Z,FALSE,,"[""health"", ""run"", ""fitness_goal""]"
-,,2025-01-02T09:15:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4801, 34.0301, 16]}","Work - Acme HQ, Office Desk",phone_gps_android,TRUE,2025-01-02T09:15:00Z,FALSE,,"[""work"", ""office"", ""engineering""]"
-,,2025-01-03T20:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Listening to Funk - Home Music Nook,spotify_playback_api,TRUE,2025-01-03T20:30:00Z,FALSE,,"[""music"", ""spotify"", ""funk"", ""home""]"
-,,2025-01-04T21:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Composing Lofi EDM - Home Music Nook,manual_log,TRUE,2025-01-04T21:00:00Z,TRUE,,"[""music"", ""creation"", ""ableton"", ""lofi""]"
-,,2025-01-06T08:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4851, 34.0251, 12]}",School Drop-off - St. Michael's,phone_gps_android,TRUE,2025-01-06T08:30:00Z,FALSE,,"[""family"", ""school"", ""kids""]"
-,,2025-01-10T14:30:00Z,TRUE,point,"{""type"":""Point"", ""coordinates"":[-118.5102, 34.0401, 20]}",Site Visit - Hwy Overpass Project A,phone_gps_android,TRUE,2025-01-10T14:30:00Z,FALSE,,"[""work"", ""site_visit"", ""civil_eng""]"
-,,2025-01-12T15:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.5052, 34.0181, 4]}",Mike's Soccer Practice - Westside Park,phone_gps_android,TRUE,2025-01-12T15:30:00Z,FALSE,,"[""family"", ""kids"", ""sports"", ""soccer""]"
-,,2025-01-13T16:45:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4880, 34.0280, 9]}",Tina's Ballet Class - Academy,phone_gps_android,TRUE,2025-01-13T16:45:00Z,FALSE,,"[""family"", ""kids"", ""arts"", ""ballet""]"
-,,2025-01-18T19:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Family Game Night - Mario Kart (Home),manual_log,TRUE,2025-01-18T19:00:00Z,TRUE,,"[""family"", ""gaming"", ""nintendo"", ""home""]"
-,,2025-01-20T12:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4800, 34.0300, 16], ""alt"": 16}",Lunch Break - Listening to Classic Rock,youtube_api,TRUE,2025-01-20T12:30:00Z,FALSE,,"[""music"", ""youtube"", ""classic_rock"", ""work""]"
-,,2025-02-02T07:10:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4978, 34.0102, 3]}",Morning Run - Hit 10k Steps,wearable_gps_fitbit,TRUE,2025-02-02T07:10:00Z,FALSE,,"[""health"", ""run"", ""fitbit"", ""milestone""]"
-,,2025-02-03T18:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4951, 34.0151, 8]}",Gym Session - Strength Training,phone_gps_android,TRUE,2025-02-03T18:30:00Z,FALSE,,"[""health"", ""gym"", ""workout""]"
-,,2025-02-05T10:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4803, 34.0302, 17]}",Work Meeting - Geotechnical Team,phone_gps_android,TRUE,2025-02-05T10:00:00Z,FALSE,,"[""work"", ""meeting"", ""project_collab""]"
-,,2025-02-08T16:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Discovering new EDM on SoundCloud (Home),soundcloud_api,TRUE,2025-02-08T16:00:00Z,FALSE,,"[""music"", ""soundcloud"", ""edm"", ""home""]"
-,,2025-02-11T19:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4850, 34.0250, 12]}",Parent-Teacher Conference - School,phone_gps_android,TRUE,2025-02-11T19:00:00Z,FALSE,,"[""family"", ""school"", ""parenting""]"
-,,2025-02-15T11:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.5100, 34.0400, 20]}",Site Inspection - Hwy Overpass,phone_gps_android,TRUE,2025-02-15T11:00:00Z,FALSE,,"[""work"", ""inspection"", ""field_work""]"
-,,2025-02-17T14:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4700, 34.0350, 10]}",Studio Time - Mixing Tracks,phone_gps_android,TRUE,2025-02-17T14:00:00Z,FALSE,,"[""music"", ""studio"", ""mixing"", ""lofi""]"
-,,2025-02-20T22:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Late Night Lyrics - Home Music Nook,manual_log,TRUE,2025-02-20T22:30:00Z,TRUE,,"[""music"", ""writing"", ""home""]"
-,,2025-02-25T18:45:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4950, 34.0150, 8]}",Gym - Strength & Cardio,wearable_gps_fitbit,TRUE,2025-02-25T18:45:00Z,FALSE,,"[""health"", ""gym"", ""fitness""]"
-,,2025-03-01T10:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4800, 34.0300, 16]}",Mentoring Junior Engineer - Acme HQ,phone_gps_android,TRUE,2025-03-01T10:00:00Z,FALSE,,"[""work"", ""mentoring"", ""office""]"
-,,2025-03-03T06:50:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4985, 34.0095, 3], ""orientation"": 180}",Longer Morning Run - Park Loop,wearable_gps_fitbit,TRUE,2025-03-03T06:50:00Z,FALSE,,"[""health"", ""run"", ""endurance""]"
-,,2025-03-05T14:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.2437, 34.0522, 50]}",Arrived at GreenBuild Conference LA,phone_gps_android,TRUE,2025-03-05T14:00:00Z,FALSE,,"[""work"", ""conference"", ""travel""]"
-,,2025-03-06T10:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.2440, 34.0525, 51]}",Conference Session: Green Materials,manual_log,TRUE,2025-03-06T10:30:00Z,TRUE,,"[""work"", ""learning"", ""conference""]"
-,,2025-03-08T11:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4852, 34.0252, 12]}",Family Day Event - St. Michael's School,phone_gps_android,TRUE,2025-03-08T11:00:00Z,FALSE,,"[""family"", ""school"", ""event""]"
-,,2025-03-10T20:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Rehearsing for Open Mic (Home),spotify_playback_api,TRUE,2025-03-10T20:00:00Z,FALSE,,"[""music"", ""rehearsal"", ""home"", ""rock""]"
-,,2025-03-15T20:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4750, 34.0320, 7]}",Open Mic Performance - The Rhythm Room,phone_gps_android,TRUE,2025-03-15T20:30:00Z,FALSE,,"[""music"", ""performance"", ""live""]"
-,,2025-03-22T16:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-116.5453, 33.8303, 146]}",Arrived at Palm Springs Hotel (Mary's Bday),phone_gps_android,TRUE,2025-03-22T16:00:00Z,FALSE,,"[""family"", ""vacation"", ""birthday""]"
-,,2025-03-23T10:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-116.5450, 33.8300, 147]}",Poolside at Palm Springs Hotel,wearable_gps_fitbit,TRUE,2025-03-23T10:00:00Z,FALSE,,"[""family"", ""leisure"", ""vacation""]"
-,,2025-03-25T19:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Playing Ratchet & Clank on PS5 (Home),manual_log,TRUE,2025-03-25T19:30:00Z,TRUE,,"[""gaming"", ""ps5"", ""home"", ""leisure""]"
-,,2025-03-28T07:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4980, 34.0100, 3]}","Fast Run - Ocean View Park, tracking HR",wearable_gps_fitbit,TRUE,2025-03-28T07:00:00Z,FALSE,,"[""health"", ""run"", ""performance_track""]"
-,,2025-01-15T11:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4895, 34.0210, 7]}",Grocery Shopping - Local Market,phone_gps_android,TRUE,2025-01-15T11:00:00Z,FALSE,,"[""errands"", ""shopping"", ""home_supply""]"
-,,2025-02-10T08:15:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4850, 34.0275, 2]}",Driving - Listening to R&B playlist,spotify_playback_api,TRUE,2025-02-10T08:15:00Z,FALSE,,"[""music"", ""spotify"", ""rnb"", ""driving""]"
-,,2025-02-18T13:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4810, 34.0290, 10]}",Lunch with Colleague - Near Office,phone_gps_android,TRUE,2025-02-18T13:00:00Z,FALSE,,"[""work"", ""social"", ""lunch""]"
-,,2025-03-12T17:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Kids playing Minecraft on PC (Home),manual_log,TRUE,2025-03-12T17:00:00Z,TRUE,,"[""family"", ""gaming"", ""pc"", ""kids"", ""home""]"
-,,2025-03-18T21:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Arranging tracks in Logic Pro (Home),manual_log,TRUE,2025-03-18T21:30:00Z,TRUE,,"[""music"", ""creation"", ""logicpro"", ""home""]"
-,,2025-01-25T09:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4915, 34.0225, 8]}",Doctor's Visit - Routine Check-up,phone_gps_android,TRUE,2025-01-25T09:00:00Z,FALSE,,"[""health"", ""medical"", ""checkup""]"
-,,2025-03-30T14:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4805, 34.0305, 16]}",Finalizing Project Design at Office,phone_gps_android,TRUE,2025-03-30T14:00:00Z,FALSE,,"[""work"", ""project"", ""design"", ""office""]"
+id,user_id,connection_id,datetime,estimated,geo_format,geolocation,identifier,provider_id,tracked,updated,uploaded,tags
+L001,1,conn1,2025-01-05T09:00:00Z,FALSE,point,"{\"lat\":34.01,\"lng\":-118.49}",location-12,prov-acme,TRUE,2025-01-05T09:30:00Z,FALSE,"[\"work\"]"
+L002,1,conn2,2025-01-07T08:00:00Z,FALSE,point,"{\"lat\":34.02,\"lng\":-118.50}",location-commute-01,prov-gps,TRUE,2025-01-07T08:45:00Z,FALSE,"[\"commute\"]"
+L003,1,conn3,2025-01-11T18:00:00Z,FALSE,point,"{\"lat\":34.03,\"lng\":-118.51}",place-home-01,prov-apple,TRUE,2025-01-11T18:45:00Z,FALSE,"[\"home\"]"
+L004,1,,2025-01-21 19:31:41,FALSE,radius,"{'lat': 33.9991, 'lon': -118.457745, 'alt': 30.47, 'orientation': 58}",loc_1,user_defined_manual,FALSE,2025-01-19 23:08:46,TRUE,"['work']"
+L005,1,,2025-03-23 7:22:31,FALSE,radius,"{'lat': 34.012121, 'lon': -118.463221, 'alt': 16.03, 'orientation': 42}",loc_2,google_places_api,FALSE,2025-01-05 18:21:31,TRUE,"['leisure']"
+L006,1,,2025-02-21 19:07:04,FALSE,point,"{'lat': 34.046203, 'lon': -118.489596, 'alt': 21.52, 'orientation': 233}",loc_3,osm_import,FALSE,2025-03-04 5:12:46,FALSE,"['work']"
+L007,1,,2025-01-27 3:00:56,TRUE,triangle,"{'lat': 34.007614, 'lon': -118.503148, 'alt': 5.1, 'orientation': 343}",loc_4,user_defined_manual,TRUE,2025-02-18 17:40:01,FALSE,"['running']"
+L008,1,,2025-03-16 3:45:06,FALSE,point,"{'lat': 34.019642, 'lon': -118.491633, 'alt': 11.6, 'orientation': 55}",loc_5,user_defined_manual,FALSE,2025-02-08 18:07:32,FALSE,"['school']"
+L009,1,,2025-03-27 17:10:42,TRUE,triangle,"{'lat': 33.993633, 'lon': -118.472113, 'alt': 46.83, 'orientation': 218}",loc_6,google_places_api,FALSE,2025-02-28 22:55:04,TRUE,"['work']"
+L010,1,,2025-01-07 2:41:20,TRUE,point,"{'lat': 34.021919, 'lon': -118.480501, 'alt': 23.49, 'orientation': 255}",loc_7,user_defined_manual,FALSE,2025-01-12 21:11:32,FALSE,"['commute']"
+L011,1,,2025-03-02 17:43:55,FALSE,radius,"{'lat': 34.017151, 'lon': -118.505544, 'alt': 45.21, 'orientation': 288}",loc_8,osm_import,TRUE,2025-03-24 0:44:15,TRUE,"['work']"
+L012,1,,2025-03-21 5:05:17,TRUE,point,"{'lat': 34.003319, 'lon': -118.500813, 'alt': 14.68, 'orientation': 196}",loc_9,user_defined_manual,FALSE,2025-03-25 19:49:40,FALSE,"['school']"
+L013,1,,2025-03-21 1:31:56,FALSE,triangle,"{'lat': 34.0388, 'lon': -118.476797, 'alt': 46.84, 'orientation': 207}",loc_10,event_provided,TRUE,2025-03-10 21:40:00,FALSE,"['work']"
+L014,1,,2025-01-29 15:51:47,TRUE,triangle,"{'lat': 34.023378, 'lon': -118.46757, 'alt': 8.12, 'orientation': 92}",loc_11,booking_com,TRUE,2025-03-09 21:23:13,FALSE,"['leisure']"
+L015,1,,2025-01-04 7:23:46,TRUE,triangle,"{'lat': 34.015747, 'lon': -118.456718, 'alt': 14.62, 'orientation': 36}",loc_12,user_defined_manual,TRUE,2025-02-05 23:45:56,FALSE,"['leisure']"
+L016,1,,2025-01-15 19:13:24,TRUE,triangle,"{'lat': 34.002804, 'lon': -118.481791, 'alt': 46.53, 'orientation': 170}",loc_13,osm_import,TRUE,2025-02-02 2:13:28,TRUE,"['work']"
+L017,1,,2025-01-24 3:22:42,TRUE,triangle,"{'lat': 34.001273, 'lon': -118.476453, 'alt': 46.76, 'orientation': 187}",loc_14,user_defined_manual,TRUE,2025-03-23 17:52:59,TRUE,"['school']"
+L018,1,,2025-01-16 10:55:33,FALSE,point,"{'lat': 34.035707, 'lon': -118.462315, 'alt': 25.29, 'orientation': 71}",loc_15,google_places_api,FALSE,2025-03-04 17:30:15,TRUE,"['running']"
+L019,1,,2025-01-01 3:02:02,TRUE,triangle,"{'lat': 34.034361, 'lon': -118.467625, 'alt': 20.53, 'orientation': 357}",loc_16,osm_import,FALSE,2025-03-02 8:03:13,FALSE,"['commute']"
+L020,1,,2025-02-08 21:12:37,FALSE,radius,"{'lat': 34.044378, 'lon': -118.48484, 'alt': 38.09, 'orientation': 68}",loc_17,user_defined_manual,FALSE,2025-01-21 8:42:48,FALSE,"['leisure']"
+L021,1,,2025-02-21 19:59:40,TRUE,triangle,"{'lat': 34.016418, 'lon': -118.49271, 'alt': 45.26, 'orientation': 175}",loc_18,user_defined_manual,FALSE,2025-03-12 11:24:44,TRUE,"['school']"
+L022,1,,2025-01-14 4:38:43,FALSE,radius,"{'lat': 33.998211, 'lon': -118.486452, 'alt': 2.07, 'orientation': 63}",loc_19,google_places_api,FALSE,2025-03-12 18:56:38,FALSE,"['leisure']"
+L023,1,,2025-02-27 4:47:05,TRUE,triangle,"{'lat': 34.042862, 'lon': -118.508513, 'alt': 34.23, 'orientation': 177}",loc_20,user_defined_manual,FALSE,2025-02-27 19:50:24,FALSE,"['commute']"
+L024,1,,2025-03-09 5:40:31,FALSE,triangle,"{'lat': 33.998577, 'lon': -118.464554, 'alt': 2.48, 'orientation': 97}",loc_21,osm_import,TRUE,2025-02-11 7:24:28,TRUE,"['commute']"
+L025,1,,2025-02-07 13:06:36,TRUE,point,"{'lat': 34.043595, 'lon': -118.478236, 'alt': 49.28, 'orientation': 104}",loc_22,user_defined_manual,TRUE,2025-03-22 12:37:48,TRUE,"['commute']"
+L026,1,,2025-02-21 14:20:21,FALSE,point,"{'lat': 34.014731, 'lon': -118.461078, 'alt': 20.23, 'orientation': 37}",loc_23,event_provided,TRUE,2025-02-09 15:32:47,FALSE,"['school']"
+L027,1,,2025-01-18 9:30:09,TRUE,triangle,"{'lat': 34.005345, 'lon': -118.475703, 'alt': 48.75, 'orientation': 237}",loc_24,booking_com,FALSE,2025-01-14 19:37:41,TRUE,"['school']"
+L028,1,,2025-02-16 7:20:02,FALSE,triangle,"{'lat': 34.034477, 'lon': -118.479834, 'alt': 18.48, 'orientation': 280}",loc_25,user_defined_manual,TRUE,2025-01-16 20:43:31,TRUE,"['leisure']"
+L029,1,,2025-02-06 0:27:30,FALSE,point,"{'lat': 34.022411, 'lon': -118.452133, 'alt': 28.22, 'orientation': 282}",loc_26,osm_import,TRUE,2025-02-19 19:08:00,TRUE,"['leisure']"
+L030,1,,2025-02-27 8:15:19,TRUE,radius,"{'lat': 34.017858, 'lon': -118.504763, 'alt': 45.88, 'orientation': 331}",loc_27,user_defined_manual,TRUE,2025-01-22 21:26:30,FALSE,"['leisure']"
+L031,1,,2025-03-17 21:01:46,TRUE,radius,"{'lat': 34.031929, 'lon': -118.504273, 'alt': 45.14, 'orientation': 125}",loc_28,google_places_api,TRUE,2025-01-27 20:56:33,TRUE,"['work']"
+L032,1,,2025-03-14 5:45:13,FALSE,triangle,"{'lat': 34.021109, 'lon': -118.49815, 'alt': 43.01, 'orientation': 353}",loc_29,osm_import,TRUE,2025-03-11 11:08:46,FALSE,"['work']"
+L033,1,,2025-03-23 7:10:46,TRUE,triangle,"{'lat': 34.000545, 'lon': -118.466833, 'alt': 18.66, 'orientation': 198}",loc_30,user_defined_manual,TRUE,2025-03-04 11:08:28,TRUE,"['running']"
+L034,1,,2025-02-04 2:12:59,TRUE,triangle,"{'lat': 34.017947, 'lon': -118.466019, 'alt': 13.58, 'orientation': 162}",loc_31,user_defined_manual,TRUE,2025-01-31 4:58:09,TRUE,"['running']"
+L035,1,,2025-01-15 8:43:45,FALSE,radius,"{'lat': 34.02569, 'lon': -118.489375, 'alt': 9.3, 'orientation': 273}",loc_32,google_places_api,FALSE,2025-03-06 13:30:30,TRUE,"['running']"
+L036,1,,2025-02-12 6:16:52,FALSE,triangle,"{'lat': 34.042423, 'lon': -118.469741, 'alt': 27.61, 'orientation': 5}",loc_33,user_defined_manual,TRUE,2025-03-09 15:22:07,TRUE,"['work']"
+L037,1,,2025-03-19 18:50:27,FALSE,triangle,"{'lat': 34.012672, 'lon': -118.488169, 'alt': 16.24, 'orientation': 327}",loc_34,osm_import,FALSE,2025-01-29 22:53:10,TRUE,"['school']"
+L038,1,,2025-02-06 1:21:40,TRUE,triangle,"{'lat': 34.049372, 'lon': -118.484044, 'alt': 7.2, 'orientation': 163}",loc_35,user_defined_manual,FALSE,2025-03-23 18:43:32,FALSE,"['running']"
+L039,1,,2025-01-12 10:00:23,FALSE,radius,"{'lat': 34.016317, 'lon': -118.472731, 'alt': 8.61, 'orientation': 207}",loc_36,event_provided,TRUE,2025-01-11 1:06:46,FALSE,"['running']"
+L040,1,,2025-02-04 20:39:26,FALSE,radius,"{'lat': 33.991232, 'lon': -118.492218, 'alt': 3.58, 'orientation': 306}",loc_37,booking_com,TRUE,2025-03-24 6:52:10,TRUE,"['school']"
+L041,1,,2025-03-07 19:08:44,TRUE,radius,"{'lat': 34.025109, 'lon': -118.488897, 'alt': 40.64, 'orientation': 41}",loc_38,user_defined_manual,TRUE,2025-02-12 6:39:50,TRUE,"['commute']"
+L042,1,,2025-03-06 17:57:32,FALSE,radius,"{'lat': 34.048034, 'lon': -118.454808, 'alt': 6.87, 'orientation': 101}",loc_39,osm_import,FALSE,2025-01-07 18:09:19,TRUE,"['school']"
+L043,1,,2025-03-01 16:29:09,FALSE,point,"{'lat': 34.02262, 'lon': -118.487216, 'alt': 17.21, 'orientation': 47}",loc_40,user_defined_manual,FALSE,2025-01-25 16:08:41,TRUE,"['running']"
+L044,1,,2025-01-02 2:38:34,TRUE,triangle,"{'lat': 34.009295, 'lon': -118.50626, 'alt': 41.4, 'orientation': 124}",loc_41,google_places_api,TRUE,2025-02-25 8:24:07,FALSE,"['commute']"
+L045,1,,2025-03-08 3:18:36,TRUE,point,"{'lat': 34.047748, 'lon': -118.454466, 'alt': 38.79, 'orientation': 122}",loc_42,osm_import,TRUE,2025-03-09 20:39:55,FALSE,"['work']"
+L046,1,,2025-01-19 18:21:37,TRUE,radius,"{'lat': 34.020877, 'lon': -118.471363, 'alt': 8.27, 'orientation': 202}",loc_43,user_defined_manual,TRUE,2025-01-17 11:03:50,FALSE,"['leisure']"
+L047,1,,2025-02-15 4:40:06,FALSE,radius,"{'lat': 34.00363, 'lon': -118.503868, 'alt': 39.6, 'orientation': 356}",loc_44,user_defined_manual,TRUE,2025-02-11 4:11:44,FALSE,"['school']"
+L048,1,,2025-03-28 3:51:03,TRUE,triangle,"{'lat': 34.028133, 'lon': -118.482722, 'alt': 49.35, 'orientation': 288}",loc_45,google_places_api,TRUE,2025-02-27 1:32:02,FALSE,"['running']"
+L049,1,,2025-03-02 23:06:07,TRUE,triangle,"{'lat': 33.996004, 'lon': -118.476482, 'alt': 1.96, 'orientation': 232}",loc_46,user_defined_manual,FALSE,2025-02-06 21:44:52,TRUE,"['running']"
+L050,1,,2025-03-09 23:43:22,FALSE,triangle,"{'lat': 34.046828, 'lon': -118.463996, 'alt': 8.84, 'orientation': 221}",loc_47,osm_import,FALSE,2025-01-13 22:15:00,FALSE,"['school']"
+L051,1,,2025-02-21 17:31:09,FALSE,radius,"{'lat': 34.018819, 'lon': -118.495946, 'alt': 43.48, 'orientation': 271}",loc_48,user_defined_manual,TRUE,2025-01-19 0:19:05,TRUE,"['school']"
+L052,1,,2025-03-14 10:07:27,TRUE,triangle,"{'lat': 34.035535, 'lon': -118.493473, 'alt': 49.98, 'orientation': 170}",loc_49,event_provided,TRUE,2025-03-23 10:40:47,TRUE,"['school']"
+L053,1,,2025-03-21 12:52:21,TRUE,point,"{'lat': 34.017277, 'lon': -118.507225, 'alt': 28.57, 'orientation': 175}",loc_50,booking_com,FALSE,2025-02-24 17:30:28,FALSE,"['leisure']"
+L054,1,,2025-01-02T07:05:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4975, 34.0105, 3], ""orientation"": 90}",Morning Run - Ocean View Park,wearable_gps_fitbit,TRUE,2025-01-02T07:05:00Z,FALSE,"[""health"", ""run"", ""fitness_goal""]"
+L055,1,,2025-01-02T09:15:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4801, 34.0301, 16]}","Work - Acme HQ, Office Desk",phone_gps_android,TRUE,2025-01-02T09:15:00Z,FALSE,"[""work"", ""office"", ""engineering""]"
+L056,1,,2025-01-03T20:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Listening to Funk - Home Music Nook,spotify_playback_api,TRUE,2025-01-03T20:30:00Z,FALSE,"[""music"", ""spotify"", ""funk"", ""home""]"
+L057,1,,2025-01-04T21:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Composing Lofi EDM - Home Music Nook,manual_log,TRUE,2025-01-04T21:00:00Z,TRUE,"[""music"", ""creation"", ""ableton"", ""lofi""]"
+L058,1,,2025-01-06T08:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4851, 34.0251, 12]}",School Drop-off - St. Michael's,phone_gps_android,TRUE,2025-01-06T08:30:00Z,FALSE,"[""family"", ""school"", ""kids""]"
+L059,1,,2025-01-10T14:30:00Z,TRUE,point,"{""type"":""Point"", ""coordinates"":[-118.5102, 34.0401, 20]}",Site Visit - Hwy Overpass Project A,phone_gps_android,TRUE,2025-01-10T14:30:00Z,FALSE,"[""work"", ""site_visit"", ""civil_eng""]"
+L060,1,,2025-01-12T15:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.5052, 34.0181, 4]}",Mike's Soccer Practice - Westside Park,phone_gps_android,TRUE,2025-01-12T15:30:00Z,FALSE,"[""family"", ""kids"", ""sports"", ""soccer""]"
+L061,1,,2025-01-13T16:45:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4880, 34.0280, 9]}",Tina's Ballet Class - Academy,phone_gps_android,TRUE,2025-01-13T16:45:00Z,FALSE,"[""family"", ""kids"", ""arts"", ""ballet""]"
+L062,1,,2025-01-18T19:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Family Game Night - Mario Kart (Home),manual_log,TRUE,2025-01-18T19:00:00Z,TRUE,"[""family"", ""gaming"", ""nintendo"", ""home""]"
+L063,1,,2025-01-20T12:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4800, 34.0300, 16], ""alt"": 16}",Lunch Break - Listening to Classic Rock,youtube_api,TRUE,2025-01-20T12:30:00Z,FALSE,"[""music"", ""youtube"", ""classic_rock"", ""work""]"
+L064,1,,2025-02-02T07:10:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4978, 34.0102, 3]}",Morning Run - Hit 10k Steps,wearable_gps_fitbit,TRUE,2025-02-02T07:10:00Z,FALSE,"[""health"", ""run"", ""fitbit"", ""milestone""]"
+L065,1,,2025-02-03T18:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4951, 34.0151, 8]}",Gym Session - Strength Training,phone_gps_android,TRUE,2025-02-03T18:30:00Z,FALSE,"[""health"", ""gym"", ""workout""]"
+L066,1,,2025-02-05T10:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4803, 34.0302, 17]}",Work Meeting - Geotechnical Team,phone_gps_android,TRUE,2025-02-05T10:00:00Z,FALSE,"[""work"", ""meeting"", ""project_collab""]"
+L067,1,,2025-02-08T16:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Discovering new EDM on SoundCloud (Home),soundcloud_api,TRUE,2025-02-08T16:00:00Z,FALSE,"[""music"", ""soundcloud"", ""edm"", ""home""]"
+L068,1,,2025-02-11T19:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4850, 34.0250, 12]}",Parent-Teacher Conference - School,phone_gps_android,TRUE,2025-02-11T19:00:00Z,FALSE,"[""family"", ""school"", ""parenting""]"
+L069,1,,2025-02-15T11:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.5100, 34.0400, 20]}",Site Inspection - Hwy Overpass,phone_gps_android,TRUE,2025-02-15T11:00:00Z,FALSE,"[""work"", ""inspection"", ""field_work""]"
+L070,1,,2025-02-17T14:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4700, 34.0350, 10]}",Studio Time - Mixing Tracks,phone_gps_android,TRUE,2025-02-17T14:00:00Z,FALSE,"[""music"", ""studio"", ""mixing"", ""lofi""]"
+L071,1,,2025-02-20T22:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Late Night Lyrics - Home Music Nook,manual_log,TRUE,2025-02-20T22:30:00Z,TRUE,"[""music"", ""writing"", ""home""]"
+L072,1,,2025-02-25T18:45:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4950, 34.0150, 8]}",Gym - Strength & Cardio,wearable_gps_fitbit,TRUE,2025-02-25T18:45:00Z,FALSE,"[""health"", ""gym"", ""fitness""]"
+L073,1,,2025-03-01T10:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4800, 34.0300, 16]}",Mentoring Junior Engineer - Acme HQ,phone_gps_android,TRUE,2025-03-01T10:00:00Z,FALSE,"[""work"", ""mentoring"", ""office""]"
+L074,1,,2025-03-03T06:50:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4985, 34.0095, 3], ""orientation"": 180}",Longer Morning Run - Park Loop,wearable_gps_fitbit,TRUE,2025-03-03T06:50:00Z,FALSE,"[""health"", ""run"", ""endurance""]"
+L075,1,,2025-03-05T14:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.2437, 34.0522, 50]}",Arrived at GreenBuild Conference LA,phone_gps_android,TRUE,2025-03-05T14:00:00Z,FALSE,"[""work"", ""conference"", ""travel""]"
+L076,1,,2025-03-06T10:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.2440, 34.0525, 51]}",Conference Session: Green Materials,manual_log,TRUE,2025-03-06T10:30:00Z,TRUE,"[""work"", ""learning"", ""conference""]"
+L077,1,,2025-03-08T11:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4852, 34.0252, 12]}",Family Day Event - St. Michael's School,phone_gps_android,TRUE,2025-03-08T11:00:00Z,FALSE,"[""family"", ""school"", ""event""]"
+L078,1,,2025-03-10T20:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Rehearsing for Open Mic (Home),spotify_playback_api,TRUE,2025-03-10T20:00:00Z,FALSE,"[""music"", ""rehearsal"", ""home"", ""rock""]"
+L079,1,,2025-03-15T20:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4750, 34.0320, 7]}",Open Mic Performance - The Rhythm Room,phone_gps_android,TRUE,2025-03-15T20:30:00Z,FALSE,"[""music"", ""performance"", ""live""]"
+L080,1,,2025-03-22T16:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-116.5453, 33.8303, 146]}",Arrived at Palm Springs Hotel (Mary's Bday),phone_gps_android,TRUE,2025-03-22T16:00:00Z,FALSE,"[""family"", ""vacation"", ""birthday""]"
+L081,1,,2025-03-23T10:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-116.5450, 33.8300, 147]}",Poolside at Palm Springs Hotel,wearable_gps_fitbit,TRUE,2025-03-23T10:00:00Z,FALSE,"[""family"", ""leisure"", ""vacation""]"
+L082,1,,2025-03-25T19:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Playing Ratchet & Clank on PS5 (Home),manual_log,TRUE,2025-03-25T19:30:00Z,TRUE,"[""gaming"", ""ps5"", ""home"", ""leisure""]"
+L083,1,,2025-03-28T07:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4980, 34.0100, 3]}","Fast Run - Ocean View Park, tracking HR",wearable_gps_fitbit,TRUE,2025-03-28T07:00:00Z,FALSE,"[""health"", ""run"", ""performance_track""]"
+L084,1,,2025-01-15T11:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4895, 34.0210, 7]}",Grocery Shopping - Local Market,phone_gps_android,TRUE,2025-01-15T11:00:00Z,FALSE,"[""errands"", ""shopping"", ""home_supply""]"
+L085,1,,2025-02-10T08:15:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4850, 34.0275, 2]}",Driving - Listening to R&B playlist,spotify_playback_api,TRUE,2025-02-10T08:15:00Z,FALSE,"[""music"", ""spotify"", ""rnb"", ""driving""]"
+L086,1,,2025-02-18T13:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4810, 34.0290, 10]}",Lunch with Colleague - Near Office,phone_gps_android,TRUE,2025-02-18T13:00:00Z,FALSE,"[""work"", ""social"", ""lunch""]"
+L087,1,,2025-03-12T17:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4900, 34.0200, 5]}",Kids playing Minecraft on PC (Home),manual_log,TRUE,2025-03-12T17:00:00Z,TRUE,"[""family"", ""gaming"", ""pc"", ""kids"", ""home""]"
+L088,1,,2025-03-18T21:30:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4902, 34.0201, 6]}",Arranging tracks in Logic Pro (Home),manual_log,TRUE,2025-03-18T21:30:00Z,TRUE,"[""music"", ""creation"", ""logicpro"", ""home""]"
+L089,1,,2025-01-25T09:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4915, 34.0225, 8]}",Doctor's Visit - Routine Check-up,phone_gps_android,TRUE,2025-01-25T09:00:00Z,FALSE,"[""health"", ""medical"", ""checkup""]"
+L090,1,,2025-03-30T14:00:00Z,FALSE,point,"{""type"":""Point"", ""coordinates"":[-118.4805, 34.0305, 16]}",Finalizing Project Design at Office,phone_gps_android,TRUE,2025-03-30T14:00:00Z,FALSE,"[""work"", ""project"", ""design"", ""office""]"
