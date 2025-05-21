@@ -1,2 +1,17 @@
 id,connection,type,name,tags
 t001,conn1,apparel,shirt,"[""clothing""]"
+t002,conn2,apparel,hat,"[\"clothing\"]"
+t003,conn3,electronics,phone,"[\"device\"]"
+t004,conn4,book,novel,"[\"reading\"]"
+t005,conn5,apparel,scarf,"[\"clothing\"]"
+t006,conn6,electronics,tablet,"[\"device\"]"
+t007,conn7,apparel,jacket,"[\"clothing\"]"
+t008,conn8,electronics,laptop,"[\"device\"]"
+t009,conn9,book,magazine,"[\"reading\"]"
+t010,conn10,electronics,smartwatch,"[\"device\"]"
+t011,conn11,apparel,socks,"[\"clothing\"]"
+t012,conn12,book,textbook,"[\"reading\"]"
+t013,conn13,electronics,headphones,"[\"device\"]"
+t014,conn14,apparel,shoes,"[\"clothing\"]"
+t015,conn15,book,comic,"[\"reading\"]"
+
