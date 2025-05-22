@@ -1,8 +1,10 @@
 import * as React from 'react';
-import { useState } from 'react';
-import { Calendar, Clock, Coffee, Search, ShoppingCart, Utensils, BookOpen, Dumbbell, Car, Laptop, Tv, User } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Calendar, Clock, Coffee, Search, ShoppingCart, Utensils, BookOpen, Dumbbell, Car, Laptop, Tv, User, MapPin } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from '@/components/ui/separator';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
 // Sample memory data
 interface MemoryItem {
@@ -12,6 +14,11 @@ interface MemoryItem {
   timestamp: string;
   category: string;
   icon: React.ReactNode;
+  location?: {
+    lat: number;
+    lng: number;
+    name?: string;
+  };
 }
 
 const sampleMemories: MemoryItem[] = [
@@ -21,7 +28,12 @@ const sampleMemories: MemoryItem[] = [
     description: "Had a cappuccino at Blue Bottle Coffee while reading the news",
     timestamp: "2025-05-21T07:30:00Z",
     category: "Food & Drink",
-    icon: <Coffee className="h-5 w-5" />
+    icon: <Coffee className="h-5 w-5" />,
+    location: {
+      lat: 37.7749,
+      lng: -122.4194,
+      name: "Blue Bottle Coffee"
+    }
   },
   {
     id: "mem-2",
@@ -37,7 +49,12 @@ const sampleMemories: MemoryItem[] = [
     description: "Met Sarah at the Italian restaurant to catch up about her new job",
     timestamp: "2025-05-21T12:30:00Z",
     category: "Social",
-    icon: <Utensils className="h-5 w-5" />
+    icon: <Utensils className="h-5 w-5" />,
+    location: {
+      lat: 37.7833,
+      lng: -122.4167,
+      name: "Italian Restaurant"
+    }
   },
   {
     id: "mem-4",
@@ -45,7 +62,12 @@ const sampleMemories: MemoryItem[] = [
     description: "45 minutes of strength training and 20 minutes of cardio",
     timestamp: "2025-05-21T17:00:00Z",
     category: "Fitness",
-    icon: <Dumbbell className="h-5 w-5" />
+    icon: <Dumbbell className="h-5 w-5" />,
+    location: {
+      lat: 37.7694,
+      lng: -122.4862,
+      name: "Fitness Center"
+    }
   },
   {
     id: "mem-5",
@@ -53,7 +75,12 @@ const sampleMemories: MemoryItem[] = [
     description: "Picked up ingredients for dinner and restocked on essentials",
     timestamp: "2025-05-21T18:30:00Z",
     category: "Errands",
-    icon: <ShoppingCart className="h-5 w-5" />
+    icon: <ShoppingCart className="h-5 w-5" />,
+    location: {
+      lat: 37.7583,
+      lng: -122.4294,
+      name: "Whole Foods Market"
+    }
   },
   {
     id: "mem-6",
@@ -85,7 +112,12 @@ const sampleMemories: MemoryItem[] = [
     description: "Commuted to the office while listening to the Daily podcast",
     timestamp: "2025-05-21T08:30:00Z",
     category: "Transportation",
-    icon: <Car className="h-5 w-5" />
+    icon: <Car className="h-5 w-5" />,
+    location: {
+      lat: 37.7900,
+      lng: -122.4000,
+      name: "Office Building"
+    }
   },
   {
     id: "mem-10",
@@ -100,6 +132,9 @@ const sampleMemories: MemoryItem[] = [
 export function MemoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [memories] = useState<MemoryItem[]>(sampleMemories);
+  const [activeTab, setActiveTab] = useState('list');
+  const mapRef = useRef<L.Map | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   
   // Filter memories based on search query
   const filteredMemories = searchQuery.trim() === '' 
@@ -109,6 +144,64 @@ export function MemoryPage() {
         memory.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         memory.category.toLowerCase().includes(searchQuery.toLowerCase())
       );
+      
+  // Get memories with location data for the map
+  const memoriesWithLocation = filteredMemories.filter(memory => memory.location);
+  
+  // Initialize and update map when the tab changes or filtered memories change
+  useEffect(() => {
+    if (activeTab !== 'map' || !mapContainerRef.current) return;
+    
+    // Fix for Leaflet's icon paths
+    delete (L.Icon.Default.prototype as any)._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+      iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+    });
+
+    // Initialize map if it doesn't exist
+    if (!mapRef.current) {
+      mapRef.current = L.map(mapContainerRef.current).setView([37.7749, -122.4194], 12);
+      
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(mapRef.current);
+    }
+    
+    // Clear existing markers
+    mapRef.current.eachLayer(layer => {
+      if (layer instanceof L.Marker) {
+        mapRef.current?.removeLayer(layer);
+      }
+    });
+    
+    // Add markers for memories with location
+    const bounds = L.latLngBounds([]);
+    memoriesWithLocation.forEach(memory => {
+      if (memory.location) {
+        const marker = L.marker([memory.location.lat, memory.location.lng])
+          .addTo(mapRef.current!)
+          .bindPopup(`
+            <strong>${memory.title}</strong><br>
+            ${memory.description}<br>
+            <small>${new Date(memory.timestamp).toLocaleString()}</small>
+          `);
+          
+        bounds.extend([memory.location.lat, memory.location.lng]);
+      }
+    });
+    
+    // Fit bounds if we have markers
+    if (bounds.isValid()) {
+      mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+    }
+    
+    // Cleanup function
+    return () => {
+      // Don't destroy the map when switching tabs, just let it persist
+    };
+  }, [activeTab, memoriesWithLocation]);
 
   return (
     <div className="flex flex-col w-full h-full">
@@ -145,7 +238,12 @@ export function MemoryPage() {
         <Separator className="my-2" />
         
         {/* Tabs */}
-        <Tabs defaultValue="list" className="w-full">
+        <Tabs 
+          defaultValue="list" 
+          className="w-full"
+          onValueChange={setActiveTab}
+          value={activeTab}
+        >
           <TabsList className="grid grid-cols-5 w-full max-w-2xl mx-auto">
             <TabsTrigger value="list">List</TabsTrigger>
             <TabsTrigger value="feed">Feed</TabsTrigger>
@@ -201,11 +299,50 @@ export function MemoryPage() {
           </TabsContent>
           
           <TabsContent value="map" className="mt-6">
-            <div className="rounded-lg border p-8 text-center">
-              <h3 className="text-lg font-medium">Map View</h3>
-              <p className="text-muted-foreground mt-2">
-                Your memories will be displayed on a map here.
-              </p>
+            <div className="rounded-lg border p-4">
+              <h3 className="text-lg font-medium mb-4">Memory Map</h3>
+              
+              {memoriesWithLocation.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">No memories with location data found.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div 
+                    ref={mapContainerRef} 
+                    className="h-[500px] w-full rounded-lg border"
+                  ></div>
+                  
+                  <div className="mt-4">
+                    <h4 className="text-md font-medium mb-2">Locations ({memoriesWithLocation.length})</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {memoriesWithLocation.map(memory => (
+                        <div 
+                          key={memory.id} 
+                          className="flex items-center gap-2 p-2 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                          onClick={() => {
+                            if (mapRef.current && memory.location) {
+                              mapRef.current.setView([memory.location.lat, memory.location.lng], 15);
+                            }
+                          }}
+                        >
+                          <div className="flex-shrink-0 p-1 bg-primary/10 rounded-full">
+                            <MapPin className="h-4 w-4" />
+                          </div>
+                          <div className="flex-grow min-w-0">
+                            <div className="flex justify-between items-start">
+                              <h5 className="font-medium text-sm truncate">{memory.title}</h5>
+                            </div>
+                            <p className="text-muted-foreground text-xs truncate">
+                              {memory.location?.name || "Unknown location"}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </TabsContent>
           
