@@ -11,6 +11,7 @@ import { SignupPage } from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { ChatPage } from '@/pages/ChatPage';
+import { MemoryPage } from '@/pages/MemoryPage';
 
 // Protected route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -61,27 +62,27 @@ const items = [
   },
   {
     title: 'Memory',
-    url: '#',
+    url: '/memory',
     icon: Bot,
     items: [
       {
         title: 'List',
-        url: '#',
+        url: '/memory',
         icon: Bot,
       },
       {
         title: 'Feed',
-        url: '#',
+        url: '/memory?tab=feed',
         icon: Bot,
       },
       {
         title: 'Map',
-        url: '#',
+        url: '/memory?tab=map',
         icon: Map,
       },
       {
         title: 'Calendar',
-        url: '#',
+        url: '/memory?tab=calendar',
         icon: Bot,
       },
       {
@@ -239,6 +240,16 @@ function App() {
                 <ProtectedRoute>
                   <AppSidebar>
                     <AdminPage />
+                  </AppSidebar>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/memory"
+              element={
+                <ProtectedRoute>
+                  <AppSidebar>
+                    <MemoryPage />
                   </AppSidebar>
                 </ProtectedRoute>
               }
