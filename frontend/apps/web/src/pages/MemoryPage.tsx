@@ -135,7 +135,7 @@ const sampleMemories: MemoryItem[] = [
 export function MemoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [memories] = useState<MemoryItem[]>(sampleMemories);
-  const [activeTab, setActiveTab] = useState('list');
+  const [activeTab, setActiveTab] = useState('map');
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   
@@ -272,15 +272,15 @@ export function MemoryPage() {
         
         {/* Tabs */}
         <Tabs 
-          defaultValue="list" 
+          defaultValue="map" 
           className="w-full"
           onValueChange={setActiveTab}
           value={activeTab}
         >
           <TabsList className="grid grid-cols-5 w-full max-w-2xl mx-auto">
+            <TabsTrigger value="map">Map</TabsTrigger>
             <TabsTrigger value="list">List</TabsTrigger>
             <TabsTrigger value="feed">Feed</TabsTrigger>
-            <TabsTrigger value="map">Map</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="insights">Insights</TabsTrigger>
           </TabsList>
