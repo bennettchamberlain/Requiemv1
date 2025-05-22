@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 
-export function LoginPage() {
+export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
