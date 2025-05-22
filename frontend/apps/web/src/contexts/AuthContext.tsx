@@ -34,11 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const validateToken = async (token: string) => {
     try {
       // You would typically verify the token with your backend
-      // For now, we'll just assume it's valid if it exists
-      setUser({ id: '1', email: 'user@example.com' }); // Placeholder user
+      // For now, we'll retrieve the stored user data if available
+      const storedUser = localStorage.getItem('user-data');
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      } else {
+        // Fallback if no stored user data
+        setUser({ id: '1', email: 'user@example.com' });
+      }
     } catch (error) {
       console.error('Token validation failed:', error, token);
       localStorage.removeItem('feathers-jwt');
+      localStorage.removeItem('user-data');
     } finally {
       setIsLoading(false);
     }
@@ -65,12 +72,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
       localStorage.setItem('feathers-jwt', data.accessToken);
 
-      // Set user data
-      setUser({
+      // Create user data object
+      const userData = {
         id: data.user?.id || '1',
         email: email,
         name: data.user?.name,
-      });
+      };
+      
+      // Store user data in localStorage
+      localStorage.setItem('user-data', JSON.stringify(userData));
+      
+      // Set user data in state
+      setUser(userData);
     } catch (error) {
       console.error('Login failed:', error);
       throw error;
@@ -112,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem('feathers-jwt');
+    localStorage.removeItem('user-data');
     setUser(null);
   };
 
