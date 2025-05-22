@@ -163,17 +163,22 @@ export function MemoryPage() {
       shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
     });
 
-    // Initialize map if it doesn't exist
-    if (!mapRef.current) {
-      mapRef.current = L.map(mapContainerRef.current).setView([37.7749, -122.4194], 12);
-      
-      // Use a more modern map style
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20
-      }).addTo(mapRef.current);
+    // When switching tabs, we need to destroy and recreate the map
+    // This fixes the issue with the map not appearing when switching back to the tab
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
     }
+    
+    // Initialize map
+    mapRef.current = L.map(mapContainerRef.current).setView([37.7749, -122.4194], 12);
+    
+    // Use a more modern map style
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20
+    }).addTo(mapRef.current);
     
     // Clear existing markers
     mapRef.current.eachLayer(layer => {
@@ -232,7 +237,7 @@ export function MemoryPage() {
     
     // Cleanup function
     return () => {
-      // Don't destroy the map when switching tabs, just let it persist
+      // No need to clean up here as we handle it at the beginning of the effect
     };
   }, [activeTab, memoriesWithLocation]);
 
