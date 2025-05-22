@@ -159,13 +159,14 @@ export function AppSidebarUnused({ children }: AppSideBarProps) {
 
 
   
-const exampleUser = {
-  name: 'John Smith',
-  email: 'John@Smith.com',
-  avatar: '/avatars/shadcn.jpg',
-};
-
 export function AppSidebar({ children }: AppSideBarProps) {
+  const { user } = useAuth();
+  
+  const currentUser = {
+    name: user?.name || user?.email || 'User',
+    email: user?.email || '',
+    avatar: '/avatars/shadcn.jpg',
+  };
   return (
     <SidebarProvider>
       <Sidebar>
@@ -190,7 +191,7 @@ export function AppSidebar({ children }: AppSideBarProps) {
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter>
-          <NavUser user={exampleUser} />
+          <NavUser user={currentUser} />
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
