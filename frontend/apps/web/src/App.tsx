@@ -6,11 +6,13 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
 // Import pages
-const SplashPage = lazy(() => import('@/pages/SplashPage'));
-const LoginPage = lazy(() => import('@/pages/LoginPage'));
-const SignupPage = lazy(() => import('@/pages/SignupPage'));
-const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
-const AdminPage = lazy(() => import('@/pages/AdminPage'));
+
+import { SplashPage } from '@/pages/SplashPage';
+import { LoginPage } from '@/pages/LoginPage';
+import { SignupPage } from '@/pages/SignupPage';
+import { DashboardPage } from '@/pages/DashboardPage';
+import { AdminPage } from '@/pages/AdminPage';
+import { ChatPage } from '@/pages/ChatPage';
 
 // Protected route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -32,30 +34,36 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <Router>
-          <Suspense fallback={<p>Loading…</p>}>
-            <Routes>
-              <Route path="/" element={<SplashPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/signup" element={<SignupPage />} />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <DashboardPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute>
-                    <AdminPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </Suspense>
+          <Routes>
+            <Route path="/" element={<SplashPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+            <Route
+              path="/chat"
+              element={
+                <ProtectedRoute>
+                  <ChatPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <AdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
         </Router>
       </AuthProvider>
     </ThemeProvider>

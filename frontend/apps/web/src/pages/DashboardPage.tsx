@@ -2,7 +2,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
-import { AppSidebar } from '@/components/app-sidebar';
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,7 +13,116 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Separator } from '@/components/ui/separator';
 
-export default function DashboardPage() {
+
+
+import * as React from 'react';
+import { BookOpen, Bot, Map, Settings2, SquareTerminal } from 'lucide-react';
+
+import { NavMain } from '@/components/nav-main';
+import { NavUser } from '@/components/nav-user';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarRail } from '@/components/ui/sidebar';
+import { Collapsible } from '@/components/ui/collapsible';
+
+const navigationChoices = [
+  {
+    title: 'Dashboard',
+    url: '#',
+    icon: SquareTerminal,
+    isActive: true,
+  },
+  {
+    title: 'Memory',
+    url: '#',
+    icon: Bot,
+    items: [
+      {
+        title: 'List',
+        url: '#',
+        icon: Bot,
+      },
+      {
+        title: 'Feed',
+        url: '#',
+        icon: Bot,
+      },
+      {
+        title: 'Map',
+        url: '#',
+        icon: Map,
+      },
+      {
+        title: 'Calendar',
+        url: '#',
+        icon: Bot,
+      },
+      {
+        title: 'Chat',
+        url: '/chat',
+        icon: Bot,
+      },
+    ],
+  },
+  {
+    title: 'Questions',
+    url: '#',
+    icon: BookOpen,
+    items: [
+      {
+        title: 'Questions',
+        url: '#',
+      },
+      {
+        title: 'Insights',
+        url: '#',
+      },
+    ],
+  },
+  {
+    title: 'Chat',
+    url: '/Chat',
+    icon: Bot,
+    collapsible: false
+  },
+  {
+    title: 'Settings',
+    url: '#',
+    icon: Settings2,
+    items: [
+      {
+        title: 'General',
+        url: '#',
+      },
+      {
+        title: 'Billing',
+        url: '#',
+      },
+      {
+        title: 'Privacy',
+        url: '#',
+      },
+      {
+        title: 'Admin',
+        url: '/admin',
+      },
+    ],
+  },
+];
+
+export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  return (
+    <Sidebar collapsible="icon" {...props}>
+      <SidebarContent>
+        <NavMain items={navigationChoices} />
+      </SidebarContent>
+      <SidebarRail />
+    </Sidebar>
+  );
+}
+
+
+
+
+export function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -44,9 +153,7 @@ export default function DashboardPage() {
 
             <div className="ml-auto flex items-center gap-2">
               <span className="text-sm font-medium">Welcome, {user?.name || user?.email}</span>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                Logout
-              </Button>
+              <Button variant="outline" size="sm" onClick={handleLogout}>Logout</Button>
             </div>
           </div>
         </header>
