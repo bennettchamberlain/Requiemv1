@@ -3,3 +3,34 @@ b3b1c2e0-1234-4a5b-8c6d-123456789abc,Jane,Doe,123 Main St,123 Main St,,Springfie
 7e2a1d4f-5678-4c2b-9e1f-abcdef123456,Bob,Brown,456 Oak Ave,456 Oak Ave,Unit 2,Metropolis,NY,USA,10001,https://pics.example.com/bob.jpg,,contractor,2025-05-20T00:00:00Z,TRUE,"vendor",,Allen,M
 c1d2e3f4-2345-4b6c-8d7e-23456789abcd,Alice,Smith,789 Pine Rd,789 Pine Rd,,Smalltown,CA,USA,90210,https://pics.example.com/alice.jpg,,manager,2025-05-21T00:00:00Z,FALSE,"leadership",,Elizabeth,F
 f4e3d2c1-3456-4c7d-8e9f-3456789abcde,Tom,Johnson,321 Maple St,321 Maple St,,Lakeside,TX,USA,75001,https://pics.example.com/tom.jpg,,employee,2025-05-21T00:00:00Z,FALSE,"team",,Lee,M
+f4e3d2c1-3456-4c7d-8e9f-3456789abcf,Emily,White,987 Cedar St,987 Cedar St,,Hilltown,WA,USA,98001,https://pics.example.com/emily.jpg,,employee,2025-05-22T00:00:00Z,FALSE,"team",,Marie,F
+b2c3d4e5-4567-4d8e-9f0a-456789abcdef,Chris,Green,654 Spruce Ave,654 Spruce Ave,,Rivercity,OR,USA,97035,https://pics.example.com/chris.jpg,,contractor,2025-05-22T00:00:00Z,TRUE,"vendor",,Lee,M
+1a2b3c4d-aaaa-4bbb-8ccc-1234567890ab,Olivia,King,321 Willow St,321 Willow St,,Baytown,FL,USA,33001,https://pics.example.com/olivia.jpg,,manager,2025-05-23T00:00:00Z,FALSE,"leadership",,Marie,F
+2b3c4d5e-bbbb-4ccc-8ddd-2345678901bc,Lucas,Moore,654 Aspen Ave,654 Aspen Ave,,Lakeview,CO,USA,80014,https://pics.example.com/lucas.jpg,,employee,2025-05-23T00:00:00Z,FALSE,"team",,Lee,M
+3c4d5e6f-cccc-4ddd-8eee-3456789012cd,Emma,Scott,987 Birch Rd,987 Birch Rd,,Forestville,GA,USA,30301,https://pics.example.com/emma.jpg,,contractor,2025-05-23T00:00:00Z,TRUE,"vendor",,Elizabeth,F
+4d5e6f7a-dddd-4eee-8fff-4567890123de,Noah,Young,123 Redwood Dr,123 Redwood Dr,,Sunset,AZ,USA,85001,https://pics.example.com/noah.jpg,,employee,2025-05-23T00:00:00Z,FALSE,"team",,Lee,M
+5e6f7a8b-eeee-4fff-9000-5678901234ef,William,Broza,222 Elm St,222 Elm St,,Oceanview,CA,USA,94016,https://pics.example.com/william.jpg,,manager,2025-05-24T00:00:00Z,FALSE,"leadership,project",,James,M
+6f7a8b9c-ffff-4000-9111-6789012345f0,Isabella,Martinez,333 Palm Ave,333 Palm Ave,,Palm City,FL,USA,33480,https://pics.example.com/isabella.jpg,,employee,2025-05-24T00:00:00Z,FALSE,"team,fun",,Rose,F
+7a8b9c0d-0000-4111-9222-789012345601,Ethan,Lee,444 Cypress Rd,444 Cypress Rd,,Mountainview,CO,USA,80401,https://pics.example.com/ethan.jpg,,contractor,2025-05-24T00:00:00Z,TRUE,"vendor,urgent",,David,M
+8b9c0d1e-1111-4222-9333-890123456712,Mia,Nguyen,555 Willow Dr,555 Willow Dr,,Riverbend,WA,USA,98052,https://pics.example.com/mia.jpg,,employee,2025-05-25T00:00:00Z,FALSE,"team,education",,Lynn,F
+9c0d1e2f-2222-4333-9444-901234567823,James,Patel,666 Redwood Ln,666 Redwood Ln,,Sunrise,AZ,USA,85044,https://pics.example.com/james.jpg,,manager,2025-05-25T00:00:00Z,FALSE,"leadership,important",,Paul,M
+0d1e2f3a-3333-4444-9555-012345678934,Charlotte,Kim,777 Magnolia St,777 Magnolia St,,Hillcrest,TX,USA,75002,https://pics.example.com/charlotte.jpg,,employee,2025-05-25T00:00:00Z,FALSE,"team,review",,Ann,F
+1e2f3a4b-4444-4555-9666-123456789045,Henry,Garcia,888 Aspen Ct,888 Aspen Ct,,Bayview,OR,USA,97036,https://pics.example.com/henry.jpg,,contractor,2025-05-26T00:00:00Z,TRUE,"vendor,archive",,Lee,M
+2f3a4b5c-5555-4666-9777-234567890156,Amelia,Clark,999 Oak Cir,999 Oak Cir,,Foresthill,GA,USA,30302,https://pics.example.com/amelia.jpg,,employee,2025-05-26T00:00:00Z,FALSE,"team,food",,Marie,F
+3a4b5c6d-6666-4777-9888-345678901267,Jack,Walker,1010 Pine Pl,1010 Pine Pl,,Sunset,AZ,USA,85002,https://pics.example.com/jack.jpg,,manager,2025-05-26T00:00:00Z,FALSE,"leadership,meeting",,James,M
+4b5c6d7e-7777-4888-9999-456789012378,Sophia,Lopez,1111 Cedar Blvd,1111 Cedar Blvd,,Metropolis,NY,USA,10002,https://pics.example.com/sophia.jpg,,employee,2025-05-27T00:00:00Z,FALSE,"team,exercise",,Rose,F
+1a2b3c4d-1111-4bbb-8ccc-1234567890ac,Michael,Stone,222 Oak St,222 Oak St,,Greenfield,TX,USA,75002,https://pics.example.com/michael.jpg,,employee,2025-05-28T00:00:00Z,FALSE,"team,project",,James,M
+2b3c4d5e-2222-4ccc-8ddd-2345678901bd,Grace,Turner,333 Pine Ave,333 Pine Ave,,Hilltown,WA,USA,98002,https://pics.example.com/grace.jpg,,manager,2025-05-28T00:00:00Z,FALSE,"leadership,review",,Marie,F
+3c4d5e6f-3333-4ddd-8eee-3456789012ce,Daniel,Reed,444 Maple Rd,444 Maple Rd,,Baytown,FL,USA,33002,https://pics.example.com/daniel.jpg,,contractor,2025-05-28T00:00:00Z,TRUE,"vendor,archive",,Lee,M
+4d5e6f7a-4444-4eee-8fff-4567890123df,Chloe,Price,555 Cedar St,555 Cedar St,,Rivercity,OR,USA,97036,https://pics.example.com/chloe.jpg,,employee,2025-05-29T00:00:00Z,FALSE,"team,food",,Ann,F
+5e6f7a8b-5555-4fff-9000-5678901234f0,Matthew,Nguyen,666 Willow Dr,666 Willow Dr,,Sunset,AZ,USA,85003,https://pics.example.com/matthew.jpg,,manager,2025-05-29T00:00:00Z,FALSE,"leadership,meeting",,Paul,M
+6a7b8c9d-8888-4999-9aaa-5678901234a1,Harper,Stewart,123 Aspen Way,123 Aspen Way,,Clearwater,FL,USA,33755,https://pics.example.com/harper.jpg,,employee,2025-05-30T00:00:00Z,FALSE,"team,fun",,Morgan,F
+7b8c9d0e-9999-4aaa-9bbb-6789012345b2,Logan,Diaz,234 Oak Loop,234 Oak Loop,,Summit,CO,USA,80435,https://pics.example.com/logan.jpg,,contractor,2025-05-30T00:00:00Z,TRUE,"vendor,urgent",,Taylor,M
+8c9d0e1f-aaaa-4bbb-9ccc-7890123456c3,Aria,Kim,345 Pine Pass,345 Pine Pass,,Brookside,WA,USA,98011,https://pics.example.com/aria.jpg,,employee,2025-05-31T00:00:00Z,FALSE,"team,education",,Jordan,F
+9d0e1f2a-bbbb-4ccc-9ddd-8901234567d4,Elijah,Nguyen,456 Cedar Bend,456 Cedar Bend,,Riverside,OR,USA,97036,https://pics.example.com/elijah.jpg,,manager,2025-05-31T00:00:00Z,FALSE,"leadership,important",,Casey,M
+0e1f2a3b-cccc-4ddd-9eee-9012345678e5,Scarlett,Patel,567 Maple Hollow,567 Maple Hollow,,Sunrise,AZ,USA,85045,https://pics.example.com/scarlett.jpg,,employee,2025-06-01T00:00:00Z,FALSE,"team,review",,Alex,F
+1f2a3b4c-dddd-4eee-9fff-0123456789f6,Wyatt,Clark,678 Birch Trail,678 Birch Trail,,Hillcrest,TX,USA,75003,https://pics.example.com/wyatt.jpg,,contractor,2025-06-01T00:00:00Z,TRUE,"vendor,archive",,Riley,M
+2a3b4c5d-eeee-4fff-9000-1234567890a7,Penelope,Walker,789 Redwood Path,789 Redwood Path,,Bayview,OR,USA,97037,https://pics.example.com/penelope.jpg,,employee,2025-06-02T00:00:00Z,FALSE,"team,food",,Sydney,F
+3b4c5d6e-ffff-4000-9111-2345678901b8,Julian,Lopez,890 Willow Ridge,890 Willow Ridge,,Foresthill,GA,USA,30303,https://pics.example.com/julian.jpg,,manager,2025-06-02T00:00:00Z,FALSE,"leadership,meeting",,Drew,M
+4c5d6e7f-0000-4111-9222-3456789012c9,Victoria,Reed,901 Aspen Crest,901 Aspen Crest,,Sunset,AZ,USA,85003,https://pics.example.com/victoria.jpg,,employee,2025-06-03T00:00:00Z,FALSE,"team,exercise",,Morgan,F
+5d6e7f8a-1111-4222-9333-4567890123da,Leo,Price,1012 Cedar Cove,1012 Cedar Cove,,Metropolis,NY,USA,10003,https://pics.example.com/leo.jpg,,employee,2025-06-03T00:00:00Z,FALSE,"team,project",,Taylor,M
