@@ -6,6 +6,9 @@ import { Separator } from '@/components/ui/separator';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
+// Add custom styles for Leaflet
+import './memory-map.css';
+
 // Sample memory data
 interface MemoryItem {
   id: string;
@@ -164,8 +167,11 @@ export function MemoryPage() {
     if (!mapRef.current) {
       mapRef.current = L.map(mapContainerRef.current).setView([37.7749, -122.4194], 12);
       
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      // Use a more modern map style
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20
       }).addTo(mapRef.current);
     }
     
@@ -176,17 +182,39 @@ export function MemoryPage() {
       }
     });
     
+    // Create custom icon for markers
+    const customIcon = L.divIcon({
+      className: 'custom-map-marker',
+      html: `<div class="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-md">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-map-pin"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            </div>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+      popupAnchor: [0, -32]
+    });
+    
     // Add markers for memories with location
     const bounds = L.latLngBounds([]);
     memoriesWithLocation.forEach(memory => {
       if (memory.location) {
-        const marker = L.marker([memory.location.lat, memory.location.lng])
+        const marker = L.marker([memory.location.lat, memory.location.lng], { icon: customIcon })
           .addTo(mapRef.current!)
           .bindPopup(`
-            <strong>${memory.title}</strong><br>
-            ${memory.description}<br>
-            <small>${new Date(memory.timestamp).toLocaleString()}</small>
-          `);
+            <div class="p-2">
+              <div class="font-bold text-lg mb-1">${memory.title}</div>
+              <div class="text-sm mb-2">${memory.description}</div>
+              <div class="text-xs text-gray-500">${new Date(memory.timestamp).toLocaleString()}</div>
+              <div class="mt-2 text-xs inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                ${memory.category}
+              </div>
+            </div>
+          `, {
+            className: 'custom-popup',
+            maxWidth: 300,
+            minWidth: 200,
+            closeButton: true,
+            autoClose: false
+          });
           
         bounds.extend([memory.location.lat, memory.location.lng]);
       }
@@ -195,6 +223,11 @@ export function MemoryPage() {
     // Fit bounds if we have markers
     if (bounds.isValid()) {
       mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+    }
+    
+    // Add map controls
+    if (!mapRef.current.zoomControl) {
+      L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
     }
     
     // Cleanup function
@@ -300,7 +333,12 @@ export function MemoryPage() {
           
           <TabsContent value="map" className="mt-6">
             <div className="rounded-lg border p-4">
-              <h3 className="text-lg font-medium mb-4">Memory Map</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium">Memory Map</h3>
+                <div className="text-sm text-muted-foreground">
+                  {memoriesWithLocation.length} location{memoriesWithLocation.length !== 1 ? 's' : ''}
+                </div>
+              </div>
               
               {memoriesWithLocation.length === 0 ? (
                 <div className="text-center py-8">
@@ -310,28 +348,57 @@ export function MemoryPage() {
                 <div className="space-y-4">
                   <div 
                     ref={mapContainerRef} 
-                    className="h-[500px] w-full rounded-lg border"
+                    className="h-[500px] w-full rounded-lg border overflow-hidden shadow-sm"
                   ></div>
                   
-                  <div className="mt-4">
-                    <h4 className="text-md font-medium mb-2">Locations ({memoriesWithLocation.length})</h4>
+                  <div className="mt-6">
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="text-md font-medium">Locations</h4>
+                      <button 
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => {
+                          if (mapRef.current && memoriesWithLocation.length > 0) {
+                            const bounds = L.latLngBounds(
+                              memoriesWithLocation
+                                .filter(m => m.location)
+                                .map(m => [m.location!.lat, m.location!.lng])
+                            );
+                            mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+                          }
+                        }}
+                      >
+                        View all
+                      </button>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {memoriesWithLocation.map(memory => (
                         <div 
                           key={memory.id} 
-                          className="flex items-center gap-2 p-2 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                          className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
                           onClick={() => {
                             if (mapRef.current && memory.location) {
-                              mapRef.current.setView([memory.location.lat, memory.location.lng], 15);
+                              mapRef.current.setView([memory.location.lat, memory.location.lng], 16);
+                              
+                              // Find and open the popup for this marker
+                              mapRef.current.eachLayer(layer => {
+                                if (layer instanceof L.Marker && 
+                                    layer.getLatLng().lat === memory.location!.lat && 
+                                    layer.getLatLng().lng === memory.location!.lng) {
+                                  layer.openPopup();
+                                }
+                              });
                             }
                           }}
                         >
-                          <div className="flex-shrink-0 p-1 bg-primary/10 rounded-full">
+                          <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
                             <MapPin className="h-4 w-4" />
                           </div>
                           <div className="flex-grow min-w-0">
                             <div className="flex justify-between items-start">
                               <h5 className="font-medium text-sm truncate">{memory.title}</h5>
+                              <span className="text-xs text-muted-foreground ml-2">
+                                {new Date(memory.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </span>
                             </div>
                             <p className="text-muted-foreground text-xs truncate">
                               {memory.location?.name || "Unknown location"}
