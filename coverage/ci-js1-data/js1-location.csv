@@ -18,4 +18,4 @@ L016,conn16,2025-06-03T20:00:00Z,FALSE,point,"{""lat"":34.16,""lng"":-118.64}",l
 L017,conn17,2025-06-04T21:00:00Z,FALSE,point,"{""lat"":34.17,""lng"":-118.65}",location-mall-01,prov-gps,TRUE,2025-06-04T21:45:00Z,FALSE,2a3b4c5d-eeee-4fff-9000-1234567890a7,"[""shopping""]"
 L018,conn18,2025-06-05T22:00:00Z,FALSE,point,"{""lat"":34.18,""lng"":-118.66}",location-park-01,prov-gps,TRUE,2025-06-05T22:45:00Z,FALSE,3b4c5d6e-ffff-4000-9111-2345678901b8,"[""park""]"
 L019,conn19,2025-06-06T23:00:00Z,FALSE,point,"{""lat"":34.19,""lng"":-118.67}",location-mall-01,prov-gps,TRUE,2025-06-06T23:45:00Z,FALSE,4c5d6e7f-0000-4111-9222-3456789012c9,"[""shopping""]"
-
+L020,conn20,2025-06-07T00:00:00Z,FALSE,point,"{""lat"":34.20,""lng"":-118.68}",location-park-01,prov-gps,TRUE,2025-06-07T00:45:00Z,FALSE,5d6e7f8a-1111-4222-9333-4567890123da,"[""park""]"
