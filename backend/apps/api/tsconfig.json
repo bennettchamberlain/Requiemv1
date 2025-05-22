@@ -2,7 +2,7 @@
   "extends": "../../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "module": "commonjs",
     "target": "ES2020",
     "types": ["node"],
@@ -10,9 +10,10 @@
     "declaration": true,
     "strict": true,
     "esModuleInterop": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["src"],
+  "include": ["src", "scripts"],
   "exclude": ["dist", "node_modules"],
   "ts-node": {
     "files": true
