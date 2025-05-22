@@ -16,16 +16,27 @@ export function MemoryPage() {
       <div className="flex flex-col gap-6 p-6">
         {/* Search Bar */}
         <div className="relative w-full max-w-2xl mx-auto">
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-            <Search className="h-4 w-4 text-muted-foreground" />
+          <div className="flex">
+            <div className="relative flex-grow">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <Search className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <input
+                type="search"
+                className="block w-full p-2 pl-10 text-sm border rounded-l-lg bg-background border-input"
+                placeholder="Search memories..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && console.log('Searching for:', searchQuery)}
+              />
+            </div>
+            <button
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-r-lg border border-primary hover:bg-primary/90"
+              onClick={() => console.log('Searching for:', searchQuery)}
+            >
+              Search
+            </button>
           </div>
-          <input
-            type="search"
-            className="block w-full p-2 pl-10 text-sm border rounded-lg bg-background border-input"
-            placeholder="Search memories..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
         </div>
         
         <Separator className="my-2" />
