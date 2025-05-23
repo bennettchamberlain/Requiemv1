@@ -317,6 +317,7 @@ __metadata:
     "@types/csv-parse": "npm:^1.2.5"
     "@types/node": "npm:^22.15.21"
     "@types/pg": "npm:^8"
+    "@types/uuid": "npm:^10.0.0"
     axios: "npm:^1.9.0"
     csv-parse: "npm:^5.6.0"
     feathers-hooks-common: "npm:^8.2.1"
@@ -329,6 +330,7 @@ __metadata:
     pino-pretty: "npm:^13.0.0"
     ts-node: "npm:^10.9.2"
     typescript: "npm:^5.8.3"
+    uuid: "npm:^11.1.0"
   languageName: unknown
   linkType: soft
 
@@ -3270,6 +3272,13 @@ __metadata:
     "@types/node": "npm:*"
     form-data: "npm:^4.0.0"
   checksum: 10c0/12631f1d8b3a62e1f435bc885f6d64d1a2d1ae82b80f0c6d63d4d6372c40b6f1fee6b3da59ac18bb86250b1eb73583bf2d4b1f7882048c32468791c560c69b7c
+  languageName: node
+  linkType: hard
+
+"@types/uuid@npm:^10.0.0":
+  version: 10.0.0
+  resolution: "@types/uuid@npm:10.0.0"
+  checksum: 10c0/9a1404bf287164481cb9b97f6bb638f78f955be57c40c6513b7655160beb29df6f84c915aaf4089a1559c216557dc4d2f79b48d978742d3ae10b937420ddac60
   languageName: node
   linkType: hard
 
