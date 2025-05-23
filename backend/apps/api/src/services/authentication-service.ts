@@ -1,13 +1,16 @@
+import { AuthenticationService as BaseAuthenticationService } from '@feathersjs/authentication';
 import type { HookContext } from '@feathersjs/feathers';
 
-export const hooks = {
-  after: {
-    create: [
-      (context: HookContext) => {
-        delete context.result.authentication;
+export class AuthenticationService extends BaseAuthenticationService {
+  static hooks = {
+    after: {
+      create: [
+        (context: HookContext) => {
+          delete context.result.authentication;
 
-        return context;
-      },
-    ],
-  },
-};
+          return context;
+        },
+      ],
+    },
+  };
+}

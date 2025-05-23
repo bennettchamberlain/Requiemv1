@@ -1,11 +1,11 @@
 import { app } from './app';
 
-import { LoggingService } from './logging';
+import { Logger } from './utils';
 
 const port = app.get('port');
 const host = app.get('host');
 
-const logger = LoggingService.create('application');
+const logger = Logger.create('application');
 
 process.on('unhandledRejection', (reason) => logger.error(reason));
 

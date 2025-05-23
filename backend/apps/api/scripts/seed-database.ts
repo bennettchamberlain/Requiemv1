@@ -2,13 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { parse } from 'csv-parse/sync';
 import { app } from '../src/app';
-import { LoggingService } from '../src/logging';
+import { Logger } from '../src/utils';
 import { v4 as uuidv4 } from 'uuid';
 
 declare const __dirname: string;
 declare const process: any;
 
-const logger = LoggingService.create('database-seeder');
+const logger = Logger.create('database-seeder');
 const db = app.get('postgresqlClient');
 
 type AnyRecord = Record<string, any>;

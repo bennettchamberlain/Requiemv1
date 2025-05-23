@@ -1,8 +1,8 @@
 import type { HookContext, NextFunction } from '@feathersjs/feathers';
 
-import { LoggingService } from '../logging';
+import { Logger } from '../utils';
 
-const logger = LoggingService.create('error');
+const logger = Logger.create('error');
 
 export async function logError(context: HookContext, next: NextFunction) {
   try {
