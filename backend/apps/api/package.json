@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "nodemon -x ts-node src/index.ts",
+"dev:pretty": "yarn dev | yarn pino-pretty",
     "migrate": "knex migrate:latest",
     "migrate:make": "knex migrate:make",
     "migrate:rollback": "knex migrate:rollback"
