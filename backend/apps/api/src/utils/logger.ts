@@ -2,7 +2,7 @@ import { pino } from 'pino';
 
 const logger = pino();
 
-export class LoggingService {
+export class Logger {
   static create(name?: string | null, config?: object) {
     const nameConfig = name != null ? { name } : {};
     const optionConfig = config || {};

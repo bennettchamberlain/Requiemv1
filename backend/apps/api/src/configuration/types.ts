@@ -1,11 +1,10 @@
 import { HookContext as FeathersHookContext, NextFunction } from '@feathersjs/feathers';
-import { type AuthenticationService } from '@feathersjs/authentication';
 import { Application as FeathersApplication } from '@feathersjs/koa';
 import { Type, defaultAppConfiguration } from '@feathersjs/typebox';
 import type { Static } from '@feathersjs/typebox';
+import type { Knex } from 'knex';
 
-import { UserService } from '../services';
-import { SignupService } from '../services/signup-service';
+import type { ServiceTypes } from '../services';
 
 export const configurationSchema = Type.Object({
   ...defaultAppConfiguration.properties,
@@ -34,17 +33,10 @@ export const configurationSchema = Type.Object({
 
 export type ApplicationConfiguration = Static<typeof configurationSchema>;
 
-export type { NextFunction };
-
 // The types for app.get(name) and app.set(name)
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Configuration extends ApplicationConfiguration {}
-
-// A mapping of service names to types. Will be extended in service files.
-export interface ServiceTypes {
-  users: UserService;
-  authenticate: AuthenticationService;
-  signup: SignupService;
+export interface Configuration extends ApplicationConfiguration {
+  postgresqlClient: Knex;
 }
 
 // The application instance type that will be used everywhere else
@@ -52,3 +44,5 @@ export type Application = FeathersApplication<ServiceTypes, Configuration>;
 
 // The context for hook functions - can be typed with a service class
 export type HookContext<S = unknown> = FeathersHookContext<Application, S>;
+
+export type { NextFunction };

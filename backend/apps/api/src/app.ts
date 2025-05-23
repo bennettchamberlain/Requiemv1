@@ -1,17 +1,14 @@
 import { feathers } from '@feathersjs/feathers';
 import { koa, rest, bodyParser, errorHandler, parseAuthentication, cors } from '@feathersjs/koa';
 
-import { postgresql } from './configuration/postgresql';
 import type { Application } from './configuration/types';
-import { appConfiguration } from './configuration';
-import { logError } from './hooks/log-error';
-import { logRequest } from './hooks/log-request';
-import { services } from './services/index';
+import { configureDatabases, configureServices, configuration } from './configuration';
+import { logError, logRequest } from './hooks';
 
 const app: Application = koa(feathers());
 
 // Load our app configuration (see config/ folder)
-app.configure(appConfiguration);
+app.configure(configuration);
 
 // Set up Koa middleware
 app.use(cors());
@@ -22,8 +19,8 @@ app.use(bodyParser());
 // Configure services and transports
 app.configure(rest());
 
-app.configure(postgresql);
-app.configure(services);
+app.configure(configureDatabases);
+app.configure(configureServices);
 
 // Register hooks that run on all service methods
 app.hooks({

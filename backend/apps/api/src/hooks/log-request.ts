@@ -2,9 +2,9 @@
 
 import { HookContext, NextFunction } from '@feathersjs/feathers';
 
-import { LoggingService } from '../logging';
+import { Logger } from '../utils';
 
-const logger = LoggingService.create('request');
+const logger = Logger.create('request');
 
 export async function logRequest(context: HookContext, next: NextFunction) {
   const start = process.hrtime.bigint();
