@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "nodemon -x ts-node src/index.ts",
     "dev:pretty": "yarn dev | yarn pino-pretty",
+    "lint:circular-imports": "madge . --extensions ts --circular",
     "migrate": "knex migrate:latest",
     "migrate:make": "knex migrate:make",
     "migrate:rollback": "knex migrate:rollback"
@@ -40,6 +41,7 @@
     "@types/node": "^22.15.21",
     "@types/pg": "^8",
     "@types/uuid": "^10.0.0",
+    "madge": "^8.0.0",
     "nodemon": "^3.1.10",
     "pino-pretty": "^13.0.0",
     "ts-node": "^10.9.2",
