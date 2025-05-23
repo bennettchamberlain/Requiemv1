@@ -13,6 +13,7 @@ import { SignupPage } from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { ChatPage } from '@/pages/ChatPage';
+import { MemoryPage } from '@/pages/MemoryPage';
 
 // Protected route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -29,6 +30,183 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/////////////////////////////////////////////////////////////////////////////////
+
+import { useNavigate } from 'react-router-dom';
+import { BookOpen, Bot, Map, Settings2, SquareTerminal } from 'lucide-react';
+import { NavMain } from '@/components/nav-main';
+import { NavUser } from '@/components/nav-user';
+import { Collapsible } from '@/components/ui/collapsible';
+
+import {
+    SidebarProvider,
+    Sidebar,
+    SidebarMenu,
+    SidebarMenuItem,
+    SidebarMenuButton,
+    SidebarContent,
+    SidebarInset,
+    SidebarGroup,
+    SidebarGroupLabel,
+    SidebarGroupContent,
+    SidebarRail,
+    SidebarTrigger,
+    SidebarHeader,
+    SidebarFooter,
+} from '@/components/ui/sidebar';
+
+const items = [
+  {
+    title: 'Dashboard',
+    url: '/dashboard',
+    icon: SquareTerminal,
+    isActive: true,
+  },
+  {
+    title: 'Memory',
+    url: '/memory',
+    icon: Bot,
+    items: [
+      {
+        title: 'List',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Feed',
+        url: '/memory?tab=feed',
+        icon: Bot,
+      },
+      {
+        title: 'Map',
+        url: '/memory?tab=map',
+        icon: Map,
+      },
+      {
+        title: 'Calendar',
+        url: '/memory?tab=calendar',
+        icon: Bot,
+      },
+      {
+        title: 'Chat',
+        url: '/chat',
+        icon: Bot,
+      },
+    ],
+  },
+  {
+    title: 'Questions',
+    url: '#',
+    icon: BookOpen,
+    items: [
+      {
+        title: 'Questions',
+        url: '#',
+      },
+      {
+        title: 'Insights',
+        url: '#',
+      },
+    ],
+  },
+  {
+    title: 'Chat',
+    url: '/Chat',
+    icon: Bot,
+    collapsible: false
+  },
+  {
+    title: 'Settings',
+    url: '/admin',
+    icon: Settings2,
+    items: [
+      {
+        title: 'General',
+        url: '#',
+      },
+      {
+        title: 'Billing',
+        url: '#',
+      },
+      {
+        title: 'Privacy',
+        url: '#',
+      },
+      {
+        title: 'Admin',
+        url: '/admin',
+      },
+    ],
+  },
+];
+
+interface AppSideBarProps {
+  children: React.ReactNode;
+}
+
+export function AppSidebarUnused({ children }: AppSideBarProps) {
+  return (
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarContent>
+          <NavMain items={items} />
+        </SidebarContent>
+        <SidebarRail />
+      </Sidebar>
+      <SidebarInset>
+        {children}
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
+
+  
+export function AppSidebar({ children }: AppSideBarProps) {
+  const { user } = useAuth();
+  
+  const currentUser = {
+    name: user?.name || user?.email || 'User',
+    email: user?.email || '',
+    avatar: '/avatars/shadcn.jpg',
+  };
+  return (
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarContent>
+          <SidebarHeader>
+            Companion Intelligence
+          </SidebarHeader>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {items.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild>
+                      <a href={item.url}>
+                        <span>{item.title}</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          <NavUser user={currentUser} />
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset>
+        {children}
+      </SidebarInset>
+    </SidebarProvider>
+  )
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+
+
 function App() {
   return (
     <ThemeProvider>
@@ -42,7 +220,9 @@ function App() {
               path="/chat"
               element={
                 <ProtectedRoute>
-                  <ChatPage />
+                  <AppSidebar>
+                    <ChatPage />
+                  </AppSidebar>
                 </ProtectedRoute>
               }
             />
@@ -50,7 +230,9 @@ function App() {
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <DashboardPage />
+                  <AppSidebar>
+                    <DashboardPage />
+                  </AppSidebar>
                 </ProtectedRoute>
               }
             />
@@ -58,7 +240,19 @@ function App() {
               path="/admin"
               element={
                 <ProtectedRoute>
-                  <AdminPage />
+                  <AppSidebar>
+                    <AdminPage />
+                  </AppSidebar>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/memory"
+              element={
+                <ProtectedRoute>
+                  <AppSidebar>
+                    <MemoryPage />
+                  </AppSidebar>
                 </ProtectedRoute>
               }
             />
