@@ -11,7 +11,6 @@
     "strict": true,
     "esModuleInterop": true,
     "sourceMap": true,
-    "typeRoots": ["./node_modules/@types"]
   },
   "include": ["src", "scripts"],
   "exclude": ["dist", "node_modules"],
