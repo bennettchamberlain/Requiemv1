@@ -3,6 +3,8 @@ import { LocalStrategy } from '@feathersjs/authentication-local';
 
 import {
   AuthenticationService,
+  EmbeddingsService,
+  InternalEmbeddingsService,
   SignupService,
   UserService,
 } from '../services';
@@ -19,6 +21,8 @@ export function configure(app: Application) {
   app.use('users', new UserService(db));
   app.use('signup', new SignupService(app));
   app.use('authenticate', authenticationService);
+  app.use('embeddings', new EmbeddingsService(app));
+  app.use('internalEmbeddings', new InternalEmbeddingsService(db));
 
   app.service('users').hooks(UserService.hooks);
   app.service('authenticate').hooks(AuthenticationService.hooks);

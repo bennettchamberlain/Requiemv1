@@ -307,6 +307,7 @@ __metadata:
     "@feathersjs/authentication-jwt": "npm:^2.0.10"
     "@feathersjs/authentication-local": "npm:^5.0.34"
     "@feathersjs/configuration": "npm:^5.0.34"
+    "@feathersjs/errors": "npm:^5.0.34"
     "@feathersjs/feathers": "npm:^5.0.34"
     "@feathersjs/knex": "npm:^5.0.34"
     "@feathersjs/koa": "npm:^5.0.34"
@@ -324,6 +325,7 @@ __metadata:
     fs: "npm:^0.0.1-security"
     knex: "npm:^3.1.0"
     nodemon: "npm:^3.1.10"
+    ollama: "npm:^0.5.15"
     path: "npm:^0.12.7"
     pg: "npm:^8.16.0"
     pino: "npm:^9.6.0"
@@ -6887,6 +6889,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"ollama@npm:^0.5.15":
+  version: 0.5.15
+  resolution: "ollama@npm:0.5.15"
+  dependencies:
+    whatwg-fetch: "npm:^3.6.20"
+  checksum: 10c0/2591d67c69614abf6353654a22edb492464d817908975a09c61551f211f6d22357b026614710a43687b917a9dcc8792f0446eae97535d43540c17870008c5537
+  languageName: node
+  linkType: hard
+
 "on-exit-leak-free@npm:^2.1.0":
   version: 2.1.2
   resolution: "on-exit-leak-free@npm:2.1.2"
@@ -9110,6 +9121,13 @@ __metadata:
   dependencies:
     iconv-lite: "npm:0.6.3"
   checksum: 10c0/273b5f441c2f7fda3368a496c3009edbaa5e43b71b09728f90425e7f487e5cef9eb2b846a31bd760dd8077739c26faf6b5ca43a5f24033172b003b72cf61a93e
+  languageName: node
+  linkType: hard
+
+"whatwg-fetch@npm:^3.6.20":
+  version: 3.6.20
+  resolution: "whatwg-fetch@npm:3.6.20"
+  checksum: 10c0/fa972dd14091321d38f36a4d062298df58c2248393ef9e8b154493c347c62e2756e25be29c16277396046d6eaa4b11bd174f34e6403fff6aaca9fb30fa1ff46d
   languageName: node
   linkType: hard
 
