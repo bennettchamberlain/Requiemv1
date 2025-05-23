@@ -58,7 +58,13 @@ dev:
 init: ## Initialize repository after checkout
 	@printf "🏗️ Initializing repository...\n\n"
 
-	@which node >/dev/null || { printf "$(RED)✗$(RESET) You do not have NodeJS installed. Please install NodeJS v$(shell cat .nvmrc 2>/dev/null || echo '[unknown]') first.\n\n"; exit 1; }
+	@NODEJS=$$(which node 2>/dev/null); \
+	if [ -z "$$NODEJS" ]; then \
+		printf "$(RED)✗$(RESET) You do not have 'node' installed or it is not in your path. Please install NodeJS v$(shell cat .nvmrc 2>/dev/null || echo '[unknown]') first.\n\n"; \
+		exit 1; \
+	else \
+		printf "$(GREEN)✓$(RESET) NodeJS found at $$NODEJS\n\n"; \
+	fi
 
 	@required_version=$$(cat .nvmrc); \
 	current_version=$$(node -v | cut -c2-); \
@@ -67,6 +73,24 @@ init: ## Initialize repository after checkout
 		exit 1; \
 	else \
 		printf "$(GREEN)✓$(RESET) Node version matches ($$current_version)\n\n"; \
+	fi
+
+	@OLLAMA=$$(which ollama 2>/dev/null); \
+	if [ -z "$$OLLAMA" ]; then \
+		printf "$(RED)✗$(RESET) You do not have 'ollama' installed or it is not in your PATH.\n\n"; \
+		exit 1; \
+	else \
+		printf "$(GREEN)✓$(RESET) ollama found at $$OLLAMA 🦙\n\n"; \
+	fi
+
+	@MODEL=nomic-embed-text; \
+	ollama list | grep -Fq "$$MODEL"; \
+	STATUS=$$?; \
+	if [ "$$STATUS" -eq 0 ]; then \
+		printf "\t$(GREEN)✓$(RESET) ollama model '$$MODEL' is available\n\n"; \
+	else \
+		printf "\t$(RED)✗$(RESET) ollama model '$$MODEL' is not yet pulled\n\n"; \
+		exit 1; \
 	fi
 
 	@HOST=dev.companionintelligence.com; \

@@ -53,6 +53,17 @@ The `ollama` binary can be daemonized if using Homebrew with:
 brew services start ollama
 ```
 
+You will want to pull at least:
+
+* `nomic-embed-text` [here](https://ollama.com/library/nomic-embed-text) which powers our embed vector generation
+
+E.g.
+
+```
+ollama pull nomic-embed-text
+```
+
+If the `ollama` daemon is running, just having the model present should be sufficient, you don't need to serve it explicitly.
 
 ## Local infrastructure
 
