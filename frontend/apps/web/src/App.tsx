@@ -61,7 +61,91 @@ const items = [
     url: '/dashboard',
     icon: SquareTerminal,
     isActive: true,
+    items: [
+      {
+        title: 'Recommendations',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Amusing Statistics',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Recent Activity',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Recent Notifications',
+        url: '/memory',
+        icon: Bot,
+      },
+    ]
   },
+
+  {
+    title: 'Talk to an AI',
+    url: '/memory',
+    icon: Bot,
+    items: [
+      {
+        title: 'Text Talk to AI',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Voice Talk to AI',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Visual Camera Mode',
+        url: '/memory',
+        icon: Bot,
+      },
+    ]
+  },
+
+  {
+    title: 'Counsel',
+    url: '/memory',
+    icon: Bot,
+    items: [
+      {
+        title: 'Active Coaches',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Available Coaches',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Priorities / Swim Lanes',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'About you (Questions)',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Insights / Context',
+        url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Actions for you to do',
+        url: '/memory',
+        icon: Bot,
+      },
+    ]
+  },
+
   {
     title: 'Memory',
     url: '/memory',
@@ -83,38 +167,33 @@ const items = [
         icon: Map,
       },
       {
-        title: 'Calendar',
+        title: 'Timeline',
         url: '/memory?tab=calendar',
         icon: Bot,
       },
-      {
-        title: 'Chat',
-        url: '/chat',
-        icon: Bot,
-      },
     ],
   },
+
   {
-    title: 'Questions',
-    url: '#',
-    icon: BookOpen,
+    title: 'Tasks',
+    url: '/admin',
+    icon: Settings2,
     items: [
       {
-        title: 'Questions',
+        title: 'Active',
         url: '#',
       },
       {
-        title: 'Insights',
+        title: 'Available',
         url: '#',
       },
-    ],
+      {
+        title: 'Analysis',
+        url: '#',
+      },
+    ]
   },
-  {
-    title: 'Chat',
-    url: '/Chat',
-    icon: Bot,
-    collapsible: false
-  },
+
   {
     title: 'Settings',
     url: '/admin',
@@ -144,14 +223,26 @@ interface AppSideBarProps {
   children: React.ReactNode;
 }
 
-export function AppSidebarUnused({ children }: AppSideBarProps) {
+export function AppSidebar({ children }: AppSideBarProps) {
+  const { user } = useAuth();  
+  const currentUser = {
+    name: user?.name || user?.email || 'User',
+    email: user?.email || '',
+    avatar: '/avatars/shadcn.jpg',
+  };
   return (
     <SidebarProvider>
       <Sidebar>
         <SidebarContent>
+          <SidebarHeader>
+            Companion Intelligence
+          </SidebarHeader>
           <NavMain items={items} />
         </SidebarContent>
         <SidebarRail />
+        <SidebarFooter>
+          <NavUser user={currentUser} />
+        </SidebarFooter>
       </Sidebar>
       <SidebarInset>
         {children}
@@ -162,7 +253,7 @@ export function AppSidebarUnused({ children }: AppSideBarProps) {
 
 
   
-export function AppSidebar({ children }: AppSideBarProps) {
+export function AppSidebarUnused({ children }: AppSideBarProps) {
   const { user } = useAuth();
   
   const currentUser = {
