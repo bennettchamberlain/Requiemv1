@@ -363,12 +363,12 @@ async function seedDatabase() {
     await seedUsers(path.join(dataDir, 'js1-user.csv'));
     await seedContacts(path.join(dataDir, 'js1-contact.csv'));
     await seedPeople(path.join(dataDir, 'js1-people.csv'));
+    await seedQuestions(path.join(dataDir, 'questions.csv'));
     await seedLocations(path.join(dataDir, 'js1-location.csv'));
     await seedPlaces(path.join(dataDir, 'js1-place.csv'));
     await seedThings(path.join(dataDir, 'js1-things.csv'));
     await seedContent(path.join(dataDir, 'jsi-content.csv'));
     await seedEvents(path.join(dataDir, 'js1-events.csv'));
-    await seedQuestions(path.join(dataDir, 'questions.csv'));
     logger.info('Database seeding completed successfully');
     process.exit(0);
   } catch (error) {
