@@ -106,7 +106,7 @@ export default function AdminPage() {
 
       const result = await response.json();
       console.log('Action result:', result);
-      
+
       // Refresh data after action
       await fetchJobs();
       await fetchQueueStats();
@@ -146,11 +146,11 @@ export default function AdminPage() {
   };
 
   const filteredJobs = jobs.filter(job => {
-    const matchesSearch = !searchTerm || 
+    const matchesSearch = !searchTerm ||
       job.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       job.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       job.queue.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     return matchesSearch;
   });
 

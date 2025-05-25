@@ -1,5 +1,7 @@
 # CI Server
 
+A comprehensive Companion Intelligence system with a modern web application, robust backend API, and job queue system.
+
 ## Prerequisites
 
 ### Homebrew
@@ -96,7 +98,6 @@ This will spin up:
 
 You'll want to edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
 
-
 ## Running the application
 
 Now that you have prerequisites installed and the local infrastructure running you should be able to run:
@@ -134,7 +135,135 @@ You should now be able to view the application at:
 
 [dev.companionintelligence.com](http://dev.companionintelligence.com)
 
-----------------
+## Available Commands
+
+### Root Level Commands
+
+From the project root, you can run:
+
+```bash
+# Development workflow
+make help          # List all available make commands
+make init          # Initialize repository after checkout
+make install       # Install project dependencies
+make migrate       # Run database migrations
+make dev          # Start development environment with tmux
+
+# Linting
+yarn lint         # Run ESLint across the workspace
+```
+
+### Backend API Commands (`backend/apps/api`)
+
+Navigate to `backend/apps/api` and run:
+
+```bash
+# Development
+yarn dev                    # Start development server with nodemon
+yarn dev:pretty            # Start dev server with pretty-printed logs
+
+# Database operations
+yarn migrate               # Run latest database migrations
+yarn migrate:make <name>   # Create a new migration file
+yarn migrate:rollback     # Rollback the last migration
+
+# Code quality
+yarn lint:circular-imports # Check for circular import dependencies
+
+# Database seeding
+npx ts-node scripts/seed-database.ts  # Seed database with test data
+```
+
+### Frontend Web App Commands (`frontend/apps/web`)
+
+Navigate to `frontend/apps/web` and run:
+
+```bash
+# Development
+yarn dev          # Start Vite development server
+yarn build        # Build for production (TypeScript + Vite)
+yarn preview      # Preview production build locally
+```
+
+### Docker Commands
+
+```bash
+# Local development infrastructure
+docker compose --profile local up -d     # Start core services (PostgreSQL, Nginx)
+docker compose --profile local down      # Stop core services
+
+# Development tools
+docker compose --profile tools up -d     # Start monitoring tools (OpenSearch dashboard, Open WebUI)
+docker compose --profile tools down      # Stop monitoring tools
+
+# View logs
+docker compose logs -f                   # Follow all container logs
+docker compose logs -f <service-name>    # Follow specific service logs
+
+# Container management
+docker compose ps                        # List running containers
+docker compose restart <service-name>    # Restart specific service
+```
+
+### Job Queue System
+
+The backend includes a comprehensive job queue system powered by PG-Boss. See [backend/apps/api/JOB_QUEUE_README.md](backend/apps/api/JOB_QUEUE_README.md) for detailed documentation.
+
+Key features:
+- AI processing jobs (embeddings, analysis)
+- Scheduled recurring tasks
+- Job monitoring and management
+- Dead letter queue handling
+- Real-time job status tracking
+
+### Package Structure
+
+This is a Yarn workspace monorepo with the following structure:
+
+```
+├── backend/apps/
+│   └── api/                    # Main backend API service (Feathers.js)
+├── frontend/apps/
+│   ├── web/                    # Main web application (React + Vite)
+│   └── native/                 # Future native app
+└── frontend/packages/
+    ├── common/                 # Shared components and utilities
+    └── thingo/                 # Additional shared package
+```
+
+### Environment Setup
+
+1. **Node.js Version**: This project uses Node.js v22 (see [.nvmrc](.nvmrc))
+2. **Package Manager**: Yarn v4.9.1 (configured with Corepack)
+3. **Database**: PostgreSQL with pgvector extension
+4. **Development Tools**:
+   - ESLint for code linting
+   - Prettier for code formatting
+   - TypeScript for type safety
+   - Vite for frontend bundling
+
+### CI/CD
+
+GitHub Actions workflows are configured for:
+- **Linting**: Runs ESLint on push/PR to main branch
+
+### Architecture Overview
+
+- **Backend**: Feathers.js API with Knex.js for database operations
+- **Frontend**: React SPA with modern UI components (Radix UI, Tailwind CSS)
+- **Database**: PostgreSQL with vector embeddings support
+- **Queue System**: PG-Boss for background job processing
+- **AI Integration**: Ollama for local LLM processing
+
+### Development Workflow
+
+1. Start local infrastructure: `docker compose --profile local up -d`
+2. Install dependencies: `make install`
+3. Run migrations: `make migrate`
+4. Start development servers: `make dev`
+5. Access the application at `dev.companionintelligence.com`
+
+The `make dev` command starts both backend and frontend in a tmux session for convenient development.
 
 ## Proposed folder structure
 

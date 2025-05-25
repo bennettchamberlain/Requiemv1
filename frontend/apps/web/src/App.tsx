@@ -240,7 +240,7 @@ interface AppSideBarProps {
 }
 
 export function AppSidebar({ children }: AppSideBarProps) {
-  const { user } = useAuth();  
+  const { user } = useAuth();
   const currentUser = {
     name: user?.name || user?.email || 'User',
     email: user?.email || '',
@@ -269,10 +269,10 @@ export function AppSidebar({ children }: AppSideBarProps) {
 }
 
 
-  
+
 export function AppSidebarUnused({ children }: AppSideBarProps) {
   const { user } = useAuth();
-  
+
   const currentUser = {
     name: user?.name || user?.email || 'User',
     email: user?.email || '',

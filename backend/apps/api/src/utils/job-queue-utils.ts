@@ -1,15 +1,15 @@
 import type { Application } from '../configuration/types';
-import type { JobQueueService } from '../services/job-queue-service';
+import type { JobQueueService, JobData, JobOptions } from '../services/job-queue-service';
 
 /**
  * Get the job queue service instance from the application
  */
 export function getJobQueue(app: Application): JobQueueService {
-  const jobQueueService = app.get('jobQueueService' as any);
+  const jobQueueService = app.get('jobQueueService') as JobQueueService | undefined;
   if (!jobQueueService) {
     throw new Error('Job queue service is not configured');
   }
-  return jobQueueService as JobQueueService;
+  return jobQueueService;
 }
 
 /**
@@ -29,8 +29,8 @@ export async function queueAIJob(
     | 'streaming'
     | 'circuit-breaker'
     | 'llm-processing',
-  data: unknown,
-  options?: unknown,
+  data: Record<string, unknown>,
+  options?: { priority?: number; delay?: number; retryLimit?: number; retryDelay?: number; expireIn?: string; },
 ): Promise<string | null> {
   const jobQueue = getJobQueue(app);
 
@@ -93,10 +93,40 @@ export async function scheduleAITask(
   await jobQueue.scheduleJob(name, cronExpression, taskData, options);
 }
 
+/**
+ * Send a job to a specific queue
+ */
+export async function sendJob(
+  app: Application,
+  queue: string,
+  type: string,
+  data: Record<string, unknown> = {},
+  options: JobOptions = {}
+) {
+  const jobQueue = app.get('jobQueueService') as JobQueueService;
+  return await jobQueue.sendJob(queue, { type, ...data }, options);
+}
+
+/**
+ * Schedule a job with a delay
+ */
+export async function scheduleJob(
+  app: Application,
+  name: string,
+  cronExpression: string,
+  data: Record<string, unknown> = {},
+  options: JobOptions = {}
+) {
+  const jobQueue = app.get('jobQueueService') as JobQueueService;
+  return await jobQueue.scheduleJob(name, cronExpression, data, options);
+}
+
 export default {
   getJobQueue,
   queueAIJob,
   queueNotification,
   queueDataProcessing,
   scheduleAITask,
+  sendJob,
+  scheduleJob,
 };
