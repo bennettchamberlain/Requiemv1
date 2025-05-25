@@ -174,6 +174,15 @@ yarn lint:circular-imports # Check for circular import dependencies
 npx ts-node scripts/seed-database.ts  # Seed database with test data
 ```
 
+
+### Available Scripts
+
+#### Database Seeding
+```bash
+# Seed database with test data
+npx ts-node scripts/seed-database.ts
+```
+
 ### Frontend Web App Commands (`frontend/apps/web`)
 
 Navigate to `frontend/apps/web` and run:
