@@ -6,18 +6,42 @@ import { Application } from '../configuration/types';
 import { queryValidator } from '../configuration/validators';
 import { getJobQueue } from '../utils/job-queue-utils';
 
+// Job interface for PgBoss job structure
+interface PgBossJobDetails {
+  id: string;
+  name: string;
+  data: unknown;
+  state?: string;
+  priority?: number;
+  retryCount?: number;
+  retryLimit?: number;
+  retryDelay?: number;
+  retryBackoff?: boolean;
+  startAfter?: Date | string;
+  startedOn?: Date | string;
+  singletonKey?: string;
+  singletonOn?: Date | string;
+  expireIn?: string;
+  createdOn?: Date | string;
+  completedOn?: Date | string;
+  keepUntil?: Date | string;
+  output?: unknown;
+}
+
 // Input validation schemas
 export const JobInput = Type.Object(
   {
     queue: Type.String(),
     data: Type.Any(),
-    options: Type.Optional(Type.Object({
-      priority: Type.Optional(Type.Number()),
-      delay: Type.Optional(Type.Number()),
-      retryLimit: Type.Optional(Type.Number()),
-      retryDelay: Type.Optional(Type.Number()),
-      expireIn: Type.Optional(Type.String()),
-    })),
+    options: Type.Optional(
+      Type.Object({
+        priority: Type.Optional(Type.Number()),
+        delay: Type.Optional(Type.Number()),
+        retryLimit: Type.Optional(Type.Number()),
+        retryDelay: Type.Optional(Type.Number()),
+        expireIn: Type.Optional(Type.String()),
+      }),
+    ),
   },
   {
     additionalProperties: false,
@@ -29,10 +53,12 @@ export const ScheduleJobInput = Type.Object(
     name: Type.String(),
     cronExpression: Type.String(),
     data: Type.Optional(Type.Any()),
-    options: Type.Optional(Type.Object({
-      priority: Type.Optional(Type.Number()),
-      retryLimit: Type.Optional(Type.Number()),
-    })),
+    options: Type.Optional(
+      Type.Object({
+        priority: Type.Optional(Type.Number()),
+        retryLimit: Type.Optional(Type.Number()),
+      }),
+    ),
   },
   {
     additionalProperties: false,
@@ -55,14 +81,11 @@ export class JobsService {
   /**
    * Create (send) a new job
    */
-  async create(input: JobInputType, params?: Params) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async create(input: JobInputType, _params?: Params) {
     const jobQueue = getJobQueue(this.app);
 
-    const jobId = await jobQueue.sendJob(
-      input.queue,
-      input.data,
-      input.options
-    );
+    const jobId = await jobQueue.sendJob(input.queue, input.data, input.options);
 
     return {
       success: true,
@@ -75,14 +98,18 @@ export class JobsService {
   /**
    * Get job by ID
    */
-  async get(id: string, params?: Params) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async get(id: string, _params?: Params) {
     const jobQueue = getJobQueue(this.app);
 
-    const job = await jobQueue.getJob(id);
+    const jobResult = await jobQueue.getJob(id);
 
-    if (!job) {
+    if (!jobResult) {
       throw new Error(`Job ${id} not found`);
     }
+
+    // Type cast the unknown result to our job interface
+    const job = jobResult as PgBossJobDetails;
 
     return {
       id: job.id,
@@ -109,18 +136,20 @@ export class JobsService {
   /**
    * Cancel a job
    */
-  async remove(id: string, params?: Params) {
-    const jobQueue = getJobQueue(this.app);
-
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async remove(_id: string, _params?: Params) {
     // Note: PgBoss v10+ requires queue name for cancel
     // For now, we'll return an error message
-    throw new Error('Cancel job requires queue name. Use PATCH /jobs/:id with action: "cancel" and queueName');
+    throw new Error(
+      'Cancel job requires queue name. Use PATCH /jobs/:id with action: "cancel" and queueName',
+    );
   }
 
   /**
    * Update/Patch a job (for cancel, resume operations)
    */
-  async patch(id: string, data: { action: 'cancel' | 'resume'; queueName: string }, params?: Params) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async patch(id: string, data: { action: 'cancel' | 'resume'; queueName: string }, _params?: Params) {
     const jobQueue = getJobQueue(this.app);
 
     if (data.action === 'cancel') {
@@ -145,7 +174,8 @@ export class JobsService {
   /**
    * Get queue information
    */
-  async find(params?: Params) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async find(_params?: Params) {
     const jobQueue = getJobQueue(this.app);
 
     // Get queue sizes for common queues
@@ -154,7 +184,7 @@ export class JobsService {
       queues.map(async (queue) => ({
         name: queue,
         size: await jobQueue.getQueueSize(queue),
-      }))
+      })),
     );
 
     return {
@@ -181,15 +211,11 @@ export class ScheduledJobsService {
   /**
    * Schedule a new job
    */
-  async create(input: ScheduleJobInputType, params?: Params) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async create(input: ScheduleJobInputType, _params?: Params) {
     const jobQueue = getJobQueue(this.app);
 
-    await jobQueue.scheduleJob(
-      input.name,
-      input.cronExpression,
-      input.data,
-      input.options
-    );
+    await jobQueue.scheduleJob(input.name, input.cronExpression, input.data, input.options);
 
     return {
       success: true,

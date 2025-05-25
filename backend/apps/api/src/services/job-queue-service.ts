@@ -1,10 +1,77 @@
-const PgBoss = require('pg-boss');
+import PgBoss from 'pg-boss';
 import type { Application } from '../configuration/types';
 import { Logger } from '../utils';
 import { EnhancedAIHandler } from '../handlers/enhanced-ai-handlers';
 
+// Types matching the enhanced AI handlers
+interface AnalysisOptions {
+  includeDetails?: boolean;
+  categories?: string[];
+  maxSentences?: number;
+  maxKeywords?: number;
+}
+
+interface AnalysisJob {
+  data: {
+    content: string;
+    analysisType: string;
+    options?: AnalysisOptions;
+  };
+}
+
+interface EmbeddingJob {
+  data: {
+    text?: string;
+    texts?: string[];
+    model?: string;
+    metadata?: unknown;
+  };
+}
+
+interface PipelineJob {
+  data: {
+    step: string;
+    data: unknown;
+    pipelineId?: string;
+    stepIndex: number;
+    totalSteps: number;
+    nextStep?: string;
+  };
+}
+
+interface BatchJob {
+  data: {
+    batchId: string;
+    batchIndex: number;
+    totalBatches: number;
+    items: unknown[];
+    processingType: string;
+  };
+}
+
 export interface JobData {
-  [key: string]: any;
+  [key: string]: unknown;
+  type?: string;
+  content?: string;
+  analysisType?: string;
+  text?: string;
+  texts?: string[];
+  model?: string;
+  metadata?: unknown;
+  options?: unknown;
+  // Pipeline job properties
+  step?: string;
+  data?: unknown;
+  pipelineId?: string;
+  stepIndex?: number;
+  totalSteps?: number;
+  nextStep?: string;
+  // Batch job properties
+  batchId?: string;
+  batchIndex?: number;
+  totalBatches?: number;
+  items?: unknown[];
+  processingType?: string;
 }
 
 export interface JobOptions {
@@ -19,25 +86,46 @@ export interface JobOptions {
   singletonSeconds?: number;
 }
 
+export interface PgBossJob {
+  id: string;
+  name: string;
+  data: JobData;
+  done?: (err?: Error | null, result?: unknown) => void;
+}
+
+export interface JobHandler {
+  (job: PgBossJob): Promise<void> | void;
+}
+
+export interface PostgreSQLConfig {
+  connection?: {
+    host?: string;
+    port?: number;
+    database?: string;
+    user?: string;
+    password?: string;
+  };
+}
+
 export class JobQueueService {
-  private boss: any;
+  private boss: PgBoss;
   private isStarted = false;
   private logger = Logger.create('JobQueueService');
   private enhancedAIHandler: EnhancedAIHandler;
 
   constructor(private app: Application) {
-    const config = this.app.get('postgresql');
+    const config = this.app.get('postgresql') as PostgreSQLConfig;
 
     // Initialize enhanced AI handler
     this.enhancedAIHandler = new EnhancedAIHandler(app);
 
     // Create PgBoss instance with the same database connection
     this.boss = new PgBoss({
-      host: (config as any)?.connection?.host || 'localhost',
-      port: (config as any)?.connection?.port || 5432,
-      database: (config as any)?.connection?.database,
-      user: (config as any)?.connection?.user,
-      password: (config as any)?.connection?.password,
+      host: config?.connection?.host || 'localhost',
+      port: config?.connection?.port || 5432,
+      database: config?.connection?.database,
+      user: config?.connection?.user,
+      password: config?.connection?.password,
       // Optional: Configure additional PgBoss settings
       retryLimit: 3,
       retryDelay: 1000,
@@ -47,7 +135,7 @@ export class JobQueueService {
     });
 
     // Handle PgBoss events
-    this.boss.on('error', (error: any) => {
+    this.boss.on('error', (error: Error) => {
       this.logger.error('PgBoss error:', error);
     });
 
@@ -99,11 +187,7 @@ export class JobQueueService {
   /**
    * Send a job to the queue
    */
-  async sendJob(
-    queue: string,
-    data: JobData,
-    options: JobOptions = {}
-  ): Promise<string | null> {
+  async sendJob(queue: string, data: JobData, options: JobOptions = {}): Promise<string | null> {
     if (!this.isStarted) {
       throw new Error('JobQueueService is not started');
     }
@@ -125,7 +209,7 @@ export class JobQueueService {
     name: string,
     cronExpression: string,
     data: JobData = {},
-    options: JobOptions = {}
+    options: JobOptions = {},
   ): Promise<void> {
     if (!this.isStarted) {
       throw new Error('JobQueueService is not started');
@@ -162,17 +246,14 @@ export class JobQueueService {
   /**
    * Register a job handler
    */
-  async registerHandler(
-    queue: string,
-    handler: (job: any) => Promise<void> | void,
-    options: any = {}
-  ): Promise<void> {
+  async registerHandler(queue: string, handler: JobHandler): Promise<void> {
     if (!this.isStarted) {
       throw new Error('JobQueueService is not started');
     }
 
     try {
-      await this.boss.work(queue, options, async (jobs: any[]) => {
+      // Use the correct PgBoss work method signature - handler receives array of jobs
+      await this.boss.work(queue, async (jobs: PgBossJob[]) => {
         for (const job of jobs) {
           try {
             await handler(job);
@@ -193,13 +274,14 @@ export class JobQueueService {
   /**
    * Get job by ID
    */
-  async getJob(id: string): Promise<any | null> {
+  async getJob(id: string): Promise<unknown | null> {
     if (!this.isStarted) {
       throw new Error('JobQueueService is not started');
     }
 
     // PgBoss v10+ API - need to provide queue name, but we'll try to get by ID
     // Note: This is a limitation - we'd need to track queue names or use different approach
+    this.logger.warn(`Job retrieval by ID ${id} not implemented - requires queue name`);
     return null; // TODO: Implement proper job retrieval
   }
 
@@ -252,17 +334,17 @@ export class JobQueueService {
 
         switch (job.data.type) {
           case 'embedding':
-            result = await this.enhancedAIHandler.processEmbedding(job);
+            result = await this.enhancedAIHandler.processEmbedding(this.transformToEmbeddingJob(job));
             break;
           case 'analysis':
-            result = await this.enhancedAIHandler.processAnalysis(job);
+            result = await this.enhancedAIHandler.processAnalysis(this.transformToAnalysisJob(job));
             break;
           default:
             // Legacy support for old job format
             if (job.data.type === 'embedding') {
-              result = await this.enhancedAIHandler.processEmbedding(job);
+              result = await this.enhancedAIHandler.processEmbedding(this.transformToEmbeddingJob(job));
             } else if (job.data.type === 'analysis') {
-              result = await this.enhancedAIHandler.processAnalysis(job);
+              result = await this.enhancedAIHandler.processAnalysis(this.transformToAnalysisJob(job));
             } else {
               this.logger.warn(`Unknown AI job type: ${job.data.type}`);
               result = { success: false, error: 'Unknown job type' };
@@ -281,7 +363,7 @@ export class JobQueueService {
       this.logger.info(`Processing pipeline job ${job.id}`);
 
       try {
-        const result = await this.enhancedAIHandler.processPipeline(job);
+        const result = await this.enhancedAIHandler.processPipeline(this.transformToPipelineJob(job));
         this.logger.info(`Pipeline job ${job.id} completed:`, result);
       } catch (error) {
         this.logger.error(`Pipeline job ${job.id} failed:`, error);
@@ -294,7 +376,7 @@ export class JobQueueService {
       this.logger.info(`Processing batch job ${job.id}`);
 
       try {
-        const result = await this.enhancedAIHandler.processBatch(job);
+        const result = await this.enhancedAIHandler.processBatch(this.transformToBatchJob(job));
         this.logger.info(`Batch job ${job.id} completed:`, result);
       } catch (error) {
         this.logger.error(`Batch job ${job.id} failed:`, error);
@@ -307,7 +389,7 @@ export class JobQueueService {
       this.logger.info(`Processing multi-model job ${job.id}`);
 
       try {
-        const result = await this.enhancedAIHandler.processAnalysis(job);
+        const result = await this.enhancedAIHandler.processAnalysis(this.transformToAnalysisJob(job));
         this.logger.info(`Multi-model job ${job.id} completed:`, result);
       } catch (error) {
         this.logger.error(`Multi-model job ${job.id} failed:`, error);
@@ -345,7 +427,7 @@ export class JobQueueService {
 
       // Simulate varying processing times for load testing
       const processingTime = Math.random() * 1000 + 100;
-      await new Promise(resolve => setTimeout(resolve, processingTime));
+      await new Promise((resolve) => setTimeout(resolve, processingTime));
 
       this.logger.info(`Load test job ${job.id} completed in ${processingTime}ms`);
     });
@@ -355,7 +437,7 @@ export class JobQueueService {
 
       // Simulate heavier processing for stress testing
       const processingTime = Math.random() * 3000 + 500;
-      await new Promise(resolve => setTimeout(resolve, processingTime));
+      await new Promise((resolve) => setTimeout(resolve, processingTime));
 
       // Occasionally fail to test error handling
       if (Math.random() < 0.05) {
@@ -370,16 +452,31 @@ export class JobQueueService {
    * Process embedding generation jobs (legacy support)
    */
   private async processEmbeddingJob(data: JobData): Promise<void> {
-    // Delegate to enhanced handler
-    await this.enhancedAIHandler.processEmbedding({ data });
+    // Transform JobData to EmbeddingJob format expected by handler
+    const embeddingJob = {
+      data: {
+        text: data.text as string,
+        texts: data.texts as string[],
+        model: (data.model as string) || 'nomic-embed-text',
+        metadata: data.metadata,
+      },
+    };
+    await this.enhancedAIHandler.processEmbedding(embeddingJob);
   }
 
   /**
    * Process AI analysis jobs (legacy support)
    */
   private async processAnalysisJob(data: JobData): Promise<void> {
-    // Delegate to enhanced handler
-    await this.enhancedAIHandler.processAnalysis({ data });
+    // Transform JobData to AnalysisJob format expected by handler
+    const analysisJob = {
+      data: {
+        content: data.content as string,
+        analysisType: data.analysisType as string,
+        options: data.options as AnalysisOptions | undefined,
+      },
+    };
+    await this.enhancedAIHandler.processAnalysis(analysisJob);
   }
 
   /**
@@ -405,7 +502,7 @@ export class JobQueueService {
   /**
    * Get the underlying PgBoss instance for advanced operations
    */
-  getBoss(): any {
+  getBoss(): unknown {
     return this.boss;
   }
 
@@ -414,6 +511,64 @@ export class JobQueueService {
    */
   isReady(): boolean {
     return this.isStarted;
+  }
+
+  /**
+   * Transform PgBossJob to AnalysisJob format expected by enhanced AI handler
+   */
+  private transformToAnalysisJob(job: PgBossJob): AnalysisJob {
+    return {
+      data: {
+        content: job.data.content as string,
+        analysisType: job.data.analysisType as string,
+        options: job.data.options as AnalysisOptions | undefined,
+      },
+    };
+  }
+
+  /**
+   * Transform PgBossJob to EmbeddingJob format expected by enhanced AI handler
+   */
+  private transformToEmbeddingJob(job: PgBossJob): EmbeddingJob {
+    return {
+      data: {
+        text: job.data.text as string | undefined,
+        texts: job.data.texts as string[] | undefined,
+        model: job.data.model as string | undefined,
+        metadata: job.data.metadata,
+      },
+    };
+  }
+
+  /**
+   * Transform PgBossJob to PipelineJob format expected by enhanced AI handler
+   */
+  private transformToPipelineJob(job: PgBossJob): PipelineJob {
+    return {
+      data: {
+        step: job.data.step as string,
+        data: job.data.data,
+        pipelineId: job.data.pipelineId as string | undefined,
+        stepIndex: job.data.stepIndex as number,
+        totalSteps: job.data.totalSteps as number,
+        nextStep: job.data.nextStep as string | undefined,
+      },
+    };
+  }
+
+  /**
+   * Transform PgBossJob to BatchJob format expected by enhanced AI handler
+   */
+  private transformToBatchJob(job: PgBossJob): BatchJob {
+    return {
+      data: {
+        batchId: job.data.batchId as string,
+        batchIndex: job.data.batchIndex as number,
+        totalBatches: job.data.totalBatches as number,
+        items: job.data.items as unknown[],
+        processingType: job.data.processingType as string,
+      },
+    };
   }
 }
 

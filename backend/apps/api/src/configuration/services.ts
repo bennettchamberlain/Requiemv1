@@ -12,6 +12,12 @@ import {
   UserService,
 } from '../services';
 
+import {
+  setupJobAdminService,
+  setupHealthCheckService,
+  setupDashboardService,
+} from '../services/job-admin-api.service';
+
 import type { Application } from './types';
 
 export function configure(app: Application) {
@@ -32,6 +38,11 @@ export function configure(app: Application) {
   app.use('internalEmbeddings', new InternalEmbeddingsService(db));
   app.use('jobs', new JobsService(app));
   app.use('scheduledJobs', new ScheduledJobsService(app));
+
+  // Setup admin and monitoring services
+  setupJobAdminService(app);
+  setupHealthCheckService(app);
+  setupDashboardService(app);
 
   app.service('users').hooks(UserService.hooks);
   app.service('authenticate').hooks(AuthenticationService.hooks);

@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 // Import contexts
 import { ThemeProvider } from '@/contexts/ThemeContext';
@@ -7,11 +7,11 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
 // Import pages
 
-import { SplashPage } from '@/pages/SplashPage';
-import { LoginPage } from '@/pages/LoginPage';
-import { SignupPage } from '@/pages/SignupPage';
+import SplashPage from '@/pages/SplashPage';
+import LoginPage from '@/pages/LoginPage';
+import SignupPage from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { AdminPage } from '@/pages/AdminPage';
+import AdminPage from '@/pages/AdminPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { MemoryPage } from '@/pages/MemoryPage';
 
@@ -63,28 +63,76 @@ const items = [
     isActive: true,
     items: [
       {
-        title: 'Recommendations',
-        url: '/memory',
-        icon: Bot,
+        title: 'Overview',
+        url: '/dashboard',
+        icon: SquareTerminal,
       },
       {
-        title: 'Amusing Statistics',
-        url: '/memory',
-        icon: Bot,
+        title: 'Live Metrics',
+        url: '/dashboard/metrics',
+        icon: Map,
       },
       {
-        title: 'Recent Activity',
-        url: '/memory',
-        icon: Bot,
+        title: 'Job History',
+        url: '/admin/history',
+        icon: BookOpen,
       },
       {
-        title: 'Recent Notifications',
-        url: '/memory',
+        title: 'Notifications',
+        url: '/dashboard/notifications',
         icon: Bot,
       },
     ]
   },
-
+  {
+    title: 'Tasks',
+    url: '/admin',
+    icon: Settings2,
+    items: [
+      {
+        title: 'Active Jobs',
+        url: '/admin',
+        icon: Settings2,
+      },
+      {
+        title: 'Failed Jobs',
+        url: '/admin/failed',
+        icon: Bot,
+      },
+      {
+        title: 'Dead Letter Queue',
+        url: '/admin/dead-letter',
+        icon: Bot,
+      },
+      {
+        title: 'Job Scheduling',
+        url: '/admin/schedule',
+        icon: Map,
+      },
+    ]
+  },
+  {
+    title: 'Settings',
+    url: '/admin/settings',
+    icon: Settings2,
+    items: [
+      {
+        title: 'General',
+        url: '/admin/settings',
+        icon: Settings2,
+      },
+      {
+        title: 'Alerting',
+        url: '/admin/settings/alerting',
+        icon: Bot,
+      },
+      {
+        title: 'Integrations',
+        url: '/admin/settings/integrations',
+        icon: Bot,
+      },
+    ],
+  },
   {
     title: 'Talk to an AI',
     url: '/memory',
@@ -173,51 +221,19 @@ const items = [
       },
     ],
   },
-
-  {
-    title: 'Tasks',
-    url: '/admin',
-    icon: Settings2,
-    items: [
-      {
-        title: 'Active',
-        url: '#',
-      },
-      {
-        title: 'Available',
-        url: '#',
-      },
-      {
-        title: 'Analysis',
-        url: '#',
-      },
-    ]
-  },
-
-  {
-    title: 'Settings',
-    url: '/admin',
-    icon: Settings2,
-    items: [
-      {
-        title: 'General',
-        url: '#',
-      },
-      {
-        title: 'Billing',
-        url: '#',
-      },
-      {
-        title: 'Privacy',
-        url: '#',
-      },
-      {
-        title: 'Admin',
-        url: '/admin',
-      },
-    ],
-  },
 ];
+
+function useActiveSidebarItems(items) {
+  const location = useLocation();
+  function markActive(items) {
+    return items.map(item => {
+      const isActive = location.pathname === item.url;
+      const subItems = item.items ? markActive(item.items) : undefined;
+      return { ...item, isActive, items: subItems };
+    });
+  }
+  return markActive(items);
+}
 
 interface AppSideBarProps {
   children: React.ReactNode;
@@ -230,6 +246,7 @@ export function AppSidebar({ children }: AppSideBarProps) {
     email: user?.email || '',
     avatar: '/avatars/shadcn.jpg',
   };
+  const activeItems = useActiveSidebarItems(items);
   return (
     <SidebarProvider>
       <Sidebar>
@@ -237,7 +254,7 @@ export function AppSidebar({ children }: AppSideBarProps) {
           <SidebarHeader>
             Companion Intelligence
           </SidebarHeader>
-          <NavMain items={items} />
+          <NavMain items={activeItems} />
         </SidebarContent>
         <SidebarRail />
         <SidebarFooter>

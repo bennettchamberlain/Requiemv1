@@ -3,6 +3,48 @@
 
 import type { Application } from '../configuration/types';
 
+// Minimal types for strict TS
+interface EmbeddingJob {
+  data: {
+    text?: string;
+    texts?: string[];
+    model?: string;
+    metadata?: unknown;
+  };
+}
+interface AnalysisOptions {
+  includeDetails?: boolean;
+  categories?: string[];
+  maxSentences?: number;
+  maxKeywords?: number;
+}
+interface AnalysisJob {
+  data: {
+    content: string;
+    analysisType: string;
+    options?: AnalysisOptions;
+  };
+}
+interface PipelineJob {
+  data: {
+    step: string;
+    data: unknown;
+    pipelineId?: string;
+    stepIndex: number;
+    totalSteps: number;
+    nextStep?: string;
+  };
+}
+interface BatchJob {
+  data: {
+    batchId: string;
+    batchIndex: number;
+    totalBatches: number;
+    items: unknown[];
+    processingType: string;
+  };
+}
+
 /**
  * Enhanced AI Processing Handler with realistic AI operations
  */
@@ -16,7 +58,7 @@ export class EnhancedAIHandler {
   /**
    * Realistic embedding generation using a mock AI service
    */
-  async processEmbedding(job: any): Promise<any> {
+  async processEmbedding(job: EmbeddingJob): Promise<unknown> {
     const { text, texts, model = 'nomic-embed-text', metadata } = job.data;
 
     try {
@@ -43,7 +85,7 @@ export class EnhancedAIHandler {
           metadata,
           processedAt: new Date().toISOString(),
         };
-      } else {
+      } else if (typeof text === 'string') {
         // Single embedding
         const embedding = await this.generateEmbedding(text, model);
 
@@ -57,6 +99,8 @@ export class EnhancedAIHandler {
           metadata,
           processedAt: new Date().toISOString(),
         };
+      } else {
+        throw new Error('No text or texts provided for embedding');
       }
     } catch (error) {
       console.error('Embedding generation failed:', error);
@@ -67,7 +111,7 @@ export class EnhancedAIHandler {
   /**
    * Realistic AI analysis with multiple analysis types
    */
-  async processAnalysis(job: any): Promise<any> {
+  async processAnalysis(job: AnalysisJob): Promise<unknown> {
     const { content, analysisType, options = {} } = job.data;
 
     try {
@@ -85,7 +129,7 @@ export class EnhancedAIHandler {
           result = await this.performSummarization(content, options);
           break;
         case 'entities':
-          result = await this.performEntityExtraction(content, options);
+          result = await this.performEntityExtraction(content);
           break;
         case 'keywords':
           result = await this.performKeywordExtraction(content, options);
@@ -112,7 +156,7 @@ export class EnhancedAIHandler {
   /**
    * Pipeline processing handler
    */
-  async processPipeline(job: any): Promise<any> {
+  async processPipeline(job: PipelineJob): Promise<unknown> {
     const { step, data, pipelineId, stepIndex, totalSteps, nextStep } = job.data;
 
     try {
@@ -124,7 +168,7 @@ export class EnhancedAIHandler {
           result = await this.preprocessData(data);
           break;
         case 'extract':
-          result = await this.extractFeatures(data);
+          result = await this.extractFeatures(data as { normalizedText?: string });
           break;
         case 'transform':
           result = await this.transformData(data);
@@ -165,7 +209,7 @@ export class EnhancedAIHandler {
   /**
    * Batch processing with progress tracking
    */
-  async processBatch(job: any): Promise<any> {
+  async processBatch(job: BatchJob): Promise<unknown> {
     const { batchId, batchIndex, totalBatches, items, processingType } = job.data;
 
     try {
@@ -187,7 +231,7 @@ export class EnhancedAIHandler {
           errors.push({
             index: itemIndex,
             item,
-            error: error.message,
+            error: error instanceof Error ? error.message : String(error),
             success: false,
           });
         }
@@ -215,7 +259,7 @@ export class EnhancedAIHandler {
 
   private async generateEmbedding(text: string, model: string): Promise<number[]> {
     // Simulate embedding generation with realistic timing
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 100 + 50));
 
     // Generate mock embedding based on text characteristics
     const dimension = model.includes('large') ? 1536 : 768;
@@ -230,8 +274,8 @@ export class EnhancedAIHandler {
     return embedding;
   }
 
-  private async performSentimentAnalysis(content: string, options: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 200 + 100));
+  private async performSentimentAnalysis(content: string, options: AnalysisOptions = {}): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 200 + 100));
 
     // Simple sentiment analysis based on content
     const positiveWords = ['good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic'];
@@ -241,13 +285,13 @@ export class EnhancedAIHandler {
     let positiveScore = 0;
     let negativeScore = 0;
 
-    words.forEach(word => {
+    words.forEach((word: string) => {
       if (positiveWords.includes(word)) positiveScore++;
       if (negativeWords.includes(word)) negativeScore++;
     });
 
     const totalScore = positiveScore - negativeScore;
-    const normalizedScore = Math.max(-1, Math.min(1, totalScore / words.length * 10));
+    const normalizedScore = Math.max(-1, Math.min(1, (totalScore / words.length) * 10));
 
     let sentiment: string;
     if (normalizedScore > 0.1) sentiment = 'positive';
@@ -264,20 +308,20 @@ export class EnhancedAIHandler {
     };
   }
 
-  private async performClassification(content: string, options: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 300 + 150));
+  private async performClassification(content: string, options: AnalysisOptions = {}): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 300 + 150));
 
     const categories = options.categories || ['technology', 'business', 'science', 'entertainment', 'sports'];
     const words = content.toLowerCase().split(/\s+/);
 
     // Simple keyword-based classification
-    const scores = categories.map(category => {
+    const scores = categories.map((category: string) => {
       const keywords = this.getCategoryKeywords(category);
-      const score = words.filter(word => keywords.includes(word)).length / words.length;
+      const score = words.filter((word: string) => keywords.includes(word)).length / words.length;
       return { category, score, confidence: Math.min(0.95, score * 5) };
     });
 
-    scores.sort((a, b) => b.score - a.score);
+    scores.sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
     return {
       prediction: scores[0].category,
@@ -287,10 +331,10 @@ export class EnhancedAIHandler {
     };
   }
 
-  private async performSummarization(content: string, options: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 250));
+  private async performSummarization(content: string, options: AnalysisOptions = {}): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 500 + 250));
 
-    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const sentences = content.split(/[.!?]+/).filter((s: string) => s.trim().length > 0);
     const maxSentences = options.maxSentences || Math.min(3, Math.ceil(sentences.length * 0.3));
 
     // Simple extractive summarization - take first and most "important" sentences
@@ -304,7 +348,7 @@ export class EnhancedAIHandler {
       .slice(0, maxSentences)
       .sort((a, b) => a.index - b.index);
 
-    const summary = importantSentences.map(s => s.sentence).join('. ') + '.';
+    const summary = importantSentences.map((s) => s.sentence).join('. ') + '.';
 
     return {
       summary,
@@ -316,8 +360,8 @@ export class EnhancedAIHandler {
     };
   }
 
-  private async performEntityExtraction(content: string, options: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 250 + 125));
+  private async performEntityExtraction(content: string): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 250 + 125));
 
     const words = content.split(/\s+/);
     const entities = [];
@@ -345,20 +389,21 @@ export class EnhancedAIHandler {
     return {
       entities,
       count: entities.length,
-      types: [...new Set(entities.map(e => e.type))],
+      types: [...new Set(entities.map((e: { type: string }) => e.type))],
     };
   }
 
-  private async performKeywordExtraction(content: string, options: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 150 + 75));
+  private async performKeywordExtraction(content: string, options: AnalysisOptions = {}): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 150 + 75));
 
-    const words = content.toLowerCase()
+    const words = content
+      .toLowerCase()
       .replace(/[^\w\s]/g, '')
       .split(/\s+/)
-      .filter(word => word.length > 3);
+      .filter((word: string) => word.length > 3);
 
     const frequency: Record<string, number> = {};
-    words.forEach(word => {
+    words.forEach((word: string) => {
       frequency[word] = (frequency[word] || 0) + 1;
     });
 
@@ -381,17 +426,26 @@ export class EnhancedAIHandler {
 
   // Helper methods for pipeline processing
 
-  private async preprocessData(data: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    return {
-      ...data,
-      preprocessed: true,
-      normalizedText: typeof data === 'string' ? data.toLowerCase().trim() : data,
-    };
+  private async preprocessData(data: unknown): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (typeof data === 'string') {
+      return {
+        preprocessed: true,
+        normalizedText: data.toLowerCase().trim(),
+      };
+    }
+    if (typeof data === 'object' && data !== null) {
+      return {
+        ...data,
+        preprocessed: true,
+        normalizedText: undefined,
+      };
+    }
+    return { preprocessed: true, normalizedText: undefined };
   }
 
-  private async extractFeatures(data: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, 150));
+  private async extractFeatures(data: { normalizedText?: string }): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, 150));
     return {
       ...data,
       features: {
@@ -403,51 +457,70 @@ export class EnhancedAIHandler {
     };
   }
 
-  private async transformData(data: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    return {
-      ...data,
-      transformed: true,
-      vector: new Array(10).fill(0).map(() => Math.random()),
-    };
+  private async transformData(data: unknown): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (typeof data === 'object' && data !== null) {
+      return {
+        ...data,
+        transformed: true,
+        vector: new Array(10).fill(0).map(() => Math.random()),
+      };
+    }
+    return { transformed: true, vector: new Array(10).fill(0).map(() => Math.random()) };
   }
 
-  private async analyzeData(data: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, 200));
-    return {
-      ...data,
-      analysis: {
-        complexity: Math.random(),
-        sentiment: Math.random() * 2 - 1,
-        category: ['A', 'B', 'C'][Math.floor(Math.random() * 3)],
-      },
-    };
+  private async analyzeData(data: unknown): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (typeof data === 'object' && data !== null) {
+      return {
+        ...data,
+        analysis: {
+          complexity: Math.random(),
+          sentiment: Math.random() * 2 - 1,
+          category: ['A', 'B', 'C'][Math.floor(Math.random() * 3)],
+        },
+      };
+    }
+    return { analysis: { complexity: Math.random(), sentiment: Math.random() * 2 - 1, category: 'A' } };
   }
 
-  private async postprocessData(data: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, 50));
+  private async postprocessData(data: unknown): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    if (typeof data === 'object' && data !== null) {
+      return {
+        ...data,
+        postprocessed: true,
+        finalResult: {
+          processed: true,
+          timestamp: new Date().toISOString(),
+          quality: Math.random() * 0.3 + 0.7, // 0.7-1.0
+        },
+      };
+    }
     return {
-      ...data,
       postprocessed: true,
       finalResult: {
         processed: true,
         timestamp: new Date().toISOString(),
-        quality: Math.random() * 0.3 + 0.7, // 0.7-1.0
+        quality: Math.random() * 0.3 + 0.7,
       },
     };
   }
 
-  private async customProcessingStep(step: string, data: any): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    return {
-      ...data,
-      customStep: step,
-      customResult: `Processed with ${step}`,
-    };
+  private async customProcessingStep(step: string, data: unknown): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (typeof data === 'object' && data !== null) {
+      return {
+        ...data,
+        customStep: step,
+        customResult: `Processed with ${step}`,
+      };
+    }
+    return { customStep: step, customResult: `Processed with ${step}` };
   }
 
-  private async processItem(item: any, processingType: string): Promise<any> {
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 50 + 25));
+  private async processItem(item: unknown, processingType: string): Promise<unknown> {
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 50 + 25));
 
     switch (processingType) {
       case 'normalize':
@@ -467,7 +540,7 @@ export class EnhancedAIHandler {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return hash;
@@ -487,7 +560,7 @@ export class EnhancedAIHandler {
   private calculateSentenceImportance(sentence: string): number {
     const words = sentence.toLowerCase().split(/\s+/);
     const importantWords = ['important', 'significant', 'key', 'main', 'primary', 'essential'];
-    const score = words.filter(word => importantWords.includes(word)).length;
+    const score = words.filter((word: string) => importantWords.includes(word)).length;
     return score + (sentence.length > 50 ? 1 : 0); // Favor longer sentences
   }
 }

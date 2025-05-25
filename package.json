@@ -20,5 +20,8 @@
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1"
+  },
+  "dependencies": {
+    "recharts": "^2.15.3"
   }
 }

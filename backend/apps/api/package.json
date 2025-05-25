@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "nodemon -x ts-node src/index.ts",
+    "dev": "yarn dlx nodemon -x \"yarn dlx ts-node src/index.ts\"",
     "dev:pretty": "yarn dev | yarn pino-pretty",
     "lint:circular-imports": "madge . --extensions ts --circular",
     "migrate": "knex migrate:latest",
