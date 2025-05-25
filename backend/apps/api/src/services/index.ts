@@ -2,6 +2,8 @@ import { AuthenticationService } from './authentication-service';
 import { EmbeddingsService, InternalEmbeddingsService } from './embeddings-service';
 import { SignupService } from './signup-service';
 import { UserService } from './user-service';
+import { QuestionsService } from './questions-service';
+import { AnswersService } from './answers-service';
 
 export interface ServiceTypes {
   authenticate: AuthenticationService;
@@ -9,6 +11,8 @@ export interface ServiceTypes {
   internalEmbeddings: InternalEmbeddingsService;
   signup: SignupService;
   users: UserService;
+  questions: QuestionsService;
+  answers: AnswersService;
 }
 
 export {
@@ -17,4 +21,6 @@ export {
   InternalEmbeddingsService,
   SignupService,
   UserService,
+  QuestionsService,
+  AnswersService,
 };
