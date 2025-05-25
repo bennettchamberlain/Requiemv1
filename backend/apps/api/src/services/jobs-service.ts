@@ -179,7 +179,7 @@ export class JobsService {
     const jobQueue = getJobQueue(this.app);
 
     // Get queue sizes for common queues
-    const queues = ['ai-processing', 'notifications', 'data-processing'];
+    const queues = ['ai-processing', 'notifications', 'data-processing', 'llm-processing'];
     const queueInfo = await Promise.all(
       queues.map(async (queue) => ({
         name: queue,

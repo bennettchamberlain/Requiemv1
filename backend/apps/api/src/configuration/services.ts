@@ -8,6 +8,10 @@ import {
   JobQueueService,
   JobsService,
   ScheduledJobsService,
+  LLMService,
+  LLMChatService,
+  LLMJobService,
+  LLMUtilityService,
   SignupService,
   UserService,
 } from '../services';
@@ -38,6 +42,10 @@ export function configure(app: Application) {
   app.use('internalEmbeddings', new InternalEmbeddingsService(db));
   app.use('jobs', new JobsService(app));
   app.use('scheduledJobs', new ScheduledJobsService(app));
+  app.use('llm', new LLMService(app));
+  app.use('llmChat', new LLMChatService(app));
+  app.use('llmJobs', new LLMJobService(app));
+  app.use('llmUtility', new LLMUtilityService(app));
 
   // Setup admin and monitoring services
   setupJobAdminService(app);
@@ -49,7 +57,10 @@ export function configure(app: Application) {
   app.service('embeddings').hooks(EmbeddingsService.hooks);
   app.service('jobs').hooks(JobsService.hooks);
   app.service('scheduledJobs').hooks(ScheduledJobsService.hooks);
+  app.service('llm').hooks(LLMService.hooks);
+  app.service('llmChat').hooks(LLMChatService.hooks);
+  app.service('llmJobs').hooks(LLMJobService.hooks);
 
   // Store job queue service for later access
-  app.set('jobQueueService' as any, jobQueueService);
+  app.set('jobQueueService', jobQueueService);
 }

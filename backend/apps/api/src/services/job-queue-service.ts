@@ -2,6 +2,7 @@ import PgBoss from 'pg-boss';
 import type { Application } from '../configuration/types';
 import { Logger } from '../utils';
 import { EnhancedAIHandler } from '../handlers/enhanced-ai-handlers';
+import ollama from 'ollama';
 
 // Types matching the enhanced AI handlers
 interface AnalysisOptions {
@@ -49,6 +50,28 @@ interface BatchJob {
   };
 }
 
+interface LLMJob {
+  data: {
+    operation: 'generate' | 'chat';
+    model: string;
+    prompt?: string;
+    messages?: Array<{
+      role: 'user' | 'assistant' | 'system';
+      content: string;
+    }>;
+    system?: string;
+    stream?: boolean;
+    format?: string;
+    options?: {
+      temperature?: number;
+      top_p?: number;
+      top_k?: number;
+      num_predict?: number;
+      seed?: number;
+    };
+  };
+}
+
 export interface JobData {
   [key: string]: unknown;
   type?: string;
@@ -72,6 +95,16 @@ export interface JobData {
   totalBatches?: number;
   items?: unknown[];
   processingType?: string;
+  // LLM job properties
+  operation?: 'generate' | 'chat';
+  prompt?: string;
+  messages?: Array<{
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+  }>;
+  system?: string;
+  stream?: boolean;
+  format?: string;
 }
 
 export interface JobOptions {
@@ -446,6 +479,19 @@ export class JobQueueService {
 
       this.logger.info(`Stress test job ${job.id} completed in ${processingTime}ms`);
     });
+
+    // LLM Processing Queue - For Ollama model interactions
+    await this.registerHandler('llm-processing', async (job) => {
+      this.logger.info(`Processing LLM job ${job.id} with operation: ${job.data.operation}`);
+
+      try {
+        const result = await this.processLLMJob(this.transformToLLMJob(job));
+        this.logger.info(`LLM job ${job.id} completed:`, result);
+      } catch (error) {
+        this.logger.error(`LLM job ${job.id} failed:`, error);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -497,6 +543,77 @@ export class JobQueueService {
     this.logger.info('Processing data job:', data);
 
     // Example: Data transformation, cleanup, analysis, etc.
+  }
+
+  /**
+   * Process LLM jobs using Ollama
+   */
+  private async processLLMJob(llmJob: LLMJob): Promise<unknown> {
+    this.logger.info('Processing LLM job:', llmJob.data);
+
+    try {
+      if (llmJob.data.operation === 'generate') {
+        if (!llmJob.data.prompt) {
+          throw new Error('Prompt is required for generate operation');
+        }
+
+        // Force non-streaming for job processing
+        const response = await ollama.generate({
+          model: llmJob.data.model,
+          prompt: llmJob.data.prompt,
+          system: llmJob.data.system,
+          format: llmJob.data.format,
+          options: llmJob.data.options,
+          stream: false,
+        });
+
+        return {
+          success: true,
+          operation: 'generate',
+          model: llmJob.data.model,
+          response: response.response,
+          model_info: {
+            total_duration: response.total_duration,
+            load_duration: response.load_duration,
+            prompt_eval_count: response.prompt_eval_count,
+            eval_count: response.eval_count,
+          },
+          completedAt: new Date().toISOString(),
+        };
+      } else if (llmJob.data.operation === 'chat') {
+        if (!llmJob.data.messages || llmJob.data.messages.length === 0) {
+          throw new Error('Messages are required for chat operation');
+        }
+
+        // Force non-streaming for job processing
+        const response = await ollama.chat({
+          model: llmJob.data.model,
+          messages: llmJob.data.messages,
+          format: llmJob.data.format,
+          options: llmJob.data.options,
+          stream: false,
+        });
+
+        return {
+          success: true,
+          operation: 'chat',
+          model: llmJob.data.model,
+          message: response.message,
+          model_info: {
+            total_duration: response.total_duration,
+            load_duration: response.load_duration,
+            prompt_eval_count: response.prompt_eval_count,
+            eval_count: response.eval_count,
+          },
+          completedAt: new Date().toISOString(),
+        };
+      } else {
+        throw new Error(`Unknown LLM operation: ${llmJob.data.operation}`);
+      }
+    } catch (error) {
+      this.logger.error('LLM processing error:', error);
+      throw error;
+    }
   }
 
   /**
@@ -567,6 +684,33 @@ export class JobQueueService {
         totalBatches: job.data.totalBatches as number,
         items: job.data.items as unknown[],
         processingType: job.data.processingType as string,
+      },
+    };
+  }
+
+  /**
+   * Transform PgBossJob to LLMJob format for LLM processing
+   */
+  private transformToLLMJob(job: PgBossJob): LLMJob {
+    return {
+      data: {
+        operation: job.data.operation as 'generate' | 'chat',
+        model: job.data.model as string,
+        prompt: job.data.prompt as string | undefined,
+        messages: job.data.messages as Array<{
+          role: 'user' | 'assistant' | 'system';
+          content: string;
+        }> | undefined,
+        system: job.data.system as string | undefined,
+        stream: job.data.stream as boolean | undefined,
+        format: job.data.format as string | undefined,
+        options: job.data.options as {
+          temperature?: number;
+          top_p?: number;
+          top_k?: number;
+          num_predict?: number;
+          seed?: number;
+        } | undefined,
       },
     };
   }
