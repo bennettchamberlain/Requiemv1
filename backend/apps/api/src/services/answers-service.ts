@@ -58,19 +58,21 @@ export class AnswersService extends KnexService {
       create: [validateData(validator), resolveData(answerDataResolver)],
       update: [
         validateData(validator),
-        resolve<AnswerType, HookContext>({
-          properties: {
-            updated: async () => new Date().toISOString(),
-          },
-        }),
+        resolveData(answerDataResolver),
+//        resolve<AnswerType, HookContext>({
+//          properties: {
+//            updated: async () => new Date().toISOString(),
+//          },
+//        }),
       ],
       patch: [
         validateData(validator),
-        resolve<AnswerType, HookContext>({
-          properties: {
-            updated: async () => new Date().toISOString(),
-          },
-        }),
+        resolveData(answerDataResolver),
+//        resolve<AnswerType, HookContext>({
+//          properties: {
+//            updated: async () => new Date().toISOString(),
+//          },
+//        }),
       ],
     },
   };

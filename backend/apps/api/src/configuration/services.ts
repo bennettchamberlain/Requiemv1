@@ -31,6 +31,6 @@ export function configure(app: Application) {
   app.service('users').hooks(UserService.hooks);
   app.service('authenticate').hooks(AuthenticationService.hooks);
   app.service('embeddings').hooks(EmbeddingsService.hooks);
-  app.service('questions').hooks(QuestionsService.hooks);
+  //app.service('questions').hooks(QuestionsService.hooks);
   app.service('answers').hooks(AnswersService.hooks);
 }
