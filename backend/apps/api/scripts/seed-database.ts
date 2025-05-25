@@ -297,6 +297,65 @@ async function seedUsers(filePath: string) {
   }
 }
 
+async function seedQuestions(filePath: string) {
+  logger.info(`Seeding questions from ${filePath}`);
+  const records: AnyRecord[] = readCsv(filePath);
+  validateCsvRecords(records, ['question_string'], 'questions.csv');
+  const batchSize = 100;
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
+    const transformedBatch = batch.map((record: AnyRecord) => {
+      // Parse tags array if it exists
+      let tags = null;
+      if (record.tag) {
+        try {
+          // Handle various formats: JSON array, comma-separated, etc.
+          if (typeof record.tag === 'string') {
+            if (record.tag.startsWith('[')) {
+              // JSON array format
+              const arr =JSON.parse(record.tag.replace(/'/g, '"'));
+              if (Array.isArray(arr)) {
+                tags = arr.filter(isValidUUID);
+              }
+            } else if (record.tag.includes(',')) {
+              // Comma-separated format
+              tags = record.tag.split(',').map((t: string) => t.trim()).filter(isValidUUID);
+            } else if (isValidUUID(record.tag)) {
+              // Single UUID
+              tags = [record.tag];
+            }
+          } else if (Array.isArray(record.tag)) {
+            tags = record.tag.filter(isValidUUID);
+          }
+        } catch {
+          // Skip if parsing fails
+        }
+      }
+
+      return {
+        id: isValidUUID(record.id) ? record.id : uuidv4(),
+        created: record.created && !isNaN(Date.parse(record.created)) ? new Date(record.created) : new Date(),
+        updated: record.updated && !isNaN(Date.parse(record.updated)) ? new Date(record.updated) : null,
+        tag: tags,
+        category: record.category || null,
+        user_id: isValidUUID(record.user_id) ? record.user_id : null,
+        question_string: record.question_string || null,
+        example_answer_1: record.example_answer_1 || null,
+        example_answer_2: record.example_answer_2 || null,
+        example_answer_3: record.example_answer_3 || null,
+      };
+    });
+    try {
+      await db('questions').insert(transformedBatch).onConflict('id').merge();
+      logger.info(`Upserted ${transformedBatch.length} questions (batch ${i / batchSize + 1})`);
+    } catch (err) {
+      logger.error('Error upserting questions batch:', err);
+      logger.error('Batch data:', JSON.stringify(transformedBatch, null, 2));
+      // Continue on error
+    }
+  }
+}
+
 async function seedDatabase() {
   try {
     logger.info('Starting database seeding process');
@@ -309,6 +368,7 @@ async function seedDatabase() {
     await seedThings(path.join(dataDir, 'js1-things.csv'));
     await seedContent(path.join(dataDir, 'jsi-content.csv'));
     await seedEvents(path.join(dataDir, 'js1-events.csv'));
+    await seedQuestions(path.join(dataDir, 'questions.csv'));
     logger.info('Database seeding completed successfully');
     process.exit(0);
   } catch (error) {
