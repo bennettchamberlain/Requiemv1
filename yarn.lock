@@ -331,6 +331,7 @@ __metadata:
     ollama: "npm:^0.5.15"
     path: "npm:^0.12.7"
     pg: "npm:^8.16.0"
+    pg-boss: "npm:^10.2.0"
     pino: "npm:^9.6.0"
     pino-pretty: "npm:^13.0.0"
     ts-node: "npm:^10.9.2"
@@ -4489,6 +4490,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"cron-parser@npm:^4.9.0":
+  version: 4.9.0
+  resolution: "cron-parser@npm:4.9.0"
+  dependencies:
+    luxon: "npm:^3.2.1"
+  checksum: 10c0/348622bdcd1a15695b61fc33af8a60133e5913a85cf99f6344367579e7002896514ba3b0a9d6bb569b02667d6b06836722bf2295fcd101b3de378f71d37bed0b
+  languageName: node
+  linkType: hard
+
 "cross-spawn@npm:^7.0.6":
   version: 7.0.6
   resolution: "cross-spawn@npm:7.0.6"
@@ -7070,6 +7080,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"luxon@npm:^3.2.1":
+  version: 3.6.1
+  resolution: "luxon@npm:3.6.1"
+  checksum: 10c0/906d57a9dc4d1de9383f2e9223e378c298607c1b4d17b6657b836a3cd120feb1c1de3b5d06d846a3417e1ca764de8476e8c23b3cd4083b5cdb870adcb06a99d5
+  languageName: node
+  linkType: hard
+
 "lz-string@npm:^1.5.0":
   version: 1.5.0
   resolution: "lz-string@npm:1.5.0"
@@ -7812,6 +7829,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pg-boss@npm:^10.2.0":
+  version: 10.2.0
+  resolution: "pg-boss@npm:10.2.0"
+  dependencies:
+    cron-parser: "npm:^4.9.0"
+    pg: "npm:^8.14.1"
+    serialize-error: "npm:^8.1.0"
+  checksum: 10c0/1b62f3c27d60c530b2ebee10fe6224ba914d70aa592450bebf10071429cdff8aa44f9493324084f63080a69891bf30933033b360019c5f7755c010b317c65565
+  languageName: node
+  linkType: hard
+
 "pg-cloudflare@npm:^1.2.5":
   version: 1.2.5
   resolution: "pg-cloudflare@npm:1.2.5"
@@ -7891,7 +7919,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pg@npm:^8.16.0":
+"pg@npm:^8.14.1, pg@npm:^8.16.0":
   version: 8.16.0
   resolution: "pg@npm:8.16.0"
   dependencies:
@@ -8846,6 +8874,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"serialize-error@npm:^8.1.0":
+  version: 8.1.0
+  resolution: "serialize-error@npm:8.1.0"
+  dependencies:
+    type-fest: "npm:^0.20.2"
+  checksum: 10c0/8cfd89f43ca93e283c5f1d16178a536bdfac9bc6029f4a9df988610cc399bc4f2478d1f10ce40b9dff66b863a5158a19b438fbec929045c96d92174f6bca1e88
+  languageName: node
+  linkType: hard
+
 "set-cookie-parser@npm:^2.6.0":
   version: 2.7.1
   resolution: "set-cookie-parser@npm:2.7.1"
@@ -9583,6 +9620,13 @@ __metadata:
   dependencies:
     prelude-ls: "npm:^1.2.1"
   checksum: 10c0/7b3fd0ed43891e2080bf0c5c504b418fbb3e5c7b9708d3d015037ba2e6323a28152ec163bcb65212741fa5d2022e3075ac3c76440dbd344c9035f818e8ecee58
+  languageName: node
+  linkType: hard
+
+"type-fest@npm:^0.20.2":
+  version: 0.20.2
+  resolution: "type-fest@npm:0.20.2"
+  checksum: 10c0/dea9df45ea1f0aaa4e2d3bed3f9a0bfe9e5b2592bddb92eb1bf06e50bcf98dbb78189668cd8bc31a0511d3fc25539b4cd5c704497e53e93e2d40ca764b10bfc3
   languageName: node
   linkType: hard
 
