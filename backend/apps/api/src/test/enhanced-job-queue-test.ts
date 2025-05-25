@@ -269,7 +269,7 @@ export class EnhancedJobQueueTestSuite {
       }, { retryLimit: 1 });
       tests.push({ name: 'Invalid Job Data', status: 'handled' });
     } catch (error) {
-      tests.push({ name: 'Invalid Job Data', status: 'error-caught', error: error.message });
+      tests.push({ name: 'Invalid Job Data', status: 'error-caught', error: error instanceof Error ? error.message : String(error) });
     }
 
     // Test stress testing with controlled failures

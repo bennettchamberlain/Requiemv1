@@ -520,4 +520,4 @@ export async function runPerformanceBenchmark(app: Application): Promise<any> {
   };
 }
 
-export default JobQueuePerformanceMonitor;
+// All exports are named exports above

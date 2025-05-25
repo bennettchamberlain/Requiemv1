@@ -17,12 +17,28 @@ export function getJobQueue(app: Application): JobQueueService {
  */
 export async function queueAIJob(
   app: Application,
-  type: 'embedding' | 'analysis' | 'processing',
+  type: 'embedding' | 'analysis' | 'processing' | 'pipeline' | 'batch-processing' | 'multi-model' | 'priority-processing' | 'dependent-processing' | 'streaming' | 'circuit-breaker',
   data: any,
   options?: any
 ): Promise<string | null> {
   const jobQueue = getJobQueue(app);
-  return await jobQueue.sendJob('ai-processing', { type, ...data }, options);
+
+  // Route to appropriate queue based on type
+  const queueMap: Record<string, string> = {
+    'embedding': 'ai-processing',
+    'analysis': 'ai-processing',
+    'processing': 'ai-processing',
+    'pipeline': 'pipeline',
+    'batch-processing': 'batch-processing',
+    'multi-model': 'multi-model',
+    'priority-processing': 'ai-processing',
+    'dependent-processing': 'ai-processing',
+    'streaming': 'ai-processing',
+    'circuit-breaker': 'ai-processing'
+  };
+
+  const queue = queueMap[type] || 'ai-processing';
+  return await jobQueue.sendJob(queue, { type, ...data }, options);
 }
 
 /**
