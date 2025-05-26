@@ -13,6 +13,7 @@ import SignupPage from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import AdminPage from '@/pages/AdminPage';
 import AnswersPage from '@/pages/AnswersPage';
+import QuestionsPage from '@/pages/QuestionsPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { MemoryPage } from '@/pages/MemoryPage';
 
@@ -131,7 +132,7 @@ const items = [
       },
       {
         title: 'About you (Questions)',
-        url: '/memory',
+        url: '/questions',
         icon: Bot,
       },
       {
@@ -349,6 +350,16 @@ function App() {
                 <ProtectedRoute>
                   <AppSidebar>
                     <AnswersPage />
+                  </AppSidebar>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/questions"
+              element={
+                <ProtectedRoute>
+                  <AppSidebar>
+                    <QuestionsPage />
                   </AppSidebar>
                 </ProtectedRoute>
               }
