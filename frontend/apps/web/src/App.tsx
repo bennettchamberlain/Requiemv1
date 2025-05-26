@@ -12,6 +12,7 @@ import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import AdminPage from '@/pages/AdminPage';
+import AnswersPage from '@/pages/AnswersPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { MemoryPage } from '@/pages/MemoryPage';
 
@@ -29,8 +30,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
-
-/////////////////////////////////////////////////////////////////////////////////
 
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Bot, Map, Settings2, SquareTerminal } from 'lucide-react';
@@ -182,6 +181,11 @@ const items = [
         icon: Bot,
       },
       {
+        title: 'Your Answers',
+        url: '/answers',
+        icon: Bot,
+      },
+      {
         title: 'Insights / Context',
         url: '/memory',
         icon: Bot,
@@ -312,8 +316,6 @@ export function AppSidebarUnused({ children }: AppSideBarProps) {
   )
 }
 
-///////////////////////////////////////////////////////////////////////////////////
-
 
 function App() {
   return (
@@ -350,6 +352,16 @@ function App() {
                 <ProtectedRoute>
                   <AppSidebar>
                     <AdminPage />
+                  </AppSidebar>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/answers"
+              element={
+                <ProtectedRoute>
+                  <AppSidebar>
+                    <AnswersPage />
                   </AppSidebar>
                 </ProtectedRoute>
               }
