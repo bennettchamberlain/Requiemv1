@@ -14,6 +14,8 @@ import {
   LLMUtilityService,
   SignupService,
   UserService,
+  QuestionsService,
+  AnswersService,
 } from '../services';
 
 import {
@@ -47,6 +49,9 @@ export function configure(app: Application) {
   app.use('llmJobs', new LLMJobService(app));
   app.use('llmUtility', new LLMUtilityService(app));
 
+  app.use('questions', new QuestionsService(db));
+  app.use('answers', new AnswersService(db));
+
   // Setup admin and monitoring services
   setupJobAdminService(app);
   setupHealthCheckService(app);
@@ -61,6 +66,8 @@ export function configure(app: Application) {
   app.service('llmChat').hooks(LLMChatService.hooks);
   app.service('llmJobs').hooks(LLMJobService.hooks);
 
-  // Store job queue service for later access
+  app.service('questions').hooks(QuestionsService.hooks);
+  app.service('answers').hooks(AnswersService.hooks);
+
   app.set('jobQueueService', jobQueueService);
 }

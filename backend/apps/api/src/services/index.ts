@@ -5,6 +5,8 @@ import { JobsService, ScheduledJobsService } from './jobs-service';
 import { LLMService, LLMChatService, LLMJobService, LLMUtilityService } from './llm-service';
 import { SignupService } from './signup-service';
 import { UserService } from './user-service';
+import { QuestionsService } from './questions-service';
+import { AnswersService } from './answers-service';
 
 export interface ServiceTypes {
   authenticate: AuthenticationService;
@@ -19,6 +21,8 @@ export interface ServiceTypes {
   llmUtility: LLMUtilityService;
   signup: SignupService;
   users: UserService;
+  questions: QuestionsService;
+  answers: AnswersService;
 }
 
 export {
@@ -34,4 +38,6 @@ export {
   LLMUtilityService,
   SignupService,
   UserService,
+  QuestionsService,
+  AnswersService,
 };
