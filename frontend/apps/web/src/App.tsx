@@ -7,11 +7,12 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
 // Import pages
 
-import { SplashPage } from '@/pages/SplashPage';
-import { LoginPage } from '@/pages/LoginPage';
-import { SignupPage } from '@/pages/SignupPage';
+import SplashPage from '@/pages/SplashPage';
+import LoginPage from '@/pages/LoginPage';
+import SignupPage from '@/pages/SignupPage';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { AdminPage } from '@/pages/AdminPage';
+import AdminPage from '@/pages/AdminPage';
+import AnswersPage from '@/pages/AnswersPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { MemoryPage } from '@/pages/MemoryPage';
 
@@ -131,6 +132,11 @@ const items = [
       {
         title: 'About you (Questions)',
         url: '/memory',
+        icon: Bot,
+      },
+      {
+        title: 'Your Answers',
+        url: '/answers',
         icon: Bot,
       },
       {
@@ -333,6 +339,16 @@ function App() {
                 <ProtectedRoute>
                   <AppSidebar>
                     <AdminPage />
+                  </AppSidebar>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/answers"
+              element={
+                <ProtectedRoute>
+                  <AppSidebar>
+                    <AnswersPage />
                   </AppSidebar>
                 </ProtectedRoute>
               }
