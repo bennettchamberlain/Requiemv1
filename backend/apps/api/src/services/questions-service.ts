@@ -13,8 +13,8 @@ export const QuestionData = Type.Object(
     id: Type.Optional(Type.String({ format: 'uuid' })),
     created: Type.Optional(Type.String({ format: 'date-time' })),
     updated: Type.Optional(Type.String({ format: 'date-time' })),
-    tag: Type.Array(Type.String({ format: 'uuid' })),
-    category: Type.String(),
+    tag: Type.Optional(Type.Array(Type.String({ format: 'uuid' }))),
+    category: Type.Optional(Type.String()),
     user_id: Type.String({ format: 'uuid' }),
     question_string: Type.String(),
     example_answer_1: Type.Optional(Type.String()),
@@ -56,20 +56,10 @@ export class QuestionsService extends KnexService {
       update: [
         validateData(validator),
         resolveData(questionDataResolver),
-//        resolve<QuestionType, HookContext>({
-//          properties: {
-//            updated: async () => new Date().toISOString(),
-//          },
-//        }),
       ],
       patch: [
         validateData(validator),
-       resolveData(questionDataResolver),
-///        resolve<QuestionType, HookContext>({
-//          properties: {
-//            updated: async () => new Date().toISOString(),
-//          },
-//        }),
+        resolveData(questionDataResolver),
       ],
     },
   };
