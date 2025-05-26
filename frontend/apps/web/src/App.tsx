@@ -66,63 +66,63 @@ const items = [
     items: [
       {
         title: 'Recommendations',
-        url: '/memory',
+        url: '/dashboard',
         icon: Bot,
       },
       {
         title: 'Amusing Statistics',
-        url: '/memory',
+        url: '/dashboard',
         icon: Bot,
       },
       {
         title: 'Recent Activity',
-        url: '/memory',
+        url: '/dashboard',
         icon: Bot,
       },
       {
         title: 'Recent Notifications',
-        url: '/memory',
+        url: '/dashboard',
         icon: Bot,
       },
     ]
   },
 
   {
-    title: 'Talk to an AI',
-    url: '/memory',
+    title: 'Chat',
+    url: '/chat',
     icon: Bot,
     items: [
       {
         title: 'Text Talk to AI',
-        url: '/memory',
+        url: '/chat',
         icon: Bot,
       },
       {
         title: 'Voice Talk to AI',
-        url: '/memory',
+        url: '/chat',
         icon: Bot,
       },
       {
         title: 'Visual Camera Mode',
-        url: '/memory',
+        url: '/chat',
         icon: Bot,
       },
     ]
   },
 
   {
-    title: 'Counsel',
-    url: '/memory',
+    title: 'Your Agents',
+    url: '/agents',
     icon: Bot,
     items: [
       {
-        title: 'Active Coaches',
-        url: '/memory',
+        title: 'Active',
+        url: '/agents?active=true',
         icon: Bot,
       },
       {
-        title: 'Available Coaches',
-        url: '/memory',
+        title: 'All',
+        url: '/agents',
         icon: Bot,
       },
       {
@@ -130,31 +130,11 @@ const items = [
         url: '/memory',
         icon: Bot,
       },
-      {
-        title: 'About you (Questions)',
-        url: '/questions',
-        icon: Bot,
-      },
-      {
-        title: 'Your Answers',
-        url: '/answers',
-        icon: Bot,
-      },
-      {
-        title: 'Insights / Context',
-        url: '/memory',
-        icon: Bot,
-      },
-      {
-        title: 'Actions for you to do',
-        url: '/memory',
-        icon: Bot,
-      },
     ]
   },
 
   {
-    title: 'Memory',
+    title: 'Digital Memory Browser',
     url: '/memory',
     icon: Bot,
     items: [
@@ -179,6 +159,29 @@ const items = [
         icon: Bot,
       },
     ],
+  },
+
+  {
+    title: 'Questions',
+    url: '/questions',
+    icon: Bot,
+    items: [
+      {
+        title: 'Questions',
+        url: '/questions',
+        icon: Bot,
+      },
+      {
+        title: 'Answers',
+        url: '/answers',
+        icon: Bot,
+      },
+      {
+        title: 'Insights',
+        url: '/insights',
+        icon: Bot,
+      },
+    ]
   },
 
   {
