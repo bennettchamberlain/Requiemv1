@@ -2,6 +2,12 @@
 
 A comprehensive Companion Intelligence system with a modern web application, robust backend API, and job queue system.
 
+## COPYRIGHT COMPANION INTELLIGENCE - LIFESCOPE INC
+
+## DO NOT DISTRIBUTE
+
+## PRIVATE AND CONFIDENTIAL
+
 ## Prerequisites
 
 ### Homebrew
