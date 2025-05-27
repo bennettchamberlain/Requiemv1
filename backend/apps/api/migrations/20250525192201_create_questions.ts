@@ -3,6 +3,9 @@ import { Knex } from 'knex';
 
 exports.up = async function (knex: Knex): Promise<void> {
   return knex.raw(`
+
+    CREATE EXTENSION IF NOT EXISTS vector;
+
     CREATE TABLE questions (
       id UUID PRIMARY KEY,
       created TIMESTAMP,
@@ -11,7 +14,9 @@ exports.up = async function (knex: Knex): Promise<void> {
       category TEXT,
       user_id uuid REFERENCES person(id), -- assuming a 'person' table with UUID as id
       question_string TEXT,
+      question_string_vector VECTOR(768),
       example_answer_1 TEXT,
+      example_answer_1_vector VECTOR(768),
       example_answer_2 TEXT,
       example_answer_3 TEXT
     );

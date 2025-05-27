@@ -109,7 +109,7 @@ async function seedPeople(filePath: string) {
   validateCsvRecords(
     records,
     [
-      'id', 'first_name', 'last_name', 'address', 'street_address', 'street_address_2', 'city', 'region', 'country', 'postal_code', 'avatar_url', 'external_avatar_url', 'type', 'created', 'hidden', 'tags', 'contact_ids', 'middle_name', 'gender'
+      'id', 'first_name', 'last_name', 'address', 'street_address', 'city', 'region', 'country', 'postal_code', 'avatar_url', 'type', 'created', 'hidden', 'tags', 'middle_name', 'gender'
     ],
     'js1-people.csv',
   );
