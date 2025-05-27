@@ -1,19 +1,29 @@
 import type { HookContext } from '@feathersjs/feathers';
 import ollama from 'ollama';
 
-export const generateEmbedding = async (context: HookContext) => {
+export const generateEmbeddings = async (context: HookContext) => {
   const { data } = context;
 
-  // TODO generalize by looking for _vector
+  if (!data) {
+    return context;
+  }
 
-  if (data?.question_string) {
-    const response = await ollama.embeddings({
-      model: 'nomic-embed-text',
-      prompt: data.question_string,
+  const embeddingPromises = Object.keys(data)
+    .filter(key => key.endsWith('_vector'))
+    .map(async vectorKey => {
+      const fieldKey = vectorKey.slice(0, -7); // remove '_vector'
+
+      if (data[fieldKey] && typeof data[fieldKey] === 'string') {
+        const response = await ollama.embeddings({
+          model: 'nomic-embed-text',
+          prompt: data[fieldKey],
+        });
+
+        data[vectorKey] = response.embedding;
+      }
     });
 
-    data.question_string_vector = response.embedding;
-  }
+  await Promise.all(embeddingPromises);
 
   return context;
 };
