@@ -59,6 +59,20 @@ async function run() {
           // This is the source label for tracking
           const sourceLabel = `${source.name}.${fieldName}`;
 
+          // Check if embedding already exists for this source_id and source_label
+          const checkQuery = `
+            SELECT id FROM embeddings 
+            WHERE source_id = $1 AND source_label = $2
+            LIMIT 1
+          `;
+          
+          const existingResult = await client.query(checkQuery, [row.id, sourceLabel]);
+          
+          if (existingResult.rows.length > 0) {
+            console.log(`Embedding already exists for ${sourceLabel} (row ${row.id}), skipping...`);
+            continue;
+          }
+
           console.log(`Generating embedding for ${sourceLabel} (row ${row.id})`);
 
           try {
@@ -84,6 +98,11 @@ async function run() {
               ) VALUES (
                 $1, $2, $3::vector, $4, $5, $6, $7
               )
+              ON CONFLICT (source_id, source_label) 
+              DO UPDATE SET 
+                raw_input = EXCLUDED.raw_input,
+                embedding_vector = EXCLUDED.embedding_vector,
+                updated_at = EXCLUDED.updated_at
             `;
 
             await client.query(insertQuery, [
