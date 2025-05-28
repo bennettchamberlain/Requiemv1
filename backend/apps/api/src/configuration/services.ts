@@ -5,12 +5,25 @@ import {
   AuthenticationService,
   EmbeddingsService,
   InternalEmbeddingsService,
+  JobQueueService,
+  JobsService,
+  ScheduledJobsService,
+  LLMService,
+  LLMChatService,
+  LLMJobService,
+  LLMUtilityService,
   SignupService,
   UserService,
   QuestionsService,
   AnswersService,
   SearchService,
 } from '../services';
+
+import {
+  setupJobAdminService,
+  setupHealthCheckService,
+  setupDashboardService,
+} from '../services/job-admin-api.service';
 
 import type { Application } from './types';
 
@@ -21,18 +34,42 @@ export function configure(app: Application) {
   authenticationService.register('jwt', new JWTStrategy());
   authenticationService.register('local', new LocalStrategy());
 
+  // Initialize job queue service and store it in app configuration
+  const jobQueueService = new JobQueueService(app);
+  app.set('jobQueueService', jobQueueService);
+
   app.use('users', new UserService(db));
   app.use('signup', new SignupService(app));
   app.use('authenticate', authenticationService);
   app.use('embeddings', new EmbeddingsService(app));
   app.use('internalEmbeddings', new InternalEmbeddingsService(db));
+  app.use('jobs', new JobsService(app));
+  app.use('scheduledJobs', new ScheduledJobsService(app));
+  app.use('llm', new LLMService(app));
+  app.use('llmChat', new LLMChatService(app));
+  app.use('llmJobs', new LLMJobService(app));
+  app.use('llmUtility', new LLMUtilityService(app));
+
   app.use('questions', new QuestionsService(db));
   app.use('answers', new AnswersService(db));
   app.use('search', new SearchService(app));
 
+  // Setup admin and monitoring services
+  setupJobAdminService(app);
+  setupHealthCheckService(app);
+  setupDashboardService(app);
+
   app.service('users').hooks(UserService.hooks);
   app.service('authenticate').hooks(AuthenticationService.hooks);
   app.service('embeddings').hooks(EmbeddingsService.hooks);
+  app.service('jobs').hooks(JobsService.hooks);
+  app.service('scheduledJobs').hooks(ScheduledJobsService.hooks);
+  app.service('llm').hooks(LLMService.hooks);
+  app.service('llmChat').hooks(LLMChatService.hooks);
+  app.service('llmJobs').hooks(LLMJobService.hooks);
+  app.service('questions').hooks(QuestionsService.hooks);
+  app.service('answers').hooks(AnswersService.hooks);
+  app.set('jobQueueService', jobQueueService);
   app.service('questions').hooks(QuestionsService.hooks);
   app.service('answers').hooks(AnswersService.hooks);
   app.service('search').hooks(SearchService.hooks);

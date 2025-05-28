@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "nodemon -x ts-node src/index.ts",
+    "dev": "yarn dlx nodemon -x \"yarn dlx ts-node src/index.ts\"",
     "dev:pretty": "yarn dev | yarn pino-pretty",
     "lint:circular-imports": "madge . --extensions ts --circular",
     "migrate": "knex migrate:latest",
@@ -33,6 +33,7 @@
     "ollama": "^0.5.15",
     "path": "^0.12.7",
     "pg": "^8.16.0",
+    "pg-boss": "^10.2.0",
     "pino": "^9.6.0",
     "uuid": "^11.1.0"
   },

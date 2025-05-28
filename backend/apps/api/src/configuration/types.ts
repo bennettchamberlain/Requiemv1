@@ -37,6 +37,7 @@ export type ApplicationConfiguration = Static<typeof configurationSchema>;
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Configuration extends ApplicationConfiguration {
   postgresqlClient: Knex;
+  jobQueueService: any; // We'll import the proper type later to avoid circular imports
 }
 
 // The application instance type that will be used everywhere else

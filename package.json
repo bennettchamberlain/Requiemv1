@@ -23,6 +23,7 @@
     "typescript-eslint": "^8.32.1"
   },
   "dependencies": {
+    "recharts": "^2.15.3"
     "ollama": "^0.5.15",
     "pg": "^8.16.0"
   }

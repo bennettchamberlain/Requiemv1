@@ -1,12 +1,14 @@
 import { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-
-// Import contexts
-import { ThemeProvider } from '@/contexts/ThemeContext';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 
-// Import pages
-
+const LoginPage = lazy(() => import('@/pages/LoginPage'));
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const AdminPage = lazy(() => import('@/pages/AdminPage'));
+const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
+const QuestionsPage = lazy(() => import('@/pages/QuestionsPage'));
 import SplashPage from '@/pages/SplashPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
@@ -18,21 +20,22 @@ import SearchPage from '@/pages/SearchPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { MemoryPage } from '@/pages/MemoryPage';
 
-// Protected route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
     return <div className="flex items-center justify-center min-h-svh">Loading...</div>;
   }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" />;
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
-
+  
   return <>{children}</>;
 }
 
+function AppContent() {
+  const location = useLocation();
 /////////////////////////////////////////////////////////////////////////////////
 
 import { useNavigate } from 'react-router-dom';
@@ -280,110 +283,47 @@ export function AppSidebar({ children }: AppSideBarProps) {
   );
 }
 
-
-  
 export function AppSidebarUnused({ children }: AppSideBarProps) {
   const { user } = useAuth();
   
-  const currentUser = {
-    name: user?.name || user?.email || 'User',
-    email: user?.email || '',
-    avatar: '/avatars/shadcn.jpg',
-  };
+  const showSidebar = user && location.pathname !== '/login';
+
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarContent>
-          <SidebarHeader>
-            Companion Intelligence
-          </SidebarHeader>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {items.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild>
-                      <a href={item.url}>
-                        <span>{item.title}</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarFooter>
-          <NavUser user={currentUser} />
-        </SidebarFooter>
-      </Sidebar>
-      <SidebarInset>
-        {children}
-      </SidebarInset>
-    </SidebarProvider>
-  )
-}
-
-///////////////////////////////////////////////////////////////////////////////////
-
-
-function App() {
-  return (
-    <ThemeProvider>
-      <AuthProvider>
-        <Router>
-          <Routes>
-            <Route path="/" element={<SplashPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/signup" element={<SignupPage />} />
-            <Route
-              path="/chat"
-              element={
+    <div className="flex h-screen">
+      {showSidebar ? (
+        <SidebarProvider>
+          <SidebarInset>
+            <Routes>
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              <Route path="/" element={
                 <ProtectedRoute>
-                  <AppSidebar>
-                    <ChatPage />
-                  </AppSidebar>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <AppSidebar>
+                  <Suspense fallback={<div>Loading...</div>}>
                     <DashboardPage />
-                  </AppSidebar>
+                  </Suspense>
                 </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
+              } />
+              <Route path="/admin/*" element={
                 <ProtectedRoute>
-                  <AppSidebar>
+                  <Suspense fallback={<div>Loading...</div>}>
                     <AdminPage />
-                  </AppSidebar>
+                  </Suspense>
                 </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/answers"
-              element={
+              } />
+              <Route path="/chat" element={
                 <ProtectedRoute>
-                  <AppSidebar>
-                    <AnswersPage />
-                  </AppSidebar>
+                  <Suspense fallback={<div>Loading...</div>}>
+                    <ChatPage />
+                  </Suspense>
                 </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/questions"
-              element={
+              } />
+              <Route path="/memory" element={
                 <ProtectedRoute>
-                  <AppSidebar>
-                    <QuestionsPage />
-                  </AppSidebar>
+                  <Suspense fallback={<div>Loading...</div>}>
+                    <MemoryPage />
+                  </Suspense>
                 </ProtectedRoute>
+              } />
+              <Route path="/questions" element={
               }
             />
             <Route
@@ -400,17 +340,42 @@ function App() {
               path="/memory"
               element={
                 <ProtectedRoute>
-                  <AppSidebar>
-                    <MemoryPage />
-                  </AppSidebar>
+                  <Suspense fallback={<div>Loading...</div>}>
+                    <QuestionsPage />
+                  </Suspense>
                 </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" />} />
+              } />
+            </Routes>
+          </SidebarInset>
+        </SidebarProvider>
+      ) : (
+        <div className="w-full">
+          <Routes>
+            <Route path="/login" element={
+              <Suspense fallback={<div>Loading...</div>}>
+                <LoginPage />
+              </Suspense>
+            } />
+            <Route path="/signup" element={
+              <Suspense fallback={<div>Loading...</div>}>
+                <LoginPage />
+              </Suspense>
+            } />
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
-        </Router>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <AppContent />
       </AuthProvider>
-    </ThemeProvider>
+    </Router>
   );
 }
 
