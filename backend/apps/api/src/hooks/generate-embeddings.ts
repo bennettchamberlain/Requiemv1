@@ -7,7 +7,7 @@ export const generateEmbeddings = async (context: HookContext) => {
     return context;
   }
 
-  const { data, app } = context;
+  const { data, app, result } = context;
 
   // Check if the data has a text field
   if (!data || !data.text) {
@@ -24,11 +24,16 @@ export const generateEmbeddings = async (context: HookContext) => {
     // Get the database client
     const db = app.get('postgresqlClient');
 
+    // Get the ID of the inserted content (from the result of the create operation)
+    const contentId = result?.id || data.id;
+
     // Insert the embedding into the embeddings table
     await db('embeddings').insert({
       model: 'nomic-embed-text',
       raw_input: data.text,
       embedding_vector: `[${response.embedding.join(',')}]`, // Format as PostgreSQL vector
+      source_id: contentId,
+      source_label: 'content.text', // Table name + field name
       created_at: new Date(),
       updated_at: new Date(),
     });
