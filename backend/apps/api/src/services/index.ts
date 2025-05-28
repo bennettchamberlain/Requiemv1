@@ -4,6 +4,7 @@ import { SignupService } from './signup-service';
 import { UserService } from './user-service';
 import { QuestionsService } from './questions-service';
 import { AnswersService } from './answers-service';
+import { SearchService } from './search-service';
 
 export interface ServiceTypes {
   authenticate: AuthenticationService;
@@ -13,6 +14,7 @@ export interface ServiceTypes {
   users: UserService;
   questions: QuestionsService;
   answers: AnswersService;
+  search: SearchService;
 }
 
 export {
@@ -23,4 +25,5 @@ export {
   UserService,
   QuestionsService,
   AnswersService,
+  SearchService,
 };
