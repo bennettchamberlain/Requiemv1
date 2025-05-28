@@ -2,28 +2,41 @@ import type { HookContext } from '@feathersjs/feathers';
 import ollama from 'ollama';
 
 export const generateEmbeddings = async (context: HookContext) => {
-  const { data } = context;
-
-  if (!data) {
+  // Only process if this is a create operation on the content table
+  if (context.method !== 'create' || context.path !== 'content') {
     return context;
   }
 
-  const embeddingPromises = Object.keys(data)
-    .filter(key => key.endsWith('_vector'))
-    .map(async vectorKey => {
-      const fieldKey = vectorKey.slice(0, -7); // remove '_vector'
+  const { data, app } = context;
 
-      if (data[fieldKey] && typeof data[fieldKey] === 'string') {
-        const response = await ollama.embeddings({
-          model: 'nomic-embed-text',
-          prompt: data[fieldKey],
-        });
+  if (!data || !data.text) {
+    return context;
+  }
 
-        data[vectorKey] = response.embedding;
-      }
+  try {
+    // Generate embedding for the text field
+    const response = await ollama.embeddings({
+      model: 'nomic-embed-text',
+      prompt: data.text,
     });
 
-  await Promise.all(embeddingPromises);
+    // Get the database client
+    const db = app.get('postgresqlClient');
+
+    // Insert the embedding into the embeddings table
+    await db('embeddings').insert({
+      model: 'nomic-embed-text',
+      raw_input: data.text,
+      embedding_vector: `[${response.embedding.join(',')}]`, // Format as PostgreSQL vector
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    console.log(`Generated and stored embedding for content with text: ${data.text.substring(0, 50)}...`);
+  } catch (error) {
+    console.error('Error generating embedding:', error);
+    // Don't fail the main operation if embedding fails
+  }
 
   return context;
 };
