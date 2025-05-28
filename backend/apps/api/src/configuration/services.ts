@@ -9,6 +9,7 @@ import {
   UserService,
   QuestionsService,
   AnswersService,
+  SearchService,
 } from '../services';
 
 import type { Application } from './types';
@@ -27,10 +28,12 @@ export function configure(app: Application) {
   app.use('internalEmbeddings', new InternalEmbeddingsService(db));
   app.use('questions', new QuestionsService(db));
   app.use('answers', new AnswersService(db));
+  app.use('search', new SearchService(app));
 
   app.service('users').hooks(UserService.hooks);
   app.service('authenticate').hooks(AuthenticationService.hooks);
   app.service('embeddings').hooks(EmbeddingsService.hooks);
-  //app.service('questions').hooks(QuestionsService.hooks);
+  app.service('questions').hooks(QuestionsService.hooks);
   app.service('answers').hooks(AnswersService.hooks);
+  app.service('search').hooks(SearchService.hooks);
 }

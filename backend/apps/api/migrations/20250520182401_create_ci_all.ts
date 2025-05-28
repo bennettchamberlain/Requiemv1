@@ -18,7 +18,7 @@ exports.up = async function (knex: Knex): Promise<void> {
     drop type if exists content_type cascade;
     drop type if exists thing_type cascade;
     drop type if exists geo_format_type cascade;
-
+    
     create table provider (
         id uuid primary key,
         coming_soon boolean,

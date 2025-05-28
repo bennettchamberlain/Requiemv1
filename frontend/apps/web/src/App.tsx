@@ -14,6 +14,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import AdminPage from '@/pages/AdminPage';
 import AnswersPage from '@/pages/AnswersPage';
 import QuestionsPage from '@/pages/QuestionsPage';
+import SearchPage from '@/pages/SearchPage';
 import { ChatPage } from '@/pages/ChatPage';
 import { MemoryPage } from '@/pages/MemoryPage';
 
@@ -35,7 +36,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 /////////////////////////////////////////////////////////////////////////////////
 
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Bot, Map, Settings2, SquareTerminal } from 'lucide-react';
+import { BookOpen, Bot, Map, Settings2, SquareTerminal, Search } from 'lucide-react';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import { Collapsible } from '@/components/ui/collapsible';
@@ -106,6 +107,24 @@ const items = [
         title: 'Visual Camera Mode',
         url: '/chat',
         icon: Bot,
+      },
+    ]
+  },
+
+  {
+    title: 'Search',
+    url: '/search',
+    icon: Search,
+    items: [
+      {
+        title: 'Semantic Search',
+        url: '/search',
+        icon: Search,
+      },
+      {
+        title: 'Advanced Search',
+        url: '/search?advanced=true',
+        icon: Search,
       },
     ]
   },
@@ -363,6 +382,16 @@ function App() {
                 <ProtectedRoute>
                   <AppSidebar>
                     <QuestionsPage />
+                  </AppSidebar>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/search"
+              element={
+                <ProtectedRoute>
+                  <AppSidebar>
+                    <SearchPage />
                   </AppSidebar>
                 </ProtectedRoute>
               }
