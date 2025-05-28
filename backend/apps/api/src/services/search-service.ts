@@ -1,12 +1,10 @@
 import type { Params, HookContext } from '@feathersjs/feathers';
-import { validateData } from '@feathersjs/schema';
 import { Type, Static, getValidator } from '@feathersjs/typebox';
 import { authenticate } from '@feathersjs/authentication';
 import { iff } from 'feathers-hooks-common';
 import ollama from 'ollama';
 
 import { Application } from '../configuration/types';
-import { queryValidator } from '../configuration/validators';
 
 export const SearchQuery = Type.Object(
   {
@@ -29,8 +27,6 @@ export const SearchResult = Type.Object({
 });
 
 export type SearchResultType = Static<typeof SearchResult>;
-
-const validator = getValidator(SearchQuery, queryValidator);
 
 export class SearchService {
   app: Application;
@@ -114,16 +110,6 @@ export class SearchService {
       all: [
         // Only authenticate if it's an external request
         iff((context: HookContext) => context.params.provider, authenticate('jwt')),
-      ],
-      find: [
-        async (context: HookContext) => {
-          // Validate query parameters
-          const { query } = context.params;
-          if (query) {
-            await validateData(validator)(query);
-          }
-          return context;
-        },
       ],
     },
   };
