@@ -3,6 +3,7 @@ import { Knex } from 'knex';
 
 exports.up = async function (knex: Knex): Promise<void> {
   return knex.raw(`
+
     CREATE TABLE questions (
       id UUID PRIMARY KEY,
       created TIMESTAMP,

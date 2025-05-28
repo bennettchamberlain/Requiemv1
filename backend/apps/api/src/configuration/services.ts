@@ -16,6 +16,7 @@ import {
   UserService,
   QuestionsService,
   AnswersService,
+  SearchService,
 } from '../services';
 
 import {
@@ -51,6 +52,7 @@ export function configure(app: Application) {
 
   app.use('questions', new QuestionsService(db));
   app.use('answers', new AnswersService(db));
+  app.use('search', new SearchService(app));
 
   // Setup admin and monitoring services
   setupJobAdminService(app);
@@ -65,9 +67,10 @@ export function configure(app: Application) {
   app.service('llm').hooks(LLMService.hooks);
   app.service('llmChat').hooks(LLMChatService.hooks);
   app.service('llmJobs').hooks(LLMJobService.hooks);
-
   app.service('questions').hooks(QuestionsService.hooks);
   app.service('answers').hooks(AnswersService.hooks);
-
   app.set('jobQueueService', jobQueueService);
+  app.service('questions').hooks(QuestionsService.hooks);
+  app.service('answers').hooks(AnswersService.hooks);
+  app.service('search').hooks(SearchService.hooks);
 }
