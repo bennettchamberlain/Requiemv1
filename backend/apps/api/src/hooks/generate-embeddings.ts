@@ -9,6 +9,7 @@ export const generateEmbeddings = async (context: HookContext) => {
 
   const { data, app } = context;
 
+  // Check if the data has a text field
   if (!data || !data.text) {
     return context;
   }
