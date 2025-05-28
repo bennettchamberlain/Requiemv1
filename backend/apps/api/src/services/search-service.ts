@@ -37,11 +37,14 @@ export class SearchService {
 
   async find(params: Params): Promise<SearchResultType[]> {
     // Extract query parameters
-    const { query, limit = 10 } = params.query || {};
+    const { query, limit = '10' } = params.query || {};
 
     if (!query) {
       throw new Error('Query parameter is required');
     }
+
+    // Parse limit as integer
+    const limitInt = parseInt(limit as string, 10) || 10;
 
     try {
       // Generate embedding for the search query
@@ -63,13 +66,13 @@ export class SearchService {
           source_id,
           source_label,
           raw_input,
-          embedding_vector <-> $1::vector AS distance 
+          embedding_vector <-> ?::vector AS distance 
         FROM embeddings 
         ORDER BY distance ASC 
-        LIMIT $2
+        LIMIT ?
       `;
 
-      const result = await db.raw(sql, [vectorString, limit]);
+      const result = await db.raw(sql, [vectorString, limitInt]);
 
       // Return the search results
       return result.rows.map((row: any) => ({
