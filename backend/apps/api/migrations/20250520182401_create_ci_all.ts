@@ -18,8 +18,6 @@ exports.up = async function (knex: Knex): Promise<void> {
     drop type if exists content_type cascade;
     drop type if exists thing_type cascade;
     drop type if exists geo_format_type cascade;
-
-    CREATE EXTENSION IF NOT EXISTS vector;
     
     create table provider (
         id uuid primary key,
@@ -44,7 +42,6 @@ exports.up = async function (knex: Knex): Promise<void> {
         last_run timestamp,
         last_successful_run timestamp,
         name text,
-        name_vector VECTOR(768),
         oauth_app_name text,
         permissions jsonb,
         provider_id uuid references provider(id),
@@ -54,19 +51,13 @@ exports.up = async function (knex: Knex): Promise<void> {
     create table person (
         id uuid primary key,
         first_name text,
-        first_name_vector VECTOR(768),
         last_name text,
-        last_name_vector VECTOR(768),
         address text,
-        address_vector VECTOR(768),
         street_address text,
         street_address_2 text,
         city text,
-        city_vector VECTOR(768),
         region text,
-        region_vector VECTOR(768),
         country text,
-        country_vector VECTOR(768),
         postal_code text,
         avatar_url text,
         external_avatar_url text,
@@ -76,7 +67,6 @@ exports.up = async function (knex: Knex): Promise<void> {
         tags uuid[],
         contact_ids uuid[],
         gender text,
-        gender_vector VECTOR(768),
         middle_name text
     );
     create table tag (
@@ -84,7 +74,6 @@ exports.up = async function (knex: Knex): Promise<void> {
         id text,
         created timestamp,
         tag text,
-        tag_vector VECTOR(768),
         share text,
         passcode text,
         updated timestamp,
@@ -101,9 +90,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         icon_color text,
         last_run timestamp,
         name text,
-        name_vector VECTOR(768),
         query text,
-        query_vector VECTOR(768),
         user_id uuid references person(id)
     );
     create type content_type as enum ('Photo', 'Video', 'Audio', 'Text', 'Code', 'Game', 'Web Page', 'File');
@@ -123,9 +110,7 @@ exports.up = async function (knex: Knex): Promise<void> {
         remote_id text,
         tags uuid[],
         text text,
-        text_vector VECTOR(768),
         title text,
-        title_vector VECTOR(768),
         type content_type,
         updated timestamp,
         url text,
@@ -153,7 +138,6 @@ exports.up = async function (knex: Knex): Promise<void> {
         geo_format geo_format_type,
         geolocation jsonb,
         identifier text,
-        identifier_vector VECTOR(768),
         provider_id uuid references provider(id),
         tracked boolean,
         updated timestamp,
@@ -172,7 +156,6 @@ exports.up = async function (knex: Knex): Promise<void> {
         geo_format geo_format_type,
         geolocation jsonb,
         identifier text,
-        identifier_vector VECTOR(768),
         provider_id uuid references provider(id),
         tracked boolean,
         updated timestamp,
@@ -189,7 +172,6 @@ exports.up = async function (knex: Knex): Promise<void> {
         hidden boolean,
         identifier text,
         name text,
-        name_vector VECTOR(768),
         people_id uuid references person(id),
         provider_id uuid references provider(id),
         provider_name text,
