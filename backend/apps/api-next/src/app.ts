@@ -1,0 +1,29 @@
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import config from './config';
+import { RequestContextMiddleware } from './common/middleware';
+import { RequestContextService } from './domains/context';
+import { AuthModule } from './domains/auth';
+import { UserModule } from './domains/user';
+import { EmbeddingModule } from './domains/search';
+
+@Module({
+  imports: [
+    TypeOrmModule.forRoot({
+      type: config.db.type,
+      url: config.db.url,
+      entities: [__dirname + '/domains/**/*Entity.{ts,js}'],
+    }),
+    AuthModule,
+    UserModule,
+    EmbeddingModule,
+  ],
+  controllers: [],
+  providers: [RequestContextService],
+})
+export class App implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}

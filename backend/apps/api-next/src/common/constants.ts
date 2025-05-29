@@ -1,0 +1,20 @@
+export enum PgErrorCode {
+  UNIQUE_VIOLATION = '23505', // duplicate key violates unique constraint
+  FOREIGN_KEY_VIOLATION = '23503', // insert/update violates foreign key
+  NOT_NULL_VIOLATION = '23502', // null value in column violates not-null constraint
+  CHECK_VIOLATION = '23514', // check constraint violation
+  EXCLUSION_VIOLATION = '23P01', // exclusion constraint violation
+  INVALID_TEXT_REPRESENTATION = '22P02', // invalid input syntax for type
+  STRING_DATA_RIGHT_TRUNCATION = '22001', // value too long for type
+  DEADLOCK_DETECTED = '40P01', // deadlock detected
+  SERIALIZATION_FAILURE = '40001', // could not serialize access due to concurrent update
+  LOCK_NOT_AVAILABLE = '55P03', // could not obtain lock on resource
+  INVALID_FOREIGN_KEY = '42830', // invalid foreign key
+  RESTRICT_VIOLATION = '23001', // restrict constraint violation
+  INSUFFICIENT_PRIVILEGE = '42501', // insufficient_privilege
+  SYNTAX_ERROR = '42601', // syntax error
+  INVALID_COLUMN_REFERENCE = '42P10', // invalid column reference
+  UNDEFINED_TABLE = '42P01', // undefined table
+  UNDEFINED_COLUMN = '42703', // undefined column
+  UNIQUE_NO_INDEX = '42P07', // relation already exists
+}
