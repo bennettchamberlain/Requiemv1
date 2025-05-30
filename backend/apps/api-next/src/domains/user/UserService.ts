@@ -21,7 +21,7 @@ export class UserService {
 
     const user = this.userRepository.create({
       ...data,
-      external_id: uuidv7(),
+      id: uuidv7(),
       password: hashedPassword,
     });
 
@@ -40,16 +40,6 @@ export class UserService {
     const result = await this.userRepository.findOne({
       where: {
         id,
-      },
-    });
-
-    return result?.toUser() ?? null;
-  }
-
-  async findOneByExternalId(externalId: string): Promise<User | null> {
-    const result = await this.userRepository.findOne({
-      where: {
-        external_id: externalId,
       },
     });
 

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import ollama from 'ollama';
 import { Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { EmbeddingEntity } from './EmbeddingEntity';
 
@@ -27,6 +28,7 @@ export class EmbeddingService {
     const vector = await this.calculateVector(input);
 
     await this.embeddingRepo.save({
+      id: uuidv7(),
       model: EMBEDDING_MODEL,
       raw_input: input,
       embedding_vector: vector,

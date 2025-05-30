@@ -1,14 +1,11 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn } from 'typeorm';
 
 import { User } from './types';
 
 @Entity('users')
 export class UserEntity {
-  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
-  id!: string; // Keep as string, safer for JS... questionable... claimed from ChatGPT
-
-  @Column()
-  external_id!: string;
+  @PrimaryColumn()
+  id!: string;
 
   @Column()
   name!: string;
@@ -21,8 +18,7 @@ export class UserEntity {
 
   toUser() {
     return {
-      id: this.external_id,
-      pk: this.id,
+      id: this.id,
       name: this.name,
       email: this.email,
     } satisfies User;

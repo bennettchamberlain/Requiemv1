@@ -1,9 +1,9 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn } from 'typeorm';
 
 @Entity('embeddings')
 export class EmbeddingEntity {
-  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
-  id!: string; // Keep as string, safer for JS... questionable... claimed from ChatGPT
+  @PrimaryColumn()
+  id!: string;
 
   @Column()
   model!: string;
