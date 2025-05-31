@@ -2,7 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from './config';
-import { RequestContextMiddleware } from './common/middleware';
+import { RequestContextMiddleware, RequestLoggerMiddleware } from './common/middleware';
 import { AuthModule } from './domains/auth';
 import { UserModule } from './domains/user';
 import { EmbeddingModule } from './domains/search';
@@ -24,5 +24,6 @@ import { EmbeddingModule } from './domains/search';
 export class App implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer.apply(RequestLoggerMiddleware).forRoutes('*');
   }
 }

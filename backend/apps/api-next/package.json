@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "yarn dlx nodemon --exec ts-node --swc src/main.ts",
+    "dev:pretty": "yarn dev | yarn pino-pretty",
     "lint:circular-imports": "madge . --extensions ts --circular",
     "migrate": "dbmate --env-file .env.local up",
     "migrate:up": "migrate",
@@ -28,7 +29,7 @@
     "passport-local": "^1.0.0",
     "pg": "^8.16.0",
     "pgvector": "^0.2.1",
-    "pino": "^9.6.0",
+    "pino": "^9.7.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.24",
