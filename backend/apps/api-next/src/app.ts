@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from './config';
 import { RequestContextMiddleware } from './common/middleware';
-import { RequestContextService } from './domains/context';
 import { AuthModule } from './domains/auth';
 import { UserModule } from './domains/user';
 import { EmbeddingModule } from './domains/search';
@@ -20,7 +19,7 @@ import { EmbeddingModule } from './domains/search';
     EmbeddingModule,
   ],
   controllers: [],
-  providers: [RequestContextService],
+  providers: [],
 })
 export class App implements NestModule {
   configure(consumer: MiddlewareConsumer) {

@@ -1,18 +1,21 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
-import type { Request, Response, NextFunction } from 'express';
+import type { Response, NextFunction } from 'express';
+import { v4 as uuidv4 } from 'uuid';
 
-import { RequestContextService } from '../../domains/context/RequestContextService';
+import type { RequestWithContext } from '../types';
 
 export const REQUEST_ID_HEADER = 'X-Request-Id';
 
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
-  constructor(private readonly contextService: RequestContextService) {}
+  use(req: RequestWithContext, res: Response, next: NextFunction) {
+    const requestId = uuidv4();
 
-  use(req: Request, res: Response, next: NextFunction) {
-    const context = this.contextService.get(req);
+    req.context = {
+      requestId,
+    };
 
-    res.setHeader(REQUEST_ID_HEADER, context.requestId);
+    res.setHeader(REQUEST_ID_HEADER, requestId);
 
     next();
   }

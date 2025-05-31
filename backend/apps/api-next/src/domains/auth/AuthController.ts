@@ -4,7 +4,6 @@ import { Request } from 'express';
 import { z } from 'zod';
 
 import { ValidationPipe } from '../../common/pipes';
-import { RequestContextService } from '../context';
 
 import { AuthService } from './AuthService';
 import { JwtPayload, LoginDto } from './types';
@@ -18,7 +17,6 @@ const localStrategySchema = z.object({
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly contextService: RequestContextService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -30,10 +28,6 @@ export class AuthController {
     if (user == null) {
       throw new UnauthorizedException('Invalid credentials');
     }
-
-    this.contextService.extend(req, {
-      user,
-    });
 
     const payload = {
       sub: user.id,

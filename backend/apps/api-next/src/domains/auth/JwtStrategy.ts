@@ -1,12 +1,11 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Request } from 'express';
 
 import { z } from 'zod';
 
 import config from '../../config';
-import { RequestContextService } from '../context';
+import { RequestWithContext } from '../../common/types';
 import { UserService } from '../user';
 
 import { JwtPayload } from './types';
@@ -17,10 +16,7 @@ const jwtPayloadSchema = z.object({
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(
-    private readonly contextService: RequestContextService,
-    private readonly userService: UserService,
-  ) {
+  constructor(private readonly userService: UserService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -29,7 +25,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(req: Request, payload: JwtPayload) {
+  async validate(req: RequestWithContext, payload: JwtPayload) {
     const result = jwtPayloadSchema.safeParse(payload);
 
     if (!result.success) {
@@ -45,9 +41,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User not found');
     }
 
-    this.contextService.extend(req, {
-      user,
-    });
+    req.context = {
+      ...req.context,
+      userId: user.id,
+    };
 
     return user;
   }
