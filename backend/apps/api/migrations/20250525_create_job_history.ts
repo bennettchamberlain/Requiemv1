@@ -1,5 +1,7 @@
+import type { Knex } from 'knex';
+
 // Knex migration for job_history table
-exports.up = function(knex) {
+exports.up = function(knex: Knex) {
   return knex.schema.createTable('job_history', function(table) {
     table.string('id').primary();
     table.string('queue').notNullable();
@@ -14,6 +16,6 @@ exports.up = function(knex) {
   });
 };
 
-exports.down = function(knex) {
+exports.down = function(knex: Knex) {
   return knex.schema.dropTable('job_history');
 };
