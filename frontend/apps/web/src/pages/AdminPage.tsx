@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -8,7 +7,20 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
-import { AlertCircle, RefreshCw, Play, Pause, Trash2, RotateCcw, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import {
+  AlertCircle,
+  RefreshCw,
+  Play,
+  Pause,
+  Trash2,
+  RotateCcw,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+} from 'lucide-react';
+
+import { useAuth } from '../hooks';
 
 const API_BASE = 'http://dev.companionintelligence.com/api';
 
@@ -40,7 +52,7 @@ interface QueueStats {
 }
 
 export default function AdminPage() {
-  const { user } = useAuth();
+  const [{ user }] = useAuth();
   const [jobs, setJobs] = useState<JobStatus[]>([]);
   const [queueStats, setQueueStats] = useState<QueueStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +73,7 @@ export default function AdminPage() {
       if (filterState) params.append('state', filterState);
 
       const res = await fetch(`${API_BASE}/admin/jobs?${params}`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
       if (!res.ok) throw new Error(res.statusText);
 
@@ -78,7 +90,7 @@ export default function AdminPage() {
     try {
       const token = localStorage.getItem('feathers-jwt');
       const res = await fetch(`${API_BASE}/dashboard/queues`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(res.statusText);
 
@@ -105,7 +117,6 @@ export default function AdminPage() {
       }
 
       const result = await response.json();
-      console.log('Action result:', result);
 
       // Refresh data after action
       await fetchJobs();
@@ -123,30 +134,45 @@ export default function AdminPage() {
 
   const getStateIcon = (state: string) => {
     switch (state) {
-      case 'completed': return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'failed': return <XCircle className="h-4 w-4 text-red-500" />;
-      case 'active': return <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />;
-      case 'waiting': return <Clock className="h-4 w-4 text-yellow-500" />;
-      case 'delayed': return <AlertTriangle className="h-4 w-4 text-orange-500" />;
-      case 'paused': return <Pause className="h-4 w-4 text-gray-500" />;
-      default: return <AlertCircle className="h-4 w-4 text-gray-500" />;
+      case 'completed':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'failed':
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case 'active':
+        return <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />;
+      case 'waiting':
+        return <Clock className="h-4 w-4 text-yellow-500" />;
+      case 'delayed':
+        return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+      case 'paused':
+        return <Pause className="h-4 w-4 text-gray-500" />;
+      default:
+        return <AlertCircle className="h-4 w-4 text-gray-500" />;
     }
   };
 
   const getStateBadgeVariant = (state: string) => {
     switch (state) {
-      case 'completed': return 'default';
-      case 'failed': return 'destructive';
-      case 'active': return 'default';
-      case 'waiting': return 'secondary';
-      case 'delayed': return 'outline';
-      case 'paused': return 'secondary';
-      default: return 'outline';
+      case 'completed':
+        return 'default';
+      case 'failed':
+        return 'destructive';
+      case 'active':
+        return 'default';
+      case 'waiting':
+        return 'secondary';
+      case 'delayed':
+        return 'outline';
+      case 'paused':
+        return 'secondary';
+      default:
+        return 'outline';
     }
   };
 
-  const filteredJobs = jobs.filter(job => {
-    const matchesSearch = !searchTerm ||
+  const filteredJobs = jobs.filter((job) => {
+    const matchesSearch =
+      !searchTerm ||
       job.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       job.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       job.queue.toLowerCase().includes(searchTerm.toLowerCase());
@@ -162,7 +188,13 @@ export default function AdminPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Job Queue Administration</h1>
-        <Button onClick={() => { fetchJobs(); fetchQueueStats(); }} disabled={loading}>
+        <Button
+          onClick={() => {
+            fetchJobs();
+            fetchQueueStats();
+          }}
+          disabled={loading}
+        >
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -259,9 +291,7 @@ export default function AdminPage() {
                       <TableCell>
                         <div className="flex items-center space-x-2">
                           {getStateIcon(job.state)}
-                          <Badge variant={getStateBadgeVariant(job.state)}>
-                            {job.state}
-                          </Badge>
+                          <Badge variant={getStateBadgeVariant(job.state)}>{job.state}</Badge>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -382,7 +412,7 @@ function SystemHealthComponent() {
       setLoading(true);
       const token = localStorage.getItem('feathers-jwt');
       const res = await fetch(`${API_BASE}/health/detailed`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
@@ -419,7 +449,8 @@ function SystemHealthComponent() {
             <div>
               <h4 className="font-medium mb-2">Uptime</h4>
               <p className="text-sm text-gray-600">
-                {Math.floor(healthData.uptime / 3600000)}h {Math.floor((healthData.uptime % 3600000) / 60000)}m
+                {Math.floor(healthData.uptime / 3600000)}h {Math.floor((healthData.uptime % 3600000) / 60000)}
+                m
               </p>
             </div>
             <div>
@@ -427,7 +458,8 @@ function SystemHealthComponent() {
               <div className="space-y-1">
                 <Progress value={healthData.memory.percentage} />
                 <p className="text-sm text-gray-600">
-                  {Math.round(healthData.memory.percentage)}% ({Math.round(healthData.memory.used / 1024 / 1024)}MB used)
+                  {Math.round(healthData.memory.percentage)}% (
+                  {Math.round(healthData.memory.used / 1024 / 1024)}MB used)
                 </p>
               </div>
             </div>

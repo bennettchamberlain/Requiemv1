@@ -176,7 +176,7 @@ class ChatAPI {
   // Create a new conversation
   public async createConversation(title: string, topic: string = "General"): Promise<Conversation> {
     await new Promise(resolve => setTimeout(resolve, 300));
-    
+
     const newConversation: Conversation = {
       id: `conv-${Date.now()}`,
       title,
@@ -185,7 +185,7 @@ class ChatAPI {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    
+
     this.conversations.unshift(newConversation);
     return newConversation;
   }
@@ -193,37 +193,37 @@ class ChatAPI {
   // Delete a conversation
   public async deleteConversation(id: string): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 200));
-    
+
     const initialLength = this.conversations.length;
     this.conversations = this.conversations.filter(conv => conv.id !== id);
-    
+
     return initialLength > this.conversations.length;
   }
 
   // Add a message to a conversation
   public async addMessage(conversationId: string, content: string, sender: 'user' | 'assistant'): Promise<Message | null> {
     await new Promise(resolve => setTimeout(resolve, 200));
-    
+
     const conversation = this.conversations.find(conv => conv.id === conversationId);
     if (!conversation) return null;
-    
+
     const newMessage: Message = {
       id: `msg-${conversationId}-${Date.now()}`,
       content,
       sender,
       timestamp: new Date().toISOString()
     };
-    
+
     conversation.messages.push(newMessage);
     conversation.updatedAt = new Date().toISOString();
-    
+
     return newMessage;
   }
 
   // Get all messages for a conversation
   public async getMessages(conversationId: string): Promise<Message[]> {
     await new Promise(resolve => setTimeout(resolve, 200));
-    
+
     const conversation = this.conversations.find(conv => conv.id === conversationId);
     return conversation ? [...conversation.messages] : [];
   }
@@ -232,7 +232,7 @@ class ChatAPI {
 // Hook to use the chat API
 function useChatAPI() {
   const api = ChatAPI.getInstance();
-  
+
   return {
     getConversations: api.getConversations.bind(api),
     getConversation: api.getConversation.bind(api),
@@ -243,14 +243,14 @@ function useChatAPI() {
   };
 }
 
-export function ChatSidebar({ 
-  conversations, 
-  selectedConversationId, 
+export function ChatSidebar({
+  conversations,
+  selectedConversationId,
   onSelectConversation,
   onNewConversation,
   onDeleteConversation
-}: { 
-  conversations: Conversation[], 
+}: {
+  conversations: Conversation[],
   selectedConversationId: string | null,
   onSelectConversation: (id: string) => void,
   onNewConversation: () => void,
@@ -269,7 +269,7 @@ export function ChatSidebar({
     <Sidebar>
       <SidebarHeader className="flex justify-between items-center">
         <h2 className="text-lg font-semibold">Conversations</h2>
-        <button 
+        <button
           onClick={onNewConversation}
           className="p-1 rounded-full hover:bg-muted"
           title="New conversation"
@@ -285,13 +285,13 @@ export function ChatSidebar({
               <SidebarMenu>
                 {topicConversations.map((conversation) => (
                   <SidebarMenuItem key={conversation.id}>
-                    <SidebarMenuButton 
+                    <SidebarMenuButton
                       onClick={() => onSelectConversation(conversation.id)}
                       className={selectedConversationId === conversation.id ? "bg-muted" : ""}
                     >
                       <MessageSquare className="mr-2 h-4 w-4" />
                       <span className="flex-1 truncate">{conversation.title}</span>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onDeleteConversation(conversation.id);
@@ -313,7 +313,7 @@ export function ChatSidebar({
   );
 }
 
-export function ChatPage() {
+export default function ChatPage() {
   const chatApi = useChatAPI();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -328,7 +328,7 @@ export function ChatPage() {
         const data = await chatApi.getConversations();
         setConversations(data);
         setLoading(false);
-        
+
         // Select the first conversation by default if available
         if (data.length > 0 && !selectedConversationId) {
           setSelectedConversationId(data[0].id);
@@ -338,7 +338,7 @@ export function ChatPage() {
         setLoading(false);
       }
     };
-    
+
     loadConversations();
   }, []);
 
@@ -349,7 +349,7 @@ export function ChatPage() {
         setCurrentConversation(null);
         return;
       }
-      
+
       try {
         const conversation = await chatApi.getConversation(selectedConversationId);
         setCurrentConversation(conversation || null);
@@ -357,7 +357,7 @@ export function ChatPage() {
         console.error("Failed to load conversation:", error);
       }
     };
-    
+
     loadConversation();
   }, [selectedConversationId]);
 
@@ -366,7 +366,7 @@ export function ChatPage() {
     try {
       const title = prompt("Enter a title for the new conversation:") || "New Conversation";
       const topic = prompt("Enter a topic for the conversation:") || "General";
-      
+
       const newConversation = await chatApi.createConversation(title, topic);
       setConversations(prev => [newConversation, ...prev]);
       setSelectedConversationId(newConversation.id);
@@ -378,11 +378,11 @@ export function ChatPage() {
   // Handle deleting a conversation
   const handleDeleteConversation = async (id: string) => {
     if (!confirm("Are you sure you want to delete this conversation?")) return;
-    
+
     try {
       await chatApi.deleteConversation(id);
       setConversations(prev => prev.filter(conv => conv.id !== id));
-      
+
       if (selectedConversationId === id) {
         const nextConversation = conversations.find(conv => conv.id !== id);
         setSelectedConversationId(nextConversation?.id || null);
@@ -395,7 +395,7 @@ export function ChatPage() {
   // Handle sending a new message
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversationId) return;
-    
+
     try {
       // Add user message
       const userMessage = await chatApi.addMessage(
@@ -403,7 +403,7 @@ export function ChatPage() {
         newMessage,
         'user'
       );
-      
+
       if (userMessage && currentConversation) {
         // Update the current conversation with the new message
         setCurrentConversation({
@@ -411,9 +411,9 @@ export function ChatPage() {
           messages: [...currentConversation.messages, userMessage]
         });
       }
-      
+
       setNewMessage("");
-      
+
       // Simulate assistant response after a short delay
       setTimeout(async () => {
         const assistantMessage = await chatApi.addMessage(
@@ -421,7 +421,7 @@ export function ChatPage() {
           "This is a simulated response from the assistant. In a real application, this would come from an AI service.",
           'assistant'
         );
-        
+
         if (assistantMessage && currentConversation) {
           // Update the current conversation with the assistant's response
           setCurrentConversation(prev => prev ? {
@@ -437,7 +437,7 @@ export function ChatPage() {
 
   return (
     <SidebarProvider>
-      <ChatSidebar 
+      <ChatSidebar
         conversations={conversations}
         selectedConversationId={selectedConversationId}
         onSelectConversation={setSelectedConversationId}
@@ -463,11 +463,11 @@ export function ChatPage() {
             <>
               <div className="flex-1 overflow-y-auto py-4">
                 {currentConversation.messages.map((message) => (
-                  <div 
-                    key={message.id} 
+                  <div
+                    key={message.id}
                     className={`mb-4 p-3 rounded-lg max-w-[80%] ${
-                      message.sender === 'user' 
-                        ? 'ml-auto bg-primary text-primary-foreground' 
+                      message.sender === 'user'
+                        ? 'ml-auto bg-primary text-primary-foreground'
                         : 'mr-auto bg-muted'
                     }`}
                   >

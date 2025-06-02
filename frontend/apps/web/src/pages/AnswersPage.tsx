@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, RefreshCw } from 'lucide-react';
+
+import { useAuth } from '../hooks';
 
 interface Answer {
   id: string;
@@ -22,7 +23,7 @@ interface Answer {
 }
 
 export default function AnswersPage() {
-  const { user } = useAuth();
+  const [{ user }] = useAuth();
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +51,9 @@ export default function AnswersPage() {
 
       if (!response.ok) {
         // Handle different HTTP error codes
-        console.error(`AnswersPage: API request failed with status ${response.status}: ${response.statusText}`);
+        console.error(
+          `AnswersPage: API request failed with status ${response.status}: ${response.statusText}`,
+        );
         if (response.status === 401) {
           throw new Error('Unauthorized: You do not have permission to access this resource');
         } else if (response.status === 403) {
@@ -119,7 +122,13 @@ export default function AnswersPage() {
       <Card className="w-full">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-2xl">Answers</CardTitle>
-          <Button variant="outline" size="icon" onClick={fetchAnswers} disabled={loading} title="Refresh answers">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={fetchAnswers}
+            disabled={loading}
+            title="Refresh answers"
+          >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
         </CardHeader>
@@ -168,9 +177,15 @@ export default function AnswersPage() {
                           <TableCell className="font-mono text-xs">{answer.id.substring(0, 8)}...</TableCell>
                           <TableCell className="text-xs">{formatDate(answer.created)}</TableCell>
                           <TableCell className="text-xs">{formatDate(answer.updated)}</TableCell>
-                          <TableCell className="font-mono text-xs">{answer.user_id.substring(0, 8)}...</TableCell>
-                          <TableCell className="font-mono text-xs">{answer.question_id.substring(0, 8)}...</TableCell>
-                          <TableCell className="text-sm">{truncateText(answer.give_answer_current)}</TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {answer.user_id.substring(0, 8)}...
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {answer.question_id.substring(0, 8)}...
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {truncateText(answer.give_answer_current)}
+                          </TableCell>
                           <TableCell className="text-sm">{truncateText(answer.rag_answer_1)}</TableCell>
                         </TableRow>
                       ))

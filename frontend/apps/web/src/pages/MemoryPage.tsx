@@ -132,29 +132,29 @@ const sampleMemories: MemoryItem[] = [
   }
 ];
 
-export function MemoryPage() {
+export default function MemoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [memories] = useState<MemoryItem[]>(sampleMemories);
   const [activeTab, setActiveTab] = useState('map');
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  
+
   // Filter memories based on search query
-  const filteredMemories = searchQuery.trim() === '' 
-    ? memories 
-    : memories.filter(memory => 
-        memory.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredMemories = searchQuery.trim() === ''
+    ? memories
+    : memories.filter(memory =>
+        memory.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         memory.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         memory.category.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      
+
   // Get memories with location data for the map
   const memoriesWithLocation = filteredMemories.filter(memory => memory.location);
-  
+
   // Initialize and update map when the tab changes or filtered memories change
   useEffect(() => {
     if (activeTab !== 'map' || !mapContainerRef.current) return;
-    
+
     // Fix for Leaflet's icon paths
     delete (L.Icon.Default.prototype as any)._getIconUrl;
     L.Icon.Default.mergeOptions({
@@ -169,24 +169,24 @@ export function MemoryPage() {
       mapRef.current.remove();
       mapRef.current = null;
     }
-    
+
     // Initialize map
     mapRef.current = L.map(mapContainerRef.current).setView([37.7749, -122.4194], 12);
-    
+
     // Use a more modern map style
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       subdomains: 'abcd',
       maxZoom: 20
     }).addTo(mapRef.current);
-    
+
     // Clear existing markers
     mapRef.current.eachLayer(layer => {
       if (layer instanceof L.Marker) {
         mapRef.current?.removeLayer(layer);
       }
     });
-    
+
     // Create custom icon for markers
     const customIcon = L.divIcon({
       className: 'custom-map-marker',
@@ -197,7 +197,7 @@ export function MemoryPage() {
       iconAnchor: [16, 32],
       popupAnchor: [0, -32]
     });
-    
+
     // Add markers for memories with location
     const bounds = L.latLngBounds([]);
     memoriesWithLocation.forEach(memory => {
@@ -220,21 +220,21 @@ export function MemoryPage() {
             closeButton: true,
             autoClose: false
           });
-          
+
         bounds.extend([memory.location.lat, memory.location.lng]);
       }
     });
-    
+
     // Fit bounds if we have markers
     if (bounds.isValid()) {
       mapRef.current.fitBounds(bounds, { padding: [50, 50] });
     }
-    
+
     // Add map controls
     if (!mapRef.current.zoomControl) {
       L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
     }
-    
+
     // Cleanup function
     return () => {
       // No need to clean up here as we handle it at the beginning of the effect
@@ -246,7 +246,7 @@ export function MemoryPage() {
       <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
         <h1 className="text-xl font-semibold">Memory</h1>
       </header>
-      
+
       <div className="flex flex-col gap-6 p-6">
         {/* Search Bar */}
         <div className="relative w-full max-w-2xl mx-auto">
@@ -272,12 +272,12 @@ export function MemoryPage() {
             </button>
           </div>
         </div>
-        
+
         <Separator className="my-2" />
-        
+
         {/* Tabs */}
-        <Tabs 
-          defaultValue="map" 
+        <Tabs
+          defaultValue="map"
           className="w-full"
           onValueChange={setActiveTab}
           value={activeTab}
@@ -289,11 +289,11 @@ export function MemoryPage() {
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="insights">Insights</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="list" className="mt-6">
             <div className="rounded-lg border p-4">
               <h3 className="text-lg font-medium mb-4">Today's Activities</h3>
-              
+
               {filteredMemories.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No memories found matching your search.</p>
@@ -326,7 +326,7 @@ export function MemoryPage() {
               )}
             </div>
           </TabsContent>
-          
+
           <TabsContent value="feed" className="mt-6">
             <div className="rounded-lg border p-8 text-center">
               <h3 className="text-lg font-medium">Feed View</h3>
@@ -335,7 +335,7 @@ export function MemoryPage() {
               </p>
             </div>
           </TabsContent>
-          
+
           <TabsContent value="map" className="mt-6">
             <div className="rounded-lg border p-4">
               <div className="flex justify-between items-center mb-4">
@@ -344,22 +344,22 @@ export function MemoryPage() {
                   {memoriesWithLocation.length} location{memoriesWithLocation.length !== 1 ? 's' : ''}
                 </div>
               </div>
-              
+
               {memoriesWithLocation.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No memories with location data found.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div 
-                    ref={mapContainerRef} 
+                  <div
+                    ref={mapContainerRef}
                     className="h-[500px] w-full rounded-lg border overflow-hidden shadow-sm"
                   ></div>
-                  
+
                   <div className="mt-6">
                     <div className="flex justify-between items-center mb-3">
                       <h4 className="text-md font-medium">Locations</h4>
-                      <button 
+                      <button
                         className="text-xs text-primary hover:underline"
                         onClick={() => {
                           if (mapRef.current && memoriesWithLocation.length > 0) {
@@ -377,17 +377,17 @@ export function MemoryPage() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {memoriesWithLocation.map(memory => (
-                        <div 
-                          key={memory.id} 
+                        <div
+                          key={memory.id}
                           className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
                           onClick={() => {
                             if (mapRef.current && memory.location) {
                               mapRef.current.setView([memory.location.lat, memory.location.lng], 16);
-                              
+
                               // Find and open the popup for this marker
                               mapRef.current.eachLayer(layer => {
-                                if (layer instanceof L.Marker && 
-                                    layer.getLatLng().lat === memory.location!.lat && 
+                                if (layer instanceof L.Marker &&
+                                    layer.getLatLng().lat === memory.location!.lat &&
                                     layer.getLatLng().lng === memory.location!.lng) {
                                   layer.openPopup();
                                 }
@@ -417,7 +417,7 @@ export function MemoryPage() {
               )}
             </div>
           </TabsContent>
-          
+
           <TabsContent value="calendar" className="mt-6">
             <div className="rounded-lg border p-8 text-center">
               <h3 className="text-lg font-medium">Calendar View</h3>
@@ -426,7 +426,7 @@ export function MemoryPage() {
               </p>
             </div>
           </TabsContent>
-          
+
           <TabsContent value="insights" className="mt-6">
             <div className="rounded-lg border p-8 text-center">
               <h3 className="text-lg font-medium">Insights</h3>
