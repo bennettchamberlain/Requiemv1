@@ -1,4 +1,10 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from './config';
@@ -6,6 +12,7 @@ import { RequestContextMiddleware, RequestLoggerMiddleware } from './common/midd
 import { AuthModule } from './domains/auth';
 import { UserModule } from './domains/user';
 import { EmbeddingModule } from './domains/search';
+import { LoggerService } from './common/services';
 
 @Module({
   imports: [
@@ -21,9 +28,24 @@ import { EmbeddingModule } from './domains/search';
   controllers: [],
   providers: [],
 })
-export class App implements NestModule {
+export class App implements NestModule, OnApplicationBootstrap, OnApplicationShutdown {
+  private logger = new LoggerService('application');
+
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(RequestContextMiddleware).forRoutes('*');
     consumer.apply(RequestLoggerMiddleware).forRoutes('*');
+  }
+
+  onApplicationBootstrap() {
+    this.logger.log('Application listening', {
+      host: config.host,
+      port: config.port,
+    });
+  }
+
+  onApplicationShutdown(signal?: string) {
+    this.logger.log('Application stopped', {
+      signal,
+    });
   }
 }
