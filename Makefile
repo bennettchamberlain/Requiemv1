@@ -35,7 +35,7 @@ dev:
 	@printf "\n"
 
 	@SESSION="companion-dev"; \
-	BACKEND_DIR="backend/apps/api"; \
+	BACKEND_DIR="backend/apps/api-next"; \
 	FRONTEND_DIR="frontend/apps/web"; \
 	\
 	if tmux has-session -t $$SESSION 2>/dev/null; then \
@@ -47,7 +47,7 @@ dev:
 	\
 	printf "🚀 Starting new tmux session: $$SESSION\n\n"; \
 	tmux new-session -d -s $$SESSION -c $$BACKEND_DIR; \
-	tmux send-keys -t $$SESSION "yarn dev | yarn pino-pretty" C-m; \
+	tmux send-keys -t $$SESSION "yarn dev:pretty" C-m; \
 	\
 	tmux split-window -h -t $$SESSION -c $$FRONTEND_DIR; \
 	tmux send-keys -t $$SESSION "yarn dev" C-m; \
