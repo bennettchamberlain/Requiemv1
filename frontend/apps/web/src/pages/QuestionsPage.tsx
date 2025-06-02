@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, RefreshCw } from 'lucide-react';
+
+import { useAuth } from '../hooks';
 
 interface Question {
   id: string;
@@ -19,7 +20,7 @@ interface Question {
 }
 
 export default function QuestionsPage() {
-  const { user } = useAuth();
+  const [{ user }] = useAuth();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +48,9 @@ export default function QuestionsPage() {
 
       if (!response.ok) {
         // Handle different HTTP error codes
-        console.error(`QuestionsPage: API request failed with status ${response.status}: ${response.statusText}`);
+        console.error(
+          `QuestionsPage: API request failed with status ${response.status}: ${response.statusText}`,
+        );
         if (response.status === 401) {
           throw new Error('Unauthorized: You do not have permission to access this resource');
         } else if (response.status === 403) {
@@ -121,7 +124,13 @@ export default function QuestionsPage() {
       <Card className="w-full">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-2xl">Questions</CardTitle>
-          <Button variant="outline" size="icon" onClick={fetchQuestions} disabled={loading} title="Refresh questions">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={fetchQuestions}
+            disabled={loading}
+            title="Refresh questions"
+          >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
         </CardHeader>
@@ -167,7 +176,9 @@ export default function QuestionsPage() {
                     ) : (
                       questions.map((question) => (
                         <TableRow key={question.id}>
-                          <TableCell className="font-mono text-xs">{question.id.substring(0, 8)}...</TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {question.id.substring(0, 8)}...
+                          </TableCell>
                           <TableCell className="text-xs">{formatDate(question.created)}</TableCell>
                           <TableCell className="text-xs">{formatDate(question.updated)}</TableCell>
                           <TableCell className="text-sm">{question.category || 'N/A'}</TableCell>

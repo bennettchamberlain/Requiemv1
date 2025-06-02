@@ -8,13 +8,16 @@ import {
   Param,
   Body,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { QueryFailedError } from 'typeorm';
 import { z } from 'zod';
 
 import { PgErrorCode } from '../../common/constants';
+import { Context } from '../../common/decorators';
 import { ValidationPipe } from '../../common/pipes';
+import { RequestContext } from '../../common/types';
 
 import { UserService } from './UserService';
 import { CreateUserDto, UpdateUserDto } from './types';
@@ -33,6 +36,18 @@ const updateUserSchema = z.object({
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
+
+  @UseGuards(AuthGuard('jwt'))
+  @Get('me')
+  async selfProfile(@Context() context: RequestContext) {
+    const userId = context.userId;
+
+    if (userId == null) {
+      throw new NotFoundException();
+    }
+
+    return this.userService.findOne(userId);
+  }
 
   @UseGuards(AuthGuard('jwt'))
   @Post()

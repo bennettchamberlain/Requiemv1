@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-
 import { ChartAreaInteractive } from '@/components/chart-area-interactive';
+
+import { useAuth } from '../hooks';
 
 const API_BASE = 'http://dev.companionintelligence.com/api';
 
@@ -30,11 +30,11 @@ const StatCard = ({ title, value, description, icon, trend }: StatCard) => (
     </CardHeader>
     <CardContent>
       <div className="text-2xl font-bold">{value}</div>
-      {description && (
-        <p className="text-xs text-muted-foreground mt-1">{description}</p>
-      )}
+      {description && <p className="text-xs text-muted-foreground mt-1">{description}</p>}
       {trend && (
-        <div className={`flex items-center text-xs mt-2 ${trend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+        <div
+          className={`flex items-center text-xs mt-2 ${trend.isPositive ? 'text-green-600' : 'text-red-600'}`}
+        >
           📈 {trend.value}% from last week
         </div>
       )}
@@ -42,7 +42,15 @@ const StatCard = ({ title, value, description, icon, trend }: StatCard) => (
   </Card>
 );
 
-const ActivityItem = ({ time, activity, icon }: { time: string; activity: string; icon: React.ReactNode }) => (
+const ActivityItem = ({
+  time,
+  activity,
+  icon,
+}: {
+  time: string;
+  activity: string;
+  icon: React.ReactNode;
+}) => (
   <div className="flex items-start space-x-3 py-3 border-b last:border-0">
     <div className="text-muted-foreground mt-0.5">{icon}</div>
     <div className="flex-1">
@@ -52,7 +60,15 @@ const ActivityItem = ({ time, activity, icon }: { time: string; activity: string
   </div>
 );
 
-const RecommendationItem = ({ title, description, icon }: { title: string; description: string; icon: React.ReactNode }) => (
+const RecommendationItem = ({
+  title,
+  description,
+  icon,
+}: {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+}) => (
   <div className="flex items-start space-x-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
     <div className="text-primary mt-0.5">{icon}</div>
     <div className="flex-1">
@@ -62,8 +78,8 @@ const RecommendationItem = ({ title, description, icon }: { title: string; descr
   </div>
 );
 
-export function DashboardPage() {
-  const { user, logout } = useAuth();
+export default function DashboardPage() {
+  const [{ user }, { logout }] = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,64 +92,64 @@ export function DashboardPage() {
   // Mock data for statistics
   const stats = [
     {
-      title: "Total Activities",
-      value: "2,847",
-      description: "Tracked this month",
-      icon: "📊",
-      trend: { value: 12, isPositive: true }
+      title: 'Total Activities',
+      value: '2,847',
+      description: 'Tracked this month',
+      icon: '📊',
+      trend: { value: 12, isPositive: true },
     },
     {
-      title: "Active Conversations",
-      value: "23",
-      description: "Across 5 AI coaches",
-      icon: "💬",
-      trend: { value: 8, isPositive: true }
+      title: 'Active Conversations',
+      value: '23',
+      description: 'Across 5 AI coaches',
+      icon: '💬',
+      trend: { value: 8, isPositive: true },
     },
     {
-      title: "Tasks Completed",
-      value: "156",
-      description: "This week",
-      icon: "✅",
-      trend: { value: 23, isPositive: true }
+      title: 'Tasks Completed',
+      value: '156',
+      description: 'This week',
+      icon: '✅',
+      trend: { value: 23, isPositive: true },
     },
     {
-      title: "Insights Generated",
-      value: "89",
-      description: "Personal insights",
-      icon: "🧠",
-      trend: { value: 5, isPositive: false }
-    }
+      title: 'Insights Generated',
+      value: '89',
+      description: 'Personal insights',
+      icon: '🧠',
+      trend: { value: 5, isPositive: false },
+    },
   ];
 
   const recentActivities = [
-    { time: "2 minutes ago", activity: "Completed morning meditation session", icon: "🧠" },
-    { time: "1 hour ago", activity: "AI Coach suggested new productivity workflow", icon: "✨" },
-    { time: "3 hours ago", activity: "Logged workout: 45 min cardio session", icon: "💪" },
-    { time: "5 hours ago", activity: "Answered 3 personal development questions", icon: "💬" },
-    { time: "Yesterday", activity: "Weekly goal review completed", icon: "🎯" }
+    { time: '2 minutes ago', activity: 'Completed morning meditation session', icon: '🧠' },
+    { time: '1 hour ago', activity: 'AI Coach suggested new productivity workflow', icon: '✨' },
+    { time: '3 hours ago', activity: 'Logged workout: 45 min cardio session', icon: '💪' },
+    { time: '5 hours ago', activity: 'Answered 3 personal development questions', icon: '💬' },
+    { time: 'Yesterday', activity: 'Weekly goal review completed', icon: '🎯' },
   ];
 
   const recommendations = [
-    { 
-      title: "Schedule Deep Work Time", 
-      description: "Your productivity peaks at 10 AM. Block 2 hours tomorrow.",
-      icon: "⏰"
+    {
+      title: 'Schedule Deep Work Time',
+      description: 'Your productivity peaks at 10 AM. Block 2 hours tomorrow.',
+      icon: '⏰',
     },
-    { 
-      title: "Connect with Sarah", 
+    {
+      title: 'Connect with Sarah',
       description: "It's been 2 weeks since your last conversation.",
-      icon: "👥"
+      icon: '👥',
     },
-    { 
-      title: "Review Weekly Goals", 
-      description: "3 goals need attention before Friday.",
-      icon: "🎯"
+    {
+      title: 'Review Weekly Goals',
+      description: '3 goals need attention before Friday.',
+      icon: '🎯',
     },
-    { 
-      title: "Mindfulness Break", 
+    {
+      title: 'Mindfulness Break',
       description: "You've been active for 3 hours. Time for a 5-min break.",
-      icon: "🧠"
-    }
+      icon: '🧠',
+    },
   ];
 
   const handleLogout = () => {
@@ -157,10 +173,12 @@ export function DashboardPage() {
         <SidebarTrigger />
         <div className="ml-auto flex items-center gap-2">
           <span>Welcome, {user.name || user.email}</span>
-          <Button variant="outline" size="sm" onClick={handleLogout}>Logout</Button>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            Logout
+          </Button>
         </div>
       </header>
-      
+
       <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
         <div className="flex items-center justify-between space-y-2">
           <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
@@ -188,12 +206,8 @@ export function DashboardPage() {
           {/* Recommendations */}
           <Card className="col-span-full md:col-span-1 lg:col-span-3">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                ✨ AI Recommendations
-              </CardTitle>
-              <CardDescription>
-                Personalized suggestions based on your patterns
-              </CardDescription>
+              <CardTitle className="flex items-center gap-2">✨ AI Recommendations</CardTitle>
+              <CardDescription>Personalized suggestions based on your patterns</CardDescription>
             </CardHeader>
             <CardContent className="space-y-1">
               {recommendations.map((rec, index) => (
@@ -209,9 +223,7 @@ export function DashboardPage() {
           <Card className="col-span-full md:col-span-1 lg:col-span-4">
             <CardHeader>
               <CardTitle>Recent Activities</CardTitle>
-              <CardDescription>
-                Your latest tracked activities and interactions
-              </CardDescription>
+              <CardDescription>Your latest tracked activities and interactions</CardDescription>
             </CardHeader>
             <CardContent>
               {recentActivities.map((activity, index) => (
@@ -224,9 +236,7 @@ export function DashboardPage() {
           <Card className="col-span-full md:col-span-1 lg:col-span-3">
             <CardHeader>
               <CardTitle>Activity Insights</CardTitle>
-              <CardDescription>
-                Your personal patterns and habits
-              </CardDescription>
+              <CardDescription>Your personal patterns and habits</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -247,7 +257,7 @@ export function DashboardPage() {
                   <span className="text-sm text-muted-foreground">12 days 🔥</span>
                 </div>
               </div>
-              
+
               <div className="pt-4 border-t">
                 <h4 className="text-sm font-medium mb-3">Top Categories</h4>
                 <div className="space-y-2">

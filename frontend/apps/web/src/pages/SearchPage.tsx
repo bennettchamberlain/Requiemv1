@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { AlertCircle, Search, Loader2 } from 'lucide-react';
+
+import { useAuth } from '../hooks';
 
 interface SearchResult {
   id: number;
@@ -15,7 +16,7 @@ interface SearchResult {
 }
 
 export default function SearchPage() {
-  const { user } = useAuth();
+  const [{ user }] = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -43,15 +44,20 @@ export default function SearchPage() {
       }
 
       console.log('SearchPage: Making API request to search service');
-      const response = await fetch(`http://dev.companionintelligence.com/api/search?query=${encodeURIComponent(searchQuery)}&limit=20`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `http://dev.companionintelligence.com/api/search?query=${encodeURIComponent(searchQuery)}&limit=20`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         },
-      });
+      );
 
       if (!response.ok) {
-        console.error(`SearchPage: API request failed with status ${response.status}: ${response.statusText}`);
+        console.error(
+          `SearchPage: API request failed with status ${response.status}: ${response.statusText}`,
+        );
         if (response.status === 401) {
           throw new Error('Unauthorized: You do not have permission to access this resource');
         } else if (response.status === 403) {
@@ -118,9 +124,7 @@ export default function SearchPage() {
       <Card className="w-full">
         <CardHeader>
           <CardTitle className="text-2xl">Semantic Search</CardTitle>
-          <CardDescription>
-            Search through your knowledge base using natural language
-          </CardDescription>
+          <CardDescription>Search through your knowledge base using natural language</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Search Input */}
@@ -135,11 +139,7 @@ export default function SearchPage() {
               disabled={loading}
             />
             <Button onClick={performSearch} disabled={loading}>
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               <span className="ml-2">Search</span>
             </Button>
           </div>
@@ -160,9 +160,7 @@ export default function SearchPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold">
-                  {searchResults.length > 0 
-                    ? `Found ${searchResults.length} results`
-                    : 'No results found'}
+                  {searchResults.length > 0 ? `Found ${searchResults.length} results` : 'No results found'}
                 </h3>
                 {searchResults.length > 0 && (
                   <span className="text-sm text-muted-foreground">
@@ -189,14 +187,14 @@ export default function SearchPage() {
                             {formatDistance(result.distance)}
                           </TableCell>
                           <TableCell>
-                            <span className={`text-sm font-medium ${getSourceTypeColor(result.source_label)}`}>
+                            <span
+                              className={`text-sm font-medium ${getSourceTypeColor(result.source_label)}`}
+                            >
                               {result.source_label}
                             </span>
                           </TableCell>
                           <TableCell className="max-w-md">
-                            <p className="text-sm line-clamp-2">
-                              {truncateText(result.raw_input, 200)}
-                            </p>
+                            <p className="text-sm line-clamp-2">{truncateText(result.raw_input, 200)}</p>
                           </TableCell>
                           <TableCell className="font-mono text-xs">
                             {result.source_id.substring(0, 8)}...
@@ -210,7 +208,9 @@ export default function SearchPage() {
                 hasSearched && (
                   <div className="text-center py-8 text-muted-foreground">
                     <p>No results found for your search query.</p>
-                    <p className="text-sm mt-2">Try using different keywords or a more general search term.</p>
+                    <p className="text-sm mt-2">
+                      Try using different keywords or a more general search term.
+                    </p>
                   </div>
                 )
               )}

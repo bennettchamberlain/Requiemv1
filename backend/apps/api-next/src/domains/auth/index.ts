@@ -26,5 +26,4 @@ import { JwtStrategy } from './JwtStrategy';
 })
 export class AuthModule {}
 
-export { JwtAuthGuard } from './JwtAuthGuard';
 export type { LoginDto } from './types';
