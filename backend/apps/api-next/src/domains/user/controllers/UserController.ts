@@ -14,13 +14,13 @@ import { AuthGuard } from '@nestjs/passport';
 import { QueryFailedError } from 'typeorm';
 import { z } from 'zod';
 
-import { PgErrorCode } from '../../common/constants';
-import { Context } from '../../common/decorators';
-import { ValidationPipe } from '../../common/pipes';
-import { RequestContext } from '../../common/types';
+import { PgErrorCode } from '@ci/common/constants';
+import { Context } from '@ci/common/decorators';
+import { ValidationPipe } from '@ci/common/pipes';
+import { RequestContext } from '@ci/common/types';
 
-import { UserService } from './UserService';
-import { CreateUserDto, UpdateUserDto } from './types';
+import { UserService } from '../services/UserService';
+import { CreateUserDto, UpdateUserDto } from '../types';
 
 const createUserSchema = z.object({
   name: z.string().min(1, 'Name is required'),

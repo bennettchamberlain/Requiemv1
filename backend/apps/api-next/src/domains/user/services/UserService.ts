@@ -4,10 +4,10 @@ import bcrypt from 'bcrypt';
 import { DeleteResult, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import config from '../../config';
+import config from '@ci/config';
 
-import { UserEntity } from './UserEntity';
-import { CreateUserDto, UpdateUserDto, User } from './types';
+import { UserEntity } from '../entities/UserEntity';
+import { CreateUserDto, UpdateUserDto, User } from '../types';
 
 @Injectable()
 export class UserService {
