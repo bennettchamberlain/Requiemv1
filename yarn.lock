@@ -354,6 +354,7 @@ __metadata:
     "@yarnpkg/pnpify": "npm:^4.1.4"
     bcrypt: "npm:^6.0.0"
     config: "npm:^4.0.0"
+    csv-parse: "npm:^5.6.0"
     dbmate: "npm:^2.27.0"
     express: "npm:^5.1.0"
     madge: "npm:^8.0.0"
