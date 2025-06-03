@@ -18,3 +18,69 @@ export enum PgErrorCode {
   UNDEFINED_COLUMN = '42703', // undefined column
   UNIQUE_NO_INDEX = '42P07', // relation already exists
 }
+
+export enum ContentType {
+  PHOTO = 'Photo',
+  VIDEO = 'Video',
+  AUDIO = 'Audio',
+  TEXT = 'Text',
+  CODE = 'Code',
+  GAME = 'Game',
+  WEBPAGE = 'Web Page',
+  FILE = 'File',
+}
+
+export enum EventType {
+  VIEW = 'View',
+  PLAY = 'Play',
+  MESSAGE = 'Message',
+  COMMENT = 'Comment',
+  CREATE = 'Create',
+  EDIT = 'Edit',
+  CALL = 'Call',
+  VISIT = 'Visit',
+  TRAVEL = 'Travel',
+  EAT = 'Eat',
+  TRANSACTIONS = 'Transactions',
+  SLEEP = 'Sleep',
+  EXERCISE = 'Exercise',
+}
+
+export enum GeoFormatType {
+  POINT = 'point',
+  RADIUS = 'radius',
+  TRIANGLE = 'triangle',
+}
+
+export enum ThingType {
+  APPAREL = 'Apparel',
+  FOOTWEAR = 'Footwear',
+  ELECTRONICS = 'Electronics',
+  FURNITURE = 'Furniture',
+  KITCHENWARE = 'Kitchenware and Cooking Equipment',
+  VEHICLES = 'Vehicles',
+  BOOKS = 'Books and Magazines',
+  JEWELRY = 'Jewelry and Accessories',
+  PERSONALCARE = 'Personal Care',
+  APPLIANCES = 'Appliances',
+  SPORTING = 'Sporting and Fitness',
+  TOOLS = 'Tools and Home Improvement Items',
+  TOYS = 'Toys and Games',
+  DECOR = 'Decorations and Home Décor',
+  BEDDING = 'Bedding',
+  INSTRUMENTS = 'Instruments',
+  GARDENING = 'Gardening',
+  OUTDOOR = 'Outdoor and Camping Gear',
+  ART = 'Art',
+  OFFICE = 'Office',
+  PETSUPPLIES = 'Pet Supplies',
+  FOOD = 'Food',
+  CLEANING = 'Cleaning',
+  MEDICAL = 'Medical',
+  TRAVEL = 'Travel',
+  COLLECTIBLES = 'Collectibles',
+  EYEWEAR = 'Eyewear',
+  WATCHES = 'Watches',
+  PHOTOGRAPHY = 'Photography',
+  ORGANIZATIONAL = 'Organizational',
+}
