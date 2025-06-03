@@ -6,6 +6,9 @@ export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
   auth: z.object({
+    local: z.object({
+      saltRounds: z.number(),
+    }),
     jwt: z.object({
       secret: z.string(),
     }),
