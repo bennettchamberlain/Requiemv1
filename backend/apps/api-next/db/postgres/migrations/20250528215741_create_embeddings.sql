@@ -6,8 +6,7 @@ CREATE TABLE embeddings (
     raw_input TEXT,
     embedding_vector VECTOR (768),
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- migrate:down
