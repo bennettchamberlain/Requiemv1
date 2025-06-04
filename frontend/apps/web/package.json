@@ -1,5 +1,5 @@
 {
-  "name": "@ci/app-web",
+  "name": "@ci/fe-web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
