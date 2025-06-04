@@ -26,6 +26,7 @@ interface AuthResponse {
 type Value = [
   {
     expired: boolean;
+    authToken?: string;
     user?: User;
     loading: boolean;
     error: Error | null;
@@ -152,6 +153,7 @@ function useAuth(): Value {
   return [
     {
       expired: isExpired(),
+      authToken: credentials,
       user,
       loading,
       error,

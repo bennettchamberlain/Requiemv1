@@ -8,19 +8,13 @@ import { useAuth } from '../hooks';
 
 interface Question {
   id: string;
-  created: string;
-  updated: string;
-  tag?: string[];
-  category?: string;
-  user_id: string;
-  question_string: string;
-  example_answer_1?: string;
-  example_answer_2?: string;
-  example_answer_3?: string;
+  category: string;
+  text: string;
+  answer: string;
 }
 
 export default function QuestionsPage() {
-  const [{ user }] = useAuth();
+  const [{ authToken }] = useAuth();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,10 +24,8 @@ export default function QuestionsPage() {
       console.log('QuestionsPage: Starting to fetch questions');
       setLoading(true);
       setError(null);
-      // Get the token from localStorage
-      const token = localStorage.getItem('feathers-jwt');
 
-      if (!token) {
+      if (!authToken) {
         console.error('QuestionsPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
@@ -41,7 +33,7 @@ export default function QuestionsPage() {
       console.log('QuestionsPage: Making API request to http://dev.companionintelligence.com/api/questions');
       const response = await fetch('http://dev.companionintelligence.com/api/questions', {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
       });
@@ -158,12 +150,9 @@ export default function QuestionsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>ID</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Updated</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead>Question</TableHead>
-                      <TableHead>Example Answer 1</TableHead>
-                      <TableHead>Tags</TableHead>
+                      <TableHead>Answer</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -176,15 +165,10 @@ export default function QuestionsPage() {
                     ) : (
                       questions.map((question) => (
                         <TableRow key={question.id}>
-                          <TableCell className="font-mono text-xs">
-                            {question.id.substring(0, 8)}...
-                          </TableCell>
-                          <TableCell className="text-xs">{formatDate(question.created)}</TableCell>
-                          <TableCell className="text-xs">{formatDate(question.updated)}</TableCell>
+                          <TableCell className="font-mono text-xs">{question.id}</TableCell>
                           <TableCell className="text-sm">{question.category || 'N/A'}</TableCell>
-                          <TableCell className="text-sm">{truncateText(question.question_string)}</TableCell>
-                          <TableCell className="text-sm">{truncateText(question.example_answer_1)}</TableCell>
-                          <TableCell className="text-xs">{formatTags(question.tag)}</TableCell>
+                          <TableCell className="text-sm">{truncateText(question.text)}</TableCell>
+                          <TableCell className="text-sm">{truncateText(question.answer)}</TableCell>
                         </TableRow>
                       ))
                     )}

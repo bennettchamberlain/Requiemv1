@@ -11,6 +11,7 @@ import config from './config';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
 import { LoggerService } from '@ci/common/services';
 import { AuthModule } from '@ci/domains/auth';
+import { IntelligenceModule } from '@ci/domains/intelligence';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
 
@@ -23,8 +24,9 @@ import { UserModule } from '@ci/domains/user';
       logging: config.db.logging,
     }),
     AuthModule,
-    UserModule,
     EmbeddingModule,
+    IntelligenceModule,
+    UserModule,
   ],
   controllers: [],
   providers: [],

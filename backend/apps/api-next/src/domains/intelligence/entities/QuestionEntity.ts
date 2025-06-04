@@ -34,7 +34,7 @@ export class QuestionEntity {
   @Column({ type: 'timestamptz' })
   updated_at!: Date;
 
-  toUser() {
+  toQuestion() {
     return {
       id: this.id,
 
