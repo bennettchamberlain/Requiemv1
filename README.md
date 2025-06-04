@@ -137,9 +137,13 @@ You may additionally want to check the README files for each of our development 
 * Backend (api) [README](backend/apps/api/README.md)
 * Frontend (web) [README](frontend/apps/web/README.md)
 
+## Exercising the application
+
 You should now be able to view the application at:
 
 [dev.companionintelligence.com](http://dev.companionintelligence.com)
+
+If you run the seeding scripts can you login using john.smith@example.com / companion .
 
 ## Available Commands
 
