@@ -4,7 +4,7 @@ import ollama from 'ollama';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { EmbeddingEntity } from './EmbeddingEntity';
+import { EmbeddingEntity } from '../entities/EmbeddingEntity';
 
 // 768 dimension model, hard coded for now, but doesn't need to stay this way
 // Note: We can consider downsampling by:

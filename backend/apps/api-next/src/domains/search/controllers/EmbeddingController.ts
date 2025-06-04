@@ -1,9 +1,9 @@
 import { Controller, Get, HttpCode, Post, Body } from '@nestjs/common';
 import { z } from 'zod';
 
-import { ValidationPipe } from '../../common/pipes';
+import { ValidationPipe } from '@ci/common/pipes';
 
-import { EmbeddingService } from './EmbeddingService';
+import { EmbeddingService } from '../services/EmbeddingService';
 
 const vectorInputSchema = z.object({
   input: z.string(),

@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { EmbeddingController } from './EmbeddingController';
-import { EmbeddingEntity } from './EmbeddingEntity';
-import { EmbeddingService } from './EmbeddingService';
+import { EmbeddingController } from './controllers/EmbeddingController';
+import { EmbeddingEntity } from './entities/EmbeddingEntity';
+import { EmbeddingService } from './services/EmbeddingService';
 
 @Module({
   imports: [TypeOrmModule.forFeature([EmbeddingEntity])],
