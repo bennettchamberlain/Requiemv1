@@ -1,14 +1,13 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-
 import { z } from 'zod';
 
-import config from '../../config';
-import { RequestWithContext } from '../../common/types';
-import { UserService } from '../user';
+import config from '@ci/config';
+import { RequestWithContext } from '@ci/common/types';
+import { UserService } from '@ci/domains/user';
 
-import { JwtPayload } from './types';
+import { JwtPayload } from '../types';
 
 const jwtPayloadSchema = z.object({
   sub: z.string(),

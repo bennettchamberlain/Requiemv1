@@ -1,10 +1,10 @@
 import { Body, Controller, HttpCode, Post, UnauthorizedException } from '@nestjs/common';
 import { z } from 'zod';
 
-import { ValidationPipe } from '../../common/pipes';
+import { ValidationPipe } from '@ci/common/pipes';
 
-import { AuthService } from './AuthService';
-import { LoginDto } from './types';
+import { AuthService } from '../services/AuthService';
+import { LoginDto } from '../types';
 
 const localStrategySchema = z.object({
   username: z.string(),

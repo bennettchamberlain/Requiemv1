@@ -8,11 +8,11 @@ import {
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from './config';
-import { RequestContextMiddleware, RequestLoggerMiddleware } from './common/middleware';
-import { AuthModule } from './domains/auth';
-import { UserModule } from './domains/user';
-import { EmbeddingModule } from './domains/search';
-import { LoggerService } from './common/services';
+import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
+import { LoggerService } from '@ci/common/services';
+import { AuthModule } from '@ci/domains/auth';
+import { EmbeddingModule } from '@ci/domains/search';
+import { UserModule } from '@ci/domains/user';
 
 @Module({
   imports: [
