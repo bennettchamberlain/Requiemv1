@@ -46,7 +46,7 @@ export class FilesController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
   // Note that the literal 'file' is referencing the input with name `file` in a hypothetical form.
   // All other fields would show up in the `body` here.
   async upload(
