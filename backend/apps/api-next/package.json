@@ -14,6 +14,8 @@
   },
   "packageManager": "yarn@4.9.1",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.823.0",
+    "@aws-sdk/s3-request-presigner": "^3.823.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/jwt": "^11.0.0",
@@ -46,6 +48,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/config": "^3.3.5",
     "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.15.21",
     "@types/passport": "^0",
     "@types/passport-jwt": "^4.0.1",

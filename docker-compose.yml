@@ -66,6 +66,21 @@ services:
       - opensearch-net
     profiles: [ "opensearch" ]
 
+  minio:
+    image: minio/minio
+    container_name: minio
+    ports:
+      - 9000:9000
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - ./backend/apps/api-next/db/minio/data:/data
+    networks:
+      - web
+    command: server /data
+    profiles: [ "all", "local", "minio" ]
+
   dev-proxy:
     image: nginx:stable
     container_name: dev-proxy
@@ -73,6 +88,8 @@ services:
       - 80:80
     volumes:
       - ./infrastructure/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - web
     extra_hosts:
       - host.docker.internal:host-gateway
     profiles: [ "all", "local" ]
@@ -108,6 +125,6 @@ volumes:
   open-webui:
   postgres_data:
 
-
 networks:
   opensearch-net:
+  web:

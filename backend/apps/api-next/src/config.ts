@@ -18,6 +18,17 @@ export const ConfigSchema = z.object({
     url: z.string(),
     logging: z.union([z.literal(false), z.array(z.enum(['query', 'error']))]),
   }),
+  staticfiles: z.object({
+    storageUrl: z.string(),
+    region: z.optional(z.string()),
+    bucket: z.string(),
+    auth: z.object({
+      signatureUrl: z.optional(z.string()),
+      signatureTTL: z.number(),
+      accessKeyId: z.string(),
+      secretAccessKey: z.string(),
+    }),
+  }),
 });
 
 export default ConfigSchema.parse(config);

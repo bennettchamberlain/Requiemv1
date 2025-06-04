@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { LoadingPage } from '@ci/common';
-import { Bot, Map, Settings2, SquareTerminal, Search } from 'lucide-react';
+import { Bot, Map, Settings2, SquareTerminal, Search, Camera } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
 
 import { NavMain } from '../components/nav-main';
@@ -193,6 +193,17 @@ const navItems = [
       {
         title: 'Admin',
         url: '/admin',
+      },
+    ],
+  },
+  {
+    title: 'Files',
+    url: '/files',
+    icon: Camera,
+    items: [
+      {
+        title: 'Files',
+        url: '/files',
       },
     ],
   },

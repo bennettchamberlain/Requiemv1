@@ -13,5 +13,16 @@
     "type": "postgres",
     "url": "postgres://companion_intel:comp4nion_1ntel_ftw!@127.0.0.1:5432/companion_intel?sslmode=disable",
     "logging": ["query", "error"]
+  },
+  "staticfiles": {
+    "storageUrl": "http://localhost:9000",
+    "region": "us-east-1",
+    "bucket": "companion",
+    "auth": {
+      "signatureUrl": "http://minio:9000",
+      "signatureTTL": 60,
+      "accessKeyId": "minioadmin",
+      "secretAccessKey": "minioadmin"
+    }
   }
 }
