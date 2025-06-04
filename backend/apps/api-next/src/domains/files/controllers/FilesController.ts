@@ -1,11 +1,12 @@
 import { BadRequestException, Body, Controller, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 
+import { FileService } from '../services/FileService';
 import type { FileUploadDto } from '../types';
 
 @Controller('files')
 export class FilesController {
-  constructor() {}
+  constructor(private readonly fileService: FileService) {}
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
@@ -16,7 +17,10 @@ export class FilesController {
       throw new BadRequestException('File is required');
     }
 
+    const { key } = await this.fileService.upload(file.buffer, file.mimetype);
+
     return {
+      key,
       body,
       file: {
         field: file.fieldname,
