@@ -1,4 +1,11 @@
-import { S3Client, HeadBucketCommand, CreateBucketCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  HeadBucketCommand,
+  CreateBucketCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Readable } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
@@ -61,5 +68,32 @@ export class FileService implements OnModuleInit {
     );
 
     return { key };
+  }
+
+  async generatePresignedLink(key: string, contentType?: string) {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      ResponseContentType: contentType,
+    });
+
+    const url = await getSignedUrl(this.s3, command, {
+      expiresIn: 60,
+    });
+
+    return this.getKeyAndQuery(url);
+  }
+
+  private getKeyAndQuery(url: string) {
+    const parsed = new URL(url);
+
+    let path = parsed.pathname;
+
+    // Remove bucket prefix if needed
+    if (path.startsWith(`/${BUCKET_NAME}/`)) {
+      path = path.slice(BUCKET_NAME.length + 1); // +1 for slash
+    }
+
+    return path + parsed.search;
   }
 }

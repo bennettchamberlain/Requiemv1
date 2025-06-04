@@ -2,11 +2,20 @@ import { BadRequestException, Body, Controller, Post, UploadedFile, UseIntercept
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import { FileService } from '../services/FileService';
-import type { FileUploadDto } from '../types';
+import type { FilePresignedLinkDto, FileUploadDto } from '../types';
 
 @Controller('files')
 export class FilesController {
   constructor(private readonly fileService: FileService) {}
+
+  @Post()
+  async getPresignedLink(@Body() body: FilePresignedLinkDto) {
+    const link = await this.fileService.generatePresignedLink(body.id, body.contentType);
+
+    return {
+      link,
+    };
+  }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
