@@ -8,8 +8,10 @@ import { Main as MainLayout } from './layouts';
 import LoginPage from './pages/LoginPage';
 import NotFound from './pages/NotFound';
 import SignupPage from './pages/SignupPage';
+import SplashPage from './pages/SplashPage';
 
 const AdminPage = lazy(() => import('./pages/AdminPage'));
+const AnswersPage = lazy(() => import('./pages/AnswersPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const MemoryPage = lazy(() => import('./pages/MemoryPage'));
@@ -30,13 +32,14 @@ function AppRoutes() {
   return (
     <Routes>
       {/* No navigation for these pages */}
+      <Route path="/" element={<SplashPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
 
       {/* Main layout routes */}
       <Route element={<MainLayout />}>
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <ProtectedRoute>
               <DashboardPage />
@@ -72,6 +75,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <QuestionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/answers"
+          element={
+            <ProtectedRoute>
+              <AnswersPage />
             </ProtectedRoute>
           }
         />

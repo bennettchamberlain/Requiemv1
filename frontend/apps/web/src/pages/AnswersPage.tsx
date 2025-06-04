@@ -8,22 +8,17 @@ import { useAuth } from '../hooks';
 
 interface Answer {
   id: string;
-  created: string;
-  updated: string;
-  user_id: string;
-  question_id: string;
-  rag_answer_1?: string;
-  rag_answer_2?: string;
-  rag_answer_3?: string;
-  give_answer_current?: string;
-  give_answer_2?: string;
-  give_answer_3?: string;
-  give_answer_4?: string;
-  give_answer_5?: string;
+  ragAnswer: string;
+  answer: string;
+  user?: { id: string };
+  question?: {
+    id: string;
+    text: string;
+  };
 }
 
 export default function AnswersPage() {
-  const [{ user }] = useAuth();
+  const [{ authToken }] = useAuth();
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,10 +28,8 @@ export default function AnswersPage() {
       console.log('AnswersPage: Starting to fetch answers');
       setLoading(true);
       setError(null);
-      // Get the token from localStorage
-      const token = localStorage.getItem('feathers-jwt');
 
-      if (!token) {
+      if (!authToken) {
         console.error('AnswersPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
@@ -44,7 +37,7 @@ export default function AnswersPage() {
       console.log('AnswersPage: Making API request to http://dev.companionintelligence.com/api/answers');
       const response = await fetch('http://dev.companionintelligence.com/api/answers', {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
       });
@@ -156,12 +149,9 @@ export default function AnswersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>ID</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Updated</TableHead>
-                      <TableHead>User ID</TableHead>
-                      <TableHead>Question ID</TableHead>
-                      <TableHead>Current Answer</TableHead>
-                      <TableHead>RAG Answer 1</TableHead>
+                      <TableHead>Question</TableHead>
+                      <TableHead>Answer</TableHead>
+                      <TableHead>RAG Answer</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -174,19 +164,10 @@ export default function AnswersPage() {
                     ) : (
                       answers.map((answer) => (
                         <TableRow key={answer.id}>
-                          <TableCell className="font-mono text-xs">{answer.id.substring(0, 8)}...</TableCell>
-                          <TableCell className="text-xs">{formatDate(answer.created)}</TableCell>
-                          <TableCell className="text-xs">{formatDate(answer.updated)}</TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {answer.user_id.substring(0, 8)}...
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {answer.question_id.substring(0, 8)}...
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {truncateText(answer.give_answer_current)}
-                          </TableCell>
-                          <TableCell className="text-sm">{truncateText(answer.rag_answer_1)}</TableCell>
+                          <TableCell className="font-mono text-xs">{answer.id}</TableCell>
+                          <TableCell className="text-sm">{answer.question?.text}</TableCell>
+                          <TableCell className="text-sm">{truncateText(answer.answer)}</TableCell>
+                          <TableCell className="text-sm">{truncateText(answer.ragAnswer)}</TableCell>
                         </TableRow>
                       ))
                     )}

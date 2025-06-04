@@ -4,10 +4,10 @@ import bcrypt from 'bcrypt';
 import { DeleteResult, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { UserEntity } from './UserEntity';
-import { CreateUserDto, UpdateUserDto, User } from './types';
+import config from '@ci/config';
 
-const SALT_ROUNDS = 10;
+import { UserEntity } from '../entities/UserEntity';
+import { CreateUserDto, UpdateUserDto, User } from '../types';
 
 @Injectable()
 export class UserService {
@@ -17,7 +17,7 @@ export class UserService {
   ) {}
 
   async create(data: CreateUserDto): Promise<User> {
-    const hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(data.password, config.auth.local.saltRounds);
 
     const user = this.userRepository.create({
       ...data,

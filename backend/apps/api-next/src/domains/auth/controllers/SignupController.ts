@@ -2,11 +2,11 @@ import { ConflictException, Controller, Get, Post, Patch, Delete, Param, Body } 
 import { QueryFailedError } from 'typeorm';
 import { z } from 'zod';
 
-import { PgErrorCode } from '../../common/constants';
-import { ValidationPipe } from '../../common/pipes';
+import { PgErrorCode } from '@ci/common/constants';
+import { ValidationPipe } from '@ci/common/pipes';
+import { UserService, type CreateUserDto } from '@ci/domains/user';
 
-import { UserService, type CreateUserDto } from '../../domains/user';
-import { AuthService } from './AuthService';
+import { AuthService } from '../services/AuthService';
 
 const signupSchema = z.object({
   name: z.string().min(1, 'Name is required'),

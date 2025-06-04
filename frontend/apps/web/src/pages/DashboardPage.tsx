@@ -154,7 +154,6 @@ export default function DashboardPage() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
   };
 
   useEffect(() => {

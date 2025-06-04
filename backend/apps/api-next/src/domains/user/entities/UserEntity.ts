@@ -1,6 +1,6 @@
 import { Entity, Column, PrimaryColumn } from 'typeorm';
 
-import { User } from './types';
+import { User } from '../types';
 
 @Entity('users')
 export class UserEntity {
@@ -15,6 +15,12 @@ export class UserEntity {
 
   @Column()
   password!: string;
+
+  @Column({ name: 'created_at', type: 'timestamptz' })
+  createdAt!: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt!: Date;
 
   toUser() {
     return {
