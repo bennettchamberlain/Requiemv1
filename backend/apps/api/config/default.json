@@ -1,42 +1,28 @@
 {
-  "host": "localhost",
+  "host": "127.0.0.1",
   "port": 3030,
-  "origins": [
-    "http://localhost:3030"
-  ],
-  "paginate": {
-    "default": 10,
-    "max": 50
-  },
-  "authentication": {
-    "secret": "DEVELOPER_SECRET_CHANGEME",
-    "authStrategies": [
-      "jwt",
-      "local"
-    ],
-    "service": "users",
-    "entity": "user",
-    "jwtOptions": {
-      "header": {
-        "typ": "access"
-      },
-      "audience": "https://dev.companionintelligence.com",
-      "issuer": "ci",
-      "algorithm": "HS256",
-      "expiresIn": "1d"
-    },
+  "auth": {
     "local": {
-      "usernameField": "email",
-      "passwordField": "password"
+      "saltRounds": 10
+    },
+    "jwt": {
+      "secret": "CHANGE_ME_SOON"
     }
   },
-  "postgresql": {
-    "client": "pg",
-    "connection": {
-      "host": "127.0.0.1",
-      "user": "companion_intel",
-      "password": "comp4nion_1ntel_ftw!",
-      "database": "companion_intel"
+  "db": {
+    "type": "postgres",
+    "url": "postgres://companion_intel:comp4nion_1ntel_ftw!@127.0.0.1:5432/companion_intel?sslmode=disable",
+    "logging": ["query", "error"]
+  },
+  "staticfiles": {
+    "storageUrl": "http://localhost:9000",
+    "region": "us-east-1",
+    "bucket": "companion",
+    "auth": {
+      "signatureUrl": "http://minio:9000",
+      "signatureTTL": 60,
+      "accessKeyId": "minioadmin",
+      "secretAccessKey": "minioadmin"
     }
   }
 }

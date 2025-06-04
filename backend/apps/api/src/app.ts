@@ -1,41 +1,56 @@
-import { feathers } from '@feathersjs/feathers';
-import { koa, rest, bodyParser, errorHandler, parseAuthentication, cors } from '@feathersjs/koa';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+} from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
-import type { Application } from './configuration/types';
-import { configureDatabases, configureServices, configuration } from './configuration';
-import { logError, logRequest } from './hooks';
+import config from './config';
+import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
+import { LoggerService } from '@ci/common/services';
+import { AuthModule } from '@ci/domains/auth';
+import { FilesModule } from '@ci/domains/files';
+import { IntelligenceModule } from '@ci/domains/intelligence';
+import { EmbeddingModule } from '@ci/domains/search';
+import { UserModule } from '@ci/domains/user';
 
-const app: Application = koa(feathers());
+@Module({
+  imports: [
+    TypeOrmModule.forRoot({
+      type: config.db.type,
+      url: config.db.url,
+      entities: [__dirname + '/domains/**/*Entity.{ts,js}'],
+      logging: config.db.logging,
+    }),
+    AuthModule,
+    EmbeddingModule,
+    FilesModule,
+    IntelligenceModule,
+    UserModule,
+  ],
+  controllers: [],
+  providers: [],
+})
+export class App implements NestModule, OnApplicationBootstrap, OnApplicationShutdown {
+  private logger = new LoggerService('application');
 
-// Load our app configuration (see config/ folder)
-app.configure(configuration);
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer.apply(RequestLoggerMiddleware).forRoutes('*');
+  }
 
-// Set up Koa middleware
-app.use(cors());
-app.use(errorHandler());
-app.use(parseAuthentication());
-app.use(bodyParser());
+  onApplicationBootstrap() {
+    this.logger.log('Application listening', {
+      host: config.host,
+      port: config.port,
+    });
+  }
 
-// Configure services and transports
-app.configure(rest());
-
-app.configure(configureDatabases);
-app.configure(configureServices);
-
-// Register hooks that run on all service methods
-app.hooks({
-  around: {
-    all: [logRequest, logError],
-  },
-  before: {},
-  after: {},
-  error: {},
-});
-
-// Register application setup and teardown hooks here
-app.hooks({
-  setup: [],
-  teardown: [],
-});
-
-export { app };
+  onApplicationShutdown(signal?: string) {
+    this.logger.log('Application stopped', {
+      signal,
+    });
+  }
+}

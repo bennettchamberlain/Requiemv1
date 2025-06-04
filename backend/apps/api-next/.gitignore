@@ -1,2 +1,0 @@
-db/minio/data/*
-!db/minio/data/.gitkeep

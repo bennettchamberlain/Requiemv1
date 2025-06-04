@@ -75,7 +75,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
-      - ./backend/apps/api-next/db/minio/data:/data
+      - minio_data:/data
     networks:
       - web
     command: server /data
@@ -124,6 +124,7 @@ volumes:
   opensearch-data2:
   open-webui:
   postgres_data:
+  minio_data:
 
 networks:
   opensearch-net:
