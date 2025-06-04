@@ -11,39 +11,40 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
+import config from '@ci/config';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 
 import { FileEntity } from '../entities/FileEntity';
 import type { File } from '../types';
 
-const BUCKET_NAME = 'companion';
-const PRESIGN_EXPIRATION = 60;
+const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
+const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
 
 @Injectable()
 export class FileService implements OnModuleInit {
   private logger = new LoggerService(FileService.name);
 
   private s3 = new S3Client({
-    endpoint: 'http://localhost:9000',
+    endpoint: config.staticfiles.storageUrl,
     // Minio doesn't care about the region, but we're specifying this default just to make S3 happy. May not be needed.
-    region: 'us-east-1',
+    region: BUCKET_REGION,
     // This is so the client is forced to use http://localhost:9000/example-bucket instead of subdomains.
     // We don't want file paths resolving to http://example-bucket.localhost:9000.
     forcePathStyle: true,
     credentials: {
-      accessKeyId: 'minioadmin',
-      secretAccessKey: 'minioadmin',
+      accessKeyId: config.staticfiles.auth.accessKeyId,
+      secretAccessKey: config.staticfiles.auth.secretAccessKey,
     },
   });
 
   private signatureS3 = new S3Client({
-    endpoint: 'http://minio:9000',
-    region: 'us-east-1',
+    endpoint: SIGNATURE_URL,
+    region: BUCKET_REGION,
     forcePathStyle: true,
     credentials: {
-      accessKeyId: 'minioadmin',
-      secretAccessKey: 'minioadmin',
+      accessKeyId: config.staticfiles.auth.accessKeyId,
+      secretAccessKey: config.staticfiles.auth.secretAccessKey,
     },
   });
 
@@ -56,7 +57,7 @@ export class FileService implements OnModuleInit {
     try {
       await this.s3.send(
         new HeadBucketCommand({
-          Bucket: BUCKET_NAME,
+          Bucket: config.staticfiles.bucket,
         }),
       );
 
@@ -67,7 +68,7 @@ export class FileService implements OnModuleInit {
 
         await this.s3.send(
           new CreateBucketCommand({
-            Bucket: BUCKET_NAME,
+            Bucket: config.staticfiles.bucket,
           }),
         );
       } else {
@@ -108,7 +109,7 @@ export class FileService implements OnModuleInit {
   async upload(context: RequestContext, file: Express.Multer.File): Promise<File> {
     const entity = this.fileRepository.create({
       id: uuidv7(),
-      bucket: BUCKET_NAME,
+      bucket: config.staticfiles.bucket,
       key: uuidv4(),
       original_name: file.originalname,
       content_type: file.mimetype,
@@ -153,7 +154,7 @@ export class FileService implements OnModuleInit {
     });
 
     const url = await getSignedUrl(this.signatureS3, command, {
-      expiresIn: PRESIGN_EXPIRATION,
+      expiresIn: config.staticfiles.auth.signatureTTL,
     });
 
     return this.getKeyAndQuery(url);
