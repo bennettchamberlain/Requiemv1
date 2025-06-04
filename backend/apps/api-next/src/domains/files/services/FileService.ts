@@ -6,13 +6,19 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Readable } from 'stream';
-import { v4 as uuidv4 } from 'uuid';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
+import { RequestContext } from '@ci/common/types';
+
+import { FileEntity } from '../entities/FileEntity';
+import type { File } from '../types';
 
 const BUCKET_NAME = 'companion';
+const PRESIGN_EXPIRATION = 60;
 
 @Injectable()
 export class FileService implements OnModuleInit {
@@ -30,6 +36,11 @@ export class FileService implements OnModuleInit {
       secretAccessKey: 'minioadmin',
     },
   });
+
+  constructor(
+    @InjectRepository(FileEntity)
+    private readonly fileRepository: Repository<FileEntity>,
+  ) {}
 
   async onModuleInit() {
     try {
@@ -55,45 +66,92 @@ export class FileService implements OnModuleInit {
     }
   }
 
-  async upload(buffer: Buffer | Readable, contentType?: string) {
-    const key = uuidv4();
+  async findAll(context: RequestContext): Promise<File[]> {
+    const result = await this.fileRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+      },
+    });
+
+    return result.map((entity) => entity.toFile());
+  }
+
+  async findOne(context: RequestContext, id: string): Promise<File> {
+    const result = await this.fileRepository.findOne({
+      where: {
+        id,
+        user: {
+          id: context.userId,
+        },
+      },
+    });
+
+    if (result == null) {
+      throw new NotFoundException();
+    }
+
+    return result.toFile();
+  }
+
+  async upload(context: RequestContext, file: Express.Multer.File): Promise<File> {
+    const entity = this.fileRepository.create({
+      id: uuidv7(),
+      bucket: BUCKET_NAME,
+      key: uuidv4(),
+      original_name: file.originalname,
+      content_type: file.mimetype,
+      size: file.size,
+      user: {
+        id: context.userId,
+      },
+    });
+
+    const result = await this.fileRepository.save(entity);
 
     await this.s3.send(
       new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
+        Bucket: result.bucket,
+        Key: result.key,
+        Body: file.buffer,
+        ContentType: result.content_type,
       }),
     );
 
-    return { key };
+    return entity.toFile();
   }
 
-  async generatePresignedLink(key: string, contentType?: string) {
+  async generatePresignedLink(context: RequestContext, id: string): Promise<string> {
+    const result = await this.fileRepository.findOne({
+      where: {
+        id,
+        user: {
+          id: context.userId,
+        },
+      },
+    });
+
+    if (result == null) {
+      throw new NotFoundException();
+    }
+
     const command = new GetObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: key,
-      ResponseContentType: contentType,
+      Bucket: result.bucket,
+      Key: result.key,
+      ResponseContentType: result.content_type,
     });
 
     const url = await getSignedUrl(this.s3, command, {
-      expiresIn: 60,
+      expiresIn: PRESIGN_EXPIRATION,
     });
 
     return this.getKeyAndQuery(url);
   }
 
-  private getKeyAndQuery(url: string) {
+  private getKeyAndQuery(url: string): string {
     const parsed = new URL(url);
 
-    let path = parsed.pathname;
-
-    // Remove bucket prefix if needed
-    if (path.startsWith(`/${BUCKET_NAME}/`)) {
-      path = path.slice(BUCKET_NAME.length + 1); // +1 for slash
-    }
-
-    return path + parsed.search;
+    return parsed.pathname + parsed.search;
   }
 }

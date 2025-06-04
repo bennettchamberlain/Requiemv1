@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { FilesController } from './controllers/FilesController';
+import { FileEntity } from './entities/FileEntity';
 import { FileService } from './services/FileService';
 
 @Module({
-  imports: [],
+  imports: [TypeOrmModule.forFeature([FileEntity])],
   providers: [FileService],
   controllers: [FilesController],
   exports: [],
@@ -12,10 +14,10 @@ import { FileService } from './services/FileService';
 export class FilesModule {}
 
 // Entities
-export {};
+export { FileEntity };
 
 // Services
-export {};
+export { FileService };
 
 // Types
-export type { FileUploadDto } from './types';
+export type { File, FileUploadDto } from './types';
