@@ -16,6 +16,7 @@ export const ConfigSchema = z.object({
   db: z.object({
     type: z.literal('postgres'), // restrict to 'postgres' (or z.string() for other DBs)
     url: z.string(),
+    logging: z.union([z.literal(false), z.array(z.enum(['query', 'error']))]),
   }),
 });
 

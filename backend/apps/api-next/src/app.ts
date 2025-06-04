@@ -20,6 +20,7 @@ import { LoggerService } from './common/services';
       type: config.db.type,
       url: config.db.url,
       entities: [__dirname + '/domains/**/*Entity.{ts,js}'],
+      logging: config.db.logging,
     }),
     AuthModule,
     UserModule,

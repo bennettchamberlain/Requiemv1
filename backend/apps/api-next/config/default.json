@@ -11,6 +11,7 @@
   },
   "db": {
     "type": "postgres",
-    "url": "postgres://companion_intel:comp4nion_1ntel_ftw!@127.0.0.1:5432/companion_intel?sslmode=disable"
+    "url": "postgres://companion_intel:comp4nion_1ntel_ftw!@127.0.0.1:5432/companion_intel?sslmode=disable",
+    "logging": ["query", "error"]
   }
 }
