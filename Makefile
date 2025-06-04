@@ -1,4 +1,4 @@
-.PHONY: help dev init install migrate
+.PHONY: help dev init install migrate seed
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -34,8 +34,8 @@ dev:
 	@docker compose --profile local up -d
 	@printf "\n"
 
-	@SESSION="companion-dev"; \
-	BACKEND_DIR="backend/apps/api-next"; \
+	@SESSION="companion"; \
+	BACKEND_DIR="backend/apps/api"; \
 	FRONTEND_DIR="frontend/apps/web"; \
 	\
 	if tmux has-session -t $$SESSION 2>/dev/null; then \
@@ -83,6 +83,13 @@ init: ## Initialize repository after checkout
 		printf "$(GREEN)✓$(RESET) ollama found at $$OLLAMA 🦙\n\n"; \
 	fi
 
+	@if nc -z localhost 11434 > /dev/null 2>&1; then \
+		printf "\t$(GREEN)✓$(RESET) ollama is running on port 11434\n\n"; \
+	else \
+		printf "\t$(RED)✗$(RESET) ollama is NOT running on port 11434. Please start ollama (e.g., 'ollama serve')\n\n"; \
+		exit 1; \
+	fi
+
 	@MODEL=nomic-embed-text; \
 	ollama list | grep -Fq "$$MODEL"; \
 	STATUS=$$?; \
@@ -122,3 +129,8 @@ migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
 	@cd backend/apps/api && yarn migrate
 	@printf "\nMigrations successfully run.\n"
+
+seed: ## Seed backend database
+	@printf "🌱 Seeding database...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
+	@printf "\nDatabase successfully seeded.\n"
