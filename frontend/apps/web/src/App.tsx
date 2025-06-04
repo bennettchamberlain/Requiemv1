@@ -14,6 +14,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'));
 const AnswersPage = lazy(() => import('./pages/AnswersPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const FilesGalleryPage = lazy(() => import('./pages/FilesGalleryPage'));
 const MemoryPage = lazy(() => import('./pages/MemoryPage'));
 const QuestionsPage = lazy(() => import('./pages/QuestionsPage'));
 const SearchPage = lazy(() => import('./pages/SearchPage'));
@@ -99,6 +100,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <QuestionsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/files"
+          element={
+            <ProtectedRoute>
+              <FilesGalleryPage />
             </ProtectedRoute>
           }
         />
