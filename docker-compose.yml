@@ -76,6 +76,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - ./backend/apps/api-next/db/minio/data:/data
+    networks:
+      - web
     command: server /data
     profiles: [ "all", "local", "minio" ]
 
@@ -86,6 +88,8 @@ services:
       - 80:80
     volumes:
       - ./infrastructure/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - web
     extra_hosts:
       - host.docker.internal:host-gateway
     profiles: [ "all", "local" ]
@@ -121,6 +125,6 @@ volumes:
   open-webui:
   postgres_data:
 
-
 networks:
   opensearch-net:
+  web:

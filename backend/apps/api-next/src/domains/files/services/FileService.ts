@@ -37,6 +37,16 @@ export class FileService implements OnModuleInit {
     },
   });
 
+  private signatureS3 = new S3Client({
+    endpoint: 'http://minio:9000',
+    region: 'us-east-1',
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: 'minioadmin',
+      secretAccessKey: 'minioadmin',
+    },
+  });
+
   constructor(
     @InjectRepository(FileEntity)
     private readonly fileRepository: Repository<FileEntity>,
@@ -142,7 +152,7 @@ export class FileService implements OnModuleInit {
       ResponseContentType: result.content_type,
     });
 
-    const url = await getSignedUrl(this.s3, command, {
+    const url = await getSignedUrl(this.signatureS3, command, {
       expiresIn: PRESIGN_EXPIRATION,
     });
 
