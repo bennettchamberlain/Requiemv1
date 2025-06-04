@@ -35,12 +35,12 @@ export class FilesController {
   }
 
   @UseGuards(AuthGuard('jwt'))
-  @Post('presign/:id')
+  @Post(':id/presign')
   async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
-    const link = await this.fileService.generatePresignedLink(context, id);
+    const url = await this.fileService.generatePresignedLink(context, id);
 
     return {
-      link,
+      url,
     };
   }
 

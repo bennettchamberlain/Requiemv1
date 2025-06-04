@@ -3,6 +3,7 @@ export interface File {
   name: string;
   contentType: string;
   size: number;
+  url?: string;
 }
 
 export interface FileUploadDto {}

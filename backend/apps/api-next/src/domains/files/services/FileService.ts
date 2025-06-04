@@ -86,7 +86,7 @@ export class FileService implements OnModuleInit {
       },
     });
 
-    return result.map((entity) => entity.toFile());
+    return this.signFiles(result);
   }
 
   async findOne(context: RequestContext, id: string): Promise<File> {
@@ -103,7 +103,7 @@ export class FileService implements OnModuleInit {
       throw new NotFoundException();
     }
 
-    return result.toFile();
+    return this.signFile(result);
   }
 
   async upload(context: RequestContext, file: Express.Multer.File): Promise<File> {
@@ -158,6 +158,27 @@ export class FileService implements OnModuleInit {
     });
 
     return this.getKeyAndQuery(url);
+  }
+
+  private async signFiles(files: FileEntity[]): Promise<File[]> {
+    return Promise.all(files.map(this.signFile.bind(this)));
+  }
+
+  private async signFile(file: FileEntity): Promise<File> {
+    const command = new GetObjectCommand({
+      Bucket: file.bucket,
+      Key: file.key,
+      ResponseContentType: file.content_type,
+    });
+
+    const url = await getSignedUrl(this.signatureS3, command, {
+      expiresIn: config.staticfiles.auth.signatureTTL,
+    });
+
+    return {
+      ...file.toFile(),
+      url: this.getKeyAndQuery(url),
+    };
   }
 
   private getKeyAndQuery(url: string): string {
