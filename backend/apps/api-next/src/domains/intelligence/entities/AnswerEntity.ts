@@ -35,7 +35,7 @@ export class AnswerEntity {
 
   @ManyToOne(() => QuestionEntity)
   @JoinColumn({ name: 'question_id' })
-  question?: UserEntity;
+  question?: QuestionEntity;
 
   @Column({ type: 'timestamptz' })
   created_at!: Date;
@@ -43,11 +43,14 @@ export class AnswerEntity {
   @Column({ type: 'timestamptz' })
   updated_at!: Date;
 
-  toUser() {
+  toAnswer() {
     return {
       id: this.id,
       ragAnswer: this.rag_answer_1,
       answer: this.give_answer_1,
+
+      user: this.user?.toUser(),
+      question: this.question?.toQuestion(),
     } satisfies Answer;
   }
 }

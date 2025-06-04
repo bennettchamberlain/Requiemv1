@@ -11,6 +11,7 @@ import SignupPage from './pages/SignupPage';
 import SplashPage from './pages/SplashPage';
 
 const AdminPage = lazy(() => import('./pages/AdminPage'));
+const AnswersPage = lazy(() => import('./pages/AnswersPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const MemoryPage = lazy(() => import('./pages/MemoryPage'));
@@ -74,6 +75,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <QuestionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/answers"
+          element={
+            <ProtectedRoute>
+              <AnswersPage />
             </ProtectedRoute>
           }
         />

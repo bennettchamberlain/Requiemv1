@@ -1,16 +1,18 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AnswersController } from './controllers/AnswersController';
 import { QuestionsController } from './controllers/QuestionsController';
 import { AnswerEntity } from './entities/AnswerEntity';
 import { QuestionEntity } from './entities/QuestionEntity';
+import { AnswerService } from './services/AnswerService';
 import { QuestionService } from './services/QuestionService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([QuestionEntity])],
-  providers: [QuestionService],
-  controllers: [QuestionsController],
-  exports: [QuestionService],
+  imports: [TypeOrmModule.forFeature([AnswerEntity, QuestionEntity])],
+  providers: [AnswerService, QuestionService],
+  controllers: [AnswersController, QuestionsController],
+  exports: [AnswerService, QuestionService],
 })
 export class IntelligenceModule {}
 
@@ -18,7 +20,7 @@ export class IntelligenceModule {}
 export { AnswerEntity, QuestionEntity };
 
 // Services
-export { QuestionService };
+export { AnswerService, QuestionService };
 
 // Types
 export type { Answer, Question } from './types';
