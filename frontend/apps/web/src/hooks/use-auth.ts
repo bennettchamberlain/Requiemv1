@@ -95,7 +95,7 @@ function useAuth(): Value {
         localStorage.setItem(CREDENTIAL_KEY, data.accessToken);
         setUser(data.user);
 
-        navigate('/');
+        navigate('/dashboard');
       } catch (error: unknown) {
         setUser(null);
         setError(error as Error);
@@ -135,7 +135,7 @@ function useAuth(): Value {
         localStorage.setItem(CREDENTIAL_KEY, data.accessToken);
         setUser(data.user);
 
-        navigate('/');
+        navigate('/dashboard');
       } catch (error: unknown) {
         setUser(null);
         setError(error as Error);
