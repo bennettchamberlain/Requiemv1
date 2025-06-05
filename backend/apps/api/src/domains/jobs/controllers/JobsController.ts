@@ -28,7 +28,7 @@ export class JobsController {
   }
 
   @OnEvent(Events.API_ENQUEUE)
-  handleOrderCreatedEvent(payload: EventPayloads[Events.API_ENQUEUE]) {
-    this.logger.log('Processed event test from listener', payload);
+  handleApiEnqueueEvent(payload: EventPayloads[Events.API_ENQUEUE]) {
+    this.logger.log('Processed event from listener', payload);
   }
 }
