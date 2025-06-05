@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 
+import { EventsModule } from '@ci/domains/events';
+
 import { JobsController } from './controllers/JobsController';
-import { DelegationService, Queue } from './services/DelegationService';
 
 @Module({
-  imports: [],
-  providers: [DelegationService],
+  imports: [EventsModule],
+  providers: [],
   controllers: [JobsController],
-  exports: [DelegationService],
+  exports: [],
 })
 export class JobsModule {}
 
@@ -15,8 +16,7 @@ export class JobsModule {}
 export {};
 
 // Services
-export { DelegationService };
+export {};
 
 // Types
 export type {} from './types';
-export { Queue };

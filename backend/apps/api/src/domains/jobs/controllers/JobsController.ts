@@ -1,17 +1,21 @@
 import { Controller, InternalServerErrorException, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
-import { DelegationService } from '../services/DelegationService';
+import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
+import { LoggerService } from '@ci/common/services';
 
 @Controller('jobs')
 export class JobsController {
-  constructor(private readonly delegationService: DelegationService) {}
+  private logger = new LoggerService(JobsController.name);
+
+  constructor(private readonly eventService: EventService) {}
 
   @UseGuards(AuthGuard('jwt'))
   @Post()
   async enqueue() {
-    const result = await this.delegationService.sendEvent({
-      foo: 'bar',
+    const result = await this.eventService.send(Events.API_ENQUEUE, {
+      foo: 'test',
+      bar: 'test',
     });
 
     if (result == null) {
@@ -21,5 +25,10 @@ export class JobsController {
     return {
       id: result,
     };
+  }
+
+  @OnEvent(Events.API_ENQUEUE)
+  handleOrderCreatedEvent(payload: EventPayloads[Events.API_ENQUEUE]) {
+    this.logger.log('Processed event test from listener', payload);
   }
 }
