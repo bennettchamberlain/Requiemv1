@@ -14,6 +14,7 @@ import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 import config from '@ci/config';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { EventService, Events, type EventPayloads } from '@ci/domains/events';
 
 import { FileEntity } from '../entities/FileEntity';
 import type { File } from '../types';
@@ -51,6 +52,7 @@ export class FileService implements OnModuleInit {
   constructor(
     @InjectRepository(FileEntity)
     private readonly fileRepository: Repository<FileEntity>,
+    private readonly eventService: EventService,
   ) {}
 
   async onModuleInit() {
@@ -129,6 +131,10 @@ export class FileService implements OnModuleInit {
         ContentType: result.content_type,
       }),
     );
+
+    await this.eventService.send(Events.FILE_UPLOAD, {
+      fileId: result.id,
+    });
 
     return entity.toFile();
   }

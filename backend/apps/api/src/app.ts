@@ -5,14 +5,17 @@ import {
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from './config';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
 import { LoggerService } from '@ci/common/services';
 import { AuthModule } from '@ci/domains/auth';
+import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
+import { JobsModule } from '@ci/domains/jobs';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
 
@@ -24,10 +27,13 @@ import { UserModule } from '@ci/domains/user';
       entities: [__dirname + '/domains/**/*Entity.{ts,js}'],
       logging: config.db.logging,
     }),
+    EventEmitterModule.forRoot(),
     AuthModule,
     EmbeddingModule,
+    EventsModule,
     FilesModule,
     IntelligenceModule,
+    JobsModule,
     UserModule,
   ],
   controllers: [],
