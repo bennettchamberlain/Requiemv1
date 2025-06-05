@@ -13,6 +13,7 @@ import { LoggerService } from '@ci/common/services';
 import { AuthModule } from '@ci/domains/auth';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
+import { JobsModule } from '@ci/domains/jobs';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
 
@@ -28,6 +29,7 @@ import { UserModule } from '@ci/domains/user';
     EmbeddingModule,
     FilesModule,
     IntelligenceModule,
+    JobsModule,
     UserModule,
   ],
   controllers: [],
