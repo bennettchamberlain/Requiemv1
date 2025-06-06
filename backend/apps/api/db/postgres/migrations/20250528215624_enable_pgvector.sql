@@ -1,5 +1,5 @@
 -- migrate:up
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION vector;
 
 -- migrate:down
-DROP EXTENSION IF EXISTS vector;
+DROP EXTENSION vector;

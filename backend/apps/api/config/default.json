@@ -6,7 +6,15 @@
       "saltRounds": 10
     },
     "jwt": {
-      "secret": "CHANGE_ME_SOON"
+      "authTokenSecret": "CHANGE_ME_SOON",
+      "authTokenExpiration": "5m",
+      "refreshTokenSecret": "CHANGE_ME_SOON_ALSO",
+      "refreshTokenExpiration": "7d"
+    },
+    "session": {
+      "saltRounds": 4,
+      "fieldPepper": "CHANGE_ME_SOON_ALSO_ALSO",
+      "duration": "7d"
     }
   },
   "db": {

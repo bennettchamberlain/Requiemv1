@@ -1034,6 +1034,7 @@ __metadata:
     madge: "npm:^8.0.0"
     nodemon: "npm:^3.1.10"
     ollama: "npm:^0.5.15"
+    parse-duration: "npm:^2.1.4"
     passport: "npm:^0.7.0"
     passport-jwt: "npm:^4.0.1"
     passport-local: "npm:^1.0.0"
@@ -10256,6 +10257,13 @@ __metadata:
   dependencies:
     callsites: "npm:^3.0.0"
   checksum: 10c0/c63d6e80000d4babd11978e0d3fee386ca7752a02b035fd2435960ffaa7219dc42146f07069fb65e6e8bf1caef89daf9af7535a39bddf354d78bf50d8294f556
+  languageName: node
+  linkType: hard
+
+"parse-duration@npm:^2.1.4":
+  version: 2.1.4
+  resolution: "parse-duration@npm:2.1.4"
+  checksum: 10c0/e6dc70dbd33a0c13d9b9edaf37141340dadece38672bd7fd5e01887ef6587cd04149cc4f2cb05e7a3b3f94abbdca72dd311e2016720351d3dd1e17c45014dfbb
   languageName: node
   linkType: hard
 

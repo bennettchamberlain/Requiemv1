@@ -10,7 +10,15 @@ export const ConfigSchema = z.object({
       saltRounds: z.number(),
     }),
     jwt: z.object({
-      secret: z.string(),
+      authTokenSecret: z.string(),
+      authTokenExpiration: z.string(),
+      refreshTokenSecret: z.string(),
+      refreshTokenExpiration: z.string(),
+    }),
+    session: z.object({
+      saltRounds: z.number(),
+      fieldPepper: z.string(),
+      duration: z.string(),
     }),
   }),
   db: z.object({

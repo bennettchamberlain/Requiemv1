@@ -1,5 +1,5 @@
 -- migrate:up
-CREATE TABLE IF NOT EXISTS questions (
+CREATE TABLE questions (
     id UUID PRIMARY KEY,
 
     category TEXT,
