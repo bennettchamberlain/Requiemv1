@@ -6,3 +6,16 @@ export interface LoginDto {
 export interface JwtPayload {
   sub: string;
 }
+
+export interface CreateSessionDto {
+  token: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+export interface RotateSessionDto {
+  token: string;
+  newToken: string;
+  ip?: string;
+  userAgent?: string;
+}

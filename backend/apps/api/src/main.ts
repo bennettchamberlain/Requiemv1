@@ -10,7 +10,6 @@ import config from './config';
   express.disable('x-powered-by');
 
   app.enableShutdownHooks();
-  app.getHttpAdapter().getInstance().disable('x-powered-by');
 
   await app.listen(config.port, config.host);
 })();
