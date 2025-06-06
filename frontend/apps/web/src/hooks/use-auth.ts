@@ -1,10 +1,11 @@
 import { jwtDecode } from 'jwt-decode';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { createHookContext, fetchJson } from '@ci/common';
 
-const CREDENTIAL_KEY = 'credentials';
+const ACCESS_TOKEN_KEY = 'accessToken';
+const SESSION_TOKEN_KEY = 'sessionToken';
 
 interface JwtPayload {
   sub: string;
@@ -19,6 +20,7 @@ interface User {
 }
 
 interface AuthResponse {
+  sessionToken: string;
   accessToken: string;
   user: User;
 }
@@ -45,12 +47,14 @@ function useAuth(): Value {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const credentials = localStorage.getItem(CREDENTIAL_KEY);
-  const decoded = useMemo(() => (credentials ? jwtDecode<JwtPayload>(credentials) : null), [credentials]);
+  const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+  const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
+
+  const decoded = useMemo(() => (accessToken ? jwtDecode<JwtPayload>(accessToken) : null), [accessToken]);
   const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
 
   const getSelfProfile = useCallback(async () => {
-    if (credentials == null || isExpired()) {
+    if (accessToken == null || isExpired() || decoded.sub === user?.id) {
       setLoading(false);
 
       return false;
@@ -64,7 +68,7 @@ function useAuth(): Value {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${credentials}`,
+          Authorization: `Bearer ${accessToken}`,
         },
       });
 
@@ -75,7 +79,7 @@ function useAuth(): Value {
     } finally {
       setLoading(false);
     }
-  }, [setUser, setLoading, setError, isExpired]);
+  }, [setUser, setLoading, setError, isExpired, decoded, user, loading]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -92,7 +96,8 @@ function useAuth(): Value {
           }),
         });
 
-        localStorage.setItem(CREDENTIAL_KEY, data.accessToken);
+        localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+        localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
         setUser(data.user);
 
         navigate('/dashboard');
@@ -107,7 +112,9 @@ function useAuth(): Value {
   );
 
   const logout = useCallback(() => {
-    localStorage.removeItem(CREDENTIAL_KEY);
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    // TODO: This isn't good enough, we need to POST to the API to destroy the session.
+    localStorage.removeItem(SESSION_TOKEN_KEY);
 
     setUser(null);
     setLoading(false);
@@ -132,7 +139,8 @@ function useAuth(): Value {
           }),
         });
 
-        localStorage.setItem(CREDENTIAL_KEY, data.accessToken);
+        localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+        localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
         setUser(data.user);
 
         navigate('/dashboard');
@@ -146,6 +154,22 @@ function useAuth(): Value {
     [setUser, setError, setLoading],
   );
 
+  const refresh = useCallback(async () => {
+    const data: AuthResponse = await fetchJson('/api/authenticate/refresh', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionToken}`,
+      },
+    });
+
+    localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+    localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
+    setUser(data.user);
+  }, [setUser]);
+
+  useAutoRefreshToken(accessToken, sessionToken, refresh);
+
   useEffect(() => {
     getSelfProfile();
   }, [decoded]);
@@ -153,7 +177,7 @@ function useAuth(): Value {
   return [
     {
       expired: isExpired(),
-      authToken: credentials,
+      authToken: accessToken,
       user,
       loading,
       error,
@@ -164,6 +188,36 @@ function useAuth(): Value {
       signup,
     },
   ];
+}
+
+function useAutoRefreshToken(
+  accessToken: string,
+  refreshToken: string,
+  onRefresh: (refreshToken: string) => Promise<void>,
+) {
+  const timeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!accessToken || !refreshToken) {
+      return;
+    }
+
+    const decoded: any = jwtDecode(accessToken);
+    const exp = decoded.exp * 1000;
+    const now = Date.now();
+    const refreshAt = exp - 60 * 1000;
+    const delay = Math.max(refreshAt - now, 0);
+
+    timeoutRef.current && clearTimeout(timeoutRef.current);
+
+    timeoutRef.current = setTimeout(() => {
+      onRefresh(refreshToken);
+    }, delay);
+
+    return () => {
+      timeoutRef.current && clearTimeout(timeoutRef.current);
+    };
+  }, [accessToken, refreshToken, onRefresh]);
 }
 
 const { Provider, useHookContext } = createHookContext(useAuth);
