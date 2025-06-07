@@ -1,13 +1,10 @@
 import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button, Card, CardHeader, CardTitle, CardContent, CardDescription, Input, Label } from '@ci/shadcn';
 
 import { useAuth } from '../hooks';
 
 export default function LoginPage() {
-  const [{ user, loading, error }, { login }] = useAuth();
+  const [{ loading, error }, { login }] = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
