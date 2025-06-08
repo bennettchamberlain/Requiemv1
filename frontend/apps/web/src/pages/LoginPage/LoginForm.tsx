@@ -1,19 +1,25 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Alert, Form, Input, LoadingButton, useForm } from '@ci/shadcn';
+import {
+  Alert,
+  Form,
+  Input,
+  LoadingButton,
+  useForm,
+  formDataResolver,
+  formDataSchema as s,
+} from '@ci/shadcn';
 import { AlertCircleIcon } from '@ci/shadcn/icons';
 import type { BaseSyntheticEvent } from 'react';
-import { z } from 'zod';
 
 import { useAuth } from '../../hooks';
 
-const LoginFormSchema = z.object({
-  email: z.string().email({
+const LoginFormSchema = s.object({
+  email: s.string().email({
     message: 'Invalid email.',
   }),
-  password: z.string(),
+  password: s.string(),
 });
 
-export type LoginFormData = z.infer<typeof LoginFormSchema>;
+export type LoginFormData = s.infer<typeof LoginFormSchema>;
 
 interface LoginFormProps {
   onSubmit?: (data: LoginFormData, e?: BaseSyntheticEvent) => void;
@@ -23,7 +29,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
   const [{ loading, error }] = useAuth();
 
   const form = useForm<LoginFormData>({
-    resolver: zodResolver(LoginFormSchema),
+    resolver: formDataResolver(LoginFormSchema),
   });
 
   const handleSubmit = (data: LoginFormData, e?: BaseSyntheticEvent) => onSubmit?.(data, e);

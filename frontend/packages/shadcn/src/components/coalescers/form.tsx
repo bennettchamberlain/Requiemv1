@@ -1,7 +1,5 @@
 import { Form, FormItem, FormLabel, FormControl, FormDescription, FormMessage, FormField } from '../ui/form';
 
-export { useForm } from 'react-hook-form';
-
 type FormComponent = typeof Form & {
   Item: typeof FormItem;
   Label: typeof FormLabel;
@@ -21,3 +19,6 @@ AugmentedForm.Message = FormMessage;
 AugmentedForm.Field = FormField;
 
 export { AugmentedForm as Form };
+export { useForm } from 'react-hook-form';
+export { zodResolver as formDataResolver } from '@hookform/resolvers/zod';
+export { z as formDataSchema } from 'zod';
