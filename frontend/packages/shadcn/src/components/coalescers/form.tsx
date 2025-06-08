@@ -1,13 +1,6 @@
-import {
-  useFormField,
-  Form,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormDescription,
-  FormMessage,
-  FormField,
-} from '../ui/form';
+import { Form, FormItem, FormLabel, FormControl, FormDescription, FormMessage, FormField } from '../ui/form';
+
+export { useForm } from 'react-hook-form';
 
 type FormComponent = typeof Form & {
   Item: typeof FormItem;
@@ -27,4 +20,4 @@ AugmentedForm.Description = FormDescription;
 AugmentedForm.Message = FormMessage;
 AugmentedForm.Field = FormField;
 
-export { AugmentedForm as Form, useFormField };
+export { AugmentedForm as Form };
