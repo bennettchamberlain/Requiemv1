@@ -45,4 +45,6 @@ export * from './src/components/ui/toggle-group';
 export * from './src/components/ui/toggle';
 export * from './src/components/ui/tooltip';
 
+export * from './src/components/adapters/loading-button';
+
 export * from './src/hooks/use-mobile';
