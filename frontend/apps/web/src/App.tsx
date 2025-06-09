@@ -1,29 +1,29 @@
-import { ReactNode, lazy } from 'react';
+import { type ReactNode, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Sidebar } from '@ci/shadcn';
 
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { SidebarProvider } from './components/ui/sidebar';
-import { AuthProvider } from './hooks';
-import { Main as MainLayout } from './layouts';
-import LoginPage from './pages/LoginPage';
-import NotFound from './pages/NotFound';
-import SignupPage from './pages/SignupPage';
-import SplashPage from './pages/SplashPage';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { AuthProvider } from '@/hooks';
+import { Main as MainLayout } from '@/layouts';
+import LoginPage from '@/pages/LoginPage';
+import NotFound from '@/pages/NotFound';
+import SignupPage from '@/pages/SignupPage';
+import SplashPage from '@/pages/SplashPage';
 
-const AdminPage = lazy(() => import('./pages/AdminPage'));
-const AnswersPage = lazy(() => import('./pages/AnswersPage'));
-const ChatPage = lazy(() => import('./pages/ChatPage'));
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const FilesGalleryPage = lazy(() => import('./pages/FilesGalleryPage'));
-const MemoryPage = lazy(() => import('./pages/MemoryPage'));
-const QuestionsPage = lazy(() => import('./pages/QuestionsPage'));
-const SearchPage = lazy(() => import('./pages/SearchPage'));
+const AdminPage = lazy(() => import('@/pages/AdminPage'));
+const AnswersPage = lazy(() => import('@/pages/AnswersPage'));
+const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
+const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
+const QuestionsPage = lazy(() => import('@/pages/QuestionsPage'));
+const SearchPage = lazy(() => import('@/pages/SearchPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
       <AuthProvider args={[]}>
-        <SidebarProvider>{children}</SidebarProvider>
+        <Sidebar.Provider>{children}</Sidebar.Provider>
       </AuthProvider>
     </Router>
   );
@@ -95,15 +95,6 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/memory"
-          element={
-            <ProtectedRoute>
-              <QuestionsPage />
-            </ProtectedRoute>
-          }
-        />
-
         <Route
           path="/files"
           element={

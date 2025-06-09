@@ -34,9 +34,6 @@ export function SplashPage() {
             <Button variant="outline" asChild size="lg" className="px-8">
               <Link to="/login">Log In</Link>
             </Button>
-            <Button variant="ghost" asChild size="lg">
-              <Link to="/admin">Admin Panel</Link>
-            </Button>
           </div>
         </div>
       </div>
