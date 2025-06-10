@@ -1,3 +1,5 @@
+import path from 'path';
+import { Logger } from '@nestjs/common';
 import bcrypt from 'bcrypt';
 import type { DataSource } from 'typeorm';
 
@@ -6,16 +8,19 @@ import { UserEntity } from '@ci/domains/user';
 
 import { readCsv } from './utils';
 
+const logger = new Logger(path.basename(__filename));
+
 export async function seedUsers(db: DataSource, filePath: string) {
-  type CsvUser = {
+  type CsvRecord = {
     id: string;
     first_name: string;
     last_name: string;
     email: string;
-    created: Date;
+    created_at: Date;
+    updated_at: Date;
   };
 
-  const records = readCsv<CsvUser>(filePath);
+  const records = readCsv<CsvRecord>(filePath);
 
   await db.transaction(async (manager) => {
     for (const record of records) {
@@ -24,9 +29,11 @@ export async function seedUsers(db: DataSource, filePath: string) {
         name: `${record.first_name} ${record.last_name}`,
         email: record.email,
         password: await bcrypt.hash('companion', config.auth.local.saltRounds),
-        created_at: record.created,
-        updated_at: record.created,
+        created_at: record.created_at,
+        updated_at: record.updated_at,
       });
     }
   });
+
+  logger.log(`Seeded ${records.length} user records`);
 }

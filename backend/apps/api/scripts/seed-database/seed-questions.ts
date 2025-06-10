@@ -1,12 +1,16 @@
+import path from 'path';
+import { Logger } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
-import { v7 as uuidv7 } from 'uuid';
 
 import { QuestionEntity } from '@ci/domains/intelligence';
 
 import { readCsv } from './utils';
 
+const logger = new Logger(path.basename(__filename));
+
 export async function seedQuestions(db: DataSource, filePath: string) {
   type CsvQuestion = {
+    id: string;
     category: string;
     user_id: string;
     question_string: string;
@@ -20,7 +24,7 @@ export async function seedQuestions(db: DataSource, filePath: string) {
 
     for (const record of records) {
       await manager.save(QuestionEntity, {
-        id: uuidv7(),
+        id: record.id,
         category: record.category,
         text: record.question_string,
         example_answer_1: record.example_answer_1,
@@ -32,4 +36,6 @@ export async function seedQuestions(db: DataSource, filePath: string) {
       });
     }
   });
+
+  logger.log(`Seeded ${records.length} question records`);
 }
