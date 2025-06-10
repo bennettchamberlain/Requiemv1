@@ -75,7 +75,7 @@ export class EmbeddingService {
     });
   }
 
-  async findNearest(context: RequestContext, input: string, topK: number = 5): Promise<EmbeddingEntity[]> {
+  async findNearest(context: RequestContext, input: string, topK: number = 25): Promise<EmbeddingEntity[]> {
     const vector = await this.calculateVectorString(input);
 
     let sql = `SELECT *, embedding_vector <-> $1 as distance FROM embeddings`;
@@ -96,7 +96,14 @@ export class EmbeddingService {
 
     params.push(topK);
 
-    return this.embeddingRepo.query(sql, params);
+    const result = await this.embeddingRepo.query(sql, params);
+
+    return result.map((entity: EmbeddingEntity) => ({
+      text: entity.raw_input,
+      type: entity.entity_type,
+      id: entity.entity_id,
+      path: entity.data_path,
+    }));
   }
 
   private async indexGeneric(
