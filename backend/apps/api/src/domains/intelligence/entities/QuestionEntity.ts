@@ -1,4 +1,12 @@
-import { Entity, Column, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  CreateDateColumn,
+  JoinColumn,
+  ManyToOne,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 import { UserEntity } from '@ci/domains/user';
 
@@ -28,10 +36,10 @@ export class QuestionEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
-  @Column({ type: 'timestamptz' })
+  @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
-  @Column({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
 
   toQuestion() {

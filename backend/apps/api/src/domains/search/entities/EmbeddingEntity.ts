@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryColumn } from 'typeorm';
+import { Entity, Column, CreateDateColumn, PrimaryColumn } from 'typeorm';
 
 @Entity('embeddings')
 export class EmbeddingEntity {
@@ -19,4 +19,7 @@ export class EmbeddingEntity {
     },
   })
   embedding_vector!: number[];
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  created_at!: Date;
 }
