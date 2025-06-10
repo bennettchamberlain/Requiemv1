@@ -12,7 +12,7 @@ import { seedQuestions } from './seed-questions';
 const logger = new Logger(path.basename(__filename));
 
 (async function () {
-  const dataDir = path.resolve(__dirname, '../../../../../coverage/ci-js1-data');
+  const dataDir = path.resolve(__dirname, './js1-data');
 
   const db = new DataSource({
     type: config.db.type,
