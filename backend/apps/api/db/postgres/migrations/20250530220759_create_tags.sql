@@ -10,4 +10,4 @@ CREATE TABLE tags (
 );
 
 -- migrate:down
-DROP TABLE IF EXISTS tags;
+DROP TABLE tags;
