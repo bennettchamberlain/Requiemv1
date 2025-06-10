@@ -217,6 +217,7 @@ export function MemoryPage() {
     const bounds = L.latLngBounds([]);
     memoriesWithLocation.forEach((memory) => {
       if (memory.location) {
+        // @ts-expect-error
         const marker = L.marker([memory.location.lat, memory.location.lng], { icon: customIcon })
           .addTo(mapRef.current!)
           .bindPopup(

@@ -33,7 +33,7 @@ export function FilesGalleryPage() {
           throw new Error('Failed to fetch file list');
         }
 
-        const metaList: FileMeta[] = (await res.json()).map((file) => ({
+        const metaList: FileMeta[] = (await res.json()).map((file: FileMeta) => ({
           ...file,
           url: `/static${file.url}`,
         }));

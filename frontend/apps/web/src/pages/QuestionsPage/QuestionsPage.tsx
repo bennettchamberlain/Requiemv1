@@ -89,24 +89,10 @@ export function QuestionsPage() {
     };
   }, []);
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleString();
-    } catch {
-      return dateString;
-    }
-  };
-
   const truncateText = (text: string | undefined, maxLength: number = 50) => {
     if (!text) return 'N/A';
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
-  };
-
-  const formatTags = (tags: string[] | undefined) => {
-    if (!tags || tags.length === 0) return 'N/A';
-    return tags.length > 2 ? `${tags.slice(0, 2).join(', ')}... (+${tags.length - 2})` : tags.join(', ');
   };
 
   return (

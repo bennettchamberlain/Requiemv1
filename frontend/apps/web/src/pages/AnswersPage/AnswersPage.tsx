@@ -93,15 +93,6 @@ export function AnswersPage() {
     };
   }, []);
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleString();
-    } catch {
-      return dateString;
-    }
-  };
-
   const truncateText = (text: string | undefined, maxLength: number = 50) => {
     if (!text) return 'N/A';
     if (text.length <= maxLength) return text;

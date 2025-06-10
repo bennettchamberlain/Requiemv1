@@ -109,8 +109,6 @@ export function AdminPage() {
         throw new Error(`Failed to perform action: ${response.statusText}`);
       }
 
-      const result = await response.json();
-
       // Refresh data after action
       await fetchJobs();
       await fetchQueueStats();
