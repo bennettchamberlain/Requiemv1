@@ -1,4 +1,4 @@
-.PHONY: help dev init install migrate seed
+.PHONY: help dev index init install migrate seed
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -54,6 +54,11 @@ dev:
 	\
 	tmux select-pane -t 0; \
 	tmux attach -t $$SESSION
+
+index: ## Generate vector embeddings for indexable content
+	@printf "🗂 Indexing database...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings/main.ts
+	@printf "\nDatabase successfully indexed.\n"
 
 init: ## Initialize repository after checkout
 	@printf "🏗️ Initializing repository...\n\n"
