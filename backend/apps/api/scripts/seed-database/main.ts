@@ -4,22 +4,54 @@ import { DataSource } from 'typeorm';
 
 import config from '@ci/config';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
+import {
+  ContactEntity,
+  ContentEntity,
+  EventEntity,
+  LocationEntity,
+  PersonEntity,
+  PlaceEntity,
+  TagEntity,
+  ThingEntity,
+} from '@ci/domains/memory';
 import { UserEntity } from '@ci/domains/user';
 
-import { seedUsers } from './seed-users';
+import { seedContacts } from './seed-contacts';
+import { seedContent } from './seed-content';
+import { seedEvents } from './seed-events';
+import { seedLocations } from './seed-locations';
+import { seedPeople } from './seed-people';
+import { seedPlaces } from './seed-places';
 import { seedQuestions } from './seed-questions';
+import { seedThings } from './seed-things';
+import { seedUsers } from './seed-users';
 
 const logger = new Logger(path.basename(__filename));
 
 (async function () {
-  const dataDir = path.resolve(__dirname, './js1-data');
+  const dataDir = path.resolve(__dirname);
 
   const db = new DataSource({
     type: config.db.type,
     url: config.db.url,
-    entities: [AnswerEntity, QuestionEntity, UserEntity],
+    entities: [
+      // Memory
+      ContactEntity,
+      ContentEntity,
+      EventEntity,
+      LocationEntity,
+      PersonEntity,
+      PlaceEntity,
+      TagEntity,
+      ThingEntity,
+      // Intelligence
+      AnswerEntity,
+      QuestionEntity,
+      // Users
+      UserEntity,
+    ],
     synchronize: false,
-    logging: ['query', 'error'],
+    logging: ['error'],
   });
 
   let error: Error | null;
@@ -27,8 +59,18 @@ const logger = new Logger(path.basename(__filename));
   try {
     await db.initialize();
 
-    await seedUsers(db, path.join(dataDir, 'js1-user.csv'));
-    await seedQuestions(db, path.join(dataDir, 'questions.csv'));
+    // John Smith
+    await seedUsers(db, path.resolve(dataDir, './js1-data/js1-users.csv'));
+    await seedEvents(db, path.resolve(dataDir, './js1-data/js1-events.csv'));
+    await seedPeople(db, path.resolve(dataDir, './js1-data/js1-people.csv'));
+    await seedContacts(db, path.resolve(dataDir, './js1-data/js1-contacts.csv'));
+    await seedContent(db, path.resolve(dataDir, './js1-data/js1-content.csv'));
+    await seedThings(db, path.resolve(dataDir, './js1-data/js1-things.csv'));
+    await seedPlaces(db, path.resolve(dataDir, './js1-data/js1-places.csv'));
+    await seedLocations(db, path.resolve(dataDir, './js1-data/js1-locations.csv'));
+
+    // Intelligence Data
+    await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
 
     process.exit(0);
   } catch (err: unknown) {
