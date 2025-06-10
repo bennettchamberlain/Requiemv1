@@ -42,9 +42,9 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
           name="email"
           render={({ field }) => (
             <Form.Item>
-              <Form.Label>Username</Form.Label>
+              <Form.Label>Email</Form.Label>
               <Form.Control>
-                <Input placeholder="user@example.com" {...field} />
+                <Input {...field} />
               </Form.Control>
               <Form.Message />
             </Form.Item>
@@ -73,7 +73,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
         )}
 
         <LoadingButton className="w-full" type="submit" loading={loading}>
-          Submit
+          Log in
         </LoadingButton>
       </form>
     </Form>

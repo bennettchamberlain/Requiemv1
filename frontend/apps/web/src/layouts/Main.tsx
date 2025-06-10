@@ -1,19 +1,12 @@
 import { Suspense } from 'react';
 import { LoadingPage } from '@ci/common';
-import { Bot, Map, Settings2, SquareTerminal, Search, Camera } from 'lucide-react';
+import { Sidebar } from '@ci/shadcn';
+import { Bot, Map, Settings2, SquareTerminal, Search, Camera } from '@ci/shadcn/icons';
 import { Outlet } from 'react-router-dom';
 
-import { NavMain } from '../components/nav-main';
-import { NavUser } from '../components/nav-user';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarInset,
-  SidebarRail,
-  SidebarHeader,
-  SidebarFooter,
-} from '../components/ui/sidebar';
-import { useAuth } from '../hooks';
+import { NavMain } from '@/components/nav-main';
+import { NavUser } from '@/components/nav-user';
+import { useAuth } from '@/hooks';
 
 const navItems = [
   {
@@ -221,20 +214,20 @@ export function Main() {
   return (
     <div className="flex h-screen">
       <Sidebar>
-        <SidebarContent>
-          <SidebarHeader>Companion Intelligence</SidebarHeader>
+        <Sidebar.Content>
+          <Sidebar.Header>Companion Intelligence</Sidebar.Header>
           <NavMain items={navItems} />
-        </SidebarContent>
-        <SidebarRail />
-        <SidebarFooter>
+        </Sidebar.Content>
+        <Sidebar.Rail />
+        <Sidebar.Footer>
           <NavUser user={currentUser} />
-        </SidebarFooter>
+        </Sidebar.Footer>
       </Sidebar>
-      <SidebarInset>
+      <Sidebar.Inset>
         <Suspense fallback={<LoadingPage />}>
           <Outlet />
         </Suspense>
-      </SidebarInset>
+      </Sidebar.Inset>
     </div>
   );
 }

@@ -28,8 +28,8 @@ interface AuthResponse {
 type Value = [
   {
     expired: boolean;
-    authToken?: string;
-    user?: User;
+    authToken?: string | null;
+    user?: User | null;
     loading: boolean;
     error: Error | null;
   },
@@ -54,7 +54,7 @@ function useAuth(): Value {
   const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
 
   const getSelfProfile = useCallback(async () => {
-    if (accessToken == null || isExpired() || decoded.sub === user?.id) {
+    if (accessToken == null || isExpired() || (decoded && decoded.sub === user?.id)) {
       setLoading(false);
 
       return false;
@@ -191,11 +191,11 @@ function useAuth(): Value {
 }
 
 function useAutoRefreshToken(
-  accessToken: string,
-  refreshToken: string,
+  accessToken: string | null | undefined,
+  refreshToken: string | null | undefined,
   onRefresh: (refreshToken: string) => Promise<void>,
 ) {
-  const timeoutRef = useRef<number | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   useEffect(() => {
     if (!accessToken || !refreshToken) {
