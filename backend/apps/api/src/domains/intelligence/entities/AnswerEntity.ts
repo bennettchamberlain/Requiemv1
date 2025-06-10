@@ -8,12 +8,14 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+import { Indexable } from '@ci/common/decorators';
 import { UserEntity } from '@ci/domains/user';
 
 import { Answer } from '../types';
 
 import { QuestionEntity } from './QuestionEntity';
 
+@Indexable('answer', ['give_answer_1'])
 @Entity('answers')
 export class AnswerEntity {
   @PrimaryColumn()
