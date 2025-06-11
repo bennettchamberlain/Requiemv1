@@ -13,17 +13,16 @@
   ],
   "devDependencies": {
     "@eslint/js": "^9.27.0",
+    "@storybook/react-vite": "^9.0.8",
     "@types/pg": "^8",
     "eslint": "^9.27.0",
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-prettier": "^5.4.0",
     "globals": "^16.1.0",
     "prettier": "^3.5.3",
+    "storybook": "^9.0.8",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.32.1"
-  },
-  "dependencies": {
-    "ollama": "^0.5.15",
-    "pg": "^8.16.0"
+    "typescript-eslint": "^8.32.1",
+    "vite": "^6.3.5"
   }
 }
