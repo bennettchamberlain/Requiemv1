@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Separator, Sidebar } from '@ci/shadcn';
+import { Portal } from '@ci/common';
+import { Breadcrumb, Sidebar } from '@ci/shadcn';
 import { MessageSquare, Plus, Trash2 } from '@ci/shadcn/icons';
 
 // Types for our chat data
@@ -264,50 +265,52 @@ function ChatSidebar({
   );
 
   return (
-    <Sidebar>
-      <Sidebar.Header className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Conversations</h2>
-        <button
-          onClick={onNewConversation}
-          className="p-1 rounded-full hover:bg-muted"
-          title="New conversation"
-        >
-          <Plus size={20} />
-        </button>
-      </Sidebar.Header>
-      <Sidebar.Content>
-        {Object.entries(conversationsByTopic).map(([topic, topicConversations]) => (
-          <Sidebar.Group key={topic}>
-            <Sidebar.GroupLabel>{topic}</Sidebar.GroupLabel>
-            <Sidebar.GroupContent>
-              <Sidebar.Menu>
-                {topicConversations.map((conversation) => (
-                  <Sidebar.MenuItem key={conversation.id}>
-                    <Sidebar.MenuButton
-                      onClick={() => onSelectConversation(conversation.id)}
-                      className={selectedConversationId === conversation.id ? 'bg-muted' : ''}
-                    >
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      <span className="flex-1 truncate">{conversation.title}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteConversation(conversation.id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-muted"
-                        title="Delete conversation"
+    <>
+      <div className="border-l grow">
+        <Sidebar.Header className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold">Conversations</h2>
+          <button
+            onClick={onNewConversation}
+            className="p-1 rounded-full hover:bg-muted"
+            title="New conversation"
+          >
+            <Plus size={20} />
+          </button>
+        </Sidebar.Header>
+        <Sidebar.Content>
+          {Object.entries(conversationsByTopic).map(([topic, topicConversations]) => (
+            <Sidebar.Group key={topic}>
+              <Sidebar.GroupLabel>{topic}</Sidebar.GroupLabel>
+              <Sidebar.GroupContent>
+                <Sidebar.Menu>
+                  {topicConversations.map((conversation) => (
+                    <Sidebar.MenuItem key={conversation.id}>
+                      <Sidebar.MenuButton
+                        onClick={() => onSelectConversation(conversation.id)}
+                        className={selectedConversationId === conversation.id ? 'bg-muted' : ''}
                       >
-                        <Trash2 size={14} />
-                      </button>
-                    </Sidebar.MenuButton>
-                  </Sidebar.MenuItem>
-                ))}
-              </Sidebar.Menu>
-            </Sidebar.GroupContent>
-          </Sidebar.Group>
-        ))}
-      </Sidebar.Content>
-    </Sidebar>
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        <span className="flex-1 truncate">{conversation.title}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteConversation(conversation.id);
+                          }}
+                          className="group-hover:opacity-100 p-1 rounded-full hover:bg-muted"
+                          title="Delete conversation"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </Sidebar.MenuButton>
+                    </Sidebar.MenuItem>
+                  ))}
+                </Sidebar.Menu>
+              </Sidebar.GroupContent>
+            </Sidebar.Group>
+          ))}
+        </Sidebar.Content>
+      </div>
+    </>
   );
 }
 
@@ -434,72 +437,88 @@ export function ChatPage() {
   };
 
   return (
-    <Sidebar.Provider>
-      <ChatSidebar
-        conversations={conversations}
-        selectedConversationId={selectedConversationId}
-        onSelectConversation={setSelectedConversationId}
-        onNewConversation={handleNewConversation}
-        onDeleteConversation={handleDeleteConversation}
-      />
-      <Sidebar.Inset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-4">
-            <Sidebar.Trigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <h1 className="text-lg font-semibold">{currentConversation?.title || 'Select a conversation'}</h1>
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Chat</Breadcrumb.Page>
+            </Breadcrumb.Item>
+            {currentConversation?.title && (
+              <>
+                <Breadcrumb.Separator className="hidden md:block" />
+                <Breadcrumb.Item>
+                  <Breadcrumb.Page>{currentConversation.title}</Breadcrumb.Page>
+                </Breadcrumb.Item>
+              </>
+            )}
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
+      <Portal.Slot id="tertiary-navigation">
+        <ChatSidebar
+          conversations={conversations}
+          selectedConversationId={selectedConversationId}
+          onSelectConversation={setSelectedConversationId}
+          onNewConversation={handleNewConversation}
+          onDeleteConversation={handleDeleteConversation}
+        />
+      </Portal.Slot>
+
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <span>Loading conversations...</span>
           </div>
-        </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-          {loading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <span>Loading conversations...</span>
-            </div>
-          ) : currentConversation ? (
-            <>
-              <div className="flex-1 overflow-y-auto py-4">
-                {currentConversation.messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`mb-4 p-3 rounded-lg max-w-[80%] ${
-                      message.sender === 'user'
-                        ? 'ml-auto bg-primary text-primary-foreground'
-                        : 'mr-auto bg-muted'
-                    }`}
-                  >
-                    <p>{message.content}</p>
-                    <div className="text-xs opacity-70 mt-1 text-right">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </div>
+        ) : currentConversation ? (
+          <>
+            <div className="flex-1 overflow-y-auto py-4">
+              {currentConversation.messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`mb-4 p-3 rounded-lg max-w-[80%] ${
+                    message.sender === 'user'
+                      ? 'ml-auto bg-primary text-primary-foreground'
+                      : 'mr-auto bg-muted'
+                  }`}
+                >
+                  <p>{message.content}</p>
+                  <div className="text-xs opacity-70 mt-1 text-right">
+                    {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
-                ))}
-              </div>
-              <div className="border-t pt-4">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Type your message..."
-                    className="flex-1 min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-                  >
-                    Send
-                  </button>
                 </div>
-              </div>
-            </>
-          ) : (
-            <div className="min-h-[50vh] flex-1 rounded-xl bg-muted/50 flex items-center justify-center md:min-h-min">
-              <span className="text-xl font-medium">Select a conversation or create a new one</span>
+              ))}
             </div>
-          )}
-        </div>
-      </Sidebar.Inset>
-    </Sidebar.Provider>
+            <div className="border-t pt-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Type your message..."
+                  className="flex-1 min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                />
+                <button
+                  onClick={handleSendMessage}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="min-h-[50vh] flex-1 rounded-xl bg-muted/50 flex items-center justify-center md:min-h-min">
+            <span className="text-xl font-medium">Select a conversation or create a new one</span>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

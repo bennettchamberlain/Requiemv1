@@ -123,7 +123,7 @@ export function Main() {
                   <Outlet />
                 </main>
                 <aside className="flex flex-col">
-                  <Portal id="tertiary-navigation" />
+                  <Portal id="tertiary-navigation" className="flex flex-col grow" />
                 </aside>
               </div>
             </div>

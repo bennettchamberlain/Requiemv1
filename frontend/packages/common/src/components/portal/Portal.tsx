@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 
 interface PortalProps {
   id: string;
+  className?: string;
 }
 
-function Portal({ id }: PortalProps) {
-  return <div id={id} />;
+function Portal({ id, className }: PortalProps) {
+  return <div id={id} className={className} />;
 }
 
 interface SlotProps {
@@ -26,4 +27,4 @@ function Slot({ id, children }: SlotProps) {
 
 Portal.Slot = Slot;
 
-export { Portal }
+export { Portal };
