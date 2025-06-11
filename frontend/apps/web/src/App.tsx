@@ -1,6 +1,5 @@
 import { type ReactNode, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Sidebar } from '@ci/shadcn';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AuthProvider } from '@/hooks';
@@ -22,9 +21,7 @@ const SearchPage = lazy(() => import('@/pages/SearchPage'));
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
-      <AuthProvider args={[]}>
-        <Sidebar.Provider>{children}</Sidebar.Provider>
-      </AuthProvider>
+      <AuthProvider args={[]}>{children}</AuthProvider>
     </Router>
   );
 }

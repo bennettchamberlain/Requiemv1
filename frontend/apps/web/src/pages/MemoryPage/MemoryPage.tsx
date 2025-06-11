@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Separator, Tabs } from '@ci/shadcn';
+import { Portal, usePageTitle } from '@ci/common';
+import { Breadcrumb, Separator, Tabs } from '@ci/shadcn';
 import {
   Clock,
   Coffee,
@@ -145,6 +146,8 @@ const sampleMemories: MemoryItem[] = [
 ];
 
 export function MemoryPage() {
+  usePageTitle('Memory - Companion Intelligence');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [memories] = useState<MemoryItem[]>(sampleMemories);
   const [activeTab, setActiveTab] = useState('map');
@@ -261,12 +264,22 @@ export function MemoryPage() {
   }, [activeTab, memoriesWithLocation]);
 
   return (
-    <div className="flex flex-col w-full h-full">
-      <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-        <h1 className="text-xl font-semibold">Memory</h1>
-      </header>
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Memory</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
 
-      <div className="flex flex-col gap-6 p-6">
+      <div className="w-full flex flex-col gap-6">
         {/* Search Bar */}
         <div className="relative w-full max-w-2xl mx-auto">
           <div className="flex">
@@ -460,6 +473,6 @@ export function MemoryPage() {
           </Tabs.Content>
         </Tabs>
       </div>
-    </div>
+    </>
   );
 }

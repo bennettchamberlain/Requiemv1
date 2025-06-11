@@ -48,3 +48,5 @@ export * from './src/components/coalescers/tooltip';
 export * from './src/components/adapters/loading-button';
 
 export * from './src/hooks/use-mobile';
+
+export * from './src/lib/utils';

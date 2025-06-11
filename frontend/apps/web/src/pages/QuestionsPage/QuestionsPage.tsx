@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Button, Card, Table } from '@ci/shadcn';
+import { Portal, usePageTitle } from '@ci/common';
+import { Breadcrumb, Button, Card, Table } from '@ci/shadcn';
 import { AlertCircle, RefreshCw } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
@@ -12,6 +13,8 @@ interface Question {
 }
 
 export function QuestionsPage() {
+  usePageTitle('Questions - Companion Intelligence');
+
   const [{ authToken }] = useAuth();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,10 +99,23 @@ export function QuestionsPage() {
   };
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Questions</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
       <Card className="w-full">
-        <Card.Header className="flex flex-row items-center justify-between">
-          <Card.Title className="text-2xl">Questions</Card.Title>
+        <Card.Header className="flex flex-row items-center justify-end">
           <Button
             variant="outline"
             size="icon"
@@ -164,6 +180,6 @@ export function QuestionsPage() {
           )}
         </Card.Content>
       </Card>
-    </div>
+    </>
   );
 }

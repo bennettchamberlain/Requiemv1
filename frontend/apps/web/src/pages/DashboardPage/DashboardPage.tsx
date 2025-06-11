@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { Button, Card, Sidebar } from '@ci/shadcn';
+import { Portal, usePageTitle } from '@ci/common';
+import { Breadcrumb, Card } from '@ci/shadcn';
 
 import { ChartAreaInteractive } from '@/components/chart-area-interactive';
 import { useAuth } from '@/hooks';
@@ -72,7 +73,9 @@ const RecommendationItem = ({
 );
 
 export function DashboardPage() {
-  const [{ user, loading, error }, { logout }] = useAuth();
+  usePageTitle('Dashboard - Companion Intelligence');
+
+  const [{ user, loading, error }] = useAuth();
 
   const fetchMetrics = async () => {
     // Mock function for now
@@ -142,10 +145,6 @@ export function DashboardPage() {
     },
   ];
 
-  const handleLogout = () => {
-    logout();
-  };
-
   useEffect(() => {
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 30000);
@@ -157,133 +156,130 @@ export function DashboardPage() {
   if (error) return <div className="p-6 text-red-600">Error: {error + ''}</div>;
 
   return (
-    <main className="flex flex-col h-full">
-      <header className="flex h-16 items-center px-4 border-b">
-        <Sidebar.Trigger />
-        <div className="ml-auto flex items-center gap-2">
-          <span>Welcome, {user.name || user.email}</span>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            Logout
-          </Button>
-        </div>
-      </header>
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Dashboard</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
 
-      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-        <div className="flex items-center justify-between space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-muted-foreground">
-              Welcome back! Here's your personal intelligence overview.
-            </span>
-          </div>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat, index) => (
-            <StatCard key={index} {...stat} />
-          ))}
-        </div>
-
-        {/* Main Content Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-          {/* Activity Chart */}
-          <div className="col-span-full lg:col-span-4">
-            <ChartAreaInteractive />
+      <div className="flex flex-col w-full">
+        <div className="flex-1 space-y-4">
+          {/* Stats Grid */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {stats.map((stat, index) => (
+              <StatCard key={index} {...stat} />
+            ))}
           </div>
 
-          {/* Recommendations */}
-          <Card className="col-span-full md:col-span-1 lg:col-span-3">
-            <Card.Header>
-              <Card.Title className="flex items-center gap-2">✨ AI Recommendations</Card.Title>
-              <Card.Description>Personalized suggestions based on your patterns</Card.Description>
-            </Card.Header>
-            <Card.Content className="space-y-1">
-              {recommendations.map((rec, index) => (
-                <RecommendationItem key={index} {...rec} />
-              ))}
-            </Card.Content>
-          </Card>
-        </div>
+          {/* Main Content Grid */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+            {/* Activity Chart */}
+            <div className="col-span-full lg:col-span-4">
+              <ChartAreaInteractive />
+            </div>
 
-        {/* Bottom Section */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-          {/* Recent Activities */}
-          <Card className="col-span-full md:col-span-1 lg:col-span-4">
-            <Card.Header>
-              <Card.Title>Recent Activities</Card.Title>
-              <Card.Description>Your latest tracked activities and interactions</Card.Description>
-            </Card.Header>
-            <Card.Content>
-              {recentActivities.map((activity, index) => (
-                <ActivityItem key={index} {...activity} />
-              ))}
-            </Card.Content>
-          </Card>
+            {/* Recommendations */}
+            <Card className="col-span-full md:col-span-1 lg:col-span-3">
+              <Card.Header>
+                <Card.Title className="flex items-center gap-2">✨ AI Recommendations</Card.Title>
+                <Card.Description>Personalized suggestions based on your patterns</Card.Description>
+              </Card.Header>
+              <Card.Content className="space-y-1">
+                {recommendations.map((rec, index) => (
+                  <RecommendationItem key={index} {...rec} />
+                ))}
+              </Card.Content>
+            </Card>
+          </div>
 
-          {/* Quick Stats */}
-          <Card className="col-span-full md:col-span-1 lg:col-span-3">
-            <Card.Header>
-              <Card.Title>Activity Insights</Card.Title>
-              <Card.Description>Your personal patterns and habits</Card.Description>
-            </Card.Header>
-            <Card.Content className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Most Active Day</span>
-                  <span className="text-sm text-muted-foreground">Wednesday</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Peak Productivity</span>
-                  <span className="text-sm text-muted-foreground">10 AM - 12 PM</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Avg. Daily Activities</span>
-                  <span className="text-sm text-muted-foreground">94</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Streak</span>
-                  <span className="text-sm text-muted-foreground">12 days 🔥</span>
-                </div>
-              </div>
+          {/* Bottom Section */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+            {/* Recent Activities */}
+            <Card className="col-span-full md:col-span-1 lg:col-span-4">
+              <Card.Header>
+                <Card.Title>Recent Activities</Card.Title>
+                <Card.Description>Your latest tracked activities and interactions</Card.Description>
+              </Card.Header>
+              <Card.Content>
+                {recentActivities.map((activity, index) => (
+                  <ActivityItem key={index} {...activity} />
+                ))}
+              </Card.Content>
+            </Card>
 
-              <div className="pt-4 border-t">
-                <h4 className="text-sm font-medium mb-3">Top Categories</h4>
+            {/* Quick Stats */}
+            <Card className="col-span-full md:col-span-1 lg:col-span-3">
+              <Card.Header>
+                <Card.Title>Activity Insights</Card.Title>
+                <Card.Description>Your personal patterns and habits</Card.Description>
+              </Card.Header>
+              <Card.Content className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                      <span className="text-sm">Work & Productivity</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">42%</span>
+                    <span className="text-sm font-medium">Most Active Day</span>
+                    <span className="text-sm text-muted-foreground">Wednesday</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full" />
-                      <span className="text-sm">Health & Fitness</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">28%</span>
+                    <span className="text-sm font-medium">Peak Productivity</span>
+                    <span className="text-sm text-muted-foreground">10 AM - 12 PM</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-purple-500 rounded-full" />
-                      <span className="text-sm">Learning & Growth</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">18%</span>
+                    <span className="text-sm font-medium">Avg. Daily Activities</span>
+                    <span className="text-sm text-muted-foreground">94</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-orange-500 rounded-full" />
-                      <span className="text-sm">Social & Relationships</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">12%</span>
+                    <span className="text-sm font-medium">Streak</span>
+                    <span className="text-sm text-muted-foreground">12 days 🔥</span>
                   </div>
                 </div>
-              </div>
-            </Card.Content>
-          </Card>
+
+                <div className="pt-4 border-t">
+                  <h4 className="text-sm font-medium mb-3">Top Categories</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                        <span className="text-sm">Work & Productivity</span>
+                      </div>
+                      <span className="text-sm text-muted-foreground">42%</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full" />
+                        <span className="text-sm">Health & Fitness</span>
+                      </div>
+                      <span className="text-sm text-muted-foreground">28%</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-purple-500 rounded-full" />
+                        <span className="text-sm">Learning & Growth</span>
+                      </div>
+                      <span className="text-sm text-muted-foreground">18%</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-orange-500 rounded-full" />
+                        <span className="text-sm">Social & Relationships</span>
+                      </div>
+                      <span className="text-sm text-muted-foreground">12%</span>
+                    </div>
+                  </div>
+                </div>
+              </Card.Content>
+            </Card>
+          </div>
         </div>
       </div>
-    </main>
+    </>
   );
 }

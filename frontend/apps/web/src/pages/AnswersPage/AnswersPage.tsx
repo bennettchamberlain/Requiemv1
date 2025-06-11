@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Button, Card, Table } from '@ci/shadcn';
+import { Portal, usePageTitle } from '@ci/common';
+import { Breadcrumb, Button, Card, Table } from '@ci/shadcn';
 import { AlertCircle, RefreshCw } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
@@ -16,7 +17,10 @@ interface Answer {
 }
 
 export function AnswersPage() {
+  usePageTitle('Answers - Companion Intelligence');
+
   const [{ authToken }] = useAuth();
+
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +104,21 @@ export function AnswersPage() {
   };
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Answers</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
       <Card className="w-full">
         <Card.Header className="flex flex-row items-center justify-between">
           <Card.Title className="text-2xl">Answers</Card.Title>
@@ -168,6 +186,6 @@ export function AnswersPage() {
           )}
         </Card.Content>
       </Card>
-    </div>
+    </>
   );
 }

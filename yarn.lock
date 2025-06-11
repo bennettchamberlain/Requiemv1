@@ -1079,7 +1079,9 @@ __metadata:
   resolution: "@ci/common@workspace:frontend/packages/common"
   dependencies:
     "@types/react": "npm:^19.1.5"
+    "@types/react-dom": "npm:^19.1.5"
     react: "npm:^19.1.0"
+    react-dom: "npm:^19.1.0"
   languageName: unknown
   linkType: soft
 
