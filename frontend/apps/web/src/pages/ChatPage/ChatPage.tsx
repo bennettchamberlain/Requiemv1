@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Portal } from '@ci/common';
+import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Sidebar } from '@ci/shadcn';
 import { MessageSquare, Plus, Trash2 } from '@ci/shadcn/icons';
 
@@ -315,6 +315,8 @@ function ChatSidebar({
 }
 
 export function ChatPage() {
+  usePageTitle('Chat - Companion Intelligence');
+
   const chatApi = useChatAPI();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
