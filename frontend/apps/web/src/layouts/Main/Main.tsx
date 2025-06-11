@@ -15,6 +15,8 @@ import {
   Settings2,
 } from '@ci/shadcn/icons';
 
+import logo from '../../assets/logo.png';
+
 import { NavSection } from './NavSection';
 import { NavUser } from './NavUser';
 
@@ -83,7 +85,12 @@ function SecondaryNavigation() {
   return (
     <>
       <Sidebar collapsible="icon">
-        <Sidebar.Header>{open ? 'Companion Intelligence' : 'CI'}</Sidebar.Header>
+        <Sidebar.Header>
+          <div className="flex flex-row items-center gap-2">
+            <img src={logo} alt="Logo" className="w-8 h-auto" />
+            {open && <div>Companion Intelligence</div>}
+          </div>
+        </Sidebar.Header>
         <Sidebar.Content className="gap-0">
           <NavSection title="Intelligence" items={INTELLIGENCE} />
           <NavSection title="Memory" items={MEMORY} />
