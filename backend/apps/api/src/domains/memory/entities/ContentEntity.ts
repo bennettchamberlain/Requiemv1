@@ -10,11 +10,13 @@ import {
   JoinTable,
 } from 'typeorm';
 
+import { Indexable } from '@ci/common/decorators';
 import { UserEntity } from '@ci/domains/user';
 
 import { EventEntity } from './EventEntity';
 import { TagEntity } from './TagEntity';
 
+@Indexable('content', ['text'])
 @Entity({ name: 'content' })
 export class ContentEntity {
   @PrimaryColumn('uuid')

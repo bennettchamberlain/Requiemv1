@@ -1,11 +1,21 @@
-import { Entity, Column, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  CreateDateColumn,
+  JoinColumn,
+  ManyToOne,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
+import { Indexable } from '@ci/common/decorators';
 import { UserEntity } from '@ci/domains/user';
 
 import { Answer } from '../types';
 
 import { QuestionEntity } from './QuestionEntity';
 
+@Indexable('answer', ['give_answer_1'])
 @Entity('answers')
 export class AnswerEntity {
   @PrimaryColumn()
@@ -37,10 +47,10 @@ export class AnswerEntity {
   @JoinColumn({ name: 'question_id' })
   question?: QuestionEntity;
 
-  @Column({ type: 'timestamptz' })
+  @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
-  @Column({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
 
   toAnswer() {

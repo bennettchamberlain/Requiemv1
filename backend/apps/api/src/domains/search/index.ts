@@ -12,3 +12,12 @@ import { EmbeddingService } from './services/EmbeddingService';
   exports: [EmbeddingService],
 })
 export class EmbeddingModule {}
+
+// Entities
+export { EmbeddingEntity };
+
+// Services
+export { EmbeddingService };
+
+// Types
+export type {} from './types';

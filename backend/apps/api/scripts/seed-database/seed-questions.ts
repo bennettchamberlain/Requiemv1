@@ -27,12 +27,7 @@ export async function seedQuestions(db: DataSource, filePath: string) {
         id: record.id,
         category: record.category,
         text: record.question_string,
-        example_answer_1: record.example_answer_1,
-        user: {
-          id: record.user_id,
-        },
-        created_at: now,
-        updated_at: now,
+        example_answer_1: record.example_answer_1
       });
     }
   });

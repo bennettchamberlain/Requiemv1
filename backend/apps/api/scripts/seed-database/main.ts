@@ -16,6 +16,7 @@ import {
 } from '@ci/domains/memory';
 import { UserEntity } from '@ci/domains/user';
 
+import { seedAnswers } from './seed-answers';
 import { seedContacts } from './seed-contacts';
 import { seedContent } from './seed-content';
 import { seedEvents } from './seed-events';
@@ -59,6 +60,9 @@ const logger = new Logger(path.basename(__filename));
   try {
     await db.initialize();
 
+    // Intelligence Data
+    await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
+
     // John Smith
     await seedUsers(db, path.resolve(dataDir, './js1-data/js1-users.csv'));
     await seedEvents(db, path.resolve(dataDir, './js1-data/js1-events.csv'));
@@ -68,9 +72,7 @@ const logger = new Logger(path.basename(__filename));
     await seedThings(db, path.resolve(dataDir, './js1-data/js1-things.csv'));
     await seedPlaces(db, path.resolve(dataDir, './js1-data/js1-places.csv'));
     await seedLocations(db, path.resolve(dataDir, './js1-data/js1-locations.csv'));
-
-    // Intelligence Data
-    await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
+    await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
 
     process.exit(0);
   } catch (err: unknown) {
