@@ -2,15 +2,18 @@ import { useState } from 'react';
 import { Button, Card, Input, Table } from '@ci/shadcn';
 import { AlertCircle, Search, Loader2 } from '@ci/shadcn/icons';
 
+import { useAuth } from '@/hooks';
+
 interface SearchResult {
-  id: number;
-  source_id: string;
-  source_label: string;
-  distance: number;
-  raw_input?: string;
+  text: string;
+  type: string;
+  id: string;
+  path: string;
 }
 
 export function SearchPage() {
+  const [{ authToken }] = useAuth();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,24 +32,17 @@ export function SearchPage() {
       setError(null);
       setHasSearched(true);
 
-      // Get the token from localStorage
-      const token = localStorage.getItem('feathers-jwt');
-
-      if (!token) {
-        console.error('SearchPage: No authentication token found');
-        throw new Error('Authentication token not found');
-      }
-
       console.log('SearchPage: Making API request to search service');
-      const response = await fetch(
-        `http://dev.companionintelligence.com/api/search?query=${encodeURIComponent(searchQuery)}&limit=20`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
+      const response = await fetch(`http://dev.companionintelligence.com/api/embeddings/search`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
         },
-      );
+        body: JSON.stringify({
+          input: searchQuery,
+        }),
+      });
 
       if (!response.ok) {
         console.error(
@@ -66,24 +62,30 @@ export function SearchPage() {
       }
 
       console.log('SearchPage: API request successful, parsing response');
+
       const data = await response.json();
 
       // Handle both array response and paginated response
       let resultsData: SearchResult[] = [];
+
       if (Array.isArray(data)) {
         resultsData = data;
       } else if (data.data && Array.isArray(data.data)) {
         resultsData = data.data;
       } else {
         console.error('SearchPage: Invalid response format', data);
+
         throw new Error('Invalid response format: Expected an array of search results');
       }
 
       console.log(`SearchPage: Successfully found ${resultsData.length} results`, resultsData);
+
       setSearchResults(resultsData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+
       console.error('SearchPage: Error in performSearch():', errorMessage, err);
+
       setError(errorMessage);
     } finally {
       console.log('SearchPage: Search operation completed');
@@ -95,22 +97,6 @@ export function SearchPage() {
     if (e.key === 'Enter') {
       performSearch();
     }
-  };
-
-  const truncateText = (text: string | undefined, maxLength: number = 100) => {
-    if (!text) return 'N/A';
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-  };
-
-  const formatDistance = (distance: number) => {
-    return distance.toFixed(4);
-  };
-
-  const getSourceTypeColor = (sourceLabel: string) => {
-    if (sourceLabel.startsWith('content.')) return 'text-blue-600';
-    if (sourceLabel.startsWith('questions.')) return 'text-green-600';
-    return 'text-gray-600';
   };
 
   return (
@@ -168,31 +154,19 @@ export function SearchPage() {
                   <Table>
                     <Table.Header>
                       <Table.Row>
-                        <Table.Head className="w-[100px]">Distance</Table.Head>
-                        <Table.Head className="w-[150px]">Source</Table.Head>
+                        <Table.Head>Type</Table.Head>
+                        <Table.Head>ID</Table.Head>
+                        <Table.Head>Data Path</Table.Head>
                         <Table.Head>Content</Table.Head>
-                        <Table.Head className="w-[150px]">Source ID</Table.Head>
                       </Table.Row>
                     </Table.Header>
                     <Table.Body>
                       {searchResults.map((result) => (
                         <Table.Row key={result.id}>
-                          <Table.Cell className="font-mono text-sm">
-                            {formatDistance(result.distance)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            <span
-                              className={`text-sm font-medium ${getSourceTypeColor(result.source_label)}`}
-                            >
-                              {result.source_label}
-                            </span>
-                          </Table.Cell>
-                          <Table.Cell className="max-w-md">
-                            <p className="text-sm line-clamp-2">{truncateText(result.raw_input, 200)}</p>
-                          </Table.Cell>
-                          <Table.Cell className="font-mono text-xs">
-                            {result.source_id.substring(0, 8)}...
-                          </Table.Cell>
+                          <Table.Cell>{result.type}</Table.Cell>
+                          <Table.Cell>{result.id}</Table.Cell>
+                          <Table.Cell className="max-w-md">{result.path}</Table.Cell>
+                          <Table.Cell className="font-mono text-xs">{result.text}</Table.Cell>
                         </Table.Row>
                       ))}
                     </Table.Body>
