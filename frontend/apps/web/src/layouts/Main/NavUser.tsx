@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Avatar, DropdownMenu, Sidebar, useSidebar } from '@ci/shadcn';
 import { BadgeCheck, Bell, ChevronsUpDown, CreditCard, LogOut, Settings2, Sparkles } from '@ci/shadcn/icons';
 
@@ -7,11 +8,27 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const [{ user }, { logout }] = useAuth();
 
-  const currentUser = {
-    name: user?.name || user?.email || 'User',
-    email: user?.email || '',
-    avatar: '/avatars/shadcn.jpg',
-  };
+  const currentUser = useMemo(
+    () => ({
+      name: user?.name || user?.email || 'User',
+      email: user?.email || '',
+      avatar: '/avatars/shadcn.jpg',
+    }),
+    ['user'],
+  );
+
+  const initials = useMemo(() => {
+    const parts = currentUser.name.trim().split(/\s+/);
+
+    if (parts.length === 0) {
+      return 'JD';
+    }
+
+    const first = parts[0][0] ?? '';
+    const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+
+    return (first + last).toUpperCase();
+  }, [currentUser]);
 
   return (
     <Sidebar.Menu>
@@ -24,7 +41,7 @@ export function NavUser() {
             >
               <Avatar className="h-8 w-8 rounded-lg">
                 <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
-                <Avatar.Fallback className="rounded-lg">CN</Avatar.Fallback>
+                <Avatar.Fallback className="rounded-lg">{initials}</Avatar.Fallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{currentUser.name}</span>
@@ -43,7 +60,7 @@ export function NavUser() {
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
                   <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
-                  <Avatar.Fallback className="rounded-lg">CN</Avatar.Fallback>
+                  <Avatar.Fallback className="rounded-lg">{initials}</Avatar.Fallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{currentUser.name}</span>
