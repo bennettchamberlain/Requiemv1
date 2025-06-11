@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Button, Card, Input, Table } from '@ci/shadcn';
+import { Portal, usePageTitle } from '@ci/common';
+import { Breadcrumb, Button, Card, Input, Table } from '@ci/shadcn';
 import { AlertCircle, Search, Loader2 } from '@ci/shadcn/icons';
 
 interface SearchResult {
@@ -11,6 +12,8 @@ interface SearchResult {
 }
 
 export function SearchPage() {
+  usePageTitle('Search - Companion Intelligence');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -114,12 +117,22 @@ export function SearchPage() {
   };
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Search</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
       <Card className="w-full">
-        <Card.Header>
-          <Card.Title className="text-2xl">Semantic Search</Card.Title>
-          <Card.Description>Search through your knowledge base using natural language</Card.Description>
-        </Card.Header>
         <Card.Content className="space-y-6">
           {/* Search Input */}
           <div className="flex gap-2">
@@ -221,6 +234,6 @@ export function SearchPage() {
           )}
         </Card.Content>
       </Card>
-    </div>
+    </>
   );
 }
