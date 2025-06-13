@@ -17,6 +17,7 @@ const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const QuestionsPage = lazy(() => import('@/pages/QuestionsPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
+const ConnectorsPage = lazy(() => import('@/pages/ConnectorsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
@@ -97,6 +98,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <FilesGalleryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/connectors"
+          element={
+            <ProtectedRoute>
+              <ConnectorsPage />
             </ProtectedRoute>
           }
         />
