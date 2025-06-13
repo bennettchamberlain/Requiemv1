@@ -19,6 +19,7 @@ import { JobsModule } from '@ci/domains/jobs';
 import { MemoryModule } from './domains/memory';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
+import { ServiceProviders } from '@ci/domains/service-providers'
 
 @Module({
   imports: [
