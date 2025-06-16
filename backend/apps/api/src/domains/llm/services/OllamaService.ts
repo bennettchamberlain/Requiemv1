@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import ollama, { type GenerateResponse } from 'ollama';
 
 import { RequestContext } from '@ci/common/types';
-
-import type { OllamaChunk } from '../types';
 
 const PROMPT_MODEL = 'gemma3:1b';
 
@@ -15,81 +14,35 @@ interface PromptOptions {
 export class OllamaService {
   constructor() {}
 
-  async *prompt(
+  async *promptStream(
     context: RequestContext,
     prompt: string,
     options?: PromptOptions,
-  ): AsyncGenerator<OllamaChunk> {
+  ): AsyncGenerator<GenerateResponse> {
     const resolvedOptions = options ?? ({} as PromptOptions);
 
     const { model = PROMPT_MODEL, signal } = resolvedOptions;
 
-    const ollamaRes = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: model,
-        prompt: prompt,
-        stream: true,
-      }),
-      signal: signal,
+    const iterator = await ollama.generate({ model, prompt, stream: true });
+
+    signal?.addEventListener('abort', () => {
+      iterator.abort();
     });
 
-    if (ollamaRes.body == null) {
-      return null;
-    }
-
-    const reader = ollamaRes.body.getReader();
-
-    for await (const chunk of ndjsonStream<OllamaChunk>(reader)) {
+    for await (const chunk of iterator) {
       yield chunk;
     }
   }
-}
 
-async function* ndjsonStream<T>(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  decoder = new TextDecoder(),
-) {
-  let buffer = '';
+  prompt(
+    context: RequestContext,
+    prompt: string,
+    options?: Omit<PromptOptions, 'signal'>,
+  ): Promise<GenerateResponse> {
+    const resolvedOptions = options ?? ({} as PromptOptions);
 
-  while (true) {
-    const { value, done } = await reader.read();
+    const { model = PROMPT_MODEL } = resolvedOptions;
 
-    if (done) {
-      break;
-    }
-
-    if (value) {
-      buffer += decoder.decode(value, { stream: true });
-
-      let lines = buffer.split('\n');
-
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        if (!line.trim()) {
-          continue;
-        }
-
-        try {
-          yield JSON.parse(line) as T;
-        } catch (err) {
-          // Optionally: log or ignore
-          // console.error('JSON parse error on line:', line);
-        }
-      }
-    }
-  }
-
-  // Flush last buffer
-  if (buffer.trim()) {
-    try {
-      yield JSON.parse(buffer) as T;
-    } catch (err) {
-      // console.error('JSON parse error on buffer:', buffer);
-    }
+    return ollama.generate({ model, prompt });
   }
 }

@@ -21,7 +21,7 @@ export class OllamaController {
 
   constructor(private readonly ollamaService: OllamaService) {}
 
-  // @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'))
   @Post('prompt')
   @HttpCode(200)
   async prompt(
@@ -41,7 +41,7 @@ export class OllamaController {
       }
     });
 
-    const stream = this.ollamaService.prompt(context, input.prompt, {
+    const stream = this.ollamaService.promptStream(context, input.prompt, {
       signal: abortController.signal,
     });
 
