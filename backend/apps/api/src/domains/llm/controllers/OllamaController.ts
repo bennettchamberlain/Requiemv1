@@ -1,7 +1,6 @@
 import { Body, Controller, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
-import { TextDecoder } from 'util';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -9,11 +8,8 @@ import { ValidationPipe } from '@ci/common/pipes';
 import type { RequestContext } from '@ci/common/types';
 
 import { OllamaService } from '../services/OllamaService';
-import { OllamaChunk, PromptInput } from '../types';
-import { ndjsonStream } from '../utils';
+import { PromptInput } from '../types';
 import { LoggerService } from '@ci/common/services';
-
-const PROMPT_MODEL = 'gemma3:1b';
 
 const promptSchema = z.object({
   prompt: z.string(),
@@ -33,6 +29,10 @@ export class OllamaController {
     @Body(new ValidationPipe(promptSchema)) input: PromptInput,
     @Res() res: Response,
   ) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
     const abortController = new AbortController();
 
     res.on('close', () => {
@@ -41,31 +41,12 @@ export class OllamaController {
       }
     });
 
-    const ollamaRes = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: PROMPT_MODEL,
-        prompt: input.prompt,
-        stream: true,
-      }),
+    const stream = this.ollamaService.prompt(context, input.prompt, {
       signal: abortController.signal,
     });
 
-    if (ollamaRes.body == null) {
-      return res.sendStatus(204);
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    const reader = ollamaRes.body.getReader();
-
     try {
-      for await (const chunk of ndjsonStream<OllamaChunk>(reader)) {
+      for await (const chunk of stream) {
         if (chunk.response) {
           res.write(chunk.response);
         }
