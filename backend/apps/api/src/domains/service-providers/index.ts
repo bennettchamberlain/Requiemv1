@@ -2,11 +2,12 @@ import { Module } from '@nestjs/common';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { ServiceProvidersController } from './controllers/service-providers-controller';
+import { ServiceProvidersController } from './controllers/ServiceProvidersController';
+import { ServiceProvidersService } from './services/ServiceProvidersService';
 
 @Module({
   imports: [EventsModule],
-  providers: [],
+  providers: [ServiceProvidersService],
   controllers: [ServiceProvidersController],
   exports: [],
 })
