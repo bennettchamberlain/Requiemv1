@@ -19,7 +19,7 @@ import { JobsModule } from '@ci/domains/jobs';
 import { MemoryModule } from './domains/memory';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
-import { ServiceProvidersModule } from '@ci/domains/service-providers'
+import { ConnectorsModule } from '@ci/domains/connectors'
 
 @Module({
   imports: [
@@ -31,14 +31,14 @@ import { ServiceProvidersModule } from '@ci/domains/service-providers'
     }),
     EventEmitterModule.forRoot(),
     AuthModule,
+    ConnectorsModule,
     EmbeddingModule,
     EventsModule,
     FilesModule,
     IntelligenceModule,
     JobsModule,
     MemoryModule,
-    UserModule,
-    ServiceProvidersModule
+    UserModule
   ],
   controllers: [],
   providers: [],
