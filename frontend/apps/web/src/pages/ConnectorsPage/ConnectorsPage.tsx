@@ -169,9 +169,10 @@ export function ConnectorsPage() {
     setConnectors(ConnectorsData);
   }
 
-  const connectorConfigure = (connector:Connector) => {
-    console.log("configure me",connector)
-    alert("configuring")
+  const connectorConfigure = async (connector:Connector) => {
+    const res = await fetch("/api/connectors");
+    const {url} = await res.json();
+    location.href = url
   }
 
   return (
