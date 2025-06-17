@@ -12,6 +12,7 @@
   },
   "packageManager": "yarn@4.9.1",
   "dependencies": {
+    "@ci/capture": "workspace:*",
     "@ci/common": "workspace:*",
     "@ci/shadcn": "workspace:*",
     "clsx": "^2.1.1",
