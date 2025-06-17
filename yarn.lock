@@ -1158,6 +1158,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@ci/capture@workspace:*, @ci/capture@workspace:frontend/packages/capture":
+  version: 0.0.0-use.local
+  resolution: "@ci/capture@workspace:frontend/packages/capture"
+  dependencies:
+    "@ci/common": "workspace:*"
+    "@ci/shadcn": "workspace:*"
+    "@types/react": "npm:^19.1.5"
+    "@types/react-dom": "npm:^19.1.5"
+    react: "npm:^19.1.0"
+    react-dom: "npm:^19.1.0"
+  languageName: unknown
+  linkType: soft
+
 "@ci/ci-server@workspace:.":
   version: 0.0.0-use.local
   resolution: "@ci/ci-server@workspace:."
