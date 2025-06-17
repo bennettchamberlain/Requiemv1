@@ -1295,6 +1295,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@ci/template@workspace:frontend/packages/template":
+  version: 0.0.0-use.local
+  resolution: "@ci/template@workspace:frontend/packages/template"
+  dependencies:
+    "@types/react": "npm:^19.1.5"
+    "@types/react-dom": "npm:^19.1.5"
+    react: "npm:^19.1.0"
+    react-dom: "npm:^19.1.0"
+  languageName: unknown
+  linkType: soft
+
 "@colors/colors@npm:1.5.0":
   version: 1.5.0
   resolution: "@colors/colors@npm:1.5.0"
