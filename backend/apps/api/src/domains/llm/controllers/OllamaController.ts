@@ -23,9 +23,9 @@ export class OllamaController {
   constructor(private readonly ollamaService: OllamaService) {}
 
   @UseGuards(AuthGuard('jwt'))
-  @Post('prompt')
+  @Post('generate')
   @HttpCode(200)
-  async prompt(
+  async generate(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(promptSchema)) input: PromptInput,
     @Res() res: Response,
@@ -42,7 +42,7 @@ export class OllamaController {
       }
     });
 
-    const stream = this.ollamaService.promptStream(context, input.prompt, {
+    const stream = this.ollamaService.generateStream(context, input.prompt, {
       signal: abortController.signal,
     });
 
@@ -119,7 +119,7 @@ export class OllamaController {
     }
   }
 
-  async getOllamaResponseMeta(chunk: GenerateResponse | ChatResponse) {
+  private getOllamaResponseMeta(chunk: GenerateResponse | ChatResponse) {
     return {
       model: chunk.model,
       totalDuration: chunk.total_duration ? chunk.total_duration / 1_000_000 : undefined,

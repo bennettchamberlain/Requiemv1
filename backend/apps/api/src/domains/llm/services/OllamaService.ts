@@ -14,7 +14,7 @@ interface PromptOptions {
 export class OllamaService {
   constructor() {}
 
-  async *promptStream(
+  async *generateStream(
     context: RequestContext,
     prompt: string,
     options?: PromptOptions,
@@ -38,7 +38,7 @@ export class OllamaService {
     }
   }
 
-  prompt(
+  generate(
     context: RequestContext,
     prompt: string,
     options?: Omit<PromptOptions, 'signal'>,
