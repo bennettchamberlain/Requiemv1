@@ -16,6 +16,7 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { JobsModule } from '@ci/domains/jobs';
+import { LLMModule } from './domains/llm';
 import { MemoryModule } from './domains/memory';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
@@ -35,6 +36,7 @@ import { UserModule } from '@ci/domains/user';
     FilesModule,
     IntelligenceModule,
     JobsModule,
+    LLMModule,
     MemoryModule,
     UserModule,
   ],
