@@ -1,12 +1,13 @@
 import { Suspense } from 'react';
 import { Outlet } from 'react-router-dom';
 import { LoadingPage, Portal } from '@ci/common';
-import { Separator, Sidebar, useSidebar } from '@ci/shadcn';
+import { Separator, Sidebar, Toaster, useSidebar } from '@ci/shadcn';
 import {
   BookA,
   BookImage,
   Bot,
   Brain,
+  Camera,
   ChartPie,
   Lightbulb,
   ListTodo,
@@ -58,6 +59,11 @@ const MEMORY = [
     name: 'Content',
     url: '/files',
     icon: BookImage,
+  },
+  {
+    name: 'Capture',
+    url: '/capture',
+    icon: Camera,
   },
 ];
 
@@ -112,6 +118,8 @@ export function Main() {
 
         <Sidebar.Inset>
           <Suspense fallback={<LoadingPage />}>
+            <Toaster />
+
             <div className="min-h-screen flex flex-col">
               <header className="flex flex-row items-center justify-between pl-2 pr-4 py-2 border-b">
                 <section className="flex flex-row items-center">
