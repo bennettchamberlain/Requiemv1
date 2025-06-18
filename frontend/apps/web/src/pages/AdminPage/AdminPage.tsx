@@ -15,7 +15,7 @@ import {
 
 import { useAuth } from '@/hooks';
 
-const API_BASE = 'http://dev.companionintelligence.com/api';
+const API_BASE = '/api';
 
 interface JobStatus {
   id: string;

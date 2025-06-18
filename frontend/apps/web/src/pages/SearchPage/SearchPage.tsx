@@ -35,7 +35,7 @@ export function SearchPage() {
       setHasSearched(true);
 
       console.log('SearchPage: Making API request to search service');
-      const response = await fetch(`http://dev.companionintelligence.com/api/embeddings/search`, {
+      const response = await fetch(`/api/embeddings/search`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${authToken}`,
