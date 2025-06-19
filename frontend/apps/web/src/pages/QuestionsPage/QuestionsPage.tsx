@@ -32,7 +32,7 @@ export function QuestionsPage() {
       }
 
       console.log('QuestionsPage: Making API request to http://dev.companionintelligence.com/api/questions');
-      const response = await fetch('http://dev.companionintelligence.com/api/questions', {
+      const response = await fetch('/api/questions', {
         headers: {
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',

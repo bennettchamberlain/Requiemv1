@@ -1161,6 +1161,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@ci/capture@workspace:*, @ci/capture@workspace:frontend/packages/capture":
+  version: 0.0.0-use.local
+  resolution: "@ci/capture@workspace:frontend/packages/capture"
+  dependencies:
+    "@ci/common": "workspace:*"
+    "@ci/shadcn": "workspace:*"
+    "@types/react": "npm:^19.1.5"
+    "@types/react-dom": "npm:^19.1.5"
+    react: "npm:^19.1.0"
+    react-dom: "npm:^19.1.0"
+  languageName: unknown
+  linkType: soft
+
 "@ci/ci-server@workspace:.":
   version: 0.0.0-use.local
   resolution: "@ci/ci-server@workspace:."
@@ -1195,6 +1208,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@ci/fe-web@workspace:frontend/apps/web"
   dependencies:
+    "@ci/capture": "workspace:*"
     "@ci/common": "workspace:*"
     "@ci/shadcn": "workspace:*"
     "@storybook/addon-a11y": "npm:^9.0.8"
@@ -1295,6 +1309,17 @@ __metadata:
     typescript: "npm:^5.8.3"
     vaul: "npm:^1.1.2"
     zod: "npm:^3.25.56"
+  languageName: unknown
+  linkType: soft
+
+"@ci/template@workspace:frontend/packages/template":
+  version: 0.0.0-use.local
+  resolution: "@ci/template@workspace:frontend/packages/template"
+  dependencies:
+    "@types/react": "npm:^19.1.5"
+    "@types/react-dom": "npm:^19.1.5"
+    react: "npm:^19.1.0"
+    react-dom: "npm:^19.1.0"
   languageName: unknown
   linkType: soft
 

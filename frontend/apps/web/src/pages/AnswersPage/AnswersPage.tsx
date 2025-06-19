@@ -37,7 +37,7 @@ export function AnswersPage() {
       }
 
       console.log('AnswersPage: Making API request to http://dev.companionintelligence.com/api/answers');
-      const response = await fetch('http://dev.companionintelligence.com/api/answers', {
+      const response = await fetch('/api/answers', {
         headers: {
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
