@@ -6,7 +6,6 @@ import { AuthProvider } from '@/hooks';
 import { Main as MainLayout } from '@/layouts';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
-import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
 const AdminPage = lazy(() => import('@/pages/AdminPage'));
@@ -33,7 +32,6 @@ function AppRoutes() {
       {/* No navigation for these pages */}
       <Route path="/" element={<SplashPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
 
       {/* Main layout routes */}
       <Route element={<MainLayout />}>
