@@ -22,13 +22,17 @@ export async function seedUsers(db: DataSource, filePath: string) {
 
   const records = readCsv<CsvRecord>(filePath);
 
+  if (process.env.AUTH_DEFAULT_USER_PASSWORD == null) {
+    throw new Error("Default user password not specified");
+  }
+
   await db.transaction(async (manager) => {
     for (const record of records) {
       await manager.save(UserEntity, {
         id: record.id,
         name: `${record.first_name} ${record.last_name}`,
         email: record.email,
-        password: await bcrypt.hash('companion', config.auth.local.saltRounds),
+        password: await bcrypt.hash(process.env.AUTH_DEFAULT_USER_PASSWORD!, config.auth.local.saltRounds),
         created_at: record.created_at,
         updated_at: record.updated_at,
       });

@@ -19,7 +19,11 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   private logger = new LoggerService(EventService.name);
 
   private boss = new PgBoss({
-    connectionString: config.db.url,
+    host: config.db.host,
+    port: config.db.port,
+    database: config.db.database,
+    user: config.db.username,
+    password: config.db.password,
     schema: 'pgboss',
     // Optional PgBoss settings
     retryLimit: 3,

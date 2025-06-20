@@ -14,7 +14,11 @@ const logger = new Logger(path.basename(__filename));
 (async function () {
   const db = new DataSource({
     type: config.db.type,
-    url: config.db.url,
+    host: config.db.host,
+    port: config.db.port,
+    database: config.db.database,
+    username: config.db.username,
+    password: config.db.password,
     entities: [
       AnswerEntity,
       ContentEntity,

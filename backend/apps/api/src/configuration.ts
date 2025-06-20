@@ -1,3 +1,5 @@
+import './bootstrap';
+
 import config from 'config';
 
 import { z } from 'zod';
@@ -23,7 +25,11 @@ export const ConfigSchema = z.object({
   }),
   db: z.object({
     type: z.literal('postgres'), // restrict to 'postgres' (or z.string() for other DBs)
-    url: z.string(),
+    host: z.string(),
+    port: z.number(),
+    database: z.string(),
+    username: z.string(),
+    password: z.string(),
     logging: z.union([z.literal(false), z.array(z.enum(['query', 'error']))]),
   }),
   staticfiles: z.object({
