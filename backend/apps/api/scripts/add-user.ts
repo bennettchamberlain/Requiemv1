@@ -1,7 +1,7 @@
 import { input, password as passwordInput } from '@inquirer/prompts';
 import bcrypt from 'bcrypt';
 import { DataSource } from 'typeorm';
-import { v7 as uuidv7 } from 'uuid';
+import { v7 as uuid7 } from 'uuid';
 
 import config from '@ci/configuration';
 import { UserEntity } from '@ci/domains/user';
@@ -33,16 +33,31 @@ import { UserEntity } from '@ci/domains/user';
 
   const password = await passwordInput({
     message: 'Your password:',
-    mask: '*',
+    mask: '·',
     validate: (value) => value.length >= 8 || 'Must be at least 8 characters',
   });
 
-  await db.transaction(async (manager) => {
-    await manager.save(UserEntity, {
-      id: uuidv7(),
-      name: name,
-      email: email,
-      password: await bcrypt.hash(password, config.auth.local.saltRounds),
+  let exitCode = 0;
+
+  try {
+    const id = uuid7();
+
+    await db.transaction(async (manager) => {
+      await manager.save(UserEntity, {
+        id,
+        name,
+        email,
+        password: await bcrypt.hash(password, config.auth.local.saltRounds),
+      });
     });
-  });
+
+    console.log(`\nUser successfully created: ${id}`);
+  } catch (err) {
+    console.error('\nFailed to create user', (err as Error).message);
+    exitCode = 1;
+  }
+
+  await db.destroy();
+
+  process.exit(exitCode);
 })();
