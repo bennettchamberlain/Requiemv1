@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import PgBoss from 'pg-boss';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { LoggerService } from '@ci/common/services';
 import { type EventPayloads } from '../event-registry';
 
@@ -19,7 +19,11 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   private logger = new LoggerService(EventService.name);
 
   private boss = new PgBoss({
-    connectionString: config.db.url,
+    host: config.db.host,
+    port: config.db.port,
+    database: config.db.database,
+    user: config.db.username,
+    password: config.db.password,
     schema: 'pgboss',
     // Optional PgBoss settings
     retryLimit: 3,

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 
-import { EventService, Queue } from './services/EventService';
+import { EventService, Queues } from './services/EventService';
 
 @Module({
   imports: [],
@@ -19,7 +19,7 @@ export { EventService };
 // Types
 export type {} from './types';
 export { Events, type EventPayloads } from './event-registry';
-export { Queue };
+export { Queues };
 
 // Misc
 export { OnEvent } from './decorators/on-event';

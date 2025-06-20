@@ -2,7 +2,7 @@ import path from 'path';
 import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
 import {
   ContactEntity,
@@ -34,7 +34,11 @@ const logger = new Logger(path.basename(__filename));
 
   const db = new DataSource({
     type: config.db.type,
-    url: config.db.url,
+    host: config.db.host,
+    port: config.db.port,
+    database: config.db.database,
+    username: config.db.username,
+    password: config.db.password,
     entities: [
       // Memory
       ContactEntity,

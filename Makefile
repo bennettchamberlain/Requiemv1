@@ -1,10 +1,14 @@
-.PHONY: help dev index init install migrate seed
+.PHONY: help build dbclear dev index infra init install local migrate seed staging useradd userpw
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
 GREEN=\033[0;32m
 YELLOW=\033[0;33m
 RESET=\033[0m
+
+export API_REPO ?= ci/api
+export WEBSERVER_REPO ?= ci/nginx
+export TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 
 define BANNER
    ______                                  _
@@ -27,12 +31,42 @@ help: ## List make commands with their descriptions
 	@printf "$$BANNER\n\n"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-dev:
+build: ## Build the application
+	@printf "🧱 Building the application...\n\n"
+
+	@printf "Compiling API...\n\n"
+	@cd backend/apps/api && yarn clean && yarn build
+	@printf "\nAPI successfully compiled.\n"
+
+	@printf "\nCompiling web frontend...\n\n"
+	@cd frontend/apps/web && yarn clean && yarn build
+	@printf "\nWeb frontend successfully compiled.\n"
+
+	@printf "\nBuilding API Docker image...\n\n"
+	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
+	@printf "\nAPI Docker image successfully built.\n"
+
+	@printf "\nBuilding webserver Docker image...\n\n"
+	@docker build -f docker/webserver/Dockerfile -t $(WEBSERVER_REPO):latest .
+	@printf "\nWebserver Docker image successfully built.\n"
+
+	@printf "\nApplication successfully built.\n"
+
+infra: ## Boot the local infrastructure
+	@printf "🐳 Starting Docker dependencies...\n\n"
+	@docker compose --profile infra up -d
+	@printf "\nDocker dependencies successfully started.\n"
+
+dbclear: ## Clear the PostgreSQL database and start from scratch
+	@printf "🧨 Clearing PostgreSQL database...\n\n"
+	@cd backend/apps/api && yarn db:clear
+	@printf "\nDatabase successfully cleared.\n"
+
+dev: ## Boot the application
 	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
 
-	@printf "🐳 Starting Docker dependencies...\n\n"
-	@docker compose --profile local up -d
-	@printf "\n"
+	$(MAKE) infra
+	$(MAKE) local
 
 	@SESSION="companion"; \
 	BACKEND_DIR="backend/apps/api"; \
@@ -57,7 +91,7 @@ dev:
 
 index: ## Generate vector embeddings for indexable content
 	@printf "🗂 Indexing database...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings/main.ts
+	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings.ts
 	@printf "\nDatabase successfully indexed.\n"
 
 init: ## Initialize repository after checkout
@@ -130,6 +164,12 @@ install: ## Install project dependencies
 	@yarn install
 	@printf "\nDependencies successfully installed.\n"
 
+local: ## Run the local dependencies from Docker images
+	@printf "⌨️ Starting the local services...\n\n"
+	@docker compose --profile staging down
+	@docker compose --profile local up -d
+	@printf "\nLocal services successfully started.\n"
+
 migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
 	@cd backend/apps/api && yarn migrate
@@ -139,3 +179,17 @@ seed: ## Seed backend database
 	@printf "🌱 Seeding database...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
 	@printf "\nDatabase successfully seeded.\n"
+
+staging: ## Run the staging server from Docker images
+	@printf "🎭 Starting the staging services...\n\n"
+	@docker compose --profile local down
+	@docker compose --profile staging up -d
+	@printf "\nStaging services successfully started.\n"
+
+useradd: ## Add a user to the PostgreSQL database
+	@printf "👤 Adding user...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/add-user.ts
+
+userpw: ## Change a user's password
+	@printf "🔑 Changing user password...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/change-password.ts

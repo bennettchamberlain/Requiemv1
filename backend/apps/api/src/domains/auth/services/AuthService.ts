@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
 import { SessionService } from '../services/SessionService';

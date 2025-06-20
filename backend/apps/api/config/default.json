@@ -1,25 +1,32 @@
 {
   "host": "127.0.0.1",
   "port": 3030,
+  "logging": {
+    "level": "debug"
+  },
   "auth": {
     "local": {
       "saltRounds": 10
     },
     "jwt": {
-      "authTokenSecret": "CHANGE_ME_SOON",
+      "authTokenSecret": "AUTH_TOKEN_SECRET",
       "authTokenExpiration": "5m",
-      "refreshTokenSecret": "CHANGE_ME_SOON_ALSO",
+      "refreshTokenSecret": "AUTH_REFRESH_TOKEN_SECRET",
       "refreshTokenExpiration": "7d"
     },
     "session": {
       "saltRounds": 4,
-      "fieldPepper": "CHANGE_ME_SOON_ALSO_ALSO",
+      "fieldPepper": "AUTH_SESSION_PEPPER",
       "duration": "7d"
     }
   },
   "db": {
     "type": "postgres",
-    "url": "postgres://companion_intel:comp4nion_1ntel_ftw!@127.0.0.1:5432/companion_intel?sslmode=disable",
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "companion_intel",
+    "username": "POSTGRES_USERNAME",
+    "password": "POSTGRES_PASSWORD",
     "logging": ["query", "error"]
   },
   "staticfiles": {
@@ -29,8 +36,8 @@
     "auth": {
       "signatureUrl": "http://minio:9000",
       "signatureTTL": 60,
-      "accessKeyId": "minioadmin",
-      "secretAccessKey": "minioadmin"
+      "accessKeyId": "S3_ACCESS_KEY_ID",
+      "secretAccessKey": "S3_SECRET_ACCESS_KEY"
     }
   }
 }
