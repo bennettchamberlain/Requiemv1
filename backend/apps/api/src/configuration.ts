@@ -7,6 +7,9 @@ import { z } from 'zod';
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
+  logging: z.object({
+    level: z.string(),
+  }),
   auth: z.object({
     local: z.object({
       saltRounds: z.number(),
