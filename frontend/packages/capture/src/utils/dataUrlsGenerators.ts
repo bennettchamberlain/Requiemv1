@@ -47,7 +47,7 @@ export function getVideoPreviewDataURL(file: File): Promise<string> {
     const video = document.createElement('video');
     let objectURL: string;
 
-    video.addEventListener('error', (event) => {
+    video.addEventListener('error', () => {
       if (objectURL) {
         URL.revokeObjectURL(objectURL);
       }
