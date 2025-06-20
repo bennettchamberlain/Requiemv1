@@ -1,12 +1,26 @@
 {
-  "extends": "../../../tsconfig.json",
   "compilerOptions": {
+    "target": "ES2020",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "jsx": "react-jsx",
     "strict": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "noEmit": true,
+
+    "esModuleInterop": true,
     "skipLibCheck": true,
-    "noEmit": true
+
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "jsx": "react-jsx"
   },
   "include": ["src", "index.ts"]
 }
