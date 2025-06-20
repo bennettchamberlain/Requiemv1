@@ -16,7 +16,7 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra", "local", "staging" ]
+    profiles: [ "all", "infra" ]
 
   minio:
     image: minio/minio
@@ -31,7 +31,7 @@ services:
     networks:
       - web
     command: server /data
-    profiles: [ "all", "infra", "local", "staging" ]
+    profiles: [ "all", "infra" ]
 
   webserver:
     image: nginx:stable

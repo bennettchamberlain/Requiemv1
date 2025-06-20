@@ -1,4 +1,4 @@
-.PHONY: help build dbclear dev index infra init install migrate seed staging useradd userpw
+.PHONY: help build dbclear dev index infra init install local migrate seed staging useradd userpw
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -66,6 +66,7 @@ dev: ## Boot the application
 	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
 
 	$(MAKE) infra
+	$(MAKE) local
 
 	@SESSION="companion"; \
 	BACKEND_DIR="backend/apps/api"; \
@@ -163,6 +164,12 @@ install: ## Install project dependencies
 	@yarn install
 	@printf "\nDependencies successfully installed.\n"
 
+local: ## Run the local dependencies from Docker images
+	@printf "⌨️ Starting the local services...\n\n"
+	@docker compose --profile staging down
+	@docker compose --profile local up -d
+	@printf "\nLocal services successfully started.\n"
+
 migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
 	@cd backend/apps/api && yarn migrate
@@ -175,6 +182,7 @@ seed: ## Seed backend database
 
 staging: ## Run the staging server from Docker images
 	@printf "🎭 Starting the staging services...\n\n"
+	@docker compose --profile local down
 	@docker compose --profile staging up -d
 	@printf "\nStaging services successfully started.\n"
 
