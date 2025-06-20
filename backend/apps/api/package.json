@@ -12,6 +12,7 @@
     "migrate:up": "yarn migrate",
     "migrate:down": "yarn dbmate down",
     "migrate:make": "yarn dbmate new",
+    "db:clear": "yarn dbmate --execute-file ./db/postgres/scripts/drop_all_pg_data.sql"
   },
   "packageManager": "yarn@4.9.1",
   "dependencies": {
