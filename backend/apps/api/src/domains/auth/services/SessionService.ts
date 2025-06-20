@@ -6,7 +6,7 @@ import parseDuration from 'parse-duration';
 import { MoreThan, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 
 import { SessionEntity } from '../entities/SessionEntity';
 import { CreateSessionDto, RotateSessionDto } from '../types';

@@ -3,7 +3,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { z } from 'zod';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { RequestWithContext } from '@ci/common/types';
 import { UserService } from '@ci/domains/user';
 

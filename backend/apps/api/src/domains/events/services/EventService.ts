@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import PgBoss from 'pg-boss';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { LoggerService } from '@ci/common/services';
 import { type EventPayloads } from '../event-registry';
 

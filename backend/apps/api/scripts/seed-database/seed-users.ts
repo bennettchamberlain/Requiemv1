@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import bcrypt from 'bcrypt';
 import type { DataSource } from 'typeorm';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { UserEntity } from '@ci/domains/user';
 
 import { readCsv } from './utils';

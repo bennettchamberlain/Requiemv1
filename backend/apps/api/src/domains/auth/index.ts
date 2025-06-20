@@ -3,7 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { UserModule } from '@ci/domains/user';
 
 import { SessionController } from './controllers/SessionController';

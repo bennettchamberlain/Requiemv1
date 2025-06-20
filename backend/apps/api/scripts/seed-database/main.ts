@@ -2,7 +2,7 @@ import path from 'path';
 import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
 import {
   ContactEntity,

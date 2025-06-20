@@ -57,7 +57,7 @@ dev:
 
 index: ## Generate vector embeddings for indexable content
 	@printf "🗂 Indexing database...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings/main.ts
+	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings.ts
 	@printf "\nDatabase successfully indexed.\n"
 
 init: ## Initialize repository after checkout
