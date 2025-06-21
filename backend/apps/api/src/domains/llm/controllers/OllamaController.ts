@@ -1,26 +1,37 @@
-import { Body, Controller, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, NotFoundException, Post, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
-import { ChatResponse, GenerateResponse } from 'ollama';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 
+import { MessageService } from '../services/MessageService';
 import { OllamaService } from '../services/OllamaService';
-import { PromptInput } from '../types';
+import { ThreadService } from '../services/ThreadService';
+import type { PromptInput } from '../types';
+
+const DEFAULT_MODEL = 'gemma3:1b';
 
 const promptSchema = z.object({
   prompt: z.string(),
+  model: z.optional(z.string()),
+  threadId: z.string().nullable().optional(),
 });
 
 @Controller('llm')
 export class OllamaController {
   private logger = new LoggerService(OllamaController.name);
 
-  constructor(private readonly ollamaService: OllamaService) {}
+  constructor(
+    private readonly eventService: EventService,
+    private readonly messageService: MessageService,
+    private readonly ollamaService: OllamaService,
+    private readonly threadService: ThreadService,
+  ) {}
 
   @UseGuards(AuthGuard('jwt'))
   @Post('generate')
@@ -30,104 +41,141 @@ export class OllamaController {
     @Body(new ValidationPipe(promptSchema)) input: PromptInput,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    let threadId: string;
 
-    const abortController = new AbortController();
+    if (input.threadId != null) {
+      const threadExists = await this.threadService.exists(context, input.threadId);
 
-    res.on('close', () => {
-      if (!abortController.signal.aborted) {
-        abortController.abort();
-      }
-    });
-
-    const stream = this.ollamaService.generateStream(context, input.prompt, {
-      signal: abortController.signal,
-    });
-
-    try {
-      for await (const chunk of stream) {
-        if (chunk.response) {
-          res.write(chunk.response);
-        }
-
-        if (chunk.done) {
-          this.logger.log('Ollama prompt evaluation completed', this.getOllamaResponseMeta(chunk));
-        }
+      if (!threadExists) {
+        throw new NotFoundException('Thread not found');
       }
 
-      res.end();
-    } catch (err) {
-      if (abortController.signal.aborted) {
-        this.logger.log('Client disconnected, aborted upstream Ollama request.');
-      } else {
-        this.logger.error('Error proxying Ollama stream:', err as Error);
-      }
+      threadId = input.threadId;
+    } else {
+      const thread = await this.threadService.create(context, {
+        model: DEFAULT_MODEL, // TODO: Make this user input and validate it.
+      });
 
-      res.end();
+      threadId = thread.id;
+
+      await this.eventService.send(Events.CHAT_SUMMARIZATION, {
+        ownerId: context.userId as string,
+        threadId,
+      });
     }
-  }
 
-  @UseGuards(AuthGuard('jwt'))
-  @Post('chat')
-  @HttpCode(200)
-  async chat(
-    @Context() context: RequestContext,
-    @Body(new ValidationPipe(promptSchema)) input: PromptInput,
-    @Res() res: Response,
-  ) {
+    const prompt = await this.messageService.create(context, {
+      model: DEFAULT_MODEL, // TODO: Make this user input and validate it.
+      text: input.prompt,
+      mimetype: 'text/markdown', // TODO: Make this more flexible.
+      prompt: true,
+      canceled: false,
+      threadId,
+    });
+
+    // Pre-create the message that will be updated after the stream
+    // terminates with more content and resolution.
+    const llmResponse = await this.messageService.create(context, {
+      model: DEFAULT_MODEL, // TODO: Make this user input and validate it.
+      // text -> We are updating this after the stream terminates
+      // mimetype // TODO: Infer this from the content stream
+      prompt: false,
+      // canceled -> We are updating this after the stream terminates
+      threadId,
+      promptMessageId: prompt.id,
+    });
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Thread-Id', threadId);
+    res.setHeader('X-Prompt-Id', prompt.id);
+    res.setHeader('X-Response-Id', llmResponse.id);
 
     const abortController = new AbortController();
+    const signal = abortController.signal;
 
     res.on('close', () => {
-      if (!abortController.signal.aborted) {
+      if (!signal.aborted) {
         abortController.abort();
       }
     });
 
-    const stream = this.ollamaService.chatStream(context, input.prompt, {
-      signal: abortController.signal,
+    const messages = await this.messageService.findByThread(context, threadId);
+    const filteredMessages = messages.filter((message) => message.id !== llmResponse.id);
+
+    const stream = this.ollamaService.chatStream(context, filteredMessages, {
+      signal,
     });
 
     try {
       for await (const chunk of stream) {
         if (chunk.message) {
-          // TODO:
-          //  It looks like some images can be generated here.
-          //  We should consider persisting these.
+          // TODO: Handle other properties on `chunk.message`.
+          //   chunk.message.images?
+          //   chunk.message.role
+          //   chunk.message.tool_calls?
           res.write(chunk.message.content);
         }
 
         if (chunk.done) {
-          this.logger.log('Ollama prompt evaluation completed', this.getOllamaResponseMeta(chunk));
+          this.logger.log('Ollama prompt evaluation completed', {
+            model: chunk.model,
+            totalDuration: chunk.total_duration ? chunk.total_duration / 1_000_000 : undefined,
+            loadDuration: chunk.load_duration ? chunk.load_duration / 1_000_000 : undefined,
+            evalDuration: chunk.prompt_eval_duration ? chunk.prompt_eval_duration / 1_000_000 : undefined,
+            promptCount: chunk.prompt_eval_count,
+            evalCount: chunk.eval_count,
+            doneReason: chunk.done_reason,
+          });
         }
       }
-
-      res.end();
     } catch (err) {
-      if (abortController.signal.aborted) {
+      if (signal.aborted) {
         this.logger.log('Client disconnected, aborted upstream Ollama request.');
       } else {
         this.logger.error('Error proxying Ollama stream:', err as Error);
       }
+    } finally {
+      await this.messageService.update(context, llmResponse.id, {
+        text: stream.buffer,
+        canceled: signal.aborted,
+      });
 
       res.end();
     }
   }
 
-  private getOllamaResponseMeta(chunk: GenerateResponse | ChatResponse) {
-    return {
-      model: chunk.model,
-      totalDuration: chunk.total_duration ? chunk.total_duration / 1_000_000 : undefined,
-      loadDuration: chunk.load_duration ? chunk.load_duration / 1_000_000 : undefined,
-      evalDuration: chunk.prompt_eval_duration ? chunk.prompt_eval_duration / 1_000_000 : undefined,
-      promptCount: chunk.prompt_eval_count,
-      evalCount: chunk.eval_count,
-      doneReason: chunk.done_reason,
+  @OnEvent(Events.CHAT_SUMMARIZATION)
+  async handleApiEnqueueEvent(payload: EventPayloads[Events.CHAT_SUMMARIZATION]) {
+    const context: RequestContext = {
+      userId: payload.ownerId,
     };
+
+    const thread = await this.threadService.findOne(context, payload.threadId);
+    const messages = await this.messageService.findByThread(context, thread.id);
+
+    const messagesInput = [
+      {
+        prompt: true,
+        text: 'Please summarize all of the following messages I will send you in 10 words or less. Please ONLY give me your summary. Please do not use punctuation.',
+      },
+      ...messages.map((message) => ({
+        prompt: true,
+        text: message.text,
+      })),
+    ];
+
+    const result = await this.ollamaService.chat(context, messagesInput);
+    const summary = result.message.content;
+
+    await this.threadService.update(context, thread.id, {
+      name: summary,
+    });
+
+    this.logger.log('Processed chat summarization event', {
+      payload,
+      summary: result.message.content,
+    });
   }
 }
