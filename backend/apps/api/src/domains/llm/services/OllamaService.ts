@@ -130,7 +130,7 @@ export class OllamaService {
     });
   }
 
-  toOllamaMessages(messages: MessagesInput) {
+  private toOllamaMessages(messages: MessagesInput) {
     const ollamaMessages: OllamaMessage[] = messages.map(
       (message) =>
         ({
