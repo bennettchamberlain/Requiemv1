@@ -7,6 +7,7 @@ import { Context } from '@ci/common/decorators';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 
 import { MessageService } from '../services/MessageService';
 import { OllamaService } from '../services/OllamaService';
@@ -26,6 +27,7 @@ export class OllamaController {
   private logger = new LoggerService(OllamaController.name);
 
   constructor(
+    private readonly eventService: EventService,
     private readonly messageService: MessageService,
     private readonly ollamaService: OllamaService,
     private readonly threadService: ThreadService,
@@ -53,11 +55,13 @@ export class OllamaController {
       const thread = await this.threadService.create(context, {
         model: DEFAULT_MODEL, // TODO: Make this user input and validate it.
       });
+
       threadId = thread.id;
 
-      // TODO: Kick off a Promise to name and describe the chat. Do this in parallel and update the metadata in the `finally` block? Can also Event it.
-      // Let's do this with an event to build up good practice examples. We don't need it here anyway. We don't want to bog response down until it finishes,
-      // especially if Ollama serializes the requests. We'll delegate the complexity to the frontend and long-poll perhaps until we have a summary.
+      await this.eventService.send(Events.CHAT_SUMMARIZATION, {
+        ownerId: context.userId as string,
+        threadId,
+      });
     }
 
     const prompt = await this.messageService.create(context, {
@@ -140,5 +144,38 @@ export class OllamaController {
 
       res.end();
     }
+  }
+
+  @OnEvent(Events.CHAT_SUMMARIZATION)
+  async handleApiEnqueueEvent(payload: EventPayloads[Events.CHAT_SUMMARIZATION]) {
+    const context: RequestContext = {
+      userId: payload.ownerId,
+    };
+
+    const thread = await this.threadService.findOne(context, payload.threadId);
+    const messages = await this.messageService.findByThread(context, thread.id);
+
+    const messagesInput = [
+      {
+        prompt: true,
+        text: 'Please summarize all of the following messages I will send you in 10 words or less. Please ONLY give me your summary. Please do not use punctuation.',
+      },
+      ...messages.map((message) => ({
+        prompt: true,
+        text: message.text,
+      })),
+    ];
+
+    const result = await this.ollamaService.chat(context, messagesInput);
+    const summary = result.message.content;
+
+    await this.threadService.update(context, thread.id, {
+      name: summary,
+    });
+
+    this.logger.log('Processed chat summarization event', {
+      payload,
+      summary: result.message.content,
+    });
   }
 }

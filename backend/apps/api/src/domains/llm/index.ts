@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { EventsModule } from '@ci/domains/events';
+
 import { OllamaController } from './controllers/OllamaController';
 import { ThreadsController } from './controllers/ThreadsController';
 import { MessageEntity } from './entities/MessageEntity';
@@ -10,7 +12,7 @@ import { OllamaService } from './services/OllamaService';
 import { ThreadService } from './services/ThreadService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MessageEntity, ThreadEntity])],
+  imports: [TypeOrmModule.forFeature([MessageEntity, ThreadEntity]), EventsModule],
   providers: [MessageService, OllamaService, ThreadService],
   controllers: [OllamaController, ThreadsController],
   exports: [],
