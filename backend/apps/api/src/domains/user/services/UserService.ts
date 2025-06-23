@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { DeleteResult, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 
 import { UserEntity } from '../entities/UserEntity';
 import { CreateUserDto, UpdateUserDto, User } from '../types';

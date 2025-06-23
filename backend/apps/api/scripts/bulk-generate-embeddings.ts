@@ -2,7 +2,7 @@ import path from 'path';
 import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 
 import { ContentEntity, EventEntity, TagEntity } from '@ci/domains/memory';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
@@ -14,7 +14,11 @@ const logger = new Logger(path.basename(__filename));
 (async function () {
   const db = new DataSource({
     type: config.db.type,
-    url: config.db.url,
+    host: config.db.host,
+    port: config.db.port,
+    database: config.db.database,
+    username: config.db.username,
+    password: config.db.password,
     entities: [
       AnswerEntity,
       ContentEntity,

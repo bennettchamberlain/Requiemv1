@@ -8,7 +8,7 @@ import {
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import config from './config';
+import config from '@ci/configuration';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
 import { LoggerService } from '@ci/common/services';
 import { AuthModule } from '@ci/domains/auth';
@@ -26,7 +26,11 @@ import { ConnectorsModule } from '@ci/domains/connectors'
   imports: [
     TypeOrmModule.forRoot({
       type: config.db.type,
-      url: config.db.url,
+      host: config.db.host,
+      port: config.db.port,
+      database: config.db.database,
+      username: config.db.username,
+      password: config.db.password,
       entities: [__dirname + '/domains/**/*Entity.{ts,js}'],
       logging: config.db.logging,
     }),

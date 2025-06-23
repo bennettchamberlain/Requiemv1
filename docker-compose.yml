@@ -3,68 +3,20 @@ services:
     build:
       context: ./docker/postgres
       dockerfile: Dockerfile
+    image: ci/postgres
     container_name: postgres
     ports:
       - 5432:5432
     environment:
-      POSTGRES_USER: companion_intel
-      POSTGRES_PASSWORD: comp4nion_1ntel_ftw!
+      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: companion_intel
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - web
     restart: unless-stopped
-    profiles: [ "all", "local", "postgres" ]
-
-  opensearch-node1:
-    image: opensearchproject/opensearch:3
-    container_name: opensearch-node1
-    environment:
-      - cluster.name=opensearch-cluster # Name the cluster
-      - node.name=opensearch-node1 # Name the node that will run in this container
-      - discovery.seed_hosts=opensearch-node1,opensearch-node2 # Nodes to look for when discovering the cluster
-      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2 # Nodes eligible to serve as cluster manager
-      - bootstrap.memory_lock=true # Disable JVM heap memory swapping
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" # Set min and max JVM heap sizes to at least 50% of system RAM
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=CompanionIntel1! # Sets the demo admin user password when using demo configuration, required for OpenSearch 2.12 and later
-    ulimits:
-      memlock:
-        soft: -1 # Set memlock to unlimited (no soft or hard limit)
-        hard: -1
-      nofile:
-        soft: 65536 # Maximum number of open files for the opensearch user - set to at least 65536
-        hard: 65536
-    volumes:
-      - opensearch-data1:/usr/share/opensearch/data
-    ports:
-      - 9200:9200 # REST API
-      - 9600:9600 # Performance Analyzer
-    networks:
-      - opensearch-net
-    profiles: [ "opensearch" ]
-
-  opensearch-node2:
-    image: opensearchproject/opensearch:3
-    container_name: opensearch-node2
-    environment:
-      - cluster.name=opensearch-cluster
-      - node.name=opensearch-node2
-      - discovery.seed_hosts=opensearch-node1,opensearch-node2
-      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
-      - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=CompanionIntel1!
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    volumes:
-      - opensearch-data2:/usr/share/opensearch/data
-    networks:
-      - opensearch-net
-    profiles: [ "opensearch" ]
+    profiles: [ "all", "infra" ]
 
   minio:
     image: minio/minio
@@ -72,18 +24,18 @@ services:
     ports:
       - 9000:9000
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
     volumes:
-      - minio_data:/data
+      - minio-data:/data
     networks:
       - web
     command: server /data
-    profiles: [ "all", "local", "minio" ]
+    profiles: [ "all", "infra" ]
 
-  dev-proxy:
+  webserver:
     image: nginx:stable
-    container_name: dev-proxy
+    container_name: webserver
     ports:
       - 80:80
       - 443:443
@@ -96,18 +48,36 @@ services:
       - host.docker.internal:host-gateway
     profiles: [ "all", "local" ]
 
-  opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:3 # Make sure the version of opensearch-dashboards matches the version of opensearch installed on other nodes
-    container_name: opensearch-dashboards
-    ports:
-      - 5601:5601
-    expose:
-      - 5601
+  ci-api:
+    image: ci/api:latest
+    container_name: ci-api
     environment:
-      OPENSEARCH_HOSTS: '["https://opensearch-node1:9200","https://opensearch-node2:9200"]'
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET}
+      AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET}
+      AUTH_SESSION_PEPPER: ${AUTH_SESSION_PEPPER}
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      OLLAMA_HOST: http://host.docker.internal:11434
     networks:
-      - opensearch-net
-    profiles: [ "opensearch" ]
+      - web
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    profiles: [ "all", "staging" ]
+
+  staging-webserver:
+    image: ci/nginx
+    container_name: staging-webserver
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./infrastructure/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
+    networks:
+      - web
+    profiles: [ "all", "staging" ]
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
@@ -119,15 +89,12 @@ services:
       - host.docker.internal:host-gateway
     volumes:
       - open-webui:/app/backend/data
-    profiles: [ "all", "tools", "llm" ]
+    profiles: [ "all" ]
 
 volumes:
-  opensearch-data1:
-  opensearch-data2:
+  postgres-data:
+  minio-data:
   open-webui:
-  postgres_data:
-  minio_data:
 
 networks:
-  opensearch-net:
   web:

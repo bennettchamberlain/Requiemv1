@@ -11,7 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
-import config from '@ci/config';
+import config from '@ci/configuration';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 import { EventService, Events, type EventPayloads } from '@ci/domains/events';

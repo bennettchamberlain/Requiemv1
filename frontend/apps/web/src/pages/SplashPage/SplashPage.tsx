@@ -28,9 +28,6 @@ export function SplashPage() {
             help.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-            <Button asChild size="lg" className="px-8">
-              <Link to="/signup">Get Started</Link>
-            </Button>
             <Button variant="outline" asChild size="lg" className="px-8">
               <Link to="/login">Log In</Link>
             </Button>
