@@ -34,6 +34,9 @@ export class ConnectionEntity {
   clientsecret!: string | null;
 
   @Column({ type: 'text', nullable: true })
+  clienttoken!: string | null;
+
+  @Column({ type: 'text', nullable: true })
   schedule!: string | null;
 
   @ManyToOne(() => UserEntity)
