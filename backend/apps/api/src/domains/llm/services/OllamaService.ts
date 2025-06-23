@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import ollama, { type ChatResponse, type GenerateResponse, type Message as OllamaMessage } from 'ollama';
 
 import type { RequestContext } from '@ci/common/types';
@@ -144,7 +144,7 @@ export class OllamaService {
     const validModel = availableModels.find((availableModel) => availableModel.model === resolvedModel);
 
     if (!validModel) {
-      throw new BadRequestException(`Invalid model specified: ${model}`);
+      throw new Error(`Invalid model specified: ${model}`);
     }
 
     return validModel;

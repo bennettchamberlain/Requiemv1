@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, NotFoundException, Post, Res, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Post,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -12,7 +22,7 @@ import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/e
 import { MessageService } from '../services/MessageService';
 import { OllamaService } from '../services/OllamaService';
 import { ThreadService } from '../services/ThreadService';
-import type { PromptInput } from '../types';
+import type { OllamaModel, PromptInput } from '../types';
 
 const promptSchema = z.object({
   prompt: z.string(),
@@ -45,7 +55,7 @@ export class OllamaController {
     @Body(new ValidationPipe(promptSchema)) input: PromptInput,
     @Res() res: Response,
   ) {
-    const resolvedModel = await this.ollamaService.validateModel(context, input.model);
+    const resolvedModel = await this.validateModel(context, input.model);
 
     let threadId: string;
 
@@ -184,5 +194,13 @@ export class OllamaController {
       payload,
       summary: result.message.content,
     });
+  }
+
+  private async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
+    try {
+      return this.ollamaService.validateModel(context, model);
+    } catch (err) {
+      throw new BadRequestException((err as Error).message);
+    }
   }
 }
