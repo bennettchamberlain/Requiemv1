@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, NotFoundException, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Post, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -13,8 +13,6 @@ import { MessageService } from '../services/MessageService';
 import { OllamaService } from '../services/OllamaService';
 import { ThreadService } from '../services/ThreadService';
 import type { PromptInput } from '../types';
-
-const DEFAULT_MODEL = 'gemma3:1b';
 
 const promptSchema = z.object({
   prompt: z.string(),
@@ -34,6 +32,12 @@ export class OllamaController {
   ) {}
 
   @UseGuards(AuthGuard('jwt'))
+  @Get('models')
+  async listModels(@Context() context: RequestContext) {
+    return await this.ollamaService.getAvailableModels(context);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Post('generate')
   @HttpCode(200)
   async generate(
@@ -41,6 +45,8 @@ export class OllamaController {
     @Body(new ValidationPipe(promptSchema)) input: PromptInput,
     @Res() res: Response,
   ) {
+    const resolvedModel = await this.ollamaService.validateModel(context, input.model);
+
     let threadId: string;
 
     if (input.threadId != null) {
@@ -53,7 +59,7 @@ export class OllamaController {
       threadId = input.threadId;
     } else {
       const thread = await this.threadService.create(context, {
-        model: DEFAULT_MODEL, // TODO: Make this user input and validate it.
+        model: resolvedModel.model,
       });
 
       threadId = thread.id;
@@ -65,7 +71,7 @@ export class OllamaController {
     }
 
     const prompt = await this.messageService.create(context, {
-      model: DEFAULT_MODEL, // TODO: Make this user input and validate it.
+      model: resolvedModel.model,
       text: input.prompt,
       mimetype: 'text/markdown', // TODO: Make this more flexible.
       prompt: true,
@@ -76,7 +82,7 @@ export class OllamaController {
     // Pre-create the message that will be updated after the stream
     // terminates with more content and resolution.
     const llmResponse = await this.messageService.create(context, {
-      model: DEFAULT_MODEL, // TODO: Make this user input and validate it.
+      model: resolvedModel.model,
       // text -> We are updating this after the stream terminates
       // mimetype // TODO: Infer this from the content stream
       prompt: false,
@@ -104,7 +110,8 @@ export class OllamaController {
     const messages = await this.messageService.findByThread(context, threadId);
     const filteredMessages = messages.filter((message) => message.id !== llmResponse.id);
 
-    const stream = this.ollamaService.chatStream(context, filteredMessages, {
+    const stream = await this.ollamaService.chatStream(context, filteredMessages, {
+      model: resolvedModel.model,
       signal,
     });
 
