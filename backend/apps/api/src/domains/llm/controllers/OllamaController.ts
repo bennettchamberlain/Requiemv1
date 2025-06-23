@@ -154,7 +154,7 @@ export class OllamaController {
   }
 
   @OnEvent(Events.CHAT_SUMMARIZATION)
-  async handleApiEnqueueEvent(payload: EventPayloads[Events.CHAT_SUMMARIZATION]) {
+  async handleChatSummarizationEvent(payload: EventPayloads[Events.CHAT_SUMMARIZATION]) {
     const context: RequestContext = {
       userId: payload.ownerId,
     };
