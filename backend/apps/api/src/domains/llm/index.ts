@@ -52,3 +52,6 @@ export { OllamaService };
 
 // Types
 export type {} from './types';
+
+// GraphQL
+export { ThreadResolver };

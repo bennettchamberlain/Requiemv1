@@ -3,8 +3,9 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import path from 'node:path';
 
+import { LLMModule } from '@ci/domains/llm';
+
 import { GraphQLController } from './controllers/GraphQLController';
-import { RecipeResolver } from './resolvers/RecipeResolver';
 
 @Module({
   imports: [
@@ -15,8 +16,9 @@ import { RecipeResolver } from './resolvers/RecipeResolver';
       playground: false,
       graphiql: false,
     }),
+    LLMModule,
   ],
-  providers: [RecipeResolver],
+  providers: [],
   controllers: [GraphQLController],
   exports: [],
 })
