@@ -11,6 +11,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import path from 'node:path';
 
 import { IdFormatGuard } from '@ci/common/guards';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
@@ -23,6 +24,7 @@ import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
+import { GraphQLModule } from '@ci/domains/graphql';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
@@ -43,7 +45,7 @@ import { UserModule } from '@ci/domains/user';
       database: config.db.database,
       username: config.db.username,
       password: config.db.password,
-      entities: [__dirname + '/domains/**/*Entity.{ts,js}'],
+      entities: [path.join(__dirname, 'domains/**/*Entity.{ts,js}')],
       logging: ['error', ...(config.environment['database.query.logging'] ? (['query'] as const) : [])],
     }),
     EventEmitterModule.forRoot(),
@@ -56,6 +58,7 @@ import { UserModule } from '@ci/domains/user';
     EtlModule,
     EventsModule,
     FilesModule,
+    GraphQLModule,
     IntelligenceModule,
     LLMModule,
     OnboardingModule,
