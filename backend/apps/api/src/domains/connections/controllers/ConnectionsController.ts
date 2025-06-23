@@ -22,11 +22,19 @@ import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
 const createConnectionSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   providerId: z.string().uuid('Invalid provider ID'),
+  clientid: z.string().optional(),
+  clientkey: z.string().optional(),
+  clientsecret: z.string().optional(),
+  schedule: z.string().optional(),
 });
 
 const updateConnectionSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
   active: z.boolean().optional(),
+  clientid: z.string().optional(),
+  clientkey: z.string().optional(),
+  clientsecret: z.string().optional(),
+  schedule: z.string().optional(),
 });
 
 @Controller('connections')
