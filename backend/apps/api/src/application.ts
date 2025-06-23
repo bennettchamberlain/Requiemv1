@@ -20,6 +20,7 @@ import { LLMModule } from './domains/llm';
 import { MemoryModule } from './domains/memory';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
+import { ConnectionsModule } from '@ci/domains/connections';
 import { ConnectorsModule } from '@ci/domains/connectors';
 import { ProvidersModule } from '@ci/domains/providers';
 
@@ -46,7 +47,8 @@ import { ProvidersModule } from '@ci/domains/providers';
     LLMModule,
     MemoryModule,
     UserModule,
-    ProvidersModule
+    ProvidersModule,
+    ConnectionsModule
   ],
   controllers: [],
   providers: [],
