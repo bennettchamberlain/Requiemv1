@@ -2,7 +2,7 @@ import { type ReactNode, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AuthProvider } from '@/hooks';
+import { AuthProvider, ModelProvider } from '@/hooks';
 import { Main as MainLayout } from '@/layouts';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
@@ -23,7 +23,9 @@ const SearchPage = lazy(() => import('@/pages/SearchPage'));
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
-      <AuthProvider args={[]}>{children}</AuthProvider>
+      <AuthProvider args={[]}>
+        <ModelProvider args={[]}>{children}</ModelProvider>
+      </AuthProvider>
     </Router>
   );
 }

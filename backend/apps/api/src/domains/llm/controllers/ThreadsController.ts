@@ -1,11 +1,18 @@
-import { Controller, Delete, Get, HttpCode, Param, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Param, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
 import type { RequestContext } from '@ci/common/types';
 
 import { MessageService } from '../services/MessageService';
 import { ThreadService } from '../services/ThreadService';
+import { ValidationPipe } from '@ci/common/pipes';
+
+export const includeMessagesSchema = z
+  .enum(['true', 'false'])
+  .optional()
+  .transform((v) => v !== 'false');
 
 @Controller('threads')
 export class ThreadsController {
@@ -24,8 +31,17 @@ export class ThreadsController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get(':id')
-  async findOne(@Context() context: RequestContext, @Param('id') id: string) {
+  async findOne(
+    @Context() context: RequestContext,
+    @Param('id') id: string,
+    @Query('includeMessages', new ValidationPipe(includeMessagesSchema)) includeMessages: boolean,
+  ) {
     const thread = await this.threadService.findOne(context, id);
+
+    if (!includeMessages) {
+      return thread;
+    }
+
     const messages = await this.messageService.findByThread(context, thread.id);
 
     return {

@@ -1,16 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Card, Textarea, cn } from '@ci/shadcn';
+import { Portal, fetchJson, usePageTitle } from '@ci/common';
+import { Breadcrumb, Button, Card, Resizable, Textarea, cn } from '@ci/shadcn';
+import { ArrowUp } from '@ci/shadcn/icons';
 
-import { useAuth } from '@/hooks';
+import { ModelSelector } from '@/components/ModelSelector';
+import { useAuth, useModel } from '@/hooks';
+
+interface Thread {
+  id: string;
+  name: string | null;
+  model: string;
+  description: string | null;
+}
 
 export function ChatThreadingPage() {
   usePageTitle('Chat - Companion Intelligence');
 
   const [{ authToken }] = useAuth();
+  const [{ selectedModel }] = useModel();
 
   const { id } = useParams<{ id: string }>();
+
+  // TODO: Load the thread when the page loads, show a spinner when it's loading.
+
   const navigate = useNavigate();
 
   const isNew = !id; // we're on /chat/new
@@ -18,7 +31,8 @@ export function ChatThreadingPage() {
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(id ?? null);
+  const threadName = useLongPollForThreadName(threadId);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -48,6 +62,7 @@ export function ChatThreadingPage() {
         },
         body: JSON.stringify({
           prompt: input,
+          model: selectedModel,
           threadId,
         }),
         signal: controller.signal,
@@ -55,13 +70,19 @@ export function ChatThreadingPage() {
 
       setThreadId(res.headers.get('X-Thread-Id') as string);
 
-      if (!res.body) throw new Error('No response body');
+      if (!res.body) {
+        throw new Error('No response body');
+      }
 
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
 
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+
+        if (done) {
+          break;
+        }
+
         if (value) {
           setOutput((prev) => prev + value);
         }
@@ -104,12 +125,16 @@ export function ChatThreadingPage() {
               <>
                 <Breadcrumb.Separator className="hidden md:block" />
                 <Breadcrumb.Item>
-                  <Breadcrumb.Page>{threadId}</Breadcrumb.Page>
+                  <Breadcrumb.Page>{threadName || threadId}</Breadcrumb.Page>
                 </Breadcrumb.Item>
               </>
             )}
           </Breadcrumb.List>
         </Breadcrumb>
+      </Portal.Slot>
+
+      <Portal.Slot id="actions">
+        <ModelSelector />
       </Portal.Slot>
 
       <Card className="w-full max-w-2xl mx-auto p-4 space-y-4">
@@ -121,7 +146,7 @@ export function ChatThreadingPage() {
         />
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} disabled={isLoading}>
+          <Button onClick={handleSubmit} disabled={isLoading || selectedModel == null}>
             Generate
           </Button>
           <Button variant="destructive" onClick={handleStop} disabled={!isLoading}>
@@ -139,3 +164,42 @@ export function ChatThreadingPage() {
     </>
   );
 }
+
+// TODO:
+//   This should only be used on the initial thread creation.
+//   Right now we're relying on this to get the name even when we probably
+//   already know it (e.g. when a user loads an existing chat to add to it).
+function useLongPollForThreadName(threadId?: string | null) {
+  const [{ authToken }] = useAuth();
+
+  const [name, setName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!threadId || name) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const thread: Thread = await fetchJson(`/api/threads/${threadId}?includeMessages=false`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        if (thread?.name) {
+          setName(thread.name);
+          clearInterval(interval);
+        }
+      } catch (err) {
+        console.error('Polling failed:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [threadId, name]);
+
+  return name;
+}
+

@@ -51,3 +51,10 @@ export interface Thread {
   readonly description: string | null;
   readonly user?: User;
 }
+
+export interface OllamaModel {
+  model: string;
+  namespace: string | null;
+  name: string;
+  tag: string | null;
+}

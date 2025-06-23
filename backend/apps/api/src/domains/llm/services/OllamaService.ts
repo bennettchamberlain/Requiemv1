@@ -3,11 +3,12 @@ import ollama, { type ChatResponse, type GenerateResponse, type Message as Ollam
 
 import type { RequestContext } from '@ci/common/types';
 
-import type { Message } from '../types';
+import type { Message, OllamaModel } from '../types';
 
 import { MessageService } from './MessageService';
 
 const PROMPT_MODEL = 'gemma3:1b';
+const INTERNAL_MODELS = new Set(['nomic-embed-text']);
 
 interface PromptOptions {
   model?: string;
@@ -20,11 +21,18 @@ type MessagesInput = Pick<Message, 'prompt' | 'text'>[];
 export class OllamaService {
   constructor(private readonly messageService: MessageService) {}
 
-  generateStream(
+  async getAvailableModels(context: RequestContext): Promise<OllamaModel[]> {
+    const result = await ollama.list();
+    const models = result.models.map((model) => this.parseOllamaModel(model.name));
+
+    return models.filter((model) => !INTERNAL_MODELS.has(model.name));
+  }
+
+  async generateStream(
     context: RequestContext,
     prompt: string,
     options?: PromptOptions,
-  ): AsyncGenerator<GenerateResponse> & { buffer: string } {
+  ): Promise<AsyncGenerator<GenerateResponse> & { buffer: string }> {
     const chunks: string[] = [];
 
     const stream = (async function* () {
@@ -58,13 +66,12 @@ export class OllamaService {
     return stream as typeof stream & { buffer: string };
   }
 
-  generate(
+  async generate(
     context: RequestContext,
     prompt: string,
     options?: Omit<PromptOptions, 'signal'>,
   ): Promise<GenerateResponse> {
     const resolvedOptions = options ?? ({} as PromptOptions);
-
     const { model = PROMPT_MODEL } = resolvedOptions;
 
     return ollama.generate({
@@ -73,11 +80,11 @@ export class OllamaService {
     });
   }
 
-  chatStream(
+  async chatStream(
     context: RequestContext,
     messages: MessagesInput,
     options?: PromptOptions,
-  ): AsyncGenerator<ChatResponse> & { buffer: string } {
+  ): Promise<AsyncGenerator<ChatResponse> & { buffer: string }> {
     const chunks: string[] = [];
 
     const stream = (async function* (self) {
@@ -115,22 +122,35 @@ export class OllamaService {
     return stream as typeof stream & { buffer: string };
   }
 
-  chat(
+  async chat(
     context: RequestContext,
     messages: MessagesInput,
     options?: Omit<PromptOptions, 'signal'>,
   ): Promise<ChatResponse> {
     const resolvedOptions = options ?? ({} as PromptOptions);
-
     const { model = PROMPT_MODEL } = resolvedOptions;
 
     return ollama.chat({
       model,
-      messages: this.toOllamaMessages(messages)
+      messages: this.toOllamaMessages(messages),
     });
   }
 
-  private toOllamaMessages(messages: MessagesInput) {
+  async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
+    const resolvedModel = model ?? PROMPT_MODEL;
+
+    const availableModels = await this.getAvailableModels(context);
+
+    const validModel = availableModels.find((availableModel) => availableModel.model === resolvedModel);
+
+    if (!validModel) {
+      throw new Error(`Invalid model specified: ${model}`);
+    }
+
+    return validModel;
+  }
+
+  private toOllamaMessages(messages: MessagesInput): OllamaMessage[] {
     const ollamaMessages: OllamaMessage[] = messages.map(
       (message) =>
         ({
@@ -140,5 +160,28 @@ export class OllamaService {
     );
 
     return ollamaMessages;
+  }
+
+  private parseOllamaModel(model: string): OllamaModel {
+    const [fullName, tag = 'latest'] = model.split(':'); // `namespace/model:tag`
+    const parts = fullName.split('/');
+
+    if (parts.length === 2) {
+      const [namespace, name] = parts;
+
+      return {
+        model,
+        namespace,
+        name,
+        tag,
+      };
+    }
+
+    return {
+      model,
+      namespace: null,
+      name: parts[0],
+      tag,
+    };
   }
 }
