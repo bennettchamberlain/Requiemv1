@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
-import { AlertCircle, RefreshCw } from '@ci/shadcn/icons';
+import { AlertCircle, RefreshCw, Settings } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
@@ -34,8 +34,9 @@ export function ConnectionsPage() {
   const [error, setError] = useState<string | null>(null);
   
   // Modal state
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createFormData, setCreateFormData] = useState({
+  const [showConfigureModal, setShowConfigureModal] = useState(false);
+  const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
+  const [configureFormData, setConfigureFormData] = useState({
     name: '',
     providerId: '',
     clientid: '',
@@ -43,8 +44,8 @@ export function ConnectionsPage() {
     clientsecret: '',
     schedule: 'daily'
   });
-  const [createLoading, setCreateLoading] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [configureLoading, setConfigureLoading] = useState(false);
+  const [configureError, setConfigureError] = useState<string | null>(null);
 
   const fetchConnections = async () => {
     try {
@@ -202,57 +203,45 @@ export function ConnectionsPage() {
     */
   }
 
-  const connectionConfigure = async (connection:Connection) => {
-    console.log("configuring connection",connection)
-    /*
-    // @todo
-    // generate a connection that will be related to a given provider
-    // @todo
-    // using a supplied provider attempt to do actual oauth2 login
-    const res = await fetch("/api/connections");
-    const {url} = await res.json();
-    location.href = url
-    */
+  const connectionConfigure = (connection: Connection) => {
+    console.log("connection configure called", connection);
+    
+    setSelectedConnection(connection);
+    setConfigureFormData({
+      name: connection.name || '',
+      providerId: connection.provider?.id || '',
+      clientid: connection.clientid || '',
+      clientkey: connection.clientkey || '',
+      clientsecret: connection.clientsecret || '',
+      schedule: connection.schedule || 'daily'
+    });
+    setConfigureError(null);
+    setShowConfigureModal(true);
   }
 
   const connectionCreate = async () => {
     console.log("connection create called");
     
-    // Reset form and errors
-    setCreateFormData({
-      name: '',
-      providerId: Providers.length > 0 ? Providers[0].id : '',
-      clientid: '',
-      clientkey: '',
-      clientsecret: '',
-      schedule: 'daily'
-    });
-    setCreateError(null);
-    setShowCreateModal(true);
-  }
-
-  const handleCreateSubmit = async () => {
     try {
-      setCreateLoading(true);
-      setCreateError(null);
-
       if (!authToken) {
         throw new Error('Authentication token not found');
       }
 
-      if (!createFormData.name || !createFormData.providerId) {
-        throw new Error('Name and Provider are required');
+      if (Providers.length === 0) {
+        throw new Error('No providers available');
       }
 
-      console.log('Creating connection with data:', createFormData);
-
+      // Create a new connection with default values
       const response = await fetch('/api/connections', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(createFormData),
+        body: JSON.stringify({
+          name: 'New Connection',
+          providerId: Providers[0].id,
+        }),
       });
 
       if (!response.ok) {
@@ -263,15 +252,65 @@ export function ConnectionsPage() {
       const newConnection = await response.json();
       console.log('Successfully created connection:', newConnection);
 
-      // Close modal and refresh the connections list
-      setShowCreateModal(false);
+      // Refresh the connections list
       await fetchConnections();
+      
+      // Open configure modal for the new connection
+      connectionConfigure(newConnection);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error creating connection:', errorMessage, err);
-      setCreateError(errorMessage);
+      setError(errorMessage);
+    }
+  }
+
+  const handleConfigureSubmit = async () => {
+    try {
+      setConfigureLoading(true);
+      setConfigureError(null);
+
+      if (!authToken || !selectedConnection) {
+        throw new Error('Authentication token or connection not found');
+      }
+
+      if (!configureFormData.name) {
+        throw new Error('Name is required');
+      }
+
+      console.log('Updating connection with data:', configureFormData);
+
+      const response = await fetch(`/api/connections/${selectedConnection.id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: configureFormData.name,
+          clientid: configureFormData.clientid,
+          clientkey: configureFormData.clientkey,
+          clientsecret: configureFormData.clientsecret,
+          schedule: configureFormData.schedule,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Error updating connection: ${response.statusText}`);
+      }
+
+      const updatedConnection = await response.json();
+      console.log('Successfully updated connection:', updatedConnection);
+
+      // Close modal and refresh the connections list
+      setShowConfigureModal(false);
+      await fetchConnections();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error('Error updating connection:', errorMessage, err);
+      setConfigureError(errorMessage);
     } finally {
-      setCreateLoading(false);
+      setConfigureLoading(false);
     }
   };
 
@@ -363,8 +402,12 @@ export function ConnectionsPage() {
                             </Toggle>
                           </Table.Cell>
                           <Table.Cell className="text-sm">
-                            <Button onClick={() => { connectionConfigure(connection) }}>
-                                Configure
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => connectionConfigure(connection)}
+                            >
+                              <Settings className="h-4 w-4" />
                             </Button>
                           </Table.Cell>
                         </Table.Row>
@@ -379,20 +422,20 @@ export function ConnectionsPage() {
         </Card.Content>
       </Card>
 
-      {/* Create Connection Modal */}
-      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+      {/* Configure Connection Modal */}
+      <Dialog open={showConfigureModal} onOpenChange={setShowConfigureModal}>
         <Dialog.Content className="sm:max-w-[500px]">
           <Dialog.Header>
-            <Dialog.Title>Create New Connection</Dialog.Title>
+            <Dialog.Title>Configure Connection</Dialog.Title>
             <Dialog.Description>
-              Configure a new connection to sync data from an external provider.
+              Update the settings for this connection.
             </Dialog.Description>
           </Dialog.Header>
           
           <div className="grid gap-4 py-4">
-            {createError && (
+            {configureError && (
               <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-                {createError}
+                {configureError}
               </div>
             )}
             
@@ -401,21 +444,20 @@ export function ConnectionsPage() {
               <Input
                 id="name"
                 placeholder="My Google Connection"
-                value={createFormData.name}
-                onChange={(e) => setCreateFormData({ ...createFormData, name: e.target.value })}
-                disabled={createLoading}
+                value={configureFormData.name}
+                onChange={(e) => setConfigureFormData({ ...configureFormData, name: e.target.value })}
+                disabled={configureLoading}
               />
             </div>
 
             <div className="grid gap-2">
               <Label htmlFor="provider">Provider</Label>
               <Select
-                value={createFormData.providerId}
-                onValueChange={(value) => setCreateFormData({ ...createFormData, providerId: value })}
-                disabled={createLoading}
+                value={configureFormData.providerId}
+                disabled={true}
               >
                 <Select.Trigger id="provider">
-                  <Select.Value placeholder="Select a provider" />
+                  <Select.Value />
                 </Select.Trigger>
                 <Select.Content>
                   {Providers.map((provider) => (
@@ -432,9 +474,9 @@ export function ConnectionsPage() {
               <Input
                 id="clientid"
                 placeholder="your-client-id"
-                value={createFormData.clientid}
-                onChange={(e) => setCreateFormData({ ...createFormData, clientid: e.target.value })}
-                disabled={createLoading}
+                value={configureFormData.clientid}
+                onChange={(e) => setConfigureFormData({ ...configureFormData, clientid: e.target.value })}
+                disabled={configureLoading}
               />
             </div>
 
@@ -443,9 +485,9 @@ export function ConnectionsPage() {
               <Input
                 id="clientkey"
                 placeholder="your-client-key"
-                value={createFormData.clientkey}
-                onChange={(e) => setCreateFormData({ ...createFormData, clientkey: e.target.value })}
-                disabled={createLoading}
+                value={configureFormData.clientkey}
+                onChange={(e) => setConfigureFormData({ ...configureFormData, clientkey: e.target.value })}
+                disabled={configureLoading}
               />
             </div>
 
@@ -455,18 +497,18 @@ export function ConnectionsPage() {
                 id="clientsecret"
                 type="password"
                 placeholder="your-client-secret"
-                value={createFormData.clientsecret}
-                onChange={(e) => setCreateFormData({ ...createFormData, clientsecret: e.target.value })}
-                disabled={createLoading}
+                value={configureFormData.clientsecret}
+                onChange={(e) => setConfigureFormData({ ...configureFormData, clientsecret: e.target.value })}
+                disabled={configureLoading}
               />
             </div>
 
             <div className="grid gap-2">
               <Label htmlFor="schedule">Sync Schedule</Label>
               <Select
-                value={createFormData.schedule}
-                onValueChange={(value) => setCreateFormData({ ...createFormData, schedule: value })}
-                disabled={createLoading}
+                value={configureFormData.schedule}
+                onValueChange={(value) => setConfigureFormData({ ...configureFormData, schedule: value })}
+                disabled={configureLoading}
               >
                 <Select.Trigger id="schedule">
                   <Select.Value />
@@ -483,22 +525,22 @@ export function ConnectionsPage() {
           <Dialog.Footer>
             <Button
               variant="outline"
-              onClick={() => setShowCreateModal(false)}
-              disabled={createLoading}
+              onClick={() => setShowConfigureModal(false)}
+              disabled={configureLoading}
             >
               Cancel
             </Button>
             <Button
-              onClick={handleCreateSubmit}
-              disabled={createLoading || !createFormData.name || !createFormData.providerId}
+              onClick={handleConfigureSubmit}
+              disabled={configureLoading || !configureFormData.name}
             >
-              {createLoading ? (
+              {configureLoading ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                  Creating...
+                  Saving...
                 </>
               ) : (
-                'Create Connection'
+                'Save Changes'
               )}
             </Button>
           </Dialog.Footer>
