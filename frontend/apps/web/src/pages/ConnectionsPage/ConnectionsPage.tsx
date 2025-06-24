@@ -21,7 +21,7 @@ export interface Connection {
   readonly provider?: Provider;
 }
 
-export function ConnectorsPage() {
+export function ConnectionsPage() {
   usePageTitle('Connections - Companion Intelligence');
 
   const [{ authToken }] = useAuth();
@@ -53,11 +53,11 @@ export function ConnectorsPage() {
       setError(null);
 
       if (!authToken) {
-        console.error('ConnectorsPage: No authentication token found');
+        console.error('ConnectionsPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
 
-      console.log('ConnectorsPage: Making API request to /api/connections');
+      console.log('ConnectionsPage: Making API request to /api/connections');
       const response = await fetch('/api/connections', {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -68,7 +68,7 @@ export function ConnectorsPage() {
       if (!response.ok) {
         // Handle different HTTP error codes
         console.error(
-          `ConnectorsPage: API request failed with status ${response.status}: ${response.statusText}`,
+          `ConnectionsPage: API request failed with status ${response.status}: ${response.statusText}`,
         );
         if (response.status === 401) {
           throw new Error('Unauthorized: You do not have permission to access this resource');
@@ -83,7 +83,7 @@ export function ConnectorsPage() {
         }
       }
 
-      console.log('ConnectorsPage: API request successful, parsing response');
+      console.log('ConnectionsPage: API request successful, parsing response');
       const data = await response.json();
 
       // Handle both array response and paginated response
@@ -93,18 +93,18 @@ export function ConnectorsPage() {
       } else if (data.data && Array.isArray(data.data)) {
         ConnectionsData = data.data;
       } else {
-        console.error('ConnectorsPage: Invalid response format', data);
+        console.error('ConnectionsPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of Connectors');
       }
 
-      console.log(`ConnectorsPage: Successfully fetched ${ConnectionsData.length} Connections`, {ConnectionsData});
+      console.log(`ConnectionsPage: Successfully fetched ${ConnectionsData.length} Connections`, {ConnectionsData});
       setConnections(ConnectionsData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('ConnectorsPage: Error in fetchConnectors():', errorMessage, err);
+      console.error('ConnectionsPage: Error in fetchConnectors():', errorMessage, err);
       setError(errorMessage);
     } finally {
-      console.log('ConnectorsPage: Fetch operation completed');
+      console.log('ConnectionsPage: Fetch operation completed');
       setLoading(false);
     }
   };
@@ -116,11 +116,11 @@ export function ConnectorsPage() {
       setError(null);
 
       if (!authToken) {
-        console.error('ConnectorsPage: No authentication token found');
+        console.error('ConnectionsPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
 
-      console.log('ConnectorsPage: Making API request to /api/providers');
+      console.log('ConnectionsPage: Making API request to /api/providers');
       const response = await fetch('/api/providers', {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -131,7 +131,7 @@ export function ConnectorsPage() {
       if (!response.ok) {
         // Handle different HTTP error codes
         console.error(
-          `ConnectorsPage: API request failed with status ${response.status}: ${response.statusText}`,
+          `ConnectionsPage: API request failed with status ${response.status}: ${response.statusText}`,
         );
         if (response.status === 401) {
           throw new Error('Unauthorized: You do not have permission to access this resource');
@@ -146,7 +146,7 @@ export function ConnectorsPage() {
         }
       }
 
-      console.log('ConnectorsPage: API request successful, parsing response');
+      console.log('ConnectionsPage: API request successful, parsing response');
       const data = await response.json();
 
       // Handle both array response and paginated response
@@ -156,18 +156,18 @@ export function ConnectorsPage() {
       } else if (data.data && Array.isArray(data.data)) {
         ProvidersData = data.data;
       } else {
-        console.error('ConnectorsPage: Invalid response format', data);
+        console.error('ConnectionsPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of Connectors');
       }
 
-      console.log(`ConnectorsPage: Successfully fetched ${ProvidersData.length} Connectors`, {ProvidersData});
+      console.log(`ConnectionsPage: Successfully fetched ${ProvidersData.length} Connectors`, {ProvidersData});
       setProviders(ProvidersData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('ConnectorsPage: Error in fetchConnectors():', errorMessage, err);
+      console.error('ConnectionsPage: Error in fetchConnectors():', errorMessage, err);
       setError(errorMessage);
     } finally {
-      console.log('ConnectorsPage: Fetch operation completed');
+      console.log('ConnectionsPage: Fetch operation completed');
       setLoading(false);
     }
   };
@@ -178,10 +178,10 @@ export function ConnectorsPage() {
   }
 
   useEffect(() => {
-    console.log('ConnectorsPage: Component mounted, fetching Connectors');
+    console.log('ConnectionsPage: Component mounted, fetching Connectors');
     fetchState();
     return () => {
-      console.log('ConnectorsPage: Component unmounting');
+      console.log('ConnectionsPage: Component unmounting');
     };
   }, []);
 
