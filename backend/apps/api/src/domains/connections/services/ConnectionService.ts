@@ -18,6 +18,7 @@ import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../ty
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 import { google } from 'googleapis';
+import { LoggerService } from '@ci/common/services/LoggerService';
 
 //import dotenv from 'dotenv';
 //dotenv.config();
@@ -48,6 +49,9 @@ const SCOPES = [
 
 @Injectable()
 export class ConnectionService {
+
+  private logger = new LoggerService(ConnectionService.name);
+
   constructor(
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
@@ -161,6 +165,10 @@ export class ConnectionService {
   }
 
   async callback(context: RequestContext): Promise<any> {
+
+    // @todo we need to know which connection was invoked
+    console.log("connection service backend authentication callback has been called",context)
+
     if(!context.query || !context.query.code) {
       this.logger.error('Connection service failed to get oauth2 token back');
       throw new NotFoundException();

@@ -217,6 +217,19 @@ export function ConnectionsPage() {
     });
     setConfigureError(null);
     setShowConfigureModal(true);
+
+    // test - actually fire off a connection request
+    // @todo pass a valid connection handle - right now it is all hardcoded
+    if(connection && connection.clientsecret && connection.clientsecret.length > 1) {
+      console.log('connection: attempting to do oauth')
+      fetch("/api/connections/connect").then(res => {
+        res.json().then(url => {
+          alert(url)
+          location.href = url
+        })
+      })
+    }
+
   }
 
   const connectionCreate = async () => {
