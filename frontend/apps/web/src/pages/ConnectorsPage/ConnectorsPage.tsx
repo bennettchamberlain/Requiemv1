@@ -372,31 +372,6 @@ export function ConnectorsPage() {
                     )}
                   </Table.Body>
                 </Table>
-                <hr></hr>
-                <h1>Providers - just for debugging - remove later</h1>
-                <hr></hr>
-                <Table>
-                  <Table.Header>
-                    <Table.Row>
-                      <Table.Head>Name</Table.Head>
-                    </Table.Row>
-                  </Table.Header>
-                  <Table.Body>
-                    {Providers.length === 0 ? (
-                      <Table.Row>
-                        <Table.Cell colSpan={7} className="text-center py-8 text-muted-foreground">
-                          No Providers found in the system
-                        </Table.Cell>
-                      </Table.Row>
-                    ) : (
-                      Providers.map((provider) => (
-                        <Table.Row key={provider.id}>
-                          <Table.Cell className="text-sm">{provider.name}</Table.Cell>
-                        </Table.Row>
-                      ))
-                    )}
-                  </Table.Body>
-                </Table>
               </div>
               <div className="text-xs text-muted-foreground mt-4">Total Connections: {Connections.length}</div>
             </>
