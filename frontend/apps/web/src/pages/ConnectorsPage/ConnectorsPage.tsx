@@ -22,7 +22,7 @@ export interface Connection {
 }
 
 export function ConnectorsPage() {
-  usePageTitle('Connectors - Companion Intelligence');
+  usePageTitle('Connections - Companion Intelligence');
 
   const [{ authToken }] = useAuth();
 
@@ -285,7 +285,7 @@ export function ConnectorsPage() {
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>Connectors</Breadcrumb.Page>
+              <Breadcrumb.Page>Connections</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
@@ -293,7 +293,7 @@ export function ConnectorsPage() {
 
       <Card className="w-full">
         <Card.Header className="flex flex-row items-center justify-between">
-          <Card.Title className="text-2xl">Connections and Providers</Card.Title>
+          <Card.Title className="text-2xl">Connections</Card.Title>
           <Button
             variant="outline"
             size="icon"
