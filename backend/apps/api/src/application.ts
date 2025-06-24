@@ -21,7 +21,6 @@ import { MemoryModule } from './domains/memory';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
 import { ConnectionsModule } from '@ci/domains/connections';
-import { ConnectorsModule } from '@ci/domains/connectors';
 import { ProvidersModule } from '@ci/domains/providers';
 
 @Module({
@@ -38,7 +37,6 @@ import { ProvidersModule } from '@ci/domains/providers';
     }),
     EventEmitterModule.forRoot(),
     AuthModule,
-    ConnectorsModule,
     EmbeddingModule,
     EventsModule,
     FilesModule,
