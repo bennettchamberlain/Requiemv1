@@ -1,86 +1,52 @@
 import { useState, useEffect } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Card, Table, Toggle } from '@ci/shadcn';
+import { Breadcrumb, Button, Card, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
 import { AlertCircle, RefreshCw } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
-interface Connector {
-  id: string;
-  name: string;
-  process: string;
-  schedule: string;
-  lastrun: string;
-  enabled: boolean;
-  user?: { id: string };
+export interface Provider {
+  readonly id: string;
+  readonly name: string | null;
 }
 
-const ConnectorsData = [
-  { id: "1", name: "google", process: "./connectors/googlehandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "2", name: "youtube", process: "./connectors/youtubehandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "3", name: "facebook", process: "./connectors/facebookhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "4", name: "instagram", process: "./connectors/instagramhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "5", name: "amazon", process: "./connectors/amazonhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "6", name: "whatsapp", process: "./connectors/whatsapphandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "7", name: "gmail", process: "./connectors/gmailhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "8", name: "tiktok", process: "./connectors/tiktokhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "9", name: "microsoft", process: "./connectors/microsofthandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "10", name: "apple", process: "./connectors/applehandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "11", name: "x", process: "./connectors/xhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "12", name: "reddit", process: "./connectors/reddithandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "13", name: "linkedin", process: "./connectors/linkedinhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "14", name: "netflix", process: "./connectors/netflixhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "15", name: "zoom", process: "./connectors/zoomhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "16", name: "wikipedia", process: "./connectors/wikipediahandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "17", name: "pinterest", process: "./connectors/pinteresthandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "18", name: "snapchat", process: "./connectors/snapchathandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "19", name: "discord", process: "./connectors/discordhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "20", name: "dropbox", process: "./connectors/dropboxhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "21", name: "spotify", process: "./connectors/spotifyhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "22", name: "twitch", process: "./connectors/twitchhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "23", name: "ebay", process: "./connectors/ebayhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "24", name: "paypal", process: "./connectors/paypalhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "25", name: "telegram", process: "./connectors/telegramhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "26", name: "bing", process: "./connectors/binghandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "27", name: "slack", process: "./connectors/slackhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "28", name: "salesforce", process: "./connectors/salesforcehandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "29", name: "canva", process: "./connectors/canvahandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "30", name: "quora", process: "./connectors/quorahandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "31", name: "yahoo", process: "./connectors/yahoohandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "32", name: "airbnb", process: "./connectors/airbnbhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "33", name: "uber", process: "./connectors/uberhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "34", name: "google maps", process: "./connectors/googlemapshandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "35", name: "google drive", process: "./connectors/googledrivehandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "36", name: "icloud", process: "./connectors/icloudhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "37", name: "outlook", process: "./connectors/outlookhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "38", name: "wechat", process: "./connectors/wechathandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "39", name: "tencent", process: "./connectors/tencenthandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "40", name: "baidu", process: "./connectors/baiduhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "41", name: "hulu", process: "./connectors/huluhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "42", name: "medium", process: "./connectors/mediumhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "43", name: "notion", process: "./connectors/notionhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "44", name: "substack", process: "./connectors/substackhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "45", name: "stack overflow", process: "./connectors/stackoverflowhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "46", name: "github", process: "./connectors/githubhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "47", name: "trello", process: "./connectors/trellohandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "48", name: "asana", process: "./connectors/asanahandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "49", name: "stripe", process: "./connectors/stripehandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true },
-  { id: "50", name: "indeed", process: "./connectors/indeedhandler.js", schedule: "daily", lastrun: "yesterday", user: "1", enabled: true }
-];
-
-
+export interface Connection {
+  readonly id: string;
+  readonly name: string | null;
+  readonly active: boolean;
+  readonly clientid: string | null;
+  readonly clientkey: string | null;
+  readonly clientsecret: string | null;
+  readonly schedule: string | null;
+  readonly provider?: Provider;
+}
 
 export function ConnectorsPage() {
   usePageTitle('Connectors - Companion Intelligence');
 
   const [{ authToken }] = useAuth();
 
-  const [Connectors, setConnectors] = useState<Connector[]>([]);
+  const [Providers, setProviders] = useState<Provider[]>([]);
+  const [Connections, setConnections] = useState<Connection[]>([]);
+ 
   const [changes, setChanges] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createFormData, setCreateFormData] = useState({
+    name: '',
+    providerId: '',
+    clientid: '',
+    clientkey: '',
+    clientsecret: '',
+    schedule: 'daily'
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  const fetchConnectors = async () => {
+  const fetchConnections = async () => {
     try {
 
       setLoading(true);
@@ -90,9 +56,9 @@ export function ConnectorsPage() {
         console.error('ConnectorsPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
-/*
-      console.log('ConnectorsPage: Making API request to http://dev.companionintelligence.com/api/Connectors');
-      const response = await fetch('http://dev.companionintelligence.com/api/Connectors', {
+
+      console.log('ConnectorsPage: Making API request to /api/connections');
+      const response = await fetch('/api/connections', {
         headers: {
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
@@ -120,22 +86,19 @@ export function ConnectorsPage() {
       console.log('ConnectorsPage: API request successful, parsing response');
       const data = await response.json();
 
-
       // Handle both array response and paginated response
-      let ConnectorsData: Connector[] = [];
+      let ConnectionsData: Connection[] = [];
       if (Array.isArray(data)) {
-        ConnectorsData = data;
+        ConnectionsData = data;
       } else if (data.data && Array.isArray(data.data)) {
-        ConnectorsData = data.data;
+        ConnectionsData = data.data;
       } else {
         console.error('ConnectorsPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of Connectors');
       }
-*/
 
-
-      console.log(`ConnectorsPage: Successfully fetched ${ConnectorsData.length} Connectors`, ConnectorsData);
-      setConnectors(ConnectorsData);
+      console.log(`ConnectorsPage: Successfully fetched ${ConnectionsData.length} Connections`, {ConnectionsData});
+      setConnections(ConnectionsData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('ConnectorsPage: Error in fetchConnectors():', errorMessage, err);
@@ -146,9 +109,77 @@ export function ConnectorsPage() {
     }
   };
 
+  const fetchProviders = async () => {
+    try {
+
+      setLoading(true);
+      setError(null);
+
+      if (!authToken) {
+        console.error('ConnectorsPage: No authentication token found');
+        throw new Error('Authentication token not found');
+      }
+
+      console.log('ConnectorsPage: Making API request to /api/providers');
+      const response = await fetch('/api/providers', {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        // Handle different HTTP error codes
+        console.error(
+          `ConnectorsPage: API request failed with status ${response.status}: ${response.statusText}`,
+        );
+        if (response.status === 401) {
+          throw new Error('Unauthorized: You do not have permission to access this resource');
+        } else if (response.status === 403) {
+          throw new Error('Forbidden: Access denied');
+        } else if (response.status === 404) {
+          throw new Error('API endpoint not found');
+        } else if (response.status >= 500) {
+          throw new Error('Server error: Please try again later');
+        } else {
+          throw new Error(`Error fetching Connectors: ${response.statusText}`);
+        }
+      }
+
+      console.log('ConnectorsPage: API request successful, parsing response');
+      const data = await response.json();
+
+      // Handle both array response and paginated response
+      let ProvidersData: Provider[] = [];
+      if (Array.isArray(data)) {
+        ProvidersData = data;
+      } else if (data.data && Array.isArray(data.data)) {
+        ProvidersData = data.data;
+      } else {
+        console.error('ConnectorsPage: Invalid response format', data);
+        throw new Error('Invalid response format: Expected an array of Connectors');
+      }
+
+      console.log(`ConnectorsPage: Successfully fetched ${ProvidersData.length} Connectors`, {ProvidersData});
+      setProviders(ProvidersData);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error('ConnectorsPage: Error in fetchConnectors():', errorMessage, err);
+      setError(errorMessage);
+    } finally {
+      console.log('ConnectorsPage: Fetch operation completed');
+      setLoading(false);
+    }
+  };
+
+  const fetchState = async () => {
+    await fetchConnections()
+    await fetchProviders()
+  }
+
   useEffect(() => {
     console.log('ConnectorsPage: Component mounted, fetching Connectors');
-    fetchConnectors();
+    fetchState();
     return () => {
       console.log('ConnectorsPage: Component unmounting');
     };
@@ -160,20 +191,89 @@ export function ConnectorsPage() {
     return text.substring(0, maxLength) + '...';
   };
 
-  const connectorToggle = (connector:Connector) => {
-    const c = ConnectorsData.find(c => c.id === connector.id);
+  const connectionToggle = (connection:Connection) => {
+    /*
+    const c = connections.find(c => c.id === connector.id);
     if(c) {
-        c.enabled = !c.enabled
-        setChanges(changes+1)
+        c.active = !c.active;
+        setChanges(changes+1);
     }
-    setConnectors(ConnectorsData);
+    setConnectors(connections);
+    */
   }
 
-  const connectorConfigure = async (connector:Connector) => {
-    const res = await fetch("/api/connectors");
+  const connectionConfigure = async (connection:Connection) => {
+    console.log("configuring connection",connection)
+    /*
+    // @todo
+    // generate a connection that will be related to a given provider
+    // @todo
+    // using a supplied provider attempt to do actual oauth2 login
+    const res = await fetch("/api/connections");
     const {url} = await res.json();
     location.href = url
+    */
   }
+
+  const connectionCreate = async () => {
+    console.log("connection create called");
+    
+    // Reset form and errors
+    setCreateFormData({
+      name: '',
+      providerId: Providers.length > 0 ? Providers[0].id : '',
+      clientid: '',
+      clientkey: '',
+      clientsecret: '',
+      schedule: 'daily'
+    });
+    setCreateError(null);
+    setShowCreateModal(true);
+  }
+
+  const handleCreateSubmit = async () => {
+    try {
+      setCreateLoading(true);
+      setCreateError(null);
+
+      if (!authToken) {
+        throw new Error('Authentication token not found');
+      }
+
+      if (!createFormData.name || !createFormData.providerId) {
+        throw new Error('Name and Provider are required');
+      }
+
+      console.log('Creating connection with data:', createFormData);
+
+      const response = await fetch('/api/connections', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(createFormData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Error creating connection: ${response.statusText}`);
+      }
+
+      const newConnection = await response.json();
+      console.log('Successfully created connection:', newConnection);
+
+      // Close modal and refresh the connections list
+      setShowCreateModal(false);
+      await fetchConnections();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error('Error creating connection:', errorMessage, err);
+      setCreateError(errorMessage);
+    } finally {
+      setCreateLoading(false);
+    }
+  };
 
   return (
     <>
@@ -193,30 +293,37 @@ export function ConnectorsPage() {
 
       <Card className="w-full">
         <Card.Header className="flex flex-row items-center justify-between">
-          <Card.Title className="text-2xl">Connectors</Card.Title>
+          <Card.Title className="text-2xl">Connections and Providers</Card.Title>
           <Button
             variant="outline"
             size="icon"
-            onClick={fetchConnectors}
             disabled={loading}
-            title="Refresh Connectors"
+            title="Refresh Providers"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={loading}
+            onClick={connectionCreate}
+            title="Create Connection"
+          >Create
           </Button>
         </Card.Header>
         <Card.Content>
           {loading ? (
             <div className="text-center py-8">
               <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-              <p>Loading Connectors...</p>
+              <p>Loading...</p>
             </div>
           ) : error ? (
             <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
               <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
               <div>
-                <h3 className="font-medium">Error loading Connectors</h3>
+                <h3 className="font-medium">Error loading</h3>
                 <p className="text-sm">{error}</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={fetchConnectors}>
+                <Button variant="outline" size="sm" className="mt-2" onClick={fetchState()}>
                   Try Again
                 </Button>
               </div>
@@ -224,6 +331,9 @@ export function ConnectorsPage() {
           ) : (
             <>
               <div className="overflow-x-auto">
+                <hr></hr>
+                <h1>Connections</h1>
+                <hr></hr>
                 <Table>
                   <Table.Header>
                     <Table.Row>
@@ -235,41 +345,190 @@ export function ConnectorsPage() {
                     </Table.Row>
                   </Table.Header>
                   <Table.Body>
-                    {Connectors.length === 0 ? (
+                    {Providers.length === 0 ? (
                       <Table.Row>
                         <Table.Cell colSpan={7} className="text-center py-8 text-muted-foreground">
-                          No Connectors found in the system
+                          No Providers found in the system
                         </Table.Cell>
                       </Table.Row>
                     ) : (
-                      Connectors.map((connector) => (
-                        <Table.Row key={connector.id}>
-                          <Table.Cell className="text-sm">{connector.name}</Table.Cell>
-                          <Table.Cell className="text-sm">{truncateText(connector.schedule)}</Table.Cell>
-                          <Table.Cell className="text-sm">{truncateText(connector.lastrun)}</Table.Cell>
+                      Connections.map((connection) => (
+                        <Table.Row key={connection.id}>
+                          <Table.Cell className="text-sm">{connection.name}</Table.Cell>
+                          <Table.Cell className="text-sm">{truncateText(connection.schedule)}</Table.Cell>
+                          <Table.Cell className="text-sm">-</Table.Cell>
                           <Table.Cell className="text-sm">
-                            <Toggle aria-label="Toggle italic" onClick={() => { connectorToggle(connector) }} >
-                                { connector.enabled ? "enabled" : "disabled" }
+                            <Toggle aria-label="Toggle italic" onClick={() => { connectionToggle(connection) }} >
+                                { connection.active ? "enabled" : "disabled" }
                             </Toggle>
                           </Table.Cell>
                           <Table.Cell className="text-sm">
-                            <Button onClick={() => { connectorConfigure(connector) }}>
+                            <Button onClick={() => { connectionConfigure(connection) }}>
                                 Configure
                             </Button>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))
+                    )}
+                  </Table.Body>
+                </Table>
+                <hr></hr>
+                <h1>Providers - just for debugging - remove later</h1>
+                <hr></hr>
+                <Table>
+                  <Table.Header>
+                    <Table.Row>
+                      <Table.Head>Name</Table.Head>
+                    </Table.Row>
+                  </Table.Header>
+                  <Table.Body>
+                    {Providers.length === 0 ? (
+                      <Table.Row>
+                        <Table.Cell colSpan={7} className="text-center py-8 text-muted-foreground">
+                          No Providers found in the system
                         </Table.Cell>
-
-
+                      </Table.Row>
+                    ) : (
+                      Providers.map((provider) => (
+                        <Table.Row key={provider.id}>
+                          <Table.Cell className="text-sm">{provider.name}</Table.Cell>
                         </Table.Row>
                       ))
                     )}
                   </Table.Body>
                 </Table>
               </div>
-              <div className="text-xs text-muted-foreground mt-4">Total Connectors: {Connectors.length}</div>
+              <div className="text-xs text-muted-foreground mt-4">Total Connections: {Connections.length}</div>
             </>
           )}
         </Card.Content>
       </Card>
+
+      {/* Create Connection Modal */}
+      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <Dialog.Content className="sm:max-w-[500px]">
+          <Dialog.Header>
+            <Dialog.Title>Create New Connection</Dialog.Title>
+            <Dialog.Description>
+              Configure a new connection to sync data from an external provider.
+            </Dialog.Description>
+          </Dialog.Header>
+          
+          <div className="grid gap-4 py-4">
+            {createError && (
+              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+                {createError}
+              </div>
+            )}
+            
+            <div className="grid gap-2">
+              <Label htmlFor="name">Connection Name</Label>
+              <Input
+                id="name"
+                placeholder="My Google Connection"
+                value={createFormData.name}
+                onChange={(e) => setCreateFormData({ ...createFormData, name: e.target.value })}
+                disabled={createLoading}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="provider">Provider</Label>
+              <Select
+                value={createFormData.providerId}
+                onValueChange={(value) => setCreateFormData({ ...createFormData, providerId: value })}
+                disabled={createLoading}
+              >
+                <Select.Trigger id="provider">
+                  <Select.Value placeholder="Select a provider" />
+                </Select.Trigger>
+                <Select.Content>
+                  {Providers.map((provider) => (
+                    <Select.Item key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="clientid">Client ID (Optional)</Label>
+              <Input
+                id="clientid"
+                placeholder="your-client-id"
+                value={createFormData.clientid}
+                onChange={(e) => setCreateFormData({ ...createFormData, clientid: e.target.value })}
+                disabled={createLoading}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="clientkey">Client Key (Optional)</Label>
+              <Input
+                id="clientkey"
+                placeholder="your-client-key"
+                value={createFormData.clientkey}
+                onChange={(e) => setCreateFormData({ ...createFormData, clientkey: e.target.value })}
+                disabled={createLoading}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="clientsecret">Client Secret (Optional)</Label>
+              <Input
+                id="clientsecret"
+                type="password"
+                placeholder="your-client-secret"
+                value={createFormData.clientsecret}
+                onChange={(e) => setCreateFormData({ ...createFormData, clientsecret: e.target.value })}
+                disabled={createLoading}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="schedule">Sync Schedule</Label>
+              <Select
+                value={createFormData.schedule}
+                onValueChange={(value) => setCreateFormData({ ...createFormData, schedule: value })}
+                disabled={createLoading}
+              >
+                <Select.Trigger id="schedule">
+                  <Select.Value />
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="hourly">Hourly</Select.Item>
+                  <Select.Item value="daily">Daily</Select.Item>
+                  <Select.Item value="weekly">Weekly</Select.Item>
+                </Select.Content>
+              </Select>
+            </div>
+          </div>
+
+          <Dialog.Footer>
+            <Button
+              variant="outline"
+              onClick={() => setShowCreateModal(false)}
+              disabled={createLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateSubmit}
+              disabled={createLoading || !createFormData.name || !createFormData.providerId}
+            >
+              {createLoading ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  Creating...
+                </>
+              ) : (
+                'Create Connection'
+              )}
+            </Button>
+          </Dialog.Footer>
+        </Dialog.Content>
+      </Dialog>
     </>
   );
 }
