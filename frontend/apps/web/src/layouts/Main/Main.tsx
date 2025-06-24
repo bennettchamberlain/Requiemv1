@@ -48,8 +48,8 @@ const INTELLIGENCE = [
     icon: Bot,
   },
   {
-    name: 'Connectors',
-    url: '/connectors',
+    name: 'Connections',
+    url: '/connections',
     icon: Bot,
   },
 ];

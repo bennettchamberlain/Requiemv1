@@ -129,7 +129,7 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/connectors"
+          path="/connections"
           element={
             <ProtectedRoute>
               <ConnectorsPage />
