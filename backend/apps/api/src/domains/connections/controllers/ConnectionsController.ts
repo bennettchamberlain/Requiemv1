@@ -92,4 +92,18 @@ export class ConnectionsController {
   async delete(@Context() context: RequestContext, @Param('id') id: string) {
     await this.connectionService.delete(context, id);
   }
+
+
+  //@UseGuards(AuthGuard('jwt'))
+  @Get()
+  connect(@Context() context: RequestContext) {
+    return this.connectionService.connect(context);
+  }
+
+  @Get('callback')
+  callback(@Context() context: RequestContext) {
+    return this.connectionService.callback(context);
+  }
+
+
 }
