@@ -1,13 +1,17 @@
-import { Controller, Get, Param, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 import { Context } from '@ci/common/decorators';
+import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 
 import { QuestionService } from '../services/QuestionService';
 
 @Controller('questions')
 export class QuestionsController {
+  private logger = new LoggerService(QuestionsController.name);
+
   constructor(private readonly questionService: QuestionService) {}
 
   @UseGuards(AuthGuard('jwt'))
@@ -20,5 +24,10 @@ export class QuestionsController {
   @Get(':id')
   findOne(@Context() context: RequestContext, @Param('id') id: string) {
     return this.questionService.findOne(context, id);
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  handleCron() {
+    this.logger.log('Question cron has been invoked');
   }
 }
