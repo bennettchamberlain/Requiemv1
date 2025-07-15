@@ -29,12 +29,28 @@ export class QuestionService {
   }
 
   async findOne(context: RequestContext, id: string): Promise<Question | null> {
+    // TODO: This is a footgun that we shouldn't leave here for long.
+    //
+    // What we're actually interested in doing is returning questions owned by the user in
+    // addition to those that are unowned (user_id IS NULL). There isn't a clean way to
+    // do this with the TypeORM query API, so we'd have to write raw SQL. Not inherently
+    // a problem, but out of scope when this change was made.
+    //
+    // In the short term we're assuming that `findUnansweredByUserId` is sufficiently
+    // secure and that no events are spawned manually that would undermine that security.
+    const whereUser =
+      context.userId == null
+        ? {}
+        : {
+            user: {
+              id: context.userId,
+            },
+          };
+
     const result = await this.questionRepository.findOne({
       where: {
-        user: {
-          id: context.userId,
-        },
         id,
+        ...whereUser,
       },
       relations: ['user'],
     });
