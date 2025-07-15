@@ -6,6 +6,7 @@ export enum Events {
   API_ENQUEUE = 'api.enqueue',
   FILE_UPLOAD = 'file.upload',
   CHAT_SUMMARIZATION = 'chat.summarization',
+  INFER_QUESTION_ANSWER = 'infer.question.answer',
 }
 
 interface ApiEnqueuePayload extends EventPayload {
@@ -22,8 +23,14 @@ interface ChatSummarizationPayload extends EventPayload {
   threadId: string;
 }
 
+interface InferQuestionAnswerPayload extends EventPayload {
+  ownerId: string;
+  questionId: string;
+}
+
 export type EventPayloads = {
   [Events.API_ENQUEUE]: ApiEnqueuePayload;
   [Events.FILE_UPLOAD]: FileUploadPayload;
   [Events.CHAT_SUMMARIZATION]: ChatSummarizationPayload;
+  [Events.INFER_QUESTION_ANSWER]: InferQuestionAnswerPayload;
 };
