@@ -24,7 +24,7 @@ const logger = new Logger(path.basename(__filename));
       ContentEntity,
       EmbeddingEntity,
       EventEntity, // Unused, but relationally dependent
-      QuestionEntity, // Unused, but relationally dependent
+      QuestionEntity,
       TagEntity, // Unused, but relationally dependent
       UserEntity, // Unused, but relationally dependent
     ],
@@ -39,6 +39,20 @@ const logger = new Logger(path.basename(__filename));
 
     const embeddingRepo = db.getRepository(EmbeddingEntity);
     const embeddingService = new EmbeddingService(embeddingRepo);
+
+    await db.transaction(async (manager) => {
+      const questions = await manager.find(QuestionEntity, {
+        relations: ['user'],
+      });
+
+      logger.log(`Indexing ${questions.length} question records`);
+
+      for (const [index, entity] of questions.entries()) {
+        logger.log(`Generating vector embeddings for question, ${index + 1} / ${questions.length}`);
+
+        await embeddingService.indexEntity(entity, 'text');
+      }
+    });
 
     await db.transaction(async (manager) => {
       const answers = await manager.find(AnswerEntity, {

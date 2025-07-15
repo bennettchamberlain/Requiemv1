@@ -157,7 +157,9 @@ make help          # List all available make commands
 make init          # Initialize repository after checkout
 make install       # Install project dependencies
 make migrate       # Run database migrations
-make dev          # Start development environment with tmux
+make dev           # Start development environment with tmux
+
+make seed          # seed the database - note running this more than once will add entries more than once
 
 # Linting
 yarn lint         # Run ESLint across the workspace
@@ -180,18 +182,9 @@ yarn migrate:rollback     # Rollback the last migration
 # Code quality
 yarn lint:circular-imports # Check for circular import dependencies
 
-# Database seeding
-npx ts-node scripts/seed-database.ts  # Seed database with test data
 ```
-
 
 ### Available Scripts
-
-#### Database Seeding
-```bash
-# Seed database with test data
-npx ts-node scripts/seed-database.ts
-```
 
 ### Frontend Web App Commands (`frontend/apps/web`)
 
