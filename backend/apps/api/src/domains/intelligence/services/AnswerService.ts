@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import type { RequestContext } from '@ci/common/types';
 
 import { AnswerEntity } from '../entities/AnswerEntity';
-import type { Answer } from '../types';
+import type { Answer, Question } from '../types';
 
 @Injectable()
 export class AnswerService {
@@ -39,5 +39,11 @@ export class AnswerService {
     });
 
     return result?.toAnswer() ?? null;
+  }
+
+  async findAssociatedAnswers(context: RequestContext, question: Question): Promise<Answer[]> {
+    // TODO: Hit the vector database using the provided answer.
+    // Return a list of answers hydrated with their related questions to generate RAG context.
+    return [];
   }
 }

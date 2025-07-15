@@ -7,6 +7,7 @@ import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 
+import { AnswerService } from '../services/AnswerService';
 import { QuestionService } from '../services/QuestionService';
 
 @Controller('questions')
@@ -14,6 +15,7 @@ export class QuestionsController {
   private logger = new LoggerService(QuestionsController.name);
 
   constructor(
+    private readonly answerService: AnswerService,
     private readonly eventService: EventService,
     private readonly questionService: QuestionService,
   ) {}
@@ -31,13 +33,19 @@ export class QuestionsController {
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
-  handleCron() {
-    this.logger.log('Question cron has been invoked');
+  async cronProcessQuestions() {
+    this.logger.log('Processing question answer inference cron');
 
+    const unansweredQuestions = await this.questionService.findUnansweredByUserId();
+
+    for (const [userId, questions] of unansweredQuestions) {
+      for (const question of questions) {
     this.eventService.send(Events.INFER_QUESTION_ANSWER, {
-      ownerId: 'mock',
-      questionId: 'mock',
+          ownerId: userId,
+          questionId: question.id,
     });
+      }
+    }
   }
 
   @OnEvent(Events.INFER_QUESTION_ANSWER)
@@ -46,9 +54,19 @@ export class QuestionsController {
       userId: payload.ownerId,
     };
 
+    const question = await this.questionService.findOne(context, payload.questionId);
+
+    if (question) {
+      const associatedAnswers = this.answerService.findAssociatedAnswers(context, question);
+
+      this.logger.debug('Fetched associated answers', {
+        associatedAnswers,
+      });
+
     this.logger.log('Inferring answer to question', {
       userId: context.userId,
       questionId: payload.questionId,
     });
+    }
   }
 }
