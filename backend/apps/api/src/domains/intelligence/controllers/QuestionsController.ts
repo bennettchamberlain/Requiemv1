@@ -38,11 +38,11 @@ export class QuestionsController {
 
     const unansweredQuestions = await this.questionService.findUnansweredByUserId();
 
-    for (const [userId, questions] of unansweredQuestions) {
-      for (const question of questions) {
+    for (const [userId, questionIds] of unansweredQuestions) {
+      for (const questionId of questionIds) {
     this.eventService.send(Events.INFER_QUESTION_ANSWER, {
           ownerId: userId,
-          questionId: question.id,
+          questionId: questionId,
     });
       }
     }

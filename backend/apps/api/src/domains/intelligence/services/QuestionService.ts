@@ -42,49 +42,51 @@ export class QuestionService {
     return result?.toQuestion() ?? null;
   }
 
-  // FIXME: We don't need to return the whole Question.
-  //   This is a purpose built method only called by the cron task.
-  //   A map of UUID to UUID[] should suffice.
-  async findUnansweredByUserId(): Promise<Map<string, Question[]>> {
-    // TODO:
-    //   We need to refine how we're selecting "unanswered questions".
-    //   This first cut gets the fundamentals roughly nailed down.
+  async findUnansweredByUserId(): Promise<Map<string, string[]>> {
+    // TODO: We need to refine how we're selecting "unanswered questions".
     //
-    //   OK, so what about multiple tenants on a server box? How do we make sure
-    //   that we're not choking out user answer processing because of a noisy neighbor?
-    //   We can consider querying for top 5 for every user.
+    // This first cut gets the fundamentals roughly nailed down.
     //
-    //   How do we achieve stability? It's likely the best answer we're going to get to
-    //   a question is a user-provided one. We might consider answers "stable" if they
-    //   have such an answer. We can offer users a way to correct LLM infererences.
+    // OK, so what about multiple tenants on a server box? How do we make sure
+    // that we're not choking out user answer processing because of a noisy neighbor?
+    // We can consider querying for top 5 for every user.
     //
-    //   Otherwise how could we consider an answer good enough? It's possible we
-    //   could infer a second answer that would be worse than the first.
+    // How do we achieve stability? It's likely the best answer we're going to get to
+    // a question is a user-provided one. We might consider answers "stable" if they
+    // have such an answer. We can offer users a way to correct LLM infererences.
     //
-    //   Point being that there are rough edges here that we need to refine. But the
-    //   concept of "get me unaswered questions by user," can clearly live here.
+    // Otherwise how could we consider an answer good enough? It's possible we
+    // could infer a second answer that would be worse than the first.
+    //
+    // Point being that there are rough edges here that we need to refine. But the
+    // concept of "get me unaswered questions by user," can clearly live here.
+
+    type Row = {
+      id: string;
+      user_id: string;
+    };
 
     const rows = (await this.dataSource.query(`
       SELECT
-        *
+        questions.id as id,
+        answers.user_id as user_id
       FROM
         questions
       LEFT JOIN answers ON answers.question_id = questions.id
       WHERE answers.rag_answer_1 IS NULL
       LIMIT 5;
-    `)) satisfies Array<Partial<QuestionEntity> & { user_id: string }>;
+    `)) satisfies Array<Row>;
 
-    const groupedByUserId = new Map<string, Question[]>();
+    const groupedByUserId = new Map<string, string[]>();
 
     for (const row of rows) {
       const userId = row.user_id;
-      const entity = this.questionRepository.create(row).toQuestion();
 
       if (!groupedByUserId.has(userId)) {
         groupedByUserId.set(userId, []);
       }
 
-      groupedByUserId.get(userId)!.push(entity);
+      groupedByUserId.get(userId)!.push(row.id);
     }
 
     return groupedByUserId;
