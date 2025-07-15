@@ -2,7 +2,7 @@
   "host": "127.0.0.1",
   "port": 3030,
   "logging": {
-    "level": "debug"
+    "level": "info"
   },
   "auth": {
     "local": {
@@ -27,7 +27,7 @@
     "database": "companion_intel",
     "username": "POSTGRES_USERNAME",
     "password": "POSTGRES_PASSWORD",
-    "logging": ["query", "error"]
+    "logging": ["error"]
   },
   "staticfiles": {
     "storageUrl": "http://localhost:9000",
