@@ -51,6 +51,7 @@ export function ConnectionsPage() {
   });
   const [configureLoading, setConfigureLoading] = useState(false);
   const [configureError, setConfigureError] = useState<string | null>(null);
+  const [oauthInProgress, setOauthInProgress] = useState(false);
 
   const fetchConnections = async () => {
     try {
@@ -235,29 +236,8 @@ export function ConnectionsPage() {
     setConfigureError(null);
     setShowConfigureModal(true);
 
-    // go to oauth url
-    if(connection && connection.clientid && connection.clientsecret) {
-      logger.log('connection attempting to do oauth')
-      fetch(`/api/connections/${connection.id}/connect`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-      }).then(res => {
-        if (!res.ok) {
-          throw new Error(`Failed to get OAuth URL: ${res.statusText}`);
-        }
-        return res.json();
-      }).then(data => {
-        logger.log("connection got an url to go to for login", data)
-        if (data.url) {
-          window.location.href = data.url;
-        }
-      }).catch(err => {
-        logger.error('Failed to initiate OAuth flow:', err);
-        setConfigureError('Failed to start authentication process');
-      });
-    }
+    // Don't initiate OAuth automatically when opening the configure modal
+    // Wait for user to save the configuration first
 
   }
 
@@ -347,6 +327,36 @@ export function ConnectionsPage() {
       // Close modal and refresh the connections list
       setShowConfigureModal(false);
       await fetchConnections();
+      
+      // If OAuth credentials are configured, initiate OAuth flow
+      if (configureFormData.clientid && configureFormData.clientsecret) {
+        logger.log('Initiating OAuth flow after configuration');
+        setOauthInProgress(true);
+        
+        try {
+          const response = await fetch(`/api/connections/${selectedConnection.id}/connect`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to get OAuth URL: ${response.statusText}`);
+          }
+          
+          const data = await response.json();
+          logger.log("Got OAuth URL", data);
+          
+          if (data.url) {
+            window.location.href = data.url;
+          }
+        } catch (err) {
+          logger.error('Failed to initiate OAuth flow:', err);
+          setError('Failed to start authentication process');
+          setOauthInProgress(false);
+        }
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       logger.error('Error updating connection:', errorMessage, err);
@@ -400,10 +410,10 @@ export function ConnectionsPage() {
               </div>
             </div>
           )}
-          {loading ? (
+          {loading || oauthInProgress ? (
             <div className="text-center py-8">
               <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-              <p>Loading...</p>
+              <p>{oauthInProgress ? 'Redirecting to authentication...' : 'Loading...'}</p>
             </div>
           ) : error ? (
             <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">

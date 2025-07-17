@@ -8,8 +8,11 @@ import {
   Patch,
   Post,
   UseGuards,
+  Redirect,
+  Res,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Response } from 'express';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -93,16 +96,23 @@ export class ConnectionsController {
     await this.connectionService.delete(context, id);
   }
 
-
-  //@UseGuards(AuthGuard('jwt'))
-  @Get()
-  connect(@Context() context: RequestContext) {
-    return this.connectionService.connect(context);
+  @UseGuards(AuthGuard('jwt'))
+  @Get(':id/connect')
+  async connect(@Context() context: RequestContext, @Param('id') id: string) {
+    return this.connectionService.connect(context, id);
   }
 
   @Get('callback')
-  callback(@Context() context: RequestContext) {
-    return this.connectionService.callback(context);
+  async callback(@Context() context: RequestContext, @Res() res: Response) {
+    const result = await this.connectionService.callback(context);
+    
+    // If the service returns a redirect URL, perform the redirect
+    if (result.redirect) {
+      return res.redirect(result.redirect);
+    }
+    
+    // Otherwise return the result as JSON
+    return res.json(result);
   }
 
 
