@@ -139,6 +139,16 @@ init: ## Initialize repository after checkout
 		exit 1; \
 	fi
 
+	@MODEL=gemma3:1b; \
+	ollama list | grep -Fq "$$MODEL"; \
+	STATUS=$$?; \
+	if [ "$$STATUS" -eq 0 ]; then \
+		printf "\t$(GREEN)✓$(RESET) ollama model '$$MODEL' is available\n\n"; \
+	else \
+		printf "\t$(RED)✗$(RESET) ollama model '$$MODEL' is not yet pulled\n\n"; \
+		exit 1; \
+	fi
+
 	@HOST=dev.companionintelligence.com; \
 	IP=$$(ping -c 1 -W 1 $$HOST | grep -oE '\(([0-9:.]+)\)' | tr -d '()'); \
 	if [ "$$IP" = "127.0.0.1" ] || [ "$$IP" = "::1" ]; then \
