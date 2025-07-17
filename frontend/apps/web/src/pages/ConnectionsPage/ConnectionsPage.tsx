@@ -253,6 +253,7 @@ export function ConnectionsPage() {
       }
 
       // Create a new connection with default values
+      const defaultProvider = Providers.find(p => p.name === 'google') || Providers[0];
       const response = await fetch('/api/connections', {
         method: 'POST',
         headers: {
@@ -261,7 +262,7 @@ export function ConnectionsPage() {
         },
         body: JSON.stringify({
           name: 'New Connection',
-          providerId: Providers[0].id,
+          providerId: defaultProvider.id,
         }),
       });
 
@@ -563,7 +564,8 @@ export function ConnectionsPage() {
               <Label htmlFor="provider">Provider</Label>
               <Select
                 value={configureFormData.providerId}
-                disabled={true}
+                onValueChange={(value) => setConfigureFormData({ ...configureFormData, providerId: value })}
+                disabled={configureLoading || !!selectedConnection?.provider}
               >
                 <Select.Trigger id="provider">
                   <Select.Value />
@@ -576,6 +578,11 @@ export function ConnectionsPage() {
                   ))}
                 </Select.Content>
               </Select>
+              {selectedConnection?.provider && (
+                <p className="text-xs text-muted-foreground">
+                  Provider cannot be changed after creation
+                </p>
+              )}
             </div>
 
             <div className="grid gap-2">
