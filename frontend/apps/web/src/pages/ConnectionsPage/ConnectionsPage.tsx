@@ -5,7 +5,6 @@ import { AlertCircle, RefreshCw, Settings } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
-import { LoggerService } from '@ci/common/services/LoggerService';
 
 export interface Provider {
   readonly id: string;
@@ -26,7 +25,6 @@ export interface Connection {
 export function ConnectionsPage() {
   usePageTitle('Connections - Companion Intelligence');
 
-  const logger = new LoggerService("ConnectionsPage");
 
   const [{ authToken }] = useAuth();
 
@@ -60,11 +58,11 @@ export function ConnectionsPage() {
       setError(null);
 
       if (!authToken) {
-        logger.error('ConnectionsPage: No authentication token found');
+        console.error('ConnectionsPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
 
-      logger.log('ConnectionsPage: Making API request to /api/connections');
+      console.log('ConnectionsPage: Making API request to /api/connections');
       const response = await fetch('/api/connections', {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -74,7 +72,7 @@ export function ConnectionsPage() {
 
       if (!response.ok) {
         // Handle different HTTP error codes
-        logger.error(
+        console.error(
           `ConnectionsPage: API request failed with status ${response.status}: ${response.statusText}`,
         );
         if (response.status === 401) {
@@ -90,7 +88,7 @@ export function ConnectionsPage() {
         }
       }
 
-      logger.log('ConnectionsPage: API request successful, parsing response');
+      console.log('ConnectionsPage: API request successful, parsing response');
       const data = await response.json();
 
       // Handle both array response and paginated response
@@ -100,18 +98,18 @@ export function ConnectionsPage() {
       } else if (data.data && Array.isArray(data.data)) {
         ConnectionsData = data.data;
       } else {
-        logger.error('ConnectionsPage: Invalid response format', data);
+        console.error('ConnectionsPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of Connectors');
       }
 
-      logger.log(`ConnectionsPage: Successfully fetched ${ConnectionsData.length} Connections`, {ConnectionsData});
+      console.log(`ConnectionsPage: Successfully fetched ${ConnectionsData.length} Connections`, {ConnectionsData});
       setConnections(ConnectionsData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      logger.error('ConnectionsPage: Error in fetchConnectors():', errorMessage, err);
+      console.error('ConnectionsPage: Error in fetchConnectors():', errorMessage, err);
       setError(errorMessage);
     } finally {
-      logger.log('ConnectionsPage: Fetch operation completed');
+      console.log('ConnectionsPage: Fetch operation completed');
       setLoading(false);
     }
   };
@@ -123,11 +121,11 @@ export function ConnectionsPage() {
       setError(null);
 
       if (!authToken) {
-        logger.error('ConnectionsPage: No authentication token found');
+        console.error('ConnectionsPage: No authentication token found');
         throw new Error('Authentication token not found');
       }
 
-      logger.log('ConnectionsPage: Making API request to /api/providers');
+      console.log('ConnectionsPage: Making API request to /api/providers');
       const response = await fetch('/api/providers', {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -137,7 +135,7 @@ export function ConnectionsPage() {
 
       if (!response.ok) {
         // Handle different HTTP error codes
-        logger.error(
+        console.error(
           `ConnectionsPage: API request failed with status ${response.status}: ${response.statusText}`,
         );
         if (response.status === 401) {
@@ -153,7 +151,7 @@ export function ConnectionsPage() {
         }
       }
 
-      logger.log('ConnectionsPage: API request successful, parsing response');
+      console.log('ConnectionsPage: API request successful, parsing response');
       const data = await response.json();
 
       // Handle both array response and paginated response
@@ -163,18 +161,18 @@ export function ConnectionsPage() {
       } else if (data.data && Array.isArray(data.data)) {
         ProvidersData = data.data;
       } else {
-        logger.error('ConnectionsPage: Invalid response format', data);
+        console.error('ConnectionsPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of Connectors');
       }
 
-      logger.log(`ConnectionsPage: Successfully fetched ${ProvidersData.length} Connectors`, {ProvidersData});
+      console.log(`ConnectionsPage: Successfully fetched ${ProvidersData.length} Connectors`, {ProvidersData});
       setProviders(ProvidersData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      logger.error('ConnectionsPage: Error in fetchConnectors():', errorMessage, err);
+      console.error('ConnectionsPage: Error in fetchConnectors():', errorMessage, err);
       setError(errorMessage);
     } finally {
-      logger.log('ConnectionsPage: Fetch operation completed');
+      console.log('ConnectionsPage: Fetch operation completed');
       setLoading(false);
     }
   };
@@ -185,7 +183,7 @@ export function ConnectionsPage() {
   }
 
   useEffect(() => {
-    logger.log('ConnectionsPage: Component mounted, fetching Connectors');
+    console.log('ConnectionsPage: Component mounted, fetching Connectors');
     
     // Check for OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
@@ -200,7 +198,7 @@ export function ConnectionsPage() {
     
     fetchState();
     return () => {
-      logger.log('ConnectionsPage: Component unmounting');
+      console.log('ConnectionsPage: Component unmounting');
     };
   }, []);
 
@@ -222,7 +220,7 @@ export function ConnectionsPage() {
   }
 
   const connectionConfigure = (connection: Connection) => {
-    logger.log("connection configure called - going to oauth url", connection);
+    console.log("connection configure called - going to oauth url", connection);
     
     setSelectedConnection(connection);
     setConfigureFormData({
@@ -242,7 +240,7 @@ export function ConnectionsPage() {
   }
 
   const connectionCreate = async () => {
-    logger.log("connection create called");
+    console.log("connection create called");
     
     try {
       if (!authToken) {
@@ -272,7 +270,7 @@ export function ConnectionsPage() {
       }
 
       const newConnection = await response.json();
-      logger.log('Successfully created connection:', newConnection);
+      console.log('Successfully created connection:', newConnection);
 
       // Refresh the connections list
       await fetchConnections();
@@ -281,7 +279,7 @@ export function ConnectionsPage() {
       connectionConfigure(newConnection);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      logger.error('Error creating connection:', errorMessage, err);
+      console.error('Error creating connection:', errorMessage, err);
       setError(errorMessage);
     }
   }
@@ -299,7 +297,7 @@ export function ConnectionsPage() {
         throw new Error('Name is required');
       }
 
-      logger.log('Updating connection with data:', configureFormData);
+      console.log('Updating connection with data:', configureFormData);
 
       const response = await fetch(`/api/connections/${selectedConnection.id}`, {
         method: 'PATCH',
@@ -322,7 +320,7 @@ export function ConnectionsPage() {
       }
 
       const updatedConnection = await response.json();
-      logger.log('Successfully updated connection:', updatedConnection);
+      console.log('Successfully updated connection:', updatedConnection);
 
       // Close modal and refresh the connections list
       setShowConfigureModal(false);
@@ -330,7 +328,7 @@ export function ConnectionsPage() {
       
       // If OAuth credentials are configured, initiate OAuth flow
       if (configureFormData.clientid && configureFormData.clientsecret) {
-        logger.log('Initiating OAuth flow after configuration');
+        console.log('Initiating OAuth flow after configuration');
         setOauthInProgress(true);
         
         try {
@@ -346,20 +344,20 @@ export function ConnectionsPage() {
           }
           
           const data = await response.json();
-          logger.log("Got OAuth URL", data);
+          console.log("Got OAuth URL", data);
           
           if (data.url) {
             window.location.href = data.url;
           }
         } catch (err) {
-          logger.error('Failed to initiate OAuth flow:', err);
+          console.error('Failed to initiate OAuth flow:', err);
           setError('Failed to start authentication process');
           setOauthInProgress(false);
         }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      logger.error('Error updating connection:', errorMessage, err);
+      console.error('Error updating connection:', errorMessage, err);
       setConfigureError(errorMessage);
     } finally {
       setConfigureLoading(false);
