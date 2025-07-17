@@ -144,7 +144,7 @@ export class ConnectionService {
     });
 
     const authorizationUri = client.authorizeURL({
-      redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com'}/api/connections/callback`,
+      redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/connections/callback`,
       scope: provider.scopes || '',
       state: connectionId, // Pass connection ID in state to identify it in callback
     });
@@ -201,7 +201,7 @@ export class ConnectionService {
       // Exchange code for tokens
       const tokenParams = {
         code,
-        redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com'}/api/connections/callback`,
+        redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/connections/callback`,
       };
 
       const accessToken = await client.getToken(tokenParams);

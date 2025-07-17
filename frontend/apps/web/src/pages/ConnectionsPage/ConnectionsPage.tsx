@@ -534,7 +534,13 @@ export function ConnectionsPage() {
                                 variant="ghost"
                                 onClick={() => handleConnect(connection)}
                                 disabled={deleteLoading === connection.id || oauthInProgress || !connection.clientid || !connection.clientsecret}
-                                title={connection.accessToken ? "Reconnect" : "Connect"}
+                                title={
+                                  !connection.clientid || !connection.clientsecret 
+                                    ? "Configure OAuth credentials first" 
+                                    : connection.accessToken 
+                                      ? "Reconnect" 
+                                      : "Connect"
+                                }
                               >
                                 {connection.accessToken ? (
                                   <RefreshCw className="h-4 w-4" />
@@ -583,6 +589,13 @@ export function ConnectionsPage() {
             {configureError && (
               <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
                 {configureError}
+              </div>
+            )}
+            
+            {selectedConnection?.accessToken && (
+              <div className="bg-green-50 text-green-800 rounded-md p-3 text-sm flex items-center gap-2">
+                <Link2 className="h-4 w-4" />
+                This connection is authenticated. You can reconnect if needed.
               </div>
             )}
             
@@ -694,13 +707,25 @@ export function ConnectionsPage() {
             {selectedConnection && configureFormData.clientid && configureFormData.clientsecret && (
               <Button
                 variant="secondary"
-                onClick={() => {
+                onClick={async () => {
+                  // Save first if there are changes
+                  if (configureFormData.name !== selectedConnection.name ||
+                      configureFormData.clientid !== selectedConnection.clientid ||
+                      configureFormData.clientsecret !== selectedConnection.clientsecret ||
+                      configureFormData.schedule !== selectedConnection.schedule) {
+                    await handleConfigureSubmit();
+                  }
                   setShowConfigureModal(false);
-                  handleConnect(selectedConnection);
+                  // Use the updated connection data
+                  const updatedConnection = {
+                    ...selectedConnection,
+                    ...configureFormData
+                  };
+                  handleConnect(updatedConnection);
                 }}
                 disabled={configureLoading}
               >
-                Save & Connect
+                {selectedConnection.accessToken ? 'Save & Reconnect' : 'Save & Connect'}
               </Button>
             )}
           </Dialog.Footer>
