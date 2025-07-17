@@ -8,44 +8,8 @@ import type { RequestContext } from '@ci/common/types';
 import { ConnectionEntity } from '../entities/ConnectionEntity';
 import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../types';
 
-
-
-
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// hardcoded test for google
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-import { google } from 'googleapis';
 import { LoggerService } from '@ci/common/services/LoggerService';
-
-//import dotenv from 'dotenv';
-//dotenv.config();
-
-const CLIENT_ID = '558239792217-e6jfhfdqmecgpcod1tvvnl4p8itn3h97.apps.googleusercontent.com';
-const CLIENT_SECRET = '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';
-const API_KEY = 'AIzaSyAm5tJWdOW3eZlW4PokmTkYAqmgFeW7yac';
-
-// use process.env.CLIENT_ID ...
-
-const oauth2Client = new google.auth.OAuth2(
-  CLIENT_ID,
-  CLIENT_SECRET,
-  'http://dev.companionintelligence.com/api/connections/callback'
-);
-
-const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/calendar.readonly',
-];
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
+import { AuthorizationCode } from 'simple-oauth2';
 
 @Injectable()
 export class ConnectionService {
@@ -149,63 +113,210 @@ export class ConnectionService {
     return true;
   }
 
-
-
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+  async connect(context: RequestContext, connectionId: string): Promise<{ url: string }> {
+    const connection = await this.findOne(context, connectionId);
+    
+    if (!connection.clientid || !connection.clientsecret) {
+      throw new NotFoundException('OAuth2 credentials not configured');
+    }
 
-  async connect(context: RequestContext): Promise<{}> {
-    const url = oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: SCOPES,
-      prompt: 'consent',
+    // Get provider OAuth2 configuration
+    const provider = connection.provider;
+    if (!provider) {
+      throw new NotFoundException('Provider not found');
+    }
+
+    // Create OAuth2 client based on provider configuration
+    // This is a generic implementation that works with any OAuth2 provider
+    const client = new AuthorizationCode({
+      client: {
+        id: connection.clientid,
+        secret: connection.clientsecret,
+      },
+      auth: {
+        tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
+        tokenPath: provider.tokenPath || '/token',
+        authorizePath: provider.authorizePath || '/auth',
+      },
     });
-    return {url};
+
+    const authorizationUri = client.authorizeURL({
+      redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com'}/api/connections/callback`,
+      scope: provider.scopes || '',
+      state: connectionId, // Pass connection ID in state to identify it in callback
+    });
+
+    return { url: authorizationUri };
   }
 
   async callback(context: RequestContext): Promise<any> {
+    this.logger.debug('OAuth2 callback received', context.query);
 
-    // @todo we need to know which connection was invoked
-    console.log("connection service backend authentication callback has been called",context)
-
-    if(!context.query || !context.query.code) {
-      this.logger.error('Connection service failed to get oauth2 token back');
-      throw new NotFoundException();
+    if (!context.query || !context.query.code || !context.query.state) {
+      this.logger.error('OAuth2 callback missing code or state');
+      throw new NotFoundException('Invalid callback parameters');
     }
+
+    const connectionId = context.query.state as string;
+    const code = context.query.code as string;
+
     try {
-      const code = context.query.code;
-      const { tokens } = await oauth2Client.getToken(code);
-      oauth2Client.setCredentials(tokens);
-      // - redirect user to somewhere useful - unsure how to do this from here @todo
-      // - store tokens somewhere durable 
-    } catch (err) {
-      this.logger.error('Connection service failed to get oauth2 token back');
-      throw new NotFoundException();
-    }
+      // Get the connection to retrieve OAuth2 configuration
+      const connection = await this.findOne(context, connectionId);
+      
+      if (!connection.clientid || !connection.clientsecret) {
+        throw new NotFoundException('OAuth2 credentials not configured');
+      }
 
-    return {}
-  }
+      const provider = connection.provider;
+      if (!provider) {
+        throw new NotFoundException('Provider not found');
+      }
 
-  async getCalendar(context: RequestContext, id: string): Promise<any> {
-
-    /*
-
-    // here ordinary work is done, fetching calender events
-
-      oauth2Client.setCredentials(req.session.tokens);
-      const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-
-      const result = await calendar.events.list({
-        calendarId: 'primary',
-        timeMin: new Date().toISOString(),
-        maxResults: 5,
-        singleEvents: true,
-        orderBy: 'startTime',
+      // Create OAuth2 client
+      const client = new AuthorizationCode({
+        client: {
+          id: connection.clientid,
+          secret: connection.clientsecret,
+        },
+        auth: {
+          tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
+          tokenPath: provider.tokenPath || '/token',
+          authorizePath: provider.authorizePath || '/auth',
+        },
       });
 
-    */
+      // Exchange code for tokens
+      const tokenParams = {
+        code,
+        redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com'}/api/connections/callback`,
+      };
 
+      const accessToken = await client.getToken(tokenParams);
+
+      // Store tokens in the connection entity
+      await this.connectionRepository.update(
+        {
+          id: connectionId,
+          user: {
+            id: context.userId,
+          },
+        },
+        {
+          accessToken: accessToken.token.access_token,
+          refreshToken: accessToken.token.refresh_token,
+          tokenExpiry: accessToken.token.expires_at,
+        },
+      );
+
+      // Return success response
+      // In a real app, you might want to redirect to a success page
+      return {
+        success: true,
+        connectionId,
+        message: 'OAuth2 connection established successfully',
+      };
+    } catch (error) {
+      this.logger.error('OAuth2 token exchange failed', error);
+      throw new NotFoundException('Failed to complete OAuth2 flow');
+    }
+  }
+
+  async makeApiRequest(context: RequestContext, connectionId: string, endpoint: string, options?: any): Promise<any> {
+    const connection = await this.findOne(context, connectionId);
+    
+    if (!connection.accessToken) {
+      throw new NotFoundException('Connection not authenticated');
+    }
+
+    const provider = connection.provider;
+    if (!provider) {
+      throw new NotFoundException('Provider not found');
+    }
+
+    // Check if token needs refresh
+    if (connection.tokenExpiry && new Date(connection.tokenExpiry) < new Date()) {
+      await this.refreshToken(context, connectionId);
+      // Reload connection to get new tokens
+      const refreshedConnection = await this.findOne(context, connectionId);
+      connection.accessToken = refreshedConnection.accessToken;
+    }
+
+    // Make generic API request with the access token
+    try {
+      const response = await fetch(`${provider.apiBaseUrl || 'https://www.googleapis.com'}${endpoint}`, {
+        ...options,
+        headers: {
+          ...options?.headers,
+          'Authorization': `Bearer ${connection.accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      this.logger.error('API request failed', { connectionId, endpoint, error });
+      throw error;
+    }
+  }
+
+  private async refreshToken(context: RequestContext, connectionId: string): Promise<void> {
+    const connection = await this.findOne(context, connectionId);
+    
+    if (!connection.refreshToken) {
+      throw new NotFoundException('No refresh token available');
+    }
+
+    const provider = connection.provider;
+    if (!provider) {
+      throw new NotFoundException('Provider not found');
+    }
+
+    const client = new AuthorizationCode({
+      client: {
+        id: connection.clientid!,
+        secret: connection.clientsecret!,
+      },
+      auth: {
+        tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
+        tokenPath: provider.tokenPath || '/token',
+        authorizePath: provider.authorizePath || '/auth',
+      },
+    });
+
+    try {
+      const accessToken = client.createToken({
+        access_token: connection.accessToken!,
+        refresh_token: connection.refreshToken,
+        expires_at: connection.tokenExpiry,
+      });
+
+      const refreshedToken = await accessToken.refresh();
+
+      // Update tokens in database
+      await this.connectionRepository.update(
+        {
+          id: connectionId,
+          user: {
+            id: context.userId,
+          },
+        },
+        {
+          accessToken: refreshedToken.token.access_token,
+          refreshToken: refreshedToken.token.refresh_token || connection.refreshToken,
+          tokenExpiry: refreshedToken.token.expires_at,
+        },
+      );
+    } catch (error) {
+      this.logger.error('Token refresh failed', { connectionId, error });
+      throw new NotFoundException('Failed to refresh token');
+    }
   }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

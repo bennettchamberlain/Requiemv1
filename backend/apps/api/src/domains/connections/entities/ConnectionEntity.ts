@@ -39,6 +39,15 @@ export class ConnectionEntity {
   @Column({ type: 'text', nullable: true })
   schedule!: string | null;
 
+  @Column({ type: 'text', nullable: true, name: 'access_token' })
+  accessToken!: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'refresh_token' })
+  refreshToken!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true, name: 'token_expiry' })
+  tokenExpiry!: Date | null;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -62,6 +71,9 @@ export class ConnectionEntity {
       clientkey: this.clientkey ?? null,
       clientsecret: this.clientsecret ?? null,
       schedule: this.schedule ?? null,
+      accessToken: this.accessToken ?? null,
+      refreshToken: this.refreshToken ?? null,
+      tokenExpiry: this.tokenExpiry ?? null,
       provider: this.provider?.toProvider(),
     } satisfies Connection;
   }
