@@ -193,9 +193,14 @@ export function ConnectionsPage() {
     const urlParams = new URLSearchParams(window.location.search);
     const oauthStatus = urlParams.get('oauth');
     const connectionId = urlParams.get('connectionId');
+    const errorMessage = urlParams.get('message');
     
     if (oauthStatus === 'success' && connectionId) {
       setSuccessMessage(`Successfully authenticated connection!`);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (oauthStatus === 'error') {
+      setError(errorMessage || 'OAuth authentication failed');
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }

@@ -104,15 +104,22 @@ export class ConnectionsController {
 
   @Get('callback')
   async callback(@Context() context: RequestContext, @Res() res: Response) {
-    const result = await this.connectionService.callback(context);
-    
-    // If the service returns a redirect URL, perform the redirect
-    if (result.redirect) {
-      return res.redirect(result.redirect);
+    try {
+      const result = await this.connectionService.callback(context);
+      
+      // If the service returns a redirect URL, perform the redirect
+      if (result.redirect) {
+        return res.redirect(result.redirect);
+      }
+      
+      // Otherwise return the result as JSON
+      return res.json(result);
+    } catch (error) {
+      // Log the error and redirect to frontend with error
+      console.error('OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://dev.companionintelligence.com';
+      return res.redirect(`${frontendUrl}/connections?oauth=error&message=${encodeURIComponent('Authentication failed')}`);
     }
-    
-    // Otherwise return the result as JSON
-    return res.json(result);
   }
 
 

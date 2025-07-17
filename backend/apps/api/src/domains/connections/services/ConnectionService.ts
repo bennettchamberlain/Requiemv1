@@ -163,15 +163,23 @@ export class ConnectionService {
   }
 
   async callback(context: RequestContext): Promise<any> {
-    this.logger.debug('OAuth2 callback received', context.query);
+    this.logger.debug('OAuth2 callback received', { 
+      query: context.query,
+      hasCode: !!context.query?.code,
+      hasState: !!context.query?.state 
+    });
 
     if (!context.query || !context.query.code || !context.query.state) {
-      this.logger.error('OAuth2 callback missing code or state');
+      this.logger.error('OAuth2 callback missing code or state', {
+        query: context.query
+      });
       throw new NotFoundException('Invalid callback parameters');
     }
 
     const connectionId = context.query.state as string;
     const code = context.query.code as string;
+    
+    this.logger.debug('Processing OAuth callback', { connectionId, codeLength: code.length });
 
     try {
       // Get the connection without user context (since this is an OAuth callback)
@@ -225,7 +233,14 @@ export class ConnectionService {
         redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/connections/callback`,
       };
 
+      this.logger.debug('Exchanging code for tokens');
       const accessToken = await client.getToken(tokenParams);
+      
+      this.logger.debug('Token exchange successful', {
+        hasAccessToken: !!accessToken.token.access_token,
+        hasRefreshToken: !!accessToken.token.refresh_token,
+        hasExpiry: !!accessToken.token.expires_at
+      });
 
       // Store tokens in the connection entity
       await this.connectionRepository.update(
@@ -233,9 +248,11 @@ export class ConnectionService {
         {
           accessToken: accessToken.token.access_token,
           refreshToken: accessToken.token.refresh_token,
-          tokenExpiry: accessToken.token.expires_at,
+          tokenExpiry: accessToken.token.expires_at ? new Date(accessToken.token.expires_at) : null,
         },
       );
+      
+      this.logger.debug('Tokens stored successfully for connection', { connectionId });
 
       // Redirect to frontend success page
       const frontendUrl = process.env.FRONTEND_URL || 'http://dev.companionintelligence.com';
@@ -243,7 +260,11 @@ export class ConnectionService {
         redirect: `${frontendUrl}/connections?oauth=success&connectionId=${connectionId}`,
       };
     } catch (error) {
-      this.logger.error('OAuth2 token exchange failed', error);
+      this.logger.error('OAuth2 token exchange failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        connectionId,
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw new NotFoundException('Failed to complete OAuth2 flow');
     }
   }
