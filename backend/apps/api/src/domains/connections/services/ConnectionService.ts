@@ -139,7 +139,7 @@ export class ConnectionService {
       auth: {
         tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
         tokenPath: provider.tokenPath || '/token',
-        authorizePath: provider.authorizePath || '/auth',
+        authorizePath: provider.authorizePath || '/o/oauth2/v2/auth',
       },
     });
 
@@ -164,8 +164,17 @@ export class ConnectionService {
     const code = context.query.code as string;
 
     try {
-      // Get the connection to retrieve OAuth2 configuration
-      const connection = await this.findOne(context, connectionId);
+      // Get the connection without user context (since this is an OAuth callback)
+      const entity = await this.connectionRepository.findOne({
+        where: { id: connectionId },
+        relations: ['provider', 'user'],
+      });
+
+      if (!entity) {
+        throw new NotFoundException('Connection not found');
+      }
+
+      const connection = entity.toConnection();
       
       if (!connection.clientid || !connection.clientsecret) {
         throw new NotFoundException('OAuth2 credentials not configured');
@@ -185,7 +194,7 @@ export class ConnectionService {
         auth: {
           tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
           tokenPath: provider.tokenPath || '/token',
-          authorizePath: provider.authorizePath || '/auth',
+          authorizePath: provider.authorizePath || '/o/oauth2/v2/auth',
         },
       });
 
@@ -199,12 +208,7 @@ export class ConnectionService {
 
       // Store tokens in the connection entity
       await this.connectionRepository.update(
-        {
-          id: connectionId,
-          user: {
-            id: context.userId,
-          },
-        },
+        { id: connectionId },
         {
           accessToken: accessToken.token.access_token,
           refreshToken: accessToken.token.refresh_token,
@@ -212,12 +216,10 @@ export class ConnectionService {
         },
       );
 
-      // Return success response
-      // In a real app, you might want to redirect to a success page
+      // Redirect to frontend success page
+      const frontendUrl = process.env.FRONTEND_URL || 'http://dev.companionintelligence.com';
       return {
-        success: true,
-        connectionId,
-        message: 'OAuth2 connection established successfully',
+        redirect: `${frontendUrl}/connections?oauth=success&connectionId=${connectionId}`,
       };
     } catch (error) {
       this.logger.error('OAuth2 token exchange failed', error);
@@ -286,7 +288,7 @@ export class ConnectionService {
       auth: {
         tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
         tokenPath: provider.tokenPath || '/token',
-        authorizePath: provider.authorizePath || '/auth',
+        authorizePath: provider.authorizePath || '/o/oauth2/v2/auth',
       },
     });
 
