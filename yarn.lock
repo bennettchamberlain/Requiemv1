@@ -1129,6 +1129,7 @@ __metadata:
     "@types/passport-jwt": "npm:^4.0.1"
     "@types/passport-local": "npm:^1.0.38"
     "@types/pg": "npm:^8.15.2"
+    "@types/simple-oauth2": "npm:^5"
     "@yarnpkg/pnpify": "npm:^4.1.4"
     bcrypt: "npm:^6.0.0"
     commander: "npm:^14.0.0"
@@ -1139,7 +1140,7 @@ __metadata:
     dotenv: "npm:^16.5.0"
     express: "npm:^5.1.0"
     google-auth-library: "npm:^10.1.0"
-    googleapis: "npm:^150.0.1"
+    googleapis: "npm:^153.0.0"
     madge: "npm:^8.0.0"
     nodemon: "npm:^3.1.10"
     ollama: "npm:^0.5.15"
@@ -1155,6 +1156,7 @@ __metadata:
     reflect-metadata: "npm:^0.2.2"
     rimraf: "npm:^6.0.1"
     rxjs: "npm:^7.8.1"
+    simple-oauth2: "npm:^5.1.0"
     ts-node: "npm:^10.9.2"
     tsc-alias: "npm:^1.8.16"
     tsconfig-paths: "npm:^4.2.0"
@@ -1955,6 +1957,56 @@ __metadata:
   version: 0.2.9
   resolution: "@floating-ui/utils@npm:0.2.9"
   checksum: 10c0/48bbed10f91cb7863a796cc0d0e917c78d11aeb89f98d03fc38d79e7eb792224a79f538ed8a2d5d5584511d4ca6354ef35f1712659fd569868e342df4398ad6f
+  languageName: node
+  linkType: hard
+
+"@hapi/boom@npm:^10.0.1":
+  version: 10.0.1
+  resolution: "@hapi/boom@npm:10.0.1"
+  dependencies:
+    "@hapi/hoek": "npm:^11.0.2"
+  checksum: 10c0/e4ae8a69bb67c5687320d320a0706ac66e797a659c19fb1c9b909eaefe3b41780e4ecd4382de1297b10c33e9db81f79667324576b9153f57b0cf701293b908d0
+  languageName: node
+  linkType: hard
+
+"@hapi/bourne@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "@hapi/bourne@npm:3.0.0"
+  checksum: 10c0/2e2df62f6bc6f32b980ba5bbdc09200c93c55c8306399ec0f2781da088a82aab699498c89fe94fec4acf770210f9aee28c75bfc2f04044849ac01b034134e717
+  languageName: node
+  linkType: hard
+
+"@hapi/hoek@npm:^11.0.2, @hapi/hoek@npm:^11.0.4":
+  version: 11.0.7
+  resolution: "@hapi/hoek@npm:11.0.7"
+  checksum: 10c0/39a4a3ae9526ed66509f6d03c6eb43179a2590df6e98443328c966cfa5e7cbb9d340f61fdbe0afe092662d5377d5a611c3303c808fee26a9c9cfd6bd3737dc1c
+  languageName: node
+  linkType: hard
+
+"@hapi/hoek@npm:^9.0.0, @hapi/hoek@npm:^9.3.0":
+  version: 9.3.0
+  resolution: "@hapi/hoek@npm:9.3.0"
+  checksum: 10c0/a096063805051fb8bba4c947e293c664b05a32b47e13bc654c0dd43813a1cec993bdd8f29ceb838020299e1d0f89f68dc0d62a603c13c9cc8541963f0beca055
+  languageName: node
+  linkType: hard
+
+"@hapi/topo@npm:^5.1.0":
+  version: 5.1.0
+  resolution: "@hapi/topo@npm:5.1.0"
+  dependencies:
+    "@hapi/hoek": "npm:^9.0.0"
+  checksum: 10c0/b16b06d9357947149e032bdf10151eb71aea8057c79c4046bf32393cb89d0d0f7ca501c40c0f7534a5ceca078de0700d2257ac855c15e59fe4e00bba2f25c86f
+  languageName: node
+  linkType: hard
+
+"@hapi/wreck@npm:^18.0.0":
+  version: 18.1.0
+  resolution: "@hapi/wreck@npm:18.1.0"
+  dependencies:
+    "@hapi/boom": "npm:^10.0.1"
+    "@hapi/bourne": "npm:^3.0.0"
+    "@hapi/hoek": "npm:^11.0.2"
+  checksum: 10c0/eab85afdf24d0c514abada83ef09e5f3b096348bfba36bb6c7a6f7eebd47ab583e07aa1005be7d638b405e4c55ec82a3697ad0cbe1b2db6bb73fa0e66baffde4
   languageName: node
   linkType: hard
 
@@ -4126,6 +4178,29 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@sideway/address@npm:^4.1.5":
+  version: 4.1.5
+  resolution: "@sideway/address@npm:4.1.5"
+  dependencies:
+    "@hapi/hoek": "npm:^9.0.0"
+  checksum: 10c0/638eb6f7e7dba209053dd6c8da74d7cc995e2b791b97644d0303a7dd3119263bcb7225a4f6804d4db2bc4f96e5a9d262975a014f58eae4d1753c27cbc96ef959
+  languageName: node
+  linkType: hard
+
+"@sideway/formula@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "@sideway/formula@npm:3.0.1"
+  checksum: 10c0/3fe81fa9662efc076bf41612b060eb9b02e846ea4bea5bd114f1662b7f1541e9dedcf98aff0d24400bcb92f113964a50e0290b86e284edbdf6346fa9b7e2bf2c
+  languageName: node
+  linkType: hard
+
+"@sideway/pinpoint@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "@sideway/pinpoint@npm:2.0.0"
+  checksum: 10c0/d2ca75dacaf69b8fc0bb8916a204e01def3105ee44d8be16c355e5f58189eb94039e15ce831f3d544f229889ccfa35562a0ce2516179f3a7ee1bbe0b71e55b36
+  languageName: node
+  linkType: hard
+
 "@sindresorhus/is@npm:^4.0.0":
   version: 4.6.0
   resolution: "@sindresorhus/is@npm:4.6.0"
@@ -5988,6 +6063,13 @@ __metadata:
     "@types/node": "npm:*"
     "@types/send": "npm:*"
   checksum: 10c0/26ec864d3a626ea627f8b09c122b623499d2221bbf2f470127f4c9ebfe92bd8a6bb5157001372d4c4bd0dd37a1691620217d9dc4df5aa8f779f3fd996b1c60ae
+  languageName: node
+  linkType: hard
+
+"@types/simple-oauth2@npm:^5":
+  version: 5.0.7
+  resolution: "@types/simple-oauth2@npm:5.0.7"
+  checksum: 10c0/1cfb87b1ee4b58b30e4f9753271ea73282e707553b9b3360755064e4c7b1e96a01cabc5e83d13841369595ea7e451d3d576bea02340b4f17f9e930f54c08a15e
   languageName: node
   linkType: hard
 
@@ -9495,7 +9577,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"google-auth-library@npm:^10.0.0-rc.1, google-auth-library@npm:^10.1.0":
+"google-auth-library@npm:^10.1.0":
   version: 10.1.0
   resolution: "google-auth-library@npm:10.1.0"
   dependencies:
@@ -9517,26 +9599,26 @@ __metadata:
   languageName: node
   linkType: hard
 
-"googleapis-common@npm:^8.0.2-rc.0":
-  version: 8.0.2-rc.0
-  resolution: "googleapis-common@npm:8.0.2-rc.0"
+"googleapis-common@npm:^8.0.0":
+  version: 8.0.0
+  resolution: "googleapis-common@npm:8.0.0"
   dependencies:
     extend: "npm:^3.0.2"
     gaxios: "npm:^7.0.0-rc.4"
-    google-auth-library: "npm:^10.0.0-rc.1"
+    google-auth-library: "npm:^10.1.0"
     qs: "npm:^6.7.0"
     url-template: "npm:^2.0.8"
-  checksum: 10c0/97a8e55b4d12eafe4eef52aa2a2331f52ec36188617ae18cc2c2bbb4a9f718c6eca38c81abea156e1022c6217b50adf598ac06306129b1853cca8b3bead95546
+  checksum: 10c0/73a63def5738704199948bbcc0fdca2b49f115be240e37b3775c2c42302c03dec3dd6a6981120c2549f24fbe4eb42196f2401b6fb83f391c059c1c8cc9c3de17
   languageName: node
   linkType: hard
 
-"googleapis@npm:^150.0.1":
-  version: 150.0.1
-  resolution: "googleapis@npm:150.0.1"
+"googleapis@npm:^153.0.0":
+  version: 153.0.0
+  resolution: "googleapis@npm:153.0.0"
   dependencies:
-    google-auth-library: "npm:^10.0.0-rc.1"
-    googleapis-common: "npm:^8.0.2-rc.0"
-  checksum: 10c0/725c9ac5a1002e1c7bf4d27f1981445d60d7145176969faa39c788c771fd815a676d7807e57631fcf4ef6038618fc45935bcdd1ac1ef1a46c1542ec9ef409c0d
+    google-auth-library: "npm:^10.1.0"
+    googleapis-common: "npm:^8.0.0"
+  checksum: 10c0/a8597d23e78697ee63c3fa67b608d478505de868b649c84c2ffeee4d9e7b555c4cedee347d62400e77cd5462e1d755074b45f5b5da4dbce5378525b0cf8955ae
   languageName: node
   linkType: hard
 
@@ -10070,6 +10152,19 @@ __metadata:
   bin:
     jiti: lib/jiti-cli.mjs
   checksum: 10c0/4ceac133a08c8faff7eac84aabb917e85e8257f5ad659e843004ce76e981c457c390a220881748ac67ba1b940b9b729b30fb85cbaf6e7989f04b6002c94da331
+  languageName: node
+  linkType: hard
+
+"joi@npm:^17.6.4":
+  version: 17.13.3
+  resolution: "joi@npm:17.13.3"
+  dependencies:
+    "@hapi/hoek": "npm:^9.3.0"
+    "@hapi/topo": "npm:^5.1.0"
+    "@sideway/address": "npm:^4.1.5"
+    "@sideway/formula": "npm:^3.0.1"
+    "@sideway/pinpoint": "npm:^2.0.0"
+  checksum: 10c0/9262aef1da3f1bec5b03caf50c46368899fe03b8ff26cbe3d53af4584dd1049079fc97230bbf1500b6149db7cc765b9ee45f0deb24bb6fc3fa06229d7148c17f
   languageName: node
   linkType: hard
 
@@ -13005,6 +13100,18 @@ __metadata:
   version: 4.1.0
   resolution: "signal-exit@npm:4.1.0"
   checksum: 10c0/41602dce540e46d599edba9d9860193398d135f7ff72cab629db5171516cfae628d21e7bfccde1bbfdf11c48726bc2a6d1a8fb8701125852fbfda7cf19c6aa83
+  languageName: node
+  linkType: hard
+
+"simple-oauth2@npm:^5.1.0":
+  version: 5.1.0
+  resolution: "simple-oauth2@npm:5.1.0"
+  dependencies:
+    "@hapi/hoek": "npm:^11.0.4"
+    "@hapi/wreck": "npm:^18.0.0"
+    debug: "npm:^4.3.4"
+    joi: "npm:^17.6.4"
+  checksum: 10c0/3ed7428540644363b93bac16941dfd869db1e8b43250e515130e28a7c94c537d363833ac53d22c3b8444f050953b45ef4d833815c7b704f249369747ef338537
   languageName: node
   linkType: hard
 
