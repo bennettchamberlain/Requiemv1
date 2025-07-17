@@ -166,7 +166,9 @@ export class ConnectionService {
     this.logger.debug('OAuth2 callback received', { 
       query: context.query,
       hasCode: !!context.query?.code,
-      hasState: !!context.query?.state 
+      hasState: !!context.query?.state,
+      contextUserId: context.userId,
+      contextRequestId: context.requestId
     });
 
     if (!context.query || !context.query.code || !context.query.state) {
