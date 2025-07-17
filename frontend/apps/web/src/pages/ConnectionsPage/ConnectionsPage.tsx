@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
-import { AlertCircle, RefreshCw, Settings, Trash2, Link2, LinkOff } from '@ci/shadcn/icons';
+import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
@@ -507,7 +507,7 @@ export function ConnectionsPage() {
                               </span>
                             ) : (
                               <span className="flex items-center gap-1 text-muted-foreground">
-                                <LinkOff className="h-3 w-3" />
+                                <X className="h-3 w-3" />
                                 Not connected
                               </span>
                             )}
