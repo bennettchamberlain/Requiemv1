@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
-import { AlertCircle, RefreshCw, Settings } from '@ci/shadcn/icons';
+import { AlertCircle, RefreshCw, Settings, Trash2 } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
@@ -50,6 +50,7 @@ export function ConnectionsPage() {
   const [configureLoading, setConfigureLoading] = useState(false);
   const [configureError, setConfigureError] = useState<string | null>(null);
   const [oauthInProgress, setOauthInProgress] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
   const fetchConnections = async () => {
     try {
@@ -364,6 +365,42 @@ export function ConnectionsPage() {
     }
   };
 
+  const handleDeleteConnection = async (connectionId: string) => {
+    if (!confirm('Are you sure you want to delete this connection?')) {
+      return;
+    }
+
+    try {
+      setDeleteLoading(connectionId);
+      
+      if (!authToken) {
+        throw new Error('Authentication token not found');
+      }
+
+      const response = await fetch(`/api/connections/${connectionId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Error deleting connection: ${response.statusText}`);
+      }
+
+      // Refresh the connections list
+      await fetchConnections();
+      setSuccessMessage('Connection deleted successfully');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error('Error deleting connection:', errorMessage, err);
+      setError(errorMessage);
+    } finally {
+      setDeleteLoading(null);
+    }
+  };
+
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -437,7 +474,7 @@ export function ConnectionsPage() {
                       <Table.Head>Schedule</Table.Head>
                       <Table.Head>Last Run</Table.Head>
                       <Table.Head>Enabled</Table.Head>
-                      <Table.Head>Configure</Table.Head>
+                      <Table.Head>Actions</Table.Head>
                     </Table.Row>
                   </Table.Header>
                   <Table.Body>
@@ -459,13 +496,28 @@ export function ConnectionsPage() {
                             </Toggle>
                           </Table.Cell>
                           <Table.Cell className="text-sm">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => connectionConfigure(connection)}
-                            >
-                              <Settings className="h-4 w-4" />
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => connectionConfigure(connection)}
+                                disabled={deleteLoading === connection.id}
+                              >
+                                <Settings className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteConnection(connection.id)}
+                                disabled={deleteLoading === connection.id}
+                              >
+                                {deleteLoading === connection.id ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
                           </Table.Cell>
                         </Table.Row>
                       ))
