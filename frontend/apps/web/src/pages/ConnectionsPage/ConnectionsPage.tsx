@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
-import { AlertCircle, RefreshCw, Settings, Trash2 } from '@ci/shadcn/icons';
+import { AlertCircle, RefreshCw, Settings, Trash2, Link2, LinkOff } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
@@ -19,6 +19,9 @@ export interface Connection {
   readonly clientkey: string | null;
   readonly clientsecret: string | null;
   readonly schedule: string | null;
+  readonly accessToken: string | null;
+  readonly refreshToken: string | null;
+  readonly tokenExpiry: Date | null;
   readonly provider?: Provider;
 }
 
@@ -327,42 +330,47 @@ export function ConnectionsPage() {
       // Close modal and refresh the connections list
       setShowConfigureModal(false);
       await fetchConnections();
-      
-      // If OAuth credentials are configured, initiate OAuth flow
-      if (configureFormData.clientid && configureFormData.clientsecret) {
-        console.log('Initiating OAuth flow after configuration');
-        setOauthInProgress(true);
-        
-        try {
-          const response = await fetch(`/api/connections/${selectedConnection.id}/connect`, {
-            headers: {
-              Authorization: `Bearer ${authToken}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (!response.ok) {
-            throw new Error(`Failed to get OAuth URL: ${response.statusText}`);
-          }
-          
-          const data = await response.json();
-          console.log("Got OAuth URL", data);
-          
-          if (data.url) {
-            window.location.href = data.url;
-          }
-        } catch (err) {
-          console.error('Failed to initiate OAuth flow:', err);
-          setError('Failed to start authentication process');
-          setOauthInProgress(false);
-        }
-      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error updating connection:', errorMessage, err);
       setConfigureError(errorMessage);
     } finally {
       setConfigureLoading(false);
+    }
+  };
+
+  const handleConnect = async (connection: Connection) => {
+    if (!connection.clientid || !connection.clientsecret) {
+      setError('Please configure OAuth credentials first');
+      connectionConfigure(connection);
+      return;
+    }
+
+    console.log('Initiating OAuth flow for connection', connection.id);
+    setOauthInProgress(true);
+    
+    try {
+      const response = await fetch(`/api/connections/${connection.id}/connect`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to get OAuth URL: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log("Got OAuth URL", data);
+      
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      console.error('Failed to initiate OAuth flow:', err);
+      setError('Failed to start authentication process');
+      setOauthInProgress(false);
     }
   };
 
@@ -472,8 +480,9 @@ export function ConnectionsPage() {
                   <Table.Header>
                     <Table.Row>
                       <Table.Head>Name</Table.Head>
+                      <Table.Head>Provider</Table.Head>
+                      <Table.Head>Status</Table.Head>
                       <Table.Head>Schedule</Table.Head>
-                      <Table.Head>Last Run</Table.Head>
                       <Table.Head>Enabled</Table.Head>
                       <Table.Head>Actions</Table.Head>
                     </Table.Row>
@@ -489,8 +498,21 @@ export function ConnectionsPage() {
                       Connections.map((connection) => (
                         <Table.Row key={connection.id}>
                           <Table.Cell className="text-sm">{connection.name}</Table.Cell>
+                          <Table.Cell className="text-sm">{connection.provider?.name || 'N/A'}</Table.Cell>
+                          <Table.Cell className="text-sm">
+                            {connection.accessToken ? (
+                              <span className="flex items-center gap-1 text-green-600">
+                                <Link2 className="h-3 w-3" />
+                                Connected
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-muted-foreground">
+                                <LinkOff className="h-3 w-3" />
+                                Not connected
+                              </span>
+                            )}
+                          </Table.Cell>
                           <Table.Cell className="text-sm">{truncateText(connection.schedule)}</Table.Cell>
-                          <Table.Cell className="text-sm">-</Table.Cell>
                           <Table.Cell className="text-sm">
                             <Toggle aria-label="Toggle italic" onClick={() => { connectionToggle(connection) }} >
                                 { connection.active ? "enabled" : "disabled" }
@@ -502,15 +524,30 @@ export function ConnectionsPage() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => connectionConfigure(connection)}
-                                disabled={deleteLoading === connection.id}
+                                disabled={deleteLoading === connection.id || oauthInProgress}
+                                title="Configure"
                               >
                                 <Settings className="h-4 w-4" />
                               </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
+                                onClick={() => handleConnect(connection)}
+                                disabled={deleteLoading === connection.id || oauthInProgress || !connection.clientid || !connection.clientsecret}
+                                title={connection.accessToken ? "Reconnect" : "Connect"}
+                              >
+                                {connection.accessToken ? (
+                                  <RefreshCw className="h-4 w-4" />
+                                ) : (
+                                  <Link2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={() => handleDeleteConnection(connection.id)}
-                                disabled={deleteLoading === connection.id}
+                                disabled={deleteLoading === connection.id || oauthInProgress}
+                                title="Delete"
                               >
                                 {deleteLoading === connection.id ? (
                                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -565,7 +602,7 @@ export function ConnectionsPage() {
               <Select
                 value={configureFormData.providerId}
                 onValueChange={(value) => setConfigureFormData({ ...configureFormData, providerId: value })}
-                disabled={configureLoading || !!selectedConnection?.provider}
+                disabled={configureLoading}
               >
                 <Select.Trigger id="provider">
                   <Select.Value />
@@ -578,11 +615,6 @@ export function ConnectionsPage() {
                   ))}
                 </Select.Content>
               </Select>
-              {selectedConnection?.provider && (
-                <p className="text-xs text-muted-foreground">
-                  Provider cannot be changed after creation
-                </p>
-              )}
             </div>
 
             <div className="grid gap-2">
@@ -656,9 +688,21 @@ export function ConnectionsPage() {
                   Saving...
                 </>
               ) : (
-                'Save Changes'
+                'Save'
               )}
             </Button>
+            {selectedConnection && configureFormData.clientid && configureFormData.clientsecret && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowConfigureModal(false);
+                  handleConnect(selectedConnection);
+                }}
+                disabled={configureLoading}
+              >
+                Save & Connect
+              </Button>
+            )}
           </Dialog.Footer>
         </Dialog.Content>
       </Dialog>
