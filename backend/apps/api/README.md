@@ -23,7 +23,7 @@ yarn dev:pretty
 You can create a new database migration with:
 
 ```bash
-yarn migrate:make
+yarn migrate:make <name>
 ```
 
 This migration can be applied with:
