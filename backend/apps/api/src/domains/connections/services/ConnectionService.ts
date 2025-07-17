@@ -130,16 +130,26 @@ export class ConnectionService {
     }
 
     // Create OAuth2 client based on provider configuration
-    // This is a generic implementation that works with any OAuth2 provider
+    // Handle absolute URLs in authorizePath (like Google's setup)
+    let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
+    let tokenHost = provider.tokenHost || 'https://oauth2.googleapis.com';
+    
+    // If authorizePath is an absolute URL, extract the host and path
+    if (authorizePath.startsWith('http')) {
+      const authUrl = new URL(authorizePath);
+      tokenHost = `${authUrl.protocol}//${authUrl.host}`;
+      authorizePath = authUrl.pathname + authUrl.search;
+    }
+    
     const client = new AuthorizationCode({
       client: {
         id: connection.clientid,
         secret: connection.clientsecret,
       },
       auth: {
-        tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
+        tokenHost: tokenHost,
         tokenPath: provider.tokenPath || '/token',
-        authorizePath: provider.authorizePath || '/o/oauth2/v2/auth',
+        authorizePath: authorizePath,
       },
     });
 
@@ -186,15 +196,26 @@ export class ConnectionService {
       }
 
       // Create OAuth2 client
+      // Handle absolute URLs in authorizePath (like Google's setup)
+      let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
+      let tokenHost = provider.tokenHost || 'https://oauth2.googleapis.com';
+      
+      // If authorizePath is an absolute URL, extract the host and path
+      if (authorizePath.startsWith('http')) {
+        const authUrl = new URL(authorizePath);
+        tokenHost = `${authUrl.protocol}//${authUrl.host}`;
+        authorizePath = authUrl.pathname + authUrl.search;
+      }
+      
       const client = new AuthorizationCode({
         client: {
           id: connection.clientid,
           secret: connection.clientsecret,
         },
         auth: {
-          tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
+          tokenHost: tokenHost,
           tokenPath: provider.tokenPath || '/token',
-          authorizePath: provider.authorizePath || '/o/oauth2/v2/auth',
+          authorizePath: authorizePath,
         },
       });
 
@@ -280,15 +301,26 @@ export class ConnectionService {
       throw new NotFoundException('Provider not found');
     }
 
+    // Handle absolute URLs in authorizePath (like Google's setup)
+    let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
+    let tokenHost = provider.tokenHost || 'https://oauth2.googleapis.com';
+    
+    // If authorizePath is an absolute URL, extract the host and path
+    if (authorizePath.startsWith('http')) {
+      const authUrl = new URL(authorizePath);
+      tokenHost = `${authUrl.protocol}//${authUrl.host}`;
+      authorizePath = authUrl.pathname + authUrl.search;
+    }
+    
     const client = new AuthorizationCode({
       client: {
         id: connection.clientid!,
         secret: connection.clientsecret!,
       },
       auth: {
-        tokenHost: provider.tokenHost || 'https://oauth2.googleapis.com',
+        tokenHost: tokenHost,
         tokenPath: provider.tokenPath || '/token',
-        authorizePath: provider.authorizePath || '/o/oauth2/v2/auth',
+        authorizePath: authorizePath,
       },
     });
 
