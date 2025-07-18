@@ -43,8 +43,50 @@ const updateConnectionSchema = z.object({
 
 @Controller('connections')
 export class ConnectionsController {
-  constructor(private readonly connectionService: ConnectionService) {
-    console.log('********** ConnectionsController initialized **********');
+  constructor(private readonly connectionService: ConnectionService) {}
+
+  @Get('callback')
+  async callback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('scope') scope: string,
+    @Res() res: Response
+  ) {
+
+    console.log("********** callback hit")
+
+    try {
+      // Create a minimal context for the callback
+      const context: RequestContext = {
+        query: { code, state, scope }
+      };
+    
+      const result = await this.connectionService.callback(context);
+
+      console.log("*********** got a result",result)
+
+      // If the service returns a redirect URL, perform the redirect
+      if (result.redirect) {
+        console.log("*********** got a redirect")
+        return res.redirect(302, result.redirect);
+      }
+
+      console.log("********** got something else ",res)
+
+      // Otherwise return the result as JSON
+      return res.json(result);
+    } catch (error) {
+      // Log the error and redirect to frontend with error
+      console.error('OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://dev.companionintelligence.com';
+      return res.redirect(302, `${frontendUrl}/connections?oauth=error&message=${encodeURIComponent('Authentication failed')}`);
+    }
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Get(':id/connect')
+  async connect(@Context() context: RequestContext, @Param('id') id: string) {
+    return this.connectionService.connect(context, id);
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -99,56 +141,6 @@ export class ConnectionsController {
     await this.connectionService.delete(context, id);
   }
 
-  @UseGuards(AuthGuard('jwt'))
-  @Get(':id/connect')
-  async connect(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.connect(context, id);
-  }
-
-  @Get('test')
-  async test(@Res() res: Response) {
-    console.log('********** Test endpoint hit **********');
-    return res.json({ message: 'Test endpoint working', timestamp: new Date().toISOString() });
-  }
-
-  @Get('callback')
-  async callback(
-    @Query('code') code: string,
-    @Query('state') state: string,
-    @Query('scope') scope: string,
-    @Res() res: Response
-  ) {
-    console.log("********** ConnectionsController.callback START **********");
-    console.log("Query params:", { code: code?.substring(0, 20) + '...', state, scope });
-    console.log("Headers:", res.req.headers);
-
-    try {
-      // Create a minimal context for the callback
-      const context: RequestContext = {
-        query: { code, state, scope }
-      };
-      
-      console.log("********** Calling connectionService.callback **********");
-      const result = await this.connectionService.callback(context);
-      console.log("********** connectionService.callback returned:", result);
-      
-      // If the service returns a redirect URL, perform the redirect
-      if (result.redirect) {
-        console.log("********** Redirecting to:", result.redirect);
-        return res.redirect(302, result.redirect);
-      }
-      
-      // Otherwise return the result as JSON
-      console.log("********** Returning JSON result **********");
-      return res.json(result);
-    } catch (error) {
-      // Log the error and redirect to frontend with error
-      console.error('********** OAuth callback error:', error);
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
-      const frontendUrl = process.env.FRONTEND_URL || 'http://dev.companionintelligence.com';
-      return res.redirect(302, `${frontendUrl}/connections?oauth=error&message=${encodeURIComponent('Authentication failed')}`);
-    }
-  }
 
 
 }

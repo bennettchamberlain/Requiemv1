@@ -20,8 +20,8 @@ import { LLMModule } from './domains/llm';
 import { MemoryModule } from './domains/memory';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
-import { ProvidersModule } from '@ci/domains/providers';
 import { ConnectionsModule } from '@ci/domains/connections';
+import { ProvidersModule } from '@ci/domains/providers';
 
 @Module({
   imports: [
