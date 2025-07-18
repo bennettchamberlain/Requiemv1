@@ -16,6 +16,7 @@ export class OAuthCallbackController {
 
   constructor(private readonly connectionService: ConnectionService) {
     this.logger.log('********** OAuthCallbackController initialized **********');
+    this.logger.log('Routes: GET /oauth/callback');
   }
 
   @Get('callback')

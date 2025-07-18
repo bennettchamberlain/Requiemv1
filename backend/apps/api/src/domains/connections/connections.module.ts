@@ -5,11 +5,12 @@ import { ModuleRef } from '@nestjs/core';
 import { ConnectionEntity } from './entities/ConnectionEntity';
 import { ConnectionsController } from './controllers/ConnectionsController';
 import { OAuthCallbackController } from './controllers/OAuthCallbackController';
+import { PublicTestController } from './controllers/PublicTestController';
 import { ConnectionService } from './services/ConnectionService';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ConnectionEntity])],
-  controllers: [ConnectionsController, OAuthCallbackController],
+  controllers: [ConnectionsController, OAuthCallbackController, PublicTestController],
   providers: [ConnectionService],
   exports: [ConnectionService],
 })
