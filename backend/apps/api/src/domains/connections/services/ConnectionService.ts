@@ -230,27 +230,58 @@ export class ConnectionService {
       });
 
       // Exchange code for tokens
-      const tokenParams = {
-        code,
-        redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/oauth/callback`,
-      };
-
+      // For Google, we need to make a direct POST request to handle the response properly
       this.logger.debug('Exchanging code for tokens');
-      const accessToken = await client.getToken(tokenParams);
+      
+      const tokenEndpoint = `${provider.tokenHost || 'https://oauth2.googleapis.com'}${provider.tokenPath || '/token'}`;
+      const tokenParams = new URLSearchParams({
+        code,
+        client_id: connection.clientid,
+        client_secret: connection.clientsecret,
+        redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/oauth/callback`,
+        grant_type: 'authorization_code',
+      });
+
+      this.logger.debug('Making token request to:', tokenEndpoint);
+      
+      const tokenResponse = await fetch(tokenEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+        body: tokenParams.toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        this.logger.error('Token exchange failed', {
+          status: tokenResponse.status,
+          statusText: tokenResponse.statusText,
+          error: errorText,
+        });
+        throw new Error(`Token exchange failed: ${tokenResponse.statusText}`);
+      }
+
+      const tokenData = await tokenResponse.json();
       
       this.logger.debug('Token exchange successful', {
-        hasAccessToken: !!accessToken.token.access_token,
-        hasRefreshToken: !!accessToken.token.refresh_token,
-        hasExpiry: !!accessToken.token.expires_at
+        hasAccessToken: !!tokenData.access_token,
+        hasRefreshToken: !!tokenData.refresh_token,
+        hasExpiresIn: !!tokenData.expires_in,
       });
 
       // Store tokens in the connection entity
+      const expiryDate = tokenData.expires_in 
+        ? new Date(Date.now() + tokenData.expires_in * 1000)
+        : null;
+        
       await this.connectionRepository.update(
         { id: connectionId },
         {
-          accessToken: accessToken.token.access_token,
-          refreshToken: accessToken.token.refresh_token,
-          tokenExpiry: accessToken.token.expires_at ? new Date(accessToken.token.expires_at) : null,
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token || null,
+          tokenExpiry: expiryDate,
         },
       );
       
