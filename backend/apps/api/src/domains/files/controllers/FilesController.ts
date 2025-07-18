@@ -30,13 +30,13 @@ export class FilesController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get(`:id`)
+  @Get(':id')
   findOne(@Context() context: RequestContext, @Param('id') id: string) {
     return this.fileService.findOne(context, id);
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post(`:id/presign`)
+  @Post(':id/presign')
   @HttpCode(200)
   async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
     const url = await this.fileService.generatePresignedLink(context, id);
