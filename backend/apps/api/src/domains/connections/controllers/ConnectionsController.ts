@@ -43,7 +43,9 @@ const updateConnectionSchema = z.object({
 
 @Controller('connections')
 export class ConnectionsController {
-  constructor(private readonly connectionService: ConnectionService) {}
+  constructor(private readonly connectionService: ConnectionService) {
+    console.log('********** ConnectionsController initialized **********');
+  }
 
   @UseGuards(AuthGuard('jwt'))
   @Get()
@@ -103,6 +105,12 @@ export class ConnectionsController {
     return this.connectionService.connect(context, id);
   }
 
+  @Get('test')
+  async test(@Res() res: Response) {
+    console.log('********** Test endpoint hit **********');
+    return res.json({ message: 'Test endpoint working', timestamp: new Date().toISOString() });
+  }
+
   @Get('callback')
   async callback(
     @Query('code') code: string,
@@ -110,8 +118,9 @@ export class ConnectionsController {
     @Query('scope') scope: string,
     @Res() res: Response
   ) {
-
-    console.log("********** callback hit")
+    console.log("********** ConnectionsController.callback START **********");
+    console.log("Query params:", { code: code?.substring(0, 20) + '...', state, scope });
+    console.log("Headers:", res.req.headers);
 
     try {
       // Create a minimal context for the callback
@@ -119,18 +128,23 @@ export class ConnectionsController {
         query: { code, state, scope }
       };
       
+      console.log("********** Calling connectionService.callback **********");
       const result = await this.connectionService.callback(context);
+      console.log("********** connectionService.callback returned:", result);
       
       // If the service returns a redirect URL, perform the redirect
       if (result.redirect) {
+        console.log("********** Redirecting to:", result.redirect);
         return res.redirect(302, result.redirect);
       }
       
       // Otherwise return the result as JSON
+      console.log("********** Returning JSON result **********");
       return res.json(result);
     } catch (error) {
       // Log the error and redirect to frontend with error
-      console.error('OAuth callback error:', error);
+      console.error('********** OAuth callback error:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
       const frontendUrl = process.env.FRONTEND_URL || 'http://dev.companionintelligence.com';
       return res.redirect(302, `${frontendUrl}/connections?oauth=error&message=${encodeURIComponent('Authentication failed')}`);
     }
