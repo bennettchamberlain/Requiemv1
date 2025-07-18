@@ -154,7 +154,7 @@ export class ConnectionService {
     });
 
     const authorizationUri = client.authorizeURL({
-      redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/oauth/callback`,
+      redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/connections/callback`,
       scope: provider.scopes || '',
       state: connectionId, // Pass connection ID in state to identify it in callback
     });
@@ -238,11 +238,13 @@ export class ConnectionService {
         code,
         client_id: connection.clientid,
         client_secret: connection.clientsecret,
-        redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/oauth/callback`,
+        redirect_uri: `${process.env.API_URL || 'http://dev.companionintelligence.com/api'}/connections/callback`,
         grant_type: 'authorization_code',
       });
 
       this.logger.debug('Making token request to:', tokenEndpoint);
+      
+      this.logger.debug('Token request body:', tokenParams.toString());
       
       const tokenResponse = await fetch(tokenEndpoint, {
         method: 'POST',
@@ -253,17 +255,32 @@ export class ConnectionService {
         body: tokenParams.toString(),
       });
 
+      const responseText = await tokenResponse.text();
+      this.logger.debug('Token response:', {
+        status: tokenResponse.status,
+        headers: Object.fromEntries(tokenResponse.headers.entries()),
+        bodyPreview: responseText.substring(0, 200),
+      });
+
       if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
         this.logger.error('Token exchange failed', {
           status: tokenResponse.status,
           statusText: tokenResponse.statusText,
-          error: errorText,
+          error: responseText,
         });
-        throw new Error(`Token exchange failed: ${tokenResponse.statusText}`);
+        throw new Error(`Token exchange failed: ${tokenResponse.statusText} - ${responseText}`);
       }
 
-      const tokenData = await tokenResponse.json();
+      let tokenData;
+      try {
+        tokenData = JSON.parse(responseText);
+      } catch (parseError) {
+        this.logger.error('Failed to parse token response as JSON', {
+          responseText,
+          parseError,
+        });
+        throw new Error('Invalid token response format');
+      }
       
       this.logger.debug('Token exchange successful', {
         hasAccessToken: !!tokenData.access_token,
