@@ -3,16 +3,17 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Post,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import { Context } from '@ci/common/decorators';
+import { JwtAuthGuard } from '@ci/common/guards';
 import type { RequestContext } from '@ci/common/types';
 
 import { FileService } from '../services/FileService';
@@ -22,20 +23,21 @@ import type { FileUploadDto } from '../types';
 export class FilesController {
   constructor(private readonly fileService: FileService) {}
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
     return this.fileService.findAll(context);
   }
 
-  @UseGuards(AuthGuard('jwt'))
-  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @Get(`:id`)
   findOne(@Context() context: RequestContext, @Param('id') id: string) {
     return this.fileService.findOne(context, id);
   }
 
-  @UseGuards(AuthGuard('jwt'))
-  @Post(':id/presign')
+  @UseGuards(JwtAuthGuard)
+  @Post(`:id/presign`)
+  @HttpCode(200)
   async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
     const url = await this.fileService.generatePresignedLink(context, id);
 
@@ -44,9 +46,9 @@ export class FilesController {
     };
   }
 
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(JwtAuthGuard)
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 * 1024} }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
   // Note that the literal 'file' is referencing the input with name `file` in a hypothetical form.
   // All other fields would show up in the `body` here.
   async upload(
