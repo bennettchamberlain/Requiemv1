@@ -26,3 +26,6 @@ jobs:
 
       - name: Run linter
         run: yarn lint
+
+      - name: Run backend API tests
+        run: yarn workspace @ci/be-api test
