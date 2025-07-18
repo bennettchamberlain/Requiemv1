@@ -110,6 +110,9 @@ export class ConnectionsController {
     @Query('scope') scope: string,
     @Res() res: Response
   ) {
+
+    console.log("********** callback hit")
+
     try {
       // Create a minimal context for the callback
       const context: RequestContext = {
