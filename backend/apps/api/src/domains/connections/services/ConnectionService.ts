@@ -127,9 +127,9 @@ export class ConnectionService {
     }
 
     // Create OAuth2 client based on provider configuration
-    // Handle absolute URLs in authorizePath (like Google's setup)
+    // Handle absolute URLs in authorizePath 
     let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
-    let tokenHost = provider.tokenHost || 'https://oauth2.googleapis.com';
+    let tokenHost = provider.tokenHost;
     
     // If authorizePath is an absolute URL, extract the host and path
     if (authorizePath.startsWith('http')) {
@@ -203,9 +203,9 @@ export class ConnectionService {
       }
 
       // Create OAuth2 client
-      // Handle absolute URLs in authorizePath (like Google's setup)
+      // Handle absolute URLs in authorizePath
       let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
-      let tokenHost = provider.tokenHost || 'https://oauth2.googleapis.com';
+      let tokenHost = provider.tokenHost;
       
       // If authorizePath is an absolute URL, extract the host and path
       if (authorizePath.startsWith('http')) {
@@ -227,10 +227,10 @@ export class ConnectionService {
       });
 
       // Exchange code for tokens
-      // For Google, we need to make a direct POST request to handle the response properly
+      // @todo note for Google, we need to make a direct POST request to handle the response properly
       this.logger.debug('Exchanging code for tokens');
       
-      const tokenEndpoint = `${provider.tokenHost || 'https://oauth2.googleapis.com'}${provider.tokenPath || '/token'}`;
+      const tokenEndpoint = `${provider.tokenHost}${provider.tokenPath || '/token'}`;
       const tokenParams = new URLSearchParams({
         code,
         client_id: connection.clientid,
@@ -338,7 +338,7 @@ export class ConnectionService {
 
     // Make generic API request with the access token
     try {
-      const response = await fetch(`${provider.apiBaseUrl || 'https://www.googleapis.com'}${endpoint}`, {
+      const response = await fetch(`${provider.apiBaseUrl}${endpoint}`, {
         ...options,
         headers: {
           ...options?.headers,
@@ -369,9 +369,9 @@ export class ConnectionService {
       throw new NotFoundException('Provider not found');
     }
 
-    // Handle absolute URLs in authorizePath (like Google's setup)
+    // Handle absolute URLs in authorizePath
     let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
-    let tokenHost = provider.tokenHost || 'https://oauth2.googleapis.com';
+    let tokenHost = provider.tokenHost;
     
     // If authorizePath is an absolute URL, extract the host and path
     if (authorizePath.startsWith('http')) {

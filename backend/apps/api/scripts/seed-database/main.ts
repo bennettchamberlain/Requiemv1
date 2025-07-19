@@ -70,7 +70,7 @@ const logger = new Logger(path.basename(__filename));
 
     // Providers Data
     await seedProviders(db, path.resolve(dataDir, './providers-data/providers.csv'));
-/*
+
     // Intelligence Data
     await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
 
@@ -84,7 +84,7 @@ const logger = new Logger(path.basename(__filename));
     await seedPlaces(db, path.resolve(dataDir, './js1-data/js1-places.csv'));
     await seedLocations(db, path.resolve(dataDir, './js1-data/js1-locations.csv'));
     await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
-*/
+
     process.exit(0);
   } catch (err: unknown) {
     error = err as Error;
