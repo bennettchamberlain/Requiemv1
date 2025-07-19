@@ -6,6 +6,7 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from '@ci/configuration';
@@ -36,6 +37,7 @@ import { ProvidersModule } from '@ci/domains/providers';
       logging: config.db.logging,
     }),
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
     AuthModule,
     EmbeddingModule,
     EventsModule,

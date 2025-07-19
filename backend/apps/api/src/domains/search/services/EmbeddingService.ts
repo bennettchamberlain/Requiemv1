@@ -75,19 +75,34 @@ export class EmbeddingService {
     });
   }
 
-  async findNearest(context: RequestContext, input: string, topK: number = 25): Promise<EmbeddingEntity[]> {
+  async findNearest(
+    context: RequestContext,
+    input: string,
+    type?: string,
+    topK: number = 25,
+  ): Promise<EmbeddingEntity[]> {
     const vector = await this.calculateVectorString(input);
 
-    let sql = `SELECT *, embedding_vector <-> $1 as distance FROM embeddings`;
+    // FIXME: This feels like it's ripe for injection. Just... be aware. Or at least confirm it's not, I don't remember if I did.
+
+    let sql = `SELECT *, embedding_vector <-> $1 as distance FROM embeddings WHERE 1 = 1`;
 
     const params: (string | number)[] = [vector];
 
     let paramIndex = 2;
 
     if (context.userId) {
-      sql += ` WHERE user_id = $${paramIndex}`;
+      sql += ` AND user_id = $${paramIndex}`;
 
       params.push(context.userId);
+
+      paramIndex++;
+    }
+
+    if (type) {
+      sql += ` AND entity_type = $${paramIndex}`;
+
+      params.push(type);
 
       paramIndex++;
     }

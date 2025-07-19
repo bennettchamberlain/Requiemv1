@@ -39,9 +39,16 @@ export class LoggerService implements NestLoggerService {
   }
 
   error(message: LogData, context: LogData = {}) {
-    const { message: msg, ...rest } = this.normalizeLogData(message, context);
+    if (message instanceof Error) {
+      const resolvedContext = this.normalizeLogContext(context);
+      const childLogger = this.logger.child(resolvedContext);
 
-    this.logger.error(rest, msg);
+      childLogger.error(message);
+    } else {
+      const { message: msg, ...rest } = this.normalizeLogData(message, context);
+
+      this.logger.error(rest, msg);
+    }
   }
 
   warn(message: LogData, context: LogData = {}) {
@@ -56,9 +63,13 @@ export class LoggerService implements NestLoggerService {
     this.logger.debug(rest, msg);
   }
 
+  private normalizeLogContext(context: LogData = {}) {
+    return typeof context === 'string' ? { context } : context;
+  }
+
   private normalizeLogData(message: LogData = {}, context: LogData = {}): ResolvedData {
     const resolvedMessage = typeof message === 'string' ? { message } : message;
-    const resolvedContext = typeof context === 'string' ? { context } : context;
+    const resolvedContext = this.normalizeLogContext(context);
 
     return {
       ...(resolvedContext as object),

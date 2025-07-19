@@ -15,7 +15,7 @@ import { ThreadService } from './services/ThreadService';
   imports: [TypeOrmModule.forFeature([MessageEntity, ThreadEntity]), EventsModule],
   providers: [MessageService, OllamaService, ThreadService],
   controllers: [OllamaController, ThreadsController],
-  exports: [],
+  exports: [OllamaService],
 })
 export class LLMModule {}
 
@@ -23,7 +23,7 @@ export class LLMModule {}
 export { MessageEntity, ThreadEntity };
 
 // Services
-export {};
+export { OllamaService };
 
 // Types
 export type {} from './types';
