@@ -53,8 +53,6 @@ export class ConnectionsController {
     @Res() res: Response
   ) {
 
-    console.log("********** callback hit")
-
     try {
       // Create a minimal context for the callback
       const context: RequestContext = {
@@ -63,15 +61,10 @@ export class ConnectionsController {
     
       const result = await this.connectionService.callback(context);
 
-      console.log("*********** got a result",result)
-
       // If the service returns a redirect URL, perform the redirect
       if (result.redirect) {
-        console.log("*********** got a redirect")
         return res.redirect(302, result.redirect);
       }
-
-      console.log("********** got something else ",res)
 
       // Otherwise return the result as JSON
       return res.json(result);

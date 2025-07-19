@@ -8,7 +8,7 @@ export interface Connection {
   readonly clientkey: string | null;
   readonly clientsecret: string | null;
   readonly schedule: string | null;
-  readonly accessToken: string | null;
+  accessToken: string | null;
   readonly refreshToken: string | null;
   readonly tokenExpiry: Date | null;
   readonly provider?: Provider;
