@@ -44,6 +44,7 @@ export * from './src/components/coalescers/textarea';
 export * from './src/components/coalescers/toggle-group';
 export * from './src/components/coalescers/toggle';
 export * from './src/components/coalescers/tooltip';
+export * from './src/components/coalescers/toggle';
 
 export * from './src/components/adapters/loading-button';
 

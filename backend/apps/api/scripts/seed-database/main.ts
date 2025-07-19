@@ -14,6 +14,7 @@ import {
   TagEntity,
   ThingEntity,
 } from '@ci/domains/memory';
+import { ProviderEntity } from '@ci/domains/providers';
 import { UserEntity } from '@ci/domains/user';
 
 import { seedAnswers } from './seed-answers';
@@ -23,6 +24,7 @@ import { seedEvents } from './seed-events';
 import { seedLocations } from './seed-locations';
 import { seedPeople } from './seed-people';
 import { seedPlaces } from './seed-places';
+import { seedProviders } from './seed-providers';
 import { seedQuestions } from './seed-questions';
 import { seedThings } from './seed-things';
 import { seedUsers } from './seed-users';
@@ -52,6 +54,8 @@ const logger = new Logger(path.basename(__filename));
       // Intelligence
       AnswerEntity,
       QuestionEntity,
+      // Providers
+      ProviderEntity,
       // Users
       UserEntity,
     ],
@@ -63,6 +67,9 @@ const logger = new Logger(path.basename(__filename));
 
   try {
     await db.initialize();
+
+    // Providers Data
+    await seedProviders(db, path.resolve(dataDir, './providers-data/providers.csv'));
 
     // Intelligence Data
     await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));

@@ -47,6 +47,11 @@ const INTELLIGENCE = [
     url: '/chat',
     icon: Bot,
   },
+  {
+    name: 'Connections',
+    url: '/connections',
+    icon: Bot,
+  },
 ];
 
 const MEMORY = [
