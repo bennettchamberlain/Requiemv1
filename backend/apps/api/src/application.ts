@@ -5,11 +5,13 @@ import {
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from '@ci/configuration';
+import { IdFormatGuard } from '@ci/common/guards';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
 import { LoggerService } from '@ci/common/services';
 import { AuthModule } from '@ci/domains/auth';
@@ -17,8 +19,8 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { JobsModule } from '@ci/domains/jobs';
-import { LLMModule } from './domains/llm';
-import { MemoryModule } from './domains/memory';
+import { LLMModule } from '@ci/domains/llm';
+import { MemoryModule } from '@ci/domains/memory';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
 import { ConnectionsModule } from '@ci/domains/connections';
@@ -51,7 +53,12 @@ import { ProvidersModule } from '@ci/domains/providers';
     ConnectionsModule
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: IdFormatGuard,
+    },
+  ],
 })
 export class App implements NestModule, OnApplicationBootstrap, OnApplicationShutdown {
   private logger = new LoggerService('application');
