@@ -157,6 +157,7 @@ export class ConnectionService {
     return { url: authorizationUri };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async callback(context: RequestContext): Promise<any> {
     this.logger.debug('OAuth2 callback received', {
       query: context.query,
@@ -212,6 +213,7 @@ export class ConnectionService {
         authorizePath = authUrl.pathname + authUrl.search;
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const client = new AuthorizationCode({
         client: {
           id: connection.clientid,
@@ -317,7 +319,9 @@ export class ConnectionService {
     context: RequestContext,
     connectionId: string,
     endpoint: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     options?: any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<any> {
     const connection = await this.findOne(context, connectionId);
 
