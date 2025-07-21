@@ -1,9 +1,10 @@
 import type { LoggerService as NestLoggerService } from '@nestjs/common';
-import pino, { Logger as PinoLogger, LoggerOptions } from 'pino';
+import type { Logger as PinoLogger, LoggerOptions } from 'pino';
+import pino from 'pino';
 
 import config from '@ci/configuration';
 
-type LogData = string | Record<string, any>;
+type LogData = string | Record<string, unknown>;
 
 interface ResolvedData {
   message?: string;
