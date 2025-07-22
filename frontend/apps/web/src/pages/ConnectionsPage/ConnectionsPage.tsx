@@ -317,6 +317,7 @@ export function ConnectionsPage() {
         },
         body: JSON.stringify({
           name: configureFormData.name,
+          providerId: configureFormData.providerId,
           clientid: configureFormData.clientid,
           clientkey: configureFormData.clientkey,
           clientsecret: configureFormData.clientsecret,
@@ -715,6 +716,7 @@ export function ConnectionsPage() {
                 onClick={async () => {
                   // Save first if there are changes
                   if (configureFormData.name !== selectedConnection.name ||
+                      configureFormData.providerId !== selectedConnection.provider?.id ||
                       configureFormData.clientid !== selectedConnection.clientid ||
                       configureFormData.clientsecret !== selectedConnection.clientsecret ||
                       configureFormData.schedule !== selectedConnection.schedule) {
