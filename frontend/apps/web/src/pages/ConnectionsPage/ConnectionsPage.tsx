@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
+
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
 import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
-
 
 export interface Provider {
   readonly id: string;
@@ -28,17 +28,16 @@ export interface Connection {
 export function ConnectionsPage() {
   usePageTitle('Connections - Companion Intelligence');
 
-
   const [{ authToken }] = useAuth();
 
   const [Providers, setProviders] = useState<Provider[]>([]);
   const [Connections, setConnections] = useState<Connection[]>([]);
- 
-  const [changes, setChanges] = useState(0);
+
+  // const [changes, setChanges] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  
+
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -52,7 +51,7 @@ export function ConnectionsPage() {
     clientid: '',
     clientkey: '',
     clientsecret: '',
-    schedule: 'daily'
+    schedule: 'daily',
   });
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -61,7 +60,6 @@ export function ConnectionsPage() {
 
   const fetchConnections = async () => {
     try {
-
       setLoading(true);
       setError(null);
 
@@ -110,7 +108,9 @@ export function ConnectionsPage() {
         throw new Error('Invalid response format: Expected an array of Connectors');
       }
 
-      console.log(`ConnectionsPage: Successfully fetched ${ConnectionsData.length} Connections`, {ConnectionsData});
+      console.log(`ConnectionsPage: Successfully fetched ${ConnectionsData.length} Connections`, {
+        ConnectionsData,
+      });
       setConnections(ConnectionsData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -124,7 +124,6 @@ export function ConnectionsPage() {
 
   const fetchProviders = async () => {
     try {
-
       setLoading(true);
       setError(null);
 
@@ -173,7 +172,9 @@ export function ConnectionsPage() {
         throw new Error('Invalid response format: Expected an array of Connectors');
       }
 
-      console.log(`ConnectionsPage: Successfully fetched ${ProvidersData.length} Connectors`, {ProvidersData});
+      console.log(`ConnectionsPage: Successfully fetched ${ProvidersData.length} Connectors`, {
+        ProvidersData,
+      });
       setProviders(ProvidersData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -186,19 +187,19 @@ export function ConnectionsPage() {
   };
 
   const fetchState = async () => {
-    await fetchConnections()
-    await fetchProviders()
-  }
+    await fetchConnections();
+    await fetchProviders();
+  };
 
   useEffect(() => {
     console.log('ConnectionsPage: Component mounted, fetching Connectors');
-    
+
     // Check for OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const oauthStatus = urlParams.get('oauth');
     const connectionId = urlParams.get('connectionId');
     const errorMessage = urlParams.get('message');
-    
+
     if (oauthStatus === 'success' && connectionId) {
       setSuccessMessage(`Successfully authenticated connection!`);
       // Clean up URL
@@ -208,20 +209,27 @@ export function ConnectionsPage() {
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-    
+
     fetchState();
+
     return () => {
       console.log('ConnectionsPage: Component unmounting');
     };
   }, []);
 
   const truncateText = (text: string | undefined, maxLength: number = 50) => {
-    if (!text) return 'N/A';
-    if (text.length <= maxLength) return text;
+    if (!text) {
+      return 'N/A';
+    }
+
+    if (text.length <= maxLength) {
+      return text;
+    }
+
     return text.substring(0, maxLength) + '...';
   };
 
-  const connectionToggle = (connection:Connection) => {
+  const connectionToggle = (/* connection: Connection */) => {
     /*
     const c = connections.find(c => c.id === connector.id);
     if(c) {
@@ -230,18 +238,17 @@ export function ConnectionsPage() {
     }
     setConnectors(connections);
     */
-  }
+  };
 
   const connectionEdit = (connection: Connection) => {
     console.log("connection edit called", connection);
-    
     setSelectedConnection(connection);
     setEditFormData({
       name: connection.name || '',
       clientid: connection.clientid || '',
       clientkey: connection.clientkey || '',
       clientsecret: connection.clientsecret || '',
-      schedule: connection.schedule || 'daily'
+      schedule: connection.schedule || 'daily',
     });
     setModalError(null);
     setShowEditModal(true);
@@ -314,7 +321,7 @@ export function ConnectionsPage() {
     } finally {
       setModalLoading(false);
     }
-  }
+  };
 
   const handleEditSubmit = async () => {
     try {
@@ -376,7 +383,7 @@ export function ConnectionsPage() {
 
     console.log('Initiating OAuth flow for connection', connection.id);
     setOauthInProgress(true);
-    
+
     try {
       const response = await fetch(`/api/connections/${connection.id}/connect`, {
         headers: {
@@ -384,14 +391,14 @@ export function ConnectionsPage() {
           'Content-Type': 'application/json',
         },
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to get OAuth URL: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      console.log("Got OAuth URL", data);
-      
+      console.log('Got OAuth URL', data);
+
       if (data.url) {
         window.location.href = data.url;
       }
@@ -409,7 +416,7 @@ export function ConnectionsPage() {
 
     try {
       setDeleteLoading(connectionId);
-      
+
       if (!authToken) {
         throw new Error('Authentication token not found');
       }
@@ -457,12 +464,7 @@ export function ConnectionsPage() {
       <Card className="w-full">
         <Card.Header className="flex flex-row items-center justify-between">
           <Card.Title className="text-2xl">Connections</Card.Title>
-          <Button
-            variant="outline"
-            size="icon"
-            disabled={loading}
-            title="Refresh Providers"
-          >
+          <Button variant="outline" size="icon" disabled={loading} title="Refresh Providers">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
           <Button
@@ -471,7 +473,8 @@ export function ConnectionsPage() {
             disabled={loading}
             onClick={connectionCreate}
             title="Create Connection"
-          >Create
+          >
+            Create
           </Button>
         </Card.Header>
         <Card.Content>
@@ -542,8 +545,13 @@ export function ConnectionsPage() {
                           </Table.Cell>
                           <Table.Cell className="text-sm">{truncateText(connection.schedule)}</Table.Cell>
                           <Table.Cell className="text-sm">
-                            <Toggle aria-label="Toggle italic" onClick={() => { connectionToggle(connection) }} >
-                                { connection.active ? "enabled" : "disabled" }
+                            <Toggle
+                              aria-label="Toggle italic"
+                              onClick={() => {
+                                connectionToggle(connection);
+                              }}
+                            >
+                              {connection.active ? 'enabled' : 'disabled'}
                             </Toggle>
                           </Table.Cell>
                           <Table.Cell className="text-sm">
@@ -561,13 +569,18 @@ export function ConnectionsPage() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => handleConnect(connection)}
-                                disabled={deleteLoading === connection.id || oauthInProgress || !connection.clientid || !connection.clientsecret}
+                                disabled={
+                                  deleteLoading === connection.id ||
+                                  oauthInProgress ||
+                                  !connection.clientid ||
+                                  !connection.clientsecret
+                                }
                                 title={
-                                  !connection.clientid || !connection.clientsecret 
-                                    ? "Configure OAuth credentials first" 
-                                    : connection.accessToken 
-                                      ? "Reconnect" 
-                                      : "Connect"
+                                  !connection.clientid || !connection.clientsecret
+                                    ? 'Configure OAuth credentials first'
+                                    : connection.accessToken
+                                      ? 'Reconnect'
+                                      : 'Connect'
                                 }
                               >
                                 {connection.accessToken ? (
@@ -597,7 +610,9 @@ export function ConnectionsPage() {
                   </Table.Body>
                 </Table>
               </div>
-              <div className="text-xs text-muted-foreground mt-4">Total Connections: {Connections.length}</div>
+              <div className="text-xs text-muted-foreground mt-4">
+                Total Connections: {Connections.length}
+              </div>
             </>
           )}
         </Card.Content>
@@ -612,14 +627,14 @@ export function ConnectionsPage() {
               Create a new connection to a provider.
             </Dialog.Description>
           </Dialog.Header>
-          
+
           <div className="grid gap-4 py-4">
             {modalError && (
               <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
                 {modalError}
               </div>
             )}
-            
+
             <div className="grid gap-2">
               <Label htmlFor="create-name">Connection Name</Label>
               <Input
