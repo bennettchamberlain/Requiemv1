@@ -105,6 +105,7 @@ export function ConnectionsPage() {
         console.error('ConnectionsPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of connections');
       }
+
       setConnections(ConnectionsData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -162,6 +163,7 @@ export function ConnectionsPage() {
         console.error('ConnectionsPage: Invalid response format', data);
         throw new Error('Invalid response format: Expected an array of providers');
       }
+
       setProviders(ProvidersData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -200,45 +202,50 @@ export function ConnectionsPage() {
     fetchState();
   }, [authToken, fetchState]);
 
-  const completeOAuthCallback = useCallback(async (connectionId: string, success: boolean, error?: string) => {
-    try {
-      if (!authToken) {
-        throw new Error('Authentication token not found');
+  const completeOAuthCallback = useCallback(
+    async (connectionId: string, success: boolean, error?: string) => {
+      try {
+        if (!authToken) {
+          throw new Error('Authentication token not found');
+        }
+
+        const response = await fetch('/api/connections/callback/complete', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            connectionId,
+            success,
+            error,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || `Error completing OAuth callback: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+          setSuccessMessage(
+            `Successfully authenticated connection: ${result.connection?.name || connectionId}`,
+          );
+          // Refresh the connections list to show updated data
+          await fetchConnections();
+        } else {
+          setError(result.error || 'OAuth authentication failed');
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        console.error('Error completing OAuth callback:', errorMessage, err);
+        setError(errorMessage);
       }
-
-      const response = await fetch('/api/connections/callback/complete', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          connectionId,
-          success,
-          error,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Error completing OAuth callback: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-
-      if (result.success) {
-        setSuccessMessage(`Successfully authenticated connection: ${result.connection?.name || connectionId}`);
-        // Refresh the connections list to show updated data
-        await fetchConnections();
-      } else {
-        setError(result.error || 'OAuth authentication failed');
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('Error completing OAuth callback:', errorMessage, err);
-      setError(errorMessage);
-    }
-  }, [authToken, fetchConnections]);
+    },
+    [authToken, fetchConnections],
+  );
 
   const truncateText = (text: string | undefined, maxLength: number = 50) => {
     if (!text) {
@@ -496,7 +503,9 @@ export function ConnectionsPage() {
 
       const result = await response.json();
       console.log('Successfully synced connection:', result);
-      setSuccessMessage(`Data synced successfully for connection: ${result.connection?.name || connectionId}`);
+      setSuccessMessage(
+        `Data synced successfully for connection: ${result.connection?.name || connectionId}`,
+      );
       await fetchConnections();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';

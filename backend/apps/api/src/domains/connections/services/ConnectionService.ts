@@ -13,7 +13,9 @@ import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../ty
 @Injectable()
 export class ConnectionService {
   private logger = new LoggerService(ConnectionService.name);
+
   private readonly apiUrl = process.env.API_URL || 'https://dev.companionintelligence.com';
+
   private readonly frontendUrl = process.env.FRONTEND_URL || 'https://dev.companionintelligence.com';
 
   constructor(
@@ -137,7 +139,10 @@ export class ConnectionService {
     return true;
   }
 
-  async sync(context: RequestContext, connectionId: string): Promise<{ success: boolean; message: string; data?: any }> {
+  async sync(
+    context: RequestContext,
+    connectionId: string,
+  ): Promise<{ success: boolean; message: string; data?: unknown }> {
     const connection = await this.findOne(context, connectionId);
 
     if (!connection.accessToken) {
@@ -155,7 +160,7 @@ export class ConnectionService {
       userId: context.userId,
     });
 
-    const syncResults: any[] = [];
+    const syncResults: unknown[] = [];
     const errors: string[] = [];
 
     try {
@@ -166,8 +171,7 @@ export class ConnectionService {
       // Handle Microsoft connections
       else if (provider.id === '018f8b9a-1234-7000-8000-000000000006') {
         await this.syncMicrosoftData(connection, syncResults, errors);
-      }
-      else {
+      } else {
         throw new Error(`Unsupported provider: ${provider.name}`);
       }
 
@@ -195,6 +199,7 @@ export class ConnectionService {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async syncGoogleData(connection: any, syncResults: any[], errors: string[]): Promise<void> {
     this.logger.log('Syncing Google data', { connectionId: connection.id });
 
@@ -244,6 +249,7 @@ export class ConnectionService {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async syncMicrosoftData(connection: any, syncResults: any[], errors: string[]): Promise<void> {
     this.logger.log('Syncing Microsoft data', { connectionId: connection.id });
 
@@ -346,6 +352,7 @@ export class ConnectionService {
     });
 
     // Prepare authorization parameters
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const authParams: any = {
       redirect_uri: `${this.frontendUrl}/oauth-callback.html`,
       scope: provider.scopes || '',
@@ -402,7 +409,7 @@ export class ConnectionService {
     try {
       // Get the connection without user context (since this is an OAuth callback)
       this.logger.debug('Looking for connection in database', { connectionId });
-      
+
       const entity = await this.connectionRepository.findOne({
         where: { id: connectionId },
         relations: ['provider', 'user'],
@@ -549,14 +556,14 @@ export class ConnectionService {
 
       // Get the updated connection data
       const updatedConnection = await this.findOne(
-        { userId: entity.user.id, requestId: 'oauth-callback' } as RequestContext, 
-        connectionId
+        { userId: entity.user.id, requestId: 'oauth-callback' } as RequestContext,
+        connectionId,
       );
 
       // Redirect to frontend success page
       const redirectUrl = `${this.frontendUrl}/connections?oauth=success&connectionId=${connectionId}`;
       this.logger.debug('Redirecting to frontend', { redirectUrl, frontendUrl: this.frontendUrl });
-      
+
       return {
         redirect: redirectUrl,
         connection: updatedConnection,

@@ -11,8 +11,8 @@ import {
   Res,
   Query,
 } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Response } from 'express';
 import { z } from 'zod';
 
@@ -48,6 +48,7 @@ const updateConnectionSchema = z.object({
 @Controller('connections')
 export class ConnectionsController {
   private readonly frontendUrl = process.env.FRONTEND_URL || 'http://127.0.0.1:5173';
+
   private logger = new LoggerService(ConnectionsController.name);
 
   constructor(
@@ -63,17 +64,18 @@ export class ConnectionsController {
     @Res() res: Response,
   ) {
     console.log('OAuth callback received:', { code, state, scope });
-    
+
     // If no code or state, this might be a test request
     if (!code || !state) {
       console.log('No code or state provided, returning test response');
-      return res.json({ 
+
+      return res.json({
         message: 'OAuth callback endpoint is working',
         received: { code, state, scope },
-        frontendUrl: this.frontendUrl 
+        frontendUrl: this.frontendUrl,
       });
     }
-    
+
     try {
       // Create a minimal context for the callback
       const context: RequestContext = {
@@ -96,6 +98,7 @@ export class ConnectionsController {
       // If the service returns a redirect URL, include it in the response
       if (result.redirect) {
         console.log('Including redirect URL in response:', result.redirect);
+
         return res.json(responseData);
       }
 
@@ -129,11 +132,12 @@ export class ConnectionsController {
     @Body() body: { connectionId: string; success: boolean; error?: string },
   ) {
     console.log('Completing OAuth callback:', body);
-    
+
     try {
       if (body.success) {
         // Get the updated connection data
         const connection = await this.connectionService.findOne(context, body.connectionId);
+
         return {
           success: true,
           connection,
@@ -148,6 +152,7 @@ export class ConnectionsController {
       }
     } catch (error) {
       console.error('Error completing OAuth callback:', error);
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -241,7 +246,7 @@ export class ConnectionsController {
 
     try {
       const result = await this.connectionService.sync(context, payload.connectionId);
-      
+
       this.logger.log('Connection sync completed', {
         connectionId: payload.connectionId,
         success: result.success,
