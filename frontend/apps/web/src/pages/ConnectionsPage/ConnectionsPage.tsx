@@ -867,7 +867,7 @@ export function ConnectionsPage() {
                 variant="secondary"
                 onClick={async () => {
                   console.log('handleConnect clicked', {
-                    configureFormData,
+                    editFormData,
                     selectedConnection,
                   });
                   // Save first if there are changes
