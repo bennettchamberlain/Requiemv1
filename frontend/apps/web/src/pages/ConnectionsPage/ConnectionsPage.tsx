@@ -241,7 +241,7 @@ export function ConnectionsPage() {
   };
 
   const connectionEdit = (connection: Connection) => {
-    console.log("connection edit called", connection);
+    console.log('connection edit called', connection);
     setSelectedConnection(connection);
     setEditFormData({
       name: connection.name || '',
@@ -252,13 +252,14 @@ export function ConnectionsPage() {
     });
     setModalError(null);
     setShowEditModal(true);
-  }
+  };
 
   const connectionCreate = () => {
-    console.log("connection create called");
-    
+    console.log('connection create called');
+
     if (Providers.length === 0) {
       setError('No providers available. Please add providers first.');
+
       return;
     }
 
@@ -269,7 +270,7 @@ export function ConnectionsPage() {
     });
     setModalError(null);
     setShowCreateModal(true);
-  }
+  };
 
   const handleCreateSubmit = async () => {
     try {
@@ -378,6 +379,7 @@ export function ConnectionsPage() {
     if (!connection.clientid || !connection.clientsecret) {
       setError('Please configure OAuth credentials first');
       connectionEdit(connection);
+
       return;
     }
 
@@ -623,16 +625,12 @@ export function ConnectionsPage() {
         <Dialog.Content className="sm:max-w-[500px]">
           <Dialog.Header>
             <Dialog.Title>Create Connection</Dialog.Title>
-            <Dialog.Description>
-              Create a new connection to a provider.
-            </Dialog.Description>
+            <Dialog.Description>Create a new connection to a provider.</Dialog.Description>
           </Dialog.Header>
 
           <div className="grid gap-4 py-4">
             {modalError && (
-              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-                {modalError}
-              </div>
+              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">{modalError}</div>
             )}
 
             <div className="grid gap-2">
@@ -668,11 +666,7 @@ export function ConnectionsPage() {
           </div>
 
           <Dialog.Footer>
-            <Button
-              variant="outline"
-              onClick={() => setShowCreateModal(false)}
-              disabled={modalLoading}
-            >
+            <Button variant="outline" onClick={() => setShowCreateModal(false)} disabled={modalLoading}>
               Cancel
             </Button>
             <Button
@@ -697,25 +691,21 @@ export function ConnectionsPage() {
         <Dialog.Content className="sm:max-w-[500px]">
           <Dialog.Header>
             <Dialog.Title>Edit Connection</Dialog.Title>
-            <Dialog.Description>
-              Update the settings for this connection.
-            </Dialog.Description>
+            <Dialog.Description>Update the settings for this connection.</Dialog.Description>
           </Dialog.Header>
-          
+
           <div className="grid gap-4 py-4">
             {modalError && (
-              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-                {modalError}
-              </div>
+              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">{modalError}</div>
             )}
-            
+
             {selectedConnection?.accessToken && (
               <div className="bg-green-50 text-green-800 rounded-md p-3 text-sm flex items-center gap-2">
                 <Link2 className="h-4 w-4" />
                 This connection is authenticated. You can reconnect if needed.
               </div>
             )}
-            
+
             <div className="grid gap-2">
               <Label htmlFor="edit-name">Connection Name</Label>
               <Input
@@ -790,17 +780,10 @@ export function ConnectionsPage() {
           </div>
 
           <Dialog.Footer>
-            <Button
-              variant="outline"
-              onClick={() => setShowEditModal(false)}
-              disabled={modalLoading}
-            >
+            <Button variant="outline" onClick={() => setShowEditModal(false)} disabled={modalLoading}>
               Cancel
             </Button>
-            <Button
-              onClick={handleEditSubmit}
-              disabled={modalLoading || !editFormData.name}
-            >
+            <Button onClick={handleEditSubmit} disabled={modalLoading || !editFormData.name}>
               {modalLoading ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin mr-2" />
@@ -815,17 +798,20 @@ export function ConnectionsPage() {
                 variant="secondary"
                 onClick={async () => {
                   // Save first if there are changes
-                  if (editFormData.name !== selectedConnection.name ||
-                      editFormData.clientid !== selectedConnection.clientid ||
-                      editFormData.clientsecret !== selectedConnection.clientsecret ||
-                      editFormData.schedule !== selectedConnection.schedule) {
+                  if (
+                    editFormData.name !== selectedConnection.name ||
+                    editFormData.clientid !== selectedConnection.clientid ||
+                    editFormData.clientsecret !== selectedConnection.clientsecret ||
+                    editFormData.schedule !== selectedConnection.schedule
+                  ) {
                     await handleEditSubmit();
                   }
+
                   setShowEditModal(false);
                   // Use the updated connection data
                   const updatedConnection = {
                     ...selectedConnection,
-                    ...editFormData
+                    ...editFormData,
                   };
                   handleConnect(updatedConnection);
                 }}
