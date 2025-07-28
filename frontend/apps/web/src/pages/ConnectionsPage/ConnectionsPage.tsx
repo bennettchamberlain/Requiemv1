@@ -506,6 +506,8 @@ export function ConnectionsPage() {
       setSuccessMessage(
         `Data synced successfully for connection: ${result.connection?.name || connectionId}`,
       );
+      // TODO: Optimization - Instead of refetching all connections, we could just update the synced connection's state
+      // This would reduce unnecessary API calls and improve performance
       await fetchConnections();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
