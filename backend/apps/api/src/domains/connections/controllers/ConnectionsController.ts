@@ -11,7 +11,7 @@ import {
   Res,
   Query,
 } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Response } from 'express';
 import { z } from 'zod';
@@ -21,7 +21,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
+import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
 
 import { ConnectionService } from '../services/ConnectionService';
 import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
@@ -53,7 +53,7 @@ export class ConnectionsController {
 
   constructor(
     private readonly connectionService: ConnectionService,
-    private readonly eventEmitter: EventEmitter2,
+    private readonly eventService: EventService,
   ) {}
 
   @Get('callback')
@@ -226,7 +226,7 @@ export class ConnectionsController {
     const activeConnections = await this.connectionService.findAllActive();
 
     for (const connection of activeConnections) {
-      this.eventEmitter.emit(Events.SYNC_CONNECTION, {
+      this.eventService.send(Events.SYNC_CONNECTION, {
         connectionId: connection.id,
         userId: connection.userId,
       });
