@@ -6,6 +6,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services/LoggerService';
 import type { RequestContext } from '@ci/common/types';
+import config from '@ci/configuration';
 
 import { ConnectionEntity } from '../entities/ConnectionEntity';
 import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../types';
@@ -14,9 +15,9 @@ import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../ty
 export class ConnectionService {
   private logger = new LoggerService(ConnectionService.name);
 
-  private readonly apiUrl = process.env.API_URL || 'https://dev.companionintelligence.com';
+  private readonly apiUrl = config.api.url;
 
-  private readonly frontendUrl = process.env.FRONTEND_URL || 'https://dev.companionintelligence.com';
+  private readonly frontendUrl = config.frontend.url;
 
   constructor(
     @InjectRepository(ConnectionEntity)

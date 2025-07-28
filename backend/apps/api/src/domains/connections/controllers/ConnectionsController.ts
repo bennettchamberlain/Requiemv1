@@ -22,6 +22,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
+import config from '@ci/configuration';
 
 import { ConnectionService } from '../services/ConnectionService';
 import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
@@ -47,7 +48,7 @@ const updateConnectionSchema = z.object({
 
 @Controller('connections')
 export class ConnectionsController {
-  private readonly frontendUrl = process.env.FRONTEND_URL || 'http://127.0.0.1:5173';
+  private readonly frontendUrl = config.frontend.url;
 
   private logger = new LoggerService(ConnectionsController.name);
 
