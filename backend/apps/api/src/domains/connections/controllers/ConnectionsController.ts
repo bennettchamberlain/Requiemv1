@@ -62,9 +62,18 @@ export class ConnectionsController {
     @Query('code') code: string,
     @Query('state') state: string,
     @Query('scope') scope: string,
+    @Query('error') error: string,
+    @Query('error_description') errorDescription: string,
     @Res() res: Response,
   ) {
-    console.log('OAuth callback received:', { code, state, scope });
+    console.log('OAuth callback received:', { code, state, scope, error, errorDescription });
+
+    // Handle OAuth errors
+    if (error) {
+      console.log('OAuth error received:', error, errorDescription);
+      const redirectUrl = `${this.frontendUrl}/oauth-callback.html?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}&state=${encodeURIComponent(state || '')}`;
+      return res.redirect(redirectUrl);
+    }
 
     // If no code or state, this might be a test request
     if (!code || !state) {
@@ -87,36 +96,20 @@ export class ConnectionsController {
 
       console.log('OAuth callback result:', result);
 
-      // Return both the redirect URL and the connection data
-      // This allows the frontend to handle both the redirect and make API calls
-      const responseData = {
-        redirect: result.redirect,
-        connection: result.connection,
-        success: true,
-        connectionId: result.connectionId,
-      };
+      // Redirect to the frontend OAuth callback page with the code and state
+      // The frontend will then make an API call to complete the OAuth flow
+      const redirectUrl = `${this.frontendUrl}/oauth-callback.html?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+      console.log('Redirecting to frontend:', redirectUrl);
 
-      // If the service returns a redirect URL, include it in the response
-      if (result.redirect) {
-        console.log('Including redirect URL in response:', result.redirect);
-
-        return res.json(responseData);
-      }
-
-      // Otherwise return the result as JSON
-      return res.json(responseData);
+      return res.redirect(redirectUrl);
     } catch (error) {
-      // Log the error and return error response
+      // Log the error and redirect with error
       console.error('OAuth callback error:', error);
 
-      const errorResponse = {
-        success: false,
-        error: 'Authentication failed',
-        message: error instanceof Error ? error.message : 'Unknown error',
-        redirect: `${this.frontendUrl}/connections?oauth=error&message=${encodeURIComponent('Authentication failed')}`,
-      };
-
-      return res.json(errorResponse);
+      const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
+      const redirectUrl = `${this.frontendUrl}/oauth-callback.html?error=server_error&error_description=${encodeURIComponent(errorMessage)}&state=${encodeURIComponent(state || '')}`;
+      
+      return res.redirect(redirectUrl);
     }
   }
 

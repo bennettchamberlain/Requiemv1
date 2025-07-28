@@ -224,7 +224,7 @@ export class ConnectionService {
     // Prepare authorization parameters
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const authParams: any = {
-      redirect_uri: `http://dev.companionintelligence.com/oauth-callback.html`,
+      redirect_uri: `http://dev.companionintelligence.com/api/connections/callback`,
       scope: provider.scopes || '',
       state: connectionId, // Pass connection ID in state to identify it in callback
     };
@@ -342,7 +342,7 @@ export class ConnectionService {
         code,
         client_id: connection.clientid,
         client_secret: connection.clientsecret,
-        redirect_uri: `http://dev.companionintelligence.com/oauth-callback.html`,
+        redirect_uri: `http://dev.companionintelligence.com/api/connections/callback`,
         grant_type: 'authorization_code',
       });
 
@@ -430,12 +430,10 @@ export class ConnectionService {
         connectionId,
       );
 
-      // Redirect to frontend success page
-      const redirectUrl = `${this.frontendUrl}/connections?oauth=success&connectionId=${connectionId}`;
-      this.logger.debug('Redirecting to frontend', { redirectUrl, frontendUrl: this.frontendUrl });
+      this.logger.debug('OAuth callback completed successfully', { connectionId });
 
       return {
-        redirect: redirectUrl,
+        success: true,
         connection: updatedConnection,
         connectionId: connectionId,
       };
