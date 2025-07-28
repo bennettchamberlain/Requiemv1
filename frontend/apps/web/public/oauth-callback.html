@@ -80,8 +80,8 @@
                 }
 
                 // Make API call to complete the OAuth callback
-                // Use the same origin for the API call since the frontend and API are on the same domain
-                const apiUrl = `${window.location.origin}/api/connections/callback?code=${code}&state=${state}`;
+                // Always use the production URL for consistency
+                const apiUrl = `http://dev.companionintelligence.com/api/connections/callback?code=${code}&state=${state}`;
                 
                 messageEl.textContent = 'Completing OAuth authentication...';
                 
