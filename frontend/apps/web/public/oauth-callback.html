@@ -79,17 +79,31 @@
                     throw new Error('Missing OAuth code or state parameter');
                 }
 
-                // Make API call to complete the OAuth callback
-                // Always use the production URL for consistency
-                const apiUrl = `http://dev.companionintelligence.com/api/connections/callback?code=${code}&state=${state}`;
-                
+                // For Microsoft OAuth, we need to make a direct API call to the callback endpoint
+                // This is because Microsoft redirects directly to the frontend callback page
                 messageEl.textContent = 'Completing OAuth authentication...';
                 
-                const response = await fetch(apiUrl, {
-                    method: 'GET',
+                // Check if we have a valid auth token for the API call
+                const authToken = localStorage.getItem('authToken');
+                
+                if (!authToken) {
+                    // If no auth token, redirect to the callback endpoint which will handle it
+                    window.location.href = `http://dev.companionintelligence.com/api/connections/callback?code=${code}&state=${state}`;
+                    return;
+                }
+                
+                // Make API call to complete the OAuth callback
+                const response = await fetch('/api/connections/callback/complete', {
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`,
                     },
+                    body: JSON.stringify({
+                        connectionId: state,
+                        code: code,
+                        success: true,
+                    }),
                 });
 
                 if (!response.ok) {
@@ -106,7 +120,7 @@
                     // Redirect to frontend with success
                     setTimeout(() => {
                         const frontendUrl = window.location.origin;
-                        window.location.href = `${frontendUrl}/connections?oauth=success&connectionId=${result.connectionId}`;
+                        window.location.href = `${frontendUrl}/connections?oauth=success&connectionId=${state}`;
                     }, 1000);
                 } else {
                     throw new Error(result.error || 'OAuth authentication failed');

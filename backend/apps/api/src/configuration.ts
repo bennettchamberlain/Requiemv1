@@ -16,10 +16,12 @@ export const ConfigSchema = z.object({
     google: z.object({
       id: z.string(),
       name: z.string(),
+      oauthCallbackUrl: z.string(),
     }),
     microsoft: z.object({
       id: z.string(),
       name: z.string(),
+      oauthCallbackUrl: z.string(),
     }),
   }),
   logging: z.object({

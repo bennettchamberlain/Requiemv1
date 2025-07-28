@@ -123,13 +123,31 @@ export class ConnectionsController {
   @Post('callback/complete')
   async completeCallback(
     @Context() context: RequestContext,
-    @Body() body: { connectionId: string; success: boolean; error?: string },
+    @Body() body: { connectionId: string; success: boolean; error?: string; code?: string },
   ) {
     console.log('Completing OAuth callback:', body);
 
     try {
-      if (body.success) {
-        // Get the updated connection data
+      if (body.success && body.code) {
+        // For Microsoft OAuth, we need to complete the token exchange
+        const callbackContext: RequestContext = {
+          ...context,
+          query: { code: body.code, state: body.connectionId },
+        };
+        
+        const result = await this.connectionService.callback(callbackContext);
+        
+        if (result.success) {
+          return {
+            success: true,
+            connection: result.connection,
+            message: 'OAuth authentication completed successfully',
+          };
+        } else {
+          throw new Error('Failed to complete OAuth token exchange');
+        }
+      } else if (body.success) {
+        // For Google OAuth (already completed via callback endpoint)
         const connection = await this.connectionService.findOne(context, body.connectionId);
 
         return {
