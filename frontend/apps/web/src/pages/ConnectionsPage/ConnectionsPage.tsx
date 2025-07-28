@@ -23,6 +23,7 @@ export interface Connection {
   readonly refreshToken: string | null;
   readonly tokenExpiry: Date | null;
   readonly provider?: Provider;
+  lastSyncedAt?: string;
 }
 
 export function ConnectionsPage() {
@@ -233,8 +234,17 @@ export function ConnectionsPage() {
           setSuccessMessage(
             `Successfully authenticated connection: ${result.connection?.name || connectionId}`,
           );
-          // Refresh the connections list to show updated data
-          await fetchConnections();
+          // Update the connection in the local state if we have the updated data
+          if (result.connection) {
+            setConnections(prevConnections => 
+              prevConnections.map(conn => 
+                conn.id === connectionId ? result.connection : conn
+              )
+            );
+          } else {
+            // Only fetch if we don't have the updated connection data
+            await fetchConnections();
+          }
         } else {
           setError(result.error || 'OAuth authentication failed');
         }
@@ -341,9 +351,11 @@ export function ConnectionsPage() {
       const newConnection = await response.json();
       console.log('Successfully created connection:', newConnection);
 
-      // Close modal and refresh the connections list
+      // Add the new connection to the local state
+      setConnections(prevConnections => [...prevConnections, newConnection]);
+      
+      // Close modal
       setShowCreateModal(false);
-      await fetchConnections();
       setSuccessMessage('Connection created successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -392,9 +404,15 @@ export function ConnectionsPage() {
       const updatedConnection = await response.json();
       console.log('Successfully updated connection:', updatedConnection);
 
-      // Close modal and refresh the connections list
+      // Update the connection in the local state
+      setConnections(prevConnections => 
+        prevConnections.map(conn => 
+          conn.id === updatedConnection.id ? updatedConnection : conn
+        )
+      );
+
+      // Close modal
       setShowEditModal(false);
-      await fetchConnections();
       setSuccessMessage('Connection updated successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -465,8 +483,10 @@ export function ConnectionsPage() {
         throw new Error(errorData.message || `Error deleting connection: ${response.statusText}`);
       }
 
-      // Refresh the connections list
-      await fetchConnections();
+      // Remove the connection from the local state
+      setConnections(prevConnections => 
+        prevConnections.filter(conn => conn.id !== connectionId)
+      );
       setSuccessMessage('Connection deleted successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -503,12 +523,19 @@ export function ConnectionsPage() {
 
       const result = await response.json();
       console.log('Successfully synced connection:', result);
+      
+      // Update the connection's last sync time in the local state
+      setConnections(prevConnections => 
+        prevConnections.map(conn => 
+          conn.id === connectionId 
+            ? { ...conn, lastSyncedAt: new Date().toISOString() }
+            : conn
+        )
+      );
+      
       setSuccessMessage(
         `Data synced successfully for connection: ${result.connection?.name || connectionId}`,
       );
-      // TODO: Optimization - Instead of refetching all connections, we could just update the synced connection's state
-      // This would reduce unnecessary API calls and improve performance
-      await fetchConnections();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error syncing connection:', errorMessage, err);
