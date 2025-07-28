@@ -36,8 +36,15 @@ export class ConnectionService {
       userId: context.userId,
     });
 
-    const instance = this.connectionRepository.create({
+    // Ensure credentials are trimmed when saving
+    const sanitizedData = {
       ...rest,
+      clientid: rest.clientid?.trim(),
+      clientsecret: rest.clientsecret?.trim(),
+    };
+
+    const instance = this.connectionRepository.create({
+      ...sanitizedData,
       id: uuid7(),
       active: true,
       user: {
@@ -115,8 +122,13 @@ export class ConnectionService {
       userId: context.userId,
     });
 
+    // Ensure credentials are trimmed when updating
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updatePayload: any = { ...updateData };
+    const updatePayload: any = {
+      ...updateData,
+      clientid: updateData.clientid?.trim(),
+      clientsecret: updateData.clientsecret?.trim(),
+    };
 
     if (providerId) {
       updatePayload.provider = { id: providerId };
@@ -340,6 +352,11 @@ export class ConnectionService {
         connectionId,
         clientIdLength: connection.clientid.length,
         clientSecretLength: connection.clientsecret.length,
+        clientId: connection.clientid,
+        // Log first and last few characters of secret for debugging
+        clientSecretPreview: connection.clientsecret ? 
+          `${connection.clientsecret.substring(0, 4)}...${connection.clientsecret.substring(connection.clientsecret.length - 4)}` : 
+          'null',
       });
 
       const provider = connection.provider;
@@ -382,10 +399,23 @@ export class ConnectionService {
       });
 
       const tokenEndpoint = `${provider.tokenHost}${provider.tokenPath || '/token'}`;
+      
+      // Log the provider details to ensure we have the right configuration
+      this.logger.debug('Provider configuration', {
+        providerId: provider.id,
+        providerName: provider.name,
+        tokenHost: provider.tokenHost,
+        tokenPath: provider.tokenPath,
+        fullTokenEndpoint: tokenEndpoint,
+      });
+      // Ensure credentials are trimmed of any whitespace
+      const clientId = connection.clientid.trim();
+      const clientSecret = connection.clientsecret.trim();
+      
       const tokenParams = new URLSearchParams({
         code,
-        client_id: connection.clientid,
-        client_secret: connection.clientsecret,
+        client_id: clientId,
+        client_secret: clientSecret,
         redirect_uri: `http://dev.companionintelligence.com/api/connections/callback`,
         grant_type: 'authorization_code',
       });
@@ -402,6 +432,8 @@ export class ConnectionService {
         redirect_uri: 'http://dev.companionintelligence.com/api/connections/callback',
         grant_type: 'authorization_code',
         code_length: code.length,
+        // Log the actual body being sent
+        bodyPreview: tokenParams.toString().substring(0, 200),
       });
 
       const tokenResponse = await fetch(tokenEndpoint, {
