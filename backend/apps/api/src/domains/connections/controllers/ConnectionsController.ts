@@ -56,6 +56,36 @@ export class ConnectionsController {
     private readonly eventService: EventService,
   ) {}
 
+  // Handle the /connections/callback route (for Microsoft OAuth)
+  @Get('/connections/callback')
+  async connectionsCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') error: string,
+    @Query('error_description') errorDescription: string,
+    @Res() res: Response,
+  ) {
+    this.logger.debug('Connections callback received', { 
+      code: !!code, 
+      state: !!state, 
+      error, 
+      errorDescription,
+      fullPath: '/connections/callback'
+    });
+    
+    // Redirect to the main callback handler
+    const queryParams = new URLSearchParams();
+    if (code) queryParams.append('code', code);
+    if (state) queryParams.append('state', state);
+    if (error) queryParams.append('error', error);
+    if (errorDescription) queryParams.append('error_description', errorDescription);
+    
+    const redirectUrl = `/api/connections/callback?${queryParams.toString()}`;
+    this.logger.debug('Redirecting to main callback', { redirectUrl });
+    
+    return res.redirect(redirectUrl);
+  }
+
   @Get('callback')
   async callback(
     @Query('code') code: string,
@@ -116,7 +146,26 @@ export class ConnectionsController {
   @UseGuards(JwtAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.connect(context, id);
+    this.logger.debug('Connect endpoint called', {
+      connectionId: id,
+      userId: context.userId,
+    });
+    
+    try {
+      const result = await this.connectionService.connect(context, id);
+      this.logger.debug('Connect endpoint returning', {
+        connectionId: id,
+        hasUrl: !!result.url,
+        urlLength: result.url?.length,
+      });
+      return result;
+    } catch (error) {
+      this.logger.error('Connect endpoint error', {
+        connectionId: id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
   }
 
   @UseGuards(JwtAuthGuard)

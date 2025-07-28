@@ -271,6 +271,15 @@ export class ConnectionService {
       throw new NotFoundException('Provider configuration not found');
     }
 
+    this.logger.debug('Provider config selected', {
+      providerId: provider.id,
+      providerName: provider.name,
+      googleId: config.providers.google.id,
+      microsoftId: config.providers.microsoft.id,
+      selectedConfig: providerConfig,
+      oauthCallbackUrl: providerConfig.oauthCallbackUrl,
+    });
+
     // Prepare authorization parameters
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const authParams: any = {
@@ -285,6 +294,8 @@ export class ConnectionService {
       scope: provider.scopes,
       state: connectionId,
       envApiUrl: process.env.API_URL,
+      providerName: provider.name,
+      providerId: provider.id,
     });
 
     // Add tenant ID for Microsoft connections
@@ -292,16 +303,28 @@ export class ConnectionService {
       authParams.tenant = 'common';
     }
 
-    const authorizationUri = client.authorizeURL(authParams);
+    try {
+      const authorizationUri = client.authorizeURL(authParams);
 
-    this.logger.debug('Generated authorization URL', {
-      authorizationUri,
-      redirect_uri: authParams.redirect_uri,
-      tenant: authParams.tenant,
-      fullUrl: authorizationUri,
-    });
+      this.logger.debug('Generated authorization URL', {
+        authorizationUri,
+        redirect_uri: authParams.redirect_uri,
+        tenant: authParams.tenant,
+        fullUrl: authorizationUri,
+        providerName: provider.name,
+      });
 
-    return { url: authorizationUri };
+      return { url: authorizationUri };
+    } catch (error) {
+      this.logger.error('Failed to generate authorization URL', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        providerId: provider.id,
+        providerName: provider.name,
+        redirect_uri: authParams.redirect_uri,
+        authParams,
+      });
+      throw error;
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
