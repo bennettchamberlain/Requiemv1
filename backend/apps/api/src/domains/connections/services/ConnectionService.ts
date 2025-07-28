@@ -411,7 +411,6 @@ export class ConnectionService {
       // Ensure credentials are trimmed of any whitespace
       const clientId = connection.clientid.trim();
       const clientSecret = connection.clientsecret.trim();
-      
       const tokenParams = new URLSearchParams({
         code,
         client_id: clientId,

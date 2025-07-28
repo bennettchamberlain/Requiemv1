@@ -1,7 +1,7 @@
 import type { Connection } from '../types';
-import type { SyncResult, SyncResponse } from './types';
 
 import { BaseApiProvider } from './BaseApiProvider';
+import type { SyncResult, SyncResponse } from './types';
 
 export class GoogleApiProvider extends BaseApiProvider {
   constructor() {

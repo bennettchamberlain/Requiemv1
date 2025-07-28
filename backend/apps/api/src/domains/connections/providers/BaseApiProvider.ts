@@ -1,6 +1,7 @@
 import { LoggerService } from '@ci/common/services';
 
 import type { Connection } from '../types';
+
 import type { ApiProvider, SyncResult, SyncResponse } from './types';
 
 export abstract class BaseApiProvider implements ApiProvider {
