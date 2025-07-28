@@ -9,8 +9,8 @@ import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 
 import { ConnectionEntity } from '../entities/ConnectionEntity';
-import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../types';
 import { ApiProviderFactory } from '../providers';
+import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../types';
 
 @Injectable()
 export class ConnectionService {
@@ -149,7 +149,7 @@ export class ConnectionService {
     }
 
     const updated = await this.findOne(context, id);
-    
+
     this.logger.debug('Connection updated', {
       connectionId: id,
       hasClientId: !!updated.clientid,
@@ -222,7 +222,6 @@ export class ConnectionService {
       throw error;
     }
   }
-
 
   async connect(context: RequestContext, connectionId: string): Promise<{ url: string }> {
     const connection = await this.findOne(context, connectionId);
@@ -354,9 +353,9 @@ export class ConnectionService {
         clientSecretLength: connection.clientsecret.length,
         clientId: connection.clientid,
         // Log first and last few characters of secret for debugging
-        clientSecretPreview: connection.clientsecret ? 
-          `${connection.clientsecret.substring(0, 4)}...${connection.clientsecret.substring(connection.clientsecret.length - 4)}` : 
-          'null',
+        clientSecretPreview: connection.clientsecret
+          ? `${connection.clientsecret.substring(0, 4)}...${connection.clientsecret.substring(connection.clientsecret.length - 4)}`
+          : 'null',
       });
 
       const provider = connection.provider;
@@ -399,7 +398,7 @@ export class ConnectionService {
       });
 
       const tokenEndpoint = `${provider.tokenHost}${provider.tokenPath || '/token'}`;
-      
+
       // Log the provider details to ensure we have the right configuration
       this.logger.debug('Provider configuration', {
         providerId: provider.id,
@@ -408,6 +407,7 @@ export class ConnectionService {
         tokenPath: provider.tokenPath,
         fullTokenEndpoint: tokenEndpoint,
       });
+
       // Ensure credentials are trimmed of any whitespace
       const clientId = connection.clientid.trim();
       const clientSecret = connection.clientsecret.trim();

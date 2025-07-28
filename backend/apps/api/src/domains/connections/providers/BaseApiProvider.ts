@@ -1,4 +1,5 @@
 import { LoggerService } from '@ci/common/services';
+
 import type { Connection } from '../types';
 import type { ApiProvider, SyncResult, SyncResponse } from './types';
 
@@ -36,10 +37,10 @@ export abstract class BaseApiProvider implements ApiProvider {
 
       return await response.json();
     } catch (error) {
-      this.logger.error('API request failed', { 
-        connectionId: connection.id, 
-        endpoint, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      this.logger.error('API request failed', {
+        connectionId: connection.id,
+        endpoint,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }

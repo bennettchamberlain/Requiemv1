@@ -1,6 +1,7 @@
-import { BaseApiProvider } from './BaseApiProvider';
 import type { Connection } from '../types';
 import type { SyncResult, SyncResponse } from './types';
+
+import { BaseApiProvider } from './BaseApiProvider';
 
 export class GoogleApiProvider extends BaseApiProvider {
   constructor() {
@@ -29,10 +30,7 @@ export class GoogleApiProvider extends BaseApiProvider {
 
     // Gmail API
     try {
-      const gmailData = await this.makeApiRequest(
-        connection,
-        '/gmail/v1/users/me/messages?maxResults=10',
-      );
+      const gmailData = await this.makeApiRequest(connection, '/gmail/v1/users/me/messages?maxResults=10');
       syncResults.push({ api: 'Gmail', data: gmailData });
       this.logger.debug('Gmail data synced', { connectionId: connection.id });
     } catch (error) {
@@ -43,10 +41,7 @@ export class GoogleApiProvider extends BaseApiProvider {
 
     // Google Drive API
     try {
-      const driveData = await this.makeApiRequest(
-        connection,
-        '/drive/v3/files?pageSize=10',
-      );
+      const driveData = await this.makeApiRequest(connection, '/drive/v3/files?pageSize=10');
       syncResults.push({ api: 'Google Drive', data: driveData });
       this.logger.debug('Google Drive data synced', { connectionId: connection.id });
     } catch (error) {

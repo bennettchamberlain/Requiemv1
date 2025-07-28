@@ -11,7 +11,6 @@ import {
   Res,
   Query,
 } from '@nestjs/common';
-
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Response } from 'express';
 import { z } from 'zod';
@@ -21,8 +20,8 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
 import config from '@ci/configuration';
+import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
 
 import { ConnectionService } from '../services/ConnectionService';
 import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
@@ -72,6 +71,7 @@ export class ConnectionsController {
     if (error) {
       console.log('OAuth error received:', error, errorDescription);
       const redirectUrl = `${this.frontendUrl}/oauth-callback.html?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}&state=${encodeURIComponent(state || '')}`;
+
       return res.redirect(redirectUrl);
     }
 
@@ -108,7 +108,7 @@ export class ConnectionsController {
 
       const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
       const redirectUrl = `${this.frontendUrl}/oauth-callback.html?error=server_error&error_description=${encodeURIComponent(errorMessage)}&state=${encodeURIComponent(state || '')}`;
-      
+
       return res.redirect(redirectUrl);
     }
   }

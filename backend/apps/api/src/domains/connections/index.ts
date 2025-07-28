@@ -5,8 +5,8 @@ import { EventsModule } from '@ci/domains/events';
 
 import { ConnectionsController } from './controllers/ConnectionsController';
 import { ConnectionEntity } from './entities/ConnectionEntity';
-import { ConnectionService } from './services/ConnectionService';
 import { ApiProviderFactory } from './providers';
+import { ConnectionService } from './services/ConnectionService';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ConnectionEntity]), EventsModule],

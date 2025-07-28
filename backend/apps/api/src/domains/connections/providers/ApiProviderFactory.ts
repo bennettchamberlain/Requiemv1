@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+
 import config from '@ci/configuration';
+
 import { GoogleApiProvider } from './GoogleApiProvider';
 import { MicrosoftApiProvider } from './MicrosoftApiProvider';
 import type { ApiProvider } from './types';
@@ -19,6 +21,7 @@ export class ApiProviderFactory {
     if (!provider) {
       throw new Error(`Unsupported provider ID: ${providerId}`);
     }
+
     return provider;
   }
 

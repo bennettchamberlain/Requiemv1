@@ -1,6 +1,7 @@
-import { BaseApiProvider } from './BaseApiProvider';
 import type { Connection } from '../types';
 import type { SyncResult, SyncResponse } from './types';
+
+import { BaseApiProvider } from './BaseApiProvider';
 
 export class MicrosoftApiProvider extends BaseApiProvider {
   constructor() {
