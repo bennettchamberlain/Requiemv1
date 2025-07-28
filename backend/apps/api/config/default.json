@@ -2,7 +2,7 @@
   "host": "127.0.0.1",
   "port": 3030,
   "frontend": {
-    "url": "http://127.0.0.1:5173"
+    "url": "https://dev.companionintelligence.com"
   },
   "api": {
     "url": "https://dev.companionintelligence.com"
