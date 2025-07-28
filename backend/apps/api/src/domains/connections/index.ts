@@ -4,10 +4,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConnectionsController } from './controllers/ConnectionsController';
 import { ConnectionEntity } from './entities/ConnectionEntity';
 import { ConnectionService } from './services/ConnectionService';
+import { ApiProviderFactory } from './providers';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ConnectionEntity])],
-  providers: [ConnectionService],
+  providers: [ConnectionService, ApiProviderFactory],
   controllers: [ConnectionsController],
   exports: [ConnectionService],
 })
