@@ -16,7 +16,7 @@
     "microsoft": {
       "id": "018f8b9a-1234-7000-8000-000000000006",
       "name": "Microsoft",
-      "oauthCallbackUrl": "http://dev.companionintelligence.com/oauth-callback.html"
+      "oauthCallbackUrl": "http://dev.companionintelligence.com/api/oauth-callback.html"
     }
   },
   "logging": {
