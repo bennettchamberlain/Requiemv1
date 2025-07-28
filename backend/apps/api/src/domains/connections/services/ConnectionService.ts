@@ -238,7 +238,7 @@ export class ConnectionService {
     });
 
     // Add tenant ID for Microsoft connections
-    if (provider.id === '018f8b9a-1234-7000-8000-000000000006') {
+    if (provider.id === config.providers.microsoft.id) {
       authParams.tenant = 'common';
     }
 
@@ -347,7 +347,7 @@ export class ConnectionService {
       });
 
       // Add tenant parameter for Microsoft connections
-      if (provider.id === '018f8b9a-1234-7000-8000-000000000006') {
+      if (provider.id === config.providers.microsoft.id) {
         tokenParams.append('tenant', 'common');
       }
 

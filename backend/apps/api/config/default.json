@@ -7,6 +7,16 @@
   "api": {
     "url": "http://dev.companionintelligence.com"
   },
+  "providers": {
+    "google": {
+      "id": "018f8b9a-1234-7000-8000-000000000001",
+      "name": "Google"
+    },
+    "microsoft": {
+      "id": "018f8b9a-1234-7000-8000-000000000006",
+      "name": "Microsoft"
+    }
+  },
   "logging": {
     "level": "info"
   },

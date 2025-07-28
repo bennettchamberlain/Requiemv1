@@ -12,6 +12,16 @@ export const ConfigSchema = z.object({
   api: z.object({
     url: z.string(),
   }),
+  providers: z.object({
+    google: z.object({
+      id: z.string(),
+      name: z.string(),
+    }),
+    microsoft: z.object({
+      id: z.string(),
+      name: z.string(),
+    }),
+  }),
   logging: z.object({
     level: z.string(),
   }),

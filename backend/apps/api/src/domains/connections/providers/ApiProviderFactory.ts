@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import config from '@ci/configuration';
 import { GoogleApiProvider } from './GoogleApiProvider';
 import { MicrosoftApiProvider } from './MicrosoftApiProvider';
 import type { ApiProvider } from './types';
@@ -8,9 +9,9 @@ export class ApiProviderFactory {
   private readonly providers = new Map<string, ApiProvider>();
 
   constructor() {
-    // Register providers by provider ID
-    this.providers.set('018f8b9a-1234-7000-8000-000000000001', new GoogleApiProvider());
-    this.providers.set('018f8b9a-1234-7000-8000-000000000006', new MicrosoftApiProvider());
+    // Register providers by provider ID from configuration
+    this.providers.set(config.providers.google.id, new GoogleApiProvider());
+    this.providers.set(config.providers.microsoft.id, new MicrosoftApiProvider());
   }
 
   getProvider(providerId: string): ApiProvider {
