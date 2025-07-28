@@ -29,6 +29,13 @@ export class ConnectionService {
   async create(context: RequestContext, data: CreateConnectionDto): Promise<Connection> {
     const { providerId, ...rest } = data;
 
+    this.logger.debug('Creating connection', {
+      providerId,
+      hasClientId: !!rest.clientid,
+      hasClientSecret: !!rest.clientsecret,
+      userId: context.userId,
+    });
+
     const instance = this.connectionRepository.create({
       ...rest,
       id: uuid7(),
@@ -42,6 +49,12 @@ export class ConnectionService {
     });
 
     const entity = await this.connectionRepository.save(instance);
+
+    this.logger.debug('Connection created', {
+      connectionId: entity.id,
+      hasClientId: !!entity.clientid,
+      hasClientSecret: !!entity.clientsecret,
+    });
 
     return this.findOne(context, entity.id);
   }
@@ -95,6 +108,13 @@ export class ConnectionService {
   async update(context: RequestContext, id: string, data: UpdateConnectionDto): Promise<Connection> {
     const { providerId, ...updateData } = data;
 
+    this.logger.debug('Updating connection', {
+      connectionId: id,
+      hasClientId: !!updateData.clientid,
+      hasClientSecret: !!updateData.clientsecret,
+      userId: context.userId,
+    });
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updatePayload: any = { ...updateData };
 
@@ -116,7 +136,15 @@ export class ConnectionService {
       throw new NotFoundException();
     }
 
-    return this.findOne(context, id);
+    const updated = await this.findOne(context, id);
+    
+    this.logger.debug('Connection updated', {
+      connectionId: id,
+      hasClientId: !!updated.clientid,
+      hasClientSecret: !!updated.clientsecret,
+    });
+
+    return updated;
   }
 
   async activate(context: RequestContext, id: string): Promise<Connection> {
@@ -300,8 +328,19 @@ export class ConnectionService {
       const connection = entity.toConnection();
 
       if (!connection.clientid || !connection.clientsecret) {
+        this.logger.error('OAuth2 credentials not configured', {
+          connectionId,
+          hasClientId: !!connection.clientid,
+          hasClientSecret: !!connection.clientsecret,
+        });
         throw new NotFoundException('OAuth2 credentials not configured');
       }
+
+      this.logger.debug('OAuth2 credentials found', {
+        connectionId,
+        clientIdLength: connection.clientid.length,
+        clientSecretLength: connection.clientsecret.length,
+      });
 
       const provider = connection.provider;
       if (!provider) {
@@ -335,7 +374,12 @@ export class ConnectionService {
 
       // Exchange code for tokens
       // @todo note for Google, we need to make a direct POST request to handle the response properly
-      this.logger.debug('Exchanging code for tokens');
+      this.logger.debug('Exchanging code for tokens', {
+        hasClientId: !!connection.clientid,
+        hasClientSecret: !!connection.clientsecret,
+        clientIdLength: connection.clientid?.length,
+        clientSecretLength: connection.clientsecret?.length,
+      });
 
       const tokenEndpoint = `${provider.tokenHost}${provider.tokenPath || '/token'}`;
       const tokenParams = new URLSearchParams({
@@ -352,8 +396,13 @@ export class ConnectionService {
       }
 
       this.logger.debug('Making token request to:', tokenEndpoint);
-
-      this.logger.debug('Token request body:', tokenParams.toString());
+      this.logger.debug('Token request parameters:', {
+        endpoint: tokenEndpoint,
+        client_id: connection.clientid,
+        redirect_uri: 'http://dev.companionintelligence.com/api/connections/callback',
+        grant_type: 'authorization_code',
+        code_length: code.length,
+      });
 
       const tokenResponse = await fetch(tokenEndpoint, {
         method: 'POST',
@@ -368,14 +417,25 @@ export class ConnectionService {
       this.logger.debug('Token response:', {
         status: tokenResponse.status,
         headers: Object.fromEntries(tokenResponse.headers.entries()),
-        bodyPreview: responseText.substring(0, 200),
+        bodyPreview: responseText.substring(0, 500),
       });
 
       if (!tokenResponse.ok) {
+        // Try to parse error response
+        let errorDetails;
+        try {
+          errorDetails = JSON.parse(responseText);
+        } catch {
+          errorDetails = responseText;
+        }
+
         this.logger.error('Token exchange failed', {
           status: tokenResponse.status,
           statusText: tokenResponse.statusText,
-          error: responseText,
+          error: errorDetails,
+          endpoint: tokenEndpoint,
+          clientId: connection.clientid,
+          redirectUri: 'http://dev.companionintelligence.com/api/connections/callback',
         });
         throw new Error(`Token exchange failed: ${tokenResponse.statusText} - ${responseText}`);
       }
