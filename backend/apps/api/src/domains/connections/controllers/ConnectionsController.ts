@@ -65,24 +65,36 @@ export class ConnectionsController {
     @Query('error_description') errorDescription: string,
     @Res() res: Response,
   ) {
-    this.logger.debug('Connections callback received', { 
-      code: !!code, 
-      state: !!state, 
-      error, 
+    this.logger.debug('Connections callback received', {
+      code: !!code,
+      state: !!state,
+      error,
       errorDescription,
-      fullPath: '/connections/callback'
+      fullPath: '/connections/callback',
     });
-    
+
     // Redirect to the main callback handler
     const queryParams = new URLSearchParams();
-    if (code) queryParams.append('code', code);
-    if (state) queryParams.append('state', state);
-    if (error) queryParams.append('error', error);
-    if (errorDescription) queryParams.append('error_description', errorDescription);
-    
+
+    if (code) {
+      queryParams.append('code', code);
+    }
+
+    if (state) {
+      queryParams.append('state', state);
+    }
+
+    if (error) {
+      queryParams.append('error', error);
+    }
+
+    if (errorDescription) {
+      queryParams.append('error_description', errorDescription);
+    }
+
     const redirectUrl = `/api/connections/callback?${queryParams.toString()}`;
     this.logger.debug('Redirecting to main callback', { redirectUrl });
-    
+
     return res.redirect(redirectUrl);
   }
 
@@ -150,7 +162,7 @@ export class ConnectionsController {
       connectionId: id,
       userId: context.userId,
     });
-    
+
     try {
       const result = await this.connectionService.connect(context, id);
       this.logger.debug('Connect endpoint returning', {
@@ -158,6 +170,7 @@ export class ConnectionsController {
         hasUrl: !!result.url,
         urlLength: result.url?.length,
       });
+
       return result;
     } catch (error) {
       this.logger.error('Connect endpoint error', {
@@ -183,9 +196,9 @@ export class ConnectionsController {
           ...context,
           query: { code: body.code, state: body.connectionId },
         };
-        
+
         const result = await this.connectionService.callback(callbackContext);
-        
+
         if (result.success) {
           return {
             success: true,
