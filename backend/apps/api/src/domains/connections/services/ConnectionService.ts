@@ -261,11 +261,12 @@ export class ConnectionService {
     });
 
     // Get the provider-specific OAuth callback URL
-    const providerConfig = provider.id === config.providers.google.id 
-      ? config.providers.google 
-      : provider.id === config.providers.microsoft.id 
-        ? config.providers.microsoft 
-        : null;
+    const providerConfig =
+      provider.id === config.providers.google.id
+        ? config.providers.google
+        : provider.id === config.providers.microsoft.id
+          ? config.providers.microsoft
+          : null;
 
     if (!providerConfig) {
       throw new NotFoundException('Provider configuration not found');
@@ -443,11 +444,12 @@ export class ConnectionService {
       });
 
       // Get the provider-specific OAuth callback URL
-      const providerConfig = provider.id === config.providers.google.id 
-        ? config.providers.google 
-        : provider.id === config.providers.microsoft.id 
-          ? config.providers.microsoft 
-          : null;
+      const providerConfig =
+        provider.id === config.providers.google.id
+          ? config.providers.google
+          : provider.id === config.providers.microsoft.id
+            ? config.providers.microsoft
+            : null;
 
       if (!providerConfig) {
         throw new NotFoundException('Provider configuration not found');
