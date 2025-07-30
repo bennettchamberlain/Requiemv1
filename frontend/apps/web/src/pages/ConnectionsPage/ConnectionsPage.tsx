@@ -236,10 +236,8 @@ export function ConnectionsPage() {
           );
           // Update the connection in the local state if we have the updated data
           if (result.connection) {
-            setConnections(prevConnections => 
-              prevConnections.map(conn => 
-                conn.id === connectionId ? result.connection : conn
-              )
+            setConnections((prevConnections) =>
+              prevConnections.map((conn) => (conn.id === connectionId ? result.connection : conn)),
             );
           } else {
             // Only fetch if we don't have the updated connection data
@@ -352,8 +350,8 @@ export function ConnectionsPage() {
       console.log('Successfully created connection:', newConnection);
 
       // Add the new connection to the local state
-      setConnections(prevConnections => [...prevConnections, newConnection]);
-      
+      setConnections((prevConnections) => [...prevConnections, newConnection]);
+
       // Close modal
       setShowCreateModal(false);
       setSuccessMessage('Connection created successfully');
@@ -405,10 +403,8 @@ export function ConnectionsPage() {
       console.log('Successfully updated connection:', updatedConnection);
 
       // Update the connection in the local state
-      setConnections(prevConnections => 
-        prevConnections.map(conn => 
-          conn.id === updatedConnection.id ? updatedConnection : conn
-        )
+      setConnections((prevConnections) =>
+        prevConnections.map((conn) => (conn.id === updatedConnection.id ? updatedConnection : conn)),
       );
 
       // Close modal
@@ -484,9 +480,7 @@ export function ConnectionsPage() {
       }
 
       // Remove the connection from the local state
-      setConnections(prevConnections => 
-        prevConnections.filter(conn => conn.id !== connectionId)
-      );
+      setConnections((prevConnections) => prevConnections.filter((conn) => conn.id !== connectionId));
       setSuccessMessage('Connection deleted successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -523,16 +517,14 @@ export function ConnectionsPage() {
 
       const result = await response.json();
       console.log('Successfully synced connection:', result);
-      
+
       // Update the connection's last sync time in the local state
-      setConnections(prevConnections => 
-        prevConnections.map(conn => 
-          conn.id === connectionId 
-            ? { ...conn, lastSyncedAt: new Date().toISOString() }
-            : conn
-        )
+      setConnections((prevConnections) =>
+        prevConnections.map((conn) =>
+          conn.id === connectionId ? { ...conn, lastSyncedAt: new Date().toISOString() } : conn,
+        ),
       );
-      
+
       setSuccessMessage(
         `Data synced successfully for connection: ${result.connection?.name || connectionId}`,
       );
