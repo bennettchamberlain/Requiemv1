@@ -1,3 +1,5 @@
+import { networkInterfaces } from 'node:os';
+
 import {
   MiddlewareConsumer,
   Module,
@@ -69,9 +71,22 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
   }
 
   onApplicationBootstrap() {
+    let bindings: string[];
+
+    if (config.host === '0.0.0.0') {
+      const nets = networkInterfaces();
+
+      bindings = Object.values(nets)
+        .flatMap((netList) => netList || [])
+        .filter((net) => net.family === 'IPv4')
+        .map((net) => net.address)
+        .map((address) => `http://${address}:${config.port}`);
+    } else {
+      bindings = [`http://${config.host}:${config.port}`];
+    }
+
     this.logger.log('Application listening', {
-      host: config.host,
-      port: config.port,
+      bindings,
     });
   }
 
