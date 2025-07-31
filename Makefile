@@ -150,7 +150,7 @@ init: ## Initialize repository after checkout
 	fi
 
 	@HOST=dev.companionintelligence.com; \
-	IP=$$(ping -c 1 -W 1 $$HOST | grep -oE '\(([0-9:.]+)\)' | tr -d '()'); \
+	IP=$$(ping -c 1 -W 1 $$HOST | grep -oE '\(([0-9:.]+)\)' | head -n1 | tr -d '()'); \
 	if [ "$$IP" = "127.0.0.1" ] || [ "$$IP" = "::1" ]; then \
 		printf "$(GREEN)✓$(RESET) $$HOST resolves to localhost ($$IP)\n\n"; \
 	else \
