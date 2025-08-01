@@ -70,7 +70,7 @@
                     // Redirect to frontend with error
                     setTimeout(() => {
                         const frontendUrl = window.location.origin;
-                        window.location.href = `${frontendUrl}/connections?oauth=error&message=${encodeURIComponent(errorDescription || error)}`;
+                        window.location.href = `${frontendUrl}/connections?oauth=error&message=${encodeURIComponent(errorDescription || error)}&connectionId=${encodeURIComponent(state || '')}`;
                     }, 2000);
                     return;
                 }
@@ -79,25 +79,29 @@
                     throw new Error('Missing OAuth code or state parameter');
                 }
 
-                // For Microsoft OAuth, we need to make a direct API call to the callback endpoint
-                // This is because Microsoft redirects directly to the frontend callback page
+                // Get the API base URL - use the nginx proxy URL
+                const apiBaseUrl = 'https://dev.companionintelligence.com';
+
                 messageEl.textContent = 'Completing OAuth authentication...';
                 
-                // Check if we have a valid auth token for the API call
-                const authToken = localStorage.getItem('authToken');
+                // Check if we have a valid access token for the API call
+                const accessToken = localStorage.getItem('accessToken');
                 
-                if (!authToken) {
-                    // If no auth token, redirect to the callback endpoint which will handle it
-                    window.location.href = `http://dev.companionintelligence.com/api/connections/callback?code=${code}&state=${state}`;
+                if (!accessToken) {
+                    // If no access token, redirect to login
+                    messageEl.textContent = 'No authentication token found. Redirecting to login...';
+                    setTimeout(() => {
+                        window.location.href = `${window.location.origin}/login`;
+                    }, 2000);
                     return;
                 }
                 
-                // Make API call to complete the OAuth callback
-                const response = await fetch('/api/connections/callback/complete', {
+                // Make API call to complete the OAuth callback with authentication
+                const response = await fetch(`${apiBaseUrl}/api/connections/callback/complete`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`,
+                        'Authorization': `Bearer ${accessToken}`,
                     },
                     body: JSON.stringify({
                         connectionId: state,
@@ -107,7 +111,8 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`API request failed: ${response.statusText}`);
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || `API request failed: ${response.statusText}`);
                 }
 
                 const result = await response.json();
@@ -135,7 +140,7 @@
                 // Redirect to frontend with error
                 setTimeout(() => {
                     const frontendUrl = window.location.origin;
-                    window.location.href = `${frontendUrl}/connections?oauth=error&message=${encodeURIComponent(err.message)}`;
+                    window.location.href = `${frontendUrl}/connections?oauth=error&message=${encodeURIComponent(err.message)}&connectionId=${encodeURIComponent(state || '')}`;
                 }, 2000);
             }
         }

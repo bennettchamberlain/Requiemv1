@@ -18,8 +18,6 @@ export class ConnectionService {
 
   private readonly apiUrl = config.api.url;
 
-  private readonly frontendUrl = config.frontend.url;
-
   constructor(
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
@@ -299,10 +297,7 @@ export class ConnectionService {
       providerId: provider.id,
     });
 
-    // Add tenant ID for Microsoft connections
-    if (provider.id === config.providers.microsoft.id) {
-      authParams.tenant = 'common';
-    }
+    // Microsoft OAuth doesn't need additional tenant parameter as it's already in the authorize path
 
     try {
       const authorizationUri = client.authorizeURL(authParams);
@@ -466,10 +461,7 @@ export class ConnectionService {
         grant_type: 'authorization_code',
       });
 
-      // Add tenant parameter for Microsoft connections
-      if (provider.id === config.providers.microsoft.id) {
-        tokenParams.append('tenant', 'common');
-      }
+      // Microsoft OAuth doesn't need additional tenant parameter as it's already in the token endpoint URL
 
       this.logger.debug('Making token request to:', tokenEndpoint);
       this.logger.debug('Token request parameters:', {

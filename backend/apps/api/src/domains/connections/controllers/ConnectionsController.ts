@@ -47,7 +47,6 @@ const updateConnectionSchema = z.object({
 
 @Controller('connections')
 export class ConnectionsController {
-  private readonly frontendUrl = config.frontend.url;
 
   private logger = new LoggerService(ConnectionsController.name);
 
@@ -56,104 +55,75 @@ export class ConnectionsController {
     private readonly eventService: EventService,
   ) {}
 
-  // Handle the /connections/callback route (for Microsoft OAuth)
-  @Get('/connections/callback')
-  async connectionsCallback(
-    @Query('code') code: string,
-    @Query('state') state: string,
-    @Query('error') error: string,
-    @Query('error_description') errorDescription: string,
-    @Res() res: Response,
-  ) {
-    this.logger.debug('Connections callback received', {
-      code: !!code,
-      state: !!state,
-      error,
-      errorDescription,
-      fullPath: '/connections/callback',
-    });
+  // // Handle the OAuth callback route for both Google and Microsoft (authenticated)
+  // @UseGuards(JwtAuthGuard)
+  // @Get('callback')
+  // async callback(
+  //   @Query('code') code: string,
+  //   @Query('state') state: string,
+  //   @Query('scope') scope: string,
+  //   @Query('error') error: string,
+  //   @Query('error_description') errorDescription: string,
+  //   @Context() context: RequestContext,
+  //   @Res() res: Response,
+  // ) {
+  //   this.logger.debug('OAuth callback received', { 
+  //     code: !!code, 
+  //     state: !!state, 
+  //     scope: !!scope, 
+  //     error, 
+  //     errorDescription,
+  //     userId: context.userId
+  //   });
 
-    // Redirect to the main callback handler
-    const queryParams = new URLSearchParams();
+  //   // Handle OAuth errors
+  //   if (error) {
+  //     this.logger.error('OAuth error received', { error, errorDescription });
+  //     const redirectUrl = `${this.frontendUrl}/connections?oauth=error&message=${encodeURIComponent(errorDescription || error)}&connectionId=${encodeURIComponent(state || '')}`;
+  //     return res.redirect(redirectUrl);
+  //   }
 
-    if (code) {
-      queryParams.append('code', code);
-    }
+  //   // If no code or state, this might be a test request
+  //   if (!code || !state) {
+  //     this.logger.warn('No code or state provided in OAuth callback');
+  //     return res.json({
+  //       message: 'OAuth callback endpoint is working',
+  //       received: { code, state, scope },
+  //       frontendUrl: this.frontendUrl,
+  //     });
+  //   }
 
-    if (state) {
-      queryParams.append('state', state);
-    }
+  //   try {
+  //     // Create a context for the callback with user authentication
+  //     const callbackContext: RequestContext = {
+  //       ...context,
+  //       query: { code, state, scope },
+  //     };
 
-    if (error) {
-      queryParams.append('error', error);
-    }
+  //     const result = await this.connectionService.callback(callbackContext);
 
-    if (errorDescription) {
-      queryParams.append('error_description', errorDescription);
-    }
+  //     this.logger.debug('OAuth callback completed successfully', { 
+  //       connectionId: state,
+  //       success: result.success,
+  //       userId: context.userId
+  //     });
 
-    const redirectUrl = `/api/connections/callback?${queryParams.toString()}`;
-    this.logger.debug('Redirecting to main callback', { redirectUrl });
+  //     // Redirect to the frontend with success
+  //     const redirectUrl = `${this.frontendUrl}/connections?oauth=success&connectionId=${encodeURIComponent(state)}`;
+  //     return res.redirect(redirectUrl);
+  //   } catch (error) {
+  //     // Log the error and redirect with error
+  //     this.logger.error('OAuth callback error', { 
+  //       error: error instanceof Error ? error.message : 'Unknown error',
+  //       connectionId: state,
+  //       userId: context.userId
+  //     });
 
-    return res.redirect(redirectUrl);
-  }
-
-  @Get('callback')
-  async callback(
-    @Query('code') code: string,
-    @Query('state') state: string,
-    @Query('scope') scope: string,
-    @Query('error') error: string,
-    @Query('error_description') errorDescription: string,
-    @Res() res: Response,
-  ) {
-    console.log('OAuth callback received:', { code, state, scope, error, errorDescription });
-
-    // Handle OAuth errors
-    if (error) {
-      console.log('OAuth error received:', error, errorDescription);
-      const redirectUrl = `${this.frontendUrl}/oauth-callback.html?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}&state=${encodeURIComponent(state || '')}`;
-
-      return res.redirect(redirectUrl);
-    }
-
-    // If no code or state, this might be a test request
-    if (!code || !state) {
-      console.log('No code or state provided, returning test response');
-
-      return res.json({
-        message: 'OAuth callback endpoint is working',
-        received: { code, state, scope },
-        frontendUrl: this.frontendUrl,
-      });
-    }
-
-    try {
-      // Create a minimal context for the callback
-      const context: RequestContext = {
-        query: { code, state, scope },
-      };
-
-      const result = await this.connectionService.callback(context);
-
-      console.log('OAuth callback result:', result);
-
-      // Redirect to the frontend OAuth callback page with the code and state
-      // The frontend will then make an API call to complete the OAuth flow
-      const redirectUrl = `${this.frontendUrl}/oauth-callback.html?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
-      console.log('Redirecting to frontend:', redirectUrl);
-
-      return res.redirect(redirectUrl);
-    } catch (error) {
-      // Log the error and redirect with error
-      console.error('OAuth callback error:', error);
-
-      const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
-      const redirectUrl = `${this.frontendUrl}/oauth-callback.html?error=server_error&error_description=${encodeURIComponent(errorMessage)}&state=${encodeURIComponent(state || '')}`;
-
-      return res.redirect(redirectUrl);
-    }
-  }
+  //     const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
+  //     const redirectUrl = `${this.frontendUrl}/connections?oauth=error&message=${encodeURIComponent(errorMessage)}&connectionId=${encodeURIComponent(state)}`;
+  //     return res.redirect(redirectUrl);
+  //   }
+  // }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id/connect')
@@ -187,11 +157,16 @@ export class ConnectionsController {
     @Context() context: RequestContext,
     @Body() body: { connectionId: string; success: boolean; error?: string; code?: string },
   ) {
-    console.log('Completing OAuth callback:', body);
+    this.logger.debug('Completing OAuth callback', { 
+      connectionId: body.connectionId, 
+      success: body.success,
+      hasCode: !!body.code,
+      userId: context.userId
+    });
 
     try {
       if (body.success && body.code) {
-        // For Microsoft OAuth, we need to complete the token exchange
+        // Handle OAuth code exchange for authenticated flow
         const callbackContext: RequestContext = {
           ...context,
           query: { code: body.code, state: body.connectionId },
@@ -209,7 +184,7 @@ export class ConnectionsController {
           throw new Error('Failed to complete OAuth token exchange');
         }
       } else if (body.success) {
-        // For Google OAuth (already completed via callback endpoint)
+        // For cases where OAuth was already completed
         const connection = await this.connectionService.findOne(context, body.connectionId);
 
         return {
@@ -225,7 +200,11 @@ export class ConnectionsController {
         };
       }
     } catch (error) {
-      console.error('Error completing OAuth callback:', error);
+      this.logger.error('Error completing OAuth callback', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        connectionId: body.connectionId,
+        userId: context.userId
+      });
 
       return {
         success: false,
@@ -266,19 +245,19 @@ export class ConnectionsController {
     return this.connectionService.update(context, id, input);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post(':id/activate')
-  @HttpCode(200)
-  async activate(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.activate(context, id);
-  }
+  // @UseGuards(JwtAuthGuard)
+  // @Post(':id/activate')
+  // @HttpCode(200)
+  // async activate(@Context() context: RequestContext, @Param('id') id: string) {
+  //   return this.connectionService.activate(context, id);
+  // }
 
-  @UseGuards(JwtAuthGuard)
-  @Post(':id/deactivate')
-  @HttpCode(200)
-  async deactivate(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.deactivate(context, id);
-  }
+  // @UseGuards(JwtAuthGuard)
+  // @Post(':id/deactivate')
+  // @HttpCode(200)
+  // async deactivate(@Context() context: RequestContext, @Param('id') id: string) {
+  //   return this.connectionService.deactivate(context, id);
+  // }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/sync')
