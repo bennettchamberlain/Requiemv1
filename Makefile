@@ -1,4 +1,4 @@
-.PHONY: help build dbclear dev index infra init install local migrate seed staging useradd userpw
+.PHONY: help build dbclear dev index infra init install local migrate seed staging gentoken useradd userpw
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -195,6 +195,14 @@ staging: ## Run the staging server from Docker images
 	@docker compose --profile local down
 	@docker compose --profile staging up -d
 	@printf "\nStaging services successfully started.\n"
+
+#####################
+# API ADMIN SCRIPTS #
+#####################
+
+gentoken: ## Generates a stable access token for use during development
+	@printf "🔑 Generating stable access token...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/generate-stable-access-token.ts
 
 useradd: ## Add a user to the PostgreSQL database
 	@printf "👤 Adding user...\n\n"

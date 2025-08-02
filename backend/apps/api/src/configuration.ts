@@ -3,6 +3,18 @@ import './bootstrap';
 import config from 'config';
 import { z } from 'zod';
 
+const booleanStringSchema = z.preprocess((val) => {
+  if (val === 'true') {
+    return true;
+  }
+
+  if (val === 'false') {
+    return false;
+  }
+
+  return val;
+}, z.boolean());
+
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
@@ -56,6 +68,9 @@ export const ConfigSchema = z.object({
       accessKeyId: z.string(),
       secretAccessKey: z.string(),
     }),
+  }),
+  features: z.object({
+    'scheduled.answer.inferencing': booleanStringSchema,
   }),
 });
 
