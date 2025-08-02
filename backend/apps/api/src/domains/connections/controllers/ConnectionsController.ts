@@ -55,76 +55,6 @@ export class ConnectionsController {
     private readonly eventService: EventService,
   ) {}
 
-  // // Handle the OAuth callback route for both Google and Microsoft (authenticated)
-  // @UseGuards(JwtAuthGuard)
-  // @Get('callback')
-  // async callback(
-  //   @Query('code') code: string,
-  //   @Query('state') state: string,
-  //   @Query('scope') scope: string,
-  //   @Query('error') error: string,
-  //   @Query('error_description') errorDescription: string,
-  //   @Context() context: RequestContext,
-  //   @Res() res: Response,
-  // ) {
-  //   this.logger.debug('OAuth callback received', { 
-  //     code: !!code, 
-  //     state: !!state, 
-  //     scope: !!scope, 
-  //     error, 
-  //     errorDescription,
-  //     userId: context.userId
-  //   });
-
-  //   // Handle OAuth errors
-  //   if (error) {
-  //     this.logger.error('OAuth error received', { error, errorDescription });
-  //     const redirectUrl = `${this.frontendUrl}/connections?oauth=error&message=${encodeURIComponent(errorDescription || error)}&connectionId=${encodeURIComponent(state || '')}`;
-  //     return res.redirect(redirectUrl);
-  //   }
-
-  //   // If no code or state, this might be a test request
-  //   if (!code || !state) {
-  //     this.logger.warn('No code or state provided in OAuth callback');
-  //     return res.json({
-  //       message: 'OAuth callback endpoint is working',
-  //       received: { code, state, scope },
-  //       frontendUrl: this.frontendUrl,
-  //     });
-  //   }
-
-  //   try {
-  //     // Create a context for the callback with user authentication
-  //     const callbackContext: RequestContext = {
-  //       ...context,
-  //       query: { code, state, scope },
-  //     };
-
-  //     const result = await this.connectionService.callback(callbackContext);
-
-  //     this.logger.debug('OAuth callback completed successfully', { 
-  //       connectionId: state,
-  //       success: result.success,
-  //       userId: context.userId
-  //     });
-
-  //     // Redirect to the frontend with success
-  //     const redirectUrl = `${this.frontendUrl}/connections?oauth=success&connectionId=${encodeURIComponent(state)}`;
-  //     return res.redirect(redirectUrl);
-  //   } catch (error) {
-  //     // Log the error and redirect with error
-  //     this.logger.error('OAuth callback error', { 
-  //       error: error instanceof Error ? error.message : 'Unknown error',
-  //       connectionId: state,
-  //       userId: context.userId
-  //     });
-
-  //     const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
-  //     const redirectUrl = `${this.frontendUrl}/connections?oauth=error&message=${encodeURIComponent(errorMessage)}&connectionId=${encodeURIComponent(state)}`;
-  //     return res.redirect(redirectUrl);
-  //   }
-  // }
-
   @UseGuards(JwtAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
@@ -244,20 +174,6 @@ export class ConnectionsController {
   ) {
     return this.connectionService.update(context, id, input);
   }
-
-  // @UseGuards(JwtAuthGuard)
-  // @Post(':id/activate')
-  // @HttpCode(200)
-  // async activate(@Context() context: RequestContext, @Param('id') id: string) {
-  //   return this.connectionService.activate(context, id);
-  // }
-
-  // @UseGuards(JwtAuthGuard)
-  // @Post(':id/deactivate')
-  // @HttpCode(200)
-  // async deactivate(@Context() context: RequestContext, @Param('id') id: string) {
-  //   return this.connectionService.deactivate(context, id);
-  // }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/sync')

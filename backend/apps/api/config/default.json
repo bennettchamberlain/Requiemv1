@@ -1,12 +1,6 @@
 {
   "host": "0.0.0.0",
   "port": 3030,
-  "frontend": {
-    "url": "http://dev.companionintelligence.com"
-  },
-  "api": {
-    "url": "https://dev.companionintelligence.com"
-  },
   "providers": {
     "google": {
       "id": "018f8b9a-1234-7000-8000-000000000001",

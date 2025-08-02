@@ -11,16 +11,17 @@ import config from '@ci/configuration';
 import { ConnectionEntity } from '../entities/ConnectionEntity';
 import { ApiProviderFactory } from '../providers';
 import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../types';
+import { ApiLogEntity } from '../entities/ApiLogEntity';
 
 @Injectable()
 export class ConnectionService {
   private logger = new LoggerService(ConnectionService.name);
 
-  private readonly apiUrl = config.api.url;
-
   constructor(
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
+    @InjectRepository(ApiLogEntity)
+    private readonly apiLogRepository: Repository<ApiLogEntity>,
     private readonly apiProviderFactory: ApiProviderFactory,
   ) {}
 
@@ -203,8 +204,20 @@ export class ConnectionService {
 
     try {
       const apiProvider = this.apiProviderFactory.getProvider(provider.id);
+
       const syncResponse = await apiProvider.sync(connection);
 
+      await this.apiLogRepository.save({
+        id: uuid7(),
+        content: JSON.stringify(syncResponse),
+        connection: {
+          id: connectionId,
+        },
+        user: {
+          id: context.userId,
+        },
+      });
+      
       this.logger.log('Sync completed', {
         connectionId,
         success: syncResponse.success,
@@ -286,16 +299,6 @@ export class ConnectionService {
       scope: provider.scopes || '',
       state: connectionId, // Pass connection ID in state to identify it in callback
     };
-
-    this.logger.debug('OAuth authorization parameters', {
-      redirect_uri: authParams.redirect_uri,
-      apiUrl: this.apiUrl,
-      scope: provider.scopes,
-      state: connectionId,
-      envApiUrl: process.env.API_URL,
-      providerName: provider.name,
-      providerId: provider.id,
-    });
 
     // Microsoft OAuth doesn't need additional tenant parameter as it's already in the authorize path
 

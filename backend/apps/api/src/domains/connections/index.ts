@@ -7,9 +7,10 @@ import { ConnectionsController } from './controllers/ConnectionsController';
 import { ConnectionEntity } from './entities/ConnectionEntity';
 import { ApiProviderFactory } from './providers';
 import { ConnectionService } from './services/ConnectionService';
+import { ApiLogEntity } from './entities/ApiLogEntity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ConnectionEntity]), EventsModule],
+  imports: [TypeOrmModule.forFeature([ConnectionEntity, ApiLogEntity]), EventsModule],
   providers: [ConnectionService, ApiProviderFactory],
   controllers: [ConnectionsController],
   exports: [ConnectionService],

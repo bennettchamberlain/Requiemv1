@@ -6,12 +6,6 @@ import { z } from 'zod';
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
-  frontend: z.object({
-    url: z.string(),
-  }),
-  api: z.object({
-    url: z.string(),
-  }),
   providers: z.object({
     google: z.object({
       id: z.string(),
