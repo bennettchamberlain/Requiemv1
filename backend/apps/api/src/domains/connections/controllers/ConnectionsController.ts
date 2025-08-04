@@ -1,18 +1,5 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-  Res,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Response } from 'express';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -47,7 +34,6 @@ const updateConnectionSchema = z.object({
 
 @Controller('connections')
 export class ConnectionsController {
-
   private logger = new LoggerService(ConnectionsController.name);
 
   constructor(
@@ -87,11 +73,11 @@ export class ConnectionsController {
     @Context() context: RequestContext,
     @Body() body: { connectionId: string; success: boolean; error?: string; code?: string },
   ) {
-    this.logger.debug('Completing OAuth callback', { 
-      connectionId: body.connectionId, 
+    this.logger.debug('Completing OAuth callback', {
+      connectionId: body.connectionId,
       success: body.success,
       hasCode: !!body.code,
-      userId: context.userId
+      userId: context.userId,
     });
 
     try {
@@ -130,10 +116,10 @@ export class ConnectionsController {
         };
       }
     } catch (error) {
-      this.logger.error('Error completing OAuth callback', { 
+      this.logger.error('Error completing OAuth callback', {
         error: error instanceof Error ? error.message : 'Unknown error',
         connectionId: body.connectionId,
-        userId: context.userId
+        userId: context.userId,
       });
 
       return {
@@ -190,6 +176,10 @@ export class ConnectionsController {
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async cronProcessConnections() {
+    if (!config.features['scheduled.connection.fetching']) {
+      return;
+    }
+
     this.logger.log('Processing connection sync cron');
 
     const activeConnections = await this.connectionService.findAllActive();

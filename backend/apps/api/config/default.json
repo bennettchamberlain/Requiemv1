@@ -53,6 +53,7 @@
     }
   },
   "features": {
-    "scheduled.answer.inferencing": true
+    "scheduled.answer.inferencing": true,
+    "scheduled.connection.fetching": true
   }
 }
