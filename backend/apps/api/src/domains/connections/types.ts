@@ -1,5 +1,5 @@
 import type { Provider } from '@ci/domains/providers';
-import { User } from '@ci/domains/user';
+import type { User } from '@ci/domains/user';
 
 export interface ApiLog {
   readonly id: string;
@@ -21,6 +21,11 @@ export interface Connection {
   readonly refreshToken: string | null;
   readonly tokenExpiry: Date | null;
   readonly provider?: Provider;
+}
+
+export interface CompleteConnectionDto {
+  state: string;
+  code: string;
 }
 
 export interface CreateConnectionDto {

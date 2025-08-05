@@ -11,7 +11,7 @@ import config from '@ci/configuration';
 import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
 
 import { ConnectionService } from '../services/ConnectionService';
-import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
+import type { CompleteConnectionDto, CreateConnectionDto, UpdateConnectionDto } from '../types';
 
 const createConnectionSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -30,6 +30,11 @@ const updateConnectionSchema = z.object({
   clientkey: z.string().optional(),
   clientsecret: z.string().optional(),
   schedule: z.string().optional(),
+});
+
+const completeConnectionSchema = z.object({
+  state: z.string(),
+  code: z.string(),
 });
 
 @Controller('connections')
@@ -51,6 +56,7 @@ export class ConnectionsController {
 
     try {
       const result = await this.connectionService.connect(context, id);
+
       this.logger.debug('Connect endpoint returning', {
         connectionId: id,
         hasUrl: !!result.url,
@@ -68,64 +74,35 @@ export class ConnectionsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('callback/complete')
+  @Post('complete')
   async completeCallback(
     @Context() context: RequestContext,
-    @Body() body: { connectionId: string; success: boolean; error?: string; code?: string },
+    @Body(new ValidationPipe(completeConnectionSchema)) body: CompleteConnectionDto,
   ) {
-    this.logger.debug('Completing OAuth callback', {
-      connectionId: body.connectionId,
-      success: body.success,
-      hasCode: !!body.code,
-      userId: context.userId,
-    });
+    const { state, code } = body;
 
     try {
-      if (body.success && body.code) {
-        // Handle OAuth code exchange for authenticated flow
-        const callbackContext: RequestContext = {
-          ...context,
-          query: { code: body.code, state: body.connectionId },
-        };
+      const callbackContext: RequestContext = {
+        ...context,
+        query: { code, state },
+      };
 
-        const result = await this.connectionService.callback(callbackContext);
+      const result = await this.connectionService.callback(callbackContext);
 
-        if (result.success) {
-          return {
-            success: true,
-            connection: result.connection,
-            message: 'OAuth authentication completed successfully',
-          };
-        } else {
-          throw new Error('Failed to complete OAuth token exchange');
-        }
-      } else if (body.success) {
-        // For cases where OAuth was already completed
-        const connection = await this.connectionService.findOne(context, body.connectionId);
-
-        return {
-          success: true,
-          connection,
-          message: 'OAuth authentication completed successfully',
-        };
-      } else {
-        return {
-          success: false,
-          error: body.error || 'OAuth authentication failed',
-          message: 'Failed to complete OAuth authentication',
-        };
-      }
+      return {
+        success: true,
+        connection: result.connection,
+      };
     } catch (error) {
       this.logger.error('Error completing OAuth callback', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        connectionId: body.connectionId,
+        connectionId: state,
         userId: context.userId,
       });
 
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        message: 'Failed to complete OAuth authentication',
       };
     }
   }
