@@ -55,21 +55,3 @@ export interface UpdateConnectionDto {
   clientsecret?: string;
   schedule?: string;
 }
-
-export interface CreateProviderDto {
-  name: string;
-  tokenHost?: string;
-  tokenPath?: string;
-  authorizePath?: string;
-  apiBaseUrl?: string;
-  scopes?: string;
-}
-
-export interface UpdateProviderDto {
-  name?: string;
-  tokenHost?: string;
-  tokenPath?: string;
-  authorizePath?: string;
-  apiBaseUrl?: string;
-  scopes?: string;
-}
