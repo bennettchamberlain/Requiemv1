@@ -18,18 +18,6 @@ const booleanStringSchema = z.preprocess((val) => {
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
-  providers: z.object({
-    google: z.object({
-      id: z.string(),
-      name: z.string(),
-      oauthCallbackUrl: z.string(),
-    }),
-    microsoft: z.object({
-      id: z.string(),
-      name: z.string(),
-      oauthCallbackUrl: z.string(),
-    }),
-  }),
   logging: z.object({
     level: z.string(),
   }),
@@ -47,6 +35,17 @@ export const ConfigSchema = z.object({
       saltRounds: z.number(),
       fieldPepper: z.string(),
       duration: z.string(),
+    }),
+    providers: z.object({
+      google: z.object({
+        id: z.string(),
+      }),
+      microsoft: z.object({
+        id: z.string(),
+      }),
+    }),
+    oauth: z.object({
+      callbackUrl: z.string(),
     }),
   }),
   db: z.object({

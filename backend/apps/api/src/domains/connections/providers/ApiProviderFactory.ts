@@ -12,8 +12,8 @@ export class ApiProviderFactory {
 
   constructor() {
     // Register providers by provider ID from configuration
-    this.providers.set(config.providers.google.id, new GoogleApiProvider());
-    this.providers.set(config.providers.microsoft.id, new MicrosoftApiProvider());
+    this.providers.set(config.auth.providers.google.id, new GoogleApiProvider());
+    this.providers.set(config.auth.providers.microsoft.id, new MicrosoftApiProvider());
   }
 
   getProvider(providerId: string): ApiProvider {

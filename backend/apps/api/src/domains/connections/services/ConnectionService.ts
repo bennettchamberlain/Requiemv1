@@ -263,31 +263,10 @@ export class ConnectionService {
       },
     });
 
-    // Get the provider-specific OAuth callback URL
-    const providerConfig =
-      provider.id === config.providers.google.id
-        ? config.providers.google
-        : provider.id === config.providers.microsoft.id
-          ? config.providers.microsoft
-          : null;
-
-    if (!providerConfig) {
-      throw new NotFoundException('Provider configuration not found');
-    }
-
-    this.logger.debug('Provider config selected', {
-      providerId: provider.id,
-      providerName: provider.name,
-      googleId: config.providers.google.id,
-      microsoftId: config.providers.microsoft.id,
-      selectedConfig: providerConfig,
-      oauthCallbackUrl: providerConfig.oauthCallbackUrl,
-    });
-
     // Prepare authorization parameters
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const authParams: any = {
-      redirect_uri: providerConfig.oauthCallbackUrl,
+      redirect_uri: config.auth.oauth.callbackUrl,
       scope: provider.scopes || '',
       state: connectionId, // Pass connection ID in state to identify it in callback
     };
@@ -433,18 +412,6 @@ export class ConnectionService {
         fullTokenEndpoint: tokenEndpoint,
       });
 
-      // Get the provider-specific OAuth callback URL
-      const providerConfig =
-        provider.id === config.providers.google.id
-          ? config.providers.google
-          : provider.id === config.providers.microsoft.id
-            ? config.providers.microsoft
-            : null;
-
-      if (!providerConfig) {
-        throw new NotFoundException('Provider configuration not found');
-      }
-
       // Ensure credentials are trimmed of any whitespace
       const clientId = connection.clientid.trim();
       const clientSecret = connection.clientsecret.trim();
@@ -452,7 +419,7 @@ export class ConnectionService {
         code,
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: providerConfig.oauthCallbackUrl,
+        redirect_uri: config.auth.oauth.callbackUrl,
         grant_type: 'authorization_code',
       });
 
@@ -462,7 +429,7 @@ export class ConnectionService {
       this.logger.debug('Token request parameters:', {
         endpoint: tokenEndpoint,
         client_id: connection.clientid,
-        redirect_uri: providerConfig.oauthCallbackUrl,
+        redirect_uri: config.auth.oauth.callbackUrl,
         grant_type: 'authorization_code',
         code_length: code.length,
         // Log the actual body being sent
@@ -500,7 +467,7 @@ export class ConnectionService {
           error: errorDetails,
           endpoint: tokenEndpoint,
           clientId: connection.clientid,
-          redirectUri: providerConfig.oauthCallbackUrl,
+          redirectUri: config.auth.oauth.callbackUrl,
         });
         throw new Error(`Token exchange failed: ${tokenResponse.statusText} - ${responseText}`);
       }
