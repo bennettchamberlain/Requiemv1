@@ -8,10 +8,10 @@ import { LoggerService } from '@ci/common/services/LoggerService';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 
+import { ApiLogEntity } from '../entities/ApiLogEntity';
 import { ConnectionEntity } from '../entities/ConnectionEntity';
 import { ApiProviderFactory } from '../providers';
 import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../types';
-import { ApiLogEntity } from '../entities/ApiLogEntity';
 
 @Injectable()
 export class ConnectionService {
@@ -158,14 +158,6 @@ export class ConnectionService {
     return updated;
   }
 
-  async activate(context: RequestContext, id: string): Promise<Connection> {
-    return this.update(context, id, { active: true });
-  }
-
-  async deactivate(context: RequestContext, id: string): Promise<Connection> {
-    return this.update(context, id, { active: false });
-  }
-
   async delete(context: RequestContext, id: string): Promise<boolean> {
     const result = await this.connectionRepository.delete({
       id,
@@ -217,7 +209,7 @@ export class ConnectionService {
           id: context.userId,
         },
       });
-      
+
       this.logger.log('Sync completed', {
         connectionId,
         success: syncResponse.success,
@@ -577,118 +569,6 @@ export class ConnectionService {
         stack: error instanceof Error ? error.stack : undefined,
       });
       throw new NotFoundException('Failed to complete OAuth2 flow');
-    }
-  }
-
-  async makeApiRequest(
-    context: RequestContext,
-    connectionId: string,
-    endpoint: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    options?: any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ): Promise<any> {
-    const connection = await this.findOne(context, connectionId);
-
-    if (!connection.accessToken) {
-      throw new NotFoundException('Connection not authenticated');
-    }
-
-    const provider = connection.provider;
-    if (!provider) {
-      throw new NotFoundException('Provider not found');
-    }
-
-    // Check if token needs refresh
-    if (connection.tokenExpiry && new Date(connection.tokenExpiry) < new Date()) {
-      await this.refreshToken(context, connectionId);
-      // Reload connection to get new tokens
-      const refreshedConnection = await this.findOne(context, connectionId);
-      connection.accessToken = refreshedConnection.accessToken;
-    }
-
-    // Make generic API request with the access token
-    try {
-      const response = await fetch(`${provider.apiBaseUrl}${endpoint}`, {
-        ...options,
-        headers: {
-          ...options?.headers,
-          Authorization: `Bearer ${connection.accessToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      this.logger.error('API request failed', { connectionId, endpoint, error });
-      throw error;
-    }
-  }
-
-  private async refreshToken(context: RequestContext, connectionId: string): Promise<void> {
-    const connection = await this.findOne(context, connectionId);
-
-    if (!connection.refreshToken) {
-      throw new NotFoundException('No refresh token available');
-    }
-
-    const provider = connection.provider;
-    if (!provider) {
-      throw new NotFoundException('Provider not found');
-    }
-
-    // Handle absolute URLs in authorizePath
-    let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
-    let tokenHost = provider.tokenHost;
-
-    // If authorizePath is an absolute URL, extract the host and path
-    if (authorizePath.startsWith('http')) {
-      const authUrl = new URL(authorizePath);
-      tokenHost = `${authUrl.protocol}//${authUrl.host}`;
-      authorizePath = authUrl.pathname + authUrl.search;
-    }
-
-    const client = new AuthorizationCode({
-      client: {
-        id: connection.clientid!,
-        secret: connection.clientsecret!,
-      },
-      auth: {
-        tokenHost: tokenHost,
-        tokenPath: provider.tokenPath || '/token',
-        authorizePath: authorizePath,
-      },
-    });
-
-    try {
-      const accessToken = client.createToken({
-        access_token: connection.accessToken!,
-        refresh_token: connection.refreshToken,
-        expires_at: connection.tokenExpiry,
-      });
-
-      const refreshedToken = await accessToken.refresh();
-
-      // Update tokens in database
-      await this.connectionRepository.update(
-        {
-          id: connectionId,
-          user: {
-            id: context.userId,
-          },
-        },
-        {
-          accessToken: refreshedToken.token.access_token,
-          refreshToken: refreshedToken.token.refresh_token || connection.refreshToken,
-          tokenExpiry: refreshedToken.token.expires_at,
-        },
-      );
-    } catch (error) {
-      this.logger.error('Token refresh failed', { connectionId, error });
-      throw new NotFoundException('Failed to refresh token');
     }
   }
 }
