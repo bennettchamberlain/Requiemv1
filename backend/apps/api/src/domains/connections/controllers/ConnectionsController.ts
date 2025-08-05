@@ -47,6 +47,44 @@ export class ConnectionsController {
   ) {}
 
   @UseGuards(JwtAuthGuard)
+  @Post()
+  async create(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(createConnectionSchema)) input: CreateConnectionDto,
+  ) {
+    return this.connectionService.create(context, input);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get()
+  async findAll(@Context() context: RequestContext) {
+    return this.connectionService.findAll(context);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findOne(@Context() context: RequestContext, @Param('id') id: string) {
+    return this.connectionService.findOne(context, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async update(
+    @Context() context: RequestContext,
+    @Param('id') id: string,
+    @Body(new ValidationPipe(updateConnectionSchema)) input: UpdateConnectionDto,
+  ) {
+    return this.connectionService.update(context, id, input);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  @HttpCode(204)
+  async delete(@Context() context: RequestContext, @Param('id') id: string) {
+    await this.connectionService.delete(context, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
     this.logger.debug('Connect endpoint called', {
@@ -75,6 +113,7 @@ export class ConnectionsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('complete')
+  @HttpCode(200)
   async completeCallback(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(completeConnectionSchema)) body: CompleteConnectionDto,
@@ -108,47 +147,10 @@ export class ConnectionsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get()
-  async findAll(@Context() context: RequestContext) {
-    return this.connectionService.findAll(context);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get(':id')
-  async findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.findOne(context, id);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post()
-  async create(
-    @Context() context: RequestContext,
-    @Body(new ValidationPipe(createConnectionSchema)) input: CreateConnectionDto,
-  ) {
-    return this.connectionService.create(context, input);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Patch(':id')
-  async update(
-    @Context() context: RequestContext,
-    @Param('id') id: string,
-    @Body(new ValidationPipe(updateConnectionSchema)) input: UpdateConnectionDto,
-  ) {
-    return this.connectionService.update(context, id, input);
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Post(':id/sync')
+  @HttpCode(200)
   async sync(@Context() context: RequestContext, @Param('id') id: string) {
     return this.connectionService.sync(context, id);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Delete(':id')
-  @HttpCode(204)
-  async delete(@Context() context: RequestContext, @Param('id') id: string) {
-    await this.connectionService.delete(context, id);
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)
