@@ -3,12 +3,12 @@
   "port": 3030,
   "providers": {
     "google": {
-      "id": "018f8b9a-1234-7000-8000-000000000001",
+      "id": "0198779b-182c-716e-9275-b81d99a47fdb",
       "name": "Google",
       "oauthCallbackUrl": "https://dev.companionintelligence.com/oauth-callback.html"
     },
     "microsoft": {
-      "id": "018f8b9a-1234-7000-8000-000000000006",
+      "id": "0198779b-3c33-73da-84e5-82e0df145260",
       "name": "Microsoft",
       "oauthCallbackUrl": "https://dev.companionintelligence.com/oauth-callback.html"
     }
