@@ -4,6 +4,7 @@ import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import config from '@ci/configuration';
+import { ProviderEntity } from '@ci/domains/connections';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
 import {
   ContactEntity,
@@ -15,7 +16,6 @@ import {
   TagEntity,
   ThingEntity,
 } from '@ci/domains/memory';
-import { ProviderEntity } from '@ci/domains/providers';
 import { UserEntity } from '@ci/domains/user';
 
 import { seedAnswers } from './seed-answers';

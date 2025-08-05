@@ -4,24 +4,27 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventsModule } from '@ci/domains/events';
 
 import { ConnectionsController } from './controllers/ConnectionsController';
+import { ProvidersController } from './controllers/ProvidersController';
+import { ApiLogEntity } from './entities/ApiLogEntity';
 import { ConnectionEntity } from './entities/ConnectionEntity';
+import { ProviderEntity } from './entities/ProviderEntity';
 import { ApiProviderFactory } from './providers';
 import { ConnectionService } from './services/ConnectionService';
-import { ApiLogEntity } from './entities/ApiLogEntity';
+import { ProviderService } from './services/ProviderService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ConnectionEntity, ApiLogEntity]), EventsModule],
-  providers: [ConnectionService, ApiProviderFactory],
-  controllers: [ConnectionsController],
-  exports: [ConnectionService],
+  imports: [TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity, ProviderEntity]), EventsModule],
+  providers: [ApiProviderFactory, ConnectionService, ProviderService],
+  controllers: [ConnectionsController, ProvidersController],
+  exports: [],
 })
 export class ConnectionsModule {}
 
 // Entities
-export { ConnectionEntity };
+export { ProviderEntity };
 
 // Services
-export { ConnectionService };
+export {};
 
 // Types
-export type { CreateConnectionDto, Connection, UpdateConnectionDto } from './types';
+export type {} from './types';
