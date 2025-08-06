@@ -109,16 +109,11 @@ export class ConnectionsController {
     const { state, code } = body;
 
     try {
-      const callbackContext: RequestContext = {
-        ...context,
-        query: { code, state },
-      };
-
-      const result = await this.connectionService.callback(callbackContext);
+      const result = await this.connectionService.callback(context, state, code);
 
       return {
         success: true,
-        connection: result.connection,
+        connection: result,
       };
     } catch (error) {
       this.logger.error('Error completing OAuth callback', {

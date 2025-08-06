@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { AuthorizationCode } from 'simple-oauth2';
 import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
@@ -11,7 +10,13 @@ import config from '@ci/configuration';
 import { ApiLogEntity } from '../entities/ApiLogEntity';
 import { ConnectionEntity } from '../entities/ConnectionEntity';
 import { ApiProviderFactory } from '../providers';
-import type { CreateConnectionDto, Connection, UpdateConnectionDto } from '../types';
+import type {
+  CreateConnectionDto,
+  Connection,
+  OAuthTokenResponse,
+  UpdateConnectionDto,
+  UpdateConnectionCredentialsDto,
+} from '../types';
 
 @Injectable()
 export class ConnectionService {
@@ -111,27 +116,16 @@ export class ConnectionService {
     return entity.toConnection();
   }
 
-  async update(context: RequestContext, id: string, data: UpdateConnectionDto): Promise<Connection> {
-    const { providerId, ...updateData } = data;
-
-    this.logger.debug('Updating connection', {
-      connectionId: id,
-      hasClientId: !!updateData.clientid,
-      hasClientSecret: !!updateData.clientsecret,
-      userId: context.userId,
-    });
-
-    // Ensure credentials are trimmed when updating
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updatePayload: any = {
-      ...updateData,
-      clientid: updateData.clientid?.trim(),
-      clientsecret: updateData.clientsecret?.trim(),
+  async update(
+    context: RequestContext,
+    id: string,
+    data: UpdateConnectionDto & UpdateConnectionCredentialsDto,
+  ): Promise<Connection> {
+    const updatePayload: UpdateConnectionDto = {
+      ...data,
+      clientid: data.clientid?.trim(),
+      clientsecret: data.clientsecret?.trim(),
     };
-
-    if (providerId) {
-      updatePayload.provider = { id: providerId };
-    }
 
     const result = await this.connectionRepository.update(
       {
@@ -148,12 +142,6 @@ export class ConnectionService {
     }
 
     const updated = await this.findOne(context, id);
-
-    this.logger.debug('Connection updated', {
-      connectionId: id,
-      hasClientId: !!updated.clientid,
-      hasClientSecret: !!updated.clientsecret,
-    });
 
     return updated;
   }
@@ -254,246 +242,71 @@ export class ConnectionService {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async callback(context: RequestContext): Promise<any> {
-    this.logger.debug('OAuth2 callback received', {
-      query: context.query,
-      hasCode: !!context.query?.code,
-      hasState: !!context.query?.state,
-      contextUserId: context.userId,
-      contextRequestId: context.requestId,
+  async callback(context: RequestContext, connectionId: string, code: string): Promise<Connection> {
+    const connection = await this.findOne(context, connectionId);
+
+    if (connection.clientid == null || connection.clientsecret == null) {
+      throw new Error('OAuth credentials not configured');
+    }
+
+    const provider = connection.provider;
+
+    if (provider == null) {
+      throw new Error('Connection not associated with a provider');
+    }
+
+    const tokenEndpoint = mergeUrls([provider.tokenHost, provider.tokenPath]);
+
+    const tokenParams = new URLSearchParams({
+      code,
+      client_id: connection.clientid,
+      client_secret: connection.clientsecret,
+      redirect_uri: config.auth.oauth.callbackUrl,
+      grant_type: 'authorization_code',
     });
 
-    if (!context.query || !context.query.code || !context.query.state) {
-      this.logger.error('OAuth2 callback missing code or state', {
-        query: context.query,
+    const tokenResponse = await fetch(tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: tokenParams.toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      let errorDetails;
+
+      try {
+        errorDetails = tokenResponse.json();
+      } catch {
+        errorDetails = tokenResponse.text();
+      }
+
+      this.logger.error('Token exchange failed', {
+        status: tokenResponse.status,
+        error: errorDetails,
+        endpoint: tokenEndpoint,
       });
-      throw new NotFoundException('Invalid callback parameters');
+
+      throw new Error('Token exchange failed');
     }
 
-    const connectionId = context.query.state as string;
-    const code = context.query.code as string;
-
-    this.logger.debug('Processing OAuth callback', { connectionId, codeLength: code.length });
+    let tokenData: OAuthTokenResponse;
 
     try {
-      // Get the connection without user context (since this is an OAuth callback)
-      this.logger.debug('Looking for connection in database', { connectionId });
-
-      const entity = await this.connectionRepository.findOne({
-        where: { id: connectionId },
-        relations: ['provider', 'user'],
-      });
-
-      if (!entity) {
-        this.logger.error('Connection not found in database', { connectionId });
-        throw new NotFoundException('Connection not found');
-      }
-
-      this.logger.debug('Connection found in database', {
-        connectionId,
-        connectionName: entity.name,
-        hasProvider: !!entity.provider,
-        providerName: entity.provider?.name,
-      });
-
-      const connection = entity.toConnection();
-
-      if (!connection.clientid || !connection.clientsecret) {
-        this.logger.error('OAuth2 credentials not configured', {
-          connectionId,
-          hasClientId: !!connection.clientid,
-          hasClientSecret: !!connection.clientsecret,
-        });
-        throw new NotFoundException('OAuth2 credentials not configured');
-      }
-
-      this.logger.debug('OAuth2 credentials found', {
-        connectionId,
-        clientIdLength: connection.clientid.length,
-        clientSecretLength: connection.clientsecret.length,
-        clientId: connection.clientid,
-        // Log first and last few characters of secret for debugging
-        clientSecretPreview: connection.clientsecret
-          ? `${connection.clientsecret.substring(0, 4)}...${connection.clientsecret.substring(connection.clientsecret.length - 4)}`
-          : 'null',
-      });
-
-      const provider = connection.provider;
-      if (!provider) {
-        throw new NotFoundException('Provider not found');
-      }
-
-      // Create OAuth2 client
-      // Handle absolute URLs in authorizePath
-      let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
-      let tokenHost = provider.tokenHost;
-
-      // If authorizePath is an absolute URL, extract the host and path
-      if (authorizePath.startsWith('http')) {
-        const authUrl = new URL(authorizePath);
-        tokenHost = `${authUrl.protocol}//${authUrl.host}`;
-        authorizePath = authUrl.pathname + authUrl.search;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const client = new AuthorizationCode({
-        client: {
-          id: connection.clientid,
-          secret: connection.clientsecret,
-        },
-        auth: {
-          tokenHost: tokenHost,
-          tokenPath: provider.tokenPath || '/token',
-          authorizePath: authorizePath,
-        },
-      });
-
-      // Exchange code for tokens
-      // @todo note for Google, we need to make a direct POST request to handle the response properly
-      this.logger.debug('Exchanging code for tokens', {
-        hasClientId: !!connection.clientid,
-        hasClientSecret: !!connection.clientsecret,
-        clientIdLength: connection.clientid?.length,
-        clientSecretLength: connection.clientsecret?.length,
-      });
-
-      const tokenEndpoint = `${provider.tokenHost}${provider.tokenPath || '/token'}`;
-
-      // Log the provider details to ensure we have the right configuration
-      this.logger.debug('Provider configuration', {
-        providerId: provider.id,
-        providerName: provider.name,
-        tokenHost: provider.tokenHost,
-        tokenPath: provider.tokenPath,
-        fullTokenEndpoint: tokenEndpoint,
-      });
-
-      // Ensure credentials are trimmed of any whitespace
-      const clientId = connection.clientid.trim();
-      const clientSecret = connection.clientsecret.trim();
-      const tokenParams = new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: config.auth.oauth.callbackUrl,
-        grant_type: 'authorization_code',
-      });
-
-      // Microsoft OAuth doesn't need additional tenant parameter as it's already in the token endpoint URL
-
-      this.logger.debug('Making token request to:', tokenEndpoint);
-      this.logger.debug('Token request parameters:', {
-        endpoint: tokenEndpoint,
-        client_id: connection.clientid,
-        redirect_uri: config.auth.oauth.callbackUrl,
-        grant_type: 'authorization_code',
-        code_length: code.length,
-        // Log the actual body being sent
-        bodyPreview: tokenParams.toString().substring(0, 200),
-      });
-
-      const tokenResponse = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
-        },
-        body: tokenParams.toString(),
-      });
-
-      const responseText = await tokenResponse.text();
-      this.logger.debug('Token response:', {
-        status: tokenResponse.status,
-        headers: Object.fromEntries(tokenResponse.headers.entries()),
-        bodyPreview: responseText.substring(0, 500),
-      });
-
-      if (!tokenResponse.ok) {
-        // Try to parse error response
-        let errorDetails;
-        try {
-          errorDetails = JSON.parse(responseText);
-        } catch {
-          errorDetails = responseText;
-        }
-
-        this.logger.error('Token exchange failed', {
-          status: tokenResponse.status,
-          statusText: tokenResponse.statusText,
-          error: errorDetails,
-          endpoint: tokenEndpoint,
-          clientId: connection.clientid,
-          redirectUri: config.auth.oauth.callbackUrl,
-        });
-        throw new Error(`Token exchange failed: ${tokenResponse.statusText} - ${responseText}`);
-      }
-
-      let tokenData;
-      try {
-        tokenData = JSON.parse(responseText);
-      } catch (parseError) {
-        this.logger.error('Failed to parse token response as JSON', {
-          responseText,
-          parseError,
-        });
-        throw new Error('Invalid token response format');
-      }
-
-      this.logger.debug('Token exchange successful', {
-        hasAccessToken: !!tokenData.access_token,
-        hasRefreshToken: !!tokenData.refresh_token,
-        hasExpiresIn: !!tokenData.expires_in,
-      });
-
-      // Store tokens in the connection entity
-      const expiryDate = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
-
-      this.logger.debug('About to store tokens in database', {
-        connectionId,
-        hasAccessToken: !!tokenData.access_token,
-        hasRefreshToken: !!tokenData.refresh_token,
-        expiryDate,
-      });
-
-      const updateResult = await this.connectionRepository.update(
-        { id: connectionId },
-        {
-          accessToken: tokenData.access_token,
-          refreshToken: tokenData.refresh_token || null,
-          tokenExpiry: expiryDate,
-        },
-      );
-
-      this.logger.debug('Database update result', {
-        connectionId,
-        affectedRows: updateResult.affected,
-        updateResult,
-      });
-
-      this.logger.debug('Tokens stored successfully for connection', { connectionId });
-
-      // Get the updated connection data
-      const updatedConnection = await this.findOne(
-        { userId: entity.user.id, requestId: 'oauth-callback' } as RequestContext,
-        connectionId,
-      );
-
-      this.logger.debug('OAuth callback completed successfully', { connectionId });
-
-      return {
-        success: true,
-        connection: updatedConnection,
-        connectionId: connectionId,
-      };
-    } catch (error) {
-      this.logger.error('OAuth2 token exchange failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        connectionId,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      throw new NotFoundException('Failed to complete OAuth2 flow');
+      tokenData = (await tokenResponse.json()) as OAuthTokenResponse;
+    } catch {
+      throw new Error('Invalid token response format');
     }
+
+    const expiryDate = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
+
+    return this.update(context, connectionId, {
+      accessToken: tokenData.access_token || null,
+      refreshToken: tokenData.refresh_token || null,
+      tokenExpiry: expiryDate,
+    });
   }
 }
 

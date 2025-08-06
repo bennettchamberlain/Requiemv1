@@ -55,3 +55,15 @@ export interface UpdateConnectionDto {
   clientsecret?: string;
   schedule?: string;
 }
+
+export interface UpdateConnectionCredentialsDto {
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiry: Date | null;
+}
+
+export interface OAuthTokenResponse {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+}
