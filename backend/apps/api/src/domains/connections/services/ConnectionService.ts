@@ -229,72 +229,29 @@ export class ConnectionService {
   async connect(context: RequestContext, connectionId: string): Promise<{ url: string }> {
     const connection = await this.findOne(context, connectionId);
 
-    if (!connection.clientid || !connection.clientsecret) {
-      throw new NotFoundException('OAuth2 credentials not configured');
+    if (!connection.clientid) {
+      throw new Error('OAuth credentials not configured');
     }
 
-    // Get provider OAuth2 configuration
     const provider = connection.provider;
-    if (!provider) {
-      throw new NotFoundException('Provider not found');
+
+    if (provider == null) {
+      throw new Error('Connection not associated with a provider');
     }
 
-    // Create OAuth2 client based on provider configuration
-    // Handle absolute URLs in authorizePath
-    let authorizePath = provider.authorizePath || '/o/oauth2/v2/auth';
-    let tokenHost = provider.tokenHost;
-
-    // If authorizePath is an absolute URL, extract the host and path
-    if (authorizePath.startsWith('http')) {
-      const authUrl = new URL(authorizePath);
-      tokenHost = `${authUrl.protocol}//${authUrl.host}`;
-      authorizePath = authUrl.pathname + authUrl.search;
+    if (provider.tokenHost == null) {
+      throw new Error('Provider has no tokenHost specified');
     }
 
-    const client = new AuthorizationCode({
-      client: {
-        id: connection.clientid,
-        secret: connection.clientsecret,
-      },
-      auth: {
-        tokenHost: tokenHost,
-        tokenPath: provider.tokenPath || '/token',
-        authorizePath: authorizePath,
-      },
-    });
-
-    // Prepare authorization parameters
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const authParams: any = {
-      redirect_uri: config.auth.oauth.callbackUrl,
-      scope: provider.scopes || '',
-      state: connectionId, // Pass connection ID in state to identify it in callback
+    return {
+      url: generateOAuth2RedirectURL({
+        authEndpoint: mergeUrls([provider.tokenHost, provider.authorizePath]),
+        clientId: connection.clientid,
+        callbackUrl: config.auth.oauth.callbackUrl,
+        scope: provider.scopes || '',
+        state: connectionId,
+      }),
     };
-
-    // Microsoft OAuth doesn't need additional tenant parameter as it's already in the authorize path
-
-    try {
-      const authorizationUri = client.authorizeURL(authParams);
-
-      this.logger.debug('Generated authorization URL', {
-        authorizationUri,
-        redirect_uri: authParams.redirect_uri,
-        tenant: authParams.tenant,
-        fullUrl: authorizationUri,
-        providerName: provider.name,
-      });
-
-      return { url: authorizationUri };
-    } catch (error) {
-      this.logger.error('Failed to generate authorization URL', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        providerId: provider.id,
-        providerName: provider.name,
-        redirect_uri: authParams.redirect_uri,
-        authParams,
-      });
-      throw error;
-    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -538,4 +495,73 @@ export class ConnectionService {
       throw new NotFoundException('Failed to complete OAuth2 flow');
     }
   }
+}
+
+function mergeUrls(urls: (string | null)[]) {
+  const result = new URL('http://placeholder');
+  let validResult = false;
+
+  result.hostname = '';
+
+  for (const url of urls) {
+    if (url == null) {
+      continue;
+    }
+
+    let parsedUrl;
+    let overrideHost = false;
+
+    try {
+      parsedUrl = new URL(url);
+      overrideHost = true;
+    } catch {
+      parsedUrl = new URL(url, 'http://placeholder.com');
+    }
+
+    if (overrideHost) {
+      result.protocol = parsedUrl.protocol;
+      result.hostname = parsedUrl.hostname;
+      result.username = parsedUrl.username;
+      result.port = parsedUrl.port;
+
+      validResult = true;
+    }
+
+    result.pathname = parsedUrl.pathname;
+  }
+
+  if (!validResult) {
+    throw new Error('No URL contains a valid hostname');
+  }
+
+  return result.toString();
+}
+
+function generateOAuth2RedirectURL({
+  authEndpoint,
+  clientId,
+  callbackUrl,
+  scope,
+  state,
+  responseType = 'code',
+  extraParams = {},
+}: {
+  authEndpoint: string;
+  clientId: string;
+  callbackUrl: string;
+  scope: string | string[];
+  state?: string;
+  responseType?: string;
+  extraParams?: Record<string, string>;
+}): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: callbackUrl,
+    response_type: responseType,
+    scope: Array.isArray(scope) ? scope.join(' ') : scope,
+    ...(state ? { state } : {}),
+    ...extraParams,
+  });
+
+  return `${authEndpoint}?${params.toString()}`;
 }

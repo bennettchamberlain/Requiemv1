@@ -87,26 +87,14 @@ export class ConnectionsController {
   @UseGuards(JwtAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
-    this.logger.debug('Connect endpoint called', {
-      connectionId: id,
-      userId: context.userId,
-    });
-
     try {
-      const result = await this.connectionService.connect(context, id);
-
-      this.logger.debug('Connect endpoint returning', {
-        connectionId: id,
-        hasUrl: !!result.url,
-        urlLength: result.url?.length,
-      });
-
-      return result;
+      return this.connectionService.connect(context, id);
     } catch (error) {
       this.logger.error('Connect endpoint error', {
         connectionId: id,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+
       throw error;
     }
   }
@@ -161,13 +149,15 @@ export class ConnectionsController {
 
     this.logger.log('Processing connection sync cron');
 
-    const activeConnections = await this.connectionService.findAllActive();
+    const activeConnections = await this.connectionService.findSyncTargetsByUserId();
 
-    for (const connection of activeConnections) {
-      this.eventService.send(Events.SYNC_CONNECTION, {
-        connectionId: connection.id,
-        userId: connection.userId,
-      });
+    for (const [userId, connectionIds] of activeConnections) {
+      for (const connectionId of connectionIds) {
+        this.eventService.send(Events.SYNC_CONNECTION, {
+          userId,
+          connectionId,
+        });
+      }
     }
   }
 
@@ -191,6 +181,9 @@ export class ConnectionsController {
         message: result.message,
       });
     } catch (error) {
+      // Keep in mind this swallows the error and marks the job as a success.
+      // Is this a transient failure? Should we retry?
+
       this.logger.error('Connection sync failed', {
         connectionId: payload.connectionId,
         error: error instanceof Error ? error.message : 'Unknown error',
