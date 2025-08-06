@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services/LoggerService';
@@ -21,6 +21,7 @@ export class ConnectionService {
   private logger = new LoggerService(ConnectionService.name);
 
   constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
     @InjectRepository(ApiLogEntity)
@@ -81,19 +82,34 @@ export class ConnectionService {
     return entities.map((entity) => entity.toConnection());
   }
 
-  async findAllActive(): Promise<Array<Connection & { userId: string }>> {
-    const entities = await this.connectionRepository
-      .createQueryBuilder('connection')
-      .leftJoinAndSelect('connection.provider', 'provider')
-      .leftJoinAndSelect('connection.user', 'user')
-      .where('connection.active = :active', { active: true })
-      .andWhere('connection.accessToken IS NOT NULL')
-      .getMany();
+  async findSyncTargetsByUserId(): Promise<Map<string, string[]>> {
+    type Row = {
+      id: string;
+      user_id: string;
+    };
 
-    return entities.map((entity) => ({
-      ...entity.toConnection(),
-      userId: entity.user?.id || 'unknown',
-    }));
+    const rows = (await this.dataSource.query(`
+      SELECT
+        questions.id as id,
+        answers.user_id as user_id
+      FROM
+        connections
+      WHERE active = true;
+    `)) satisfies Array<Row>;
+
+    const groupedByUserId = new Map<string, string[]>();
+
+    for (const row of rows) {
+      const userId = row.user_id;
+
+      if (!groupedByUserId.has(userId)) {
+        groupedByUserId.set(userId, []);
+      }
+
+      groupedByUserId.get(userId)!.push(row.id);
+    }
+
+    return groupedByUserId;
   }
 
   async findOne(context: RequestContext, id: string): Promise<Connection> {
