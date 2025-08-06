@@ -48,7 +48,6 @@ export interface CreateConnectionDto {
 
 export interface UpdateConnectionDto {
   name?: string;
-  providerId?: string;
   active?: boolean;
   clientid?: string;
   clientkey?: string;

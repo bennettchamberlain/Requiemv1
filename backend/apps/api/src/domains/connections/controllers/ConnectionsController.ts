@@ -24,7 +24,6 @@ const createConnectionSchema = z.object({
 
 const updateConnectionSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
-  providerId: z.string().uuid('Invalid provider ID').optional(),
   active: z.boolean().optional(),
   clientid: z.string().optional(),
   clientkey: z.string().optional(),
@@ -133,7 +132,7 @@ export class ConnectionsController {
   @Post(':id/sync')
   @HttpCode(200)
   async sync(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.sync(context, id);
+    return this.connectionService.sync(context, id, false);
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)
