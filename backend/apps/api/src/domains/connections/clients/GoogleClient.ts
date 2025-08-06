@@ -1,13 +1,9 @@
 import type { Connection } from '../types';
 
-import { BaseApiProvider } from './BaseApiProvider';
+import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResult, SyncResponse } from './types';
 
-export class GoogleApiProvider extends BaseApiProvider {
-  constructor() {
-    super('Google');
-  }
-
+export class GoogleClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse> {
     this.logger.log('Syncing Google data', { connectionId: connection.id });
 
@@ -16,7 +12,7 @@ export class GoogleApiProvider extends BaseApiProvider {
 
     // Google Calendar API
     try {
-      const calendarData = await this.makeApiRequest(
+      const calendarData = await this.request(
         connection,
         '/calendar/v3/calendars/primary/events?maxResults=10&timeMin=' + new Date().toISOString(),
       );
@@ -30,7 +26,7 @@ export class GoogleApiProvider extends BaseApiProvider {
 
     // Gmail API
     try {
-      const gmailData = await this.makeApiRequest(connection, '/gmail/v1/users/me/messages?maxResults=10');
+      const gmailData = await this.request(connection, '/gmail/v1/users/me/messages?maxResults=10');
       syncResults.push({ api: 'Gmail', data: gmailData });
       this.logger.debug('Gmail data synced', { connectionId: connection.id });
     } catch (error) {
@@ -41,7 +37,7 @@ export class GoogleApiProvider extends BaseApiProvider {
 
     // Google Drive API
     try {
-      const driveData = await this.makeApiRequest(connection, '/drive/v3/files?pageSize=10');
+      const driveData = await this.request(connection, '/drive/v3/files?pageSize=10');
       syncResults.push({ api: 'Google Drive', data: driveData });
       this.logger.debug('Google Drive data synced', { connectionId: connection.id });
     } catch (error) {
@@ -50,6 +46,13 @@ export class GoogleApiProvider extends BaseApiProvider {
       this.logger.error(errorMsg, { connectionId: connection.id, error });
     }
 
-    return this.createSyncResponse(syncResults, errors);
+    return {
+      success: true,
+      message: `Sync completed. ${syncResults.length} APIs processed successfully. ${errors.length} errors occurred.`,
+      data: {
+        results: syncResults,
+        errors,
+      },
+    };
   }
 }

@@ -1,13 +1,9 @@
 import type { Connection } from '../types';
 
-import { BaseApiProvider } from './BaseApiProvider';
+import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResult, SyncResponse } from './types';
 
-export class MicrosoftApiProvider extends BaseApiProvider {
-  constructor() {
-    super('Microsoft');
-  }
-
+export class MicrosoftClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse> {
     this.logger.log('Syncing Microsoft data', { connectionId: connection.id });
 
@@ -16,7 +12,7 @@ export class MicrosoftApiProvider extends BaseApiProvider {
 
     // Microsoft Graph - User Profile
     try {
-      const userData = await this.makeApiRequest(connection, '/v1.0/me');
+      const userData = await this.request(connection, '/v1.0/me');
       syncResults.push({ api: 'Microsoft Graph - User', data: userData });
       this.logger.debug('Microsoft User data synced', { connectionId: connection.id });
     } catch (error) {
@@ -27,7 +23,7 @@ export class MicrosoftApiProvider extends BaseApiProvider {
 
     // Microsoft Graph - Calendar
     try {
-      const calendarData = await this.makeApiRequest(connection, '/v1.0/me/calendar/events?$top=10');
+      const calendarData = await this.request(connection, '/v1.0/me/calendar/events?$top=10');
       syncResults.push({ api: 'Microsoft Graph - Calendar', data: calendarData });
       this.logger.debug('Microsoft Calendar data synced', { connectionId: connection.id });
     } catch (error) {
@@ -38,7 +34,7 @@ export class MicrosoftApiProvider extends BaseApiProvider {
 
     // Microsoft Graph - Mail
     try {
-      const mailData = await this.makeApiRequest(connection, '/v1.0/me/messages?$top=10');
+      const mailData = await this.request(connection, '/v1.0/me/messages?$top=10');
       syncResults.push({ api: 'Microsoft Graph - Mail', data: mailData });
       this.logger.debug('Microsoft Mail data synced', { connectionId: connection.id });
     } catch (error) {
@@ -49,7 +45,7 @@ export class MicrosoftApiProvider extends BaseApiProvider {
 
     // Microsoft Graph - OneDrive
     try {
-      const onedriveData = await this.makeApiRequest(connection, '/v1.0/me/drive/root/children?$top=10');
+      const onedriveData = await this.request(connection, '/v1.0/me/drive/root/children?$top=10');
       syncResults.push({ api: 'Microsoft Graph - OneDrive', data: onedriveData });
       this.logger.debug('Microsoft OneDrive data synced', { connectionId: connection.id });
     } catch (error) {
@@ -58,6 +54,13 @@ export class MicrosoftApiProvider extends BaseApiProvider {
       this.logger.error(errorMsg, { connectionId: connection.id, error });
     }
 
-    return this.createSyncResponse(syncResults, errors);
+    return {
+      success: true,
+      message: `Sync completed. ${syncResults.length} APIs processed successfully. ${errors.length} errors occurred.`,
+      data: {
+        results: syncResults,
+        errors,
+      },
+    };
   }
 }
