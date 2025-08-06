@@ -18,6 +18,17 @@
       "saltRounds": 4,
       "fieldPepper": "AUTH_SESSION_PEPPER",
       "duration": "7d"
+    },
+    "providers": {
+      "google": {
+        "id": "0198779b-182c-716e-9275-b81d99a47fdb"
+      },
+      "microsoft": {
+        "id": "0198779b-3c33-73da-84e5-82e0df145260"
+      }
+    },
+    "oauth": {
+      "callbackUrl": "https://dev.companionintelligence.com/oauth/callback"
     }
   },
   "db": {
@@ -41,6 +52,7 @@
     }
   },
   "features": {
-    "scheduled.answer.inferencing": true
+    "scheduled.answer.inferencing": true,
+    "scheduled.connection.fetching": true
   }
 }

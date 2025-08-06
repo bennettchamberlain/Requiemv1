@@ -36,6 +36,17 @@ export const ConfigSchema = z.object({
       fieldPepper: z.string(),
       duration: z.string(),
     }),
+    providers: z.object({
+      google: z.object({
+        id: z.string(),
+      }),
+      microsoft: z.object({
+        id: z.string(),
+      }),
+    }),
+    oauth: z.object({
+      callbackUrl: z.string(),
+    }),
   }),
   db: z.object({
     type: z.literal('postgres'), // restrict to 'postgres' (or z.string() for other DBs)
@@ -59,6 +70,7 @@ export const ConfigSchema = z.object({
   }),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
+    'scheduled.connection.fetching': booleanStringSchema,
   }),
 });
 

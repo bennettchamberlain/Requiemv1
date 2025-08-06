@@ -24,7 +24,6 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { JobsModule } from '@ci/domains/jobs';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
-import { ProvidersModule } from '@ci/domains/providers';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
 
@@ -43,6 +42,7 @@ import { UserModule } from '@ci/domains/user';
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     AuthModule,
+    ConnectionsModule,
     EmbeddingModule,
     EventsModule,
     FilesModule,
@@ -51,8 +51,6 @@ import { UserModule } from '@ci/domains/user';
     LLMModule,
     MemoryModule,
     UserModule,
-    ProvidersModule,
-    ConnectionsModule,
   ],
   controllers: [],
   providers: [
