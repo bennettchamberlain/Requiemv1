@@ -13,49 +13,49 @@ export class MicrosoftClient extends BaseOAuth2Client {
     // Microsoft Graph - User Profile
     try {
       const userData = await this.request(connection, '/v1.0/me');
+
       syncResults.push({ api: 'Microsoft Graph - User', data: userData });
-      this.logger.debug('Microsoft User data synced', { connectionId: connection.id });
     } catch (error) {
       const errorMsg = `Microsoft User API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
       errors.push(errorMsg);
-      this.logger.error(errorMsg, { connectionId: connection.id, error });
     }
 
     // Microsoft Graph - Calendar
     try {
       const calendarData = await this.request(connection, '/v1.0/me/calendar/events?$top=10');
+
       syncResults.push({ api: 'Microsoft Graph - Calendar', data: calendarData });
-      this.logger.debug('Microsoft Calendar data synced', { connectionId: connection.id });
     } catch (error) {
       const errorMsg = `Microsoft Calendar API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
       errors.push(errorMsg);
-      this.logger.error(errorMsg, { connectionId: connection.id, error });
     }
 
     // Microsoft Graph - Mail
     try {
       const mailData = await this.request(connection, '/v1.0/me/messages?$top=10');
+
       syncResults.push({ api: 'Microsoft Graph - Mail', data: mailData });
-      this.logger.debug('Microsoft Mail data synced', { connectionId: connection.id });
     } catch (error) {
       const errorMsg = `Microsoft Mail API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
       errors.push(errorMsg);
-      this.logger.error(errorMsg, { connectionId: connection.id, error });
     }
 
     // Microsoft Graph - OneDrive
     try {
       const onedriveData = await this.request(connection, '/v1.0/me/drive/root/children?$top=10');
+
       syncResults.push({ api: 'Microsoft Graph - OneDrive', data: onedriveData });
-      this.logger.debug('Microsoft OneDrive data synced', { connectionId: connection.id });
     } catch (error) {
       const errorMsg = `Microsoft OneDrive API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
       errors.push(errorMsg);
-      this.logger.error(errorMsg, { connectionId: connection.id, error });
     }
 
     return {
-      success: true,
+      success: errors.length === 0,
       message: `Sync completed. ${syncResults.length} APIs processed successfully. ${errors.length} errors occurred.`,
       data: {
         results: syncResults,
