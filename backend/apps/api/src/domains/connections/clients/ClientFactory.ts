@@ -15,11 +15,15 @@ export class ClientFactory {
     this.providers.set(config.auth.providers.microsoft.id, new MicrosoftClient());
   }
 
-  getClientByProviderId(providerId: string): Client {
+  getClientByProviderId(providerId: string | null | undefined): Client {
+    if (providerId == null) {
+      throw new Error('API client requested for a null Provider');
+    }
+
     const provider = this.providers.get(providerId);
 
     if (provider == null) {
-      throw new Error(`Unsupported provider ID: ${providerId}`);
+      throw new Error(`Unsupported Provider id: ${providerId}`);
     }
 
     return provider;

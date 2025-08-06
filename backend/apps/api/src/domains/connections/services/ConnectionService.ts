@@ -32,14 +32,6 @@ export class ConnectionService {
   async create(context: RequestContext, data: CreateConnectionDto): Promise<Connection> {
     const { providerId, ...rest } = data;
 
-    this.logger.debug('Creating connection', {
-      providerId,
-      hasClientId: !!rest.clientid,
-      hasClientSecret: !!rest.clientsecret,
-      userId: context.userId,
-    });
-
-    // Ensure credentials are trimmed when saving
     const sanitizedData = {
       ...rest,
       clientid: rest.clientid?.trim(),
@@ -60,12 +52,6 @@ export class ConnectionService {
 
     const entity = await this.connectionRepository.save(instance);
 
-    this.logger.debug('Connection created', {
-      connectionId: entity.id,
-      hasClientId: !!entity.clientid,
-      hasClientSecret: !!entity.clientsecret,
-    });
-
     return this.findOne(context, entity.id);
   }
 
@@ -80,36 +66,6 @@ export class ConnectionService {
     });
 
     return entities.map((entity) => entity.toConnection());
-  }
-
-  async findSyncTargetsByUserId(): Promise<Map<string, string[]>> {
-    type Row = {
-      id: string;
-      user_id: string;
-    };
-
-    const rows = (await this.dataSource.query(`
-      SELECT
-        questions.id as id,
-        answers.user_id as user_id
-      FROM
-        connections
-      WHERE active = true;
-    `)) satisfies Array<Row>;
-
-    const groupedByUserId = new Map<string, string[]>();
-
-    for (const row of rows) {
-      const userId = row.user_id;
-
-      if (!groupedByUserId.has(userId)) {
-        groupedByUserId.set(userId, []);
-      }
-
-      groupedByUserId.get(userId)!.push(row.id);
-    }
-
-    return groupedByUserId;
   }
 
   async findOne(context: RequestContext, id: string): Promise<Connection> {
@@ -175,73 +131,39 @@ export class ConnectionService {
     return true;
   }
 
-  async sync(
-    context: RequestContext,
-    connectionId: string,
-  ): Promise<{ success: boolean; message: string; data?: unknown }> {
-    const connection = await this.findOne(context, connectionId);
+  async findSyncTargetsByUserId(): Promise<Map<string, string[]>> {
+    type Row = {
+      id: string;
+      user_id: string;
+    };
 
-    if (!connection.accessToken) {
-      throw new NotFoundException('Connection not authenticated');
+    const rows = (await this.dataSource.query(`
+      SELECT
+        questions.id as id,
+        answers.user_id as user_id
+      FROM
+        connections
+      WHERE active = true;
+    `)) satisfies Array<Row>;
+
+    const groupedByUserId = new Map<string, string[]>();
+
+    for (const row of rows) {
+      const userId = row.user_id;
+
+      if (!groupedByUserId.has(userId)) {
+        groupedByUserId.set(userId, []);
+      }
+
+      groupedByUserId.get(userId)!.push(row.id);
     }
 
-    const provider = connection.provider;
-    if (!provider) {
-      throw new NotFoundException('Provider not found');
-    }
-
-    this.logger.log('Starting manual sync for connection', {
-      connectionId,
-      providerName: provider.name,
-      userId: context.userId,
-    });
-
-    try {
-      const apiProvider = this.clientFactory.getClientByProviderId(provider.id);
-
-      const syncResponse = await apiProvider.sync(connection);
-
-      await this.apiLogRepository.save({
-        id: uuid7(),
-        content: JSON.stringify(syncResponse),
-        connection: {
-          id: connectionId,
-        },
-        user: {
-          id: context.userId,
-        },
-      });
-
-      this.logger.log('Sync completed', {
-        connectionId,
-        success: syncResponse.success,
-        message: syncResponse.message,
-      });
-
-      return syncResponse;
-    } catch (error) {
-      this.logger.error('Sync failed', {
-        connectionId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      throw error;
-    }
+    return groupedByUserId;
   }
 
   async connect(context: RequestContext, connectionId: string): Promise<{ url: string }> {
     const connection = await this.findOne(context, connectionId);
-
-    if (!connection.clientid) {
-      throw new Error('OAuth credentials not configured');
-    }
-
-    const provider = connection.provider;
-
-    if (provider == null) {
-      throw new Error('Connection not associated with a provider');
-    }
-
-    const client = this.clientFactory.getClientByProviderId(provider.id);
+    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
 
     return {
       url: await client.getAuthorizationUrl(connection),
@@ -250,23 +172,54 @@ export class ConnectionService {
 
   async callback(context: RequestContext, connectionId: string, code: string): Promise<Connection> {
     const connection = await this.findOne(context, connectionId);
-
-    if (connection.clientid == null || connection.clientsecret == null) {
-      throw new Error('OAuth credentials not configured');
-    }
-
-    const provider = connection.provider;
-
-    if (provider == null) {
-      throw new Error('Connection not associated with a provider');
-    }
-
-    const client = this.clientFactory.getClientByProviderId(provider.id);
-
+    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
     const tokenExchange = await client.exchangeAuthorizationCode(connection, code);
 
     return this.update(context, connectionId, {
       ...tokenExchange,
     });
+  }
+
+  async sync(context: RequestContext, connectionId: string, persistData = true) {
+    this.logger.log('Starting manual sync for connection', {
+      connectionId,
+      userId: context.userId,
+    });
+
+    try {
+      const connection = await this.findOne(context, connectionId);
+      const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
+      const syncResponse = await client.sync(connection);
+
+      if (persistData) {
+        await this.apiLogRepository.save({
+          id: uuid7(),
+          content: JSON.stringify(syncResponse),
+          connection: {
+            id: connectionId,
+          },
+          user: {
+            id: context.userId,
+          },
+        });
+      }
+
+      this.logger.log('Sync completed', {
+        connectionId,
+        userId: context.userId,
+        success: syncResponse.success,
+        message: syncResponse.message,
+      });
+
+      return syncResponse;
+    } catch (error) {
+      this.logger.error('Sync failed', {
+        connectionId,
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      throw error;
+    }
   }
 }
