@@ -7,6 +7,7 @@ import { EmbeddingModule } from '@ci/domains/search';
 
 import { AnswersController } from './controllers/AnswersController';
 import { QuestionsController } from './controllers/QuestionsController';
+import { ActionEntity } from './entities/ActionEntity';
 import { AnswerEntity } from './entities/AnswerEntity';
 import { QuestionEntity } from './entities/QuestionEntity';
 import { AnswerService } from './services/AnswerService';
@@ -14,7 +15,7 @@ import { QuestionService } from './services/QuestionService';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AnswerEntity, QuestionEntity]),
+    TypeOrmModule.forFeature([ActionEntity, AnswerEntity, QuestionEntity]),
     EventsModule,
     LLMModule,
     EmbeddingModule,
@@ -26,7 +27,7 @@ import { QuestionService } from './services/QuestionService';
 export class IntelligenceModule {}
 
 // Entities
-export { AnswerEntity, QuestionEntity };
+export { ActionEntity, AnswerEntity, QuestionEntity };
 
 // Services
 export { AnswerService, QuestionService };
