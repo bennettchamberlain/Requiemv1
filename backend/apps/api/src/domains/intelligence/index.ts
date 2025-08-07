@@ -5,11 +5,13 @@ import { EventsModule } from '@ci/domains/events';
 import { LLMModule } from '@ci/domains/llm';
 import { EmbeddingModule } from '@ci/domains/search';
 
+import { ActionsController } from './controllers/ActionsController';
 import { AnswersController } from './controllers/AnswersController';
 import { QuestionsController } from './controllers/QuestionsController';
 import { ActionEntity } from './entities/ActionEntity';
 import { AnswerEntity } from './entities/AnswerEntity';
 import { QuestionEntity } from './entities/QuestionEntity';
+import { ActionService } from './services/ActionService';
 import { AnswerService } from './services/AnswerService';
 import { QuestionService } from './services/QuestionService';
 
@@ -20,8 +22,8 @@ import { QuestionService } from './services/QuestionService';
     LLMModule,
     EmbeddingModule,
   ],
-  providers: [AnswerService, QuestionService],
-  controllers: [AnswersController, QuestionsController],
+  providers: [ActionService, AnswerService, QuestionService],
+  controllers: [ActionsController, AnswersController, QuestionsController],
   exports: [AnswerService, QuestionService],
 })
 export class IntelligenceModule {}
