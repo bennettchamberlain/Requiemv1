@@ -55,7 +55,6 @@ export const ConfigSchema = z.object({
     database: z.string(),
     username: z.string(),
     password: z.string(),
-    logging: z.union([z.literal(false), z.array(z.enum(['query', 'error']))]),
   }),
   staticfiles: z.object({
     storageUrl: z.string(),
@@ -71,6 +70,9 @@ export const ConfigSchema = z.object({
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.fetching': booleanStringSchema,
+  }),
+  environment: z.object({
+    'database.query.logging': booleanStringSchema,
   }),
 });
 
