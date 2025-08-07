@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 
 import config from '@ci/configuration';
 import { ProviderEntity } from '@ci/domains/connections';
-import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
+import { ActionEntity, AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
 import {
   ContactEntity,
   ContentEntity,
@@ -18,6 +18,7 @@ import {
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
+import { seedActions } from './seed-actions';
 import { seedAnswers } from './seed-answers';
 import { seedContacts } from './seed-contacts';
 import { seedContent } from './seed-content';
@@ -52,6 +53,7 @@ const logger = new Logger(path.basename(__filename));
       PlaceEntity,
       ThingEntity,
       // Intelligence
+      ActionEntity,
       AnswerEntity,
       QuestionEntity,
       // Providers
@@ -86,6 +88,7 @@ const logger = new Logger(path.basename(__filename));
     await seedPlaces(db, path.resolve(dataDir, './js1-data/js1-places.csv'));
     await seedLocations(db, path.resolve(dataDir, './js1-data/js1-locations.csv'));
     await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
+    await seedActions(db, path.resolve(dataDir, './js1-data/js1-actions.csv'));
 
     process.exit(0);
   } catch (err) {
