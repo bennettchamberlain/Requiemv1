@@ -13,6 +13,8 @@ import {
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
+import { Action } from '../types';
+
 @Entity({ name: 'actions' })
 export class ActionEntity {
   @PrimaryColumn('uuid')
@@ -41,4 +43,14 @@ export class ActionEntity {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
+
+  toAction(): Action {
+    return {
+      id: this.id,
+      title: this.title,
+      text: this.text,
+      user: this.user?.toUser(),
+      tags: this.tags?.map((tag) => tag.toTag()).filter((tag) => !!tag) as string[],
+    } satisfies Action;
+  }
 }
