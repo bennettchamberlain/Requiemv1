@@ -13,9 +13,9 @@ import {
   LocationEntity,
   PersonEntity,
   PlaceEntity,
-  TagEntity,
   ThingEntity,
 } from '@ci/domains/memory';
+import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
 import { seedAnswers } from './seed-answers';
@@ -50,13 +50,14 @@ const logger = new Logger(path.basename(__filename));
       LocationEntity,
       PersonEntity,
       PlaceEntity,
-      TagEntity,
       ThingEntity,
       // Intelligence
       AnswerEntity,
       QuestionEntity,
       // Providers
       ProviderEntity,
+      // Search,
+      TagEntity,
       // Users
       UserEntity,
     ],
