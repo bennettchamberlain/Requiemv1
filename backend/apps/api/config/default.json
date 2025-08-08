@@ -37,8 +37,7 @@
     "port": 5432,
     "database": "companion_intel",
     "username": "POSTGRES_USERNAME",
-    "password": "POSTGRES_PASSWORD",
-    "logging": ["error"]
+    "password": "POSTGRES_PASSWORD"
   },
   "staticfiles": {
     "storageUrl": "http://localhost:9000",
@@ -54,5 +53,8 @@
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.fetching": true
+  },
+  "environment": {
+    "database.query.logging": false
   }
 }
