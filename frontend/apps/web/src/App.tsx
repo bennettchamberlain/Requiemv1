@@ -3,7 +3,7 @@ import { type ReactNode, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AuthProvider, ModelProvider } from '@/hooks';
+import { AuthProvider, ModelProvider, useAuth } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
@@ -15,6 +15,7 @@ const CapturePage = lazy(() => import('@/pages/CapturePage'));
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const ChatListPage = lazy(() => import('@/pages/ChatListPage'));
 const ChatThreadingPage = lazy(() => import('@/pages/ChatThreadingPage'));
+const Chat2Page = lazy(() => import('@/pages/Chat2Page'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
@@ -27,9 +28,19 @@ function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
       <AuthProvider args={[]}>
-        <ModelProvider args={[]}>{children}</ModelProvider>
+        <ModelProviderWrapper>{children}</ModelProviderWrapper>
       </AuthProvider>
     </Router>
+  );
+}
+
+function ModelProviderWrapper({ children }: { children: ReactNode }) {
+  const [{ authToken }] = useAuth();
+  
+  return (
+    <ModelProvider args={[authToken]}>
+      {children}
+    </ModelProvider>
   );
 }
 
@@ -91,6 +102,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ChatThreadingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chat2/*"
+          element={
+            <ProtectedRoute>
+              <Chat2Page />
             </ProtectedRoute>
           }
         />

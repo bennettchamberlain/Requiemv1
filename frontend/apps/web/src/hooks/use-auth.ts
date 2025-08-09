@@ -40,7 +40,7 @@ type Value = [
   },
 ];
 
-function useAuth(): Value {
+function useAuthLogic(): Value {
   const navigate = useNavigate();
 
   const [user, setUser] = useState<User | null>(null);
@@ -51,12 +51,11 @@ function useAuth(): Value {
   const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
 
   const decoded = useMemo(() => (accessToken ? jwtDecode<JwtPayload>(accessToken) : null), [accessToken]);
-  const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
+  const expired = useMemo(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
 
   const getSelfProfile = useCallback(async () => {
-    if (accessToken == null || isExpired() || (decoded && decoded.sub === user?.id)) {
+    if (accessToken == null || expired || (decoded && decoded.sub === user?.id)) {
       setLoading(false);
-
       return false;
     }
 
@@ -79,7 +78,7 @@ function useAuth(): Value {
     } finally {
       setLoading(false);
     }
-  }, [setUser, setLoading, setError, isExpired, decoded, user, loading]);
+  }, [accessToken, expired, decoded, user]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -108,7 +107,7 @@ function useAuth(): Value {
         setLoading(false);
       }
     },
-    [setUser, setError, setLoading],
+    [navigate],
   );
 
   const logout = useCallback(() => {
@@ -121,7 +120,7 @@ function useAuth(): Value {
     setError(null);
 
     navigate('/');
-  }, [setUser, setLoading, setError]);
+  }, [navigate]);
 
   const signup = useCallback(
     async (name: string, email: string, password: string) => {
@@ -151,7 +150,7 @@ function useAuth(): Value {
         setLoading(false);
       }
     },
-    [setUser, setError, setLoading],
+    [navigate],
   );
 
   const refresh = useCallback(async () => {
@@ -166,17 +165,17 @@ function useAuth(): Value {
     localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
     localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
     setUser(data.user);
-  }, [setUser]);
+  }, []);
 
   useAutoRefreshToken(accessToken, sessionToken, refresh);
 
   useEffect(() => {
     getSelfProfile();
-  }, [decoded]);
+  }, [accessToken, decoded]);
 
   return [
     {
-      expired: isExpired(),
+      expired,
       authToken: accessToken,
       user,
       loading,
@@ -224,6 +223,6 @@ function useAutoRefreshToken(
   }, [accessToken, refreshToken, onRefresh]);
 }
 
-const { Provider, useHookContext } = createHookContext(useAuth);
+const { Provider, useHookContext } = createHookContext(useAuthLogic, 'useAuth');
 
 export { Provider as AuthProvider, useHookContext as useAuth };

@@ -18,14 +18,12 @@
 
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
 
     "jsx": "react-jsx",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "resolveJsonModule": true,
-    "types": ["vite/client"],
+    "resolveJsonModule": true
   },
   "include": [".", ".storybook/**/*", "src"],
   "exclude": ["node_modules", "dist"]

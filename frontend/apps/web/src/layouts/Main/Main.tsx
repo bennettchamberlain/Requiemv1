@@ -49,6 +49,11 @@ const INTELLIGENCE = [
     icon: Bot,
   },
   {
+    name: 'Chat2',
+    url: '/chat2',
+    icon: Bot,
+  },
+  {
     name: 'Connections',
     url: '/connections',
     icon: Bot,
@@ -140,12 +145,12 @@ export function Main() {
               </header>
 
               <div className="flex flex-row grow">
-                <main className="flex grow p-4">
-                  <Outlet />
-                </main>
                 <aside className="flex flex-col">
                   <Portal id="tertiary-navigation" className="flex flex-col grow" />
                 </aside>
+                <main className="flex grow p-4">
+                  <Outlet />
+                </main>
               </div>
             </div>
           </Suspense>
