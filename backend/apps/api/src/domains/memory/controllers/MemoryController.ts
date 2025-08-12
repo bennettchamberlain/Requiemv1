@@ -11,12 +11,24 @@ import { MemorySearchParams } from '../types';
 
 const memorySearchSchema = z.object({
   query: z.string().optional(),
-  startDate: z.string().datetime().optional().transform((val) => val ? new Date(val) : undefined),
-  endDate: z.string().datetime().optional().transform((val) => val ? new Date(val) : undefined),
-  categories: z.array(z.string()).optional(),
-  hasLocation: z.boolean().optional(),
-  limit: z.number().int().positive().max(100).optional().default(50),
-  offset: z.number().int().min(0).optional().default(0),
+  startDate: z.string().optional().transform((val) => val ? new Date(val) : undefined),
+  endDate: z.string().optional().transform((val) => val ? new Date(val) : undefined),
+  categories: z.union([z.array(z.string()), z.string()]).optional().transform((val) => {
+    if (typeof val === 'string') return [val];
+    return val;
+  }),
+  hasLocation: z.union([z.boolean(), z.string()]).optional().transform((val) => {
+    if (typeof val === 'string') return val === 'true';
+    return val;
+  }),
+  limit: z.union([z.number(), z.string()]).transform((val) => {
+    const num = typeof val === 'string' ? parseInt(val, 10) : val;
+    return Math.min(Math.max(1, num || 50), 100);
+  }),
+  offset: z.union([z.number(), z.string()]).transform((val) => {
+    const num = typeof val === 'string' ? parseInt(val, 10) : val;
+    return Math.max(0, num || 0);
+  }),
 });
 
 @Controller('memory')
