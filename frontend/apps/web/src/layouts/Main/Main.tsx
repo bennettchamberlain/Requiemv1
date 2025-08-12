@@ -49,11 +49,6 @@ const INTELLIGENCE = [
     icon: Bot,
   },
   {
-    name: 'Chat2',
-    url: '/chat2',
-    icon: Bot,
-  },
-  {
     name: 'Connections',
     url: '/connections',
     icon: Bot,

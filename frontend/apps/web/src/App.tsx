@@ -3,7 +3,7 @@ import { type ReactNode, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AuthProvider, ModelProvider, useAuth } from '@/hooks';
+import { AuthProvider, ModelProvider } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
@@ -13,9 +13,6 @@ const AdminPage = lazy(() => import('@/pages/AdminPage'));
 const AnswersPage = lazy(() => import('@/pages/AnswersPage'));
 const CapturePage = lazy(() => import('@/pages/CapturePage'));
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
-const ChatListPage = lazy(() => import('@/pages/ChatListPage'));
-const ChatThreadingPage = lazy(() => import('@/pages/ChatThreadingPage'));
-const Chat2Page = lazy(() => import('@/pages/Chat2Page'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
@@ -28,19 +25,9 @@ function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
       <AuthProvider args={[]}>
-        <ModelProviderWrapper>{children}</ModelProviderWrapper>
+        <ModelProvider args={[]}>{children}</ModelProvider>
       </AuthProvider>
     </Router>
-  );
-}
-
-function ModelProviderWrapper({ children }: { children: ReactNode }) {
-  const [{ authToken }] = useAuth();
-  
-  return (
-    <ModelProvider args={[authToken]}>
-      {children}
-    </ModelProvider>
   );
 }
 
@@ -74,42 +61,10 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/chat"
+          path="/chat/*"
           element={
             <ProtectedRoute>
               <ChatPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/list"
-          element={
-            <ProtectedRoute>
-              <ChatListPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/new"
-          element={
-            <ProtectedRoute>
-              <ChatThreadingPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/:id"
-          element={
-            <ProtectedRoute>
-              <ChatThreadingPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat2/*"
-          element={
-            <ProtectedRoute>
-              <Chat2Page />
             </ProtectedRoute>
           }
         />
