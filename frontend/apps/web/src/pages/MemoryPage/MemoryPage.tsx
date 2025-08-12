@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Separator, Tabs } from '@ci/shadcn';
+import { Breadcrumb, Separator, Tabs, Card } from '@ci/shadcn';
 import {
   Clock,
   Coffee,
@@ -15,158 +15,154 @@ import {
   Tv,
   User,
   MapPin,
+  Calendar,
+  FileText,
+  Package,
+  Users,
+  Phone,
+  Loader2,
+  AlertCircle,
 } from '@ci/shadcn/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
+import { useAuth } from '@/hooks';
+
 // Add custom styles for Leaflet
 import './memory-map.css';
 
-// Sample memory data
+// Memory data from API
 interface MemoryItem {
   id: string;
+  type: 'event' | 'content' | 'thing' | 'person' | 'contact';
   title: string;
-  description: string;
+  description: string | null;
   timestamp: string;
   category: string;
-  icon: React.ReactNode;
   location?: {
+    id: string;
+    name: string | null;
     lat: number;
     lng: number;
-    name?: string;
+    address?: string;
   };
+  tags: string[];
+  userId: string;
+  metadata?: Record<string, unknown>;
 }
 
-const sampleMemories: MemoryItem[] = [
-  {
-    id: 'mem-1',
-    title: 'Morning Coffee',
-    description: 'Had a cappuccino at Blue Bottle Coffee while reading the news',
-    timestamp: '2025-05-21T07:30:00Z',
-    category: 'Food & Drink',
-    icon: <Coffee className="h-5 w-5" />,
-    location: {
-      lat: 37.7749,
-      lng: -122.4194,
-      name: 'Blue Bottle Coffee',
-    },
-  },
-  {
-    id: 'mem-2',
-    title: 'Team Meeting',
-    description: 'Weekly sync with the product team about the new feature launch',
-    timestamp: '2025-05-21T10:00:00Z',
-    category: 'Work',
-    icon: <Laptop className="h-5 w-5" />,
-  },
-  {
-    id: 'mem-3',
-    title: 'Lunch with Sarah',
-    description: 'Met Sarah at the Italian restaurant to catch up about her new job',
-    timestamp: '2025-05-21T12:30:00Z',
-    category: 'Social',
-    icon: <Utensils className="h-5 w-5" />,
-    location: {
-      lat: 37.7833,
-      lng: -122.4167,
-      name: 'Italian Restaurant',
-    },
-  },
-  {
-    id: 'mem-4',
-    title: 'Gym Session',
-    description: '45 minutes of strength training and 20 minutes of cardio',
-    timestamp: '2025-05-21T17:00:00Z',
-    category: 'Fitness',
-    icon: <Dumbbell className="h-5 w-5" />,
-    location: {
-      lat: 37.7694,
-      lng: -122.4862,
-      name: 'Fitness Center',
-    },
-  },
-  {
-    id: 'mem-5',
-    title: 'Grocery Shopping',
-    description: 'Picked up ingredients for dinner and restocked on essentials',
-    timestamp: '2025-05-21T18:30:00Z',
-    category: 'Errands',
-    icon: <ShoppingCart className="h-5 w-5" />,
-    location: {
-      lat: 37.7583,
-      lng: -122.4294,
-      name: 'Whole Foods Market',
-    },
-  },
-  {
-    id: 'mem-6',
-    title: 'Cooking Dinner',
-    description: 'Made pasta primavera with fresh vegetables from the farmers market',
-    timestamp: '2025-05-21T19:30:00Z',
-    category: 'Food & Drink',
-    icon: <Utensils className="h-5 w-5" />,
-  },
-  {
-    id: 'mem-7',
-    title: 'Reading Session',
-    description: "Read three chapters of 'The Psychology of Money' before bed",
-    timestamp: '2025-05-21T21:00:00Z',
-    category: 'Learning',
-    icon: <BookOpen className="h-5 w-5" />,
-  },
-  {
-    id: 'mem-8',
-    title: 'Call with Mom',
-    description: 'Caught up with mom about her garden and upcoming visit',
-    timestamp: '2025-05-21T20:00:00Z',
-    category: 'Family',
-    icon: <User className="h-5 w-5" />,
-  },
-  {
-    id: 'mem-9',
-    title: 'Drive to Work',
-    description: 'Commuted to the office while listening to the Daily podcast',
-    timestamp: '2025-05-21T08:30:00Z',
-    category: 'Transportation',
-    icon: <Car className="h-5 w-5" />,
-    location: {
-      lat: 37.79,
-      lng: -122.4,
-      name: 'Office Building',
-    },
-  },
-  {
-    id: 'mem-10',
-    title: 'Evening Show',
-    description: 'Watched two episodes of the new sci-fi series on Netflix',
-    timestamp: '2025-05-21T22:00:00Z',
-    category: 'Entertainment',
-    icon: <Tv className="h-5 w-5" />,
-  },
-];
+interface MemoryResponse {
+  data: MemoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// Helper function to get icon for memory type/category
+function getMemoryIcon(memory: MemoryItem): React.ReactNode {
+  const iconClass = "h-5 w-5";
+  
+  // First check by type
+  switch (memory.type) {
+    case 'person':
+      return <User className={iconClass} />;
+    case 'contact':
+      return <Phone className={iconClass} />;
+    case 'thing':
+      return <Package className={iconClass} />;
+    case 'content':
+      return <FileText className={iconClass} />;
+  }
+  
+  // Then check by category for events
+  const category = memory.category.toLowerCase();
+  if (category.includes('food') || category.includes('drink') || category.includes('meal')) {
+    return <Utensils className={iconClass} />;
+  } else if (category.includes('coffee')) {
+    return <Coffee className={iconClass} />;
+  } else if (category.includes('work') || category.includes('meeting')) {
+    return <Laptop className={iconClass} />;
+  } else if (category.includes('fitness') || category.includes('gym') || category.includes('exercise')) {
+    return <Dumbbell className={iconClass} />;
+  } else if (category.includes('shopping') || category.includes('grocery')) {
+    return <ShoppingCart className={iconClass} />;
+  } else if (category.includes('learning') || category.includes('reading') || category.includes('book')) {
+    return <BookOpen className={iconClass} />;
+  } else if (category.includes('family') || category.includes('social')) {
+    return <Users className={iconClass} />;
+  } else if (category.includes('transport') || category.includes('drive') || category.includes('car')) {
+    return <Car className={iconClass} />;
+  } else if (category.includes('entertainment') || category.includes('tv') || category.includes('movie')) {
+    return <Tv className={iconClass} />;
+  } else if (category.includes('event')) {
+    return <Calendar className={iconClass} />;
+  }
+  
+  // Default icon
+  return <Clock className={iconClass} />;
+}
 
 export function MemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
+  const [{ authToken }] = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [memories] = useState<MemoryItem[]>(sampleMemories);
+  const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('map');
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filter memories based on search query
-  const filteredMemories =
-    searchQuery.trim() === ''
-      ? memories
-      : memories.filter(
-          (memory) =>
-            memory.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            memory.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            memory.category.toLowerCase().includes(searchQuery.toLowerCase()),
-        );
+  // Fetch memories from API
+  const fetchMemories = async (query?: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const params = new URLSearchParams();
+      if (query) params.append('query', query);
+      params.append('limit', '100');
+
+      const response = await fetch(`/api/memory?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch memories: ${response.statusText}`);
+      }
+
+      const data: MemoryResponse = await response.json();
+      setMemories(data.data);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error('Error fetching memories:', errorMessage);
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial load
+  useEffect(() => {
+    fetchMemories();
+  }, [authToken]);
+
+  // Handle search
+  const handleSearch = () => {
+    fetchMemories(searchQuery);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
 
   // Get memories with location data for the map
-  const memoriesWithLocation = filteredMemories.filter((memory) => memory.location);
+  const memoriesWithLocation = memories.filter((memory) => memory.location);
 
   // Initialize and update map when the tab changes or filtered memories change
   useEffect(() => {
@@ -295,21 +291,45 @@ export function MemoryPage() {
                 placeholder="Search memories..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && console.log('Searching for:', searchQuery)}
+                onKeyDown={handleKeyPress}
+                disabled={loading}
               />
             </div>
             <button
-              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-r-lg border border-primary hover:bg-primary/90"
-              onClick={() => console.log('Searching for:', searchQuery)}
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-r-lg border border-primary hover:bg-primary/90 disabled:opacity-50"
+              onClick={handleSearch}
+              disabled={loading}
             >
-              Search
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              <span className="ml-2">Search</span>
             </button>
           </div>
         </div>
 
         <Separator className="my-2" />
 
+        {/* Error Display */}
+        {error && (
+          <Card className="bg-destructive/10 text-destructive">
+            <Card.Content className="flex items-start gap-3 p-4">
+              <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="font-medium">Error loading memories</h3>
+                <p className="text-sm">{error}</p>
+              </div>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Loading State */}
+        {loading && (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
         {/* Tabs */}
+        {!loading && !error && (
         <Tabs defaultValue="map" className="w-full" onValueChange={setActiveTab} value={activeTab}>
           <Tabs.List className="grid grid-cols-5 w-full max-w-2xl mx-auto">
             <Tabs.Trigger value="map">Map</Tabs.Trigger>
@@ -321,20 +341,20 @@ export function MemoryPage() {
 
           <Tabs.Content value="list" className="mt-6">
             <div className="rounded-lg border p-4">
-              <h3 className="text-lg font-medium mb-4">Today's Activities</h3>
+              <h3 className="text-lg font-medium mb-4">Memory Timeline</h3>
 
-              {filteredMemories.length === 0 ? (
+              {memories.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No memories found matching your search.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {filteredMemories.map((memory) => (
+                  {memories.map((memory) => (
                     <div
                       key={memory.id}
                       className="flex items-start gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
                     >
-                      <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">{memory.icon}</div>
+                      <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">{getMemoryIcon(memory)}</div>
                       <div className="flex-grow min-w-0">
                         <div className="flex justify-between items-start">
                           <h4 className="font-medium truncate">{memory.title}</h4>
@@ -346,7 +366,7 @@ export function MemoryPage() {
                             })}
                           </div>
                         </div>
-                        <p className="text-muted-foreground text-sm mt-1">{memory.description}</p>
+                        <p className="text-muted-foreground text-sm mt-1">{memory.description || 'No description'}</p>
                         <div className="mt-2">
                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10">
                             {memory.category}
@@ -474,6 +494,7 @@ export function MemoryPage() {
             </div>
           </Tabs.Content>
         </Tabs>
+        )}
       </div>
     </>
   );
