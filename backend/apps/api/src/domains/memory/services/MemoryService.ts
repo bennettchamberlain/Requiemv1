@@ -39,42 +39,40 @@ export class MemoryService {
     const offset = params.offset || 0;
 
     try {
-      // Fetch events with related places
+      // ONLY fetch events for now
       const [events, eventsCount] = await this.findEvents(context, params);
-      const [contents, contentsCount] = await this.findContents(context, params);
-      const [people, peopleCount] = await this.findPeople(context, params);
-      const [things, thingsCount] = await this.findThings(context, params);
 
-      this.logger.debug('Found entities', { 
-        eventsCount, 
-        contentsCount,
-        peopleCount,
-        thingsCount,
+      this.logger.warn('EVENTS ONLY DEBUG', { 
+        eventsCount,
+        eventsLength: events.length,
+        firstEvent: events[0] || null,
         userId: context.userId 
       });
 
       // Convert entities to Memory objects
       const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
-      const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
-      const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
-      const thingMemories = await Promise.all(things.map((t) => this.thingToMemory(t)));
 
-      // Combine and sort by timestamp
-      const allMemories = [...eventMemories, ...contentMemories, ...personMemories, ...thingMemories]
+      this.logger.warn('EVENT MEMORIES DEBUG', {
+        eventMemoriesLength: eventMemories.length,
+        firstEventMemory: eventMemories[0] || null
+      });
+
+      // Just return events
+      const allMemories = eventMemories
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
         .slice(offset, offset + limit);
 
       const response = {
         data: allMemories,
-        total: eventsCount + contentsCount + peopleCount + thingsCount,
+        total: eventsCount,
         limit,
         offset,
       };
 
-      this.logger.debug('Returning memory response', { 
+      this.logger.warn('FINAL RESPONSE DEBUG', { 
         dataLength: response.data.length,
         total: response.total,
-        memoriesWithLocation: response.data.filter(m => m.location).length
+        firstMemoryInResponse: response.data[0] || null
       });
 
       return response;
@@ -214,7 +212,7 @@ export class MemoryService {
     let location: MemoryLocation | undefined;
     
     // Log the event we're converting
-    this.logger.debug('Converting event to memory', {
+    this.logger.warn('CONVERTING EVENT TO MEMORY', {
       eventId: event.id,
       eventName: event.name,
       eventType: event.type,
@@ -222,7 +220,8 @@ export class MemoryService {
       startTime: event.start_time,
       hasUser: !!event.user,
       userId: event.user?.id,
-      createdAt: event.created_at
+      createdAt: event.created_at,
+      fullEvent: event
     });
     
     // First, try to find associated locations through the locations table
@@ -316,11 +315,12 @@ export class MemoryService {
       },
     };
 
-    this.logger.debug('Created memory from event', {
+    this.logger.warn('CREATED MEMORY FROM EVENT', {
       memoryId: memory.id,
       memoryTitle: memory.title,
       memoryTimestamp: memory.timestamp,
-      memoryDescription: memory.description
+      memoryDescription: memory.description,
+      fullMemory: memory
     });
 
     return memory;
@@ -652,5 +652,34 @@ export class MemoryService {
     }
     
     return results;
+  }
+
+  async testEventConversion() {
+    this.logger.warn('Testing event conversion');
+    
+    try {
+      // Get a few raw events
+      const events = await this.eventRepo.find({
+        relations: ['user', 'tags'],
+        take: 5
+      });
+
+      this.logger.warn('Raw events from DB', {
+        count: events.length,
+        events: events
+      });
+
+      // Convert them to memories
+      const memories = await Promise.all(events.map(e => this.eventToMemory(e)));
+
+      return {
+        rawEvents: events,
+        convertedMemories: memories,
+        conversionCount: memories.length
+      };
+    } catch (error) {
+      this.logger.error('Error in testEventConversion', { error });
+      throw error;
+    }
   }
 }

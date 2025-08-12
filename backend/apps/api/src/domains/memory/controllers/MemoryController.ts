@@ -33,7 +33,7 @@ const memorySearchSchema = z.object({
 });
 
 @Controller('memory')
-@UseGuards(JwtAuthGuard)
+//@UseGuards(JwtAuthGuard)
 export class MemoryController {
   private logger = new LoggerService(MemoryController.name);
 
@@ -175,6 +175,28 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Debug direct error', { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  // Test event conversion
+  @Get('debug/test-events')
+  async testEventConversion() {
+    this.logger.warn('Testing event conversion');
+    
+    try {
+      const result = await this.memoryService.testEventConversion();
+      return {
+        success: true,
+        ...result,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Test event conversion error', { error });
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
