@@ -8,7 +8,16 @@ export interface Memory {
   location?: MemoryLocation;
   tags: string[];
   userId: string;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    eventId?: string;
+    eventType?: string;
+    eventName?: string;
+    synthetic?: boolean;
+    personRef?: string;
+    contentRef?: string;
+    thingRef?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface MemoryLocation {

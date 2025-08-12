@@ -39,31 +39,28 @@ export class MemoryService {
     const offset = params.offset || 0;
 
     try {
-      // Fetch all entity types (excluding things)
+      // Fetch only events as anchors
       const [events, eventsCount] = await this.findEvents(context, params);
-      const [contents, contentsCount] = await this.findContents(context, params);
-      const [people, peopleCount] = await this.findPeople(context, params);
 
-      this.logger.debug('Found entities', { 
+      this.logger.debug('Found events', { 
         eventsCount,
-        contentsCount,
-        peopleCount,
         userId: context.userId 
       });
 
-      // Convert entities to Memory objects
-      const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
-      const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
-      const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
+      // Convert events to synthetic Memory objects by hydrating related objects
+      const syntheticMemories = await Promise.all(
+        events.map((e) => this.createSyntheticMemoriesFromEvent(e))
+      );
 
-      // Combine and sort by timestamp (excluding things)
-      const allMemories = [...eventMemories, ...contentMemories, ...personMemories]
+      // Flatten the array since each event can produce multiple synthetic memories
+      const allMemories = syntheticMemories
+        .flat()
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
         .slice(offset, offset + limit);
 
       const response = {
         data: allMemories,
-        total: eventsCount + contentsCount + peopleCount,
+        total: eventsCount, // This might need adjustment based on synthetic object count
         limit,
         offset,
       };
@@ -82,21 +79,36 @@ export class MemoryService {
   }
 
   async findOne(context: RequestContext, id: string): Promise<Memory> {
-    // Try to find in each entity type
-    // TEMPORARILY DISABLED: User filtering
+    // Extract the event ID from synthetic memory ID (format: memory-{eventId}-{type}-{index})
+    const parts = id.split('-');
+    let eventId: string;
+    
+    if (parts[0] === 'memory' && parts.length >= 3) {
+      eventId = parts[1];
+    } else {
+      eventId = id; // Fallback to direct ID
+    }
+
     const event = await this.eventRepo.findOne({
-      where: { id },
+      where: { id: eventId },
       relations: ['tags', 'user'],
     });
-    if (event) return this.eventToMemory(event);
+    
+    if (!event) {
+      throw new NotFoundException(`Memory with id ${id} not found`);
+    }
 
-    const content = await this.contentRepo.findOne({
-      where: { id },
-      relations: ['tags', 'user', 'event'],
-    });
-    if (content) return this.contentToMemory(content);
+    // Create synthetic memories from the event
+    const syntheticMemories = await this.createSyntheticMemoriesFromEvent(event);
+    
+    // Find the specific synthetic memory by ID
+    const memory = syntheticMemories.find(m => m.id === id);
+    
+    if (!memory) {
+      throw new NotFoundException(`Memory with id ${id} not found`);
+    }
 
-    throw new NotFoundException(`Memory with id ${id} not found`);
+    return memory;
   }
 
   private async findEvents(
@@ -599,35 +611,24 @@ export class MemoryService {
     const offset = 0;
 
     try {
-      // Get events without user filter (excluding things)
+      // Get events without user filter
       const events = await this.eventRepo.find({
         relations: ['user', 'tags'],
         take: 10
       });
 
-      const contents = await this.contentRepo.find({
-        relations: ['user', 'tags', 'event'],
-        take: 10
+      this.logger.debug('Found events without filter', { 
+        eventsCount: events.length
       });
 
-      const people = await this.personRepo.find({
-        relations: ['user', 'tags'],
-        take: 10
-      });
+      // Convert events to synthetic memories
+      const syntheticMemories = await Promise.all(
+        events.map((e) => this.createSyntheticMemoriesFromEvent(e))
+      );
 
-      this.logger.debug('Found entities without filter', { 
-        eventsCount: events.length,
-        contentsCount: contents.length,
-        peopleCount: people.length
-      });
-
-      // Convert entities to Memory objects
-      const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
-      const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
-      const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
-
-      // Combine and sort by timestamp (excluding things)
-      const allMemories = [...eventMemories, ...contentMemories, ...personMemories]
+      // Flatten and sort
+      const allMemories = syntheticMemories
+        .flat()
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
       const response = {
@@ -832,6 +833,252 @@ export class MemoryService {
     }
 
     return undefined;
+  }
+
+  private async createSyntheticMemoriesFromEvent(event: EventEntity): Promise<Memory[]> {
+    const memories: Memory[] = [];
+    
+    // Always create the base event memory
+    const baseMemory = await this.eventToMemory(event);
+    memories.push(baseMemory);
+
+    // Extract related objects from source_data
+    if (event.source_data && typeof event.source_data === 'object') {
+      const sourceData = event.source_data as any;
+      const relatedObjects = sourceData.related_objects;
+      
+      if (relatedObjects && Array.isArray(relatedObjects)) {
+        for (let i = 0; i < relatedObjects.length; i++) {
+          const objRef = relatedObjects[i];
+          
+          if (typeof objRef === 'string') {
+            // Create synthetic memories based on object type
+            if (objRef.startsWith('person_')) {
+              const personMemory = await this.createSyntheticPersonMemory(objRef, event, i);
+              if (personMemory) memories.push(personMemory);
+            } else if (objRef.startsWith('content_')) {
+              const contentMemory = await this.createSyntheticContentMemory(objRef, event, i);
+              if (contentMemory) memories.push(contentMemory);
+            } else if (objRef.startsWith('thing_')) {
+              const thingMemory = await this.createSyntheticThingMemory(objRef, event, i);
+              if (thingMemory) memories.push(thingMemory);
+            }
+            // Skip location references as they're used for the event's location
+          }
+        }
+      }
+    }
+
+    return memories;
+  }
+
+  private async createSyntheticPersonMemory(
+    personRef: string, 
+    event: EventEntity, 
+    index: number
+  ): Promise<Memory | null> {
+    try {
+      // Try to find the actual person entity
+      const person = await this.personRepo.findOne({
+        where: { identifier: personRef },
+        relations: ['tags', 'user']
+      });
+
+      if (person) {
+        // Use actual person data
+        const memory = await this.personToMemory(person);
+        // Override ID to maintain relationship with event
+        memory.id = `memory-${event.id}-person-${index}`;
+        memory.metadata = {
+          ...memory.metadata,
+          eventId: event.id,
+          eventType: event.type,
+          eventName: event.name,
+        };
+        return memory;
+      }
+
+      // Create synthetic person if not found
+      return {
+        id: `memory-${event.id}-person-${index}`,
+        type: 'person',
+        title: `Person from ${event.name || event.type || 'Event'}`,
+        description: `Person referenced in ${event.type || 'event'}`,
+        timestamp: event.start_time || event.created_at,
+        category: 'Person',
+        location: await this.getEventLocation(event),
+        tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+        userId: event.user?.id || '',
+        metadata: {
+          eventId: event.id,
+          eventType: event.type,
+          eventName: event.name,
+          personRef: personRef,
+          synthetic: true,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error creating synthetic person memory', { error, personRef });
+      return null;
+    }
+  }
+
+  private async createSyntheticContentMemory(
+    contentRef: string, 
+    event: EventEntity, 
+    index: number
+  ): Promise<Memory | null> {
+    try {
+      // Try to find the actual content entity
+      const content = await this.contentRepo.findOne({
+        where: { external_id: contentRef },
+        relations: ['tags', 'user', 'event']
+      });
+
+      if (content) {
+        // Use actual content data
+        const memory = await this.contentToMemory(content);
+        // Override ID to maintain relationship with event
+        memory.id = `memory-${event.id}-content-${index}`;
+        memory.metadata = {
+          ...memory.metadata,
+          eventId: event.id,
+          eventType: event.type,
+          eventName: event.name,
+        };
+        return memory;
+      }
+
+      // Create synthetic content if not found
+      return {
+        id: `memory-${event.id}-content-${index}`,
+        type: 'content',
+        title: `Content from ${event.name || event.type || 'Event'}`,
+        description: `Content created during ${event.type || 'event'}`,
+        timestamp: event.start_time || event.created_at,
+        category: 'Content',
+        location: await this.getEventLocation(event),
+        tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+        userId: event.user?.id || '',
+        metadata: {
+          eventId: event.id,
+          eventType: event.type,
+          eventName: event.name,
+          contentRef: contentRef,
+          synthetic: true,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error creating synthetic content memory', { error, contentRef });
+      return null;
+    }
+  }
+
+  private async createSyntheticThingMemory(
+    thingRef: string, 
+    event: EventEntity, 
+    index: number
+  ): Promise<Memory | null> {
+    try {
+      // Try to find the actual thing entity
+      const thing = await this.thingRepo.findOne({
+        where: { external_id: thingRef },
+        relations: ['tags', 'user', 'event']
+      });
+
+      if (thing) {
+        // Use actual thing data
+        const memory = await this.thingToMemory(thing);
+        // Override ID to maintain relationship with event
+        memory.id = `memory-${event.id}-thing-${index}`;
+        memory.metadata = {
+          ...memory.metadata,
+          eventId: event.id,
+          eventType: event.type,
+          eventName: event.name,
+        };
+        return memory;
+      }
+
+      // Create synthetic thing if not found
+      return {
+        id: `memory-${event.id}-thing-${index}`,
+        type: 'thing',
+        title: `Item from ${event.name || event.type || 'Event'}`,
+        description: `Item associated with ${event.type || 'event'}`,
+        timestamp: event.start_time || event.created_at,
+        category: 'Thing',
+        location: await this.getEventLocation(event),
+        tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+        userId: event.user?.id || '',
+        metadata: {
+          eventId: event.id,
+          eventType: event.type,
+          eventName: event.name,
+          thingRef: thingRef,
+          synthetic: true,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error creating synthetic thing memory', { error, thingRef });
+      return null;
+    }
+  }
+
+  private async getEventLocation(event: EventEntity): Promise<MemoryLocation | undefined> {
+    // Extract location from event using existing logic
+    let location: MemoryLocation | undefined;
+    
+    if (event.user?.id && event.start_time) {
+      const eventLocations = await this.locationRepo.find({
+        where: { 
+          user: { id: event.user.id },
+          datetime: event.start_time
+        },
+        relations: ['place'],
+        take: 1
+      });
+
+      if (eventLocations.length > 0) {
+        const loc = eventLocations[0];
+        if (loc.geolocation && typeof loc.geolocation === 'object') {
+          const geo = loc.geolocation as any;
+          if (geo.lat && geo.lng) {
+            location = {
+              id: loc.id,
+              name: loc.place?.name || null,
+              lat: parseFloat(geo.lat),
+              lng: parseFloat(geo.lng),
+              address: loc.place?.name || undefined,
+            };
+          } else if (geo.latitude && geo.longitude) {
+            location = {
+              id: loc.id,
+              name: loc.place?.name || null,
+              lat: parseFloat(geo.latitude),
+              lng: parseFloat(geo.longitude),
+              address: loc.place?.name || undefined,
+            };
+          }
+        }
+      }
+    }
+
+    // Check source_data for location references
+    if (!location && event.source_data && typeof event.source_data === 'object') {
+      const sourceData = event.source_data as any;
+      
+      if (sourceData.related_objects && Array.isArray(sourceData.related_objects)) {
+        for (const obj of sourceData.related_objects) {
+          if (typeof obj === 'string' && obj.startsWith('loc_')) {
+            location = await this.findLocationByIdentifier(obj, event);
+            if (location) break;
+          }
+        }
+      }
+    }
+
+    return location;
   }
 
 }
