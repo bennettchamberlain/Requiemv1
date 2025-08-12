@@ -287,9 +287,8 @@ export class MemoryService {
         // Look for location references
         for (const obj of relatedObjects) {
           if (typeof obj === 'string' && (obj.startsWith('location-') || obj.startsWith('loc_'))) {
-            // Try to find a place with this identifier
-            const placeIdentifier = obj.replace('location-', '').replace('loc_', '');
-            location = await this.findLocationByIdentifier(placeIdentifier, event);
+            // Try to find a location with this identifier
+            location = await this.findLocationByIdentifier(obj, event);
             if (location) break;
           }
         }
@@ -751,28 +750,7 @@ export class MemoryService {
   private async findLocationByIdentifier(identifier: string, event: EventEntity): Promise<MemoryLocation | undefined> {
     this.logger.debug('Looking for location by identifier', { identifier, eventId: event.id });
     
-    // Try to find a place with this identifier
     try {
-      // First try exact match on place name
-      const place = await this.placeRepo.findOne({
-        where: [
-          { name: identifier },
-          { name: identifier.replace(/-/g, ' ') }, // Try with spaces instead of dashes
-        ]
-      });
-
-      if (place && place.geolocation) {
-        const geo = place.geolocation as any;
-        if (geo.lat && geo.lng) {
-          return {
-            id: place.id,
-            name: place.name || identifier,
-            lat: parseFloat(geo.lat),
-            lng: parseFloat(geo.lng),
-          };
-        }
-      }
-
       // Try to find in locations table by identifier
       const location = await this.locationRepo.findOne({
         where: { identifier: identifier },
@@ -781,19 +759,43 @@ export class MemoryService {
 
       if (location && location.geolocation) {
         const geo = location.geolocation as any;
-        if (geo.lat && geo.lng) {
+        // Handle both lng and lon field names
+        if (geo.lat && (geo.lng || geo.lon)) {
           return {
             id: location.id,
-            name: location.place?.name || identifier,
+            name: location.place?.name || `Location ${identifier}`,
             lat: parseFloat(geo.lat),
-            lng: parseFloat(geo.lng),
+            lng: parseFloat(geo.lng || geo.lon),
             address: location.place?.name,
           };
         }
       }
 
+      // If not found, try to find a place with this identifier
+      const cleanIdentifier = identifier.replace('location-', '').replace('loc_', '');
+      const place = await this.placeRepo.findOne({
+        where: [
+          { name: identifier },
+          { name: cleanIdentifier },
+          { name: cleanIdentifier.replace(/-/g, ' ') }, // Try with spaces instead of dashes
+        ]
+      });
+
+      if (place && place.geolocation) {
+        const geo = place.geolocation as any;
+        // Handle both lng and lon field names
+        if (geo.lat && (geo.lng || geo.lon)) {
+          return {
+            id: place.id,
+            name: place.name || identifier,
+            lat: parseFloat(geo.lat),
+            lng: parseFloat(geo.lng || geo.lon),
+          };
+        }
+      }
+
       // Generate synthetic location for known identifiers
-      const syntheticLocation = this.getSyntheticLocation(identifier);
+      const syntheticLocation = this.getSyntheticLocation(cleanIdentifier);
       if (syntheticLocation) {
         return syntheticLocation;
       }
