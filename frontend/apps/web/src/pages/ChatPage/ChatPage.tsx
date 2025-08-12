@@ -551,6 +551,7 @@ export default function ChatPage() {
           prompt: input,
           model: selectedModel,
           threadId: selectedThreadId,
+          enableTools: true,
         }),
         signal: controller.signal,
       });
