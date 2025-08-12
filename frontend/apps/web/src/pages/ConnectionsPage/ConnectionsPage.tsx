@@ -588,7 +588,7 @@ export function ConnectionsPage() {
               <div>
                 <h3 className="font-medium">Error loading</h3>
                 <p className="text-sm">{error}</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={fetchState}>
+                <Button variant="outline" size="sm" className="mt-2" onClick={fetchState()}>
                   Try Again
                 </Button>
               </div>
@@ -635,12 +635,12 @@ export function ConnectionsPage() {
                               </span>
                             )}
                           </Table.Cell>
-                          <Table.Cell className="text-sm">{truncateText(connection.schedule || undefined)}</Table.Cell>
+                          <Table.Cell className="text-sm">{truncateText(connection.schedule)}</Table.Cell>
                           <Table.Cell className="text-sm">
                             <Toggle
                               aria-label="Toggle italic"
                               onClick={() => {
-                                connectionToggle();
+                                connectionToggle(connection);
                               }}
                             >
                               {connection.active ? 'enabled' : 'disabled'}
