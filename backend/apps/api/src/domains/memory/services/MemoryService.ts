@@ -743,6 +743,53 @@ export class MemoryService {
     }
   }
 
+  async testLocationLookup() {
+    this.logger.warn('Testing location lookup');
+    
+    try {
+      // Get some locations
+      const locations = await this.locationRepo.find({ take: 5 });
+      
+      // Get events with location references
+      const eventsWithLocations = await this.eventRepo
+        .createQueryBuilder('event')
+        .where("event.source_data::text LIKE '%loc_%'")
+        .limit(5)
+        .getMany();
+      
+      const results = {
+        locationsInDb: locations.map(l => ({
+          id: l.id,
+          identifier: l.identifier,
+          geolocation: l.geolocation
+        })),
+        eventsWithLocationRefs: eventsWithLocations.map(e => ({
+          id: e.id,
+          name: e.name,
+          sourceData: e.source_data
+        }))
+      };
+
+      // Test conversion of events with locations
+      const memoriesWithLocations = await Promise.all(
+        eventsWithLocations.map(e => this.eventToMemory(e))
+      );
+
+      return {
+        ...results,
+        memoriesWithLocations: memoriesWithLocations.map(m => ({
+          id: m.id,
+          title: m.title,
+          hasLocation: !!m.location,
+          location: m.location
+        }))
+      };
+    } catch (error) {
+      this.logger.error('Error in testLocationLookup', { error });
+      throw error;
+    }
+  }
+
   private async findLocationByIdentifier(identifier: string, event: EventEntity): Promise<MemoryLocation | undefined> {
     this.logger.debug('Looking for location by identifier', { identifier, eventId: event.id });
     

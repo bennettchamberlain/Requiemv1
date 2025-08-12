@@ -204,4 +204,26 @@ export class MemoryController {
       };
     }
   }
+
+  // Test location lookup
+  @Get('debug/test-locations')
+  async testLocationLookup() {
+    this.logger.warn('Testing location lookup');
+    
+    try {
+      const result = await this.memoryService.testLocationLookup();
+      return {
+        success: true,
+        ...result,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Test location lookup error', { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
 }
