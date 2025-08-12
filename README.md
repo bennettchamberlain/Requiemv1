@@ -37,7 +37,7 @@ You'll want to install Docker on your machine to run containerized versions of o
 The easiest method here is downloading and installing the Docker Desktop app from [here](https://www.docker.com/products/docker-desktop/).
 The CLI tools should be automatically installed alongside the app.
 
-After it's installed, boot Docker Desktop and verify that it's running and accessible from the command line.
+After it's installed, boot Docker Desktop and verify that it's running and accessible from the command line. We don't run "docker compose up" but rather "make local" below will do this work.
 
 ```bash
 docker --version
