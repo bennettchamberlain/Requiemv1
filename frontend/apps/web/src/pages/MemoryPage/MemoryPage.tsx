@@ -357,10 +357,9 @@ export function MemoryPage() {
         {/* Tabs */}
         {!loading && !error && (
         <Tabs defaultValue="map" className="w-full" onValueChange={setActiveTab} value={activeTab}>
-          <Tabs.List className="grid grid-cols-5 w-full max-w-2xl mx-auto">
+          <Tabs.List className="grid grid-cols-4 w-full max-w-2xl mx-auto">
             <Tabs.Trigger value="map">Map</Tabs.Trigger>
             <Tabs.Trigger value="list">List</Tabs.Trigger>
-            <Tabs.Trigger value="feed">Feed</Tabs.Trigger>
             <Tabs.Trigger value="calendar">Calendar</Tabs.Trigger>
             <Tabs.Trigger value="insights">Insights</Tabs.Trigger>
           </Tabs.List>
@@ -406,14 +405,6 @@ export function MemoryPage() {
             </div>
           </Tabs.Content>
 
-          <Tabs.Content value="feed" className="mt-6">
-            <div className="rounded-lg border p-8 text-center">
-              <h3 className="text-lg font-medium">Feed View</h3>
-              <p className="text-muted-foreground mt-2">
-                Your memories will be displayed in a feed format here.
-              </p>
-            </div>
-          </Tabs.Content>
 
           <Tabs.Content value="map" className="mt-6">
             <div className="rounded-lg border p-4">
