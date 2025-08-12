@@ -1,11 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
-import type { RequestContext } from '@ci/common/types';
-import type { ToolExecutionContext } from './types';
 import { BaseTool } from './BaseTool';
+import type { ToolExecutionContext } from './types';
 
 // Input schema
 const getFamilyMembersInputSchema = z.object({
@@ -37,13 +37,11 @@ interface GetFamilyMembersOutput {
  * Useful for meal planning considering family preferences
  */
 @Injectable()
-export class GetFamilyMembersTool extends BaseTool<
-  GetFamilyMembersInput,
-  GetFamilyMembersOutput
-> {
+export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFamilyMembersOutput> {
   readonly schema = {
     name: 'get_family_members',
-    description: 'Get information about family members and their names. Use this tool when you need to know WHO the family members are, not their food preferences.',
+    description:
+      'Get information about family members and their names. Use this tool when you need to know WHO the family members are, not their food preferences.',
     category: 'database',
     parameters: {
       type: 'object',
@@ -106,16 +104,14 @@ export class GetFamilyMembersTool extends BaseTool<
     `;
 
     const peopleResult = await this.dataSource.query(peopleQuery);
-    
+
     const familyMembers: FamilyMember[] = [];
 
     for (const person of peopleResult) {
-      const fullName = [person.firstName, person.lastName]
-        .filter(Boolean)
-        .join(' ') || 'Unknown';
+      const fullName = [person.firstName, person.lastName].filter(Boolean).join(' ') || 'Unknown';
 
       let preferences: string[] = [];
-      
+
       if (input.includePreferences) {
         // Get preferences through person_tag relationship
         const preferencesQuery = `
@@ -125,7 +121,7 @@ export class GetFamilyMembersTool extends BaseTool<
           WHERE pt.person_id = $1
           ORDER BY t.label
         `;
-        
+
         const prefResult = await this.dataSource.query(preferencesQuery, [person.id]);
         preferences = prefResult.map((row: any) => row.label);
       }

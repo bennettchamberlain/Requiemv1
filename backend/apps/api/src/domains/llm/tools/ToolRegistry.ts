@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
+
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 
-import type { ToolSchema, ToolResult } from './types';
 import { BaseTool } from './BaseTool';
+import type { ToolSchema, ToolResult } from './types';
 
 /**
  * Registry for managing and executing tools
@@ -11,6 +12,7 @@ import { BaseTool } from './BaseTool';
 @Injectable()
 export class ToolRegistry {
   private readonly logger = new LoggerService(ToolRegistry.name);
+
   private readonly tools = new Map<string, BaseTool>();
 
   /**
@@ -18,7 +20,7 @@ export class ToolRegistry {
    */
   register(tool: BaseTool): void {
     const { name } = tool.schema;
-    
+
     if (this.tools.has(name)) {
       throw new Error(`Tool '${name}' is already registered`);
     }
@@ -34,11 +36,11 @@ export class ToolRegistry {
    * Get all available tool schemas (for LLM function calling)
    */
   getAvailableTools(context?: RequestContext): ToolSchema[] {
-    const schemas = Array.from(this.tools.values()).map(tool => tool.schema);
-    
+    const schemas = Array.from(this.tools.values()).map((tool) => tool.schema);
+
     this.logger.debug(`Retrieved ${schemas.length} available tools`, {
       userId: context?.userId,
-      toolNames: schemas.map(s => s.name),
+      toolNames: schemas.map((s) => s.name),
     });
 
     return schemas;
@@ -54,13 +56,9 @@ export class ToolRegistry {
   /**
    * Execute a tool by name
    */
-  async executeTool(
-    name: string,
-    context: RequestContext,
-    input: unknown,
-  ): Promise<ToolResult> {
+  async executeTool(name: string, context: RequestContext, input: unknown): Promise<ToolResult> {
     const tool = this.tools.get(name);
-    
+
     if (!tool) {
       this.logger.warn(`Attempted to execute unknown tool: ${name}`, {
         toolName: name,

@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
-import type { RequestContext } from '@ci/common/types';
 import type { ToolExecutionContext } from '../types';
+
 import { BaseTool } from './BaseTool';
 
 // Input schema for the tool
@@ -36,16 +37,15 @@ interface GetEntertainmentPreferencesOutput {
 /**
  * Tool to retrieve user entertainment preferences from the database
  * Focuses on movie, TV, and streaming preferences for recommendation systems
- * 
+ *
  * FUTURE INTEGRATIONS PLANNED:
  * - Movie theater APIs (Fandango, AMC) for current showtimes
- * - Streaming service APIs (Netflix, Hulu, etc.) for availability
- * - Movie database APIs (TMDB, IMDB) for ratings and recommendations
  * - TV guide APIs for current programming
  * - Review aggregation APIs (Rotten Tomatoes, Metacritic)
- * 
+ *
  * This tool serves as the foundation for understanding user preferences
  * before querying external entertainment APIs for personalized recommendations.
+ * *Meant to be used in conjunction with GetStreamingAvailabilityTool*
  */
 @Injectable()
 export class GetEntertainmentPreferencesTool extends BaseTool<
@@ -54,7 +54,8 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 > {
   readonly schema = {
     name: 'get_entertainment_preferences',
-    description: 'Get user entertainment preferences including movie genres, TV show types, streaming preferences, and viewing habits. Use this tool when recommending movies, TV shows, or planning entertainment.',
+    description:
+      'Get user entertainment preferences including movie genres, TV show types, streaming preferences, and viewing habits. Use this tool when recommending movies, TV shows, or planning entertainment.',
     category: 'database',
     parameters: {
       type: 'object',
@@ -76,12 +77,12 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
         input: {},
         output: {
           preferences: [
-            { 
-              id: 'uuid-123', 
-              label: 'What movie genres do you enjoy?: I love sci-fi and thriller movies', 
-              category: 'Personal Preferences', 
+            {
+              id: 'uuid-123',
+              label: 'What movie genres do you enjoy?: I love sci-fi and thriller movies',
+              category: 'Personal Preferences',
               subcategory: 'Entertainment',
-              userId: 'user-uuid', 
+              userId: 'user-uuid',
               createdAt: new Date(),
               question: 'What movie genres do you enjoy?',
               answer: 'I love sci-fi and thriller movies',
@@ -107,8 +108,10 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
   }
 
   protected async executeInternal(
-    context: ToolExecutionContext,
-    input: GetEntertainmentPreferencesInput,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _context: ToolExecutionContext,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _input: GetEntertainmentPreferencesInput,
   ): Promise<GetEntertainmentPreferencesOutput> {
     // Query for questions with subcategory = 'Entertainment'
     const query = `
@@ -127,7 +130,7 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
     `;
 
     const result = await this.dataSource.query(query);
-    
+
     const preferences: EntertainmentPreference[] = result.map((row: any) => ({
       id: `${row.userId}-${row.createdAt.getTime()}`, // Generate a unique ID
       label: `${row.question}: ${row.answer}`,

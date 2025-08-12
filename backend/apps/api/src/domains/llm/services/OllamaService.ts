@@ -1,13 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
+import ollama, {
+  type ChatResponse,
+  type GenerateResponse,
+  type Message as OllamaMessage,
+  type Tool,
+} from 'ollama';
 import { DataSource } from 'typeorm';
-import ollama, { type ChatResponse, type GenerateResponse, type Message as OllamaMessage, type Tool } from 'ollama';
 
-import type { RequestContext } from '@ci/common/types';
 import { LoggerService } from '@ci/common/services';
+import type { RequestContext } from '@ci/common/types';
 
+import {
+  ToolRegistry,
+  GetUserPreferencesTool,
+  GetEntertainmentPreferencesTool,
+  GetStreamingAvailabilityTool,
+  type ToolSchema,
+} from '../tools';
 import type { Message, OllamaModel } from '../types';
-import { ToolRegistry, GetUserPreferencesTool, GetFamilyMembersTool, GetEntertainmentPreferencesTool, GetStreamingAvailabilityTool, type ToolSchema } from '../tools';
 
 import { MessageService } from './MessageService';
 
@@ -25,6 +36,7 @@ type MessagesInput = Pick<Message, 'prompt' | 'text'>[];
 @Injectable()
 export class OllamaService {
   private readonly logger = new LoggerService(OllamaService.name);
+
   private readonly toolRegistry = new ToolRegistry();
 
   constructor(
@@ -111,7 +123,7 @@ export class OllamaService {
     // Original streaming implementation
     const chunks: string[] = [];
 
-    const stream = (async function* (self) {
+    const stream = (async function* () {
       const iterator = await ollama.chat({
         model,
         messages: self.toOllamaMessages(messages),
@@ -129,7 +141,7 @@ export class OllamaService {
 
         yield chunk;
       }
-    })(this);
+    })();
 
     Object.defineProperty(stream, 'buffer', {
       enumerable: true,
@@ -183,7 +195,7 @@ export class OllamaService {
       model,
       messageCount: messages.length,
       toolCount: ollamaTools.length,
-      toolNames: availableTools.map(t => t.name),
+      toolNames: availableTools.map((t) => t.name),
       userId: context.userId,
     });
 
@@ -280,7 +292,7 @@ export class OllamaService {
 
     this.logger.debug('Processing tool calls', {
       toolCallCount: toolCalls.length,
-      toolNames: toolCalls.map(tc => tc.function.name),
+      toolNames: toolCalls.map((tc) => tc.function.name),
       userId: context.userId,
     });
 
@@ -288,10 +300,10 @@ export class OllamaService {
     const toolResults = await Promise.all(
       toolCalls.map(async (toolCall) => {
         const { name, arguments: args } = toolCall.function;
-        
+
         try {
           const result = await this.toolRegistry.executeTool(name, context, args);
-          
+
           return {
             call: toolCall,
             result: result.success ? result.data : { error: result.error },
@@ -303,14 +315,14 @@ export class OllamaService {
             error: error instanceof Error ? error.message : String(error),
             userId: context.userId,
           });
-          
+
           return {
             call: toolCall,
             result: { error: 'Tool execution failed' },
             success: false,
           };
         }
-      })
+      }),
     );
 
     // Build messages with tool results
@@ -336,7 +348,7 @@ export class OllamaService {
 
     this.logger.debug('Completed tool-assisted conversation', {
       toolResultsCount: toolResults.length,
-      successfulTools: toolResults.filter(r => r.success).length,
+      successfulTools: toolResults.filter((r) => r.success).length,
       userId: context.userId,
     });
 
@@ -367,7 +379,7 @@ export class OllamaService {
     options?: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { buffer: string }> {
     const resolvedOptions = options ?? {};
-    const { model = PROMPT_MODEL, signal } = resolvedOptions;
+    const { model = PROMPT_MODEL } = resolvedOptions;
 
     // Step 1: Get available tools and make initial non-streaming call to check for tool calls
     const availableTools = this.toolRegistry.getAvailableTools(context);
@@ -387,7 +399,6 @@ export class OllamaService {
 
       // No tool calls needed, proceed with regular streaming
       return this.regularStream(context, messages, options);
-
     } catch (error) {
       // Handle case where model doesn't support tools
       if (error instanceof Error && error.message.includes('does not support tools')) {
@@ -395,9 +406,10 @@ export class OllamaService {
           model,
           userId: context.userId,
         });
+
         return this.regularStream(context, messages, options);
       }
-      
+
       // Re-throw other errors
       throw error;
     }
@@ -415,10 +427,10 @@ export class OllamaService {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal } = resolvedOptions;
     const toolCalls = toolCallResponse.message.tool_calls || [];
-    
+
     this.logger.debug('Processing tool calls in stream', {
       toolCallCount: toolCalls.length,
-      toolNames: toolCalls.map(tc => tc.function.name),
+      toolNames: toolCalls.map((tc) => tc.function.name),
       userId: context.userId,
     });
 
@@ -426,9 +438,10 @@ export class OllamaService {
     const toolResults = await Promise.all(
       toolCalls.map(async (toolCall) => {
         const { name, arguments: args } = toolCall.function;
-        
+
         try {
           const result = await this.toolRegistry.executeTool(name, context, args);
+
           return {
             call: toolCall,
             result: result.success ? result.data : { error: result.error },
@@ -440,14 +453,14 @@ export class OllamaService {
             error: error instanceof Error ? error.message : String(error),
             userId: context.userId,
           });
-          
+
           return {
             call: toolCall,
             result: { error: 'Tool execution failed' },
             success: false,
           };
         }
-      })
+      }),
     );
 
     // Build messages with tool results
@@ -468,7 +481,7 @@ export class OllamaService {
     // Stream the final response with tool context
     const chunks: string[] = [];
 
-    const stream = (async function* (self) {
+    const stream = (async function* () {
       const iterator = await ollama.chat({
         model,
         messages: messagesWithToolResults,
@@ -483,9 +496,10 @@ export class OllamaService {
         if (chunk && !!chunk.message) {
           chunks.push(chunk.message.content);
         }
+
         yield chunk;
       }
-    })(this);
+    })();
 
     Object.defineProperty(stream, 'buffer', {
       enumerable: true,
@@ -505,10 +519,10 @@ export class OllamaService {
   ): Promise<AsyncGenerator<ChatResponse> & { buffer: string }> {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal } = resolvedOptions;
-    
+
     const chunks: string[] = [];
 
-    const stream = (async function* (self) {
+    const stream = (async function* () {
       const iterator = await ollama.chat({
         model,
         messages: self.toOllamaMessages(messages),
@@ -523,9 +537,10 @@ export class OllamaService {
         if (chunk && !!chunk.message) {
           chunks.push(chunk.message.content);
         }
+
         yield chunk;
       }
-    })(this);
+    })();
 
     Object.defineProperty(stream, 'buffer', {
       enumerable: true,

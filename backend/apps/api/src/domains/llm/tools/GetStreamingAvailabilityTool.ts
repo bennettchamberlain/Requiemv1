@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import type { RequestContext } from '@ci/common/types';
 import type { ToolExecutionContext } from '../types';
+
 import { BaseTool } from './BaseTool';
 
 // Input schema for the tool
@@ -51,14 +52,14 @@ interface GetStreamingAvailabilityOutput {
 
 /**
  * Tool to get current streaming availability using TMDB API
- * 
+ *
  * CURRENT IMPLEMENTATION:
  * - Uses The Movie Database (TMDB) API - reliable, documented, free
  * - Real genre-based search using TMDB's discover endpoint
  * - Real streaming availability via TMDB watch providers API
  * - Real genre names and metadata
  * - No puppeteer dependencies, simple HTTP requests
- * 
+ *
  * FUTURE ENHANCEMENTS:
  * - Search functionality by title
  * - User's actual streaming subscription filtering
@@ -73,14 +74,16 @@ export class GetStreamingAvailabilityTool extends BaseTool<
 > {
   readonly schema = {
     name: 'get_streaming_availability',
-    description: 'Get currently trending movies and TV shows with real streaming availability data. Can filter by genre and content type. Shows which platforms (Netflix, Hulu, Disney+, etc.) currently have each title available. Use this when users ask about what to watch, want specific genres, or need streaming recommendations.',
+    description:
+      'Get currently trending movies and TV shows with real streaming availability data. Can filter by genre and content type. Shows which platforms (Netflix, Hulu, Disney+, etc.) currently have each title available. Use this when users ask about what to watch, want specific genres, or need streaming recommendations.',
     category: 'external_api',
     parameters: {
       type: 'object',
       properties: {
         genre: {
           type: 'string',
-          description: 'Filter by genre (e.g., "action", "comedy", "drama", "horror", "sci-fi", "thriller", "romance", "adventure", "animation", "documentary")',
+          description:
+            'Filter by genre (e.g., "action", "comedy", "drama", "horror", "sci-fi", "thriller", "romance", "adventure", "animation", "documentary")',
         },
         contentType: {
           type: 'string',
@@ -109,17 +112,17 @@ export class GetStreamingAvailabilityTool extends BaseTool<
               rating: { tmdb: 7.8 },
               streamingServices: [
                 { service: 'netflix', monetizationType: 'subscription' },
-                { service: 'hulu', monetizationType: 'subscription' }
+                { service: 'hulu', monetizationType: 'subscription' },
               ],
-              posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg'
-            }
+              posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+            },
           ],
           totalCount: 1,
           filters: { genre: 'comedy', contentType: 'movie' },
-          metadata: { queryTime: 1200, source: 'TMDB', country: 'US' }
+          metadata: { queryTime: 1200, source: 'TMDB', country: 'US' },
         },
-        description: 'Get comedy movies with streaming availability'
-      }
+        description: 'Get comedy movies with streaming availability',
+      },
     ],
   };
 
@@ -136,14 +139,14 @@ export class GetStreamingAvailabilityTool extends BaseTool<
     input: GetStreamingAvailabilityInput,
   ): Promise<GetStreamingAvailabilityOutput> {
     const startTime = Date.now();
-    
+
     try {
       // Use TMDB API instead of JustWatch (more reliable, documented API)
       const apiResponse = await this.fetchFromTMDB(input);
-      
+
       // Process the API response (now async to get real streaming data)
       const titles = await this.processTMDBResponse(apiResponse, input);
-      
+
       const result = {
         titles,
         totalCount: titles.length,
@@ -157,11 +160,12 @@ export class GetStreamingAvailabilityTool extends BaseTool<
           country: input.country,
         },
       };
-      
-      return result;
 
-    } catch (error) {
-      throw new Error(`Failed to get streaming availability: ${error instanceof Error ? error.message : String(error)}`);
+      return result;
+    } catch {
+      throw new Error(
+        `Failed to get streaming availability: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -170,20 +174,20 @@ export class GetStreamingAvailabilityTool extends BaseTool<
    */
   private async getGenreId(genreName: string, mediaType: 'movie' | 'tv'): Promise<number | null> {
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
-    
+
     if (!TMDB_API_KEY || TMDB_API_KEY === 'demo-key') {
       return null;
     }
 
     try {
       const url = `https://api.themoviedb.org/3/genre/${mediaType}/list?api_key=${TMDB_API_KEY}`;
-      
+
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'CompanionIntel/1.0'
-        }
+          Accept: 'application/json',
+          'User-Agent': 'CompanionIntel/1.0',
+        },
       });
 
       if (!response.ok) {
@@ -192,18 +196,20 @@ export class GetStreamingAvailabilityTool extends BaseTool<
 
       const data = await response.json();
       const normalizedGenre = genreName.toLowerCase().trim();
-      
+
       // Find matching genre (flexible matching)
       const matchingGenre = data.genres?.find((g: any) => {
         const genreNameLower = g.name.toLowerCase();
-        return genreNameLower === normalizedGenre || 
-               genreNameLower.includes(normalizedGenre) ||
-               normalizedGenre.includes(genreNameLower);
+
+        return (
+          genreNameLower === normalizedGenre ||
+          genreNameLower.includes(normalizedGenre) ||
+          normalizedGenre.includes(genreNameLower)
+        );
       });
 
       return matchingGenre?.id || null;
-      
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -213,20 +219,20 @@ export class GetStreamingAvailabilityTool extends BaseTool<
    */
   private async getGenreNames(genreIds: number[], mediaType: 'movie' | 'tv'): Promise<string[]> {
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
-    
+
     if (!TMDB_API_KEY || TMDB_API_KEY === 'demo-key') {
       return [];
     }
 
     try {
       const url = `https://api.themoviedb.org/3/genre/${mediaType}/list?api_key=${TMDB_API_KEY}`;
-      
+
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'CompanionIntel/1.0'
-        }
+          Accept: 'application/json',
+          'User-Agent': 'CompanionIntel/1.0',
+        },
       });
 
       if (!response.ok) {
@@ -235,19 +241,19 @@ export class GetStreamingAvailabilityTool extends BaseTool<
 
       const data = await response.json();
       const genreMap = new Map(data.genres?.map((g: any) => [g.id, g.name]) || []);
-      
-      return genreIds.map(id => genreMap.get(id)).filter(Boolean);
-      
-    } catch (error) {
+
+      return genreIds.map((id) => genreMap.get(id)).filter(Boolean);
+    } catch {
       return [];
     }
   }
+
   /**
    * Fetch data from TMDB API (reliable, documented API)
    */
   private async fetchFromTMDB(input: GetStreamingAvailabilityInput): Promise<any> {
     const TMDB_API_KEY = process.env.TMDB_API_KEY || 'demo-key';
-    
+
     if (TMDB_API_KEY === 'demo-key') {
       throw new Error('TMDB_API_KEY environment variable not set');
     }
@@ -256,25 +262,24 @@ export class GetStreamingAvailabilityTool extends BaseTool<
     if (input.genre) {
       return this.fetchByGenre(input, TMDB_API_KEY);
     }
-    
+
     // Otherwise use trending endpoint
-    const contentType = input.contentType === 'movie' ? 'movie' : 
-                       input.contentType === 'tv' ? 'tv' : 'all';
-    
+    const contentType = input.contentType === 'movie' ? 'movie' : input.contentType === 'tv' ? 'tv' : 'all';
+
     const url = `https://api.themoviedb.org/3/trending/${contentType}/week?api_key=${TMDB_API_KEY}`;
-    
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'CompanionIntel/1.0'
-      }
+        Accept: 'application/json',
+        'User-Agent': 'CompanionIntel/1.0',
+      },
     });
-    
+
     if (!response.ok) {
       throw new Error(`TMDB API error: ${response.status}`);
     }
-    
+
     return await response.json();
   }
 
@@ -283,23 +288,23 @@ export class GetStreamingAvailabilityTool extends BaseTool<
    */
   private async fetchByGenre(input: GetStreamingAvailabilityInput, apiKey: string): Promise<any> {
     const contentType = input.contentType;
-    
+
     // Handle mixed content type by fetching both and combining
     if (!contentType || contentType === 'both') {
       const [movieResults, tvResults] = await Promise.all([
         this.fetchSingleTypeByGenre(input, 'movie', apiKey),
-        this.fetchSingleTypeByGenre(input, 'tv', apiKey)
+        this.fetchSingleTypeByGenre(input, 'tv', apiKey),
       ]);
-      
+
       // Combine results
-      const combinedResults = [
-        ...(movieResults?.results || []),
-        ...(tvResults?.results || [])
-      ].slice(0, input.limit);
-      
+      const combinedResults = [...(movieResults?.results || []), ...(tvResults?.results || [])].slice(
+        0,
+        input.limit,
+      );
+
       return { results: combinedResults };
     }
-    
+
     // Fetch single content type
     return this.fetchSingleTypeByGenre(input, contentType, apiKey);
   }
@@ -308,35 +313,36 @@ export class GetStreamingAvailabilityTool extends BaseTool<
    * Fetch single content type by genre
    */
   private async fetchSingleTypeByGenre(
-    input: GetStreamingAvailabilityInput, 
-    mediaType: 'movie' | 'tv', 
-    apiKey: string
+    input: GetStreamingAvailabilityInput,
+    mediaType: 'movie' | 'tv',
+    apiKey: string,
   ): Promise<any> {
     // Get genre ID from name
     const genreId = await this.getGenreId(input.genre!, mediaType);
-    
+
     if (!genreId) {
       // If genre not found, fall back to trending for this type
       const url = `https://api.themoviedb.org/3/trending/${mediaType}/week?api_key=${apiKey}`;
       const response = await fetch(url);
+
       return response.ok ? await response.json() : { results: [] };
     }
 
     // Use discover endpoint with genre filter
     const url = `https://api.themoviedb.org/3/discover/${mediaType}?api_key=${apiKey}&with_genres=${genreId}&sort_by=popularity.desc&page=1`;
-    
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'CompanionIntel/1.0'
-      }
+        Accept: 'application/json',
+        'User-Agent': 'CompanionIntel/1.0',
+      },
     });
-    
+
     if (!response.ok) {
       return { results: [] };
     }
-    
+
     const data = await response.json();
     // Add media_type for consistency with trending endpoint
     if (data.results) {
@@ -344,29 +350,32 @@ export class GetStreamingAvailabilityTool extends BaseTool<
         item.media_type = mediaType;
       });
     }
-    
+
     return data;
   }
 
   /**
    * Get watch providers for a specific title from TMDB
    */
-  private async getWatchProviders(tmdbId: string, mediaType: 'movie' | 'tv'): Promise<StreamingTitle['streamingServices']> {
+  private async getWatchProviders(
+    tmdbId: string,
+    mediaType: 'movie' | 'tv',
+  ): Promise<StreamingTitle['streamingServices']> {
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
-    
+
     if (!TMDB_API_KEY || TMDB_API_KEY === 'demo-key') {
       return []; // Return empty array if no API key
     }
 
     try {
       const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`;
-      
+
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'CompanionIntel/1.0'
-        }
+          Accept: 'application/json',
+          'User-Agent': 'CompanionIntel/1.0',
+        },
       });
 
       if (!response.ok) {
@@ -375,7 +384,7 @@ export class GetStreamingAvailabilityTool extends BaseTool<
 
       const data = await response.json();
       const usProviders = data.results?.US; // in the future we should chain calls to get providers local to where the user currently is
-      
+
       if (!usProviders) {
         return [];
       }
@@ -384,15 +393,15 @@ export class GetStreamingAvailabilityTool extends BaseTool<
 
       // Map TMDB provider names to our standardized names
       const providerMap: Record<string, string> = {
-        'Netflix': 'netflix',
-        'Hulu': 'hulu', 
+        Netflix: 'netflix',
+        Hulu: 'hulu',
         'Disney Plus': 'disney',
         'HBO Max': 'hbo',
         'Paramount Plus': 'paramount',
         'Amazon Video': 'prime',
         'Amazon Prime Video': 'prime',
         'Apple TV Plus': 'apple',
-        'Apple TV': 'apple'
+        'Apple TV': 'apple',
       };
 
       // Add subscription services (flatrate)
@@ -401,25 +410,25 @@ export class GetStreamingAvailabilityTool extends BaseTool<
           const serviceName = providerMap[provider.provider_name] || provider.provider_name.toLowerCase();
           streamingServices.push({
             service: serviceName,
-            monetizationType: 'subscription'
+            monetizationType: 'subscription',
           });
         }
       }
 
       // Add rental services
       if (usProviders.rent) {
-        for (const provider of usProviders.rent.slice(0, 2)) { // Limit to first 2
+        for (const provider of usProviders.rent.slice(0, 2)) {
+          // Limit to first 2
           const serviceName = providerMap[provider.provider_name] || provider.provider_name.toLowerCase();
           streamingServices.push({
             service: serviceName,
-            monetizationType: 'rent'
+            monetizationType: 'rent',
           });
         }
       }
 
       return streamingServices;
-      
-    } catch (error) {
+    } catch {
       // Return empty array on any error - don't break the main request
       return [];
     }
@@ -428,7 +437,10 @@ export class GetStreamingAvailabilityTool extends BaseTool<
   /**
    * Process TMDB API response into our format
    */
-  private async processTMDBResponse(apiResponse: any, input: GetStreamingAvailabilityInput): Promise<StreamingTitle[]> {
+  private async processTMDBResponse(
+    apiResponse: any,
+    input: GetStreamingAvailabilityInput,
+  ): Promise<StreamingTitle[]> {
     if (!apiResponse?.results) {
       return [];
     }
@@ -441,25 +453,27 @@ export class GetStreamingAvailabilityTool extends BaseTool<
 
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
-      
+
       const batchPromises = batch.map(async (item) => {
         // Determine type
         const type: 'movie' | 'tv' = item.media_type === 'movie' || item.title ? 'movie' : 'tv';
-        
+
         // Get real streaming providers
         const streamingServices = await this.getWatchProviders(item.id.toString(), type);
-        
+
         // Get real genre names from TMDB
-        const genreNames = item.genre_ids && item.genre_ids.length > 0 
-          ? await this.getGenreNames(item.genre_ids, type)
-          : [];
+        const genreNames =
+          item.genre_ids && item.genre_ids.length > 0 ? await this.getGenreNames(item.genre_ids, type) : [];
 
         return {
           id: item.id.toString(),
           title: item.title || item.name,
           type,
-          year: item.release_date ? new Date(item.release_date).getFullYear() : 
-                item.first_air_date ? new Date(item.first_air_date).getFullYear() : undefined,
+          year: item.release_date
+            ? new Date(item.release_date).getFullYear()
+            : item.first_air_date
+              ? new Date(item.first_air_date).getFullYear()
+              : undefined,
           genre: genreNames,
           description: item.overview,
           rating: {

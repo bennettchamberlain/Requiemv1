@@ -1,11 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
-import type { RequestContext } from '@ci/common/types';
-import type { ToolExecutionContext } from './types';
 import { BaseTool } from './BaseTool';
+import type { ToolExecutionContext } from './types';
 
 // Input schema for the tool
 const getUserPreferencesInputSchema = z.object({
@@ -38,13 +38,11 @@ interface GetUserPreferencesOutput {
  * Useful for dinner planning and food-related conversations
  */
 @Injectable()
-export class GetUserPreferencesTool extends BaseTool<
-  GetUserPreferencesInput,
-  GetUserPreferencesOutput
-> {
+export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, GetUserPreferencesOutput> {
   readonly schema = {
     name: 'get_user_preferences',
-    description: 'Get user food preferences, dietary restrictions, allergies, and eating habits. Use this tool when planning meals, cooking, or discussing food choices.',
+    description:
+      'Get user food preferences, dietary restrictions, allergies, and eating habits. Use this tool when planning meals, cooking, or discussing food choices.',
     category: 'database',
     parameters: {
       type: 'object',
@@ -52,7 +50,8 @@ export class GetUserPreferencesTool extends BaseTool<
         category: {
           type: 'string',
           enum: ['food', 'environment', 'learning', 'general'],
-          description: 'Filter preferences by category (optional) - not used currently as we focus on food subcategory',
+          description:
+            'Filter preferences by category (optional) - not used currently as we focus on food subcategory',
         },
         userId: {
           type: 'string',
@@ -66,12 +65,12 @@ export class GetUserPreferencesTool extends BaseTool<
         input: {},
         output: {
           preferences: [
-            { 
-              id: 'uuid-123', 
-              label: 'Do you have any food allergies?: No known allergies', 
-              category: 'Physical Health', 
+            {
+              id: 'uuid-123',
+              label: 'Do you have any food allergies?: No known allergies',
+              category: 'Physical Health',
               subcategory: 'Food',
-              userId: 'user-uuid', 
+              userId: 'user-uuid',
               createdAt: new Date(),
               question: 'Do you have any food allergies?',
               answer: 'No known allergies',
@@ -97,8 +96,10 @@ export class GetUserPreferencesTool extends BaseTool<
   }
 
   protected async executeInternal(
-    context: ToolExecutionContext,
-    input: GetUserPreferencesInput,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _context: ToolExecutionContext,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _input: GetUserPreferencesInput,
   ): Promise<GetUserPreferencesOutput> {
     // Query for questions with subcategory = 'Food' (much more focused than all Personal Preferences)
     const query = `
@@ -117,7 +118,7 @@ export class GetUserPreferencesTool extends BaseTool<
     `;
 
     const result = await this.dataSource.query(query);
-    
+
     const preferences: UserPreference[] = result.map((row: any) => ({
       id: `${row.userId}-${row.createdAt.getTime()}`, // Generate a unique ID
       label: `${row.question}: ${row.answer}`,
@@ -142,24 +143,38 @@ export class GetUserPreferencesTool extends BaseTool<
   private inferCategory(question: string, answer: string): string {
     const lowerQuestion = question.toLowerCase();
     const lowerAnswer = answer.toLowerCase();
-    
-    if (lowerQuestion.includes('food') || lowerQuestion.includes('eat') || 
-        lowerQuestion.includes('sweet') || lowerQuestion.includes('savory') ||
-        lowerAnswer.includes('food') || lowerAnswer.includes('cuisine') ||
-        lowerAnswer.includes('meal') || lowerAnswer.includes('cook')) {
+
+    if (
+      lowerQuestion.includes('food') ||
+      lowerQuestion.includes('eat') ||
+      lowerQuestion.includes('sweet') ||
+      lowerQuestion.includes('savory') ||
+      lowerAnswer.includes('food') ||
+      lowerAnswer.includes('cuisine') ||
+      lowerAnswer.includes('meal') ||
+      lowerAnswer.includes('cook')
+    ) {
       return 'food';
     }
-    
-    if (lowerQuestion.includes('environment') || lowerQuestion.includes('work') ||
-        lowerAnswer.includes('quiet') || lowerAnswer.includes('organized')) {
+
+    if (
+      lowerQuestion.includes('environment') ||
+      lowerQuestion.includes('work') ||
+      lowerAnswer.includes('quiet') ||
+      lowerAnswer.includes('organized')
+    ) {
       return 'environment';
     }
-    
-    if (lowerQuestion.includes('learn') || lowerQuestion.includes('activity') ||
-        lowerAnswer.includes('reading') || lowerAnswer.includes('practice')) {
+
+    if (
+      lowerQuestion.includes('learn') ||
+      lowerQuestion.includes('activity') ||
+      lowerAnswer.includes('reading') ||
+      lowerAnswer.includes('practice')
+    ) {
       return 'learning';
     }
-    
+
     return 'general';
   }
 

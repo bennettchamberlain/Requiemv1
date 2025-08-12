@@ -1,13 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 
-import type {
-  ToolSchema,
-  ToolResult,
-  ToolExecutionContext,
-  ToolError,
-} from './types';
+import type { ToolSchema, ToolResult, ToolExecutionContext, ToolError } from './types';
 
 /**
  * Base class for all tools with built-in error handling and observability
@@ -27,10 +24,7 @@ export abstract class BaseTool<TInput = any, TOutput = any> {
   /**
    * Core execution logic - must be implemented by subclasses
    */
-  protected abstract executeInternal(
-    context: ToolExecutionContext,
-    input: TInput,
-  ): Promise<TOutput>;
+  protected abstract executeInternal(context: ToolExecutionContext, input: TInput): Promise<TOutput>;
 
   /**
    * Optional input validation - override if needed
@@ -43,10 +37,7 @@ export abstract class BaseTool<TInput = any, TOutput = any> {
   /**
    * Public execution method with error handling and observability
    */
-  async execute(
-    context: RequestContext,
-    input: unknown,
-  ): Promise<ToolResult<TOutput>> {
+  async execute(context: RequestContext, input: unknown): Promise<ToolResult<TOutput>> {
     const executionId = uuidv4();
     const startTime = new Date();
     const toolContext: ToolExecutionContext = {
@@ -149,8 +140,10 @@ export abstract class BaseTool<TInput = any, TOutput = any> {
           sanitized[field] = '[REDACTED]';
         }
       }
+
       return sanitized;
     }
+
     return input;
   }
 }
