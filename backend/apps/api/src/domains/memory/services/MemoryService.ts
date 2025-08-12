@@ -39,17 +39,15 @@ export class MemoryService {
     const offset = params.offset || 0;
 
     try {
-      // Fetch all entity types
+      // Fetch all entity types (excluding things)
       const [events, eventsCount] = await this.findEvents(context, params);
       const [contents, contentsCount] = await this.findContents(context, params);
       const [people, peopleCount] = await this.findPeople(context, params);
-      const [things, thingsCount] = await this.findThings(context, params);
 
       this.logger.debug('Found entities', { 
         eventsCount,
         contentsCount,
         peopleCount,
-        thingsCount,
         userId: context.userId 
       });
 
@@ -57,16 +55,15 @@ export class MemoryService {
       const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
       const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
       const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
-      const thingMemories = await Promise.all(things.map((t) => this.thingToMemory(t)));
 
-      // Combine and sort by timestamp
-      const allMemories = [...eventMemories, ...contentMemories, ...personMemories, ...thingMemories]
+      // Combine and sort by timestamp (excluding things)
+      const allMemories = [...eventMemories, ...contentMemories, ...personMemories]
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
         .slice(offset, offset + limit);
 
       const response = {
         data: allMemories,
-        total: eventsCount + contentsCount + peopleCount + thingsCount,
+        total: eventsCount + contentsCount + peopleCount,
         limit,
         offset,
       };
@@ -602,7 +599,7 @@ export class MemoryService {
     const offset = 0;
 
     try {
-      // Get events without user filter
+      // Get events without user filter (excluding things)
       const events = await this.eventRepo.find({
         relations: ['user', 'tags'],
         take: 10
@@ -618,26 +615,19 @@ export class MemoryService {
         take: 10
       });
 
-      const things = await this.thingRepo.find({
-        relations: ['user', 'tags', 'event'],
-        take: 10
-      });
-
       this.logger.debug('Found entities without filter', { 
         eventsCount: events.length,
         contentsCount: contents.length,
-        peopleCount: people.length,
-        thingsCount: things.length
+        peopleCount: people.length
       });
 
       // Convert entities to Memory objects
       const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
       const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
       const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
-      const thingMemories = await Promise.all(things.map((t) => this.thingToMemory(t)));
 
-      // Combine and sort by timestamp
-      const allMemories = [...eventMemories, ...contentMemories, ...personMemories, ...thingMemories]
+      // Combine and sort by timestamp (excluding things)
+      const allMemories = [...eventMemories, ...contentMemories, ...personMemories]
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
       const response = {
