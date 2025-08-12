@@ -40,13 +40,30 @@ export async function seedEvents(db: DataSource, filePath: string) {
       let sourceData = null;
       if (record.related_objects) {
         try {
-          // If it's a JSON array like "[activity_running, loc_js_00021, ...]"
-          const parsed = JSON.parse(record.related_objects.replace(/'/g, '"'));
+          // Handle different formats of related_objects
+          let parsed;
+          if (record.related_objects.startsWith('[') && record.related_objects.endsWith(']')) {
+            // Remove brackets and split by comma
+            const items = record.related_objects
+              .slice(1, -1)
+              .split(',')
+              .map(item => item.trim());
+            parsed = items;
+          } else {
+            // Try parsing as JSON
+            parsed = JSON.parse(record.related_objects.replace(/'/g, '"'));
+          }
           sourceData = { related_objects: parsed };
         } catch {
           // If parsing fails, store as-is
           sourceData = { related_objects: record.related_objects };
         }
+      }
+
+      // Add data_source to source_data if present
+      if (record.data_source) {
+        sourceData = sourceData || {};
+        sourceData.data_source = record.data_source;
       }
 
       await manager.save(EventEntity, {

@@ -39,40 +39,42 @@ export class MemoryService {
     const offset = params.offset || 0;
 
     try {
-      // ONLY fetch events for now
+      // Fetch all entity types
       const [events, eventsCount] = await this.findEvents(context, params);
+      const [contents, contentsCount] = await this.findContents(context, params);
+      const [people, peopleCount] = await this.findPeople(context, params);
+      const [things, thingsCount] = await this.findThings(context, params);
 
-      this.logger.warn('EVENTS ONLY DEBUG', { 
+      this.logger.debug('Found entities', { 
         eventsCount,
-        eventsLength: events.length,
-        firstEvent: events[0] || null,
+        contentsCount,
+        peopleCount,
+        thingsCount,
         userId: context.userId 
       });
 
       // Convert entities to Memory objects
       const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
+      const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
+      const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
+      const thingMemories = await Promise.all(things.map((t) => this.thingToMemory(t)));
 
-      this.logger.warn('EVENT MEMORIES DEBUG', {
-        eventMemoriesLength: eventMemories.length,
-        firstEventMemory: eventMemories[0] || null
-      });
-
-      // Just return events
-      const allMemories = eventMemories
+      // Combine and sort by timestamp
+      const allMemories = [...eventMemories, ...contentMemories, ...personMemories, ...thingMemories]
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
         .slice(offset, offset + limit);
 
       const response = {
         data: allMemories,
-        total: eventsCount,
+        total: eventsCount + contentsCount + peopleCount + thingsCount,
         limit,
         offset,
       };
 
-      this.logger.warn('FINAL RESPONSE DEBUG', { 
+      this.logger.debug('Returning memory response', { 
         dataLength: response.data.length,
         total: response.total,
-        firstMemoryInResponse: response.data[0] || null
+        memoriesWithLocation: response.data.filter(m => m.location).length
       });
 
       return response;
@@ -212,16 +214,14 @@ export class MemoryService {
     let location: MemoryLocation | undefined;
     
     // Log the event we're converting
-    this.logger.warn('CONVERTING EVENT TO MEMORY', {
+    this.logger.debug('Converting event to memory', {
       eventId: event.id,
-      eventName: event.name,
       eventType: event.type,
       hasStartTime: !!event.start_time,
-      startTime: event.start_time,
-      hasUser: !!event.user,
-      userId: event.user?.id,
-      createdAt: event.created_at,
-      fullEvent: event
+      hasSourceData: !!event.source_data,
+      relatedObjects: event.source_data && typeof event.source_data === 'object' 
+        ? (event.source_data as any).related_objects 
+        : undefined
     });
     
     // First, try to find associated locations through the locations table
@@ -260,9 +260,11 @@ export class MemoryService {
       }
     }
 
-    // If no location found, check source_data as fallback
+    // If no location found, check source_data for related_objects
     if (!location && event.source_data && typeof event.source_data === 'object') {
       const sourceData = event.source_data as any;
+      
+      // First check for direct location/place data
       if (sourceData.location || sourceData.place) {
         const locData = sourceData.location || sourceData.place;
         if (locData.lat && locData.lng) {
@@ -273,6 +275,23 @@ export class MemoryService {
             lng: parseFloat(locData.lng),
             address: locData.address,
           };
+        }
+      }
+      
+      // Check for location references in related_objects
+      if (!location && sourceData.related_objects) {
+        const relatedObjects = Array.isArray(sourceData.related_objects) 
+          ? sourceData.related_objects 
+          : [sourceData.related_objects];
+        
+        // Look for location references
+        for (const obj of relatedObjects) {
+          if (typeof obj === 'string' && (obj.startsWith('location-') || obj.startsWith('loc_'))) {
+            // Try to find a place with this identifier
+            const placeIdentifier = obj.replace('location-', '').replace('loc_', '');
+            location = await this.findLocationByIdentifier(placeIdentifier, event);
+            if (location) break;
+          }
         }
       }
     }
@@ -286,8 +305,26 @@ export class MemoryService {
     // Generate a meaningful title from available data
     let title = event.name;
     if (!title && event.type) {
-      // Use the event type as title if name is null
-      title = event.type + ' Event';
+      // Generate title based on type and location
+      if (location) {
+        title = `${event.type} at ${location.name}`;
+      } else {
+        title = event.type;
+      }
+      
+      // Add activity details from related_objects
+      if (event.source_data && typeof event.source_data === 'object') {
+        const sourceData = event.source_data as any;
+        if (sourceData.related_objects && Array.isArray(sourceData.related_objects)) {
+          const activities = sourceData.related_objects
+            .filter((obj: string) => obj.startsWith('activity_') || obj.includes('duration_') || obj.includes('dist_'))
+            .map((obj: string) => obj.replace(/_/g, ' ').replace('-', ' '));
+          
+          if (activities.length > 0) {
+            title += ` (${activities.join(', ')})`;
+          }
+        }
+      }
     }
     if (!title) {
       title = 'Untitled Event';
@@ -296,11 +333,37 @@ export class MemoryService {
     // Use created_at as timestamp since start_time is null in your data
     const timestamp = event.start_time || event.created_at;
     
+    // Generate description with more context
+    let description = event.description;
+    if (!description) {
+      const parts = [];
+      
+      // Add type and date
+      parts.push(`${event.type || 'Event'} on ${new Date(timestamp).toLocaleDateString()}`);
+      
+      // Add time if available
+      if (event.start_time) {
+        parts.push(`at ${new Date(event.start_time).toLocaleTimeString()}`);
+      }
+      
+      // Add location if available
+      if (location) {
+        parts.push(`at ${location.name}`);
+      }
+      
+      // Add source info
+      if (event.source_url) {
+        parts.push(`(via ${event.source_url})`);
+      }
+      
+      description = parts.join(' ');
+    }
+
     const memory: Memory = {
       id: event.id,
       type: 'event',
       title: title,
-      description: event.description || `${event.type || 'Event'} on ${new Date(timestamp).toLocaleDateString()}`,
+      description: description,
       timestamp: timestamp,
       category: event.type || 'Event',
       location,
@@ -311,16 +374,18 @@ export class MemoryService {
         externalId: event.external_id,
         sourceUrl: event.source_url,
         hasStartTime: !!event.start_time,
-        originalType: event.type
+        originalType: event.type,
+        relatedObjects: event.source_data && typeof event.source_data === 'object' 
+          ? (event.source_data as any).related_objects 
+          : undefined
       },
     };
 
-    this.logger.warn('CREATED MEMORY FROM EVENT', {
+    this.logger.debug('Created memory from event', {
       memoryId: memory.id,
       memoryTitle: memory.title,
-      memoryTimestamp: memory.timestamp,
-      memoryDescription: memory.description,
-      fullMemory: memory
+      hasLocation: !!memory.location,
+      locationName: memory.location?.name
     });
 
     return memory;
@@ -681,5 +746,86 @@ export class MemoryService {
       this.logger.error('Error in testEventConversion', { error });
       throw error;
     }
+  }
+
+  private async findLocationByIdentifier(identifier: string, event: EventEntity): Promise<MemoryLocation | undefined> {
+    this.logger.debug('Looking for location by identifier', { identifier, eventId: event.id });
+    
+    // Try to find a place with this identifier
+    try {
+      // First try exact match on place name
+      const place = await this.placeRepo.findOne({
+        where: [
+          { name: identifier },
+          { name: identifier.replace(/-/g, ' ') }, // Try with spaces instead of dashes
+        ]
+      });
+
+      if (place && place.geolocation) {
+        const geo = place.geolocation as any;
+        if (geo.lat && geo.lng) {
+          return {
+            id: place.id,
+            name: place.name || identifier,
+            lat: parseFloat(geo.lat),
+            lng: parseFloat(geo.lng),
+          };
+        }
+      }
+
+      // Try to find in locations table by identifier
+      const location = await this.locationRepo.findOne({
+        where: { identifier: identifier },
+        relations: ['place']
+      });
+
+      if (location && location.geolocation) {
+        const geo = location.geolocation as any;
+        if (geo.lat && geo.lng) {
+          return {
+            id: location.id,
+            name: location.place?.name || identifier,
+            lat: parseFloat(geo.lat),
+            lng: parseFloat(geo.lng),
+            address: location.place?.name,
+          };
+        }
+      }
+
+      // Generate synthetic location for known identifiers
+      const syntheticLocation = this.getSyntheticLocation(identifier);
+      if (syntheticLocation) {
+        return syntheticLocation;
+      }
+
+    } catch (error) {
+      this.logger.error('Error finding location by identifier', { error, identifier });
+    }
+
+    return undefined;
+  }
+
+  private getSyntheticLocation(identifier: string): MemoryLocation | undefined {
+    // Map of known location identifiers to coordinates
+    const knownLocations: Record<string, { name: string; lat: number; lng: number }> = {
+      'park-run-loop': { name: 'Park Run Loop', lat: 37.7694, lng: -122.4862 },
+      'golden-gate-park': { name: 'Golden Gate Park', lat: 37.7694, lng: -122.4862 },
+      'dolores-park': { name: 'Dolores Park', lat: 37.7596, lng: -122.4269 },
+      'crissy-field': { name: 'Crissy Field', lat: 37.8037, lng: -122.4644 },
+      'lands-end': { name: 'Lands End', lat: 37.7880, lng: -122.5057 },
+      'ocean-beach': { name: 'Ocean Beach', lat: 37.7594, lng: -122.5107 },
+    };
+
+    const location = knownLocations[identifier] || knownLocations[identifier.replace(/_/g, '-')];
+    if (location) {
+      return {
+        id: `synthetic-${identifier}`,
+        name: location.name,
+        lat: location.lat,
+        lng: location.lng,
+      };
+    }
+
+    return undefined;
   }
 }
