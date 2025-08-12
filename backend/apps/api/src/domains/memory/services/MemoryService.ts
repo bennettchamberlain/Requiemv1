@@ -266,7 +266,7 @@ export class MemoryService {
         const locData = sourceData.location || sourceData.place;
         if (locData.lat && locData.lng) {
           location = {
-            id: event.id + '-loc',
+            id: `loc-${event.id}`,
             name: locData.name || event.name,
             lat: parseFloat(locData.lat),
             lng: parseFloat(locData.lng),
@@ -362,7 +362,7 @@ export class MemoryService {
     }
 
     const memory: Memory = {
-      id: event.id,
+      id: `memory-${event.id}`,
       type: 'event',
       title: title,
       description: description,
@@ -408,7 +408,7 @@ export class MemoryService {
           const locData = sourceData.location || sourceData.place;
           if (locData.lat && locData.lng) {
             location = {
-              id: content.id + '-loc',
+              id: `loc-${content.id}`,
               name: locData.name || content.title,
               lat: parseFloat(locData.lat),
               lng: parseFloat(locData.lng),
@@ -420,7 +420,7 @@ export class MemoryService {
     }
 
     return {
-      id: content.id,
+      id: `memory-${content.id}`,
       type: 'content',
       title: content.title || 'Untitled Content',
       description: content.text,
@@ -455,7 +455,7 @@ export class MemoryService {
     const fullName = [person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown Person';
 
     return {
-      id: person.id,
+      id: `memory-${person.id}`,
       type: 'person',
       title: fullName,
       description: person.address || [person.city, person.region, person.country].filter(Boolean).join(', ') || null,
@@ -483,7 +483,7 @@ export class MemoryService {
     }
 
     return {
-      id: thing.id,
+      id: `memory-${thing.id}`,
       type: 'thing',
       title: thing.name || 'Untitled Thing',
       description: thing.description,
