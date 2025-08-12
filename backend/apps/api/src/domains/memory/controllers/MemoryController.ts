@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Context } from '@ci/common/decorators';
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
+import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 
 import { MemoryService } from '../services/MemoryService';
@@ -34,6 +35,8 @@ const memorySearchSchema = z.object({
 @Controller('memory')
 @UseGuards(JwtAuthGuard)
 export class MemoryController {
+  private logger = new LoggerService(MemoryController.name);
+
   constructor(private readonly memoryService: MemoryService) {}
 
   @Get()
@@ -41,7 +44,27 @@ export class MemoryController {
     @Context() context: RequestContext,
     @Query(new ValidationPipe(memorySearchSchema)) params: MemorySearchParams,
   ) {
-    return this.memoryService.findAll(context, params);
+    this.logger.debug('Memory findAll request', { 
+      userId: context.userId, 
+      params,
+      hasUserId: !!context.userId 
+    });
+
+    if (!context.userId) {
+      this.logger.warn('No userId in context', { context });
+    }
+
+    try {
+      const result = await this.memoryService.findAll(context, params);
+      this.logger.debug('Memory findAll response', { 
+        dataLength: result.data.length,
+        total: result.total 
+      });
+      return result;
+    } catch (error) {
+      this.logger.error('Error in memory findAll', { error, userId: context.userId });
+      throw error;
+    }
   }
 
   @Get(':id')
@@ -51,5 +74,36 @@ export class MemoryController {
     @Param('id') id: string,
   ) {
     return this.memoryService.findOne(context, id);
+  }
+
+  // Temporary debug endpoint without auth
+  @Get('debug/test')
+  async debugTest() {
+    this.logger.debug('Debug test endpoint called');
+    
+    // Try to get some data directly from the database
+    const testContext = { userId: 'b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b' }; // Using the userId from your logs
+    
+    try {
+      const result = await this.memoryService.findAll(testContext as RequestContext, { limit: 10 });
+      return {
+        success: true,
+        ...result,
+        debug: {
+          userId: testContext.userId,
+          timestamp: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      this.logger.error('Debug test error', { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        debug: {
+          userId: testContext.userId,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
   }
 }

@@ -124,21 +124,41 @@ export function MemoryPage() {
       if (query) params.append('query', query);
       params.append('limit', '100');
 
+      console.log('MemoryPage: Fetching memories', { 
+        query, 
+        authToken: authToken ? 'present' : 'missing',
+        url: `/api/memory?${params.toString()}`
+      });
+
       const response = await fetch(`/api/memory?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },
       });
 
+      console.log('MemoryPage: Response status', response.status, response.statusText);
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch memories: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('MemoryPage: Error response', { 
+          status: response.status, 
+          statusText: response.statusText,
+          body: errorText 
+        });
+        throw new Error(`Failed to fetch memories: ${response.statusText} - ${errorText}`);
       }
 
       const data: MemoryResponse = await response.json();
+      console.log('MemoryPage: Received data', { 
+        dataLength: data.data.length, 
+        total: data.total,
+        firstItem: data.data[0] 
+      });
+      
       setMemories(data.data);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('Error fetching memories:', errorMessage);
+      console.error('Error fetching memories:', errorMessage, err);
       setError(errorMessage);
     } finally {
       setLoading(false);

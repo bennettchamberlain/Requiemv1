@@ -35,25 +35,47 @@ export class MemoryService {
     const limit = params.limit || 50;
     const offset = params.offset || 0;
 
-    // For now, let's focus on events and content as they're most likely to have temporal data
-    const [events, eventsCount] = await this.findEvents(context, params);
-    const [contents, contentsCount] = await this.findContents(context, params);
+    try {
+      // For now, let's focus on events and content as they're most likely to have temporal data
+      const [events, eventsCount] = await this.findEvents(context, params);
+      const [contents, contentsCount] = await this.findContents(context, params);
 
-    // Convert entities to Memory objects
-    const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
-    const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
+      this.logger.debug('Found entities', { 
+        eventsCount, 
+        contentsCount, 
+        eventsLength: events.length,
+        contentsLength: contents.length,
+        userId: context.userId 
+      });
 
-    // Combine and sort by timestamp
-    const allMemories = [...eventMemories, ...contentMemories]
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .slice(offset, offset + limit);
+      // Convert entities to Memory objects
+      const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
+      const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
 
-    return {
-      data: allMemories,
-      total: eventsCount + contentsCount,
-      limit,
-      offset,
-    };
+      // Combine and sort by timestamp
+      const allMemories = [...eventMemories, ...contentMemories]
+        .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+        .slice(offset, offset + limit);
+
+      const response = {
+        data: allMemories,
+        total: eventsCount + contentsCount,
+        limit,
+        offset,
+      };
+
+      this.logger.debug('Returning memory response', { 
+        dataLength: response.data.length,
+        total: response.total,
+        limit: response.limit,
+        offset: response.offset
+      });
+
+      return response;
+    } catch (error) {
+      this.logger.error('Error in findAll', { error, userId: context.userId });
+      throw error;
+    }
   }
 
   async findOne(context: RequestContext, id: string): Promise<Memory> {
@@ -98,7 +120,13 @@ export class MemoryService {
       query.andWhere('event.start_time <= :endDate', { endDate: params.endDate });
     }
 
-    return query.getManyAndCount();
+    const sql = query.getSql();
+    this.logger.debug('Event query SQL', { sql, userId: context.userId });
+
+    const result = await query.getManyAndCount();
+    this.logger.debug('Event query result', { count: result[1], userId: context.userId });
+
+    return result;
   }
 
   private async findContents(
@@ -119,7 +147,13 @@ export class MemoryService {
       );
     }
 
-    return query.getManyAndCount();
+    const sql = query.getSql();
+    this.logger.debug('Content query SQL', { sql, userId: context.userId });
+
+    const result = await query.getManyAndCount();
+    this.logger.debug('Content query result', { count: result[1], userId: context.userId });
+
+    return result;
   }
 
   private async eventToMemory(event: EventEntity): Promise<Memory> {
