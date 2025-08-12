@@ -40,7 +40,7 @@ type Value = [
   },
 ];
 
-function useAuthLogic(): Value {
+function useAuth(): Value {
   const navigate = useNavigate();
 
   const [user, setUser] = useState<User | null>(null);
@@ -51,11 +51,12 @@ function useAuthLogic(): Value {
   const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
 
   const decoded = useMemo(() => (accessToken ? jwtDecode<JwtPayload>(accessToken) : null), [accessToken]);
-  const expired = useMemo(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
+  const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
 
   const getSelfProfile = useCallback(async () => {
-    if (accessToken == null || expired || (decoded && decoded.sub === user?.id)) {
+    if (accessToken == null || isExpired() || (decoded && decoded.sub === user?.id)) {
       setLoading(false);
+
       return false;
     }
 
@@ -78,7 +79,7 @@ function useAuthLogic(): Value {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, expired, decoded, user]);
+  }, [setUser, setLoading, setError, isExpired, decoded, user, loading]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -99,7 +100,7 @@ function useAuthLogic(): Value {
         localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
         setUser(data.user);
 
-        navigate('/dashboard');
+        navigate('/feed');
       } catch (error: unknown) {
         setUser(null);
         setError(error as Error);
@@ -107,7 +108,7 @@ function useAuthLogic(): Value {
         setLoading(false);
       }
     },
-    [navigate],
+    [setUser, setError, setLoading],
   );
 
   const logout = useCallback(() => {
@@ -120,7 +121,7 @@ function useAuthLogic(): Value {
     setError(null);
 
     navigate('/');
-  }, [navigate]);
+  }, [setUser, setLoading, setError]);
 
   const signup = useCallback(
     async (name: string, email: string, password: string) => {
@@ -150,7 +151,7 @@ function useAuthLogic(): Value {
         setLoading(false);
       }
     },
-    [navigate],
+    [setUser, setError, setLoading],
   );
 
   const refresh = useCallback(async () => {
@@ -165,17 +166,17 @@ function useAuthLogic(): Value {
     localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
     localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
     setUser(data.user);
-  }, []);
+  }, [setUser]);
 
   useAutoRefreshToken(accessToken, sessionToken, refresh);
 
   useEffect(() => {
     getSelfProfile();
-  }, [accessToken, decoded]);
+  }, [decoded]);
 
   return [
     {
-      expired,
+      expired: isExpired(),
       authToken: accessToken,
       user,
       loading,
@@ -223,6 +224,6 @@ function useAutoRefreshToken(
   }, [accessToken, refreshToken, onRefresh]);
 }
 
-const { Provider, useHookContext } = createHookContext(useAuthLogic, 'useAuth');
+const { Provider, useHookContext } = createHookContext(useAuth);
 
 export { Provider as AuthProvider, useHookContext as useAuth };

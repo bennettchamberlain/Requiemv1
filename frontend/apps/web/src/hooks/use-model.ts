@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { createHookContext, fetchJson } from '@ci/common';
 
+import { useAuth } from './use-auth';
+
 const ACTIVE_MODEL_KEY = 'activeModel';
 
 interface Model {
@@ -23,7 +25,9 @@ type Value = [
   },
 ];
 
-function useModelLogic(authToken?: string | null | undefined): Value {
+function useModel(): Value {
+  const [{ authToken }] = useAuth();
+
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [activeModels, setActiveModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -39,17 +43,10 @@ function useModelLogic(authToken?: string | null | undefined): Value {
         localStorage.removeItem(ACTIVE_MODEL_KEY);
       }
     },
-    [],
+    [setSelectedModel],
   );
 
   useEffect(() => {
-    if (!authToken) {
-      setLoading(false);
-      setActiveModels([]);
-      setSelectedModel(null);
-      return;
-    }
-
     (async () => {
       try {
         const data: Model[] = await fetchJson('/api/llm/models', {
@@ -65,18 +62,16 @@ function useModelLogic(authToken?: string | null | undefined): Value {
         const persistedModel = localStorage.getItem(ACTIVE_MODEL_KEY);
         const selectedModel = data.find((model) => model.model === persistedModel)
           ? persistedModel
-          : (data[0]?.model ?? null);
+          : (data[0].model ?? null);
 
         selectModel(selectedModel);
       } catch (error: unknown) {
         setError(error as Error);
-        setActiveModels([]);
-        setSelectedModel(null);
       } finally {
         setLoading(false);
       }
     })();
-  }, [authToken, selectModel]);
+  }, []);
 
   return [
     {
@@ -91,6 +86,6 @@ function useModelLogic(authToken?: string | null | undefined): Value {
   ];
 }
 
-const { Provider, useHookContext } = createHookContext(useModelLogic, 'useModel');
+const { Provider, useHookContext } = createHookContext(useModel);
 
 export { Provider as ModelProvider, useHookContext as useModel };
