@@ -136,4 +136,28 @@ export class MemoryController {
       };
     }
   }
+
+  // Debug endpoint to get all memories without user filter
+  @Get('debug/all')
+  async debugAll() {
+    this.logger.debug('Debug all memories endpoint called');
+    
+    try {
+      // Get memories for all users
+      const result = await this.memoryService.findAllDebug();
+      
+      return {
+        success: true,
+        ...result,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Debug all error', { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
 }

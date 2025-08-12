@@ -111,14 +111,31 @@ export class MemoryService {
     context: RequestContext,
     params: MemorySearchParams,
   ): Promise<[EventEntity[], number]> {
-    // First, let's check if there are any events at all for this user
-    const totalEvents = await this.eventRepo.count({
+    // First, let's check if there are any events at all
+    const totalEventsInDb = await this.eventRepo.count();
+    this.logger.debug('Total events in database', { totalEventsInDb });
+    
+    // Check events for this specific user
+    const totalEventsForUser = await this.eventRepo.count({
       where: { user: { id: context.userId } }
     });
     
     this.logger.debug('Total events for user', { 
       userId: context.userId, 
-      totalEvents 
+      totalEventsForUser 
+    });
+
+    // Let's also try a simpler query first
+    const simpleEvents = await this.eventRepo.find({
+      where: { user: { id: context.userId } },
+      relations: ['user', 'tags'],
+      take: 5
+    });
+    
+    this.logger.debug('Simple find events', {
+      userId: context.userId,
+      foundCount: simpleEvents.length,
+      firstEvent: simpleEvents[0] || null
     });
 
     const query = this.eventRepo
@@ -154,7 +171,7 @@ export class MemoryService {
     
     // Log sample event if we have any
     if (result[0].length > 0) {
-      this.logger.debug('Sample event', { 
+      this.logger.debug('Sample event from query', { 
         event: result[0][0],
         userId: context.userId 
       });
@@ -503,16 +520,108 @@ export class MemoryService {
       .limit(10)
       .getMany();
 
+    this.logger.debug('Raw events query result', {
+      count: events.length,
+      firstEvent: events[0] || null
+    });
+
+    // Also check if there are any events without users
+    const eventsWithoutUser = await this.eventRepo
+      .createQueryBuilder('event')
+      .where('event.user_id IS NULL')
+      .limit(5)
+      .getMany();
+
+    this.logger.debug('Events without user', {
+      count: eventsWithoutUser.length
+    });
+
+    // Get distinct user IDs from events
+    const userIds = await this.eventRepo
+      .createQueryBuilder('event')
+      .select('DISTINCT event.user_id', 'userId')
+      .where('event.user_id IS NOT NULL')
+      .getRawMany();
+
+    this.logger.debug('Distinct user IDs in events', {
+      userIds: userIds.map(u => u.userId)
+    });
+
     return events.map(event => ({
       id: event.id,
       name: event.name,
       type: event.type,
       userId: event.user?.id,
+      userIdDirect: (event as any).user_id, // Check if user_id is set directly
       startTime: event.start_time,
       endTime: event.end_time,
       hasUser: !!event.user,
       tagCount: event.tags?.length || 0,
       createdAt: event.created_at
     }));
+  }
+
+  async findAllDebug(): Promise<MemoryResponse> {
+    this.logger.debug('Finding all memories without user filter');
+
+    const limit = 50;
+    const offset = 0;
+
+    try {
+      // Get events without user filter
+      const events = await this.eventRepo.find({
+        relations: ['user', 'tags'],
+        take: 10
+      });
+
+      const contents = await this.contentRepo.find({
+        relations: ['user', 'tags', 'event'],
+        take: 10
+      });
+
+      const people = await this.personRepo.find({
+        relations: ['user', 'tags'],
+        take: 10
+      });
+
+      const things = await this.thingRepo.find({
+        relations: ['user', 'tags', 'event'],
+        take: 10
+      });
+
+      this.logger.debug('Found entities without filter', { 
+        eventsCount: events.length,
+        contentsCount: contents.length,
+        peopleCount: people.length,
+        thingsCount: things.length
+      });
+
+      // Convert entities to Memory objects
+      const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
+      const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
+      const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
+      const thingMemories = await Promise.all(things.map((t) => this.thingToMemory(t)));
+
+      // Combine and sort by timestamp
+      const allMemories = [...eventMemories, ...contentMemories, ...personMemories, ...thingMemories]
+        .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+      const response = {
+        data: allMemories,
+        total: allMemories.length,
+        limit,
+        offset,
+      };
+
+      this.logger.debug('Returning debug memory response', { 
+        dataLength: response.data.length,
+        memoriesWithLocation: response.data.filter(m => m.location).length
+      });
+
+      return response;
+    } catch (error) {
+      this.logger.error('Error in findAllDebug', { error });
+      throw error;
+    }
   }
 }
