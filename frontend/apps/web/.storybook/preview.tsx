@@ -19,7 +19,7 @@ const preview = {
 } satisfies Preview;
 
 export const decorators = [
-  (Story: any) => (
+  (Story) => (
     <MemoryRouter>
       <Story />
     </MemoryRouter>
