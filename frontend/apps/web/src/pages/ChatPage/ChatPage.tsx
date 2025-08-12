@@ -3,10 +3,11 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from '
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card, Textarea, cn, Sidebar } from '@ci/shadcn';
 import { Square, Plus, RefreshCw, Trash2, MessageSquare, Bot, Sparkles, Send, X, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useModel } from '@/hooks';
+import { ChatMessage } from './ChatMessage';
 
 // Custom scrollbar styles
 const scrollbarStyles = `
@@ -273,6 +274,7 @@ export default function ChatPage() {
   const [{ authToken }] = useAuth();
   const [{ selectedModel }] = useModel();
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Extract route information from pathname instead of useParams
   const pathSegments = location.pathname.split('/').filter(Boolean);
@@ -435,9 +437,9 @@ export default function ChatPage() {
   // Handle thread selection
   const handleSelectThread = useCallback((threadId: string) => {
     setSelectedThreadId(threadId);
-    // Update URL without navigation
-            window.history.pushState(null, '', `/chat/${threadId}`);
-  }, []);
+    // Update URL using React Router navigation
+    navigate(`/chat/${threadId}`, { replace: true });
+  }, [navigate]);
 
   // Handle new thread creation
   const handleNewThread = useCallback(() => {
@@ -446,10 +448,10 @@ export default function ChatPage() {
     clearInput();
     setOutput('');
     setIsLoading(false);
-    // Update URL without navigation
-                window.history.pushState(null, '', '/chat/new');
+    // Update URL using React Router navigation
+    navigate('/chat/new', { replace: true });
     // Note: Thread will be created automatically when the first message is sent
-  }, [clearInput]);
+  }, [clearInput, navigate]);
 
   // Handle thread deletion
   const handleDeleteThread = useCallback(async (threadId: string) => {
@@ -476,12 +478,12 @@ export default function ChatPage() {
         const nextThread = threads.find((t) => t.id !== threadId);
         if (nextThread) {
           setSelectedThreadId(nextThread.id);
-          // Update URL without navigation
-          window.history.pushState(null, '', `/chat/${nextThread.id}`);
+          // Update URL using React Router navigation
+          navigate(`/chat/${nextThread.id}`, { replace: true });
         } else {
           setSelectedThreadId(null);
-          // Update URL without navigation
-          window.history.pushState(null, '', '/chat/new');
+          // Update URL using React Router navigation
+          navigate('/chat/new', { replace: true });
         }
       }
     } catch (err) {
@@ -524,8 +526,8 @@ export default function ChatPage() {
       const newThreadId = res.headers.get('X-Thread-Id') as string;
       if (newThreadId && !selectedThreadId) {
         setSelectedThreadId(newThreadId);
-        // Update URL without navigation
-        window.history.replaceState(null, '', `/chat/${newThreadId}`);
+        // Update URL using React Router navigation
+        navigate(`/chat/${newThreadId}`, { replace: true });
         
         // Add the new thread to the threads list
         const newThread: Thread = {
@@ -581,13 +583,7 @@ export default function ChatPage() {
 
 
 
-  // Memoized key down handler for the textarea
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  }, [handleSubmit]);
+
 
   // Memoized computed values to prevent unnecessary re-renders
   const isSubmitDisabled = useMemo(() => {
@@ -625,48 +621,6 @@ export default function ChatPage() {
       behavior: 'smooth',
     });
   }, [output]);
-
-
-
-  // Enhanced message component - memoized to prevent re-renders
-  const ChatMessage = useCallback(({ message, index }: { message: { role: 'user' | 'assistant'; content: string }, index: number }) => (
-    <div
-      className={cn(
-        "flex gap-3 animate-in fade-in-0 slide-in-from-bottom-2 duration-300",
-        message.role === 'user' ? 'justify-end' : 'justify-start'
-      )}
-      style={{ animationDelay: `${index * 100}ms` }}
-    >
-      {message.role === 'assistant' && (
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/10 to-primary/20 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm border border-primary/20">
-          <Bot className="h-4 w-4 text-primary" />
-        </div>
-      )}
-      
-      <div
-        className={cn(
-          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-all duration-200 hover:shadow-md",
-          message.role === 'user'
-            ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground ml-auto shadow-md"
-            : "bg-gradient-to-br from-muted to-muted/80 text-foreground border border-border/50 backdrop-blur-sm"
-        )}
-      >
-        <div className="whitespace-pre-wrap">{message.content}</div>
-        <div className={cn(
-          "text-xs opacity-70 mt-2 text-right",
-          message.role === 'user' ? 'text-primary-foreground/80' : 'text-muted-foreground'
-        )}>
-          {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </div>
-      </div>
-      
-      {message.role === 'user' && (
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/30 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm border border-primary/30">
-          <div className="w-2 h-2 rounded-full bg-primary-foreground" />
-        </div>
-      )}
-    </div>
-  ), []);
 
   return (
     <>
@@ -824,7 +778,6 @@ export default function ChatPage() {
                       value={input}
                       onChange={handleInputChange}
                       className="resize-none min-h-[120px] text-base leading-relaxed pr-12 bg-background/80 backdrop-blur-sm border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-200 placeholder:text-muted-foreground/60"
-                      onKeyDown={handleKeyDown}
                     />
                     <Button
                       type="submit"
