@@ -121,6 +121,8 @@ export class OllamaController {
     const messages = await this.messageService.findByThread(context, threadId);
     const filteredMessages = messages.filter((message) => message.id !== llmResponse.id);
 
+    console.log(`******** ${input.enableTools} *******`);
+
     const stream = await this.ollamaService.chatStream(context, filteredMessages, {
       model: resolvedModel.model,
       signal,
@@ -134,9 +136,17 @@ export class OllamaController {
           //   chunk.message.images?
           //   chunk.message.role
           //   chunk.message.tool_calls?
-          res.write(chunk.message.content);
+
+          if (chunk.message.content) {
+            res.write(chunk.message.content);
+          } else if (chunk.message.tool_calls) {
+            res.write('<tool>');
+            res.write(JSON.stringify(chunk.message.tool_calls));
+            res.write('</tool>');
+          }
         }
 
+        // TODO: Now we are making multiple calls to ollma streaming, so .done for one chunk does NOT mean the whole response is done.
         if (chunk.done) {
           this.logger.log('Ollama prompt evaluation completed', {
             model: chunk.model,
@@ -156,10 +166,10 @@ export class OllamaController {
         this.logger.error('Error proxying Ollama stream:', err as Error);
       }
     } finally {
-      await this.messageService.update(context, llmResponse.id, {
-        text: stream.buffer,
-        canceled: signal.aborted,
-      });
+      // await this.messageService.update(context, llmResponse.id, {
+      //   text: stream.buffer,
+      //   canceled: signal.aborted,
+      // });
 
       res.end();
     }

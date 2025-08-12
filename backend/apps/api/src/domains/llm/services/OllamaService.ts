@@ -5,6 +5,7 @@ import ollama, {
   type GenerateResponse,
   type Message as OllamaMessage,
   type Tool,
+  type ToolCall,
 } from 'ollama';
 import { DataSource } from 'typeorm';
 
@@ -117,7 +118,7 @@ export class OllamaService {
 
     // If tools are enabled, handle function calling before streaming
     if (enableTools) {
-      return this.chatStreamWithTools(context, messages, options);
+      return this.chatStreamWithTools(context, messages, resolvedOptions);
     }
 
     // Original streaming implementation
@@ -228,6 +229,7 @@ export class OllamaService {
     const ollamaMessages: OllamaMessage[] = messages.map(
       (message) =>
         ({
+          // TODO: Change this to assistant, and realistically we need to make this better than a binary in the database, constrained enum string?
           role: message.prompt ? 'user' : 'system',
           content: message.text ?? '',
         }) satisfies OllamaMessage,
@@ -277,6 +279,53 @@ export class OllamaService {
       toolCount: this.toolRegistry.getRegisteredToolNames().length,
       tools: this.toolRegistry.getRegisteredToolNames(),
     });
+  }
+
+  private async newHandleToolCalls(context: RequestContext, toolCalls: ToolCall[]): Promise<OllamaMessage[]> {
+    this.logger.debug('Processing tool calls', {
+      toolCallCount: toolCalls.length,
+      toolNames: toolCalls.map((tc) => tc.function.name),
+      userId: context.userId,
+    });
+
+    // Execute each tool call
+    const toolResults = await Promise.all(
+      toolCalls.map(async (toolCall) => {
+        const { name, arguments: args } = toolCall.function;
+
+        try {
+          const result = await this.toolRegistry.executeTool(name, context, args);
+
+          return {
+            call: toolCall,
+            result: result.success ? result.data : { error: result.error },
+            success: result.success,
+          };
+        } catch (error) {
+          this.logger.error('Tool execution failed', {
+            toolName: name,
+            error: error instanceof Error ? error.message : String(error),
+            userId: context.userId,
+          });
+
+          return {
+            call: toolCall,
+            result: { error: 'Tool execution failed' },
+            success: false,
+          };
+        }
+      }),
+    );
+
+    // Build messages with tool results
+
+    return toolResults.map(
+      ({ result }) =>
+        ({
+          role: 'tool' as const,
+          content: JSON.stringify(result),
+        }) satisfies OllamaMessage,
+    );
   }
 
   /**
@@ -380,40 +429,146 @@ export class OllamaService {
     options?: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { buffer: string }> {
     const resolvedOptions = options ?? {};
-    const { model = PROMPT_MODEL } = resolvedOptions;
+    const { model = PROMPT_MODEL, signal } = resolvedOptions;
 
     // Step 1: Get available tools and make initial non-streaming call to check for tool calls
     const availableTools = this.toolRegistry.getAvailableTools(context);
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
-    try {
-      const initialResponse = await ollama.chat({
-        model,
-        messages: this.toOllamaMessages(messages),
-        ...(ollamaTools.length > 0 && { tools: ollamaTools }),
-      });
+    const chunks: string[] = [];
+    const toolCalls: ToolCall[] = [];
+    const ollamaMessages = this.toOllamaMessages(messages);
 
-      // Step 2: If there are tool calls, execute them and prepare for final streaming response
-      if (initialResponse.message.tool_calls && initialResponse.message.tool_calls.length > 0) {
-        return this.handleToolCallsAndStream(context, messages, initialResponse, options);
-      }
+    const stream = (async function* (self) {
+      do {
+        console.log('begin chunks', chunks);
+        console.log('begin toolCalls', toolCalls);
 
-      // No tool calls needed, proceed with regular streaming
-      return this.regularStream(context, messages, options);
-    } catch (error) {
-      // Handle case where model doesn't support tools
-      if (error instanceof Error && error.message.includes('does not support tools')) {
-        this.logger.warn('Model does not support tools, falling back to regular chat', {
+        chunks.splice(0, chunks.length);
+        toolCalls.splice(0, toolCalls.length);
+
+        const iterator = await ollama.chat({
           model,
-          userId: context.userId,
+          messages: ollamaMessages.slice(),
+          stream: true,
+          ...(ollamaTools.length > 0 &&
+            ollamaMessages[ollamaMessages.length - 1].role !== 'tool' && { tools: ollamaTools }),
         });
 
-        return this.regularStream(context, messages, options);
-      }
+        signal?.addEventListener('abort', () => {
+          iterator.abort();
+        });
 
-      // Re-throw other errors
-      throw error;
-    }
+        for await (const chunk of iterator) {
+          console.log(chunk);
+          console.log(JSON.stringify(chunk.message.tool_calls));
+
+          if (chunk.message.content) {
+            chunks.push(chunk.message.content);
+          } else if (chunk.message.tool_calls) {
+            // We are assuming that the tool_calls won't span across multiple tokens.
+            // There are some poorly trained models that don't adhere to this specification.
+            // Since we have control over the models that we're installing, we'll hand wave this away
+            // with an assumption that tool calls will always take the form (non-limiting e.g.):
+            //
+            // [
+            //   {
+            //     function: {
+            //       name: 'get_user_preferences',
+            //       arguments: {
+            //         category: 'food',
+            //         userId: 'current',
+            //       },
+            //     },
+            //   },
+            // ]
+
+            toolCalls.push(...chunk.message.tool_calls);
+          }
+
+          yield chunk;
+        }
+
+        ollamaMessages.push({
+          role: 'assistant',
+          content: chunks.join(''),
+        } satisfies OllamaMessage);
+
+        if (toolCalls.length > 0) {
+          const toolEvaluations = await self.newHandleToolCalls(context, toolCalls.slice());
+
+          ollamaMessages.push(...toolEvaluations);
+        }
+
+        console.log('end chunks', chunks);
+        console.log('end toolCalls', toolCalls);
+      } while (toolCalls.length > 0);
+    })(this);
+
+    Object.defineProperty(stream, 'buffer', {
+      enumerable: true,
+      get: () => 'foo',
+    });
+
+    return stream as typeof stream & { buffer: string };
+
+    // Shit below here we need to integrate.
+
+    // const initialResponse = await ollama.chat({
+    //   model,
+    //   messages: this.toOllamaMessages(messages),
+    //   stream: true
+    //   ...(ollamaTools.length > 0 && { tools: ollamaTools }),
+    // });
+
+    // // const stream = (async function* () {
+    // //   const iterator = await ollama.chat({
+    // //     model,
+    // //     messages: messagesWithToolResults,
+    // //     stream: true,
+    // //   });
+
+    // //   signal?.addEventListener('abort', () => {
+    // //     iterator.abort();
+    // //   });
+
+    // //   for await (const chunk of iterator) {
+    // //     if (chunk && !!chunk.message) {
+    // //       chunks.push(chunk.message.content);
+    // //     }
+
+    // //     yield chunk;
+    // //   }
+    // // })();
+
+    // try {
+    //   const initialResponse = await ollama.chat({
+    //     model,
+    //     messages: this.toOllamaMessages(messages),
+    //     ...(ollamaTools.length > 0 && { tools: ollamaTools }),
+    //   });
+
+    //   // Step 2: If there are tool calls, execute them and prepare for final streaming response
+    //   if (initialResponse.message.tool_calls && initialResponse.message.tool_calls.length > 0) {
+    //     return this.handleToolCallsAndStream(context, messages, initialResponse, options);
+    //   }
+
+    //   // No tool calls needed, proceed with regular streaming
+    //   return this.regularStream(context, messages, options);
+    // } catch (error) {
+    //   // Handle case where model doesn't support tools
+    //   if (error instanceof Error && error.message.includes('does not support tools')) {
+    //     this.logger.warn('Model does not support tools, falling back to regular chat', {
+    //       model,
+    //       userId: context.userId,
+    //     });
+
+    //     return this.regularStream(context, messages, options);
+    //   }
+
+    //   // Re-throw other errors
+    //   throw error;
+    // }
   }
 
   /**
