@@ -86,12 +86,17 @@ export class MemoryController {
     
     try {
       const result = await this.memoryService.findAll(testContext as RequestContext, { limit: 10 });
+      
+      // Also check for locations and places
+      const debugInfo = await this.memoryService.getDebugInfo(testContext as RequestContext);
+      
       return {
         success: true,
         ...result,
         debug: {
           userId: testContext.userId,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          ...debugInfo
         }
       };
     } catch (error) {

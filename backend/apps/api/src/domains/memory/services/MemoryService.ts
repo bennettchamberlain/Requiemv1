@@ -7,6 +7,7 @@ import { RequestContext } from '@ci/common/types';
 
 import { ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
+import { LocationEntity } from '../entities/LocationEntity';
 import { PersonEntity } from '../entities/PersonEntity';
 import { PlaceEntity } from '../entities/PlaceEntity';
 import { ThingEntity } from '../entities/ThingEntity';
@@ -21,6 +22,8 @@ export class MemoryService {
     private contentRepo: Repository<ContentEntity>,
     @InjectRepository(EventEntity)
     private eventRepo: Repository<EventEntity>,
+    @InjectRepository(LocationEntity)
+    private locationRepo: Repository<LocationEntity>,
     @InjectRepository(PersonEntity)
     private personRepo: Repository<PersonEntity>,
     @InjectRepository(PlaceEntity)
@@ -36,30 +39,38 @@ export class MemoryService {
     const offset = params.offset || 0;
 
     try {
-      // For now, let's focus on events and content as they're most likely to have temporal data
+      // Fetch events with related places
       const [events, eventsCount] = await this.findEvents(context, params);
       const [contents, contentsCount] = await this.findContents(context, params);
+      const [people, peopleCount] = await this.findPeople(context, params);
+      const [things, thingsCount] = await this.findThings(context, params);
 
       this.logger.debug('Found entities', { 
         eventsCount, 
-        contentsCount, 
+        contentsCount,
+        peopleCount,
+        thingsCount,
         eventsLength: events.length,
         contentsLength: contents.length,
+        peopleLength: people.length,
+        thingsLength: things.length,
         userId: context.userId 
       });
 
       // Convert entities to Memory objects
       const eventMemories = await Promise.all(events.map((e) => this.eventToMemory(e)));
       const contentMemories = await Promise.all(contents.map((c) => this.contentToMemory(c)));
+      const personMemories = await Promise.all(people.map((p) => this.personToMemory(p)));
+      const thingMemories = await Promise.all(things.map((t) => this.thingToMemory(t)));
 
       // Combine and sort by timestamp
-      const allMemories = [...eventMemories, ...contentMemories]
+      const allMemories = [...eventMemories, ...contentMemories, ...personMemories, ...thingMemories]
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
         .slice(offset, offset + limit);
 
       const response = {
         data: allMemories,
-        total: eventsCount + contentsCount,
+        total: eventsCount + contentsCount + peopleCount + thingsCount,
         limit,
         offset,
       };
@@ -68,7 +79,8 @@ export class MemoryService {
         dataLength: response.data.length,
         total: response.total,
         limit: response.limit,
-        offset: response.offset
+        offset: response.offset,
+        memoriesWithLocation: response.data.filter(m => m.location).length
       });
 
       return response;
@@ -156,12 +168,86 @@ export class MemoryService {
     return result;
   }
 
+  private async findPeople(
+    context: RequestContext,
+    params: MemorySearchParams,
+  ): Promise<[PersonEntity[], number]> {
+    const query = this.personRepo
+      .createQueryBuilder('person')
+      .leftJoinAndSelect('person.tags', 'tags')
+      .leftJoinAndSelect('person.user', 'user')
+      .where('person.user_id = :userId', { userId: context.userId });
+
+    if (params.query) {
+      query.andWhere(
+        '(person.first_name ILIKE :query OR person.last_name ILIKE :query)',
+        { query: `%${params.query}%` },
+      );
+    }
+
+    return query.getManyAndCount();
+  }
+
+  private async findThings(
+    context: RequestContext,
+    params: MemorySearchParams,
+  ): Promise<[ThingEntity[], number]> {
+    const query = this.thingRepo
+      .createQueryBuilder('thing')
+      .leftJoinAndSelect('thing.tags', 'tags')
+      .leftJoinAndSelect('thing.user', 'user')
+      .leftJoinAndSelect('thing.event', 'event')
+      .where('thing.user_id = :userId', { userId: context.userId });
+
+    if (params.query) {
+      query.andWhere(
+        '(thing.name ILIKE :query OR thing.description ILIKE :query)',
+        { query: `%${params.query}%` },
+      );
+    }
+
+    return query.getManyAndCount();
+  }
+
   private async eventToMemory(event: EventEntity): Promise<Memory> {
-    // Try to find associated places through source_data or other means
     let location: MemoryLocation | undefined;
     
-    // Check if there's location data in source_data
-    if (event.source_data && typeof event.source_data === 'object') {
+    // First, try to find associated locations through the locations table
+    const eventLocations = await this.locationRepo.find({
+      where: { 
+        user: { id: event.user?.id },
+        datetime: event.start_time
+      },
+      relations: ['place'],
+      take: 1
+    });
+
+    if (eventLocations.length > 0) {
+      const loc = eventLocations[0];
+      if (loc.geolocation && typeof loc.geolocation === 'object') {
+        const geo = loc.geolocation as any;
+        if (geo.lat && geo.lng) {
+          location = {
+            id: loc.id,
+            name: loc.place?.name || null,
+            lat: parseFloat(geo.lat),
+            lng: parseFloat(geo.lng),
+            address: loc.place?.name || undefined,
+          };
+        } else if (geo.latitude && geo.longitude) {
+          location = {
+            id: loc.id,
+            name: loc.place?.name || null,
+            lat: parseFloat(geo.latitude),
+            lng: parseFloat(geo.longitude),
+            address: loc.place?.name || undefined,
+          };
+        }
+      }
+    }
+
+    // If no location found, check source_data as fallback
+    if (!location && event.source_data && typeof event.source_data === 'object') {
       const sourceData = event.source_data as any;
       if (sourceData.location || sourceData.place) {
         const locData = sourceData.location || sourceData.place;
@@ -176,6 +262,12 @@ export class MemoryService {
         }
       }
     }
+
+    this.logger.debug('Event location data', { 
+      eventId: event.id, 
+      hasLocation: !!location,
+      locationData: location 
+    });
 
     return {
       id: event.id,
@@ -237,6 +329,96 @@ export class MemoryService {
         externalId: content.external_id,
         sourceUrl: content.source_url,
       },
+    };
+  }
+
+  private async personToMemory(person: PersonEntity): Promise<Memory> {
+    let location: MemoryLocation | undefined;
+    
+    // Check if person has address data that can be geocoded
+    if (person.city && person.country) {
+      // For now, we'll just note that the person has location data
+      // In a real implementation, you might geocode the address
+      this.logger.debug('Person has address', { 
+        personId: person.id,
+        city: person.city,
+        country: person.country 
+      });
+    }
+
+    const fullName = [person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown Person';
+
+    return {
+      id: person.id,
+      type: 'person',
+      title: fullName,
+      description: person.address || [person.city, person.region, person.country].filter(Boolean).join(', ') || null,
+      timestamp: person.created_at,
+      category: person.type || 'Person',
+      location,
+      tags: person.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+      userId: person.user?.id || '',
+      metadata: {
+        gender: person.gender,
+        avatarUrl: person.avatar_url,
+        externalId: person.external_id,
+        sourceUrl: person.source_url,
+      },
+    };
+  }
+
+  private async thingToMemory(thing: ThingEntity): Promise<Memory> {
+    let location: MemoryLocation | undefined;
+    
+    // Things might have location through their associated event
+    if (thing.event) {
+      const eventMemory = await this.eventToMemory(thing.event);
+      location = eventMemory.location;
+    }
+
+    return {
+      id: thing.id,
+      type: 'thing',
+      title: thing.name || 'Untitled Thing',
+      description: thing.description,
+      timestamp: thing.created_at,
+      category: thing.type || 'Thing',
+      location,
+      tags: thing.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+      userId: thing.user?.id || '',
+      metadata: {
+        externalId: thing.external_id,
+        sourceUrl: thing.source_url,
+        eventId: thing.event?.id,
+      },
+    };
+  }
+
+  async getDebugInfo(context: RequestContext) {
+    const [locations, locCount] = await this.locationRepo.findAndCount({
+      where: { user: { id: context.userId } },
+      take: 5
+    });
+    
+    const [places, placeCount] = await this.placeRepo.findAndCount({
+      where: { user: { id: context.userId } },
+      take: 5
+    });
+
+    return {
+      locationCount: locCount,
+      placeCount: placeCount,
+      sampleLocations: locations.map(l => ({
+        id: l.id,
+        datetime: l.datetime,
+        geolocation: l.geolocation,
+        placeId: l.place?.id
+      })),
+      samplePlaces: places.map(p => ({
+        id: p.id,
+        name: p.name,
+        geolocation: p.geolocation
+      }))
     };
   }
 }
