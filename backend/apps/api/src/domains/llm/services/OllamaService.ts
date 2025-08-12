@@ -116,38 +116,75 @@ export class OllamaService {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal, enableTools = false } = resolvedOptions;
 
-    // If tools are enabled, handle function calling before streaming
-    if (enableTools) {
-      return this.chatStreamWithTools(context, messages, resolvedOptions);
-    }
+    // Step 1: Get available tools and make initial non-streaming call to check for tool calls
+    const availableTools = this.toolRegistry.getAvailableTools(context);
+    const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
-    // Original streaming implementation
     const chunks: string[] = [];
+    const toolCalls: ToolCall[] = [];
     const ollamaMessages = this.toOllamaMessages(messages);
 
-    const stream = (async function* () {
-      const iterator = await ollama.chat({
-        model,
-        messages: ollamaMessages,
-        stream: true,
-      });
+    const stream = (async function* (self) {
+      do {
+        chunks.splice(0, chunks.length);
+        toolCalls.splice(0, toolCalls.length);
 
-      signal?.addEventListener('abort', () => {
-        iterator.abort();
-      });
+        const iterator = await ollama.chat({
+          model,
+          messages: ollamaMessages.slice(),
+          stream: true,
+          ...(enableTools &&
+            ollamaTools.length > 0 &&
+            ollamaMessages[ollamaMessages.length - 1].role !== 'tool' && { tools: ollamaTools }),
+        });
 
-      for await (const chunk of iterator) {
-        if (chunk && !!chunk.message) {
-          chunks.push(chunk.message.content);
+        signal?.addEventListener('abort', () => {
+          iterator.abort();
+        });
+
+        for await (const chunk of iterator) {
+          if (chunk.message.content) {
+            chunks.push(chunk.message.content);
+          } else if (chunk.message.tool_calls) {
+            // We are assuming that the tool_calls won't span across multiple tokens.
+            // There are some poorly trained models that don't adhere to this specification.
+            // Since we have control over the models that we're installing, we'll hand wave this away
+            // with an assumption that tool calls will always take the form (non-limiting e.g.):
+            //
+            // [
+            //   {
+            //     function: {
+            //       name: 'get_user_preferences',
+            //       arguments: {
+            //         category: 'food',
+            //         userId: 'current',
+            //       },
+            //     },
+            //   },
+            // ]
+
+            toolCalls.push(...chunk.message.tool_calls);
+          }
+
+          yield chunk;
         }
 
-        yield chunk;
-      }
-    })();
+        ollamaMessages.push({
+          role: 'assistant',
+          content: chunks.join(''),
+        } satisfies OllamaMessage);
+
+        if (toolCalls.length > 0) {
+          const toolEvaluations = await self.newHandleToolCalls(context, toolCalls.slice());
+
+          ollamaMessages.push(...toolEvaluations);
+        }
+      } while (toolCalls.length > 0);
+    })(this);
 
     Object.defineProperty(stream, 'buffer', {
       enumerable: true,
-      get: () => chunks.join(''),
+      get: () => 'foo',
     });
 
     return stream as typeof stream & { buffer: string };
@@ -441,9 +478,6 @@ export class OllamaService {
 
     const stream = (async function* (self) {
       do {
-        console.log('begin chunks', chunks);
-        console.log('begin toolCalls', toolCalls);
-
         chunks.splice(0, chunks.length);
         toolCalls.splice(0, toolCalls.length);
 
@@ -460,9 +494,6 @@ export class OllamaService {
         });
 
         for await (const chunk of iterator) {
-          console.log(chunk);
-          console.log(JSON.stringify(chunk.message.tool_calls));
-
           if (chunk.message.content) {
             chunks.push(chunk.message.content);
           } else if (chunk.message.tool_calls) {
@@ -499,9 +530,6 @@ export class OllamaService {
 
           ollamaMessages.push(...toolEvaluations);
         }
-
-        console.log('end chunks', chunks);
-        console.log('end toolCalls', toolCalls);
       } while (toolCalls.length > 0);
     })(this);
 
