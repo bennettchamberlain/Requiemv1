@@ -155,7 +155,13 @@ export function MemoryPage() {
         firstItem: data.data[0] 
       });
       
-      setMemories(data.data);
+      // Convert timestamp strings to Date strings for proper display
+      const memoriesWithDates = data.data.map(memory => ({
+        ...memory,
+        timestamp: typeof memory.timestamp === 'string' ? memory.timestamp : new Date(memory.timestamp).toISOString()
+      }));
+      
+      setMemories(memoriesWithDates);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error fetching memories:', errorMessage, err);
