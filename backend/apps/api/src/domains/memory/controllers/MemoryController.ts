@@ -22,11 +22,11 @@ const memorySearchSchema = z.object({
     if (typeof val === 'string') return val === 'true';
     return val;
   }),
-  limit: z.union([z.number(), z.string()]).transform((val) => {
+  limit: z.union([z.number(), z.string()]).optional().transform((val) => {
     const num = typeof val === 'string' ? parseInt(val, 10) : val;
     return Math.min(Math.max(1, num || 50), 100);
   }),
-  offset: z.union([z.number(), z.string()]).transform((val) => {
+  offset: z.union([z.number(), z.string()]).optional().transform((val) => {
     const num = typeof val === 'string' ? parseInt(val, 10) : val;
     return Math.max(0, num || 0);
   }),
