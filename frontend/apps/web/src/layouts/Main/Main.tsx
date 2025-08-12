@@ -141,12 +141,12 @@ export function Main() {
               </header>
 
               <div className="flex flex-row grow">
-                <main className="flex grow p-4">
-                  <Outlet />
-                </main>
                 <aside className="flex flex-col">
                   <Portal id="tertiary-navigation" className="flex flex-col grow" />
                 </aside>
+                <main className="flex grow p-4">
+                  <Outlet />
+                </main>
               </div>
             </div>
           </Suspense>

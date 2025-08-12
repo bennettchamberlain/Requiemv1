@@ -12,8 +12,6 @@ import SplashPage from '@/pages/SplashPage';
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'));
 const CapturePage = lazy(() => import('@/pages/CapturePage'));
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
-const ChatListPage = lazy(() => import('@/pages/ChatListPage'));
-const ChatThreadingPage = lazy(() => import('@/pages/ChatThreadingPage'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
@@ -86,39 +84,13 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/chat"
+          path="/chat/*"
           element={
             <ProtectedRoute>
               <ChatPage />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/chat/list"
-          element={
-            <ProtectedRoute>
-              <ChatListPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/new"
-          element={
-            <ProtectedRoute>
-              <ChatThreadingPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/:id"
-          element={
-            <ProtectedRoute>
-              <ChatThreadingPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Content */}
         <Route
           path="/files"
           element={
