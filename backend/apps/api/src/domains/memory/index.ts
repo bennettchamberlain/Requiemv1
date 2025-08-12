@@ -12,6 +12,10 @@ import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
 import { ThingEntity } from './entities/ThingEntity';
 import { MemoryService } from './services/MemoryService';
+import {EventController} from "@ci/domains/memory/controllers/EventController";
+import {EventService} from "@ci/domains/memory/services/EventService";
+import {ContentService} from "@ci/domains/memory/services/ContentService";
+import {ContentController} from "@ci/domains/memory/controllers/ContentController";
 
 @Module({
   imports: [
@@ -26,8 +30,8 @@ import { MemoryService } from './services/MemoryService';
     ]),
     UserModule,
   ],
-  providers: [MemoryService],
-  controllers: [MemoryController],
+  providers: [MemoryService, ContentService, EventService],
+  controllers: [MemoryController, ContentController, EventController],
   exports: [MemoryService],
 })
 export class MemoryModule {}

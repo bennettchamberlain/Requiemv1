@@ -11,7 +11,7 @@ import {
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
-import { UserEntity } from '@ci/domains/user';
+import {User, UserEntity} from '@ci/domains/user';
 
 @Entity({ name: 'events' })
 export class EventEntity {
@@ -59,4 +59,21 @@ export class EventEntity {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
+
+  toEvent() {
+    return {
+      id: this.id,
+      name: this.name,
+      type: this.type,
+      description: this.description,
+      start_time: this.start_time,
+      end_time: this.end_time,
+      external_id: this.external_id,
+      source_url: this.source_url,
+      source_data: this.source_data,
+      user_id: this.user?.id,
+      connection_id: this.user?.connection_id,
+      tags: this.tags?.map(tag => tag.toTag()),
+    } satisfies Event;
+  }
 }

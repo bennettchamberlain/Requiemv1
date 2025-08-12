@@ -67,4 +67,21 @@ export class ContentEntity {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
+
+  toContent() {
+    return {
+      id: this.id,
+      type: this.type,
+      title: this.title,
+      text: this.text,
+      url: this.url,
+      mimetype: this.mimetype,
+      external_id: this.external_id,
+      source_url: this.source_url,
+      source_data: this.source_data,
+      user_id: this.user?.id,
+      event_id: this.event?.id,
+      tags: this.tags?.map(tag => tag.id) || []
+    } satisfies Content;
+  }
 }
