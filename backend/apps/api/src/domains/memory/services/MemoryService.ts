@@ -92,14 +92,15 @@ export class MemoryService {
 
   async findOne(context: RequestContext, id: string): Promise<Memory> {
     // Try to find in each entity type
+    // TEMPORARILY DISABLED: User filtering
     const event = await this.eventRepo.findOne({
-      where: { id, user: { id: context.userId } },
+      where: { id },
       relations: ['tags', 'user'],
     });
     if (event) return this.eventToMemory(event);
 
     const content = await this.contentRepo.findOne({
-      where: { id, user: { id: context.userId } },
+      where: { id },
       relations: ['tags', 'user', 'event'],
     });
     if (content) return this.contentToMemory(content);
@@ -115,34 +116,23 @@ export class MemoryService {
     const totalEventsInDb = await this.eventRepo.count();
     this.logger.debug('Total events in database', { totalEventsInDb });
     
+    // TEMPORARILY DISABLED: User filtering
     // Check events for this specific user
-    const totalEventsForUser = await this.eventRepo.count({
-      where: { user: { id: context.userId } }
-    });
+    // const totalEventsForUser = await this.eventRepo.count({
+    //   where: { user: { id: context.userId } }
+    // });
     
-    this.logger.debug('Total events for user', { 
-      userId: context.userId, 
-      totalEventsForUser 
-    });
-
-    // Let's also try a simpler query first
-    const simpleEvents = await this.eventRepo.find({
-      where: { user: { id: context.userId } },
-      relations: ['user', 'tags'],
-      take: 5
-    });
-    
-    this.logger.debug('Simple find events', {
-      userId: context.userId,
-      foundCount: simpleEvents.length,
-      firstEvent: simpleEvents[0] || null
-    });
+    // this.logger.debug('Total events for user', { 
+    //   userId: context.userId, 
+    //   totalEventsForUser 
+    // });
 
     const query = this.eventRepo
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.tags', 'tags')
-      .leftJoinAndSelect('event.user', 'user')
-      .where('event.user_id = :userId', { userId: context.userId });
+      .leftJoinAndSelect('event.user', 'user');
+      // TEMPORARILY DISABLED: User filtering
+      // .where('event.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
       query.andWhere(
@@ -194,8 +184,9 @@ export class MemoryService {
       .createQueryBuilder('content')
       .leftJoinAndSelect('content.tags', 'tags')
       .leftJoinAndSelect('content.user', 'user')
-      .leftJoinAndSelect('content.event', 'event')
-      .where('content.user_id = :userId', { userId: context.userId });
+      .leftJoinAndSelect('content.event', 'event');
+      // TEMPORARILY DISABLED: User filtering
+      // .where('content.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
       query.andWhere(
@@ -220,8 +211,9 @@ export class MemoryService {
     const query = this.personRepo
       .createQueryBuilder('person')
       .leftJoinAndSelect('person.tags', 'tags')
-      .leftJoinAndSelect('person.user', 'user')
-      .where('person.user_id = :userId', { userId: context.userId });
+      .leftJoinAndSelect('person.user', 'user');
+      // TEMPORARILY DISABLED: User filtering
+      // .where('person.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
       query.andWhere(
@@ -241,8 +233,9 @@ export class MemoryService {
       .createQueryBuilder('thing')
       .leftJoinAndSelect('thing.tags', 'tags')
       .leftJoinAndSelect('thing.user', 'user')
-      .leftJoinAndSelect('thing.event', 'event')
-      .where('thing.user_id = :userId', { userId: context.userId });
+      .leftJoinAndSelect('thing.event', 'event');
+      // TEMPORARILY DISABLED: User filtering
+      // .where('thing.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
       query.andWhere(
@@ -461,32 +454,23 @@ export class MemoryService {
   }
 
   async getDebugInfo(context: RequestContext) {
+    // TEMPORARILY DISABLED: User filtering
     const [locations, locCount] = await this.locationRepo.findAndCount({
-      where: { user: { id: context.userId } },
       take: 5
     });
     
     const [places, placeCount] = await this.placeRepo.findAndCount({
-      where: { user: { id: context.userId } },
       take: 5
     });
 
     // Also get event count
-    const eventCount = await this.eventRepo.count({
-      where: { user: { id: context.userId } }
-    });
+    const eventCount = await this.eventRepo.count();
 
-    const contentCount = await this.contentRepo.count({
-      where: { user: { id: context.userId } }
-    });
+    const contentCount = await this.contentRepo.count();
 
-    const personCount = await this.personRepo.count({
-      where: { user: { id: context.userId } }
-    });
+    const personCount = await this.personRepo.count();
 
-    const thingCount = await this.thingRepo.count({
-      where: { user: { id: context.userId } }
-    });
+    const thingCount = await this.thingRepo.count();
 
     return {
       counts: {
