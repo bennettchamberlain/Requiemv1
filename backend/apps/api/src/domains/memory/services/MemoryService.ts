@@ -284,9 +284,9 @@ export class MemoryService {
           ? sourceData.related_objects 
           : [sourceData.related_objects];
         
-        // Look for location references
+        // Look for location references - all locations now start with loc_
         for (const obj of relatedObjects) {
-          if (typeof obj === 'string' && (obj.startsWith('location-') || obj.startsWith('loc_'))) {
+          if (typeof obj === 'string' && obj.startsWith('loc_')) {
             // Try to find a location with this identifier
             location = await this.findLocationByIdentifier(obj, event);
             if (location) break;
@@ -315,8 +315,14 @@ export class MemoryService {
       if (event.source_data && typeof event.source_data === 'object') {
         const sourceData = event.source_data as any;
         if (sourceData.related_objects && Array.isArray(sourceData.related_objects)) {
+          // Extract meaningful details from related objects
           const activities = sourceData.related_objects
-            .filter((obj: string) => obj.startsWith('activity_') || obj.includes('duration_') || obj.includes('dist_'))
+            .filter((obj: string) => 
+              typeof obj === 'string' && 
+              !obj.startsWith('loc_') && // Exclude location references
+              !obj.startsWith('place_') && // Exclude place references
+              (obj.includes('activity_') || obj.includes('duration_') || obj.includes('dist_'))
+            )
             .map((obj: string) => obj.replace(/_/g, ' ').replace('-', ' '));
           
           if (activities.length > 0) {
@@ -771,34 +777,18 @@ export class MemoryService {
         }
       }
 
-      // If not found, try to find a place with this identifier
-      const cleanIdentifier = identifier.replace('location-', '').replace('loc_', '');
-      const place = await this.placeRepo.findOne({
-        where: [
-          { name: identifier },
-          { name: cleanIdentifier },
-          { name: cleanIdentifier.replace(/-/g, ' ') }, // Try with spaces instead of dashes
-        ]
+      // If not found by identifier, log it for debugging
+      this.logger.debug('Location not found by identifier', { 
+        identifier, 
+        eventId: event.id 
       });
 
-      if (place && place.geolocation) {
-        const geo = place.geolocation as any;
-        // Handle both lng and lon field names
-        if (geo.lat && (geo.lng || geo.lon)) {
-          return {
-            id: place.id,
-            name: place.name || identifier,
-            lat: parseFloat(geo.lat),
-            lng: parseFloat(geo.lng || geo.lon),
-          };
-        }
-      }
-
-      // Generate synthetic location for known identifiers
-      const syntheticLocation = this.getSyntheticLocation(cleanIdentifier);
-      if (syntheticLocation) {
-        return syntheticLocation;
-      }
+      // Since all locations should now be in the database with loc_ prefix,
+      // we shouldn't need synthetic locations anymore
+      this.logger.warn('Location identifier not found in database', {
+        identifier,
+        eventId: event.id
+      });
 
     } catch (error) {
       this.logger.error('Error finding location by identifier', { error, identifier });
@@ -807,27 +797,4 @@ export class MemoryService {
     return undefined;
   }
 
-  private getSyntheticLocation(identifier: string): MemoryLocation | undefined {
-    // Map of known location identifiers to coordinates
-    const knownLocations: Record<string, { name: string; lat: number; lng: number }> = {
-      'park-run-loop': { name: 'Park Run Loop', lat: 37.7694, lng: -122.4862 },
-      'golden-gate-park': { name: 'Golden Gate Park', lat: 37.7694, lng: -122.4862 },
-      'dolores-park': { name: 'Dolores Park', lat: 37.7596, lng: -122.4269 },
-      'crissy-field': { name: 'Crissy Field', lat: 37.8037, lng: -122.4644 },
-      'lands-end': { name: 'Lands End', lat: 37.7880, lng: -122.5057 },
-      'ocean-beach': { name: 'Ocean Beach', lat: 37.7594, lng: -122.5107 },
-    };
-
-    const location = knownLocations[identifier] || knownLocations[identifier.replace(/_/g, '-')];
-    if (location) {
-      return {
-        id: `synthetic-${identifier}`,
-        name: location.name,
-        lat: location.lat,
-        lng: location.lng,
-      };
-    }
-
-    return undefined;
-  }
 }

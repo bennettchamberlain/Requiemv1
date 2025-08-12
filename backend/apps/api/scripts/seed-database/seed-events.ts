@@ -43,11 +43,11 @@ export async function seedEvents(db: DataSource, filePath: string) {
           // Handle different formats of related_objects
           let parsed;
           if (record.related_objects.startsWith('[') && record.related_objects.endsWith(']')) {
-            // Remove brackets and split by comma
+            // Remove brackets and split by comma, handling quoted strings
             const items = record.related_objects
               .slice(1, -1)
-              .split(',')
-              .map(item => item.trim());
+              .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/) // Split by comma not inside quotes
+              .map(item => item.trim().replace(/^["']|["']$/g, '')); // Remove quotes
             parsed = items;
           } else {
             // Try parsing as JSON
