@@ -478,7 +478,7 @@ export default function ChatPage() {
     setOutput('');
     setIsLoading(false);
     // Update URL using React Router navigation
-    navigate('/chat/new', { replace: true });
+    navigate('/chat');
     // Note: Thread will be created automatically when the first message is sent
   }, [clearInput, navigate]);
 
