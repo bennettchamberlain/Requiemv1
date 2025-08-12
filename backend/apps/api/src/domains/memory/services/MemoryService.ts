@@ -33,19 +33,26 @@ export class MemoryService {
   ) {}
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
-    this.logger.debug('Finding memories', { userId: context.userId, params });
+    this.logger.warn('DEBUGGING: Finding memories START', { userId: context.userId, params });
 
     const limit = params.limit || 50;
     const offset = params.offset || 0;
 
     try {
       // Fetch events with related places
+      this.logger.warn('DEBUGGING: About to call findEvents');
       const [events, eventsCount] = await this.findEvents(context, params);
+      
+      this.logger.warn('DEBUGGING: About to call findContents');
       const [contents, contentsCount] = await this.findContents(context, params);
+      
+      this.logger.warn('DEBUGGING: About to call findPeople');
       const [people, peopleCount] = await this.findPeople(context, params);
+      
+      this.logger.warn('DEBUGGING: About to call findThings');
       const [things, thingsCount] = await this.findThings(context, params);
 
-      this.logger.debug('Found entities', { 
+      this.logger.warn('DEBUGGING: Found entities', { 
         eventsCount, 
         contentsCount,
         peopleCount,
@@ -75,17 +82,21 @@ export class MemoryService {
         offset,
       };
 
-      this.logger.debug('Returning memory response', { 
+      this.logger.warn('DEBUGGING: Returning memory response', { 
         dataLength: response.data.length,
         total: response.total,
         limit: response.limit,
         offset: response.offset,
-        memoriesWithLocation: response.data.filter(m => m.location).length
+        memoriesWithLocation: response.data.filter(m => m.location).length,
+        eventMemoriesCount: eventMemories.length,
+        contentMemoriesCount: contentMemories.length,
+        personMemoriesCount: personMemories.length,
+        thingMemoriesCount: thingMemories.length
       });
 
       return response;
     } catch (error) {
-      this.logger.error('Error in findAll', { error, userId: context.userId });
+      this.logger.error('DEBUGGING: Error in findAll', { error, userId: context.userId });
       throw error;
     }
   }
@@ -114,25 +125,34 @@ export class MemoryService {
   ): Promise<[EventEntity[], number]> {
     // First, let's check if there are any events at all
     const totalEventsInDb = await this.eventRepo.count();
-    this.logger.debug('Total events in database', { totalEventsInDb });
+    this.logger.warn('DEBUGGING: Total events in database', { totalEventsInDb });
     
-    // TEMPORARILY DISABLED: User filtering
-    // Check events for this specific user
-    // const totalEventsForUser = await this.eventRepo.count({
-    //   where: { user: { id: context.userId } }
-    // });
-    
-    // this.logger.debug('Total events for user', { 
-    //   userId: context.userId, 
-    //   totalEventsForUser 
-    // });
+    // Let's try the simplest possible query first
+    try {
+      const simpleFind = await this.eventRepo.find({ take: 5 });
+      this.logger.warn('DEBUGGING: Simple find() result', { 
+        count: simpleFind.length,
+        firstEvent: simpleFind[0] || 'NO EVENTS FOUND'
+      });
+    } catch (error) {
+      this.logger.error('DEBUGGING: Error in simple find', { error });
+    }
+
+    // Try raw SQL query
+    try {
+      const rawQuery = await this.eventRepo.query('SELECT COUNT(*) as count FROM events');
+      this.logger.warn('DEBUGGING: Raw SQL count', { rawQuery });
+      
+      const rawEvents = await this.eventRepo.query('SELECT id, name, type, start_time FROM events LIMIT 5');
+      this.logger.warn('DEBUGGING: Raw SQL events', { rawEvents });
+    } catch (error) {
+      this.logger.error('DEBUGGING: Error in raw SQL', { error });
+    }
 
     const query = this.eventRepo
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.tags', 'tags')
       .leftJoinAndSelect('event.user', 'user');
-      // TEMPORARILY DISABLED: User filtering
-      // .where('event.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
       query.andWhere(
@@ -151,29 +171,36 @@ export class MemoryService {
 
     const sql = query.getSql();
     const parameters = query.getParameters();
-    this.logger.debug('Event query details', { 
+    this.logger.warn('DEBUGGING: Event query details', { 
       sql, 
       parameters,
       userId: context.userId 
     });
 
-    const result = await query.getManyAndCount();
-    
-    // Log sample event if we have any
-    if (result[0].length > 0) {
-      this.logger.debug('Sample event from query', { 
-        event: result[0][0],
+    try {
+      const result = await query.getManyAndCount();
+      
+      // Log sample event if we have any
+      if (result[0].length > 0) {
+        this.logger.warn('DEBUGGING: Sample event from query', { 
+          event: result[0][0],
+          userId: context.userId 
+        });
+      } else {
+        this.logger.error('DEBUGGING: NO EVENTS RETURNED FROM QUERY');
+      }
+      
+      this.logger.warn('DEBUGGING: Event query result', { 
+        count: result[1], 
+        returnedCount: result[0].length,
         userId: context.userId 
       });
-    }
-    
-    this.logger.debug('Event query result', { 
-      count: result[1], 
-      returnedCount: result[0].length,
-      userId: context.userId 
-    });
 
-    return result;
+      return result;
+    } catch (error) {
+      this.logger.error('DEBUGGING: Error executing event query', { error, sql });
+      throw error;
+    }
   }
 
   private async findContents(
@@ -607,5 +634,51 @@ export class MemoryService {
       this.logger.error('Error in findAllDebug', { error });
       throw error;
     }
+  }
+
+  async directDatabaseTest() {
+    this.logger.warn('DEBUGGING: Direct database test');
+    
+    const results: any = {};
+    
+    try {
+      // Test raw SQL queries
+      const eventCount = await this.eventRepo.query('SELECT COUNT(*) FROM events');
+      results.eventCountRaw = eventCount;
+      
+      const eventSample = await this.eventRepo.query('SELECT * FROM events LIMIT 5');
+      results.eventSampleRaw = eventSample;
+      
+      // Test TypeORM count
+      const eventCountTypeorm = await this.eventRepo.count();
+      results.eventCountTypeorm = eventCountTypeorm;
+      
+      // Test simple find
+      const eventFindSimple = await this.eventRepo.find({ take: 5 });
+      results.eventFindSimple = eventFindSimple;
+      
+      // Check table existence
+      const tables = await this.eventRepo.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name IN ('events', 'content', 'people', 'things', 'places', 'locations')
+      `);
+      results.existingTables = tables;
+      
+      // Check event table structure
+      const eventColumns = await this.eventRepo.query(`
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_name = 'events'
+      `);
+      results.eventColumns = eventColumns;
+      
+    } catch (error) {
+      results.error = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error('DEBUGGING: Direct database test error', { error });
+    }
+    
+    return results;
   }
 }

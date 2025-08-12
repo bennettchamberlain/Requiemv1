@@ -160,4 +160,26 @@ export class MemoryController {
       };
     }
   }
+
+  // Direct database test
+  @Get('debug/direct')
+  async debugDirect() {
+    this.logger.warn('DEBUGGING: Direct database test');
+    
+    try {
+      const result = await this.memoryService.directDatabaseTest();
+      return {
+        success: true,
+        ...result,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Debug direct error', { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
 }
