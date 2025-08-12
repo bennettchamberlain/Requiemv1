@@ -81,7 +81,8 @@ export class OllamaController {
       });
     }
 
-    const prompt = await this.messageService.create(context, {
+    // Create a message for the user prompt
+    await this.messageService.create(context, {
       model: resolvedModel.model,
       text: input.prompt,
       mimetype: 'text/markdown', // TODO: Make this more flexible.
@@ -90,24 +91,10 @@ export class OllamaController {
       threadId,
     });
 
-    // Pre-create the message that will be updated after the stream
-    // terminates with more content and resolution.
-    const llmResponse = await this.messageService.create(context, {
-      model: resolvedModel.model,
-      // text -> We are updating this after the stream terminates
-      // mimetype // TODO: Infer this from the content stream
-      prompt: false,
-      // canceled -> We are updating this after the stream terminates
-      threadId,
-      promptMessageId: prompt.id,
-    });
-
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Thread-Id', threadId);
-    res.setHeader('X-Prompt-Id', prompt.id);
-    res.setHeader('X-Response-Id', llmResponse.id);
 
     const abortController = new AbortController();
     const signal = abortController.signal;
@@ -119,11 +106,8 @@ export class OllamaController {
     });
 
     const messages = await this.messageService.findByThread(context, threadId);
-    const filteredMessages = messages.filter((message) => message.id !== llmResponse.id);
 
-    console.log(`******** ${input.enableTools} *******`);
-
-    const stream = await this.ollamaService.chatStream(context, filteredMessages, {
+    const stream = await this.ollamaService.chatStream(context, messages, {
       model: resolvedModel.model,
       signal,
       enableTools: input.enableTools,

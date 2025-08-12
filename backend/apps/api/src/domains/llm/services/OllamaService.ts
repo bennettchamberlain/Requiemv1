@@ -112,7 +112,7 @@ export class OllamaService {
     context: RequestContext,
     messages: MessagesInput,
     options?: PromptOptions,
-  ): Promise<AsyncGenerator<ChatResponse> & { buffer: string }> {
+  ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal, enableTools = false } = resolvedOptions;
 
@@ -182,12 +182,12 @@ export class OllamaService {
       } while (toolCalls.length > 0);
     })(this);
 
-    Object.defineProperty(stream, 'buffer', {
+    Object.defineProperty(stream, 'messages', {
       enumerable: true,
-      get: () => 'foo',
+      get: () => ollamaMessages,
     });
 
-    return stream as typeof stream & { buffer: string };
+    return stream as typeof stream & { messages: OllamaMessage[] };
   }
 
   async chat(
