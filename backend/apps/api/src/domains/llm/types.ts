@@ -4,6 +4,7 @@ export interface PromptInput {
   prompt: string;
   model?: string;
   threadId?: string;
+  enableTools?: boolean;
 }
 
 export interface CreateMessageDto {
