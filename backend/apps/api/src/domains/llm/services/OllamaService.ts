@@ -122,11 +122,12 @@ export class OllamaService {
 
     // Original streaming implementation
     const chunks: string[] = [];
+    const ollamaMessages = this.toOllamaMessages(messages);
 
     const stream = (async function* () {
       const iterator = await ollama.chat({
         model,
-        messages: self.toOllamaMessages(messages),
+        messages: ollamaMessages,
         stream: true,
       });
 
@@ -521,11 +522,12 @@ export class OllamaService {
     const { model = PROMPT_MODEL, signal } = resolvedOptions;
 
     const chunks: string[] = [];
+    const ollamaMessages = this.toOllamaMessages(messages);
 
     const stream = (async function* () {
       const iterator = await ollama.chat({
         model,
-        messages: self.toOllamaMessages(messages),
+        messages: ollamaMessages,
         stream: true,
       });
 
