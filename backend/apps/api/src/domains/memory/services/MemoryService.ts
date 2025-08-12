@@ -33,34 +33,23 @@ export class MemoryService {
   ) {}
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
-    this.logger.warn('DEBUGGING: Finding memories START', { userId: context.userId, params });
+    this.logger.debug('Finding memories', { userId: context.userId, params });
 
     const limit = params.limit || 50;
     const offset = params.offset || 0;
 
     try {
       // Fetch events with related places
-      this.logger.warn('DEBUGGING: About to call findEvents');
       const [events, eventsCount] = await this.findEvents(context, params);
-      
-      this.logger.warn('DEBUGGING: About to call findContents');
       const [contents, contentsCount] = await this.findContents(context, params);
-      
-      this.logger.warn('DEBUGGING: About to call findPeople');
       const [people, peopleCount] = await this.findPeople(context, params);
-      
-      this.logger.warn('DEBUGGING: About to call findThings');
       const [things, thingsCount] = await this.findThings(context, params);
 
-      this.logger.warn('DEBUGGING: Found entities', { 
+      this.logger.debug('Found entities', { 
         eventsCount, 
         contentsCount,
         peopleCount,
         thingsCount,
-        eventsLength: events.length,
-        contentsLength: contents.length,
-        peopleLength: people.length,
-        thingsLength: things.length,
         userId: context.userId 
       });
 
@@ -82,21 +71,15 @@ export class MemoryService {
         offset,
       };
 
-      this.logger.warn('DEBUGGING: Returning memory response', { 
+      this.logger.debug('Returning memory response', { 
         dataLength: response.data.length,
         total: response.total,
-        limit: response.limit,
-        offset: response.offset,
-        memoriesWithLocation: response.data.filter(m => m.location).length,
-        eventMemoriesCount: eventMemories.length,
-        contentMemoriesCount: contentMemories.length,
-        personMemoriesCount: personMemories.length,
-        thingMemoriesCount: thingMemories.length
+        memoriesWithLocation: response.data.filter(m => m.location).length
       });
 
       return response;
     } catch (error) {
-      this.logger.error('DEBUGGING: Error in findAll', { error, userId: context.userId });
+      this.logger.error('Error in findAll', { error, userId: context.userId });
       throw error;
     }
   }
@@ -123,32 +106,6 @@ export class MemoryService {
     context: RequestContext,
     params: MemorySearchParams,
   ): Promise<[EventEntity[], number]> {
-    // First, let's check if there are any events at all
-    const totalEventsInDb = await this.eventRepo.count();
-    this.logger.warn('DEBUGGING: Total events in database', { totalEventsInDb });
-    
-    // Let's try the simplest possible query first
-    try {
-      const simpleFind = await this.eventRepo.find({ take: 5 });
-      this.logger.warn('DEBUGGING: Simple find() result', { 
-        count: simpleFind.length,
-        firstEvent: simpleFind[0] || 'NO EVENTS FOUND'
-      });
-    } catch (error) {
-      this.logger.error('DEBUGGING: Error in simple find', { error });
-    }
-
-    // Try raw SQL query
-    try {
-      const rawQuery = await this.eventRepo.query('SELECT COUNT(*) as count FROM events');
-      this.logger.warn('DEBUGGING: Raw SQL count', { rawQuery });
-      
-      const rawEvents = await this.eventRepo.query('SELECT id, name, type, start_time FROM events LIMIT 5');
-      this.logger.warn('DEBUGGING: Raw SQL events', { rawEvents });
-    } catch (error) {
-      this.logger.error('DEBUGGING: Error in raw SQL', { error });
-    }
-
     const query = this.eventRepo
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.tags', 'tags')
@@ -156,51 +113,30 @@ export class MemoryService {
 
     if (params.query) {
       query.andWhere(
-        '(event.name ILIKE :query OR event.description ILIKE :query)',
+        '(event.name ILIKE :query OR event.description ILIKE :query OR event.type ILIKE :query)',
         { query: `%${params.query}%` },
       );
     }
 
     if (params.startDate) {
-      query.andWhere('event.start_time >= :startDate', { startDate: params.startDate });
+      query.andWhere('(event.start_time >= :startDate OR (event.start_time IS NULL AND event.created_at >= :startDate))', 
+        { startDate: params.startDate });
     }
 
     if (params.endDate) {
-      query.andWhere('event.start_time <= :endDate', { endDate: params.endDate });
+      query.andWhere('(event.start_time <= :endDate OR (event.start_time IS NULL AND event.created_at <= :endDate))', 
+        { endDate: params.endDate });
     }
 
-    const sql = query.getSql();
-    const parameters = query.getParameters();
-    this.logger.warn('DEBUGGING: Event query details', { 
-      sql, 
-      parameters,
+    const result = await query.getManyAndCount();
+    
+    this.logger.debug('Event query result', { 
+      count: result[1], 
+      returnedCount: result[0].length,
       userId: context.userId 
     });
 
-    try {
-      const result = await query.getManyAndCount();
-      
-      // Log sample event if we have any
-      if (result[0].length > 0) {
-        this.logger.warn('DEBUGGING: Sample event from query', { 
-          event: result[0][0],
-          userId: context.userId 
-        });
-      } else {
-        this.logger.error('DEBUGGING: NO EVENTS RETURNED FROM QUERY');
-      }
-      
-      this.logger.warn('DEBUGGING: Event query result', { 
-        count: result[1], 
-        returnedCount: result[0].length,
-        userId: context.userId 
-      });
-
-      return result;
-    } catch (error) {
-      this.logger.error('DEBUGGING: Error executing event query', { error, sql });
-      throw error;
-    }
+    return result;
   }
 
   private async findContents(
@@ -285,7 +221,8 @@ export class MemoryService {
       hasStartTime: !!event.start_time,
       startTime: event.start_time,
       hasUser: !!event.user,
-      userId: event.user?.id
+      userId: event.user?.id,
+      createdAt: event.created_at
     });
     
     // First, try to find associated locations through the locations table
@@ -347,12 +284,25 @@ export class MemoryService {
       locationData: location 
     });
 
+    // Generate a meaningful title from available data
+    let title = event.name;
+    if (!title && event.type) {
+      // Use the event type as title if name is null
+      title = event.type + ' Event';
+    }
+    if (!title) {
+      title = 'Untitled Event';
+    }
+
+    // Use created_at as timestamp since start_time is null in your data
+    const timestamp = event.start_time || event.created_at;
+    
     const memory: Memory = {
       id: event.id,
       type: 'event',
-      title: event.name || 'Untitled Event',
-      description: event.description,
-      timestamp: event.start_time || event.created_at,
+      title: title,
+      description: event.description || `${event.type || 'Event'} on ${new Date(timestamp).toLocaleDateString()}`,
+      timestamp: timestamp,
       category: event.type || 'Event',
       location,
       tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
@@ -361,13 +311,16 @@ export class MemoryService {
         endTime: event.end_time,
         externalId: event.external_id,
         sourceUrl: event.source_url,
+        hasStartTime: !!event.start_time,
+        originalType: event.type
       },
     };
 
     this.logger.debug('Created memory from event', {
       memoryId: memory.id,
       memoryTitle: memory.title,
-      memoryTimestamp: memory.timestamp
+      memoryTimestamp: memory.timestamp,
+      memoryDescription: memory.description
     });
 
     return memory;
@@ -673,6 +626,25 @@ export class MemoryService {
         WHERE table_name = 'events'
       `);
       results.eventColumns = eventColumns;
+      
+      // Check events with actual data
+      const eventsWithData = await this.eventRepo.query(`
+        SELECT * FROM events 
+        WHERE name IS NOT NULL 
+        OR description IS NOT NULL 
+        OR start_time IS NOT NULL 
+        LIMIT 10
+      `);
+      results.eventsWithData = eventsWithData;
+      
+      // Count events by type
+      const eventsByType = await this.eventRepo.query(`
+        SELECT type, COUNT(*) as count 
+        FROM events 
+        GROUP BY type 
+        ORDER BY count DESC
+      `);
+      results.eventsByType = eventsByType;
       
     } catch (error) {
       results.error = error instanceof Error ? error.message : 'Unknown error';
