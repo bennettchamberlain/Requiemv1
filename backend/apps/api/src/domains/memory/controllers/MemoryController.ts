@@ -111,4 +111,29 @@ export class MemoryController {
       };
     }
   }
+
+  // Debug endpoint to check raw events
+  @Get('debug/events')
+  async debugEvents() {
+    this.logger.debug('Debug events endpoint called');
+    
+    try {
+      // Get raw event data
+      const rawEvents = await this.memoryService.getRawEvents();
+      
+      return {
+        success: true,
+        totalEvents: rawEvents.length,
+        events: rawEvents.slice(0, 5), // First 5 events
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Debug events error', { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
 }

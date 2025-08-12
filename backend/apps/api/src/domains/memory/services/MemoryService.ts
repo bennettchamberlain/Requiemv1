@@ -111,6 +111,16 @@ export class MemoryService {
     context: RequestContext,
     params: MemorySearchParams,
   ): Promise<[EventEntity[], number]> {
+    // First, let's check if there are any events at all for this user
+    const totalEvents = await this.eventRepo.count({
+      where: { user: { id: context.userId } }
+    });
+    
+    this.logger.debug('Total events for user', { 
+      userId: context.userId, 
+      totalEvents 
+    });
+
     const query = this.eventRepo
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.tags', 'tags')
@@ -133,10 +143,28 @@ export class MemoryService {
     }
 
     const sql = query.getSql();
-    this.logger.debug('Event query SQL', { sql, userId: context.userId });
+    const parameters = query.getParameters();
+    this.logger.debug('Event query details', { 
+      sql, 
+      parameters,
+      userId: context.userId 
+    });
 
     const result = await query.getManyAndCount();
-    this.logger.debug('Event query result', { count: result[1], userId: context.userId });
+    
+    // Log sample event if we have any
+    if (result[0].length > 0) {
+      this.logger.debug('Sample event', { 
+        event: result[0][0],
+        userId: context.userId 
+      });
+    }
+    
+    this.logger.debug('Event query result', { 
+      count: result[1], 
+      returnedCount: result[0].length,
+      userId: context.userId 
+    });
 
     return result;
   }
@@ -212,36 +240,49 @@ export class MemoryService {
   private async eventToMemory(event: EventEntity): Promise<Memory> {
     let location: MemoryLocation | undefined;
     
-    // First, try to find associated locations through the locations table
-    const eventLocations = await this.locationRepo.find({
-      where: { 
-        user: { id: event.user?.id },
-        datetime: event.start_time
-      },
-      relations: ['place'],
-      take: 1
+    // Log the event we're converting
+    this.logger.debug('Converting event to memory', {
+      eventId: event.id,
+      eventName: event.name,
+      eventType: event.type,
+      hasStartTime: !!event.start_time,
+      startTime: event.start_time,
+      hasUser: !!event.user,
+      userId: event.user?.id
     });
+    
+    // First, try to find associated locations through the locations table
+    if (event.user?.id && event.start_time) {
+      const eventLocations = await this.locationRepo.find({
+        where: { 
+          user: { id: event.user.id },
+          datetime: event.start_time
+        },
+        relations: ['place'],
+        take: 1
+      });
 
-    if (eventLocations.length > 0) {
-      const loc = eventLocations[0];
-      if (loc.geolocation && typeof loc.geolocation === 'object') {
-        const geo = loc.geolocation as any;
-        if (geo.lat && geo.lng) {
-          location = {
-            id: loc.id,
-            name: loc.place?.name || null,
-            lat: parseFloat(geo.lat),
-            lng: parseFloat(geo.lng),
-            address: loc.place?.name || undefined,
-          };
-        } else if (geo.latitude && geo.longitude) {
-          location = {
-            id: loc.id,
-            name: loc.place?.name || null,
-            lat: parseFloat(geo.latitude),
-            lng: parseFloat(geo.longitude),
-            address: loc.place?.name || undefined,
-          };
+      if (eventLocations.length > 0) {
+        const loc = eventLocations[0];
+        if (loc.geolocation && typeof loc.geolocation === 'object') {
+          const geo = loc.geolocation as any;
+          if (geo.lat && geo.lng) {
+            location = {
+              id: loc.id,
+              name: loc.place?.name || null,
+              lat: parseFloat(geo.lat),
+              lng: parseFloat(geo.lng),
+              address: loc.place?.name || undefined,
+            };
+          } else if (geo.latitude && geo.longitude) {
+            location = {
+              id: loc.id,
+              name: loc.place?.name || null,
+              lat: parseFloat(geo.latitude),
+              lng: parseFloat(geo.longitude),
+              address: loc.place?.name || undefined,
+            };
+          }
         }
       }
     }
@@ -269,7 +310,7 @@ export class MemoryService {
       locationData: location 
     });
 
-    return {
+    const memory: Memory = {
       id: event.id,
       type: 'event',
       title: event.name || 'Untitled Event',
@@ -285,6 +326,14 @@ export class MemoryService {
         sourceUrl: event.source_url,
       },
     };
+
+    this.logger.debug('Created memory from event', {
+      memoryId: memory.id,
+      memoryTitle: memory.title,
+      memoryTimestamp: memory.timestamp
+    });
+
+    return memory;
   }
 
   private async contentToMemory(content: ContentEntity): Promise<Memory> {
@@ -405,9 +454,32 @@ export class MemoryService {
       take: 5
     });
 
+    // Also get event count
+    const eventCount = await this.eventRepo.count({
+      where: { user: { id: context.userId } }
+    });
+
+    const contentCount = await this.contentRepo.count({
+      where: { user: { id: context.userId } }
+    });
+
+    const personCount = await this.personRepo.count({
+      where: { user: { id: context.userId } }
+    });
+
+    const thingCount = await this.thingRepo.count({
+      where: { user: { id: context.userId } }
+    });
+
     return {
-      locationCount: locCount,
-      placeCount: placeCount,
+      counts: {
+        events: eventCount,
+        contents: contentCount,
+        people: personCount,
+        things: thingCount,
+        locations: locCount,
+        places: placeCount
+      },
       sampleLocations: locations.map(l => ({
         id: l.id,
         datetime: l.datetime,
@@ -420,5 +492,27 @@ export class MemoryService {
         geolocation: p.geolocation
       }))
     };
+  }
+
+  async getRawEvents() {
+    // Get all events without any filtering to see what's in the database
+    const events = await this.eventRepo
+      .createQueryBuilder('event')
+      .leftJoinAndSelect('event.user', 'user')
+      .leftJoinAndSelect('event.tags', 'tags')
+      .limit(10)
+      .getMany();
+
+    return events.map(event => ({
+      id: event.id,
+      name: event.name,
+      type: event.type,
+      userId: event.user?.id,
+      startTime: event.start_time,
+      endTime: event.end_time,
+      hasUser: !!event.user,
+      tagCount: event.tags?.length || 0,
+      createdAt: event.created_at
+    }));
   }
 }
