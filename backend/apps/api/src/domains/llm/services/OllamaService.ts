@@ -116,75 +116,116 @@ export class OllamaService {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal, enableTools = false } = resolvedOptions;
 
-    // Step 1: Get available tools and make initial non-streaming call to check for tool calls
-    const availableTools = this.toolRegistry.getAvailableTools(context);
+    const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
     const chunks: string[] = [];
     const toolCalls: ToolCall[] = [];
-    const ollamaMessages = this.toOllamaMessages(messages);
+    const inputMessages = this.toOllamaMessages(messages);
+    const accumulatedMessages: OllamaMessage[] = [];
 
     const stream = (async function* (self) {
       do {
-        chunks.splice(0, chunks.length);
-        toolCalls.splice(0, toolCalls.length);
-
-        const iterator = await ollama.chat({
-          model,
-          messages: ollamaMessages.slice(),
-          stream: true,
-          ...(enableTools &&
-            ollamaTools.length > 0 &&
-            ollamaMessages[ollamaMessages.length - 1].role !== 'tool' && { tools: ollamaTools }),
-        });
-
-        signal?.addEventListener('abort', () => {
-          iterator.abort();
-        });
-
-        for await (const chunk of iterator) {
-          if (chunk.message.content) {
-            chunks.push(chunk.message.content);
-          } else if (chunk.message.tool_calls) {
-            // We are assuming that the tool_calls won't span across multiple tokens.
-            // There are some poorly trained models that don't adhere to this specification.
-            // Since we have control over the models that we're installing, we'll hand wave this away
-            // with an assumption that tool calls will always take the form (non-limiting e.g.):
-            //
-            // [
-            //   {
-            //     function: {
-            //       name: 'get_user_preferences',
-            //       arguments: {
-            //         category: 'food',
-            //         userId: 'current',
-            //       },
-            //     },
-            //   },
-            // ]
-
-            toolCalls.push(...chunk.message.tool_calls);
-          }
-
-          yield chunk;
+        if (signal?.aborted) {
+          break;
         }
 
-        ollamaMessages.push({
-          role: 'assistant',
-          content: chunks.join(''),
-        } satisfies OllamaMessage);
+        let lastChunk: ChatResponse | undefined;
+        let handleAbort = () => {};
 
-        if (toolCalls.length > 0) {
-          const toolEvaluations = await self.newHandleToolCalls(context, toolCalls.slice());
+        // Flush the chunk buffer at the start of every iteration.
+        chunks.splice(0, chunks.length);
 
-          ollamaMessages.push(...toolEvaluations);
+        // Pop off any previously required tool calls and evaluate them.
+        // Notably this will always be empty on the first iteration.
+        const iterationToolCalls = toolCalls.splice(0, toolCalls.length);
+        const toolEvaluations = await self.newHandleToolCalls(context, iterationToolCalls);
+
+        // Tool evaluations may result in new accumulated messages.
+        // We feed these forward into additional Ollama calls.
+        accumulatedMessages.push(...toolEvaluations);
+
+        // We only enable tools in this iteration if:
+        //
+        //   1. Tools are enabled for the service call
+        //   2. Tools are configured / available in the system
+        //   3. We did not evaluate any tools from the previous iteration
+        //
+        // This is important to get right.
+        const iterationWillCallTools = enableTools && ollamaTools.length > 0 && toolEvaluations.length === 0;
+
+        try {
+          const iterator = await ollama.chat({
+            model,
+            messages: inputMessages.concat(accumulatedMessages),
+            stream: true,
+            ...(iterationWillCallTools && { tools: ollamaTools }),
+          });
+
+          handleAbort = () => iterator.abort();
+
+          signal?.addEventListener('abort', handleAbort);
+
+          for await (const chunk of iterator) {
+            lastChunk = chunk;
+
+            if (chunk.message.content) {
+              chunks.push(chunk.message.content);
+            }
+
+            if (chunk.message.tool_calls) {
+              toolCalls.push(...chunk.message.tool_calls);
+            }
+
+            yield chunk;
+          }
+
+          if (lastChunk?.done) {
+            self.logger.log('Ollama prompt evaluation completed', {
+              model: lastChunk.model,
+              totalDuration: lastChunk.total_duration ? lastChunk.total_duration / 1_000_000 : undefined,
+              loadDuration: lastChunk.load_duration ? lastChunk.load_duration / 1_000_000 : undefined,
+              evalDuration: lastChunk.prompt_eval_duration
+                ? lastChunk.prompt_eval_duration / 1_000_000
+                : undefined,
+              promptCount: lastChunk.prompt_eval_count,
+              evalCount: lastChunk.eval_count,
+              doneReason: lastChunk.done_reason,
+            });
+          }
+        } catch (err) {
+          if (!(err instanceof DOMException && err.name === 'AbortError')) {
+            self.logger.error('Ollama prompt evaluation completed', {
+              model: lastChunk?.model ?? resolvedOptions.model,
+              doneReason: 'error',
+            });
+
+            break;
+          }
+        } finally {
+          const message = {
+            role: 'assistant',
+            content: chunks.join(''),
+            ...(toolCalls.length > 0 && { tool_calls: toolCalls.slice() }),
+          } satisfies OllamaMessage;
+
+          accumulatedMessages.push(message);
+
+          signal?.removeEventListener('abort', handleAbort);
+
+          if (signal?.aborted) {
+            self.logger.log('Ollama prompt evaluation completed', {
+              model: lastChunk?.model ?? resolvedOptions.model,
+              doneReason: 'canceled',
+            });
+          }
         }
       } while (toolCalls.length > 0);
     })(this);
 
     Object.defineProperty(stream, 'messages', {
       enumerable: true,
-      get: () => ollamaMessages,
+      get: () => accumulatedMessages,
     });
 
     return stream as typeof stream & { messages: OllamaMessage[] };
@@ -319,6 +360,14 @@ export class OllamaService {
   }
 
   private async newHandleToolCalls(context: RequestContext, toolCalls: ToolCall[]): Promise<OllamaMessage[]> {
+    if (toolCalls.length === 0) {
+      this.logger.debug('No tool calls to evaluate, skipping handling', {
+        userId: context.userId,
+      });
+
+      return [];
+    }
+
     this.logger.debug('Processing tool calls', {
       toolCallCount: toolCalls.length,
       toolNames: toolCalls.map((tc) => tc.function.name),
@@ -468,7 +517,6 @@ export class OllamaService {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal } = resolvedOptions;
 
-    // Step 1: Get available tools and make initial non-streaming call to check for tool calls
     const availableTools = this.toolRegistry.getAvailableTools(context);
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
