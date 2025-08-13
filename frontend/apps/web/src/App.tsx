@@ -19,7 +19,7 @@ const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
-
+const ActionsPage = lazy(() => import('@/pages/ActionsPage'));
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
@@ -80,7 +80,7 @@ function AppRoutes() {
           path="/actions"
           element={
             <ProtectedRoute>
-              <div>Actions page</div>
+              <ActionsPage />
             </ProtectedRoute>
           }
         />
