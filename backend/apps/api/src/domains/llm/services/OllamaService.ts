@@ -139,7 +139,7 @@ export class OllamaService {
         // Pop off any previously required tool calls and evaluate them.
         // Notably this will always be empty on the first iteration.
         const iterationToolCalls = toolCalls.splice(0, toolCalls.length);
-        const toolEvaluations = await self.newHandleToolCalls(context, iterationToolCalls);
+        const toolEvaluations = await self.handleToolCalls(context, iterationToolCalls);
 
         // Tool evaluations may result in new accumulated messages.
         // We feed these forward into additional Ollama calls.
@@ -264,7 +264,7 @@ export class OllamaService {
       return response;
     }
 
-    const toolEvaluations = await this.newHandleToolCalls(context, response.message.tool_calls ?? []);
+    const toolEvaluations = await this.handleToolCalls(context, response.message.tool_calls ?? []);
 
     accumulatedMessages.push(...toolEvaluations);
 
@@ -344,7 +344,7 @@ export class OllamaService {
     });
   }
 
-  private async newHandleToolCalls(context: RequestContext, toolCalls: ToolCall[]): Promise<OllamaMessage[]> {
+  private async handleToolCalls(context: RequestContext, toolCalls: ToolCall[]): Promise<OllamaMessage[]> {
     if (toolCalls.length === 0) {
       this.logger.debug('No tool calls to evaluate, skipping handling', {
         userId: context.userId,
