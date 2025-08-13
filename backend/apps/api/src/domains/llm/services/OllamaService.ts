@@ -19,7 +19,7 @@ import {
   GetStreamingAvailabilityTool,
   type ToolSchema,
 } from '../tools';
-import type { Message, OllamaModel } from '../types';
+import type { OllamaModel } from '../types';
 
 import { MessageService } from './MessageService';
 
@@ -31,8 +31,6 @@ interface PromptOptions {
   signal?: AbortSignal;
   enableTools?: boolean;
 }
-
-type MessagesInput = Pick<Message, 'prompt' | 'text'>[];
 
 @Injectable()
 export class OllamaService {
@@ -110,13 +108,13 @@ export class OllamaService {
 
   async chatStream(
     context: RequestContext,
-    messages: MessagesInput,
+    messages: OllamaMessage[],
     options?: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal, enableTools = false } = resolvedOptions;
 
-    const inputMessages = this.toOllamaMessages(messages);
+    const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
@@ -233,13 +231,13 @@ export class OllamaService {
 
   async chat(
     context: RequestContext,
-    messages: MessagesInput,
+    messages: OllamaMessage[],
     options?: Omit<PromptOptions, 'signal'>,
   ): Promise<ChatResponse> {
     const resolvedOptions = options ?? ({} as PromptOptions);
     const { model = PROMPT_MODEL, enableTools = false } = resolvedOptions;
 
-    const inputMessages = this.toOllamaMessages(messages);
+    const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
@@ -286,19 +284,6 @@ export class OllamaService {
     }
 
     return validModel;
-  }
-
-  private toOllamaMessages(messages: MessagesInput): OllamaMessage[] {
-    const ollamaMessages: OllamaMessage[] = messages.map(
-      (message) =>
-        ({
-          // TODO: Change this to assistant, and realistically we need to make this better than a binary in the database, constrained enum string?
-          role: message.prompt ? 'user' : 'system',
-          content: message.text ?? '',
-        }) satisfies OllamaMessage,
-    );
-
-    return ollamaMessages;
   }
 
   private parseOllamaModel(model: string): OllamaModel {
