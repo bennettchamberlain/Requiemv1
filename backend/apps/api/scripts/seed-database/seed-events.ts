@@ -63,7 +63,7 @@ export async function seedEvents(db: DataSource, filePath: string) {
       // Add data_source to source_data if present
       if (record.data_source) {
         sourceData = sourceData || {};
-        sourceData.data_source = record.data_source;
+        (sourceData as any).data_source = record.data_source;
       }
 
       await manager.save(EventEntity, {
