@@ -15,6 +15,7 @@ const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
+const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
@@ -121,7 +122,7 @@ function AppRoutes() {
           path="/jobs"
           element={
             <ProtectedRoute>
-              <div>Jobs page</div>
+              <JobsPage />
             </ProtectedRoute>
           }
         />
