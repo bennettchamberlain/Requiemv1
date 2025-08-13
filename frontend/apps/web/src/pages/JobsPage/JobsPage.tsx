@@ -1,27 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { 
-  Breadcrumb, 
-  Button, 
-  Card, 
-  Badge, 
-  Dialog, 
-  Input, 
-  Label, 
-  Select,
-  Progress,
-  Tabs
-} from '@ci/shadcn';
-import { 
-  Clock, 
-  Play, 
-  Pause, 
-  CheckCircle, 
-  AlertCircle, 
+import { Breadcrumb, Button, Card, Badge, Dialog, Input, Label, Select, Progress, Tabs } from '@ci/shadcn';
+import {
+  Clock,
+  Play,
+  Pause,
+  CheckCircle,
   Calendar,
   Plus,
-  MoreHorizontal,
   Edit,
   Trash2,
   RefreshCw,
@@ -29,23 +16,15 @@ import {
   CalendarDays,
   Timer,
   Target,
-  TrendingUp,
   Users,
-  Mail,
   FileText,
   ShoppingCart,
-  Coffee,
   BookOpen,
   Dumbbell,
-  Palette,
   Music,
-  Camera,
   Plane,
-  Car,
-  Home,
   Briefcase,
   Filter,
-  SortAsc
 } from '@ci/shadcn/icons';
 
 export interface Job {
@@ -58,7 +37,7 @@ export interface Job {
   readonly scheduledFor?: Date;
   readonly estimatedDuration: number; // in minutes
   readonly progress?: number; // 0-100
-  readonly icon: React.ComponentType<any>;
+  readonly icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
   readonly color: string;
   readonly tags: string[];
   readonly recurring?: {
@@ -94,8 +73,8 @@ export function JobsPage() {
       tags: ['fitness', 'morning-routine'],
       recurring: {
         frequency: 'daily',
-        nextOccurrence: new Date(Date.now() + 24 * 60 * 60 * 1000)
-      }
+        nextOccurrence: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
     },
     {
       id: '2',
@@ -108,7 +87,7 @@ export function JobsPage() {
       estimatedDuration: 45,
       icon: Briefcase,
       color: 'bg-purple-500',
-      tags: ['work', 'review', 'deadline']
+      tags: ['work', 'review', 'deadline'],
     },
     {
       id: '3',
@@ -121,7 +100,7 @@ export function JobsPage() {
       estimatedDuration: 60,
       icon: ShoppingCart,
       color: 'bg-green-500',
-      tags: ['shopping', 'meal-prep']
+      tags: ['shopping', 'meal-prep'],
     },
     {
       id: '4',
@@ -133,7 +112,7 @@ export function JobsPage() {
       estimatedDuration: 30,
       icon: BookOpen,
       color: 'bg-orange-500',
-      tags: ['learning', 'programming', 'design-patterns']
+      tags: ['learning', 'programming', 'design-patterns'],
     },
     {
       id: '5',
@@ -146,7 +125,7 @@ export function JobsPage() {
       estimatedDuration: 20,
       icon: Users,
       color: 'bg-pink-500',
-      tags: ['family', 'personal']
+      tags: ['family', 'personal'],
     },
     {
       id: '6',
@@ -158,7 +137,7 @@ export function JobsPage() {
       estimatedDuration: 90,
       icon: Plane,
       color: 'bg-cyan-500',
-      tags: ['travel', 'planning', 'vacation']
+      tags: ['travel', 'planning', 'vacation'],
     },
     {
       id: '7',
@@ -171,7 +150,7 @@ export function JobsPage() {
       progress: 100,
       icon: Music,
       color: 'bg-yellow-500',
-      tags: ['music', 'hobby', 'practice']
+      tags: ['music', 'hobby', 'practice'],
     },
     {
       id: '8',
@@ -183,8 +162,8 @@ export function JobsPage() {
       estimatedDuration: 60,
       icon: FileText,
       color: 'bg-red-500',
-      tags: ['portfolio', 'career', 'update']
-    }
+      tags: ['portfolio', 'career', 'update'],
+    },
   ];
 
   useEffect(() => {
@@ -197,64 +176,74 @@ export function JobsPage() {
 
   const getStatusColor = (status: Job['status']) => {
     switch (status) {
-      case 'running': return 'bg-blue-500';
-      case 'completed': return 'bg-green-500';
-      case 'failed': return 'bg-red-500';
-      case 'scheduled': return 'bg-purple-500';
-      default: return 'bg-gray-500';
+      case 'running':
+        return 'bg-blue-500';
+      case 'completed':
+        return 'bg-green-500';
+      case 'failed':
+        return 'bg-red-500';
+      case 'scheduled':
+        return 'bg-purple-500';
+      default:
+        return 'bg-gray-500';
     }
   };
 
   const getPriorityColor = (priority: Job['priority']) => {
     switch (priority) {
-      case 'urgent': return 'bg-red-500';
-      case 'high': return 'bg-orange-500';
-      case 'medium': return 'bg-yellow-500';
-      default: return 'bg-gray-500';
+      case 'urgent':
+        return 'bg-red-500';
+      case 'high':
+        return 'bg-orange-500';
+      case 'medium':
+        return 'bg-yellow-500';
+      default:
+        return 'bg-gray-500';
     }
   };
 
   const getPriorityText = (priority: Job['priority']) => {
     switch (priority) {
-      case 'urgent': return 'Urgent';
-      case 'high': return 'High';
-      case 'medium': return 'Medium';
-      default: return 'Low';
+      case 'urgent':
+        return 'Urgent';
+      case 'high':
+        return 'High';
+      case 'medium':
+        return 'Medium';
+      default:
+        return 'Low';
     }
   };
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
+    return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
-      hour12: true
+      hour12: true,
     });
   };
 
   const getFilteredJobs = (tab: string) => {
-    if (tab === 'all') return jobs;
-    return jobs.filter(job => job.status === tab);
+    if (tab === 'all') {
+      return jobs;
+    }
+
+    return jobs.filter((job) => job.status === tab);
   };
 
   const sortedJobs = [...getFilteredJobs(activeTab)].sort((a, b) => {
     switch (sortBy) {
-      case 'priority':
+      case 'priority': {
         const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 };
+
         return priorityOrder[b.priority] - priorityOrder[a.priority];
+      }
+
       case 'time':
         if (a.scheduledFor && b.scheduledFor) {
           return a.scheduledFor.getTime() - b.scheduledFor.getTime();
         }
+
         return 0;
       case 'category':
         return a.category.localeCompare(b.category);
@@ -265,38 +254,30 @@ export function JobsPage() {
 
   const stats = {
     total: jobs.length,
-    running: jobs.filter(j => j.status === 'running').length,
-    pending: jobs.filter(j => j.status === 'pending').length,
-    completed: jobs.filter(j => j.status === 'completed').length,
-    scheduled: jobs.filter(j => j.status === 'scheduled').length
+    running: jobs.filter((j) => j.status === 'running').length,
+    pending: jobs.filter((j) => j.status === 'pending').length,
+    completed: jobs.filter((j) => j.status === 'completed').length,
+    scheduled: jobs.filter((j) => j.status === 'scheduled').length,
   };
 
   const handleStartJob = (jobId: string) => {
-    setJobs(prev => prev.map(job => 
-      job.id === jobId 
-        ? { ...job, status: 'running' as const, progress: 0 }
-        : job
-    ));
+    setJobs((prev) =>
+      prev.map((job) => (job.id === jobId ? { ...job, status: 'running' as const, progress: 0 } : job)),
+    );
   };
 
   const handlePauseJob = (jobId: string) => {
-    setJobs(prev => prev.map(job => 
-      job.id === jobId 
-        ? { ...job, status: 'pending' as const }
-        : job
-    ));
+    setJobs((prev) => prev.map((job) => (job.id === jobId ? { ...job, status: 'pending' as const } : job)));
   };
 
   const handleCompleteJob = (jobId: string) => {
-    setJobs(prev => prev.map(job => 
-      job.id === jobId 
-        ? { ...job, status: 'completed' as const, progress: 100 }
-        : job
-    ));
+    setJobs((prev) =>
+      prev.map((job) => (job.id === jobId ? { ...job, status: 'completed' as const, progress: 100 } : job)),
+    );
   };
 
   const handleDeleteJob = (jobId: string) => {
-    setJobs(prev => prev.filter(job => job.id !== jobId));
+    setJobs((prev) => prev.filter((job) => job.id !== jobId));
   };
 
   if (loading) {
@@ -326,14 +307,12 @@ export function JobsPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-            {/* Header and Stats Section */}
+      {/* Header and Stats Section */}
       <div className="mb-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Job Queue</h1>
-            <p className="text-muted-foreground mt-1">
-              Manage your personal assistant's tasks and schedule
-            </p>
+            <p className="text-muted-foreground mt-1">Manage your personal assistant's tasks and schedule</p>
           </div>
           <Button onClick={() => setShowCreateModal(true)} className="w-full lg:w-auto">
             <Plus className="h-4 w-4 mr-2" />
@@ -406,7 +385,10 @@ export function JobsPage() {
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium text-muted-foreground">Sort by:</span>
-              <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+              <Select
+                value={sortBy}
+                onValueChange={(value: 'priority' | 'time' | 'category') => setSortBy(value)}
+              >
                 <Select.Trigger className="w-[140px]">
                   <Select.Value />
                 </Select.Trigger>
@@ -447,10 +429,9 @@ export function JobsPage() {
                   <Zap className="h-12 w-12 mx-auto text-muted-foreground" />
                   <h3 className="text-lg font-semibold">No jobs found</h3>
                   <p className="text-muted-foreground max-w-sm mx-auto">
-                    {activeTab === 'all' 
+                    {activeTab === 'all'
                       ? "You're all caught up! Add a new job to get started."
-                      : `No ${activeTab} jobs found. Try changing the tab or add a new job.`
-                    }
+                      : `No ${activeTab} jobs found. Try changing the tab or add a new job.`}
                   </p>
                   <Button onClick={() => setShowCreateModal(true)}>
                     <Plus className="h-4 w-4 mr-2" />
@@ -461,7 +442,11 @@ export function JobsPage() {
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {sortedJobs.map((job) => (
-                  <Card key={job.id} className="relative overflow-hidden hover:shadow-md transition-all duration-200 border-l-4" style={{ borderLeftColor: getStatusColor(job.status).replace('bg-', '') }}>
+                  <Card
+                    key={job.id}
+                    className="relative overflow-hidden hover:shadow-md transition-all duration-200 border-l-4"
+                    style={{ borderLeftColor: getStatusColor(job.status).replace('bg-', '') }}
+                  >
                     <Card.Header className="pb-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start space-x-3 flex-1 min-w-0">
@@ -470,11 +455,16 @@ export function JobsPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <Card.Title className="text-base font-semibold truncate">{job.title}</Card.Title>
-                            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{job.description}</p>
+                            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                              {job.description}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2 flex-shrink-0">
-                          <Badge variant="secondary" className={`${getPriorityColor(job.priority)} text-white text-xs`}>
+                          <Badge
+                            variant="secondary"
+                            className={`${getPriorityColor(job.priority)} text-white text-xs`}
+                          >
                             {getPriorityText(job.priority)}
                           </Badge>
                         </div>
@@ -527,8 +517,8 @@ export function JobsPage() {
                       <div className="flex items-center justify-between pt-2">
                         <div className="flex items-center space-x-2">
                           {job.status === 'pending' && (
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               onClick={() => handleStartJob(job.id)}
                               className="bg-green-600 hover:bg-green-700"
                             >
@@ -538,16 +528,12 @@ export function JobsPage() {
                           )}
                           {job.status === 'running' && (
                             <>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => handlePauseJob(job.id)}
-                              >
+                              <Button size="sm" variant="outline" onClick={() => handlePauseJob(job.id)}>
                                 <Pause className="h-4 w-4 mr-1" />
                                 Pause
                               </Button>
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 onClick={() => handleCompleteJob(job.id)}
                                 className="bg-blue-600 hover:bg-blue-700"
                               >
@@ -557,8 +543,8 @@ export function JobsPage() {
                             </>
                           )}
                           {job.status === 'failed' && (
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               onClick={() => handleStartJob(job.id)}
                               className="bg-orange-600 hover:bg-orange-700"
                             >
@@ -568,8 +554,8 @@ export function JobsPage() {
                           )}
                         </div>
                         <div className="flex items-center space-x-1">
-                          <Button 
-                            variant="ghost" 
+                          <Button
+                            variant="ghost"
                             size="sm"
                             onClick={() => {
                               setSelectedJob(job);
@@ -578,11 +564,7 @@ export function JobsPage() {
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => handleDeleteJob(job.id)}
-                          >
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteJob(job.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -596,16 +578,12 @@ export function JobsPage() {
         </Tabs>
       </div>
 
-
-
       {/* Create Job Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
         <Dialog.Content className="sm:max-w-[500px]">
           <Dialog.Header>
             <Dialog.Title>Add New Job</Dialog.Title>
-            <Dialog.Description>
-              Create a new task for your personal assistant to handle.
-            </Dialog.Description>
+            <Dialog.Description>Create a new task for your personal assistant to handle.</Dialog.Description>
           </Dialog.Header>
 
           <div className="grid gap-4 py-4">
@@ -671,9 +649,7 @@ export function JobsPage() {
             <Button variant="outline" onClick={() => setShowCreateModal(false)}>
               Cancel
             </Button>
-            <Button onClick={() => setShowCreateModal(false)}>
-              Create Job
-            </Button>
+            <Button onClick={() => setShowCreateModal(false)}>Create Job</Button>
           </Dialog.Footer>
         </Dialog.Content>
       </Dialog>
@@ -683,9 +659,7 @@ export function JobsPage() {
         <Dialog.Content className="sm:max-w-[500px]">
           <Dialog.Header>
             <Dialog.Title>Edit Job</Dialog.Title>
-            <Dialog.Description>
-              Update the details of this job.
-            </Dialog.Description>
+            <Dialog.Description>Update the details of this job.</Dialog.Description>
           </Dialog.Header>
 
           {selectedJob && (
@@ -741,9 +715,7 @@ export function JobsPage() {
             <Button variant="outline" onClick={() => setShowEditModal(false)}>
               Cancel
             </Button>
-            <Button onClick={() => setShowEditModal(false)}>
-              Save Changes
-            </Button>
+            <Button onClick={() => setShowEditModal(false)}>Save Changes</Button>
           </Dialog.Footer>
         </Dialog.Content>
       </Dialog>
