@@ -116,12 +116,12 @@ export class OllamaService {
     const resolvedOptions = options ?? {};
     const { model = PROMPT_MODEL, signal, enableTools = false } = resolvedOptions;
 
+    const inputMessages = this.toOllamaMessages(messages);
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
     const chunks: string[] = [];
     const toolCalls: ToolCall[] = [];
-    const inputMessages = this.toOllamaMessages(messages);
     const accumulatedMessages: OllamaMessage[] = [];
 
     const stream = (async function* (self) {
@@ -239,54 +239,39 @@ export class OllamaService {
     const resolvedOptions = options ?? ({} as PromptOptions);
     const { model = PROMPT_MODEL, enableTools = false } = resolvedOptions;
 
-    // If tools are enabled, use function calling
-    if (enableTools) {
-      return this.chatWithTools(context, messages, options);
+    const inputMessages = this.toOllamaMessages(messages);
+    const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
+    const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
+
+    const accumulatedMessages: OllamaMessage[] = [];
+
+    const response = await ollama.chat({
+      model,
+      messages: inputMessages,
+      ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
+    });
+
+    const willCallTools =
+      enableTools && response.message.tool_calls && response.message.tool_calls.length > 0;
+
+    accumulatedMessages.push({
+      role: response.message.role,
+      content: response.message.content,
+      ...(willCallTools && { tool_calls: response.message.tool_calls }),
+    } satisfies OllamaMessage);
+
+    if (!willCallTools) {
+      return response;
     }
+
+    const toolEvaluations = await this.newHandleToolCalls(context, response.message.tool_calls ?? []);
+
+    accumulatedMessages.push(...toolEvaluations);
 
     return ollama.chat({
       model,
-      messages: this.toOllamaMessages(messages),
+      messages: inputMessages.concat(accumulatedMessages),
     });
-  }
-
-  /**
-   * Chat with function calling support
-   */
-  async chatWithTools(
-    context: RequestContext,
-    messages: MessagesInput,
-    options?: Omit<PromptOptions, 'signal'>,
-  ): Promise<ChatResponse> {
-    const resolvedOptions = options ?? ({} as PromptOptions);
-    const { model = PROMPT_MODEL } = resolvedOptions;
-
-    // Get available tools
-    const availableTools = this.toolRegistry.getAvailableTools(context);
-    const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
-
-    const requestPayload = {
-      model,
-      messages: this.toOllamaMessages(messages),
-      ...(ollamaTools.length > 0 && { tools: ollamaTools }),
-    };
-
-    this.logger.debug('Sending chat request with tools', {
-      model,
-      messageCount: messages.length,
-      toolCount: ollamaTools.length,
-      toolNames: availableTools.map((t) => t.name),
-      userId: context.userId,
-    });
-
-    const response = await ollama.chat(requestPayload);
-
-    // Handle tool calls if present
-    if (response.message.tool_calls && response.message.tool_calls.length > 0) {
-      return await this.handleToolCalls(context, messages, response, options);
-    }
-
-    return response;
   }
 
   async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
