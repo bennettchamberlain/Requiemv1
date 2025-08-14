@@ -47,7 +47,7 @@ export async function seedEvents(db: DataSource, filePath: string) {
             const items = record.related_objects
               .slice(1, -1)
               .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/) // Split by comma not inside quotes
-              .map(item => item.trim().replace(/^["']|["']$/g, '')); // Remove quotes
+              .map((item) => item.trim().replace(/^["']|["']$/g, '')); // Remove quotes
             parsed = items;
           } else {
             // Try parsing as JSON
@@ -63,7 +63,7 @@ export async function seedEvents(db: DataSource, filePath: string) {
       // Add data_source to source_data if present
       if (record.data_source) {
         sourceData = sourceData || {};
-        (sourceData as any).data_source = record.data_source;
+        (sourceData as Record<string, unknown>).data_source = record.data_source;
       }
 
       await manager.save(EventEntity, {
