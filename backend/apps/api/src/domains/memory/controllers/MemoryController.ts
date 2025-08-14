@@ -33,7 +33,7 @@ const memorySearchSchema = z.object({
 });
 
 @Controller('memory')
-//@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 export class MemoryController {
   private logger = new LoggerService(MemoryController.name);
 

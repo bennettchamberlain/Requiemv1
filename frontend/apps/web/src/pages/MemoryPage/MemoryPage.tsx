@@ -60,8 +60,8 @@ interface MemoryResponse {
 
 // Helper function to get icon for memory type/category
 function getMemoryIcon(memory: MemoryItem): React.ReactNode {
-  const iconClass = "h-5 w-5";
-  
+  const iconClass = 'h-5 w-5';
+
   // First check by type
   switch (memory.type) {
     case 'person':
@@ -73,7 +73,7 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
     case 'content':
       return <FileText className={iconClass} />;
   }
-  
+
   // Then check by category for events
   const category = memory.category.toLowerCase();
   if (category.includes('food') || category.includes('drink') || category.includes('meal')) {
@@ -97,7 +97,7 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
   } else if (category.includes('event')) {
     return <Calendar className={iconClass} />;
   }
-  
+
   // Default icon
   return <Clock className={iconClass} />;
 }
@@ -121,13 +121,16 @@ export function MemoryPage() {
       setError(null);
 
       const params = new URLSearchParams();
-      if (query) params.append('query', query);
+      if (query) {
+        params.append('query', query);
+      }
+
       params.append('limit', '100');
 
-      console.log('MemoryPage: Fetching memories', { 
-        query, 
+      console.log('MemoryPage: Fetching memories', {
+        query,
         authToken: authToken ? 'present' : 'missing',
-        url: `/api/memory?${params.toString()}`
+        url: `/api/memory?${params.toString()}`,
       });
 
       const response = await fetch(`/api/memory?${params.toString()}`, {
@@ -140,27 +143,28 @@ export function MemoryPage() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('MemoryPage: Error response', { 
-          status: response.status, 
+        console.error('MemoryPage: Error response', {
+          status: response.status,
           statusText: response.statusText,
-          body: errorText 
+          body: errorText,
         });
         throw new Error(`Failed to fetch memories: ${response.statusText} - ${errorText}`);
       }
 
       const data: MemoryResponse = await response.json();
-      console.log('MemoryPage: Received data', { 
-        dataLength: data.data.length, 
+      console.log('MemoryPage: Received data', {
+        dataLength: data.data.length,
         total: data.total,
-        firstItem: data.data[0] 
+        firstItem: data.data[0],
       });
-      
+
       // Convert timestamp strings to Date strings for proper display
-      const memoriesWithDates = data.data.map(memory => ({
+      const memoriesWithDates = data.data.map((memory) => ({
         ...memory,
-        timestamp: typeof memory.timestamp === 'string' ? memory.timestamp : new Date(memory.timestamp).toISOString()
+        timestamp:
+          typeof memory.timestamp === 'string' ? memory.timestamp : new Date(memory.timestamp).toISOString(),
       }));
-      
+
       setMemories(memoriesWithDates);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -356,161 +360,164 @@ export function MemoryPage() {
 
         {/* Tabs */}
         {!loading && !error && (
-        <Tabs defaultValue="map" className="w-full" onValueChange={setActiveTab} value={activeTab}>
-          <Tabs.List className="grid grid-cols-4 w-full max-w-2xl mx-auto">
-            <Tabs.Trigger value="map">Map</Tabs.Trigger>
-            <Tabs.Trigger value="list">List</Tabs.Trigger>
-            <Tabs.Trigger value="calendar">Calendar</Tabs.Trigger>
-            <Tabs.Trigger value="insights">Insights</Tabs.Trigger>
-          </Tabs.List>
+          <Tabs defaultValue="map" className="w-full" onValueChange={setActiveTab} value={activeTab}>
+            <Tabs.List className="grid grid-cols-4 w-full max-w-2xl mx-auto">
+              <Tabs.Trigger value="map">Map</Tabs.Trigger>
+              <Tabs.Trigger value="list">List</Tabs.Trigger>
+              <Tabs.Trigger value="calendar">Calendar</Tabs.Trigger>
+              <Tabs.Trigger value="insights">Insights</Tabs.Trigger>
+            </Tabs.List>
 
-          <Tabs.Content value="list" className="mt-6">
-            <div className="rounded-lg border p-4">
-              <h3 className="text-lg font-medium mb-4">Memory Timeline</h3>
+            <Tabs.Content value="list" className="mt-6">
+              <div className="rounded-lg border p-4">
+                <h3 className="text-lg font-medium mb-4">Memory Timeline</h3>
 
-              {memories.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">No memories found matching your search.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {memories.map((memory) => (
-                    <div
-                      key={memory.id}
-                      className="flex items-start gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">{getMemoryIcon(memory)}</div>
-                      <div className="flex-grow min-w-0">
-                        <div className="flex justify-between items-start">
-                          <h4 className="font-medium truncate">{memory.title}</h4>
-                          <div className="flex items-center text-muted-foreground text-sm">
-                            <Clock className="h-3 w-3 mr-1" />
-                            {new Date(memory.timestamp).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
+                {memories.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">No memories found matching your search.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {memories.map((memory) => (
+                      <div
+                        key={memory.id}
+                        className="flex items-start gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
+                          {getMemoryIcon(memory)}
+                        </div>
+                        <div className="flex-grow min-w-0">
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-medium truncate">{memory.title}</h4>
+                            <div className="flex items-center text-muted-foreground text-sm">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {new Date(memory.timestamp).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </div>
+                          </div>
+                          <p className="text-muted-foreground text-sm mt-1">
+                            {memory.description || 'No description'}
+                          </p>
+                          <div className="mt-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10">
+                              {memory.category}
+                            </span>
                           </div>
                         </div>
-                        <p className="text-muted-foreground text-sm mt-1">{memory.description || 'No description'}</p>
-                        <div className="mt-2">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10">
-                            {memory.category}
-                          </span>
-                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Tabs.Content>
-
-
-          <Tabs.Content value="map" className="mt-6">
-            <div className="rounded-lg border p-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium">Memory Map</h3>
-                <div className="text-sm text-muted-foreground">
-                  {memoriesWithLocation.length} location{memoriesWithLocation.length !== 1 ? 's' : ''}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
+            </Tabs.Content>
 
-              {memoriesWithLocation.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">No memories with location data found.</p>
+            <Tabs.Content value="map" className="mt-6">
+              <div className="rounded-lg border p-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium">Memory Map</h3>
+                  <div className="text-sm text-muted-foreground">
+                    {memoriesWithLocation.length} location{memoriesWithLocation.length !== 1 ? 's' : ''}
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div
-                    ref={mapContainerRef}
-                    className="h-[500px] w-full rounded-lg border overflow-hidden shadow-sm"
-                  ></div>
 
-                  <div className="mt-6">
-                    <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-md font-medium">Locations</h4>
-                      <button
-                        className="text-xs text-primary hover:underline"
-                        onClick={() => {
-                          if (mapRef.current && memoriesWithLocation.length > 0) {
-                            const bounds = L.latLngBounds(
-                              memoriesWithLocation
-                                .filter((m) => m.location)
-                                .map((m) => [m.location!.lat, m.location!.lng]),
-                            );
-                            mapRef.current.fitBounds(bounds, { padding: [50, 50] });
-                          }
-                        }}
-                      >
-                        View all
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {memoriesWithLocation.map((memory) => (
-                        <div
-                          key={memory.id}
-                          className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                {memoriesWithLocation.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">No memories with location data found.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div
+                      ref={mapContainerRef}
+                      className="h-[500px] w-full rounded-lg border overflow-hidden shadow-sm"
+                    ></div>
+
+                    <div className="mt-6">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-md font-medium">Locations</h4>
+                        <button
+                          className="text-xs text-primary hover:underline"
                           onClick={() => {
-                            if (mapRef.current && memory.location) {
-                              mapRef.current.setView([memory.location.lat, memory.location.lng], 16);
-
-                              // Find and open the popup for this marker
-                              mapRef.current.eachLayer((layer) => {
-                                if (
-                                  layer instanceof L.Marker &&
-                                  layer.getLatLng().lat === memory.location!.lat &&
-                                  layer.getLatLng().lng === memory.location!.lng
-                                ) {
-                                  layer.openPopup();
-                                }
-                              });
+                            if (mapRef.current && memoriesWithLocation.length > 0) {
+                              const bounds = L.latLngBounds(
+                                memoriesWithLocation
+                                  .filter((m) => m.location)
+                                  .map((m) => [m.location!.lat, m.location!.lng]),
+                              );
+                              mapRef.current.fitBounds(bounds, { padding: [50, 50] });
                             }
                           }}
                         >
-                          <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
-                            <MapPin className="h-4 w-4" />
-                          </div>
-                          <div className="flex-grow min-w-0">
-                            <div className="flex justify-between items-start">
-                              <h5 className="font-medium text-sm truncate">{memory.title}</h5>
-                              <span className="text-xs text-muted-foreground ml-2">
-                                {new Date(memory.timestamp).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </span>
+                          View all
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {memoriesWithLocation.map((memory) => (
+                          <div
+                            key={memory.id}
+                            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                            onClick={() => {
+                              if (mapRef.current && memory.location) {
+                                mapRef.current.setView([memory.location.lat, memory.location.lng], 16);
+
+                                // Find and open the popup for this marker
+                                mapRef.current.eachLayer((layer) => {
+                                  if (
+                                    layer instanceof L.Marker &&
+                                    layer.getLatLng().lat === memory.location!.lat &&
+                                    layer.getLatLng().lng === memory.location!.lng
+                                  ) {
+                                    layer.openPopup();
+                                  }
+                                });
+                              }
+                            }}
+                          >
+                            <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
+                              <MapPin className="h-4 w-4" />
                             </div>
-                            <p className="text-muted-foreground text-xs truncate">
-                              {memory.location?.name || 'Unknown location'}
-                            </p>
+                            <div className="flex-grow min-w-0">
+                              <div className="flex justify-between items-start">
+                                <h5 className="font-medium text-sm truncate">{memory.title}</h5>
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  {new Date(memory.timestamp).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+                              <p className="text-muted-foreground text-xs truncate">
+                                {memory.location?.name || 'Unknown location'}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          </Tabs.Content>
+                )}
+              </div>
+            </Tabs.Content>
 
-          <Tabs.Content value="calendar" className="mt-6">
-            <div className="rounded-lg border p-8 text-center">
-              <h3 className="text-lg font-medium">Calendar View</h3>
-              <p className="text-muted-foreground mt-2">
-                Your memories will be displayed in a calendar format here.
-              </p>
-            </div>
-          </Tabs.Content>
+            <Tabs.Content value="calendar" className="mt-6">
+              <div className="rounded-lg border p-8 text-center">
+                <h3 className="text-lg font-medium">Calendar View</h3>
+                <p className="text-muted-foreground mt-2">
+                  Your memories will be displayed in a calendar format here.
+                </p>
+              </div>
+            </Tabs.Content>
 
-          <Tabs.Content value="insights" className="mt-6">
-            <div className="rounded-lg border p-8 text-center">
-              <h3 className="text-lg font-medium">Insights</h3>
-              <p className="text-muted-foreground mt-2">
-                Analytics and insights about your memories will be displayed here.
-              </p>
-            </div>
-          </Tabs.Content>
-        </Tabs>
+            <Tabs.Content value="insights" className="mt-6">
+              <div className="rounded-lg border p-8 text-center">
+                <h3 className="text-lg font-medium">Insights</h3>
+                <p className="text-muted-foreground mt-2">
+                  Analytics and insights about your memories will be displayed here.
+                </p>
+              </div>
+            </Tabs.Content>
+          </Tabs>
         )}
       </div>
     </>
