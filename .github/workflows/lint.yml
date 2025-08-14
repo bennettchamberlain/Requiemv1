@@ -32,3 +32,9 @@ jobs:
 
       - name: ESLint frontend
         run: yarn workspace @ci/fe-web lint
+
+      - name: TypeScript typecheck backend
+        run: yarn workspace @ci/be-api typecheck
+
+      - name: TypeScript typecheck frontend
+        run: yarn workspace @ci/fe-web typecheck
