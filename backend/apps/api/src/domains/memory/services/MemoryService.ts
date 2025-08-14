@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
@@ -42,9 +42,9 @@ export class MemoryService {
       // Fetch only events as anchors
       const [events, eventsCount] = await this.findEvents(context, params);
 
-      this.logger.debug('Found events', { 
+      this.logger.debug('Found events', {
         eventsCount,
-        userId: context.userId 
+        userId: context.userId,
       });
 
       // Convert events to synthetic Memory objects by hydrating related objects
@@ -65,10 +65,10 @@ export class MemoryService {
         offset,
       };
 
-      this.logger.debug('Returning memory response', { 
+      this.logger.debug('Returning memory response', {
         dataLength: response.data.length,
         total: response.total,
-        memoriesWithLocation: response.data.filter(m => m.location).length
+        memoriesWithLocation: response.data.filter((m) => m.location).length,
       });
 
       return response;
@@ -82,7 +82,7 @@ export class MemoryService {
     // Extract the event ID from synthetic memory ID (format: memory-{eventId}-{type}-{index})
     const parts = id.split('-');
     let eventId: string;
-    
+
     if (parts[0] === 'memory' && parts.length >= 3) {
       eventId = parts[1];
     } else {
@@ -93,17 +93,17 @@ export class MemoryService {
       where: { id: eventId },
       relations: ['tags', 'user'],
     });
-    
+
     if (!event) {
       throw new NotFoundException(`Memory with id ${id} not found`);
     }
 
     // Create synthetic memories from the event
     const syntheticMemories = await this.createSyntheticMemoriesFromEvent(event);
-    
+
     // Find the specific synthetic memory by ID
-    const memory = syntheticMemories.find(m => m.id === id);
-    
+    const memory = syntheticMemories.find((m) => m.id === id);
+
     if (!memory) {
       throw new NotFoundException(`Memory with id ${id} not found`);
     }
@@ -128,21 +128,25 @@ export class MemoryService {
     }
 
     if (params.startDate) {
-      query.andWhere('(event.start_time >= :startDate OR (event.start_time IS NULL AND event.created_at >= :startDate))', 
-        { startDate: params.startDate });
+      query.andWhere(
+        '(event.start_time >= :startDate OR (event.start_time IS NULL AND event.created_at >= :startDate))',
+        { startDate: params.startDate },
+      );
     }
 
     if (params.endDate) {
-      query.andWhere('(event.start_time <= :endDate OR (event.start_time IS NULL AND event.created_at <= :endDate))', 
-        { endDate: params.endDate });
+      query.andWhere(
+        '(event.start_time <= :endDate OR (event.start_time IS NULL AND event.created_at <= :endDate))',
+        { endDate: params.endDate },
+      );
     }
 
     const result = await query.getManyAndCount();
-    
-    this.logger.debug('Event query result', { 
-      count: result[1], 
+
+    this.logger.debug('Event query result', {
+      count: result[1],
       returnedCount: result[0].length,
-      userId: context.userId 
+      userId: context.userId,
     });
 
     return result;
@@ -157,14 +161,13 @@ export class MemoryService {
       .leftJoinAndSelect('content.tags', 'tags')
       .leftJoinAndSelect('content.user', 'user')
       .leftJoinAndSelect('content.event', 'event');
-      // TEMPORARILY DISABLED: User filtering
-      // .where('content.user_id = :userId', { userId: context.userId });
+    // TEMPORARILY DISABLED: User filtering
+    // .where('content.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
-      query.andWhere(
-        '(content.title ILIKE :query OR content.text ILIKE :query)',
-        { query: `%${params.query}%` },
-      );
+      query.andWhere('(content.title ILIKE :query OR content.text ILIKE :query)', {
+        query: `%${params.query}%`,
+      });
     }
 
     const sql = query.getSql();
@@ -184,14 +187,13 @@ export class MemoryService {
       .createQueryBuilder('person')
       .leftJoinAndSelect('person.tags', 'tags')
       .leftJoinAndSelect('person.user', 'user');
-      // TEMPORARILY DISABLED: User filtering
-      // .where('person.user_id = :userId', { userId: context.userId });
+    // TEMPORARILY DISABLED: User filtering
+    // .where('person.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
-      query.andWhere(
-        '(person.first_name ILIKE :query OR person.last_name ILIKE :query)',
-        { query: `%${params.query}%` },
-      );
+      query.andWhere('(person.first_name ILIKE :query OR person.last_name ILIKE :query)', {
+        query: `%${params.query}%`,
+      });
     }
 
     return query.getManyAndCount();
@@ -206,14 +208,13 @@ export class MemoryService {
       .leftJoinAndSelect('thing.tags', 'tags')
       .leftJoinAndSelect('thing.user', 'user')
       .leftJoinAndSelect('thing.event', 'event');
-      // TEMPORARILY DISABLED: User filtering
-      // .where('thing.user_id = :userId', { userId: context.userId });
+    // TEMPORARILY DISABLED: User filtering
+    // .where('thing.user_id = :userId', { userId: context.userId });
 
     if (params.query) {
-      query.andWhere(
-        '(thing.name ILIKE :query OR thing.description ILIKE :query)',
-        { query: `%${params.query}%` },
-      );
+      query.andWhere('(thing.name ILIKE :query OR thing.description ILIKE :query)', {
+        query: `%${params.query}%`,
+      });
     }
 
     return query.getManyAndCount();
@@ -221,33 +222,34 @@ export class MemoryService {
 
   private async eventToMemory(event: EventEntity): Promise<Memory> {
     let location: MemoryLocation | undefined;
-    
+
     // Log the event we're converting
     this.logger.debug('Converting event to memory', {
       eventId: event.id,
       eventType: event.type,
       hasStartTime: !!event.start_time,
       hasSourceData: !!event.source_data,
-      relatedObjects: event.source_data && typeof event.source_data === 'object' 
-        ? (event.source_data as any).related_objects 
-        : undefined
+      relatedObjects:
+        event.source_data && typeof event.source_data === 'object'
+          ? (event.source_data as any).related_objects
+          : undefined,
     });
-    
+
     // First, try to find associated locations through the locations table
     if (event.user?.id && event.start_time) {
       const eventLocations = await this.locationRepo.find({
-        where: { 
+        where: {
           user: { id: event.user.id },
-          datetime: event.start_time
+          datetime: event.start_time,
         },
         relations: ['place'],
-        take: 1
+        take: 1,
       });
 
       if (eventLocations.length > 0) {
         const loc = eventLocations[0];
         if (loc.geolocation && typeof loc.geolocation === 'object') {
-          const geo = loc.geolocation as any;
+          const geo = loc.geolocation as Record<string, unknown>;
           if (geo.lat && geo.lng) {
             location = {
               id: loc.id,
@@ -271,8 +273,8 @@ export class MemoryService {
 
     // If no location found, check source_data for related_objects
     if (!location && event.source_data && typeof event.source_data === 'object') {
-      const sourceData = event.source_data as any;
-      
+      const sourceData = event.source_data as Record<string, unknown>;
+
       // First check for direct location/place data
       if (sourceData.location || sourceData.place) {
         const locData = sourceData.location || sourceData.place;
@@ -289,25 +291,27 @@ export class MemoryService {
       
       // Check for location references in related_objects
       if (!location && sourceData.related_objects) {
-        const relatedObjects = Array.isArray(sourceData.related_objects) 
-          ? sourceData.related_objects 
+        const relatedObjects = Array.isArray(sourceData.related_objects)
+          ? sourceData.related_objects
           : [sourceData.related_objects];
-        
+
         // Look for location references - all locations now start with loc_
         for (const obj of relatedObjects) {
           if (typeof obj === 'string' && obj.startsWith('loc_')) {
             // Try to find a location with this identifier
             location = await this.findLocationByIdentifier(obj, event);
-            if (location) break;
+            if (location) {
+              break;
+            }
           }
         }
       }
     }
 
-    this.logger.debug('Event location data', { 
-      eventId: event.id, 
+    this.logger.debug('Event location data', {
+      eventId: event.id,
       hasLocation: !!location,
-      locationData: location 
+      locationData: location,
     });
 
     // Generate a meaningful title from available data
@@ -322,18 +326,19 @@ export class MemoryService {
       
       // Add activity details from related_objects
       if (event.source_data && typeof event.source_data === 'object') {
-        const sourceData = event.source_data as any;
+        const sourceData = event.source_data as Record<string, unknown>;
         if (sourceData.related_objects && Array.isArray(sourceData.related_objects)) {
           // Extract meaningful details from related objects
           const activities = sourceData.related_objects
-            .filter((obj: string) => 
-              typeof obj === 'string' && 
-              !obj.startsWith('loc_') && // Exclude location references
-              !obj.startsWith('place_') && // Exclude place references
-              (obj.includes('activity_') || obj.includes('duration_') || obj.includes('dist_'))
+            .filter(
+              (obj: string) =>
+                typeof obj === 'string' &&
+                !obj.startsWith('loc_') && // Exclude location references
+                !obj.startsWith('place_') && // Exclude place references
+                (obj.includes('activity_') || obj.includes('duration_') || obj.includes('dist_')),
             )
             .map((obj: string) => obj.replace(/_/g, ' ').replace('-', ' '));
-          
+
           if (activities.length > 0) {
             title += ` (${activities.join(', ')})`;
           }
@@ -346,7 +351,7 @@ export class MemoryService {
 
     // Use created_at as timestamp since start_time is null in your data
     const timestamp = event.start_time || event.created_at;
-    
+
     // Generate description with more context
     let description = event.description;
     if (!description) {
@@ -354,22 +359,22 @@ export class MemoryService {
       
       // Add type and date
       parts.push(`${event.type || 'Event'} on ${new Date(timestamp).toLocaleDateString()}`);
-      
+
       // Add time if available
       if (event.start_time) {
         parts.push(`at ${new Date(event.start_time).toLocaleTimeString()}`);
       }
-      
+
       // Add location if available
       if (location) {
         parts.push(`at ${location.name}`);
       }
-      
+
       // Add source info
       if (event.source_url) {
         parts.push(`(via ${event.source_url})`);
       }
-      
+
       description = parts.join(' ');
     }
 
@@ -381,7 +386,7 @@ export class MemoryService {
       timestamp: timestamp,
       category: event.type || 'Event',
       location,
-      tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+      tags: (event.tags?.map((t) => t.label).filter(Boolean) as string[]) || [],
       userId: event.user?.id || '',
       metadata: {
         endTime: event.end_time,
@@ -389,9 +394,10 @@ export class MemoryService {
         sourceUrl: event.source_url,
         hasStartTime: !!event.start_time,
         originalType: event.type,
-        relatedObjects: event.source_data && typeof event.source_data === 'object' 
-          ? (event.source_data as any).related_objects 
-          : undefined
+        relatedObjects:
+          event.source_data && typeof event.source_data === 'object'
+            ? (event.source_data as any).related_objects
+            : undefined,
       },
     };
 
@@ -408,14 +414,14 @@ export class MemoryService {
   private async contentToMemory(content: ContentEntity): Promise<Memory> {
     // Content might be associated with an event that has location
     let location: MemoryLocation | undefined;
-    
+
     if (content.event) {
       const event = await this.eventRepo.findOne({
         where: { id: content.event.id },
       });
       
       if (event?.source_data && typeof event.source_data === 'object') {
-        const sourceData = event.source_data as any;
+        const sourceData = event.source_data as Record<string, unknown>;
         if (sourceData.location || sourceData.place) {
           const locData = sourceData.location || sourceData.place;
           if (locData.lat && locData.lng) {
@@ -439,7 +445,7 @@ export class MemoryService {
       timestamp: content.created_at,
       category: content.type || 'Content',
       location,
-      tags: content.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+      tags: (content.tags?.map((t) => t.label).filter(Boolean) as string[]) || [],
       userId: content.user?.id || '',
       metadata: {
         url: content.url,
@@ -452,19 +458,20 @@ export class MemoryService {
 
   private async personToMemory(person: PersonEntity): Promise<Memory> {
     let location: MemoryLocation | undefined;
-    
+
     // Check if person has address data that can be geocoded
     if (person.city && person.country) {
       // For now, we'll just note that the person has location data
       // In a real implementation, you might geocode the address
-      this.logger.debug('Person has address', { 
+      this.logger.debug('Person has address', {
         personId: person.id,
         city: person.city,
-        country: person.country 
+        country: person.country,
       });
     }
 
-    const fullName = [person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown Person';
+    const fullName =
+      [person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown Person';
 
     return {
       id: `memory-${person.id}`,
@@ -474,7 +481,7 @@ export class MemoryService {
       timestamp: person.created_at,
       category: person.type || 'Person',
       location,
-      tags: person.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+      tags: (person.tags?.map((t) => t.label).filter(Boolean) as string[]) || [],
       userId: person.user?.id || '',
       metadata: {
         gender: person.gender,
@@ -487,7 +494,7 @@ export class MemoryService {
 
   private async thingToMemory(thing: ThingEntity): Promise<Memory> {
     let location: MemoryLocation | undefined;
-    
+
     // Things might have location through their associated event
     if (thing.event) {
       const eventMemory = await this.eventToMemory(thing.event);
@@ -502,7 +509,7 @@ export class MemoryService {
       timestamp: thing.created_at,
       category: thing.type || 'Thing',
       location,
-      tags: thing.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+      tags: (thing.tags?.map((t) => t.label).filter(Boolean) as string[]) || [],
       userId: thing.user?.id || '',
       metadata: {
         externalId: thing.external_id,
@@ -512,14 +519,14 @@ export class MemoryService {
     };
   }
 
-  async getDebugInfo(context: RequestContext) {
+  async getDebugInfo(_context: RequestContext) {
     // TEMPORARILY DISABLED: User filtering
     const [locations, locCount] = await this.locationRepo.findAndCount({
-      take: 5
+      take: 5,
     });
-    
+
     const [places, placeCount] = await this.placeRepo.findAndCount({
-      take: 5
+      take: 5,
     });
 
     // Also get event count
@@ -538,19 +545,19 @@ export class MemoryService {
         people: personCount,
         things: thingCount,
         locations: locCount,
-        places: placeCount
+        places: placeCount,
       },
-      sampleLocations: locations.map(l => ({
+      sampleLocations: locations.map((l) => ({
         id: l.id,
         datetime: l.datetime,
         geolocation: l.geolocation,
-        placeId: l.place?.id
+        placeId: l.place?.id,
       })),
-      samplePlaces: places.map(p => ({
+      samplePlaces: places.map((p) => ({
         id: p.id,
         name: p.name,
-        geolocation: p.geolocation
-      }))
+        geolocation: p.geolocation,
+      })),
     };
   }
 
@@ -565,7 +572,7 @@ export class MemoryService {
 
     this.logger.debug('Raw events query result', {
       count: events.length,
-      firstEvent: events[0] || null
+      firstEvent: events[0] || null,
     });
 
     // Also check if there are any events without users
@@ -576,7 +583,7 @@ export class MemoryService {
       .getMany();
 
     this.logger.debug('Events without user', {
-      count: eventsWithoutUser.length
+      count: eventsWithoutUser.length,
     });
 
     // Get distinct user IDs from events
@@ -587,20 +594,20 @@ export class MemoryService {
       .getRawMany();
 
     this.logger.debug('Distinct user IDs in events', {
-      userIds: userIds.map(u => u.userId)
+      userIds: userIds.map((u) => u.userId),
     });
 
-    return events.map(event => ({
+    return events.map((event) => ({
       id: event.id,
       name: event.name,
       type: event.type,
       userId: event.user?.id,
-      userIdDirect: (event as any).user_id, // Check if user_id is set directly
+      userIdDirect: (event as Record<string, unknown>).user_id, // Check if user_id is set directly
       startTime: event.start_time,
       endTime: event.end_time,
       hasUser: !!event.user,
       tagCount: event.tags?.length || 0,
-      createdAt: event.created_at
+      createdAt: event.created_at,
     }));
   }
 
@@ -614,11 +621,11 @@ export class MemoryService {
       // Get events without user filter
       const events = await this.eventRepo.find({
         relations: ['user', 'tags'],
-        take: 10
+        take: 10,
       });
 
-      this.logger.debug('Found events without filter', { 
-        eventsCount: events.length
+      this.logger.debug('Found events without filter', {
+        eventsCount: events.length,
       });
 
       // Convert events to synthetic memories
@@ -638,9 +645,9 @@ export class MemoryService {
         offset,
       };
 
-      this.logger.debug('Returning debug memory response', { 
+      this.logger.debug('Returning debug memory response', {
         dataLength: response.data.length,
-        memoriesWithLocation: response.data.filter(m => m.location).length
+        memoriesWithLocation: response.data.filter((m) => m.location).length,
       });
 
       return response;
@@ -652,25 +659,25 @@ export class MemoryService {
 
   async directDatabaseTest() {
     this.logger.warn('DEBUGGING: Direct database test');
-    
-    const results: any = {};
-    
+
+    const results: Record<string, unknown> = {};
+
     try {
       // Test raw SQL queries
       const eventCount = await this.eventRepo.query('SELECT COUNT(*) FROM events');
       results.eventCountRaw = eventCount;
-      
+
       const eventSample = await this.eventRepo.query('SELECT * FROM events LIMIT 5');
       results.eventSampleRaw = eventSample;
-      
+
       // Test TypeORM count
       const eventCountTypeorm = await this.eventRepo.count();
       results.eventCountTypeorm = eventCountTypeorm;
-      
+
       // Test simple find
       const eventFindSimple = await this.eventRepo.find({ take: 5 });
       results.eventFindSimple = eventFindSimple;
-      
+
       // Check table existence
       const tables = await this.eventRepo.query(`
         SELECT table_name 
@@ -679,7 +686,7 @@ export class MemoryService {
         AND table_name IN ('events', 'content', 'people', 'things', 'places', 'locations')
       `);
       results.existingTables = tables;
-      
+
       // Check event table structure
       const eventColumns = await this.eventRepo.query(`
         SELECT column_name, data_type 
@@ -687,7 +694,7 @@ export class MemoryService {
         WHERE table_name = 'events'
       `);
       results.eventColumns = eventColumns;
-      
+
       // Check events with actual data
       const eventsWithData = await this.eventRepo.query(`
         SELECT * FROM events 
@@ -697,7 +704,7 @@ export class MemoryService {
         LIMIT 10
       `);
       results.eventsWithData = eventsWithData;
-      
+
       // Count events by type
       const eventsByType = await this.eventRepo.query(`
         SELECT type, COUNT(*) as count 
@@ -706,37 +713,36 @@ export class MemoryService {
         ORDER BY count DESC
       `);
       results.eventsByType = eventsByType;
-      
     } catch (error) {
       results.error = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error('DEBUGGING: Direct database test error', { error });
     }
-    
+
     return results;
   }
 
   async testEventConversion() {
     this.logger.warn('Testing event conversion');
-    
+
     try {
       // Get a few raw events
       const events = await this.eventRepo.find({
         relations: ['user', 'tags'],
-        take: 5
+        take: 5,
       });
 
       this.logger.warn('Raw events from DB', {
         count: events.length,
-        events: events
+        events: events,
       });
 
       // Convert them to memories
-      const memories = await Promise.all(events.map(e => this.eventToMemory(e)));
+      const memories = await Promise.all(events.map((e) => this.eventToMemory(e)));
 
       return {
         rawEvents: events,
         convertedMemories: memories,
-        conversionCount: memories.length
+        conversionCount: memories.length,
       };
     } catch (error) {
       this.logger.error('Error in testEventConversion', { error });
@@ -746,7 +752,7 @@ export class MemoryService {
 
   async testLocationLookup() {
     this.logger.warn('Testing location lookup');
-    
+
     try {
       // Get some locations
       const locations = await this.locationRepo.find({ take: 5 });
@@ -757,33 +763,33 @@ export class MemoryService {
         .where("event.source_data::text LIKE '%loc_%'")
         .limit(5)
         .getMany();
-      
+
       const results = {
-        locationsInDb: locations.map(l => ({
+        locationsInDb: locations.map((l) => ({
           id: l.id,
           identifier: l.identifier,
-          geolocation: l.geolocation
+          geolocation: l.geolocation,
         })),
-        eventsWithLocationRefs: eventsWithLocations.map(e => ({
+        eventsWithLocationRefs: eventsWithLocations.map((e) => ({
           id: e.id,
           name: e.name,
-          sourceData: e.source_data
-        }))
+          sourceData: e.source_data,
+        })),
       };
 
       // Test conversion of events with locations
       const memoriesWithLocations = await Promise.all(
-        eventsWithLocations.map(e => this.eventToMemory(e))
+        eventsWithLocations.map((e) => this.eventToMemory(e)),
       );
 
       return {
         ...results,
-        memoriesWithLocations: memoriesWithLocations.map(m => ({
+        memoriesWithLocations: memoriesWithLocations.map((m) => ({
           id: m.id,
           title: m.title,
           hasLocation: !!m.location,
-          location: m.location
-        }))
+          location: m.location,
+        })),
       };
     } catch (error) {
       this.logger.error('Error in testLocationLookup', { error });
@@ -791,18 +797,21 @@ export class MemoryService {
     }
   }
 
-  private async findLocationByIdentifier(identifier: string, event: EventEntity): Promise<MemoryLocation | undefined> {
+  private async findLocationByIdentifier(
+    identifier: string,
+    event: EventEntity,
+  ): Promise<MemoryLocation | undefined> {
     this.logger.debug('Looking for location by identifier', { identifier, eventId: event.id });
-    
+
     try {
       // Try to find in locations table by identifier
       const location = await this.locationRepo.findOne({
         where: { identifier: identifier },
-        relations: ['place']
+        relations: ['place'],
       });
 
       if (location && location.geolocation) {
-        const geo = location.geolocation as any;
+        const geo = location.geolocation as Record<string, unknown>;
         // Handle both lng and lon field names
         if (geo.lat && (geo.lng || geo.lon)) {
           return {
@@ -816,16 +825,16 @@ export class MemoryService {
       }
 
       // If not found by identifier, log it for debugging
-      this.logger.debug('Location not found by identifier', { 
-        identifier, 
-        eventId: event.id 
+      this.logger.debug('Location not found by identifier', {
+        identifier,
+        eventId: event.id,
       });
 
       // Since all locations should now be in the database with loc_ prefix,
       // we shouldn't need synthetic locations anymore
       this.logger.warn('Location identifier not found in database', {
         identifier,
-        eventId: event.id
+        eventId: event.id,
       });
 
     } catch (error) {
@@ -837,31 +846,37 @@ export class MemoryService {
 
   private async createSyntheticMemoriesFromEvent(event: EventEntity): Promise<Memory[]> {
     const memories: Memory[] = [];
-    
+
     // Always create the base event memory
     const baseMemory = await this.eventToMemory(event);
     memories.push(baseMemory);
 
     // Extract related objects from source_data
     if (event.source_data && typeof event.source_data === 'object') {
-      const sourceData = event.source_data as any;
+      const sourceData = event.source_data as Record<string, unknown>;
       const relatedObjects = sourceData.related_objects;
-      
+
       if (relatedObjects && Array.isArray(relatedObjects)) {
         for (let i = 0; i < relatedObjects.length; i++) {
           const objRef = relatedObjects[i];
-          
+
           if (typeof objRef === 'string') {
             // Create synthetic memories based on object type
             if (objRef.startsWith('person_')) {
               const personMemory = await this.createSyntheticPersonMemory(objRef, event, i);
-              if (personMemory) memories.push(personMemory);
+              if (personMemory) {
+                memories.push(personMemory);
+              }
             } else if (objRef.startsWith('content_')) {
               const contentMemory = await this.createSyntheticContentMemory(objRef, event, i);
-              if (contentMemory) memories.push(contentMemory);
+              if (contentMemory) {
+                memories.push(contentMemory);
+              }
             } else if (objRef.startsWith('thing_')) {
               const thingMemory = await this.createSyntheticThingMemory(objRef, event, i);
-              if (thingMemory) memories.push(thingMemory);
+              if (thingMemory) {
+                memories.push(thingMemory);
+              }
             }
             // Skip location references as they're used for the event's location
           }
@@ -873,15 +888,15 @@ export class MemoryService {
   }
 
   private async createSyntheticPersonMemory(
-    personRef: string, 
-    event: EventEntity, 
-    index: number
+    personRef: string,
+    event: EventEntity,
+    index: number,
   ): Promise<Memory | null> {
     try {
       // Try to find the actual person entity
       const person = await this.personRepo.findOne({
         where: { external_id: personRef },
-        relations: ['tags', 'user']
+        relations: ['tags', 'user'],
       });
 
       if (person) {
@@ -895,6 +910,7 @@ export class MemoryService {
           eventType: event.type || undefined,
           eventName: event.name || undefined,
         };
+
         return memory;
       }
 
@@ -907,7 +923,7 @@ export class MemoryService {
         timestamp: event.start_time || event.created_at,
         category: 'Person',
         location: await this.getEventLocation(event),
-        tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+        tags: (event.tags?.map((t) => t.label).filter(Boolean) as string[]) || [],
         userId: event.user?.id || '',
         metadata: {
           eventId: event.id,
@@ -924,15 +940,15 @@ export class MemoryService {
   }
 
   private async createSyntheticContentMemory(
-    contentRef: string, 
-    event: EventEntity, 
-    index: number
+    contentRef: string,
+    event: EventEntity,
+    index: number,
   ): Promise<Memory | null> {
     try {
       // Try to find the actual content entity
       const content = await this.contentRepo.findOne({
         where: { external_id: contentRef },
-        relations: ['tags', 'user', 'event']
+        relations: ['tags', 'user', 'event'],
       });
 
       if (content) {
@@ -946,6 +962,7 @@ export class MemoryService {
           eventType: event.type || undefined,
           eventName: event.name || undefined,
         };
+
         return memory;
       }
 
@@ -958,7 +975,7 @@ export class MemoryService {
         timestamp: event.start_time || event.created_at,
         category: 'Content',
         location: await this.getEventLocation(event),
-        tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+        tags: (event.tags?.map((t) => t.label).filter(Boolean) as string[]) || [],
         userId: event.user?.id || '',
         metadata: {
           eventId: event.id,
@@ -975,15 +992,15 @@ export class MemoryService {
   }
 
   private async createSyntheticThingMemory(
-    thingRef: string, 
-    event: EventEntity, 
-    index: number
+    thingRef: string,
+    event: EventEntity,
+    index: number,
   ): Promise<Memory | null> {
     try {
       // Try to find the actual thing entity
       const thing = await this.thingRepo.findOne({
         where: { external_id: thingRef },
-        relations: ['tags', 'user', 'event']
+        relations: ['tags', 'user', 'event'],
       });
 
       if (thing) {
@@ -997,6 +1014,7 @@ export class MemoryService {
           eventType: event.type || undefined,
           eventName: event.name || undefined,
         };
+
         return memory;
       }
 
@@ -1009,7 +1027,7 @@ export class MemoryService {
         timestamp: event.start_time || event.created_at,
         category: 'Thing',
         location: await this.getEventLocation(event),
-        tags: event.tags?.map((t) => t.label).filter(Boolean) as string[] || [],
+        tags: (event.tags?.map((t) => t.label).filter(Boolean) as string[]) || [],
         userId: event.user?.id || '',
         metadata: {
           eventId: event.id,
@@ -1028,21 +1046,21 @@ export class MemoryService {
   private async getEventLocation(event: EventEntity): Promise<MemoryLocation | undefined> {
     // Extract location from event using existing logic
     let location: MemoryLocation | undefined;
-    
+
     if (event.user?.id && event.start_time) {
       const eventLocations = await this.locationRepo.find({
-        where: { 
+        where: {
           user: { id: event.user.id },
-          datetime: event.start_time
+          datetime: event.start_time,
         },
         relations: ['place'],
-        take: 1
+        take: 1,
       });
 
       if (eventLocations.length > 0) {
         const loc = eventLocations[0];
         if (loc.geolocation && typeof loc.geolocation === 'object') {
-          const geo = loc.geolocation as any;
+          const geo = loc.geolocation as Record<string, unknown>;
           if (geo.lat && geo.lng) {
             location = {
               id: loc.id,
@@ -1066,13 +1084,15 @@ export class MemoryService {
 
     // Check source_data for location references
     if (!location && event.source_data && typeof event.source_data === 'object') {
-      const sourceData = event.source_data as any;
-      
+      const sourceData = event.source_data as Record<string, unknown>;
+
       if (sourceData.related_objects && Array.isArray(sourceData.related_objects)) {
         for (const obj of sourceData.related_objects) {
           if (typeof obj === 'string' && obj.startsWith('loc_')) {
             location = await this.findLocationByIdentifier(obj, event);
-            if (location) break;
+            if (location) {
+              break;
+            }
           }
         }
       }
@@ -1080,5 +1100,4 @@ export class MemoryService {
 
     return location;
   }
-
 }
