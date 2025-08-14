@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { ToolCall } from 'ollama';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -81,33 +82,20 @@ export class OllamaController {
       });
     }
 
-    const prompt = await this.messageService.create(context, {
+    // Create a message for the user prompt
+    const promptMessage = await this.messageService.create(context, {
       model: resolvedModel.model,
-      text: input.prompt,
+      role: 'user',
+      content: input.prompt,
       mimetype: 'text/markdown', // TODO: Make this more flexible.
-      prompt: true,
       canceled: false,
       threadId,
-    });
-
-    // Pre-create the message that will be updated after the stream
-    // terminates with more content and resolution.
-    const llmResponse = await this.messageService.create(context, {
-      model: resolvedModel.model,
-      // text -> We are updating this after the stream terminates
-      // mimetype // TODO: Infer this from the content stream
-      prompt: false,
-      // canceled -> We are updating this after the stream terminates
-      threadId,
-      promptMessageId: prompt.id,
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Thread-Id', threadId);
-    res.setHeader('X-Prompt-Id', prompt.id);
-    res.setHeader('X-Response-Id', llmResponse.id);
 
     const abortController = new AbortController();
     const signal = abortController.signal;
@@ -119,9 +107,14 @@ export class OllamaController {
     });
 
     const messages = await this.messageService.findByThread(context, threadId);
-    const filteredMessages = messages.filter((message) => message.id !== llmResponse.id);
 
-    const stream = await this.ollamaService.chatStream(context, filteredMessages, {
+    const inputMessages = messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
+    }));
+
+    const stream = await this.ollamaService.chatStream(context, inputMessages, {
       model: resolvedModel.model,
       signal,
       enableTools: input.enableTools,
@@ -132,21 +125,14 @@ export class OllamaController {
         if (chunk.message) {
           // TODO: Handle other properties on `chunk.message`.
           //   chunk.message.images?
-          //   chunk.message.role
-          //   chunk.message.tool_calls?
-          res.write(chunk.message.content);
-        }
 
-        if (chunk.done) {
-          this.logger.log('Ollama prompt evaluation completed', {
-            model: chunk.model,
-            totalDuration: chunk.total_duration ? chunk.total_duration / 1_000_000 : undefined,
-            loadDuration: chunk.load_duration ? chunk.load_duration / 1_000_000 : undefined,
-            evalDuration: chunk.prompt_eval_duration ? chunk.prompt_eval_duration / 1_000_000 : undefined,
-            promptCount: chunk.prompt_eval_count,
-            evalCount: chunk.eval_count,
-            doneReason: chunk.done_reason,
-          });
+          if (chunk.message.content) {
+            res.write(chunk.message.content);
+          } else if (chunk.message.tool_calls) {
+            res.write('<tool>');
+            res.write(JSON.stringify(chunk.message.tool_calls));
+            res.write('</tool>');
+          }
         }
       }
     } catch (err) {
@@ -156,10 +142,23 @@ export class OllamaController {
         this.logger.error('Error proxying Ollama stream:', err as Error);
       }
     } finally {
-      await this.messageService.update(context, llmResponse.id, {
-        text: stream.buffer,
-        canceled: signal.aborted,
-      });
+      console.log('MESSAGES:', stream.messages);
+
+      for (let i = 0; i < stream.messages.length; i++) {
+        const message = stream.messages[i];
+
+        await this.messageService.create(context, {
+          model: resolvedModel.model,
+          role: message.role,
+          content: message.content,
+          canceled: i === stream.messages.length - 1 && signal.aborted,
+          threadId,
+          ...(message.tool_calls && {
+            toolCalls: message.tool_calls as unknown[] as Record<string, unknown>[],
+          }),
+          promptMessageId: promptMessage.id,
+        });
+      }
 
       res.end();
     }
@@ -176,13 +175,16 @@ export class OllamaController {
 
     const messagesInput = [
       {
-        prompt: true,
-        text: 'Please summarize all of the following messages I will send you in 10 words or less. Please ONLY give me your summary. Please do not use punctuation.',
+        role: 'system',
+        content:
+          'Please summarize all of the following messages I will send you in 10 words or less. Please ONLY give me your summary. Please do not use punctuation.',
       },
-      ...messages.map((message) => ({
-        prompt: true,
-        text: message.text,
-      })),
+      ...messages
+        .filter((message) => message.role !== 'tool' && message.content)
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
     ];
 
     const result = await this.ollamaService.chat(context, messagesInput);

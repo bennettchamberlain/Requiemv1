@@ -3,7 +3,6 @@ import { Suspense } from 'react';
 import { LoadingPage, Portal } from '@ci/common';
 import { Separator, Sidebar, Toaster, useSidebar } from '@ci/shadcn';
 import {
-  BookA,
   BookImage,
   Brain,
   Cable,
@@ -15,6 +14,7 @@ import {
   MessagesSquare,
   Search,
   Settings2,
+  Zap,
 } from '@ci/shadcn/icons';
 import { Outlet } from 'react-router-dom';
 
@@ -47,7 +47,7 @@ const INTELLIGENCE = [
   {
     name: 'Actions',
     url: '/actions',
-    icon: BookA,
+    icon: Zap,
   },
   {
     name: 'Chat',
