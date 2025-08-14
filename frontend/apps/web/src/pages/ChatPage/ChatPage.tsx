@@ -16,6 +16,7 @@ import {
 } from '@ci/shadcn/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { StreamingChatContent } from '@/components/ChatBlocks';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useModel } from '@/hooks';
 
@@ -779,7 +780,9 @@ export default function ChatPage() {
                           <Bot className="h-4 w-4 text-primary" />
                         </div>
                         <div className="bg-muted text-foreground rounded-2xl px-4 py-3 text-sm border border-border/50 shadow-sm">
-                          {output || (
+                          {output ? (
+                            <StreamingChatContent content={output} isStreaming={true} />
+                          ) : (
                             <div className="flex items-center gap-2">
                               <div className="flex space-x-1">
                                 <div

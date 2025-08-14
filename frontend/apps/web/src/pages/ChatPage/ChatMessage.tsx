@@ -3,6 +3,8 @@ import React from 'react';
 import { cn } from '@ci/shadcn';
 import { Bot } from '@ci/shadcn/icons';
 
+import { ParsedChatContent } from '@/components/ChatBlocks';
+
 interface ChatMessageProps {
   message: { role: 'user' | 'assistant'; content: string };
   index: number;
@@ -30,7 +32,11 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, index }) => (
           : 'bg-gradient-to-br from-muted to-muted/80 text-foreground border border-border/50 backdrop-blur-sm',
       )}
     >
-      <div className="whitespace-pre-wrap">{message.content}</div>
+      {message.role === 'user' ? (
+        <div className="whitespace-pre-wrap">{message.content}</div>
+      ) : (
+        <ParsedChatContent content={message.content} />
+      )}
       <div
         className={cn(
           'text-xs opacity-70 mt-2 text-right',
