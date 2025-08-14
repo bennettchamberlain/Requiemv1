@@ -53,6 +53,7 @@ export async function seedEvents(db: DataSource, filePath: string) {
             // Try parsing as JSON
             parsed = JSON.parse(record.related_objects.replace(/'/g, '"'));
           }
+
           sourceData = { related_objects: parsed };
         } catch {
           // If parsing fails, store as-is

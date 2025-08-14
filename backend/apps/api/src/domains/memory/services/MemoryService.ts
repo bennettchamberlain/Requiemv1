@@ -49,7 +49,7 @@ export class MemoryService {
 
       // Convert events to synthetic Memory objects by hydrating related objects
       const syntheticMemories = await Promise.all(
-        events.map((e) => this.createSyntheticMemoriesFromEvent(e))
+        events.map((e) => this.createSyntheticMemoriesFromEvent(e)),
       );
 
       // Flatten the array since each event can produce multiple synthetic memories
@@ -231,7 +231,8 @@ export class MemoryService {
       hasSourceData: !!event.source_data,
       relatedObjects:
         event.source_data && typeof event.source_data === 'object'
-          ? (event.source_data as any).related_objects
+          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (event.source_data as any).related_objects
           : undefined,
     });
 
@@ -288,7 +289,7 @@ export class MemoryService {
           };
         }
       }
-      
+
       // Check for location references in related_objects
       if (!location && sourceData.related_objects) {
         const relatedObjects = Array.isArray(sourceData.related_objects)
@@ -323,7 +324,7 @@ export class MemoryService {
       } else {
         title = event.type;
       }
-      
+
       // Add activity details from related_objects
       if (event.source_data && typeof event.source_data === 'object') {
         const sourceData = event.source_data as Record<string, unknown>;
@@ -345,6 +346,7 @@ export class MemoryService {
         }
       }
     }
+
     if (!title) {
       title = 'Untitled Event';
     }
@@ -356,7 +358,7 @@ export class MemoryService {
     let description = event.description;
     if (!description) {
       const parts = [];
-      
+
       // Add type and date
       parts.push(`${event.type || 'Event'} on ${new Date(timestamp).toLocaleDateString()}`);
 
@@ -396,7 +398,8 @@ export class MemoryService {
         originalType: event.type,
         relatedObjects:
           event.source_data && typeof event.source_data === 'object'
-            ? (event.source_data as any).related_objects
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (event.source_data as any).related_objects
             : undefined,
       },
     };
@@ -419,7 +422,7 @@ export class MemoryService {
       const event = await this.eventRepo.findOne({
         where: { id: content.event.id },
       });
-      
+
       if (event?.source_data && typeof event.source_data === 'object') {
         const sourceData = event.source_data as Record<string, unknown>;
         if (sourceData.location || sourceData.place) {
@@ -470,14 +473,14 @@ export class MemoryService {
       });
     }
 
-    const fullName =
-      [person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown Person';
+    const fullName = [person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown Person';
 
     return {
       id: `memory-${person.id}`,
       type: 'person',
       title: fullName,
-      description: person.address || [person.city, person.region, person.country].filter(Boolean).join(', ') || null,
+      description:
+        person.address || [person.city, person.region, person.country].filter(Boolean).join(', ') || null,
       timestamp: person.created_at,
       category: person.type || 'Person',
       location,
@@ -519,7 +522,8 @@ export class MemoryService {
     };
   }
 
-  async getDebugInfo(_context: RequestContext) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getDebugInfo(context: RequestContext) {
     // TEMPORARILY DISABLED: User filtering
     const [locations, locCount] = await this.locationRepo.findAndCount({
       take: 5,
@@ -630,7 +634,7 @@ export class MemoryService {
 
       // Convert events to synthetic memories
       const syntheticMemories = await Promise.all(
-        events.map((e) => this.createSyntheticMemoriesFromEvent(e))
+        events.map((e) => this.createSyntheticMemoriesFromEvent(e)),
       );
 
       // Flatten and sort
@@ -680,36 +684,36 @@ export class MemoryService {
 
       // Check table existence
       const tables = await this.eventRepo.query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
         AND table_name IN ('events', 'content', 'people', 'things', 'places', 'locations')
       `);
       results.existingTables = tables;
 
       // Check event table structure
       const eventColumns = await this.eventRepo.query(`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
+        SELECT column_name, data_type
+        FROM information_schema.columns
         WHERE table_name = 'events'
       `);
       results.eventColumns = eventColumns;
 
       // Check events with actual data
       const eventsWithData = await this.eventRepo.query(`
-        SELECT * FROM events 
-        WHERE name IS NOT NULL 
-        OR description IS NOT NULL 
-        OR start_time IS NOT NULL 
+        SELECT * FROM events
+        WHERE name IS NOT NULL
+        OR description IS NOT NULL
+        OR start_time IS NOT NULL
         LIMIT 10
       `);
       results.eventsWithData = eventsWithData;
 
       // Count events by type
       const eventsByType = await this.eventRepo.query(`
-        SELECT type, COUNT(*) as count 
-        FROM events 
-        GROUP BY type 
+        SELECT type, COUNT(*) as count
+        FROM events
+        GROUP BY type
         ORDER BY count DESC
       `);
       results.eventsByType = eventsByType;
@@ -756,7 +760,7 @@ export class MemoryService {
     try {
       // Get some locations
       const locations = await this.locationRepo.find({ take: 5 });
-      
+
       // Get events with location references
       const eventsWithLocations = await this.eventRepo
         .createQueryBuilder('event')
@@ -778,9 +782,7 @@ export class MemoryService {
       };
 
       // Test conversion of events with locations
-      const memoriesWithLocations = await Promise.all(
-        eventsWithLocations.map((e) => this.eventToMemory(e)),
-      );
+      const memoriesWithLocations = await Promise.all(eventsWithLocations.map((e) => this.eventToMemory(e)));
 
       return {
         ...results,
@@ -836,7 +838,6 @@ export class MemoryService {
         identifier,
         eventId: event.id,
       });
-
     } catch (error) {
       this.logger.error('Error finding location by identifier', { error, identifier });
     }
@@ -935,6 +936,7 @@ export class MemoryService {
       };
     } catch (error) {
       this.logger.error('Error creating synthetic person memory', { error, personRef });
+
       return null;
     }
   }
@@ -987,6 +989,7 @@ export class MemoryService {
       };
     } catch (error) {
       this.logger.error('Error creating synthetic content memory', { error, contentRef });
+
       return null;
     }
   }
@@ -1039,6 +1042,7 @@ export class MemoryService {
       };
     } catch (error) {
       this.logger.error('Error creating synthetic thing memory', { error, thingRef });
+
       return null;
     }
   }

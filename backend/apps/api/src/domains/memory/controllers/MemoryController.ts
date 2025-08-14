@@ -106,13 +106,13 @@ export class MemoryController {
     this.logger.debug('Debug test endpoint called');
 
     // Try to get some data directly from the database
-    const testContext = { userId: 'b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b' }; // Using the userId from your logs
+    const testContext = { userId: 'b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b' } satisfies RequestContext; // Using the userId from your logs
 
     try {
       const result = await this.memoryService.findAll(testContext as RequestContext, { limit: 10 });
 
       // Also check for locations and places
-      const debugInfo = await this.memoryService.getDebugInfo(testContext as RequestContext);
+      const debugInfo = await this.memoryService.getDebugInfo(testContext);
 
       return {
         success: true,
@@ -125,6 +125,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Debug test error', { error });
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -153,6 +154,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Debug events error', { error });
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -177,6 +179,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Debug all error', { error });
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -200,6 +203,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Debug direct error', { error });
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -223,6 +227,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Test event conversion error', { error });
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -246,6 +251,7 @@ export class MemoryController {
       };
     } catch (error) {
       this.logger.error('Test location lookup error', { error });
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
