@@ -72,6 +72,9 @@ export class MessageService {
           id: threadId,
         },
       },
+      order: {
+        id: 'asc',
+      },
     });
 
     return entities.map((entity) => entity.toMessage());
