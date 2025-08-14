@@ -810,7 +810,7 @@ export class MemoryService {
             name: location.place?.name || `Location ${identifier}`,
             lat: parseFloat(geo.lat),
             lng: parseFloat(geo.lng || geo.lon),
-            address: location.place?.name,
+            address: location.place?.name || undefined,
           };
         }
       }
@@ -880,7 +880,7 @@ export class MemoryService {
     try {
       // Try to find the actual person entity
       const person = await this.personRepo.findOne({
-        where: { identifier: personRef },
+        where: { external_id: personRef },
         relations: ['tags', 'user']
       });
 
@@ -892,8 +892,8 @@ export class MemoryService {
         memory.metadata = {
           ...memory.metadata,
           eventId: event.id,
-          eventType: event.type,
-          eventName: event.name,
+          eventType: event.type || undefined,
+          eventName: event.name || undefined,
         };
         return memory;
       }
@@ -911,8 +911,8 @@ export class MemoryService {
         userId: event.user?.id || '',
         metadata: {
           eventId: event.id,
-          eventType: event.type,
-          eventName: event.name,
+          eventType: event.type || undefined,
+          eventName: event.name || undefined,
           personRef: personRef,
           synthetic: true,
         },
@@ -943,8 +943,8 @@ export class MemoryService {
         memory.metadata = {
           ...memory.metadata,
           eventId: event.id,
-          eventType: event.type,
-          eventName: event.name,
+          eventType: event.type || undefined,
+          eventName: event.name || undefined,
         };
         return memory;
       }
@@ -962,8 +962,8 @@ export class MemoryService {
         userId: event.user?.id || '',
         metadata: {
           eventId: event.id,
-          eventType: event.type,
-          eventName: event.name,
+          eventType: event.type || undefined,
+          eventName: event.name || undefined,
           contentRef: contentRef,
           synthetic: true,
         },
@@ -994,8 +994,8 @@ export class MemoryService {
         memory.metadata = {
           ...memory.metadata,
           eventId: event.id,
-          eventType: event.type,
-          eventName: event.name,
+          eventType: event.type || undefined,
+          eventName: event.name || undefined,
         };
         return memory;
       }
@@ -1013,8 +1013,8 @@ export class MemoryService {
         userId: event.user?.id || '',
         metadata: {
           eventId: event.id,
-          eventType: event.type,
-          eventName: event.name,
+          eventType: event.type || undefined,
+          eventName: event.name || undefined,
           thingRef: thingRef,
           synthetic: true,
         },
