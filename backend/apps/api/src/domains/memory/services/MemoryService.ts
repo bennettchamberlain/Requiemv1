@@ -405,7 +405,7 @@ export class MemoryService {
       memoryId: memory.id,
       memoryTitle: memory.title,
       hasLocation: !!memory.location,
-      locationName: memory.location?.name
+      locationName: memory.location?.name,
     });
 
     return memory;
