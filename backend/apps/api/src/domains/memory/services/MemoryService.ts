@@ -254,16 +254,16 @@ export class MemoryService {
             location = {
               id: loc.id,
               name: loc.place?.name || null,
-              lat: parseFloat(geo.lat),
-              lng: parseFloat(geo.lng),
+              lat: parseFloat(String(geo.lat)),
+              lng: parseFloat(String(geo.lng)),
               address: loc.place?.name || undefined,
             };
           } else if (geo.latitude && geo.longitude) {
             location = {
               id: loc.id,
               name: loc.place?.name || null,
-              lat: parseFloat(geo.latitude),
-              lng: parseFloat(geo.longitude),
+              lat: parseFloat(String(geo.latitude)),
+              lng: parseFloat(String(geo.longitude)),
               address: loc.place?.name || undefined,
             };
           }
@@ -277,14 +277,14 @@ export class MemoryService {
 
       // First check for direct location/place data
       if (sourceData.location || sourceData.place) {
-        const locData = sourceData.location || sourceData.place;
+        const locData = (sourceData.location || sourceData.place) as Record<string, unknown>;
         if (locData.lat && locData.lng) {
           location = {
             id: `loc-${event.id}`,
-            name: locData.name || event.name,
-            lat: parseFloat(locData.lat),
-            lng: parseFloat(locData.lng),
-            address: locData.address,
+            name: (locData.name as string) || event.name,
+            lat: parseFloat(String(locData.lat)),
+            lng: parseFloat(String(locData.lng)),
+            address: locData.address as string | undefined,
           };
         }
       }
@@ -423,14 +423,14 @@ export class MemoryService {
       if (event?.source_data && typeof event.source_data === 'object') {
         const sourceData = event.source_data as Record<string, unknown>;
         if (sourceData.location || sourceData.place) {
-          const locData = sourceData.location || sourceData.place;
+          const locData = (sourceData.location || sourceData.place) as Record<string, unknown>;
           if (locData.lat && locData.lng) {
             location = {
               id: `loc-${content.id}`,
-              name: locData.name || content.title,
-              lat: parseFloat(locData.lat),
-              lng: parseFloat(locData.lng),
-              address: locData.address,
+              name: (locData.name as string) || content.title,
+              lat: parseFloat(String(locData.lat)),
+              lng: parseFloat(String(locData.lng)),
+              address: locData.address as string | undefined,
             };
           }
         }
@@ -602,7 +602,7 @@ export class MemoryService {
       name: event.name,
       type: event.type,
       userId: event.user?.id,
-      userIdDirect: (event as Record<string, unknown>).user_id, // Check if user_id is set directly
+      userIdDirect: (event as unknown as Record<string, unknown>).user_id, // Check if user_id is set directly
       startTime: event.start_time,
       endTime: event.end_time,
       hasUser: !!event.user,
@@ -817,8 +817,8 @@ export class MemoryService {
           return {
             id: location.id,
             name: location.place?.name || `Location ${identifier}`,
-            lat: parseFloat(geo.lat),
-            lng: parseFloat(geo.lng || geo.lon),
+            lat: parseFloat(String(geo.lat)),
+            lng: parseFloat(String(geo.lng || geo.lon)),
             address: location.place?.name || undefined,
           };
         }
@@ -1065,16 +1065,16 @@ export class MemoryService {
             location = {
               id: loc.id,
               name: loc.place?.name || null,
-              lat: parseFloat(geo.lat),
-              lng: parseFloat(geo.lng),
+              lat: parseFloat(String(geo.lat)),
+              lng: parseFloat(String(geo.lng)),
               address: loc.place?.name || undefined,
             };
           } else if (geo.latitude && geo.longitude) {
             location = {
               id: loc.id,
               name: loc.place?.name || null,
-              lat: parseFloat(geo.latitude),
-              lng: parseFloat(geo.longitude),
+              lat: parseFloat(String(geo.latitude)),
+              lng: parseFloat(String(geo.longitude)),
               address: loc.place?.name || undefined,
             };
           }
