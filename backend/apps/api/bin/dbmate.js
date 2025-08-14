@@ -110,6 +110,7 @@ if (opts.executeFile) {
       ...process.env,
       DATABASE_URL,
       DBMATE_MIGRATIONS_DIR: './db/postgres/migrations',
+      DBMATE_SCHEMA_FILE: './db/postgres/schema.sql',
     },
   });
 
