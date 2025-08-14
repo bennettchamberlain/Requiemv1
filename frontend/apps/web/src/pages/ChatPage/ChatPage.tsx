@@ -442,9 +442,9 @@ export default function ChatPage() {
       const data = await response.json();
       const messages = data.messages || data.data || [];
 
-      const formattedMessages = messages.map((msg: { prompt: boolean; text: string }) => ({
-        role: msg.prompt ? 'user' : 'assistant',
-        content: msg.text || '',
+      const formattedMessages = messages.map((msg: { role: string; content: string }) => ({
+        role: msg.role,
+        content: msg.content || '',
       }));
 
       setChatHistory(formattedMessages);
