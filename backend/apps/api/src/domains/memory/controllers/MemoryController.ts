@@ -101,7 +101,7 @@ export class MemoryController {
   }
 
   // Temporary debug endpoint without auth
-  @Get('debug/test')
+  // @Get('debug/test')
   async debugTest() {
     this.logger.debug('Debug test endpoint called');
 
@@ -138,7 +138,7 @@ export class MemoryController {
   }
 
   // Debug endpoint to check raw events
-  @Get('debug/events')
+  // @Get('debug/events')
   async debugEvents() {
     this.logger.debug('Debug events endpoint called');
 
@@ -164,7 +164,7 @@ export class MemoryController {
   }
 
   // Debug endpoint to get all memories without user filter
-  @Get('debug/all')
+  // @Get('debug/all')
   async debugAll() {
     this.logger.debug('Debug all memories endpoint called');
 
@@ -213,7 +213,7 @@ export class MemoryController {
   }
 
   // Test event conversion
-  @Get('debug/test-events')
+  // @Get('debug/test-events')
   async testEventConversion() {
     this.logger.warn('Testing event conversion');
 
@@ -237,7 +237,7 @@ export class MemoryController {
   }
 
   // Test location lookup
-  @Get('debug/test-locations')
+  // @Get('debug/test-locations')
   async testLocationLookup() {
     this.logger.warn('Testing location lookup');
 
