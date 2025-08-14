@@ -9,6 +9,7 @@ import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
 import SplashPage from '@/pages/SplashPage';
 
+const ActionsPage = lazy(() => import('@/pages/ActionsPage'));
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'));
 const CapturePage = lazy(() => import('@/pages/CapturePage'));
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
@@ -80,7 +81,7 @@ function AppRoutes() {
           path="/actions"
           element={
             <ProtectedRoute>
-              <div>Actions page</div>
+              <ActionsPage />
             </ProtectedRoute>
           }
         />
