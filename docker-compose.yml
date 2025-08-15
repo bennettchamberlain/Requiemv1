@@ -70,8 +70,7 @@ services:
     image: ci/nginx
     container_name: staging-webserver
     ports:
-      - 80:80
-      - 443:443
+      - 8642:8642
     volumes:
       - ./infrastructure/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
       - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
