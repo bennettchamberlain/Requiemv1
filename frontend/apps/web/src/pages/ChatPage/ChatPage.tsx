@@ -2,17 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo, type FormEvent
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card, cn, Sidebar } from '@ci/shadcn';
-import {
-  Plus,
-  RefreshCw,
-  Trash2,
-  MessageSquare,
-  Bot,
-  Sparkles,
-  Send,
-  X,
-  ChevronLeft,
-} from '@ci/shadcn/icons';
+import { Plus, RefreshCw, Trash2, MessageSquare, Bot, X, ChevronLeft } from '@ci/shadcn/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { StreamingChatContent } from '@/components/ChatBlocks';
@@ -609,20 +599,6 @@ export default function ChatPage() {
     return !selectedThreadId ? 'Start a new conversation...' : 'Continue the conversation...';
   }, [selectedThreadId]);
 
-  const submitButtonText = useMemo(() => {
-    return !selectedThreadId ? (
-      <>
-        <Sparkles className="h-4 w-4" />
-        Start Chat
-      </>
-    ) : (
-      <>
-        <Send className="h-4 w-4" />
-        Send
-      </>
-    );
-  }, [selectedThreadId]);
-
   // Memoize threads data to prevent unnecessary re-renders
   const memoizedThreads = useMemo(() => threads, [threads]);
   const selectedThread = useMemo(
@@ -809,13 +785,12 @@ export default function ChatPage() {
                 )}
 
                 <ChatInput
-                  threadId={threadId}
+                  renderKey={threadId}
+                  placeholder={inputPlaceholder}
+                  disabled={isSubmitDisabled}
+                  loading={isLoading}
+                  onStop={handleStop}
                   onSubmit={handleSubmit}
-                  inputPlaceholder={inputPlaceholder}
-                  isSubmitDisabled={isSubmitDisabled}
-                  submitButtonText={submitButtonText}
-                  isLoading={isLoading}
-                  handleStop={handleStop}
                 />
               </Card.Content>
             </Card>

@@ -1,7 +1,23 @@
-import { type BaseSyntheticEvent, type FormEvent, type ReactNode, useCallback, useEffect } from 'react';
+import {
+  type BaseSyntheticEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+} from 'react';
 
-import { Button, Textarea, Form, useForm, formDataResolver, formDataSchema as s } from '@ci/shadcn';
-import { Send, Square, MessageSquare } from '@ci/shadcn/icons';
+import {
+  Button,
+  Textarea,
+  Form,
+  Tooltip,
+  cn,
+  useForm,
+  formDataResolver,
+  formDataSchema as s,
+} from '@ci/shadcn';
+import { Send, Square, Mic, Plus } from '@ci/shadcn/icons';
 
 const FormSchema = s.object({
   message: s.string(),
@@ -13,31 +29,62 @@ const EMPTY: FormData = {
   message: '',
 };
 
+const handleEnterSubmit = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    e.currentTarget.form?.requestSubmit();
+  }
+};
+
 interface Props {
-  threadId?: string | null;
+  renderKey?: string | null;
+  disabled?: boolean;
+  loading?: boolean;
+  placeholder?: string;
+  onAttach?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
+  onRecord?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
+  onStop?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onSubmit?: (data: FormData, e?: FormEvent<HTMLFormElement>) => void | Promise<void>;
-  inputPlaceholder: string;
-  isSubmitDisabled: boolean;
-  submitButtonText: ReactNode;
-  isLoading: boolean;
-  handleStop: () => void;
 }
 
 export function ChatInput({
-  threadId,
+  renderKey,
+  disabled = false,
+  loading = false,
+  placeholder,
+  onAttach,
+  onRecord,
   onSubmit,
-  inputPlaceholder,
-  isSubmitDisabled,
-  submitButtonText,
-  isLoading,
-  handleStop,
+  onStop,
 }: Props) {
-  console.log('threadId', threadId);
+  const SendIcon = loading ? Square : Send;
+  const sendIconClassName = loading ? '' : 'left-[-0.5px] top-[0.5px]';
 
   const form = useForm<FormData>({
     resolver: formDataResolver(FormSchema),
     defaultValues: EMPTY,
   });
+
+  const handleAttach = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      onAttach?.(e);
+    },
+    [onAttach],
+  );
+
+  const handleRecord = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      onRecord?.(e);
+    },
+    [onRecord],
+  );
+
+  const handleStop = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      onStop?.(e);
+    },
+    [onStop],
+  );
 
   const handleSubmit = useCallback(
     (data: FormData, e?: BaseSyntheticEvent) => {
@@ -49,56 +96,136 @@ export function ChatInput({
 
   useEffect(() => {
     form.reset();
-  }, [threadId]);
+  }, [renderKey]);
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-        <div className="relative">
-          <Form.Field
-            control={form.control}
-            name="message"
-            render={({ field }) => (
-              <Textarea
-                {...field}
-                placeholder={inputPlaceholder}
-                className="resize-none min-h-[120px] text-base leading-relaxed pr-12 bg-background/80 backdrop-blur-sm border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-200 placeholder:text-muted-foreground/60"
+    <Tooltip.Provider>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <div className="w-full flex items-center gap-2">
+            <Tooltip>
+              <Tooltip.Content side="bottom">Attach content</Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <Button
+                  type="button"
+                  disabled={loading || disabled}
+                  size="sm"
+                  variant="ghost"
+                  className="cursor-pointer h-8 w-8 p-0 -mr-1 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                  onClick={handleAttach}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </Tooltip.Trigger>
+            </Tooltip>
+
+            <div
+              className="
+                w-full
+                flex
+                items-center
+                gap-1.5
+                p-1.5
+
+                placeholder:text-muted-foreground/60
+                dark:bg-input/30
+                field-sizing-content
+
+                outline-none
+                border
+                shadow-xs
+                rounded-md
+
+                bg-transparent
+
+                text-base
+
+                focus-within:border-ring
+                focus-within:ring-[2px]
+                focus-within:ring-ring/30
+
+                aria-[invalid=true]:ring-destructive/20
+                dark:aria-[invalid=true]:ring-destructive/40
+                aria-[invalid=true]:border-destructive
+
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+                transition-[color,box-shadow]
+
+                md:text-sm
+              "
+            >
+              <Form.Field
+                control={form.control}
+                name="message"
+                render={({ field }) => (
+                  <Textarea
+                    {...field}
+                    placeholder={placeholder}
+                    disabled={loading || disabled}
+                    className="
+                      !w-full
+                      !flex-1
+                      !min-h-0
+                      !bg-transparent
+                      !border-0
+                      !outline-none
+                      !ring-0
+                      !shadow-none
+                      !rounded-none
+                      !p-0
+                      !ml-1
+
+                      focus:!ring-0
+                      focus-visible:!ring-0
+                      focus-visible:!border-transparent
+                      focus:!border-transparent
+
+                      disabled:!bg-transparent
+
+                      resize-none
+                      text-base
+                      leading-relaxed
+                    "
+                    onKeyDown={handleEnterSubmit}
+                  />
+                )}
               />
-            )}
-          />
-          <Button
-            type="submit"
-            disabled={isSubmitDisabled}
-            size="sm"
-            className="absolute bottom-3 right-3 h-8 w-8 p-0 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={isSubmitDisabled} className="gap-2 shadow-sm">
-            {submitButtonText}
-          </Button>
+              <Tooltip>
+                <Tooltip.Content side="bottom">Dictate</Tooltip.Content>
+                <Tooltip.Trigger asChild>
+                  <Button
+                    type="button"
+                    disabled={loading || disabled}
+                    size="sm"
+                    variant="ghost"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                    onClick={handleRecord}
+                  >
+                    <Mic className="h-4 w-4" />
+                  </Button>
+                </Tooltip.Trigger>
+              </Tooltip>
 
-          {isLoading && (
-            <Button variant="destructive" onClick={handleStop} size="sm" className="shadow-sm">
-              <Square className="h-4 w-4 mr-2" />
-              Stop
-            </Button>
-          )}
-
-          <Button
-            disabled
-            variant="outline"
-            className="ml-auto gap-2 shadow-sm opacity-50 cursor-not-allowed"
-            title="Voice input is currently disabled"
-          >
-            <MessageSquare className="h-4 w-4" />
-            Voice (Disabled)
-          </Button>
-        </div>
-      </form>
-    </Form>
+              <Tooltip>
+                <Tooltip.Content side="bottom">{loading ? 'Stop' : 'Send'}</Tooltip.Content>
+                <Tooltip.Trigger asChild>
+                  <Button
+                    type={loading ? 'button' : 'submit'}
+                    disabled={disabled}
+                    size="sm"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                    onClick={loading ? handleStop : undefined}
+                  >
+                    <SendIcon className={cn('h-4 w-4 relative', sendIconClassName)} />
+                  </Button>
+                </Tooltip.Trigger>
+              </Tooltip>
+            </div>
+          </div>
+        </form>
+      </Form>
+    </Tooltip.Provider>
   );
 }
