@@ -19,7 +19,7 @@ const UNSAFE_OPERATIONS = new Set(['drop_all_pg_data.sql']);
 const schema = z.object({
   type: z.literal('postgres'),
   host: z.string(),
-  port: z.number(),
+  port: z.coerce.number().int(),
   database: z.string(),
   username: z.string(),
   password: z.string(),
