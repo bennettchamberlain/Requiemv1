@@ -51,7 +51,7 @@ export const ConfigSchema = z.object({
   db: z.object({
     type: z.literal('postgres'), // restrict to 'postgres' (or z.string() for other DBs)
     host: z.string(),
-    port: z.number(),
+    port: z.coerce.number().int(),
     database: z.string(),
     username: z.string(),
     password: z.string(),
