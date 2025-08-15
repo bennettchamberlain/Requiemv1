@@ -5,11 +5,11 @@ import { Breadcrumb, Button, Card, cn, Sidebar } from '@ci/shadcn';
 import { Plus, RefreshCw, Trash2, MessageSquare, Bot, X, ChevronLeft } from '@ci/shadcn/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { ChatInput, type FormData } from '@/components/Chat';
 import { StreamingChatContent } from '@/components/ChatBlocks';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useModel } from '@/hooks';
 
-import { ChatInput, type FormData } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 
 // Custom scrollbar styles
