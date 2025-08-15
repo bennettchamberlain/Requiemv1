@@ -1,16 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import ollama, {
+import {
   type ChatResponse,
   type GenerateResponse,
   type Message as OllamaMessage,
   type Tool,
   type ToolCall,
+  Ollama,
 } from 'ollama';
 import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import config from '@ci/configuration';
 
 import {
   ToolRegistry,
@@ -36,6 +38,10 @@ interface PromptOptions {
 export class OllamaService {
   private readonly logger = new LoggerService(OllamaService.name);
 
+  private readonly ollama = new Ollama({
+    host: config.ollama.host,
+  });
+
   private readonly toolRegistry = new ToolRegistry();
 
   constructor(
@@ -48,7 +54,7 @@ export class OllamaService {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getAvailableModels(context: RequestContext): Promise<OllamaModel[]> {
-    const result = await ollama.list();
+    const result = await this.ollama.list();
     const models = result.models.map((model) => this.parseOllamaModel(model.name));
 
     return models.filter((model) => !INTERNAL_MODELS.has(model.name));
@@ -61,11 +67,11 @@ export class OllamaService {
   ): Promise<AsyncGenerator<GenerateResponse> & { buffer: string }> {
     const chunks: string[] = [];
 
-    const stream = (async function* () {
+    const stream = (async function* (self) {
       const resolvedOptions = options ?? {};
       const { model = PROMPT_MODEL, signal } = resolvedOptions;
 
-      const iterator = await ollama.generate({
+      const iterator = await self.ollama.generate({
         model,
         prompt,
         stream: true,
@@ -82,7 +88,7 @@ export class OllamaService {
 
         yield chunk;
       }
-    })();
+    })(this);
 
     Object.defineProperty(stream, 'buffer', {
       enumerable: true,
@@ -100,7 +106,7 @@ export class OllamaService {
     const resolvedOptions = options ?? ({} as PromptOptions);
     const { model = PROMPT_MODEL } = resolvedOptions;
 
-    return ollama.generate({
+    return this.ollama.generate({
       model,
       prompt,
     });
@@ -153,7 +159,7 @@ export class OllamaService {
         const iterationWillCallTools = enableTools && ollamaTools.length > 0 && toolEvaluations.length === 0;
 
         try {
-          const iterator = await ollama.chat({
+          const iterator = await self.ollama.chat({
             model,
             messages: inputMessages.concat(accumulatedMessages),
             stream: true,
@@ -243,7 +249,7 @@ export class OllamaService {
 
     const accumulatedMessages: OllamaMessage[] = [];
 
-    const response = await ollama.chat({
+    const response = await this.ollama.chat({
       model,
       messages: inputMessages,
       ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
@@ -266,7 +272,7 @@ export class OllamaService {
 
     accumulatedMessages.push(...toolEvaluations);
 
-    return ollama.chat({
+    return this.ollama.chat({
       model,
       messages: inputMessages.concat(accumulatedMessages),
     });
