@@ -18,6 +18,9 @@
       "secretAccessKey": "S3_SECRET_ACCESS_KEY"
     }
   },
+  "ollama": {
+    "host": "OLLAMA_HOST"
+  },
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
     "scheduled.connection.fetching": "ENABLE_SCHEDULED_CONNECTION_FETCHING"

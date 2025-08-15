@@ -67,6 +67,9 @@ export const ConfigSchema = z.object({
       secretAccessKey: z.string(),
     }),
   }),
+  ollama: z.object({
+    host: z.string(),
+  }),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.fetching': booleanStringSchema,
