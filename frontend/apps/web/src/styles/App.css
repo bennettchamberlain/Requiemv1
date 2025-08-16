@@ -40,3 +40,22 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Embla Carousel Styles */
+.embla {
+  overflow: hidden;
+  width: 100%;
+  position: relative;
+}
+
+.embla__container {
+  user-select: none;
+  -webkit-touch-callout: none;
+  -khtml-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+
+.embla__slide {
+  position: relative;
+}
