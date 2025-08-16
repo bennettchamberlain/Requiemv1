@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import { type ComponentProps, useEffect, useMemo } from 'react';
 
 import type { Meta, StoryObj } from '@storybook/react';
 import { fn } from 'storybook/test';
@@ -157,6 +157,18 @@ const LORUM = (
   </>
 );
 
+function makeTextChannel() {
+  const channel = new TransformStream<string, string>();
+  const writer = channel.writable.getWriter();
+
+  return {
+    readable: channel.readable,
+    write: (s: string) => writer.write(s),
+    close: () => writer.close(),
+    abort: (reason?: unknown) => writer.abort?.(reason),
+  };
+}
+
 export const Default: Story = {
   args: {
     children: LORUM,
@@ -166,4 +178,27 @@ export const Default: Story = {
 
 export const WithoutChildren: Story = {
   args: {},
+};
+
+export const StreamingText: Story = {
+  decorators: [
+    (Story, ctx) => {
+      const channel = useMemo(() => makeTextChannel(), []);
+
+      useEffect(() => {
+        let i = 1;
+
+        const id = setInterval(() => {
+          channel.write(`line ${i++} — ${new Date().toLocaleTimeString()}\n`);
+        }, 25);
+
+        return () => {
+          clearInterval(id);
+          channel.close();
+        };
+      }, [channel]);
+
+      return <Story args={{ ...ctx.args, readable: channel.readable }} />;
+    },
+  ],
 };

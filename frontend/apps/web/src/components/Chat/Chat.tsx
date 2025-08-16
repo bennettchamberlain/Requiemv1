@@ -1,4 +1,4 @@
-import { type ComponentProps, type ReactNode } from 'react';
+import { type ComponentProps, type ReactNode, useEffect, useRef } from 'react';
 
 import { ChatInput } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
@@ -6,10 +6,60 @@ import { ChatLoader } from './ChatLoader';
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
 interface Props extends ChatInputProps {
+  readable?: ReadableStream<string>;
   children: ReactNode;
 }
 
-export function Chat({ children, loading, ...chatInputProps }: Props) {
+export function Chat({ readable, loading, children, ...chatInputProps }: Props) {
+  const abortRef = useRef<AbortController>(null);
+
+  useEffect(() => {
+    if (!readable) {
+      return;
+    }
+
+    const ac = new AbortController();
+    const reader = readable.getReader();
+
+    abortRef.current = ac;
+
+    (async () => {
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          console.log(value);
+        }
+      } catch (err) {
+        if (ac.signal.aborted) {
+          return;
+        }
+
+        console.error('Error reading stream', err);
+      } finally {
+        try {
+          reader.releaseLock();
+        } catch (err) {
+          console.error('Releasing stream lock failed', err)
+}
+      }
+    })();
+
+    return () => {
+      ac.abort();
+
+      try {
+        reader.cancel();
+      } catch (err) {
+        console.log('Readable stream cancelation failed', err);
+}
+    };
+  }, [readable]);
+
   return (
     <div className="flex flex-col h-full min-h-0 relative">
       <div
