@@ -11,6 +11,7 @@ interface Props extends ChatInputProps {
 }
 
 export function Chat({ readable, loading, children, ...chatInputProps }: Props) {
+  const streamContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController>(null);
 
   useEffect(() => {
@@ -32,7 +33,13 @@ export function Chat({ readable, loading, children, ...chatInputProps }: Props) 
             break;
           }
 
-          console.log(value);
+          if (!streamContainerRef.current) {
+            return;
+          }
+
+          const textNode = document.createTextNode(value);
+
+          streamContainerRef.current.appendChild(textNode);
         }
       } catch (err) {
         if (ac.signal.aborted) {
@@ -44,7 +51,7 @@ export function Chat({ readable, loading, children, ...chatInputProps }: Props) 
         try {
           reader.releaseLock();
         } catch (err) {
-          console.error('Releasing stream lock failed', err)
+          console.error('Releasing stream lock failed', err);
 }
       }
     })();
@@ -72,6 +79,8 @@ export function Chat({ readable, loading, children, ...chatInputProps }: Props) 
         "
       >
         {children}
+
+        <div ref={streamContainerRef}></div>
       </div>
 
       <div className="p-4 pt-4 pl-1 w-full relative">
