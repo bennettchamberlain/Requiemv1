@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import { type ComponentProps } from 'react';
 
 import type { Meta, StoryObj } from '@storybook/react';
 import { fn } from 'storybook/test';
@@ -28,9 +28,17 @@ const meta: Meta<Props> = {
     imageUrl:
       'https://hips.hearstapps.com/hmg-prod/images/crunchy-mandarin-orange-chicken-salad-lead-66677b295a6b5.jpg',
     onClick: fn(),
-    onLike: fn(),
-    onDislike: fn(),
-    onExpand: fn(),
+    actions: {
+      onLike: fn(),
+      onDislike: fn(),
+      onExpand: fn(),
+    },
+    chat: {
+      onSubmit: fn(),
+      onAttach: fn(),
+      onRecord: fn(),
+      onStop: fn(),
+    },
   },
   decorators: [(Story) => <Story />],
 };

@@ -376,6 +376,26 @@ export default function FeedPage() {
     // Handle expand action - could open chat, show more details, etc.
   }, []);
 
+  // const handleChatSubmit = useCallback((id: string, message: string) => {
+  //   console.log('Chat submitted for card:', id, 'Message:', message);
+  //   // Handle chat submission - could send to AI, save to database, etc.
+  // }, []);
+
+  // const handleChatAttach = useCallback((id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+  //   console.log('Chat attach for card:', id);
+  //   // Handle file attachment
+  // }, []);
+
+  // const handleChatRecord = useCallback((id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+  //   console.log('Chat record for card:', id);
+  //   // Handle voice recording
+  // }, []);
+
+  // const handleChatStop = useCallback((id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+  //   console.log('Chat stop for card:', id);
+  //   // Handle stop recording
+  // }, []);
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -394,7 +414,7 @@ export default function FeedPage() {
                   <div
                     key={item.id}
                     className="embla__slide"
-                    style={{ flex: '0 0 550px', minWidth: '550px', marginRight: '24px' }}
+                    style={{ flex: '0 0 550px', minWidth: '550px', marginRight: '24px', height: '500px' }}
                   >
                     <BentoCard
                       title={item.title}
@@ -402,9 +422,19 @@ export default function FeedPage() {
                       tags={item.tags}
                       imageUrl={item.imageUrl}
                       onClick={() => handleCardClick(item.id)}
-                      onLike={() => handleLike(item.id)}
-                      onDislike={() => handleDislike(item.id)}
-                      onExpand={() => handleExpand(item.id)}
+                      actions={{
+                        onLike: () => handleLike(item.id),
+                        onDislike: () => handleDislike(item.id),
+                        onExpand: () => handleExpand(item.id),
+                      }}
+                      chat={
+                        {
+                          // onSubmit: (message) => handleChatSubmit(item.id, message),
+                          // onAttach: (e) => handleChatAttach(item.id, e),
+                          // onRecord: (e) => handleChatRecord(item.id, e),
+                          // onStop: (e) => handleChatStop(item.id, e),
+                        }
+                      }
                       className="hover:shadow-lg transition-shadow duration-200"
                       style={{ width: '550px', maxWidth: '550px' }}
                     />
@@ -451,9 +481,19 @@ export default function FeedPage() {
                   description={item.description}
                   tags={item.tags}
                   onClick={() => handleCardClick(item.id)}
-                  onLike={() => handleLike(item.id)}
-                  onDislike={() => handleDislike(item.id)}
-                  onExpand={() => handleExpand(item.id)}
+                  actions={{
+                    onLike: () => handleLike(item.id),
+                    onDislike: () => handleDislike(item.id),
+                    onExpand: () => handleExpand(item.id),
+                  }}
+                  chat={
+                    {
+                      // onSubmit: (message) => handleChatSubmit(item.id, message),
+                      // onAttach: (e) => handleChatAttach(item.id, e),
+                      // onRecord: (e) => handleChatRecord(item.id, e),
+                      // onStop: (e) => handleChatStop(item.id, e),
+                    }
+                  }
                   className="hover:shadow-lg transition-shadow duration-200"
                 />
               </div>
