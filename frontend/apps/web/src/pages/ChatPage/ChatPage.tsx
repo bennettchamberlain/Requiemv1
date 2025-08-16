@@ -1,21 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo, type FormEvent } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Card, Textarea, cn, Sidebar } from '@ci/shadcn';
-import {
-  Square,
-  Plus,
-  RefreshCw,
-  Trash2,
-  MessageSquare,
-  Bot,
-  Sparkles,
-  Send,
-  X,
-  ChevronLeft,
-} from '@ci/shadcn/icons';
+import { Breadcrumb, Button, Card, cn, Sidebar } from '@ci/shadcn';
+import { Plus, RefreshCw, Trash2, MessageSquare, Bot, X, ChevronLeft } from '@ci/shadcn/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { ChatInput, type FormData } from '@/components/Chat';
 import { StreamingChatContent } from '@/components/ChatBlocks';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useModel } from '@/hooks';
@@ -312,21 +302,6 @@ export default function ChatPage() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(threadId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Chat input state
-  const [input, setInput] = useState('');
-
-  // Input handlers
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-  };
-
-  const clearInput = () => {
-    setInput('');
-  };
-
-  const inputHasValue = input.trim() !== '';
-
   const [output, setOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
@@ -412,13 +387,12 @@ export default function ChatPage() {
     if (isNewRoute) {
       setSelectedThreadId(null);
       setChatHistory([]);
-      clearInput();
       setOutput('');
       setIsLoading(false);
     } else if (routeThreadId && routeThreadId !== selectedThreadId) {
       setSelectedThreadId(routeThreadId);
     }
-  }, [location.pathname, selectedThreadId, clearInput]);
+  }, [location.pathname, selectedThreadId]);
 
   // Load thread data when selectedThreadId changes
   const loadThreadData = useCallback(async () => {
@@ -475,13 +449,12 @@ export default function ChatPage() {
   const handleNewThread = useCallback(() => {
     setSelectedThreadId(null);
     setChatHistory([]);
-    clearInput();
     setOutput('');
     setIsLoading(false);
     // Update URL using React Router navigation
     navigate('/chat');
     // Note: Thread will be created automatically when the first message is sent
-  }, [clearInput, navigate]);
+  }, [navigate]);
 
   // Handle thread deletion
   const handleDeleteThread = useCallback(
@@ -526,88 +499,90 @@ export default function ChatPage() {
   );
 
   // Handle form submission
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim()) {
-      return;
-    }
+  const handleSubmit = useCallback(
+    async (data: FormData, e?: FormEvent) => {
+      e?.preventDefault();
 
-    // Add user message to chat history immediately
-    const userMessage = { role: 'user' as const, content: input.trim() };
-    setChatHistory((prev) => [...prev, userMessage]);
-
-    setOutput('');
-    setIsLoading(true);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    try {
-      const res = await fetch('/api/llm/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          prompt: input,
-          model: selectedModel,
-          threadId: selectedThreadId,
-          enableTools: true,
-        }),
-        signal: controller.signal,
-      });
-
-      const newThreadId = res.headers.get('X-Thread-Id') as string;
-      if (newThreadId && !selectedThreadId) {
-        setSelectedThreadId(newThreadId);
-        // Update URL using React Router navigation
-        navigate(`/chat/${newThreadId}`, { replace: true });
-
-        // Add the new thread to the threads list
-        const newThread: Thread = {
-          id: newThreadId,
-          name: input.trim().slice(0, 50) + (input.trim().length > 50 ? '...' : ''),
-          model: selectedModel || 'default',
-          description: input.trim().slice(0, 100) + (input.trim().length > 100 ? '...' : ''),
-        };
-        setThreads((prev) => [newThread, ...prev]);
+      if (!data.message.trim()) {
+        return;
       }
 
-      if (!res.body) {
-        throw new Error('No response body');
-      }
+      // Add user message to chat history immediately
+      const userMessage = { role: 'user' as const, content: data.message.trim() };
+      setChatHistory((prev) => [...prev, userMessage]);
 
-      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      setOutput('');
+      setIsLoading(true);
 
-      let assistantResponse = '';
-      while (true) {
-        const { value, done } = await reader.read();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-        if (done) {
-          break;
+      try {
+        const res = await fetch('/api/llm/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            prompt: data.message.trim(),
+            model: selectedModel,
+            threadId: selectedThreadId,
+            enableTools: true,
+          }),
+          signal: controller.signal,
+        });
+
+        const newThreadId = res.headers.get('X-Thread-Id') as string;
+        if (newThreadId && !selectedThreadId) {
+          setSelectedThreadId(newThreadId);
+          // Update URL using React Router navigation
+          navigate(`/chat/${newThreadId}`, { replace: true });
+
+          // Add the new thread to the threads list
+          const newThread: Thread = {
+            id: newThreadId,
+            name: data.message.trim().slice(0, 50) + (data.message.trim().length > 50 ? '...' : ''),
+            model: selectedModel || 'default',
+            description: data.message.trim().slice(0, 100) + (data.message.trim().length > 100 ? '...' : ''),
+          };
+          setThreads((prev) => [newThread, ...prev]);
         }
 
-        if (value) {
-          assistantResponse += value;
-          setOutput(assistantResponse);
+        if (!res.body) {
+          throw new Error('No response body');
         }
-      }
 
-      // Add the assistant's response to chat history
-      if (assistantResponse.trim()) {
-        setChatHistory((prev) => [...prev, { role: 'assistant', content: assistantResponse }]);
-      }
+        const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
 
-      // Clear the input field for the next message
-      clearInput();
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        console.error('Stream error:', err);
+        let assistantResponse = '';
+        while (true) {
+          const { value, done } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          if (value) {
+            assistantResponse += value;
+            setOutput(assistantResponse);
+          }
+        }
+
+        // Add the assistant's response to chat history
+        if (assistantResponse.trim()) {
+          setChatHistory((prev) => [...prev, { role: 'assistant', content: assistantResponse }]);
+        }
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error('Stream error:', err);
+        }
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [input, authToken, selectedModel, selectedThreadId]);
+    },
+    [authToken, selectedModel, selectedThreadId],
+  );
 
   const handleStop = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -617,25 +592,11 @@ export default function ChatPage() {
 
   // Memoized computed values to prevent unnecessary re-renders
   const isSubmitDisabled = useMemo(() => {
-    return isLoading || selectedModel == null || !inputHasValue;
-  }, [isLoading, selectedModel, inputHasValue]);
+    return isLoading || selectedModel == null;
+  }, [isLoading, selectedModel]);
 
   const inputPlaceholder = useMemo(() => {
     return !selectedThreadId ? 'Start a new conversation...' : 'Continue the conversation...';
-  }, [selectedThreadId]);
-
-  const submitButtonText = useMemo(() => {
-    return !selectedThreadId ? (
-      <>
-        <Sparkles className="h-4 w-4" />
-        Start Chat
-      </>
-    ) : (
-      <>
-        <Send className="h-4 w-4" />
-        Send
-      </>
-    );
   }, [selectedThreadId]);
 
   // Memoize threads data to prevent unnecessary re-renders
@@ -823,55 +784,14 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {/* Chat Input Section - always at the bottom */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSubmit();
-                  }}
-                  className="space-y-4"
-                >
-                  <div className="relative">
-                    <Textarea
-                      name="message"
-                      placeholder={inputPlaceholder}
-                      value={input}
-                      onChange={handleInputChange}
-                      className="resize-none min-h-[120px] text-base leading-relaxed pr-12 bg-background/80 backdrop-blur-sm border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-200 placeholder:text-muted-foreground/60"
-                    />
-                    <Button
-                      type="submit"
-                      disabled={isSubmitDisabled}
-                      size="sm"
-                      className="absolute bottom-3 right-3 h-8 w-8 p-0 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Button type="submit" disabled={isSubmitDisabled} className="gap-2 shadow-sm">
-                      {submitButtonText}
-                    </Button>
-
-                    {isLoading && (
-                      <Button variant="destructive" onClick={handleStop} size="sm" className="shadow-sm">
-                        <Square className="h-4 w-4 mr-2" />
-                        Stop
-                      </Button>
-                    )}
-
-                    <Button
-                      disabled
-                      variant="outline"
-                      className="ml-auto gap-2 shadow-sm opacity-50 cursor-not-allowed"
-                      title="Voice input is currently disabled"
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                      Voice (Disabled)
-                    </Button>
-                  </div>
-                </form>
+                <ChatInput
+                  renderKey={threadId}
+                  placeholder={inputPlaceholder}
+                  disabled={isSubmitDisabled}
+                  loading={isLoading}
+                  onStop={handleStop}
+                  onSubmit={handleSubmit}
+                />
               </Card.Content>
             </Card>
           </div>
