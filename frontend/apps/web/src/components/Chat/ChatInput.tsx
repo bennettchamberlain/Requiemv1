@@ -89,7 +89,6 @@ export function ChatInput({
   const handleSubmit = useCallback(
     (data: FormData, e?: BaseSyntheticEvent) => {
       onSubmit?.(data, e as FormEvent<HTMLFormElement>);
-      form.reset();
     },
     [onSubmit],
   );
