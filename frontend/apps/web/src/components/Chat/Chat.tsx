@@ -1,4 +1,6 @@
-import { type ComponentProps, type ReactNode, useEffect, useRef } from 'react';
+import { type ComponentProps, type ReactNode, useCallback, useRef } from 'react';
+
+import { useReadablePump } from '@ci/common';
 
 import { AssistantMessage } from './blocks/AssistantMessage';
 import { ChatInput } from './ChatInput';
@@ -18,65 +20,39 @@ interface Props extends ChatInputProps {
 }
 
 export function Chat({ messages, readable, loading, emptyState, ...chatInputProps }: Props) {
-  const streamContainerRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController>(null);
+  const streamContainerRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!readable) {
-      return;
+  const { drain } = useReadablePump(readable ?? null, (chunk) => {
+    const el = streamContainerRef.current;
+
+    if (el == null) {
+      return false; // not ready → buffer it
     }
 
-    const ac = new AbortController();
-    const reader = readable.getReader();
+    const textNode = document.createTextNode(chunk);
 
-    abortRef.current = ac;
+    el.appendChild(textNode);
 
-    (async () => {
-      try {
-        while (true) {
-          const { value, done } = await reader.read();
+    return true; // consumed → read next chunk
+  });
 
-          if (done) {
-            break;
-          }
+  // When the div mounts, immediately replay any queued chunks
+  const setRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      streamContainerRef.current = el;
 
-          if (!streamContainerRef.current) {
-            return;
-          }
-
-          const textNode = document.createTextNode(value);
-
-          streamContainerRef.current.appendChild(textNode);
-        }
-      } catch (err) {
-        if (ac.signal.aborted) {
-          return;
-        }
-
-        console.error('Error reading stream', err);
-      } finally {
-        try {
-          reader.releaseLock();
-        } catch (err) {
-          console.error('Releasing stream lock failed', err);
-        }
+      if (el) {
+        drain();
       }
-    })();
-
-    return () => {
-      ac.abort();
-
-      try {
-        reader.cancel();
-      } catch (err) {
-        console.log('Readable stream cancelation failed', err);
-      }
-    };
-  }, [readable]);
+    },
+    [drain],
+  );
 
   return (
     <div className="flex flex-col h-full min-h-0 w-full">
-      {emptyState && <div className="flex flex-col flex-1 min-h-0 p4 items-center justify-center">{emptyState}</div>}
+      {emptyState && (
+        <div className="flex flex-col flex-1 min-h-0 p4 items-center justify-center">{emptyState}</div>
+      )}
 
       {!emptyState && (
         <div
@@ -90,7 +66,7 @@ export function Chat({ messages, readable, loading, emptyState, ...chatInputProp
         >
           <ChatThread messages={messages} />
 
-          {readable && <AssistantMessage streamingRef={streamContainerRef} />}
+          {readable && <AssistantMessage renderEmptyContent={true} streamingRef={setRef} />}
         </div>
       )}
 
