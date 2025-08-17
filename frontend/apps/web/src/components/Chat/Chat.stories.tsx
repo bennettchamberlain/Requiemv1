@@ -211,14 +211,28 @@ export const StreamingText: Story = {
       const channel = useMemo(() => makeTextChannel(), []);
 
       useEffect(() => {
-        let i = 1;
+        (async () => {
+          channel.write('<think>');
+          channel.write('thinking line\n');
+          channel.write('thinking line\n');
+          channel.write('thinking line\n');
+          channel.write('thinking line\n');
+          channel.write('</think>\n');
+          channel.write('<tool>\n');
+          channel.write('tool line\n');
+          channel.write('</tool>\n');
+          channel.write('<tool>\n');
+          channel.write('tool line\n');
+          channel.write('</tool>\n');
 
-        const id = setInterval(() => {
-          channel.write(`line ${i++} — ${new Date().toLocaleTimeString()}\n`);
-        }, 25);
+          for (let i = 0; i < 100; i++) {
+            channel.write(`line ${i} — ${new Date().toLocaleTimeString()}\n`);
+
+            await new Promise((resolve) => setTimeout(resolve, 15));
+          }
+        })();
 
         return () => {
-          clearInterval(id);
           channel.close();
         };
       }, [channel]);

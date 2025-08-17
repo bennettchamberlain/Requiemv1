@@ -2,10 +2,11 @@ import { type ComponentProps, type ReactNode, useCallback, useRef } from 'react'
 
 import { useReadablePump } from '@ci/common';
 
-import { AssistantMessage } from './blocks/AssistantMessage';
 import { ChatInput } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
 import { ChatThread } from './ChatThread';
+import { AssistantMessage } from './blocks/AssistantMessage';
+import { useMultiplexTaggedStream } from './hooks/useMultiplexTaggedStream';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
@@ -20,10 +21,52 @@ interface Props extends ChatInputProps {
 }
 
 export function Chat({ messages, readable, loading, emptyState, ...chatInputProps }: Props) {
-  const streamContainerRef = useRef<HTMLDivElement | null>(null);
+  const textContainerRef = useRef<HTMLDivElement | null>(null);
+  const thinkContainerRef = useRef<HTMLDivElement | null>(null);
+  const toolContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const { drain } = useReadablePump(readable ?? null, (chunk) => {
-    const el = streamContainerRef.current;
+  const mux = useMultiplexTaggedStream(readable, (ended) => {
+    if (ended === 'tool') {
+      console.log('Tool block finished');
+    } else if (ended === 'think') {
+      // console.log('Think block finished');
+    } else {
+      // console.log('Text block finished');
+    }
+  });
+
+  const { drain: drainText } = useReadablePump(mux?.text ?? null, (chunk) => {
+    // console.log('Text chunk', chunk);
+
+    const el = textContainerRef.current;
+
+    if (el == null) {
+      return false; // not ready → buffer it
+    }
+
+    const textNode = document.createTextNode(chunk);
+
+    el.appendChild(textNode);
+
+    return true; // consumed → read next chunk
+  });
+
+  const { drain: drainThink } = useReadablePump(mux?.think ?? null, (chunk) => {
+    const el = thinkContainerRef.current;
+
+    if (el == null) {
+      return false; // not ready → buffer it
+    }
+
+    const textNode = document.createTextNode(chunk);
+
+    el.appendChild(textNode);
+
+    return true; // consumed → read next chunk
+  });
+
+  const { drain: drainTool } = useReadablePump(mux?.tool ?? null, (chunk) => {
+    const el = toolContainerRef.current;
 
     if (el == null) {
       return false; // not ready → buffer it
@@ -37,15 +80,37 @@ export function Chat({ messages, readable, loading, emptyState, ...chatInputProp
   });
 
   // When the div mounts, immediately replay any queued chunks
-  const setRef = useCallback(
+  const setTextRef = useCallback(
     (el: HTMLDivElement | null) => {
-      streamContainerRef.current = el;
+      textContainerRef.current = el;
 
       if (el) {
-        drain();
+        drainText();
       }
     },
-    [drain],
+    [drainText],
+  );
+
+  const setThinkRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      thinkContainerRef.current = el;
+
+      if (el) {
+        drainThink();
+      }
+    },
+    [drainThink],
+  );
+
+  const setToolRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      toolContainerRef.current = el;
+
+      if (el) {
+        drainTool();
+      }
+    },
+    [drainTool],
   );
 
   return (
@@ -66,7 +131,13 @@ export function Chat({ messages, readable, loading, emptyState, ...chatInputProp
         >
           <ChatThread messages={messages} />
 
-          {readable && <AssistantMessage renderEmptyContent={true} streamingRef={setRef} />}
+          {readable && (
+            <>
+              <AssistantMessage renderEmptyContent={true} streamingRef={setToolRef} />
+              <AssistantMessage renderEmptyContent={true} streamingRef={setThinkRef} />
+              <AssistantMessage renderEmptyContent={true} streamingRef={setTextRef} />
+            </>
+          )}
         </div>
       )}
 
