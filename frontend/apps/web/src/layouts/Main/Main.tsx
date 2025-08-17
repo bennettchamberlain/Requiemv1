@@ -19,6 +19,7 @@ import {
 import { Outlet } from 'react-router-dom';
 
 import logo from '../../assets/logo.png';
+import { ThemeToggle } from '../../components/ThemeToggle';
 
 import { NavSection } from './NavSection';
 import { NavUser } from './NavUser';
@@ -135,7 +136,8 @@ export function Main() {
                   <Portal id="breadcrumbs" />
                 </section>
 
-                <aside>
+                <aside className="flex flex-row items-center gap-2">
+                  <ThemeToggle />
                   <Portal id="actions" />
                 </aside>
               </header>
