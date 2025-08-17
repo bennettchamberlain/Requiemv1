@@ -1,16 +1,23 @@
 import { type ComponentProps, type ReactNode, useEffect, useRef } from 'react';
 
+import { AssistantMessage } from './blocks/AssistantMessage';
 import { ChatInput } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
+import { ChatThread } from './ChatThread';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
+interface Message {
+  role: string;
+  content: string;
+}
 interface Props extends ChatInputProps {
+  messages?: Message[];
   readable?: ReadableStream<string>;
-  children: ReactNode;
+  emptyState?: ReactNode;
 }
 
-export function Chat({ readable, loading, children, ...chatInputProps }: Props) {
+export function Chat({ messages, readable, loading, emptyState, ...chatInputProps }: Props) {
   const streamContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController>(null);
 
@@ -52,7 +59,7 @@ export function Chat({ readable, loading, children, ...chatInputProps }: Props) 
           reader.releaseLock();
         } catch (err) {
           console.error('Releasing stream lock failed', err);
-}
+        }
       }
     })();
 
@@ -63,25 +70,29 @@ export function Chat({ readable, loading, children, ...chatInputProps }: Props) 
         reader.cancel();
       } catch (err) {
         console.log('Readable stream cancelation failed', err);
-}
+      }
     };
   }, [readable]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 relative">
-      <div
-        className="
-          flex-1 min-h-0 overflow-y-scroll p-4
+    <div className="flex flex-col h-full min-h-0 w-full">
+      {emptyState && <div className="flex flex-col flex-1 min-h-0 p4 items-center justify-center">{emptyState}</div>}
+
+      {!emptyState && (
+        <div
+          className="
+          flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll p-4
           [mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_2rem)]
           [mask-repeat:no-repeat] [mask-size:100%_100%]
           [-webkit-mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_2rem)]
           [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]
         "
-      >
-        {children}
+        >
+          <ChatThread messages={messages} />
 
-        <div ref={streamContainerRef}></div>
-      </div>
+          {readable && <AssistantMessage streamingRef={streamContainerRef} />}
+        </div>
+      )}
 
       <div className="p-4 pt-4 pl-1 w-full relative">
         {loading && <ChatLoader />}

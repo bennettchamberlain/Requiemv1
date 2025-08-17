@@ -171,7 +171,32 @@ function makeTextChannel() {
 
 export const Default: Story = {
   args: {
-    children: LORUM,
+    messages: [
+      {
+        role: 'user',
+        content:
+          'Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+      {
+        role: 'tool',
+        content: 'Foobar',
+      },
+      {
+        role: 'assistant',
+        content:
+          'Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+      {
+        role: 'user',
+        content:
+          'Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+      {
+        role: 'assistant',
+        content:
+          '<think>I am a helpful assistant, I can see what the user might be thinking. Hmmm... what lorem text to generate to help?</think>Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+    ],
     loading: false,
   },
 };
@@ -201,4 +226,59 @@ export const StreamingText: Story = {
       return <Story args={{ ...ctx.args, readable: channel.readable }} />;
     },
   ],
+};
+
+export const StreamingTextWithPriorMessages: Story = {
+  decorators: [
+    (Story, ctx) => {
+      const channel = useMemo(() => makeTextChannel(), []);
+
+      useEffect(() => {
+        let i = 1;
+
+        const id = setInterval(() => {
+          channel.write(`line ${i++} — ${new Date().toLocaleTimeString()}\n`);
+        }, 25);
+
+        return () => {
+          clearInterval(id);
+          channel.close();
+        };
+      }, [channel]);
+
+      return <Story args={{ ...ctx.args, readable: channel.readable }} />;
+    },
+  ],
+  args: {
+    messages: [
+      {
+        role: 'user',
+        content:
+          'Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+      {
+        role: 'tool',
+        content: 'Foobar',
+      },
+      {
+        role: 'assistant',
+        content:
+          'Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+      {
+        role: 'user',
+        content:
+          'Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+      {
+        role: 'assistant',
+        content:
+          '<think>I am a helpful assistant, I can see what the user might be thinking. Hmmm... what lorem text to generate to help?</think>Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\nSed dignissim at nibh eget viverra.\n\nFusce sed mi risus. Nullam ut sem sit amet turpis lacinia laoreet non non erat. Suspendisse viverra, magna accursus volutpat, tellus ipsum finibus eros, a commodo purus erat a neque. Etiam eget egestas orci.',
+      },
+      {
+        role: 'user',
+        content: 'May you please infinitely stream text content in the format:\n\nline # — H:MM:SS',
+      },
+    ],
+  },
 };
