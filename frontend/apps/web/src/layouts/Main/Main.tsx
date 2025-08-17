@@ -23,13 +23,23 @@ export function Main({ contentPadding = true, delegateScrolling = false }: Props
             <Toaster />
 
             <div className="flex flex-col h-screen">
-                <PrimaryNavigation />
+              <PrimaryNavigation />
 
-              <div className="flex flex-row grow">
+              <div className="flex flex-row flex-1 min-h-0">
                 <aside className="flex flex-col">
-                  <Portal id="tertiary-navigation" className="flex flex-col grow" />
+                  <Portal
+                    id="tertiary-navigation"
+                    className="flex flex-col flex-1 h-full min-h-0 overflow-hidden"
+                  />
                 </aside>
-                <main className="flex grow p-4">
+
+                <main
+                  className={cn(
+                    'flex flex-1 h-full min-h-0',
+                    delegateScrolling ? 'overflow-hidden' : 'overflow-y-auto',
+                    contentPadding ? 'p-4' : '',
+                  )}
+                >
                   <Outlet />
                 </main>
               </div>
