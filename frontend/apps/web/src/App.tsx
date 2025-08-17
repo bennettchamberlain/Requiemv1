@@ -87,14 +87,6 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/chat/*"
-          element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/files"
           element={
             <ProtectedRoute>
@@ -141,6 +133,17 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+      </Route>
+
+      <Route element={<MainLayout delegateScrolling={true} contentPadding={false} />}>
+        <Route
+          path="/chat/*"
+          element={
+            <ProtectedRoute>
+              <ChatPage />
             </ProtectedRoute>
           }
         />
