@@ -130,8 +130,6 @@ export class OllamaController {
     try {
       for await (const chunk of stream) {
         if (chunk.message) {
-          console.log('message', chunk.message);
-
           let frame;
 
           if (chunk.message.content) {
@@ -159,8 +157,6 @@ export class OllamaController {
         this.logger.error('Error proxying Ollama stream:', err as Error);
       }
     } finally {
-      console.log('MESSAGES:', stream.messages);
-
       for (let i = 0; i < stream.messages.length; i++) {
         const message = stream.messages[i];
 
