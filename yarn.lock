@@ -1523,6 +1523,7 @@ __metadata:
     "@vitest/browser": "npm:^3.2.3"
     "@vitest/coverage-v8": "npm:^3.2.3"
     autoprefixer: "npm:^10.4.21"
+    buffer: "npm:^6.0.3"
     clsx: "npm:^2.1.1"
     eslint: "npm:^9.27.0"
     eslint-import-resolver-typescript: "npm:^4.4.4"
