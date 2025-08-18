@@ -1525,6 +1525,7 @@ __metadata:
     autoprefixer: "npm:^10.4.21"
     buffer: "npm:^6.0.3"
     clsx: "npm:^2.1.1"
+    embla-carousel-react: "npm:^8.6.0"
     eslint: "npm:^9.27.0"
     eslint-import-resolver-typescript: "npm:^4.4.4"
     eslint-plugin-import: "npm:^2.32.0"

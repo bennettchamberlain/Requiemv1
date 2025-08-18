@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
 
 import { BentoCard } from '../../components/BentoCard';
+import { FeedModal } from '../../components/FeedModal';
 
 interface FeedItem {
   id: string;
@@ -311,6 +312,8 @@ export default function FeedPage() {
 
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
 
   const scrollPrev = useCallback(() => {
     if (emblaApi) {
@@ -358,7 +361,11 @@ export default function FeedPage() {
 
   const handleCardClick = useCallback((id: string) => {
     console.log('Card clicked:', id);
-    // Handle card click - could open detail view, mark as read, etc.
+    const item = [...feedData, ...actionInsightData].find((item) => item.id === id);
+    if (item) {
+      setSelectedItem(item);
+      setIsModalOpen(true);
+    }
   }, []);
 
   const handleLike = useCallback((id: string) => {
@@ -373,28 +380,17 @@ export default function FeedPage() {
 
   const handleExpand = useCallback((id: string) => {
     console.log('Expanded card:', id);
-    // Handle expand action - could open chat, show more details, etc.
+    const item = [...feedData, ...actionInsightData].find((item) => item.id === id);
+    if (item) {
+      setSelectedItem(item);
+      setIsModalOpen(true);
+    }
   }, []);
 
-  // const handleChatSubmit = useCallback((id: string, message: string) => {
-  //   console.log('Chat submitted for card:', id, 'Message:', message);
-  //   // Handle chat submission - could send to AI, save to database, etc.
-  // }, []);
-
-  // const handleChatAttach = useCallback((id: string, e: React.MouseEvent<HTMLButtonElement>) => {
-  //   console.log('Chat attach for card:', id);
-  //   // Handle file attachment
-  // }, []);
-
-  // const handleChatRecord = useCallback((id: string, e: React.MouseEvent<HTMLButtonElement>) => {
-  //   console.log('Chat record for card:', id);
-  //   // Handle voice recording
-  // }, []);
-
-  // const handleChatStop = useCallback((id: string, e: React.MouseEvent<HTMLButtonElement>) => {
-  //   console.log('Chat stop for card:', id);
-  //   // Handle stop recording
-  // }, []);
+  const handleModalClose = useCallback(() => {
+    setIsModalOpen(false);
+    setSelectedItem(null);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -427,14 +423,6 @@ export default function FeedPage() {
                         onDislike: () => handleDislike(item.id),
                         onExpand: () => handleExpand(item.id),
                       }}
-                      chat={
-                        {
-                          // onSubmit: (message) => handleChatSubmit(item.id, message),
-                          // onAttach: (e) => handleChatAttach(item.id, e),
-                          // onRecord: (e) => handleChatRecord(item.id, e),
-                          // onStop: (e) => handleChatStop(item.id, e),
-                        }
-                      }
                       className="hover:shadow-lg transition-shadow duration-200"
                       style={{ width: '550px', maxWidth: '550px' }}
                     />
@@ -486,14 +474,6 @@ export default function FeedPage() {
                     onDislike: () => handleDislike(item.id),
                     onExpand: () => handleExpand(item.id),
                   }}
-                  chat={
-                    {
-                      // onSubmit: (message) => handleChatSubmit(item.id, message),
-                      // onAttach: (e) => handleChatAttach(item.id, e),
-                      // onRecord: (e) => handleChatRecord(item.id, e),
-                      // onStop: (e) => handleChatStop(item.id, e),
-                    }
-                  }
                   className="hover:shadow-lg transition-shadow duration-200"
                 />
               </div>
@@ -501,6 +481,15 @@ export default function FeedPage() {
           </div>
         </div>
       </div>
+
+      {/* Feed Modal */}
+      <FeedModal
+        isOpen={isModalOpen}
+        onClose={handleModalClose}
+        item={selectedItem}
+        onLike={handleLike}
+        onDislike={handleDislike}
+      />
     </div>
   );
 }
