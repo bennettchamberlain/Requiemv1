@@ -1,25 +1,36 @@
-import React, { useMemo, useState } from 'react';
+import { type ForwardedRef, type RefObject, forwardRef, useMemo, useState } from 'react';
 
 import { ChevronDown, ChevronRight, Brain } from '@ci/shadcn/icons';
 
 import { cn } from '@/lib/utils';
 
-interface ThinkBlockProps {
-  content: string;
+interface Props {
+  content?: string;
+  renderEmptyContent?: boolean;
   defaultExpanded?: boolean;
+  streamingRef?: RefObject<HTMLDivElement | null> | ((el: HTMLDivElement | null) => void);
 }
 
-export const ThinkBlock: React.FC<ThinkBlockProps> = ({ content, defaultExpanded = true }) => {
+function ThinkBlock(
+  { content, renderEmptyContent = false, defaultExpanded = true, streamingRef }: Props,
+  ref: ForwardedRef<HTMLDivElement>,
+) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
-  const trimmedContent = useMemo(() => content.trim(), [content]);
+  const trimmedContent = useMemo(() => content?.trim(), [content]);
 
-  if (!trimmedContent) {
+  if (!trimmedContent && !renderEmptyContent) {
     return null;
   }
 
   return (
-    <div className="border border-amber-200 dark:border-amber-800/50 text-sm rounded-lg bg-amber-50/50 dark:bg-amber-950/20">
+    <div
+      ref={ref}
+      className={cn(
+        'border border-amber-200 dark:border-amber-800/50 text-sm rounded-lg bg-amber-50/50 dark:bg-amber-950/20',
+        'has-[.streaming-content:empty]:hidden',
+      )}
+    >
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
@@ -42,9 +53,15 @@ export const ThinkBlock: React.FC<ThinkBlockProps> = ({ content, defaultExpanded
         )}
       >
         <div className="p-3 border-t border-amber-200/50 dark:border-amber-800/30 space-y-2 whitespace-pre-wrap leading-relaxed">
-          {trimmedContent}
+          <div className="streaming-content" ref={streamingRef}>
+            {trimmedContent}
+          </div>
         </div>
       </div>
     </div>
   );
-};
+}
+
+const ThinkBlockRef = forwardRef<HTMLDivElement, Props>(ThinkBlock);
+
+export { ThinkBlockRef as ThinkBlock };

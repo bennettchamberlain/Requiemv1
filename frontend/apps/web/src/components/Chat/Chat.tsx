@@ -1,12 +1,16 @@
-import { type ComponentProps, type ReactNode, useCallback, useRef } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { type ComponentProps, type ReactNode, type RefObject, useCallback, useMemo, useRef } from 'react';
 
 import { useReadablePump } from '@ci/common';
+
+import { ThinkBlock, ToolBlock } from '../ChatBlocks';
 
 import { ChatInput } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
 import { ChatThread } from './ChatThread';
 import { AssistantMessage } from './blocks/AssistantMessage';
-import { useMultiplexTaggedStream } from './hooks/useMultiplexTaggedStream';
+import { Channel, toFrameStream, type Decoded } from './utils';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
@@ -16,101 +20,139 @@ interface Message {
 }
 interface Props extends ChatInputProps {
   messages?: Message[];
-  readable?: ReadableStream<string>;
+  readable?: ReadableStream<Uint8Array>;
   emptyState?: ReactNode;
 }
 
+const textDecoder = new TextDecoder();
+const supportedChannels = new Set([Channel.TEXT, Channel.THINK, Channel.TOOL]);
+
 export function Chat({ messages, readable, loading, emptyState, ...chatInputProps }: Props) {
-  const textContainerRef = useRef<HTMLDivElement | null>(null);
-  const thinkContainerRef = useRef<HTMLDivElement | null>(null);
-  const toolContainerRef = useRef<HTMLDivElement | null>(null);
+  // These refs are used to point to the parent elements of the blocks
+  // that are receiving streaming text. We will need to clone the elements when a
+  // block is finished. These are important for that strategy.
+  const textBlockRef = useRef<HTMLDivElement | null>(null);
+  const thinkBlockRef = useRef<HTMLDivElement | null>(null);
 
-  const mux = useMultiplexTaggedStream(readable, (ended) => {
-    if (ended === 'tool') {
-      console.log('Tool block finished');
-    } else if (ended === 'think') {
-      // console.log('Think block finished');
-    } else {
-      // console.log('Text block finished');
+  // We need a target to insert our accumulated messages.
+  // We are avoiding doing this in React state because we don't want to trigger
+  // re-renders. This avoids some DOM flickering shenanigans.
+  const blocksRef = useRef<HTMLDivElement | null>(null);
+
+  // These refs are used to point to the stream target for text coming from
+  // the LLM endpoint.
+  const textStreamingRef = useRef<HTMLDivElement | null>(null);
+  const thinkStreamingRef = useRef<HTMLDivElement | null>(null);
+
+  // We want to track the channel of the last message we've received.
+  // If we receive a message in a new channel we'll know to kick off
+  // the clone / swap flow.
+  const lastChannelRef = useRef<number | null>(null);
+
+  const handleFrameChunk = useCallback((chunk: Decoded) => {
+    if (!supportedChannels.has(chunk.channel)) {
+      console.log('Ignored unsupported chunk channel:', chunk.channel);
+
+      return true; // consumed → read next chunk
     }
-  });
 
-  const { drain: drainText } = useReadablePump(mux?.text ?? null, (chunk) => {
-    // console.log('Text chunk', chunk);
+    const lastChannel = lastChannelRef.current;
+    const payload = textDecoder.decode(chunk.payload);
 
-    const el = textContainerRef.current;
+    lastChannelRef.current = chunk.channel;
 
-    if (el == null) {
-      return false; // not ready → buffer it
+    if (lastChannel != null && chunk.channel !== lastChannel) {
+      if (lastChannel === Channel.TEXT) {
+        const clone = textBlockRef.current?.cloneNode(true);
+
+        textStreamingRef.current?.replaceChildren();
+
+        if (clone && thinkBlockRef.current) {
+          blocksRef.current?.insertBefore(clone, thinkBlockRef.current);
+        }
+      } else if (lastChannel === Channel.THINK) {
+        const clone = thinkBlockRef.current?.cloneNode(true);
+
+        thinkStreamingRef.current?.replaceChildren();
+
+        if (clone && thinkBlockRef.current) {
+          blocksRef.current?.insertBefore(clone, thinkBlockRef.current);
+        }
+      }
     }
 
-    const textNode = document.createTextNode(chunk);
+    if (chunk.channel === Channel.TOOL) {
+      let parsed: { function: { name: string } }[] = [];
 
-    el.appendChild(textNode);
+      try {
+        parsed = JSON.parse(payload) as { function: { name: string } }[];
+      } catch (err) {
+        console.error('Error parsing tool payload', err);
+      }
+
+      try {
+        const toolBlocks = parsed.map((tool) => <ToolBlock toolName={tool.function.name} />);
+        const container = document.createDocumentFragment();
+        const root: Root = createRoot(container);
+
+        flushSync(() => {
+          root.render(toolBlocks);
+        });
+
+        blocksRef.current?.insertBefore(container, thinkBlockRef.current);
+      } catch (err) {
+        console.error('Error inserting tool block', err);
+      }
+
+      return true;
+    }
+
+    if (chunk.channel === Channel.TEXT || chunk.channel === Channel.THINK) {
+      let targetRef: RefObject<HTMLDivElement | null> = textStreamingRef;
+
+      if (chunk.channel === Channel.TEXT) {
+        targetRef = textStreamingRef;
+      } else if (chunk.channel === Channel.THINK) {
+        targetRef = thinkStreamingRef;
+      }
+
+      const el = targetRef.current;
+
+      if (el == null) {
+        return false; // not ready → buffer it
+      }
+
+      const textNode = document.createTextNode(payload);
+
+      el.appendChild(textNode);
+    }
 
     return true; // consumed → read next chunk
-  });
+  }, []);
 
-  const { drain: drainThink } = useReadablePump(mux?.think ?? null, (chunk) => {
-    const el = thinkContainerRef.current;
+  const frameStream = useMemo(() => toFrameStream(readable ?? null), [readable]);
+  const { drain } = useReadablePump(frameStream, handleFrameChunk);
 
-    if (el == null) {
-      return false; // not ready → buffer it
-    }
-
-    const textNode = document.createTextNode(chunk);
-
-    el.appendChild(textNode);
-
-    return true; // consumed → read next chunk
-  });
-
-  const { drain: drainTool } = useReadablePump(mux?.tool ?? null, (chunk) => {
-    const el = toolContainerRef.current;
-
-    if (el == null) {
-      return false; // not ready → buffer it
-    }
-
-    const textNode = document.createTextNode(chunk);
-
-    el.appendChild(textNode);
-
-    return true; // consumed → read next chunk
-  });
-
-  // When the div mounts, immediately replay any queued chunks
-  const setTextRef = useCallback(
+  const setTextStreamingRef = useCallback(
     (el: HTMLDivElement | null) => {
-      textContainerRef.current = el;
+      textStreamingRef.current = el;
 
       if (el) {
-        drainText();
+        drain();
       }
     },
-    [drainText],
+    [drain],
   );
 
-  const setThinkRef = useCallback(
+  const setThinkStreamingRef = useCallback(
     (el: HTMLDivElement | null) => {
-      thinkContainerRef.current = el;
+      thinkStreamingRef.current = el;
 
       if (el) {
-        drainThink();
+        drain();
       }
     },
-    [drainThink],
-  );
-
-  const setToolRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      toolContainerRef.current = el;
-
-      if (el) {
-        drainTool();
-      }
-    },
-    [drainTool],
+    [drain],
   );
 
   return (
@@ -121,6 +163,7 @@ export function Chat({ messages, readable, loading, emptyState, ...chatInputProp
 
       {!emptyState && (
         <div
+          ref={blocksRef}
           className="
           flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll p-4
           [mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_2rem)]
@@ -133,9 +176,18 @@ export function Chat({ messages, readable, loading, emptyState, ...chatInputProp
 
           {readable && (
             <>
-              <AssistantMessage renderEmptyContent={true} streamingRef={setToolRef} />
-              <AssistantMessage renderEmptyContent={true} streamingRef={setThinkRef} />
-              <AssistantMessage renderEmptyContent={true} streamingRef={setTextRef} />
+              <ThinkBlock
+                renderEmptyContent={true}
+                defaultExpanded={true}
+                ref={thinkBlockRef}
+                streamingRef={setThinkStreamingRef}
+              />
+
+              <AssistantMessage
+                renderEmptyContent={true}
+                ref={textBlockRef}
+                streamingRef={setTextStreamingRef}
+              />
             </>
           )}
         </div>
