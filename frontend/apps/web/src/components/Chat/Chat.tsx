@@ -17,7 +17,7 @@ import { AssistantMessage } from './blocks/AssistantMessage';
 import { UserMessage } from './blocks/UserMessage';
 import { ChatInput, type FormData } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
-import { ChatThread } from './ChatThread';
+import { ChatMessage } from './ChatMessage';
 import { Channel, FrameDecoder, type Decoded } from './utils';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
@@ -206,7 +206,7 @@ export function Chat({ messages, readable, loading, emptyState, onSubmit, ...cha
             [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]
           "
         >
-          <ChatThread messages={messages} />
+          {messages?.map((message, i) => <ChatMessage key={i} {...message} />)}
 
           {readable && (
             <>
