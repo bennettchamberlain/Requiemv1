@@ -4,12 +4,12 @@ import { Monitor, Moon, Sun } from '@ci/shadcn/icons';
 import { useTheme } from '@/hooks/use-theme';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { themeState, setTheme } = useTheme();
 
   const handleToggle = () => {
-    if (theme === 'light') {
+    if (themeState.mode === 'light') {
       setTheme('dark');
-    } else if (theme === 'dark') {
+    } else if (themeState.mode === 'dark') {
       setTheme('system');
     } else {
       setTheme('light');
@@ -17,7 +17,7 @@ export function ThemeToggle() {
   };
 
   const getIcon = () => {
-    switch (theme) {
+    switch (themeState.mode) {
       case 'light':
         return <Sun className="h-4 w-4" />;
       case 'dark':
@@ -30,7 +30,7 @@ export function ThemeToggle() {
   };
 
   const getTooltipText = () => {
-    switch (theme) {
+    switch (themeState.mode) {
       case 'light':
         return 'Switch to dark mode';
       case 'dark':

@@ -16,6 +16,8 @@ import {
   Info,
 } from '@ci/shadcn/icons';
 
+import { ThemePicker } from '@/components/ThemePicker';
+
 interface SettingsState {
   // Data Storage
   dataRetentionDays: string;
@@ -461,55 +463,61 @@ export function SettingsPage() {
           <Card.Header>
             <Card.Title className="flex items-center gap-2">
               <Settings className="h-5 w-5" />
-              System Preferences
+              Appearance & System Preferences
             </Card.Title>
             <Card.Description>Configure general system behavior and appearance</Card.Description>
           </Card.Header>
           <Card.Content>
-            <div className="grid gap-6 md:grid-cols-3">
-              <div className="grid gap-2">
-                <Label htmlFor="theme">Theme</Label>
-                <Select value={settings.theme} onValueChange={(value) => updateSetting('theme', value)}>
-                  <Select.Trigger id="theme">
-                    <Select.Value />
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Item value="light">Light</Select.Item>
-                    <Select.Item value="dark">Dark</Select.Item>
-                    <Select.Item value="system">System</Select.Item>
-                  </Select.Content>
-                </Select>
+            <div className="grid gap-6 lg:grid-cols-2">
+              {/* Theme Picker Section */}
+              <div className="space-y-4">
+                <div>
+                  <Label>Theme & Color</Label>
+                  <p className="text-sm text-muted-foreground">Customize your interface appearance</p>
+                </div>
+                <ThemePicker />
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="language">Language</Label>
-                <Select value={settings.language} onValueChange={(value) => updateSetting('language', value)}>
-                  <Select.Trigger id="language">
-                    <Select.Value />
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Item value="english">English</Select.Item>
-                    <Select.Item value="spanish">Spanish</Select.Item>
-                    <Select.Item value="french">French</Select.Item>
-                    <Select.Item value="german">German</Select.Item>
-                  </Select.Content>
-                </Select>
-              </div>
+              {/* Other System Settings */}
+              <div className="space-y-4">
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="language">Language</Label>
+                    <Select
+                      value={settings.language}
+                      onValueChange={(value) => updateSetting('language', value)}
+                    >
+                      <Select.Trigger id="language">
+                        <Select.Value />
+                      </Select.Trigger>
+                      <Select.Content>
+                        <Select.Item value="english">English</Select.Item>
+                        <Select.Item value="spanish">Spanish</Select.Item>
+                        <Select.Item value="french">French</Select.Item>
+                        <Select.Item value="german">German</Select.Item>
+                      </Select.Content>
+                    </Select>
+                  </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="timezone">Timezone</Label>
-                <Select value={settings.timezone} onValueChange={(value) => updateSetting('timezone', value)}>
-                  <Select.Trigger id="timezone">
-                    <Select.Value />
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Item value="America/New_York">Eastern Time</Select.Item>
-                    <Select.Item value="America/Chicago">Central Time</Select.Item>
-                    <Select.Item value="America/Denver">Mountain Time</Select.Item>
-                    <Select.Item value="America/Los_Angeles">Pacific Time</Select.Item>
-                    <Select.Item value="UTC">UTC</Select.Item>
-                  </Select.Content>
-                </Select>
+                  <div className="grid gap-2">
+                    <Label htmlFor="timezone">Timezone</Label>
+                    <Select
+                      value={settings.timezone}
+                      onValueChange={(value) => updateSetting('timezone', value)}
+                    >
+                      <Select.Trigger id="timezone">
+                        <Select.Value />
+                      </Select.Trigger>
+                      <Select.Content>
+                        <Select.Item value="America/New_York">Eastern Time</Select.Item>
+                        <Select.Item value="America/Chicago">Central Time</Select.Item>
+                        <Select.Item value="America/Denver">Mountain Time</Select.Item>
+                        <Select.Item value="America/Los_Angeles">Pacific Time</Select.Item>
+                        <Select.Item value="UTC">UTC</Select.Item>
+                      </Select.Content>
+                    </Select>
+                  </div>
+                </div>
               </div>
             </div>
 
