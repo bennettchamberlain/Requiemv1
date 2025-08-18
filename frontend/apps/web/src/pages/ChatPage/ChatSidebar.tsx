@@ -62,7 +62,7 @@ export const ChatSidebar = memo(function ChatSidebar({
           onClick={() => !isExpanded && setIsExpanded(true)}
           className={cn(
             'w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 transition-all duration-200',
-            !isExpanded && 'hover:bg-primary/20 cursor-pointer hover:scale-105',
+            !isExpanded && 'hover:bg-primary/20 cursor-pointer',
           )}
           title={!isExpanded ? 'Click to expand sidebar' : undefined}
         >
@@ -73,7 +73,7 @@ export const ChatSidebar = memo(function ChatSidebar({
             <h2 className="text-lg font-semibold flex-shrink-0">Chat Threads</h2>
             <button
               onClick={onRefresh}
-              className="p-2 rounded-lg hover:bg-muted/80 transition-all duration-200 hover:scale-105 flex-shrink-0"
+              className="p-2 rounded-lg hover:bg-muted/80 transition-all duration-200 flex-shrink-0"
               title="Refresh threads"
               disabled={loading}
             >
@@ -84,7 +84,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         {isExpanded && (
           <button
             onClick={() => setIsExpanded(false)}
-            className="p-2 rounded-lg hover:bg-muted/80 transition-all duration-200 hover:scale-105 flex-shrink-0 ml-auto"
+            className="p-2 rounded-lg hover:bg-muted/80 transition-all duration-200 flex-shrink-0 ml-auto"
             title="Collapse sidebar"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -120,8 +120,8 @@ export const ChatSidebar = memo(function ChatSidebar({
                   <button
                     onClick={onNewThread}
                     className={cn(
-                      'w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 group hover:scale-[1.02]',
-                      !selectedThreadId && 'border-primary/50 bg-primary/5 shadow-sm',
+                      'w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 group',
+                      !selectedThreadId && 'border-primary/50 bg-primary/5',
                     )}
                   >
                     <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
@@ -154,16 +154,16 @@ export const ChatSidebar = memo(function ChatSidebar({
                       <button
                         onClick={() => onSelectThread(thread.id)}
                         className={cn(
-                          'w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted/60 transition-all duration-200 relative hover:scale-[1.01]',
+                          'w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted/60 transition-all duration-200 relative',
                           selectedThreadId === thread.id &&
-                            'bg-primary/10 border border-primary/20 shadow-md ring-2 ring-primary/10',
+                            'bg-primary/10',
                         )}
                       >
                         <div
                           className={cn(
                             'w-2 h-2 rounded-full transition-all duration-200',
                             selectedThreadId === thread.id
-                              ? 'bg-primary scale-125'
+                              ? 'bg-primary'
                               : 'bg-muted-foreground/30',
                           )}
                         />
@@ -185,7 +185,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                             e.stopPropagation();
                             onDeleteThread(thread.id);
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-all duration-200 hover:scale-110 cursor-pointer"
+                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-all duration-200 cursor-pointer"
                           title="Delete thread"
                           role="button"
                           tabIndex={0}
@@ -215,7 +215,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 onClick={onNewThread}
                 className={cn(
                   'w-10 h-10 rounded-lg bg-primary/10 hover:bg-primary/20 transition-all duration-200 flex items-center justify-center',
-                  !selectedThreadId && 'bg-primary/20 ring-2 ring-primary/30',
+                  !selectedThreadId && 'bg-primary/20',
                 )}
                 title="New Thread"
               >
@@ -230,14 +230,14 @@ export const ChatSidebar = memo(function ChatSidebar({
                   onClick={() => onSelectThread(thread.id)}
                   className={cn(
                     'w-10 h-10 rounded-lg hover:bg-muted/60 transition-all duration-200 relative flex items-center justify-center',
-                    selectedThreadId === thread.id && 'bg-primary/10 ring-2 ring-primary/20',
+                    selectedThreadId === thread.id && 'bg-primary/10',
                   )}
                   title={thread.name || `Thread ${thread.id.slice(0, 8)}`}
                 >
                   <div
                     className={cn(
                       'w-2 h-2 rounded-full transition-all duration-200 absolute -top-1 -right-1',
-                      selectedThreadId === thread.id ? 'bg-primary scale-125' : 'bg-muted-foreground/30',
+                      selectedThreadId === thread.id ? 'bg-primary' : 'bg-muted-foreground/30',
                     )}
                   />
                   <MessageSquare className="h-5 w-5 text-muted-foreground" />
