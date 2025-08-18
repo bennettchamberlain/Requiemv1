@@ -32,6 +32,7 @@ interface PromptOptions {
   model?: string;
   signal?: AbortSignal;
   enableTools?: boolean;
+  enableThinking?: boolean;
 }
 
 @Injectable()
@@ -118,7 +119,7 @@ export class OllamaService {
     options?: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
     const resolvedOptions = options ?? {};
-    const { model = PROMPT_MODEL, signal, enableTools = false } = resolvedOptions;
+    const { model = PROMPT_MODEL, signal, enableTools = false, enableThinking = true } = resolvedOptions;
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -163,6 +164,7 @@ export class OllamaService {
             model,
             messages: inputMessages.concat(accumulatedMessages),
             stream: true,
+            ...(enableThinking && { think: true }),
             ...(iterationWillCallTools && { tools: ollamaTools }),
           });
 

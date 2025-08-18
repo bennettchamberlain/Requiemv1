@@ -24,6 +24,7 @@ import { MessageService } from '../services/MessageService';
 import { OllamaService } from '../services/OllamaService';
 import { ThreadService } from '../services/ThreadService';
 import type { OllamaModel, PromptInput } from '../types';
+import { Channel, FrameEncoder } from '@ci/common/rpc';
 
 const promptSchema = z.object({
   prompt: z.string(),
@@ -34,7 +35,8 @@ const promptSchema = z.object({
 
 @Controller('llm')
 export class OllamaController {
-  private logger = new LoggerService(OllamaController.name);
+  private readonly logger = new LoggerService(OllamaController.name);
+  private readonly frameEncoder = new FrameEncoder();
 
   constructor(
     private readonly eventService: EventService,
@@ -92,10 +94,14 @@ export class OllamaController {
       threadId,
     });
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Thread-Id', threadId);
+    res.socket?.setNoDelay(true);
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Thread-Id': threadId,
+    });
+    res.flushHeaders?.();
 
     const abortController = new AbortController();
     const signal = abortController.signal;
@@ -118,20 +124,31 @@ export class OllamaController {
       model: resolvedModel.model,
       signal,
       enableTools: input.enableTools,
+      enableThinking: true,
     });
 
     try {
       for await (const chunk of stream) {
         if (chunk.message) {
+          console.log('message', chunk.message);
+
+          let frame;
+
+          if (chunk.message.content) {
+            frame = this.frameEncoder.encodeFrame(Channel.TEXT, chunk.message.content);
+          } else if (chunk.message.thinking) {
+            frame = this.frameEncoder.encodeFrame(Channel.THINK, chunk.message.thinking);
+          } else if (chunk.message.tool_calls) {
+            frame = this.frameEncoder.encodeFrame(Channel.TOOL, JSON.stringify(chunk.message.tool_calls));
+          }
+
           // TODO: Handle other properties on `chunk.message`.
           //   chunk.message.images?
 
-          if (chunk.message.content) {
-            res.write(chunk.message.content);
-          } else if (chunk.message.tool_calls) {
-            res.write('<tool>');
-            res.write(JSON.stringify(chunk.message.tool_calls));
-            res.write('</tool>');
+          if (frame) {
+            const buffer = Buffer.from(frame);
+
+            res.write(buffer);
           }
         }
       }
