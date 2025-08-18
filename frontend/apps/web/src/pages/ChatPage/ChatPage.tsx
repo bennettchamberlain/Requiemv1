@@ -10,8 +10,8 @@ import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useModel } from '@/hooks';
 
 import { ChatSidebar } from './ChatSidebar';
-import { useThreadService } from './useThreadService';
 import { useThreadListService } from './useThreadListService';
+import { useThreadService } from './useThreadService';
 
 export default function ChatPage() {
   usePageTitle('Chat - Companion Intelligence');
@@ -32,7 +32,7 @@ export default function ChatPage() {
     { refetch: refetchThreads, delete: handleDeleteThread },
   ] = useThreadListService();
 
-  const [{ thread, loading: threadLoading, error: threadError }] = useThreadService(threadId);
+  const [{ thread, loading: threadLoading }] = useThreadService(threadId);
 
   const [promptLoading, setPromptLoading] = useState<boolean>(false);
   const [reader, setReader] = useState<ReadableStream<Uint8Array> | null>(null);

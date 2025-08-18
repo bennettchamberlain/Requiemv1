@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
+import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
@@ -24,7 +25,6 @@ import { MessageService } from '../services/MessageService';
 import { OllamaService } from '../services/OllamaService';
 import { ThreadService } from '../services/ThreadService';
 import type { OllamaModel, PromptInput } from '../types';
-import { Channel, FrameEncoder } from '@ci/common/rpc';
 
 const promptSchema = z.object({
   prompt: z.string(),
@@ -36,6 +36,7 @@ const promptSchema = z.object({
 @Controller('llm')
 export class OllamaController {
   private readonly logger = new LoggerService(OllamaController.name);
+
   private readonly frameEncoder = new FrameEncoder();
 
   constructor(

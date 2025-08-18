@@ -1,5 +1,3 @@
-import { createRoot, type Root } from 'react-dom/client';
-import { flushSync } from 'react-dom';
 import {
   type ComponentProps,
   type FormEvent,
@@ -10,14 +8,17 @@ import {
   useRef,
 } from 'react';
 
+import { flushSync } from 'react-dom';
+import { createRoot, type Root } from 'react-dom/client';
+
 import { ThinkBlock, ToolBlock } from '../ChatBlocks';
 
+import { AssistantMessage } from './blocks/AssistantMessage';
+import { UserMessage } from './blocks/UserMessage';
 import { ChatInput, type FormData } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
 import { ChatThread } from './ChatThread';
-import { AssistantMessage } from './blocks/AssistantMessage';
 import { Channel, FrameDecoder, type Decoded } from './utils';
-import { UserMessage } from './blocks/UserMessage';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 

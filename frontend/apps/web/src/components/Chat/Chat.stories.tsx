@@ -1,5 +1,6 @@
-import { type ComponentProps, useEffect, useMemo } from 'react';
 import { Buffer } from 'buffer';
+
+import { type ComponentProps, useEffect, useMemo } from 'react';
 
 import type { Meta, StoryObj } from '@storybook/react';
 import { fn } from 'storybook/test';

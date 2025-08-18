@@ -155,16 +155,13 @@ export const ChatSidebar = memo(function ChatSidebar({
                         onClick={() => onSelectThread(thread.id)}
                         className={cn(
                           'w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-muted/60 transition-all duration-200 relative',
-                          selectedThreadId === thread.id &&
-                            'bg-primary/10',
+                          selectedThreadId === thread.id && 'bg-primary/10',
                         )}
                       >
                         <div
                           className={cn(
                             'w-2 h-2 rounded-full transition-all duration-200',
-                            selectedThreadId === thread.id
-                              ? 'bg-primary'
-                              : 'bg-muted-foreground/30',
+                            selectedThreadId === thread.id ? 'bg-primary' : 'bg-muted-foreground/30',
                           )}
                         />
                         <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center flex-shrink-0">
