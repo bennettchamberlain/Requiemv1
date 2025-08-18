@@ -35,4 +35,8 @@ export class FrameDecoder {
 
     return out;
   }
+
+  hasBufferedData(): boolean {
+    return this.buffer.length > 0;
+  }
 }

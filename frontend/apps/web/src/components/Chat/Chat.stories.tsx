@@ -18,7 +18,7 @@ const meta: Meta<Props> = {
     onAttach: fn(),
     onRecord: fn(),
     onStop: fn(),
-    onSubmit: fn(),
+    onSubmit: fn(() => Promise.resolve(true)),
   },
   decorators: [
     (Story) => (
@@ -36,27 +36,54 @@ type Story = StoryObj<Props>;
 const frameEncoder = new FrameEncoder();
 
 function makeByteChannel() {
-  // Emits raw Uint8Array chunks; nothing else.
-  const t = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = t.writable.getWriter();
+  let controller: ReadableStreamDefaultController<Uint8Array>;
 
-  return {
-    /** ReadableStream<Uint8Array> you can pass to your component (or decoder) */
-    readable: t.readable,
+  const readable = new ReadableStream<Uint8Array>({
+    start(ctrl) {
+      controller = ctrl;
+    },
+  });
 
-    /** Write raw bytes. Buffer is a Uint8Array, so this works: write(Buffer.from(...)) */
-    write: (u8: Uint8Array) => writer.write(u8),
-
-    /** Close the stream */
-    close: () => writer.close(),
-
-    /** Abort the stream */
-    abort: (reason?: unknown) => writer.abort?.(reason),
+  const write = (chunk: Buffer | Uint8Array) => {
+    if (controller) {
+      controller.enqueue(new Uint8Array(chunk));
+    } else {
+      console.warn('Attempted to write to a channel before it was ready.');
+    }
   };
+
+  const close = () => {
+    if (controller) {
+      controller.close();
+    }
+  };
+
+  const error = (err: Error) => {
+    if (controller) {
+      controller.error(err);
+    }
+  };
+
+  return { readable, write, close, error };
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new DOMException('Aborted', 'AbortError'));
+    }
+
+    const timeoutId = setTimeout(resolve, ms);
+
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeoutId);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
 }
 
 export const Default: Story = {
@@ -100,16 +127,16 @@ export const StreamingText: Story = {
     (Story, ctx) => {
       const channel = useMemo(() => makeByteChannel(), []);
 
-      async function* scriptedChunks() {
+      // The generator is now much cleaner, with no manual checks.
+      async function* scriptedChunks(signal: AbortSignal) {
         const thinking = `Hmm... let me piece this together. I'm considering how the structure flows, and whether the sequence of tokens aligns with the intended pattern. It looks like there are multiple possible branches here, but one seems more consistent. If I break this down step by step, I should be able to maintain coherence. I might need to reconcile a few edge cases, but overall the direction seems clear. I'll refine the output so it's both logical and natural. Yes, I think this is the right path forward.`;
 
         for (const ch of thinking) {
           yield frameEncoder.encodeFrame(Channel.THINK, ch);
-
-          await sleep(Math.floor(Math.random() * 5) + 5);
+          await sleep(Math.floor(Math.random() * 5) + 5, signal);
         }
 
-        await sleep(500);
+        await sleep(500, signal);
 
         yield frameEncoder.encodeFrame(
           Channel.TOOL,
@@ -122,7 +149,7 @@ export const StreamingText: Story = {
           ]),
         );
 
-        await sleep(1500);
+        await sleep(1500, signal);
 
         yield frameEncoder.encodeFrame(
           Channel.TOOL,
@@ -135,24 +162,33 @@ export const StreamingText: Story = {
           ]),
         );
 
-        await sleep(1500);
+        await sleep(1500, signal);
 
         for (let i = 0; i < 100; i++) {
           yield frameEncoder.encodeFrame(Channel.TEXT, `line ${i} — ${new Date().toLocaleTimeString()}\n`);
-
-          await sleep(50);
+          await sleep(50, signal);
         }
       }
 
       useEffect(() => {
+        const controller = new AbortController();
+
         (async () => {
-          for await (const chunk of scriptedChunks()) {
-            channel.write(Buffer.from(chunk));
+          try {
+            for await (const chunk of scriptedChunks(controller.signal)) {
+              channel.write(Buffer.from(chunk));
+            }
+          } catch (error) {
+            if ((error as Error).name !== 'AbortError') {
+              console.error('Stream encountered an unhandled error:', error);
+            }
+          } finally {
+            channel.close();
           }
         })();
 
         return () => {
-          channel.close();
+          controller.abort();
         };
       }, [channel]);
 
