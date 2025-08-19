@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
-
-import useEmblaCarousel from 'embla-carousel-react';
+import React, { useCallback, useState } from 'react';
 
 import { BentoCard } from '../../components/BentoCard';
+import { Carousel } from '../../components/Carousel';
 import { FeedModal } from '../../components/FeedModal';
 
 interface FeedItem {
@@ -301,63 +300,8 @@ const actionInsightData: FeedItem[] = [
 ];
 
 export default function FeedPage() {
-  const [emblaRef, emblaApi] = useEmblaCarousel({
-    align: 'start',
-    containScroll: 'trimSnaps',
-    dragFree: true,
-    axis: 'x',
-    skipSnaps: true,
-    slidesToScroll: 1,
-  });
-
-  const [canScrollPrev, setCanScrollPrev] = useState(false);
-  const [canScrollNext, setCanScrollNext] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
-
-  const scrollPrev = useCallback(() => {
-    if (emblaApi) {
-      emblaApi.scrollPrev();
-    }
-  }, [emblaApi]);
-
-  const scrollNext = useCallback(() => {
-    if (emblaApi) {
-      emblaApi.scrollNext();
-    }
-  }, [emblaApi]);
-
-  const onSelect = useCallback(() => {
-    if (!emblaApi) {
-      return;
-    }
-
-    const canPrev = emblaApi.canScrollPrev();
-    const canNext = emblaApi.canScrollNext();
-    console.log('Can scroll prev:', canPrev, 'Can scroll next:', canNext);
-    setCanScrollPrev(canPrev);
-    setCanScrollNext(canNext);
-  }, [emblaApi]);
-
-  useEffect(() => {
-    if (!emblaApi) {
-      return;
-    }
-
-    console.log('Embla API initialized');
-    console.log('Container width:', emblaApi.containerNode().offsetWidth);
-    console.log('Viewport width:', emblaApi.rootNode().offsetWidth);
-    console.log('Number of slides:', emblaApi.slideNodes().length);
-
-    onSelect();
-    emblaApi.on('select', onSelect);
-    emblaApi.on('reInit', onSelect);
-
-    return () => {
-      emblaApi.off('select', onSelect);
-      emblaApi.off('reInit', onSelect);
-    };
-  }, [emblaApi, onSelect]);
 
   const handleCardClick = useCallback((id: string) => {
     console.log('Card clicked:', id);
@@ -378,15 +322,6 @@ export default function FeedPage() {
     // Handle dislike action
   }, []);
 
-  const handleExpand = useCallback((id: string) => {
-    console.log('Expanded card:', id);
-    const item = [...feedData, ...actionInsightData].find((item) => item.id === id);
-    if (item) {
-      setSelectedItem(item);
-      setIsModalOpen(true);
-    }
-  }, []);
-
   const handleModalClose = useCallback(() => {
     setIsModalOpen(false);
     setSelectedItem(null);
@@ -400,85 +335,37 @@ export default function FeedPage() {
           <p className="text-gray-600">Personalized recommendations and updates for John Smith</p>
         </div>
 
-        {/* Embla Carousel Row */}
+        {/* Featured Content Carousel */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Featured Content</h2>
-          <div className="relative">
-            <div className="embla" ref={emblaRef} style={{ width: '100%', overflow: 'hidden' }}>
-              <div className="embla__container" style={{ display: 'flex', flexDirection: 'row' }}>
-                {feedData.map((item) => (
-                  <div
-                    key={item.id}
-                    className="embla__slide"
-                    style={{ flex: '0 0 550px', minWidth: '550px', marginRight: '24px', height: '500px' }}
-                  >
-                    <BentoCard
-                      title={item.title}
-                      description={item.description}
-                      tags={item.tags}
-                      imageUrl={item.imageUrl}
-                      onClick={() => handleCardClick(item.id)}
-                      actions={{
-                        onLike: () => handleLike(item.id),
-                        onDislike: () => handleDislike(item.id),
-                        onExpand: () => handleExpand(item.id),
-                      }}
-                      className="hover:shadow-lg transition-shadow duration-200"
-                      style={{ width: '550px', maxWidth: '550px' }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Navigation Buttons */}
-            <button
-              className={`absolute left-4 top-1/2 transform -translate-y-1/2 z-10 p-2 rounded-full bg-white shadow-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                canScrollPrev ? 'opacity-100' : 'opacity-50 cursor-not-allowed'
-              }`}
-              onClick={scrollPrev}
-              disabled={!canScrollPrev}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-
-            <button
-              className={`absolute right-4 top-1/2 transform -translate-y-1/2 z-10 p-2 rounded-full bg-white shadow-lg border border-gray-200 hover:bg-gray-50 transition-colors ${
-                canScrollNext ? 'opacity-100' : 'opacity-50 cursor-not-allowed'
-              }`}
-              onClick={scrollNext}
-              disabled={!canScrollNext}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
+          <Carousel title="Featured Content">
+            {feedData.map((item) => (
+              <BentoCard
+                key={item.id}
+                title={item.title}
+                description={item.description}
+                tags={item.tags}
+                imageUrl={item.imageUrl}
+                onClick={() => handleCardClick(item.id)}
+                className="hover:shadow-lg transition-shadow duration-200"
+              />
+            ))}
+          </Carousel>
         </div>
 
-        {/* Static Action/Insight Row */}
+        {/* Actions & Insights Carousel */}
         <div>
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Actions & Insights</h2>
-          <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+          <Carousel title="Actions & Insights">
             {actionInsightData.map((item) => (
-              <div key={item.id} className="flex-shrink-0">
-                <BentoCard
-                  title={item.title}
-                  description={item.description}
-                  tags={item.tags}
-                  onClick={() => handleCardClick(item.id)}
-                  actions={{
-                    onLike: () => handleLike(item.id),
-                    onDislike: () => handleDislike(item.id),
-                    onExpand: () => handleExpand(item.id),
-                  }}
-                  className="hover:shadow-lg transition-shadow duration-200"
-                />
-              </div>
+              <BentoCard
+                key={item.id}
+                title={item.title}
+                description={item.description}
+                tags={item.tags}
+                onClick={() => handleCardClick(item.id)}
+                className="hover:shadow-lg transition-shadow duration-200"
+              />
             ))}
-          </div>
+          </Carousel>
         </div>
       </div>
 
