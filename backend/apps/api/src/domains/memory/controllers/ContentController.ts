@@ -55,8 +55,8 @@ export class ContentController {
   @Post()
   async create(@Req() req: Request, @Body(new ValidationPipe(createContentSchema)) input: CreateContentDto) {
     try {
-      console.log('content req', req)
       input.user = { id: req.user.id }
+      if (req.body.event_id) input.event = { id: req.body.event_id }
       return await this.contentService.create(input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
