@@ -38,6 +38,7 @@ const handleEnterSubmit = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 interface Props {
   disabled?: boolean;
   loading?: boolean;
+  streaming?: boolean;
   placeholder?: string;
   onAttach?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onRecord?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
@@ -48,14 +49,15 @@ interface Props {
 export function ChatInput({
   disabled = false,
   loading = false,
+  streaming = false,
   placeholder,
   onAttach,
   onRecord,
   onSubmit,
   onStop,
 }: Props) {
-  const SendIcon = loading ? Square : Send;
-  const sendIconClassName = loading ? '' : 'left-[-0.5px] top-[0.5px]';
+  const SendIcon = streaming ? Square : Send;
+  const sendIconClassName = streaming ? '' : 'left-[-0.5px] top-[0.5px]';
 
   const form = useForm<FormData>({
     resolver: formDataResolver(FormSchema),
@@ -104,7 +106,7 @@ export function ChatInput({
               <Tooltip.Trigger asChild>
                 <Button
                   type="button"
-                  disabled={loading || disabled}
+                  disabled={loading || streaming || disabled}
                   size="sm"
                   variant="ghost"
                   className="cursor-pointer h-8 w-8 p-0 -mr-1 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
@@ -158,7 +160,7 @@ export function ChatInput({
                   <Textarea
                     {...field}
                     placeholder={placeholder}
-                    disabled={loading || disabled}
+                    disabled={loading || streaming || disabled}
                     className="
                       !w-full
                       !flex-1
@@ -193,7 +195,7 @@ export function ChatInput({
                 <Tooltip.Trigger asChild>
                   <Button
                     type="button"
-                    disabled={loading || disabled}
+                    disabled={loading || streaming || disabled}
                     size="sm"
                     variant="ghost"
                     className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
@@ -205,14 +207,14 @@ export function ChatInput({
               </Tooltip>
 
               <Tooltip>
-                <Tooltip.Content side="bottom">{loading ? 'Stop' : 'Send'}</Tooltip.Content>
+                <Tooltip.Content side="bottom">{streaming ? 'Stop' : 'Send'}</Tooltip.Content>
                 <Tooltip.Trigger asChild>
                   <Button
-                    type={loading ? 'button' : 'submit'}
-                    disabled={disabled}
+                    type={streaming ? 'button' : 'submit'}
+                    disabled={loading || disabled}
                     size="sm"
                     className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
-                    onClick={loading ? handleStop : undefined}
+                    onClick={streaming ? handleStop : undefined}
                   >
                     <SendIcon className={cn('h-4 w-4 relative', sendIconClassName)} />
                   </Button>
