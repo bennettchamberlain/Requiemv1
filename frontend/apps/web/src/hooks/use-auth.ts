@@ -96,11 +96,9 @@ function useAuth(): Value {
           }),
         });
         const accessDecoded = jwtDecode(data.accessToken)
-        document.cookie = 'CI_accessToken=pants'
         document.cookie = `CI_accessToken=${data.accessToken}; SameSite=None; Secure; expires=${new Date(accessDecoded.exp * 1000).toUTCString()}`
         const sessionDecoded = jwtDecode(data.accessToken)
         document.cookie = `CI_sessionToken=${data.sessionToken}; SameSite=None; Secure; expires=${new Date(sessionDecoded.exp * 1000).toUTCString()}`
-        console.log('wrote document.cookie', document.cookie)
 
         localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
         localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);

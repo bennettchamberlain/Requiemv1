@@ -55,9 +55,7 @@ export class EventController {
   @Post()
   async create(@Req() req: Request, @Body(new ValidationPipe(createEventSchema)) input: CreateEventDto) {
     try {
-      console.log('EventService.create', req, input);
       input.user = { id: req.user.id }
-      console.log('Updated input', input)
       return await this.eventService.create(input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
@@ -72,11 +70,9 @@ export class EventController {
   @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
-    const userId = context.userId;
-    console.log('userId', userId)
     return this.eventService.findAll({
       where: {
-        user_id: userId
+        user_id: context.userId
       }
     });
   }

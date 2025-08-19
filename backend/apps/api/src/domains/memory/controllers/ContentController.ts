@@ -71,11 +71,9 @@ export class ContentController {
   @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
-    const userId = context.userId;
-    console.log('userId', userId)
     return this.contentService.findAll({
       where: {
-        user_id: userId
+        user_id: context.userId
       }
     });
   }

@@ -16,8 +16,6 @@ export class EventService {
   ) {}
 
   async create(data: CreateEventDto): Promise<Event> {
-
-    console.log('EventService.create', data);
     const event = this.eventRepository.create({
       ...data,
       id: uuidv7()
