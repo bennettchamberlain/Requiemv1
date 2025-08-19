@@ -61,11 +61,3 @@ export interface OllamaModel {
   name: string;
   tag: string | null;
 }
-
-// Extended Ollama message type that includes thinking property
-export interface OllamaMessageWithThinking {
-  role: string;
-  content?: string;
-  thinking?: string;
-  tool_calls?: Record<string, unknown>[];
-}

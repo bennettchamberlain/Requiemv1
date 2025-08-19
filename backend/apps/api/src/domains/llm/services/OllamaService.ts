@@ -21,7 +21,7 @@ import {
   GetStreamingAvailabilityTool,
   type ToolSchema,
 } from '../tools';
-import type { OllamaModel, OllamaMessageWithThinking } from '../types';
+import type { OllamaModel } from '../types';
 
 import { MessageService } from './MessageService';
 
@@ -181,9 +181,8 @@ export class OllamaService {
               textChunks.push(chunk.message.content);
             }
 
-            const thinkingMessage = chunk.message as OllamaMessageWithThinking;
-            if (thinkingMessage.thinking) {
-              thinkChunks.push(thinkingMessage.thinking);
+            if (chunk.message.thinking) {
+              thinkChunks.push(chunk.message.thinking);
             }
 
             if (chunk.message.tool_calls) {

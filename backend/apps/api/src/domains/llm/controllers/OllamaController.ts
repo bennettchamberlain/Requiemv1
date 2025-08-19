@@ -24,7 +24,7 @@ import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/e
 import { MessageService } from '../services/MessageService';
 import { OllamaService } from '../services/OllamaService';
 import { ThreadService } from '../services/ThreadService';
-import type { OllamaModel, PromptInput, OllamaMessageWithThinking } from '../types';
+import type { OllamaModel, PromptInput } from '../types';
 
 const promptSchema = z.object({
   prompt: z.string(),
@@ -135,11 +135,8 @@ export class OllamaController {
 
           if (chunk.message.content) {
             frame = this.frameEncoder.encodeFrame(Channel.TEXT, chunk.message.content);
-          } else if ((chunk.message as OllamaMessageWithThinking).thinking) {
-            const thinking = (chunk.message as OllamaMessageWithThinking).thinking;
-            if (thinking) {
-              frame = this.frameEncoder.encodeFrame(Channel.THINK, thinking);
-            }
+          } else if (chunk.message.thinking) {
+            frame = this.frameEncoder.encodeFrame(Channel.THINK, chunk.message.thinking);
           } else if (chunk.message.tool_calls) {
             frame = this.frameEncoder.encodeFrame(Channel.TOOL, JSON.stringify(chunk.message.tool_calls));
           }
