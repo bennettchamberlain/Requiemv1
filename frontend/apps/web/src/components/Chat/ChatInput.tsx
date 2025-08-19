@@ -91,10 +91,12 @@ export function ChatInput({
     async (data: FormData, e?: BaseSyntheticEvent) => {
       e?.preventDefault();
 
-      const success = await onSubmit?.(data, e as FormEvent<HTMLFormElement>);
+      if (data.message.trim()) {
+        const success = await onSubmit?.(data, e as FormEvent<HTMLFormElement>);
 
-      if (success === true) {
-        form.reset();
+        if (success === true) {
+          form.reset();
+        }
       }
     },
     [form, onSubmit],
