@@ -5,11 +5,12 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
+  useState,
 } from 'react';
 
-import { flushSync } from 'react-dom';
-import { createRoot, type Root } from 'react-dom/client';
+import { v7 as uuid7 } from 'uuid';
 
 import { ThinkBlock, ToolBlock } from '../ChatBlocks';
 
@@ -44,6 +45,8 @@ export function Chat({
   onSubmit,
   ...chatInputProps
 }: Props) {
+  const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([]);
+
   // These refs are used to point to the parent elements of the blocks
   // that are receiving streaming text. We will need to clone the elements when a
   // block is finished. These are important for that strategy.
@@ -66,23 +69,21 @@ export function Chat({
   const lastChannelRef = useRef<number | null>(null);
 
   const flushStream = useCallback((channel: Channel) => {
+    let block: ReactNode | undefined;
+
     if (channel === Channel.TEXT) {
-      const clone = textBlockRef.current?.cloneNode(true);
-
-      textStreamingRef.current?.replaceChildren();
-
-      if (clone && thinkBlockRef.current) {
-        blocksRef.current?.insertBefore(clone, thinkBlockRef.current);
-      }
-    } else if (channel === Channel.THINK) {
-      const clone = thinkBlockRef.current?.cloneNode(true);
+      const text = textStreamingRef.current?.textContent;
+      block = <AssistantMessage key={uuid7()} content={text ?? ''} />;
 
       thinkStreamingRef.current?.replaceChildren();
+    } else if (channel === Channel.THINK) {
+      const text = thinkStreamingRef.current?.textContent;
+      block = <ThinkBlock key={uuid7()} content={text ?? ''} defaultExpanded={true} />;
 
-      if (clone && thinkBlockRef.current) {
-        blocksRef.current?.insertBefore(clone, thinkBlockRef.current);
-      }
+      thinkStreamingRef.current?.replaceChildren();
     }
+
+    setAccumulatedMessages((prev) => [...prev, block]);
   }, []);
 
   const handleFrameChunk = useCallback(
@@ -112,15 +113,9 @@ export function Chat({
         }
 
         try {
-          const toolBlocks = parsed.map((tool) => <ToolBlock toolName={tool.function.name} />);
-          const container = document.createDocumentFragment();
-          const root: Root = createRoot(container);
+          const toolBlocks = parsed.map((tool) => <ToolBlock key={uuid7()} toolName={tool.function.name} />);
 
-          flushSync(() => {
-            root.render(toolBlocks);
-          });
-
-          blocksRef.current?.insertBefore(container, thinkBlockRef.current);
+          setAccumulatedMessages((prev) => [...prev, ...toolBlocks]);
         } catch (err) {
           console.error('Error inserting tool block', err);
         }
@@ -159,15 +154,9 @@ export function Chat({
 
       if (success === true) {
         try {
-          const block = <UserMessage content={data.message} />;
-          const container = document.createDocumentFragment();
-          const root: Root = createRoot(container);
+          const block = <UserMessage key={uuid7()} content={data.message} />;
 
-          flushSync(() => {
-            root.render(block);
-          });
-
-          blocksRef.current?.insertBefore(container, thinkBlockRef.current);
+          setAccumulatedMessages((prev) => [...prev, block]);
         } catch (err) {
           console.error('Error inserting user block', err);
         }
@@ -175,7 +164,7 @@ export function Chat({
 
       return success;
     },
-    [onSubmit, flushSync],
+    [onSubmit],
   );
 
   const handleFinished = useCallback(() => {
@@ -200,6 +189,11 @@ export function Chat({
     };
   }, [readable, handleFinished, handleFrameChunk]);
 
+  const renderedMessages = useMemo(
+    () => messages?.map((message) => <ChatMessage key={uuid7()} {...message} />),
+    [messages],
+  );
+
   return (
     <div className="flex flex-col h-full min-h-0 w-full">
       {emptyState && (
@@ -217,7 +211,9 @@ export function Chat({
             [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]
           "
         >
-          {messages?.map((message, i) => <ChatMessage key={i} {...message} />)}
+          {renderedMessages}
+
+          {accumulatedMessages}
 
           <ThinkBlock
             renderEmptyContent={true}
