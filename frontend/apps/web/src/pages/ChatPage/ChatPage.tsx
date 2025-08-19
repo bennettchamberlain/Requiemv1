@@ -149,8 +149,8 @@ export default function ChatPage() {
       </Portal.Slot>
 
       <Chat
-        // key={threadId ?? ''}
         loading={loading}
+        streaming={chatRequestStreaming}
         disabled={isSubmitDisabled}
         placeholder={inputPlaceholder}
         messages={thread?.messages}

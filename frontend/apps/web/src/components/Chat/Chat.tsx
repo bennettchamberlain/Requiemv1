@@ -35,7 +35,15 @@ interface Props extends ChatInputProps {
 const textDecoder = new TextDecoder();
 const supportedChannels = new Set([Channel.TEXT, Channel.THINK, Channel.TOOL]);
 
-export function Chat({ messages, readable, loading, emptyState, onSubmit, ...chatInputProps }: Props) {
+export function Chat({
+  messages,
+  readable,
+  loading,
+  streaming,
+  emptyState,
+  onSubmit,
+  ...chatInputProps
+}: Props) {
   // These refs are used to point to the parent elements of the blocks
   // that are receiving streaming text. We will need to clone the elements when a
   // block is finished. These are important for that strategy.
@@ -145,6 +153,31 @@ export function Chat({ messages, readable, loading, emptyState, onSubmit, ...cha
     [flushStream],
   );
 
+  const handleSubmit = useCallback(
+    async (data: FormData, e?: FormEvent<HTMLFormElement>) => {
+      const success = await onSubmit?.(data, e);
+
+      if (success === true) {
+        try {
+          const block = <UserMessage content={data.message} />;
+          const container = document.createDocumentFragment();
+          const root: Root = createRoot(container);
+
+          flushSync(() => {
+            root.render(block);
+          });
+
+          blocksRef.current?.insertBefore(container, thinkBlockRef.current);
+        } catch (err) {
+          console.error('Error inserting user block', err);
+        }
+      }
+
+      return success;
+    },
+    [onSubmit, flushSync],
+  );
+
   const handleFinished = useCallback(() => {
     const lastChannel = lastChannelRef.current;
 
@@ -167,28 +200,6 @@ export function Chat({ messages, readable, loading, emptyState, onSubmit, ...cha
     };
   }, [readable, handleFinished, handleFrameChunk]);
 
-  const handleSubmit = async (data: FormData, e?: FormEvent<HTMLFormElement>) => {
-    const success = await onSubmit?.(data, e);
-
-    if (success === true) {
-      try {
-        const block = <UserMessage content={data.message} />;
-        const container = document.createDocumentFragment();
-        const root: Root = createRoot(container);
-
-        flushSync(() => {
-          root.render(block);
-        });
-
-        blocksRef.current?.insertBefore(container, thinkBlockRef.current);
-      } catch (err) {
-        console.error('Error inserting user block', err);
-      }
-    }
-
-    return success;
-  };
-
   return (
     <div className="flex flex-col h-full min-h-0 w-full">
       {emptyState && (
@@ -208,29 +219,21 @@ export function Chat({ messages, readable, loading, emptyState, onSubmit, ...cha
         >
           {messages?.map((message, i) => <ChatMessage key={i} {...message} />)}
 
-          {readable && (
-            <>
-              <ThinkBlock
-                renderEmptyContent={true}
-                defaultExpanded={true}
-                ref={thinkBlockRef}
-                streamingRef={thinkStreamingRef}
-              />
+          <ThinkBlock
+            renderEmptyContent={true}
+            defaultExpanded={true}
+            ref={thinkBlockRef}
+            streamingRef={thinkStreamingRef}
+          />
 
-              <AssistantMessage
-                renderEmptyContent={true}
-                ref={textBlockRef}
-                streamingRef={textStreamingRef}
-              />
-            </>
-          )}
+          <AssistantMessage renderEmptyContent={true} ref={textBlockRef} streamingRef={textStreamingRef} />
         </div>
       )}
 
       <div className="p-4 pt-4 pl-1 w-full relative">
-        {loading && <ChatLoader />}
+        {(loading || streaming) && <ChatLoader />}
 
-        <ChatInput loading={loading} onSubmit={handleSubmit} {...chatInputProps} />
+        <ChatInput loading={loading} streaming={streaming} onSubmit={handleSubmit} {...chatInputProps} />
       </div>
     </div>
   );
