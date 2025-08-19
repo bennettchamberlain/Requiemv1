@@ -89,6 +89,8 @@ export function ChatInput({
 
   const handleSubmit = useCallback(
     async (data: FormData, e?: BaseSyntheticEvent) => {
+      e?.preventDefault();
+
       const success = await onSubmit?.(data, e as FormEvent<HTMLFormElement>);
 
       if (success === true) {
