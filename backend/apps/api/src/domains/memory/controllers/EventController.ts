@@ -9,7 +9,6 @@ import {
   Body,
   Req,
   UseGuards,
-  NotFoundException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { z } from 'zod';
@@ -25,26 +24,26 @@ import { CreateEventDto, UpdateEventDto } from '../types';
 
 const createEventSchema = z.object({
   name: z.string().optional(),
-  type: z.string(),
+  type: z.string().optional(),
   description: z.string().optional(),
   start_time: z.string().datetime(),
   end_time: z.string().datetime().optional(),
   external_id: z.string().optional(),
   source_url: z.string().optional(),
   source_data: z.string().optional(),
-  connection_id: z.string().optional()
+  connection_id: z.string().optional(),
 });
 
 const updateEventSchema = z.object({
   name: z.string().optional(),
-  type: z.string(),
+  type: z.string().optional(),
   description: z.string().optional(),
   start_time: z.string().datetime(),
   end_time: z.string().datetime().optional(),
   external_id: z.string().optional(),
   source_url: z.string().optional(),
   source_data: z.string().optional(),
-  connection_id: z.string().optional()
+  connection_id: z.string().optional(),
 });
 
 @Controller('events')
@@ -53,9 +52,16 @@ export class EventController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  async create(@Req() req: Request, @Body(new ValidationPipe(createEventSchema)) input: CreateEventDto) {
+  async create(
+    @Req() req: Request,
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(createEventSchema)) input: CreateEventDto,
+  ) {
     try {
-      input.user = { id: req.user.id }
+      if (context.userId) {
+        input.user = { id: context.userId };
+      }
+
       return await this.eventService.create(input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
@@ -70,24 +76,24 @@ export class EventController {
   @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
-    return this.eventService.findAll({
-      where: {
-        user_id: context.userId
-      }
-    });
+    return this.eventService.findAll(context);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.eventService.findOne(id);
+  findOne(@Param('id') id: string, @Context() context: RequestContext) {
+    return this.eventService.findOne(context, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  async update(@Param('id') id: string, @Body(new ValidationPipe(updateEventSchema)) input: UpdateEventDto) {
+  async update(
+    @Param('id') id: string,
+    @Body(new ValidationPipe(updateEventSchema)) input: UpdateEventDto,
+    @Context() context: RequestContext,
+  ) {
     try {
-      return await this.eventService.update(id, input);
+      return await this.eventService.update(context, id, input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
         // TODO: Obfuscate this error message? We're revealing DB details here.

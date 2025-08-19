@@ -9,7 +9,6 @@ import {
   Body,
   Req,
   UseGuards,
-  NotFoundException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { z } from 'zod';
@@ -32,7 +31,7 @@ const createContentSchema = z.object({
   external_id: z.string().optional(),
   source_url: z.string().optional(),
   user_id: z.string().optional(),
-  event_id: z.string().optional()
+  event_id: z.string().optional(),
 });
 
 const updateContentSchema = z.object({
@@ -44,7 +43,7 @@ const updateContentSchema = z.object({
   external_id: z.string().optional(),
   source_url: z.string().optional(),
   user_id: z.string().optional(),
-  event_id: z.string().optional()
+  event_id: z.string().optional(),
 });
 
 @Controller('contents')
@@ -53,10 +52,20 @@ export class ContentController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  async create(@Req() req: Request, @Body(new ValidationPipe(createContentSchema)) input: CreateContentDto) {
+  async create(
+    @Req() req: Request,
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(createContentSchema)) input: CreateContentDto,
+  ) {
     try {
-      input.user = { id: req.user.id }
-      if (req.body.event_id) input.event = { id: req.body.event_id }
+      if (context.userId) {
+        input.user = { id: context.userId };
+      }
+
+      if (input.event_id) {
+        input.event = { id: input.event_id };
+      }
+
       return await this.contentService.create(input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
@@ -71,24 +80,24 @@ export class ContentController {
   @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
-    return this.contentService.findAll({
-      where: {
-        user_id: context.userId
-      }
-    });
+    return this.contentService.findAll(context);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.contentService.findOne(id);
+  findOne(@Param('id') id: string, @Context() context: RequestContext) {
+    return this.contentService.findOne(context, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  async update(@Param('id') id: string, @Body(new ValidationPipe(updateContentSchema)) input: UpdateContentDto) {
+  async update(
+    @Param('id') id: string,
+    @Body(new ValidationPipe(updateContentSchema)) input: UpdateContentDto,
+    @Context() context: RequestContext,
+  ) {
     try {
-      return await this.contentService.update(id, input);
+      return await this.contentService.update(context, id, input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
         // TODO: Obfuscate this error message? We're revealing DB details here.

@@ -10,8 +10,9 @@ import {
   JoinTable,
 } from 'typeorm';
 
+import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
 import { TagEntity } from '@ci/domains/search';
-import {User, UserEntity} from '@ci/domains/user';
+import { UserEntity } from '@ci/domains/user';
 
 @Entity({ name: 'events' })
 export class EventEntity {
@@ -46,6 +47,10 @@ export class EventEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
+  @ManyToOne(() => ConnectionEntity, { nullable: true })
+  @JoinColumn({ name: 'connection_id' })
+  connection?: ConnectionEntity;
+
   @ManyToMany(() => TagEntity, { nullable: true })
   @JoinTable({
     name: 'event_tag',
@@ -72,8 +77,8 @@ export class EventEntity {
       source_url: this.source_url,
       source_data: this.source_data,
       user_id: this.user?.id,
-      connection_id: this.user?.connection_id,
-      tags: this.tags?.map(tag => tag.toTag()),
-    } satisfies Event;
+      connection_id: this.connection?.id,
+      tags: this.tags?.map((tag) => tag.toTag()),
+    };
   }
 }

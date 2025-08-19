@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { ContentController } from '@ci/domains/memory/controllers/ContentController';
+import { EventController } from '@ci/domains/memory/controllers/EventController';
+import { ContentService } from '@ci/domains/memory/services/ContentService';
+import { EventService } from '@ci/domains/memory/services/EventService';
 import { UserModule } from '@ci/domains/user';
 
 import { MemoryController } from './controllers/MemoryController';
@@ -12,10 +16,6 @@ import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
 import { ThingEntity } from './entities/ThingEntity';
 import { MemoryService } from './services/MemoryService';
-import {EventController} from "@ci/domains/memory/controllers/EventController";
-import {EventService} from "@ci/domains/memory/services/EventService";
-import {ContentService} from "@ci/domains/memory/services/ContentService";
-import {ContentController} from "@ci/domains/memory/controllers/ContentController";
 
 @Module({
   imports: [

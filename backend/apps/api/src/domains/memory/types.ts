@@ -47,16 +47,16 @@ export interface MemoryResponse {
 }
 export interface Event {
   readonly id: string;
-  readonly name: string;
-  readonly type: string;
-  readonly description: string;
-  readonly start_time: Date;
-  readonly end_time: Date;
-  readonly external_id: string;
-  readonly source_url: string;
-  readonly source_data: string
-  readonly user_id: string;
-  readonly connection_id: string;
+  readonly name: string | null;
+  readonly type: string | null;
+  readonly description: string | null;
+  readonly start_time: Date | null;
+  readonly end_time: Date | null;
+  readonly external_id: string | null;
+  readonly source_url: string | null;
+  readonly source_data: object | null;
+  readonly user_id: string | undefined;
+  readonly connection_id: string | undefined;
 }
 
 export interface CreateEventDto {
@@ -68,9 +68,12 @@ export interface CreateEventDto {
   end_time: Date;
   external_id: string;
   source_url: string;
-  source_data: string
+  source_data: object;
   user_id: string;
-  connection_id: string;
+  connection_id?: string;
+  user?: {
+    id: string;
+  };
 }
 
 export interface UpdateEventDto {
@@ -82,7 +85,7 @@ export interface UpdateEventDto {
   end_time?: Date;
   external_id?: string;
   source_url?: string;
-  source_data?: string
+  source_data?: object;
   user_id?: string;
   connection_id?: string;
 }
@@ -90,27 +93,33 @@ export interface UpdateEventDto {
 export interface Content {
   readonly id: string;
   readonly type: string;
-  readonly title: string;
-  readonly text: string;
-  readonly url: string;
-  readonly mimetype: string;
-  readonly external_id: string;
-  readonly source_url: string;
-  readonly user_id: string;
-  readonly event_id: string;
+  readonly title: string | null;
+  readonly text: string | null;
+  readonly url: string | null;
+  readonly mimetype: string | null;
+  readonly external_id: string | null;
+  readonly source_url: string | null;
+  readonly user_id: string | null;
+  readonly event_id: string | null;
 }
 
 export interface CreateContentDto {
   id: string;
   type: string;
-  title: string;
-  text: string;
-  url: string;
-  mimetype: string;
-  external_id: string;
-  source_url: string;
-  user_id: string;
+  title?: string;
+  text?: string;
+  url?: string;
+  mimetype?: string;
+  external_id?: string;
+  source_url?: string;
+  user_id?: string;
   event_id: string;
+  event?: {
+    id: string;
+  };
+  user?: {
+    id: string;
+  };
 }
 
 export interface UpdateContentDto {
