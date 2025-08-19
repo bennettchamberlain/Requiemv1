@@ -4,7 +4,6 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   useCallback,
-  useEffect,
 } from 'react';
 
 import {
@@ -37,18 +36,16 @@ const handleEnterSubmit = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 };
 
 interface Props {
-  renderKey?: string | null;
   disabled?: boolean;
   loading?: boolean;
   placeholder?: string;
   onAttach?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onRecord?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onStop?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
-  onSubmit?: (data: FormData, e?: FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onSubmit?: (data: FormData, e?: FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>;
 }
 
 export function ChatInput({
-  renderKey,
   disabled = false,
   loading = false,
   placeholder,
@@ -87,15 +84,15 @@ export function ChatInput({
   );
 
   const handleSubmit = useCallback(
-    (data: FormData, e?: BaseSyntheticEvent) => {
-      onSubmit?.(data, e as FormEvent<HTMLFormElement>);
-    },
-    [onSubmit],
-  );
+    async (data: FormData, e?: BaseSyntheticEvent) => {
+      const success = await onSubmit?.(data, e as FormEvent<HTMLFormElement>);
 
-  useEffect(() => {
-    form.reset();
-  }, [renderKey]);
+      if (success === true) {
+        form.reset();
+      }
+    },
+    [form, onSubmit],
+  );
 
   return (
     <Tooltip.Provider>

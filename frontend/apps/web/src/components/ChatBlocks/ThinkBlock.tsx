@@ -1,30 +1,36 @@
-import React, { useState } from 'react';
+import { type ForwardedRef, type RefObject, forwardRef, useMemo, useState } from 'react';
 
 import { ChevronDown, ChevronRight, Brain } from '@ci/shadcn/icons';
 
 import { cn } from '@/lib/utils';
 
-import { parseChatContent } from './parser';
-import { TextBlock } from './TextBlock';
-import { ToolBlock } from './ToolBlock';
-
-interface ThinkBlockProps {
-  content: string;
+interface Props {
+  content?: string;
+  renderEmptyContent?: boolean;
   defaultExpanded?: boolean;
+  streamingRef?: RefObject<HTMLDivElement | null> | ((el: HTMLDivElement | null) => void);
 }
 
-export const ThinkBlock: React.FC<ThinkBlockProps> = ({ content, defaultExpanded = true }) => {
+function ThinkBlock(
+  { content, renderEmptyContent = false, defaultExpanded = true, streamingRef }: Props,
+  ref: ForwardedRef<HTMLDivElement>,
+) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
-  // Parse the content within the think block for nested tool calls
-  const segments = parseChatContent(content);
+  const trimmedContent = useMemo(() => content?.trim(), [content]);
 
-  if (!content.trim()) {
+  if (!trimmedContent && !renderEmptyContent) {
     return null;
   }
 
   return (
-    <div className="border border-amber-200 dark:border-amber-800/50 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden">
+    <div
+      ref={ref}
+      className={cn(
+        'border border-amber-200 dark:border-amber-800/50 text-sm rounded-lg bg-amber-50/50 dark:bg-amber-950/20',
+        'has-[.streaming-content:empty]:hidden',
+      )}
+    >
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
@@ -32,7 +38,7 @@ export const ThinkBlock: React.FC<ThinkBlockProps> = ({ content, defaultExpanded
       >
         <div className="flex items-center gap-2 flex-1">
           <Brain className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-          <span className="text-sm font-medium text-amber-700 dark:text-amber-300">AI Thinking</span>
+          <span className="text-sm text-amber-700 dark:text-amber-300">AI thinking</span>
         </div>
         <div className="text-amber-600 dark:text-amber-400">
           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -46,29 +52,16 @@ export const ThinkBlock: React.FC<ThinkBlockProps> = ({ content, defaultExpanded
           isExpanded ? 'max-h-none opacity-100' : 'max-h-0 opacity-0',
         )}
       >
-        <div className="p-3 pt-0 border-t border-amber-200/50 dark:border-amber-800/30 space-y-2">
-          {segments.map((segment, index) => {
-            switch (segment.type) {
-              case 'text':
-                return <TextBlock key={`text-${index}`} content={segment.content} />;
-              case 'tool':
-                return <ToolBlock key={`tool-${index}`} toolName={segment.toolName} />;
-              case 'think':
-                // Nested think blocks - render as simple text to avoid infinite recursion
-                return (
-                  <div
-                    key={`nested-think-${index}`}
-                    className="pl-4 border-l-2 border-amber-300/50 dark:border-amber-700/50"
-                  >
-                    <TextBlock content={segment.content} />
-                  </div>
-                );
-              default:
-                return null;
-            }
-          })}
+        <div className="p-3 border-t border-amber-200/50 dark:border-amber-800/30 space-y-2 whitespace-pre-wrap leading-relaxed">
+          <div className="streaming-content" ref={streamingRef}>
+            {trimmedContent}
+          </div>
         </div>
       </div>
     </div>
   );
-};
+}
+
+const ThinkBlockRef = forwardRef<HTMLDivElement, Props>(ThinkBlock);
+
+export { ThinkBlockRef as ThinkBlock };

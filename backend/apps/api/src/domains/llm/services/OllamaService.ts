@@ -32,6 +32,7 @@ interface PromptOptions {
   model?: string;
   signal?: AbortSignal;
   enableTools?: boolean;
+  enableThinking?: boolean;
 }
 
 @Injectable()
@@ -118,13 +119,14 @@ export class OllamaService {
     options?: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
     const resolvedOptions = options ?? {};
-    const { model = PROMPT_MODEL, signal, enableTools = false } = resolvedOptions;
+    const { model = PROMPT_MODEL, signal, enableTools = false, enableThinking = true } = resolvedOptions;
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
     const ollamaTools: Tool[] = availableTools.map(this.convertToOllamaTool);
 
-    const chunks: string[] = [];
+    const textChunks: string[] = [];
+    const thinkChunks: string[] = [];
     const toolCalls: ToolCall[] = [];
     const accumulatedMessages: OllamaMessage[] = [];
 
@@ -137,8 +139,9 @@ export class OllamaService {
         let lastChunk: ChatResponse | undefined;
         let handleAbort = () => {};
 
-        // Flush the chunk buffer at the start of every iteration.
-        chunks.splice(0, chunks.length);
+        // Flush the chunk buffers at the start of every iteration.
+        textChunks.splice(0, textChunks.length);
+        thinkChunks.splice(0, thinkChunks.length);
 
         // Pop off any previously required tool calls and evaluate them.
         // Notably this will always be empty on the first iteration.
@@ -163,6 +166,7 @@ export class OllamaService {
             model,
             messages: inputMessages.concat(accumulatedMessages),
             stream: true,
+            ...(enableThinking && { think: true }),
             ...(iterationWillCallTools && { tools: ollamaTools }),
           });
 
@@ -174,7 +178,11 @@ export class OllamaService {
             lastChunk = chunk;
 
             if (chunk.message.content) {
-              chunks.push(chunk.message.content);
+              textChunks.push(chunk.message.content);
+            }
+
+            if (chunk.message.thinking) {
+              thinkChunks.push(chunk.message.thinking);
             }
 
             if (chunk.message.tool_calls) {
@@ -207,9 +215,12 @@ export class OllamaService {
             break;
           }
         } finally {
+          const think = thinkChunks.join('');
+          const content = textChunks.join('');
+
           const message = {
             role: 'assistant',
-            content: chunks.join(''),
+            content: (think ? `<think>${think}</think>` : '') + content,
             ...(toolCalls.length > 0 && { tool_calls: toolCalls.slice() }),
           } satisfies OllamaMessage;
 

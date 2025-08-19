@@ -1,5 +1,11 @@
 import type { ChatSegment } from './types';
 
+const SORT_ORDER = {
+  tool: 0,
+  think: 1,
+  text: 2,
+} as const;
+
 /**
  * Parses chat content and extracts think and tool blocks
  * Returns an array of segments with their types and content
@@ -99,6 +105,10 @@ export function parseChatContent(content: string): ChatSegment[] {
       }
     }
   }
+
+  segments.sort((a, b) => {
+    return SORT_ORDER[a.type as keyof typeof SORT_ORDER] - SORT_ORDER[b.type as keyof typeof SORT_ORDER];
+  });
 
   return segments;
 }
