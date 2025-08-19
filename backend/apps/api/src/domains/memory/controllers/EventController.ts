@@ -56,7 +56,8 @@ export class EventController {
   async create(@Req() req: Request, @Body(new ValidationPipe(createEventSchema)) input: CreateEventDto) {
     try {
       console.log('EventService.create', req, input);
-      input.userId = req.user.id
+      input.user = { id: req.user.id }
+      console.log('Updated input', input)
       return await this.eventService.create(input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {

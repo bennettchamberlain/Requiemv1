@@ -86,3 +86,42 @@ export interface UpdateEventDto {
   user_id?: string;
   connection_id?: string;
 }
+
+export interface Content {
+  readonly id: string;
+  readonly type: string;
+  readonly title: string;
+  readonly text: string;
+  readonly url: string;
+  readonly mimetype: string;
+  readonly external_id: string;
+  readonly source_url: string;
+  readonly user_id: string;
+  readonly event_id: string;
+}
+
+export interface CreateContentDto {
+  id: string;
+  type: string;
+  title: string;
+  text: string;
+  url: string;
+  mimetype: string;
+  external_id: string;
+  source_url: string;
+  user_id: string;
+  event_id: string;
+}
+
+export interface UpdateContentDto {
+  id: string;
+  type: string;
+  title: string;
+  text: string;
+  url: string;
+  mimetype: string;
+  external_id: string;
+  source_url: string;
+  user_id: string;
+  event_id: string;
+}

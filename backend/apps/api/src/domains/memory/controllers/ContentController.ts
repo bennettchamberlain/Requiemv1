@@ -7,6 +7,7 @@ import {
   Delete,
   Param,
   Body,
+  Req,
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
@@ -23,10 +24,27 @@ import { ContentService } from '../services/ContentService';
 import { CreateContentDto, UpdateContentDto } from '../types';
 
 const createContentSchema = z.object({
-
+  type: z.string().optional(),
+  title: z.string().optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+  mimetype: z.string().optional(),
+  external_id: z.string().optional(),
+  source_url: z.string().optional(),
+  user_id: z.string().optional(),
+  event_id: z.string().optional()
 });
 
 const updateContentSchema = z.object({
+  type: z.string().optional(),
+  title: z.string().optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+  mimetype: z.string().optional(),
+  external_id: z.string().optional(),
+  source_url: z.string().optional(),
+  user_id: z.string().optional(),
+  event_id: z.string().optional()
 });
 
 @Controller('contents')
@@ -35,8 +53,10 @@ export class ContentController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  async create(@Body(new ValidationPipe(createContentSchema)) input: CreateContentDto) {
+  async create(@Req() req: Request, @Body(new ValidationPipe(createContentSchema)) input: CreateContentDto) {
     try {
+      console.log('content req', req)
+      input.user = { id: req.user.id }
       return await this.contentService.create(input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {

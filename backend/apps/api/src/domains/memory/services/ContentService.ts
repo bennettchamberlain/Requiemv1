@@ -17,10 +17,13 @@ export class ContentService {
 
   async create(data: CreateContentDto): Promise<Content> {
 
+    console.log('creating content', data)
     const content = this.contentRepository.create({
       ...data,
       id: uuidv7()
     });
+
+    console.log('created content', content)
 
     const contentResult = await this.contentRepository.save(content);
 
