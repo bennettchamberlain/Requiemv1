@@ -80,6 +80,8 @@ export function ChatInput({
 
   const handleStop = useCallback(
     (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+
       onStop?.(e);
     },
     [onStop],
