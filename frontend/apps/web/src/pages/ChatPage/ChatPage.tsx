@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, type FormEvent, type ReactNode } from 'react';
+import { useCallback, type FormEvent, type ReactNode } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card } from '@ci/shadcn';
@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Chat, type FormData } from '@/components/Chat';
 import { ModelSelector } from '@/components/ModelSelector';
-import { useAuth, useModel } from '@/hooks';
+import { useChatRequester, useModel } from '@/hooks';
 
 import { ChatSidebar } from './ChatSidebar';
 import { useThreadListService } from './useThreadListService';
@@ -60,8 +60,8 @@ export default function ChatPage() {
     [submitChatRequest],
   );
 
-  const loading = threadsLoading || threadLoading || chatRequestLoading || chatRequestStreaming;
-  const isSubmitDisabled = loading || selectedModel == null;
+  const loading = threadsLoading || threadLoading || chatRequestLoading;
+  const isSubmitDisabled = selectedModel == null;
   const inputPlaceholder =
     chatRequestThreadId == null ? 'Start a new conversation...' : 'Continue the conversation...';
 
@@ -92,7 +92,7 @@ export default function ChatPage() {
         </Card.Content>
       </Card>
     );
-  } else if (threadId == null) {
+  } else if (chatRequestThreadId == null) {
     emptyState = (
       <div className="text-center max-w-md mx-auto mb-6 lg:mb-8">
         <div className="w-16 h-16 lg:w-20 lg:h-20 rounded-full bg-gradient-to-br from-primary/10 to-primary/20 flex items-center justify-center mx-auto mb-4 lg:mb-6 shadow-lg border border-primary/20">
@@ -161,129 +161,4 @@ export default function ChatPage() {
       />
     </>
   );
-}
-
-type ReturnType = [
-  {
-    stream: ReadableStream<Uint8Array> | null;
-    loading: boolean;
-    error: unknown | null;
-    streaming: boolean;
-    threadId: string | null;
-  },
-  {
-    submit: (data: FormData) => Promise<boolean>;
-    stop: () => void;
-  },
-];
-
-function useChatRequester(threadId: string | null): ReturnType {
-  const [{ authToken }] = useAuth();
-  const [{ selectedModel }] = useModel();
-
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  const [stream, setStream] = useState<ReadableStream<Uint8Array> | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<unknown | null>(null);
-  const [streaming, setStreaming] = useState<boolean>(false);
-  const [resThreadId, setResThreadId] = useState<string | null>(threadId);
-
-  const submit = useCallback(
-    async (data: FormData) => {
-      if (!data.message.trim()) {
-        return false;
-      }
-
-      abortControllerRef.current?.abort();
-
-      const controller = new AbortController();
-
-      abortControllerRef.current = controller;
-
-      setStream(null);
-      setLoading(true);
-      setError(null);
-      setStreaming(false);
-      setResThreadId(null);
-
-      let success = false;
-
-      try {
-        const res = await fetch('/api/llm/generate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({
-            prompt: data.message.trim(),
-            model: selectedModel,
-            threadId: threadId,
-            enableTools: true,
-            enableThinking: true,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          throw new Error('Request error');
-        }
-
-        if (!res.body) {
-          throw new Error('No response body');
-        }
-
-        success = true;
-
-        setResThreadId(res.headers.get('X-Thread-Id') as string);
-
-        const monitor = new TransformStream({
-          transform(chunk, controller) {
-            controller.enqueue(chunk);
-          },
-          flush(controller) {
-            setStreaming(false);
-            controller.terminate();
-          },
-        });
-
-        const stream = res.body.pipeThrough(monitor);
-
-        setStream(stream);
-        setStreaming(true);
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          setError(err);
-        }
-      } finally {
-        setLoading(false);
-      }
-
-      return success;
-    },
-    [authToken, selectedModel, threadId],
-  );
-
-  const stop = useCallback(() => {
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-
-    setStream(null);
-    setStreaming(false);
-  }, []);
-
-  return [
-    {
-      stream,
-      loading,
-      error,
-      streaming,
-      threadId: resThreadId,
-    },
-    {
-      submit,
-      stop,
-    },
-  ];
 }
