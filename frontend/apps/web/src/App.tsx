@@ -3,7 +3,7 @@ import { type ReactNode, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AuthProvider, ModelProvider } from '@/hooks';
+import { AuthProvider, ModelProvider, ThemeProvider } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
@@ -25,9 +25,11 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
-      <AuthProvider args={[]}>
-        <ModelProvider args={[]}>{children}</ModelProvider>
-      </AuthProvider>
+      <ThemeProvider defaultTheme="system" storageKey="ci-ui-theme">
+        <AuthProvider args={[]}>
+          <ModelProvider args={[]}>{children}</ModelProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </Router>
   );
 }

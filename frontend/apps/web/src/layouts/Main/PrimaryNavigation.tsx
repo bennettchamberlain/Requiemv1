@@ -1,6 +1,8 @@
 import { Portal } from '@ci/common';
 import { Separator, Sidebar } from '@ci/shadcn';
 
+import { ThemeToggle } from '@/components/ThemeToggle';
+
 export function PrimaryNavigation() {
   return (
     <header className="flex flex-row items-center justify-between pl-2 pr-4 py-2 border-b">
@@ -10,7 +12,8 @@ export function PrimaryNavigation() {
         <Portal id="breadcrumbs" />
       </section>
 
-      <section>
+      <section className="flex flex-row items-center gap-2">
+        <ThemeToggle />
         <Portal id="actions" />
       </section>
     </header>
