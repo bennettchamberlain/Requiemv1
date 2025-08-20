@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AuthProvider, ModelProvider, ThemeProvider } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
+import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
 import NotFound from '@/pages/NotFound';
 import SplashPage from '@/pages/SplashPage';
@@ -52,7 +53,7 @@ function AppRoutes() {
           path="/feed"
           element={
             <ProtectedRoute>
-              <div>Feed page</div>
+              <FeedPage />
             </ProtectedRoute>
           }
         />
