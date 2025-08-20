@@ -181,7 +181,11 @@ export function Chat({
       return;
     }
 
-    const processor = createStreamProcessor(readable, handleFrameChunk, handleFinished);
+    const processor = createStreamProcessor({
+      stream: readable,
+      onChunk: handleFrameChunk,
+      onFinished: handleFinished,
+    });
 
     processor.start();
 
@@ -226,11 +230,31 @@ export function Chat({
   );
 }
 
-function createStreamProcessor(
-  stream: ReadableStream<Uint8Array>,
-  onChunk: (chunk: Decoded) => boolean | Promise<boolean>,
-  onFinished: () => void,
-) {
+interface Options {
+  stream: ReadableStream<Uint8Array>;
+  onChunk: (chunk: Decoded) => boolean | Promise<boolean>;
+  onFinished?: () => void;
+  onError?: (error: unknown) => void;
+  /** Maximum number of retry attempts. Set to Infinity for unlimited retries. */
+  retries?: number;
+  /** Initial delay in milliseconds. */
+  initialDelay?: number;
+  /** The factor by which the delay increases after each retry (e.g., 2 for doubling). */
+  factor?: number;
+  /** The maximum delay in milliseconds. */
+  maxDelay?: number;
+}
+
+function createStreamProcessor({
+  stream,
+  onChunk,
+  onFinished,
+  onError,
+  retries = 10,
+  initialDelay = 10,
+  factor = 2,
+  maxDelay = 5000,
+}: Options) {
   const decoder = new FrameDecoder();
   const abortController = new AbortController();
 
@@ -255,6 +279,8 @@ function createStreamProcessor(
       const reader = frameStream.getReader();
 
       let chunkToReplay: Decoded | null = null;
+      let retryCount = 0;
+      let currentDelay = initialDelay;
 
       while (true) {
         if (abortController.signal.aborted) {
@@ -280,17 +306,30 @@ function createStreamProcessor(
         const success = await onChunk(currentChunk);
 
         if (success === false) {
+          retryCount++;
+
+          if (retryCount > retries) {
+            throw new Error(`Processing failed for a chunk after ${retries} retries`);
+          }
+
+          console.warn(`Chunk processing failed. Retrying in ${currentDelay}ms (Attempt ${retryCount})`);
+
+          await new Promise((resolve) => setTimeout(resolve, currentDelay));
+
+          currentDelay = Math.min(maxDelay, currentDelay * factor);
           chunkToReplay = currentChunk;
         } else {
           chunkToReplay = null;
+          retryCount = 0;
+          currentDelay = initialDelay;
         }
       }
-    } catch (error) {
-      if ((error as Error).name !== 'AbortError') {
-        console.error('Stream processing error:', error);
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        onError?.(err);
       }
     } finally {
-      onFinished();
+      onFinished?.();
     }
   };
 
