@@ -20,8 +20,8 @@ import { UserMessage } from './blocks/UserMessage';
 import { ChatInput, type FormData } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
 import { ChatMessage } from './ChatMessage';
-import { Channel, type Decoded, createStreamProcessor } from './utils';
 import { useConditionalAutoscroll } from './useConditionalAutoscroll';
+import { Channel, type Decoded, createStreamProcessor } from './utils';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
