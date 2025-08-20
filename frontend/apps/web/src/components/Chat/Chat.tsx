@@ -3,6 +3,7 @@ import {
   type FormEvent,
   type ReactNode,
   type RefObject,
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -55,42 +56,36 @@ export function Chat({
   // the clone / swap flow.
   const lastChannelRef = useRef<number | null>(null);
 
-  const renderStreamNodes = useCallback(
-    () => (
-      <>
-        <ThinkBlock
-          key={uuid7()}
-          renderEmptyContent={true}
-          defaultExpanded={true}
-          streamingRef={thinkStreamingRef}
-        />
+  const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([]);
 
-        <AssistantMessage key={uuid7()} renderEmptyContent={true} streamingRef={textStreamingRef} />
-      </>
-    ),
-    [],
-  );
+  const flushStream = useCallback((node?: ReactNode) => {
+    // We need to cut off the flow of streaming text to the current stream blocks.
+    // We will be creating new stream blocks below to accept subsequently streamed
+    // characters, but if this function has been invoked we are logically at the end
+    // of a block. These refs will not be set until the next React render cycle and
+    // we want to pause the text stream until they fixate on the newly created stream
+    // receiver elements.
+    textStreamingRef.current = null;
+    thinkStreamingRef.current = null;
 
-  const [streamNodes, setStreamNodes] = useState<ReactNode>(renderStreamNodes());
-  const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([streamNodes]);
+    // These are the new nodes that we'll insert into our accumulated messages.
+    // When we hit the next render cycle, the refs will be set and the stream can resume.
 
-  const flushStream = useCallback(() => {
-    const newStreamNodes = renderStreamNodes();
+    const id = uuid7();
+    const newStreamNodes = (
+      <Fragment key={id}>
+        <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={thinkStreamingRef} />
+        <AssistantMessage renderEmptyContent={true} streamingRef={textStreamingRef} />
+      </Fragment>
+    );
 
-    setAccumulatedMessages((prev) => [...prev, newStreamNodes]);
-    setStreamNodes(newStreamNodes);
-  }, []);
-
-  const appendMessage = useCallback((message: ReactNode) => {
-    setAccumulatedMessages((prev) => [...prev, message]);
+    setAccumulatedMessages((prev) => (node ? [...prev, node, newStreamNodes] : [...prev, newStreamNodes]));
   }, []);
 
   const handleFrameChunk = useCallback(
     (chunk: Decoded) => {
-      return false;
-
       if (!supportedChannels.has(chunk.channel)) {
-        console.log('Ignored unsupported chunk channel:', chunk.channel);
+        console.warn('Ignored unsupported chunk channel:', chunk.channel);
 
         return true; // consumed → read next chunk
       }
@@ -105,7 +100,11 @@ export function Chat({
       }
 
       if (chunk.channel === Channel.TOOL) {
-        let parsed: { function: { name: string } }[] = [];
+        let parsed: {
+          function: {
+            name: string;
+          };
+        }[] = [];
 
         try {
           parsed = JSON.parse(payload) as { function: { name: string } }[];
@@ -114,9 +113,12 @@ export function Chat({
         }
 
         try {
-          const toolBlocks = parsed.map((tool) => <ToolBlock key={uuid7()} toolName={tool.function.name} />);
+          const id = uuid7();
+          const toolBlocks = parsed.map((tool, i) => (
+            <ToolBlock key={`${id}-${i}`} toolName={tool.function.name} />
+          ));
 
-          appendMessage(toolBlocks);
+          flushStream(toolBlocks);
         } catch (err) {
           console.error('Error inserting tool block', err);
         }
@@ -155,9 +157,10 @@ export function Chat({
 
       if (success === true) {
         try {
-          const block = <UserMessage key={uuid7()} content={data.message} />;
+          const id = uuid7();
+          const block = <UserMessage key={id} content={data.message} />;
 
-          appendMessage(block);
+          flushStream(block);
         } catch (err) {
           console.error('Error inserting user block', err);
         }
@@ -165,7 +168,7 @@ export function Chat({
 
       return success;
     },
-    [onSubmit],
+    [onSubmit, flushStream],
   );
 
   const handleFinished = useCallback(() => {
@@ -195,17 +198,20 @@ export function Chat({
   }, [readable, handleFinished, handleFrameChunk]);
 
   const renderedMessages = useMemo(
-    () => messages?.map((message) => <ChatMessage key={uuid7()} {...message} />),
+    () =>
+      messages?.map((message, i) => {
+        return <ChatMessage key={i} {...message} />;
+      }),
     [messages],
   );
 
   return (
     <div className="flex flex-col h-full min-h-0 w-full">
-      {emptyState && (
+      {(messages?.length ?? 0) === 0 && accumulatedMessages.length === 0 && (
         <div className="flex flex-col flex-1 min-h-0 p4 items-center justify-center">{emptyState}</div>
       )}
 
-      {!emptyState && (
+      {((messages?.length ?? 0) > 0 || accumulatedMessages.length > 0) && (
         <div
           className="
             flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll p-4 pb-8
