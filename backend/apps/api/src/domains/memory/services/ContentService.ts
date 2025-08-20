@@ -33,7 +33,7 @@ export class ContentService {
           id: contentResult.id,
         },
       })
-    ).toContent();
+    )!.toContent();
   }
 
   async findAll(context: RequestContext): Promise<Content[]> {

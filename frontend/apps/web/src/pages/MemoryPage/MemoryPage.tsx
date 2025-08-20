@@ -25,6 +25,7 @@ import {
 } from '@ci/shadcn/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { Link } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
 
@@ -405,32 +406,30 @@ export function MemoryPage() {
                               {memory.category}
                             </span>
                           </div>
-                          {memory.category === 'Video' && (
+                          {memory.category === 'Video' && memory.metadata?.url != null && (
                             <div className="mt-2">
                               <video
                                 controls
                                 width="250"
-                                className="inline-flex items-center px-2 py-1 h-full text-xs font-medium bg-primary/10"
+                                className="inline-flex items-center px-2 py-1 w-1/2 text-xs font-medium bg-primary/10"
                               >
-                                <source src={memory.metadata.url} type="video/mp4" />
+                                <source src={memory.metadata.url as string} type="video/mp4" />
                               </video>
                             </div>
                           )}
-                          {memory.category === 'Image' && (
+                          {memory.category === 'Image' && memory.metadata?.url != null && (
                             <div className="mt-2">
                               <img
-                                src={memory.metadata.url}
-                                alt={memory.description}
-                                className="h-full object-cover"
+                                src={memory.metadata.url as string}
+                                alt={memory.description as string}
+                                className="max-w-1/2 object-cover"
                               />
                             </div>
                           )}
-                          {memory.category === 'Web Page' && (
-                            <div className="mt-2">
-                              <a href={memory.metadata.url} target="_blank" className="h-full object-cover">
-                                {memory.metadata.url}
-                              </a>
-                            </div>
+                          {memory.category === 'Web Page' && memory.metadata?.url != null && (
+                            <Link to={memory.metadata.url} target="_blank">
+                              <span>{memory.metadata.url as string}</span>
+                            </Link>
                           )}
                         </div>
                       </div>
