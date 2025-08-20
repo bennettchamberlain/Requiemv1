@@ -56,7 +56,12 @@ export function Chat({
   // the clone / swap flow.
   const lastChannelRef = useRef<number | null>(null);
 
-  const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([]);
+  const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([
+    <Fragment key={uuid7()}>
+      <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={thinkStreamingRef} />
+      <AssistantMessage renderEmptyContent={true} streamingRef={textStreamingRef} />
+    </Fragment>,
+  ]);
 
   const flushStream = useCallback((node?: ReactNode) => {
     // We need to cut off the flow of streaming text to the current stream blocks.
