@@ -405,6 +405,33 @@ export function MemoryPage() {
                               {memory.category}
                             </span>
                           </div>
+                          {memory.category === 'Video' && (
+                            <div className="mt-2">
+                              <video
+                                controls
+                                width="250"
+                                className="inline-flex items-center px-2 py-1 h-full text-xs font-medium bg-primary/10"
+                              >
+                                <source src={memory.metadata.url} type="video/mp4" />
+                              </video>
+                            </div>
+                          )}
+                          {memory.category === 'Image' && (
+                            <div className="mt-2">
+                              <img
+                                src={memory.metadata.url}
+                                alt={memory.description}
+                                className="h-full object-cover"
+                              />
+                            </div>
+                          )}
+                          {memory.category === 'Web Page' && (
+                            <div className="mt-2">
+                              <a href={memory.metadata.url} target="_blank" className="h-full object-cover">
+                                {memory.metadata.url}
+                              </a>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}

@@ -26,11 +26,13 @@ const createEventSchema = z.object({
   name: z.string().optional(),
   type: z.string().optional(),
   description: z.string().optional(),
-  start_time: z.string().datetime(),
-  end_time: z.string().datetime().optional(),
   external_id: z.string().optional(),
   source_url: z.string().optional(),
-  source_data: z.string().optional(),
+  source_data: z
+    .object({
+      related_objects: z.array(z.string()),
+    })
+    .optional(),
   connection_id: z.string().optional(),
 });
 
@@ -38,11 +40,13 @@ const updateEventSchema = z.object({
   name: z.string().optional(),
   type: z.string().optional(),
   description: z.string().optional(),
-  start_time: z.string().datetime(),
-  end_time: z.string().datetime().optional(),
   external_id: z.string().optional(),
   source_url: z.string().optional(),
-  source_data: z.string().optional(),
+  source_data: z
+    .object({
+      related_objects: z.array(z.string()),
+    })
+    .optional(),
   connection_id: z.string().optional(),
 });
 
