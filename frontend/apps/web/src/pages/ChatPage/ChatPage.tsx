@@ -158,6 +158,7 @@ export default function ChatPage() {
         readable={stream ?? undefined}
         onSubmit={handleSubmit}
         onStop={stopChatRequest}
+        autofocus={true}
       />
     </>
   );

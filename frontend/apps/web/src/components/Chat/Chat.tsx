@@ -29,7 +29,9 @@ interface Message {
   role: string;
   content: string;
 }
+
 interface Props extends ChatInputProps {
+  autofocus?: boolean;
   messages?: Message[];
   readable?: ReadableStream<Uint8Array>;
   emptyState?: ReactNode;
@@ -39,6 +41,7 @@ const textDecoder = new TextDecoder();
 const supportedChannels = new Set([Channel.TEXT, Channel.THINK, Channel.TOOL]);
 
 export function Chat({
+  autofocus = false,
   messages,
   readable,
   loading,
@@ -47,6 +50,8 @@ export function Chat({
   onSubmit,
   ...chatInputProps
 }: Props) {
+  const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
+
   // We want to maintain reference to the scroll container so that we can auto-scroll
   // when we deem it appropriate. According to the contract stipulated here, that's when
   // the user is within 10 pixels of the bottom.
@@ -207,7 +212,15 @@ export function Chat({
     if (lastChannel != null) {
       flushStream();
     }
-  }, [flushStream]);
+
+    const input = autoFocusRef.current;
+
+    if (input && autofocus) {
+      requestAnimationFrame(() => {
+        input.focus();
+      });
+    }
+  }, [flushStream, autofocus]);
 
   useEffect(() => {
     if (!readable) {
@@ -263,7 +276,14 @@ export function Chat({
       <div className="p-4 pt-4 pl-1 w-full relative">
         {(loading || streaming) && <ChatLoader />}
 
-        <ChatInput loading={loading} streaming={streaming} onSubmit={handleSubmit} {...chatInputProps} />
+        <ChatInput
+          ref={autoFocusRef}
+          loading={loading}
+          streaming={streaming}
+          autofocus={autofocus}
+          onSubmit={handleSubmit}
+          {...chatInputProps}
+        />
       </div>
     </div>
   );

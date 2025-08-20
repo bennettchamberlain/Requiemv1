@@ -1,8 +1,10 @@
 import {
   type BaseSyntheticEvent,
   type FormEvent,
+  type ForwardedRef,
   type KeyboardEvent,
   type MouseEvent,
+  forwardRef,
   useCallback,
 } from 'react';
 
@@ -39,6 +41,7 @@ interface Props {
   disabled?: boolean;
   loading?: boolean;
   streaming?: boolean;
+  autofocus?: boolean;
   placeholder?: string;
   onAttach?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onRecord?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
@@ -46,16 +49,20 @@ interface Props {
   onSubmit?: (data: FormData, e?: FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>;
 }
 
-export function ChatInput({
-  disabled = false,
-  loading = false,
-  streaming = false,
-  placeholder,
-  onAttach,
-  onRecord,
-  onSubmit,
-  onStop,
-}: Props) {
+function ChatInput(
+  {
+    disabled = false,
+    loading = false,
+    streaming = false,
+    autofocus = false,
+    placeholder,
+    onAttach,
+    onRecord,
+    onSubmit,
+    onStop,
+  }: Props,
+  forwardedRef: ForwardedRef<HTMLTextAreaElement>,
+) {
   const SendIcon = streaming ? Square : Send;
   const sendIconClassName = streaming ? '' : 'left-[-0.5px] top-[0.5px]';
 
@@ -165,6 +172,8 @@ export function ChatInput({
                 render={({ field }) => (
                   <Textarea
                     {...field}
+                    ref={forwardedRef}
+                    autoFocus={autofocus}
                     placeholder={placeholder}
                     disabled={loading || streaming || disabled}
                     className="
@@ -233,3 +242,7 @@ export function ChatInput({
     </Tooltip.Provider>
   );
 }
+
+const ChatInputForwarded = forwardRef(ChatInput);
+
+export { ChatInputForwarded as ChatInput };
