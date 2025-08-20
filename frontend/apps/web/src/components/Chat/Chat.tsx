@@ -190,6 +190,7 @@ export function Chat({
           const block = <UserMessage key={uuid7()} content={data.message} />;
 
           flushStream(block);
+          maybeAutoScroll(true);
         } catch (err) {
           console.error('Error inserting user block', err);
         }

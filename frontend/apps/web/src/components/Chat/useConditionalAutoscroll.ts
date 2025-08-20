@@ -29,25 +29,30 @@ export function useConditionalAutoscroll<T extends HTMLElement>(
     [threshold],
   );
 
-  const maybeAutoScroll = useCallback(() => {
-    const el = ref.current;
+  const maybeAutoScroll = useCallback(
+    (force: boolean = false) => {
+      const el = ref.current;
 
-    if (!el) {
-      return;
-    }
+      if (!el) {
+        return;
+      }
 
-    if (!nearBottomRef.current) {
-      return;
-    }
+      if (!nearBottomRef.current && !force) {
+        return;
+      }
 
-    isAutoRef.current = true;
-    targetTopRef.current = Math.max(0, el.scrollHeight - el.clientHeight);
+      isAutoRef.current = true;
+      targetTopRef.current = Math.max(0, el.scrollHeight - el.clientHeight);
 
-    el.scrollTo({
-      top: targetTopRef.current,
-      behavior: 'smooth',
-    });
-  }, [ref]);
+      requestAnimationFrame(() => {
+        el.scrollTo({
+          top: force ? el.scrollHeight : targetTopRef.current,
+          behavior: 'smooth',
+        });
+      });
+    },
+    [ref],
+  );
 
   useEffect(() => {
     const el = ref.current;
