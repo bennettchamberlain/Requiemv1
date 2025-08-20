@@ -23,7 +23,15 @@ export class ContentService {
 
     const contentResult = await this.contentRepository.save(content);
 
-    return contentResult.toContent();
+    await this.contentRepository.update(contentResult.id, {
+      external_id: `content_${contentResult.id}`,
+    });
+
+    return (await this.contentRepository.findOne({
+      where: {
+        id: contentResult.id,
+      },
+    }))!.toContent();
   }
 
   async findAll(context: RequestContext): Promise<Content[]> {
