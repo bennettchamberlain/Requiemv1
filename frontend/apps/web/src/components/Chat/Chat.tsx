@@ -45,19 +45,6 @@ export function Chat({
   onSubmit,
   ...chatInputProps
 }: Props) {
-  const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([]);
-
-  // These refs are used to point to the parent elements of the blocks
-  // that are receiving streaming text. We will need to clone the elements when a
-  // block is finished. These are important for that strategy.
-  const textBlockRef = useRef<HTMLDivElement | null>(null);
-  const thinkBlockRef = useRef<HTMLDivElement | null>(null);
-
-  // We need a target to insert our accumulated messages.
-  // We are avoiding doing this in React state because we don't want to trigger
-  // re-renders. This avoids some DOM flickering shenanigans.
-  const blocksRef = useRef<HTMLDivElement | null>(null);
-
   // These refs are used to point to the stream target for text coming from
   // the LLM endpoint.
   const textStreamingRef = useRef<HTMLDivElement | null>(null);
@@ -68,26 +55,40 @@ export function Chat({
   // the clone / swap flow.
   const lastChannelRef = useRef<number | null>(null);
 
-  const flushStream = useCallback((channel: Channel) => {
-    let block: ReactNode | undefined;
+  const renderStreamNodes = useCallback(
+    () => (
+      <>
+        <ThinkBlock
+          key={uuid7()}
+          renderEmptyContent={true}
+          defaultExpanded={true}
+          streamingRef={thinkStreamingRef}
+        />
 
-    if (channel === Channel.TEXT) {
-      const text = textStreamingRef.current?.textContent;
-      block = <AssistantMessage key={uuid7()} content={text ?? ''} />;
+        <AssistantMessage key={uuid7()} renderEmptyContent={true} streamingRef={textStreamingRef} />
+      </>
+    ),
+    [],
+  );
 
-      thinkStreamingRef.current?.replaceChildren();
-    } else if (channel === Channel.THINK) {
-      const text = thinkStreamingRef.current?.textContent;
-      block = <ThinkBlock key={uuid7()} content={text ?? ''} defaultExpanded={true} />;
+  const [streamNodes, setStreamNodes] = useState<ReactNode>(renderStreamNodes());
+  const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([streamNodes]);
 
-      thinkStreamingRef.current?.replaceChildren();
-    }
+  const flushStream = useCallback(() => {
+    const newStreamNodes = renderStreamNodes();
 
-    setAccumulatedMessages((prev) => [...prev, block]);
+    setAccumulatedMessages((prev) => [...prev, newStreamNodes]);
+    setStreamNodes(newStreamNodes);
+  }, []);
+
+  const appendMessage = useCallback((message: ReactNode) => {
+    setAccumulatedMessages((prev) => [...prev, message]);
   }, []);
 
   const handleFrameChunk = useCallback(
     (chunk: Decoded) => {
+      return false;
+
       if (!supportedChannels.has(chunk.channel)) {
         console.log('Ignored unsupported chunk channel:', chunk.channel);
 
@@ -100,7 +101,7 @@ export function Chat({
       lastChannelRef.current = chunk.channel;
 
       if (lastChannel != null && chunk.channel !== lastChannel) {
-        flushStream(lastChannel);
+        flushStream();
       }
 
       if (chunk.channel === Channel.TOOL) {
@@ -115,7 +116,7 @@ export function Chat({
         try {
           const toolBlocks = parsed.map((tool) => <ToolBlock key={uuid7()} toolName={tool.function.name} />);
 
-          setAccumulatedMessages((prev) => [...prev, ...toolBlocks]);
+          appendMessage(toolBlocks);
         } catch (err) {
           console.error('Error inserting tool block', err);
         }
@@ -156,7 +157,7 @@ export function Chat({
         try {
           const block = <UserMessage key={uuid7()} content={data.message} />;
 
-          setAccumulatedMessages((prev) => [...prev, block]);
+          appendMessage(block);
         } catch (err) {
           console.error('Error inserting user block', err);
         }
@@ -171,7 +172,7 @@ export function Chat({
     const lastChannel = lastChannelRef.current;
 
     if (lastChannel != null) {
-      flushStream(lastChannel);
+      flushStream();
     }
   }, [flushStream]);
 
@@ -202,7 +203,6 @@ export function Chat({
 
       {!emptyState && (
         <div
-          ref={blocksRef}
           className="
             flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll p-4 pb-8
             [mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_2rem)]
@@ -214,15 +214,6 @@ export function Chat({
           {renderedMessages}
 
           {accumulatedMessages}
-
-          <ThinkBlock
-            renderEmptyContent={true}
-            defaultExpanded={true}
-            ref={thinkBlockRef}
-            streamingRef={thinkStreamingRef}
-          />
-
-          <AssistantMessage renderEmptyContent={true} ref={textBlockRef} streamingRef={textStreamingRef} />
         </div>
       )}
 
@@ -237,7 +228,7 @@ export function Chat({
 
 function createStreamProcessor(
   stream: ReadableStream<Uint8Array>,
-  onChunk: (chunk: Decoded) => void,
+  onChunk: (chunk: Decoded) => boolean | Promise<boolean>,
   onFinished: () => void,
 ) {
   const decoder = new FrameDecoder();
@@ -263,6 +254,8 @@ function createStreamProcessor(
       const frameStream = stream.pipeThrough(frameTransformer);
       const reader = frameStream.getReader();
 
+      let chunkToReplay: Decoded | null = null;
+
       while (true) {
         if (abortController.signal.aborted) {
           await reader.cancel('Aborted by new stream or unmount');
@@ -270,13 +263,27 @@ function createStreamProcessor(
           break;
         }
 
-        const { done, value } = await reader.read();
+        let currentChunk: Decoded;
 
-        if (done) {
-          break; // Stream finished successfully
+        if (chunkToReplay) {
+          currentChunk = chunkToReplay;
+        } else {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          currentChunk = value;
         }
 
-        onChunk(value);
+        const success = await onChunk(currentChunk);
+
+        if (success === false) {
+          chunkToReplay = currentChunk;
+        } else {
+          chunkToReplay = null;
+        }
       }
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
