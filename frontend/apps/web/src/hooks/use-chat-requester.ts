@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FormData } from '@/components/Chat';
 
@@ -86,6 +86,7 @@ export function useChatRequester(threadId: string | null): ReturnType {
           },
           flush(controller) {
             setStreaming(false);
+            abortControllerRef.current = null;
             controller.terminate();
           },
         });
@@ -114,6 +115,12 @@ export function useChatRequester(threadId: string | null): ReturnType {
     setStream(null);
     setStreaming(false);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      stop();
+    };
+  }, [stop]);
 
   return [
     {
