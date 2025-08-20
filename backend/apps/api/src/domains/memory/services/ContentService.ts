@@ -27,13 +27,11 @@ export class ContentService {
       external_id: `content_${contentResult.id}`,
     });
 
-    return (
-      await this.contentRepository.findOne({
-        where: {
-          id: contentResult.id,
-        },
-      })
-    )!.toContent();
+    return (await this.contentRepository.findOne({
+      where: {
+        id: contentResult.id,
+      },
+    }))!.toContent();
   }
 
   async findAll(context: RequestContext): Promise<Content[]> {

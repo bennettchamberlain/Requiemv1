@@ -407,14 +407,37 @@ export function MemoryPage() {
                             </span>
                           </div>
                           {memory.category === 'Video' && memory.metadata?.url != null && (
-                            <div className="mt-2">
-                              <video
-                                controls
-                                width="250"
-                                className="inline-flex items-center px-2 py-1 w-1/2 text-xs font-medium bg-primary/10"
-                              >
-                                <source src={memory.metadata.url as string} type="video/mp4" />
-                              </video>
+                            <div
+                              style={{
+                                left: 0,
+                                width: '50%',
+                                height: 0,
+                                position: 'relative',
+                                paddingBottom: '28.125%',
+                              }}
+                              className="mt-2"
+                            >
+                              {memory.metadata.mimetype === 'text/html' ? (
+                                <iframe
+                                  src={memory.metadata.url as string}
+                                  allowFullScreen={true}
+                                  style={{
+                                    border: 0,
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    position: 'absolute',
+                                  }}
+                                />
+                              ) : (
+                                <video controls>
+                                  <source
+                                    src={memory.metadata.url as string}
+                                    type={memory.metadata.mimetype as string}
+                                  />
+                                </video>
+                              )}
                             </div>
                           )}
                           {memory.category === 'Image' && memory.metadata?.url != null && (
