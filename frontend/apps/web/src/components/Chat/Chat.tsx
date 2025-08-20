@@ -52,6 +52,21 @@ export function Chat({
   // the user is within 10 pixels of the bottom.
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  const setScrollRef = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el;
+
+    if (!el) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: 'instant',
+      });
+    });
+  }, []);
+
   const { onScroll, maybeAutoScroll } = useConditionalAutoscroll(scrollRef, {
     threshold: 10,
   });
@@ -228,7 +243,7 @@ export function Chat({
 
       {((messages?.length ?? 0) > 0 || accumulatedMessages.length > 0) && (
         <div
-          ref={scrollRef}
+          ref={setScrollRef}
           onScroll={onScroll}
           className="
             flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll p-4 pb-8
