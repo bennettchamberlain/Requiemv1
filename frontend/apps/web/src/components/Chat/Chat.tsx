@@ -70,10 +70,8 @@ export function Chat({
 
     // These are the new nodes that we'll insert into our accumulated messages.
     // When we hit the next render cycle, the refs will be set and the stream can resume.
-
-    const id = uuid7();
     const newStreamNodes = (
-      <Fragment key={id}>
+      <Fragment key={uuid7()}>
         <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={thinkStreamingRef} />
         <AssistantMessage renderEmptyContent={true} streamingRef={textStreamingRef} />
       </Fragment>
@@ -157,8 +155,7 @@ export function Chat({
 
       if (success === true) {
         try {
-          const id = uuid7();
-          const block = <UserMessage key={id} content={data.message} />;
+          const block = <UserMessage key={uuid7()} content={data.message} />;
 
           flushStream(block);
         } catch (err) {
@@ -198,10 +195,7 @@ export function Chat({
   }, [readable, handleFinished, handleFrameChunk]);
 
   const renderedMessages = useMemo(
-    () =>
-      messages?.map((message, i) => {
-        return <ChatMessage key={i} {...message} />;
-      }),
+    () => messages?.map((message, i) => <ChatMessage key={i} {...message} />),
     [messages],
   );
 
