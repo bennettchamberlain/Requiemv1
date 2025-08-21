@@ -7,7 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { Chat, type FormData } from '@/components/Chat';
 import { ModelSelector } from '@/components/ModelSelector';
-import { useChatRequester, useModel } from '@/hooks';
+import { useChatRequester, useCounter, useModel } from '@/hooks';
 
 import { ChatSidebar } from './ChatSidebar';
 import { useThreadListService } from './useThreadListService';
@@ -32,6 +32,13 @@ export default function ChatPage() {
   const [{ thread, loading: threadLoading }, { refetch: refetchThread }] = useThreadService(
     resolvedThreadId.current,
   );
+
+  const [{ count: newThreadCount }, { increment: incrementNewThreadCount }] = useCounter();
+
+  const navigateBackToChat = useCallback(() => {
+    incrementNewThreadCount();
+    navigate('/chat');
+  }, [incrementNewThreadCount]);
 
   const handleNewThread = useCallback(
     (threadId: string) => {
@@ -70,8 +77,8 @@ export default function ChatPage() {
   // The thread will be created automatically when the first message is sent
   // This is just to get us on the correct URL.
   const handleCreateThread = useCallback(() => {
-    navigate('/chat');
-  }, [navigate]);
+    navigateBackToChat();
+  }, [navigateBackToChat]);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
@@ -87,10 +94,10 @@ export default function ChatPage() {
       deleteThread(threadId);
 
       if (resolvedThreadId.current === threadId) {
-        navigate('/chat');
+        navigateBackToChat();
       }
     },
-    [deleteThread],
+    [deleteThread, navigateBackToChat],
   );
 
   // Handle form submission
@@ -192,7 +199,7 @@ export default function ChatPage() {
       </Portal.Slot>
 
       <Chat
-        key={initialThreadId ?? 'new-thread'}
+        key={initialThreadId ?? `new-thread-${newThreadCount}`}
         loading={loading}
         streaming={chatRequestStreaming}
         disabled={isSubmitDisabled}
