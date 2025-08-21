@@ -25,10 +25,8 @@ export function useThreadService(id: string | null): ReturnType {
   const [error, setError] = useState<unknown | null>(null);
 
   const fetchThread = useCallback(
-    async (threadId?: string) => {
-      const resolvedThread = threadId ?? id;
-
-      if (resolvedThread == null) {
+    async () => {
+      if (id == null) {
         setThread(null);
         setError(null);
         setLoading(false);
@@ -39,7 +37,7 @@ export function useThreadService(id: string | null): ReturnType {
       setLoading(true);
 
       try {
-        const thread = await fetchJson<Thread>(`/api/threads/${resolvedThread}?includeMessages=true`, {
+        const thread = await fetchJson<Thread>(`/api/threads/${id}?includeMessages=true`, {
           headers: {
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json',

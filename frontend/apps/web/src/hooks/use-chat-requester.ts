@@ -16,7 +16,6 @@ type ReturnType = [
     loading: boolean;
     error: unknown | null;
     streaming: boolean;
-    threadId: string | null;
   },
   {
     submit: (data: FormData) => Promise<boolean>;
@@ -34,7 +33,6 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown | null>(null);
   const [streaming, setStreaming] = useState<boolean>(false);
-  const [resolvedThreadId, setResolvedThreadId] = useState<string | null>(threadId);
 
   const submit = useCallback(
     async (data: FormData) => {
@@ -52,7 +50,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
       setLoading(true);
       setError(null);
       setStreaming(false);
-      
+
       let success = false;
 
       try {
@@ -65,7 +63,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           body: JSON.stringify({
             prompt: data.message.trim(),
             model: selectedModel,
-            threadId: resolvedThreadId,
+            threadId: threadId,
             enableTools: true,
             enableThinking: true,
           }),
@@ -84,8 +82,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
         const newThreadId = res.headers.get('X-Thread-Id') as string;
 
-        if (newThreadId && newThreadId !== resolvedThreadId) {
-          setResolvedThreadId(newThreadId);
+        if (newThreadId && newThreadId !== threadId) {
           onNewThread?.(newThreadId);
         }
 
@@ -114,7 +111,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
       return success;
     },
-    [authToken, selectedModel, resolvedThreadId, onNewThread],
+    [authToken, selectedModel, threadId, onNewThread],
   );
 
   const stop = useCallback(() => {
@@ -131,17 +128,12 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
     };
   }, [stop]);
 
-  useEffect(() => {
-    setResolvedThreadId(threadId);
-  }, [threadId]);
-
   return [
     {
       stream,
       loading,
       error,
       streaming,
-      threadId: resolvedThreadId,
     },
     {
       submit,

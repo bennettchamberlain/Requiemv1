@@ -17,8 +17,10 @@ import { type Message } from './types';
 export default function ChatPage() {
   usePageTitle('Chat - Companion Intelligence');
 
-  const { id: initialThreadId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+
+  const { id: initialThreadId } = useParams<{ id?: string }>();
+  const resolvedThreadId = useRef<string | null>(null);
 
   const [{ selectedModel }] = useModel();
 
@@ -28,33 +30,34 @@ export default function ChatPage() {
   ] = useThreadListService();
 
   const [{ thread, loading: threadLoading }, { refetch: refetchThread }] = useThreadService(
-initialThreadId ?? null,
-);
+    resolvedThreadId.current,
+  );
 
   const handleNewThread = useCallback(
-(threadId: string) => {
-    window.history.replaceState({}, '', `/chat/${threadId}`);
+    (threadId: string) => {
+      resolvedThreadId.current = threadId;
+      window.history.replaceState({}, '', `/chat/${threadId}`);
       refetchThreads();
-      refetchThread(threadId);
-  },
+      refetchThread();
+    },
     [refetchThreads],
-);
+  );
 
   const [
-    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, threadId: chatRequestThreadId },
+    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming },
     { submit: submitChatRequest, stop: stopChatRequest },
   ] = useChatRequester({
-    threadId: initialThreadId ?? null,
+    threadId: resolvedThreadId.current,
     onNewThread: handleNewThread,
   });
 
-  // Message fixation
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const hasSetInitialMessages = useRef(false);
 
   useEffect(() => {
     setInitialMessages([]);
-    hasSetInitialMessages.current = false;
+    hasSetInitialMessages.current = initialThreadId ? false : true;
+    resolvedThreadId.current = initialThreadId ?? null;
   }, [initialThreadId]);
 
   useEffect(() => {
@@ -90,7 +93,7 @@ initialThreadId ?? null,
   const loading = threadsLoading || threadLoading || chatRequestLoading;
   const isSubmitDisabled = selectedModel == null;
   const inputPlaceholder =
-    chatRequestThreadId == null ? 'Start a new conversation...' : 'Continue the conversation...';
+    resolvedThreadId.current == null ? 'Start a new conversation...' : 'Continue the conversation...';
 
   let emptyState: ReactNode;
 
@@ -119,7 +122,7 @@ initialThreadId ?? null,
         </Card.Content>
       </Card>
     );
-  } else if (chatRequestThreadId == null) {
+  } else if (resolvedThreadId.current == null) {
     emptyState = (
       <div className="text-center max-w-md mx-auto mb-6 lg:mb-8">
         <div className="w-16 h-16 lg:w-20 lg:h-20 rounded-full bg-gradient-to-br from-primary/10 to-primary/20 flex items-center justify-center mx-auto mb-4 lg:mb-6 shadow-lg border border-primary/20">
@@ -167,7 +170,7 @@ initialThreadId ?? null,
         <ChatSidebar
           threads={threads}
           loading={loading}
-          selectedThreadId={chatRequestThreadId}
+          selectedThreadId={resolvedThreadId.current}
           onSelectThread={handleSelectThread}
           onNewThread={handleCreateThread}
           onDeleteThread={handleDeleteThread}
@@ -176,6 +179,7 @@ initialThreadId ?? null,
       </Portal.Slot>
 
       <Chat
+        key={initialThreadId}
         loading={loading}
         streaming={chatRequestStreaming}
         disabled={isSubmitDisabled}
