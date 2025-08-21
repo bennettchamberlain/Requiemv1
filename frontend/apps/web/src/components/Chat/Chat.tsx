@@ -31,7 +31,7 @@ interface Message {
 }
 
 interface Props extends ChatInputProps {
-  autofocus?: boolean;
+  autoFocus?: boolean;
   messages?: Message[];
   readable?: ReadableStream<Uint8Array>;
   emptyState?: ReactNode;
@@ -41,7 +41,7 @@ const textDecoder = new TextDecoder();
 const supportedChannels = new Set([Channel.TEXT, Channel.THINK, Channel.TOOL]);
 
 export function Chat({
-  autofocus = false,
+  autoFocus = false,
   messages,
   readable,
   loading,
@@ -215,12 +215,12 @@ export function Chat({
 
     const input = autoFocusRef.current;
 
-    if (input && autofocus) {
+    if (input && autoFocus) {
       requestAnimationFrame(() => {
         input.focus();
       });
     }
-  }, [flushStream, autofocus]);
+  }, [flushStream, autoFocus]);
 
   useEffect(() => {
     if (!readable) {
@@ -280,7 +280,6 @@ export function Chat({
           ref={autoFocusRef}
           loading={loading}
           streaming={streaming}
-          autofocus={autofocus}
           onSubmit={handleSubmit}
           {...chatInputProps}
         />

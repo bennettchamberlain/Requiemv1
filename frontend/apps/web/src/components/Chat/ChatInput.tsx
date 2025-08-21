@@ -41,7 +41,6 @@ interface Props {
   disabled?: boolean;
   loading?: boolean;
   streaming?: boolean;
-  autofocus?: boolean;
   placeholder?: string;
   onAttach?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onRecord?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
@@ -54,7 +53,6 @@ function ChatInput(
     disabled = false,
     loading = false,
     streaming = false,
-    autofocus = false,
     placeholder,
     onAttach,
     onRecord,
@@ -173,7 +171,6 @@ function ChatInput(
                   <Textarea
                     {...field}
                     ref={forwardedRef}
-                    autoFocus={autofocus}
                     placeholder={placeholder}
                     disabled={loading || streaming || disabled}
                     className="
