@@ -17,11 +17,13 @@ import { useThreadService } from './useThreadService';
 export default function ChatPage() {
   usePageTitle('Chat - Companion Intelligence');
 
+  const resolvedThreadId = useRef<string | null>(null);
+  const hasSetInitialMessages = useRef(false);
+
   const navigate = useNavigate();
 
   const { id: initialThreadId } = useParams<{ id?: string }>();
-  const resolvedThreadId = useRef<string | null>(null);
-
+  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [{ selectedModel }] = useModel();
 
   const [
@@ -34,12 +36,6 @@ export default function ChatPage() {
   );
 
   const [{ count: newThreadCount }, { increment: incrementNewThreadCount }] = useCounter();
-
-  const navigateBackToChat = useCallback(() => {
-    incrementNewThreadCount();
-    stopChatRequest();
-    navigate('/chat');
-  }, [incrementNewThreadCount]);
 
   const handleNewThread = useCallback(
     (threadId: string) => {
@@ -59,8 +55,11 @@ export default function ChatPage() {
     onNewThread: handleNewThread,
   });
 
-  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
-  const hasSetInitialMessages = useRef(false);
+  const navigateToChatList = useCallback(() => {
+    incrementNewThreadCount();
+    stopChatRequest();
+    navigate('/chat');
+  }, [incrementNewThreadCount]);
 
   useEffect(() => {
     setInitialMessages([]);
@@ -74,12 +73,6 @@ export default function ChatPage() {
       hasSetInitialMessages.current = true;
     }
   }, [thread]);
-
-  // The thread will be created automatically when the first message is sent
-  // This is just to get us on the correct URL.
-  const handleCreateThread = useCallback(() => {
-    navigateBackToChat();
-  }, [navigateBackToChat]);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
@@ -96,13 +89,12 @@ export default function ChatPage() {
       deleteThread(threadId);
 
       if (resolvedThreadId.current === threadId) {
-        navigateBackToChat();
+        navigateToChatList();
       }
     },
-    [deleteThread, navigateBackToChat],
+    [deleteThread, navigateToChatList],
   );
 
-  // Handle form submission
   const handleSubmit = useCallback(
     async (data: FormData, e?: FormEvent) => {
       e?.preventDefault();
@@ -194,7 +186,7 @@ export default function ChatPage() {
           loading={loading}
           selectedThreadId={resolvedThreadId.current}
           onSelectThread={handleSelectThread}
-          onNewThread={handleCreateThread}
+          onNewThread={navigateToChatList}
           onDeleteThread={handleDeleteThread}
           onRefresh={refetchThreads}
         />
