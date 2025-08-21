@@ -192,7 +192,7 @@ export default function ChatPage() {
       </Portal.Slot>
 
       <Chat
-        key={initialThreadId}
+        key={initialThreadId ?? 'new-thread'}
         loading={loading}
         streaming={chatRequestStreaming}
         disabled={isSubmitDisabled}
