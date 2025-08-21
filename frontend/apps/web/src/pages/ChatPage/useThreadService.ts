@@ -13,7 +13,7 @@ type ReturnType = [
     error: unknown;
   },
   {
-    refetch: () => void;
+    refetch: (threadId?: string) => void;
   },
 ];
 
@@ -24,32 +24,37 @@ export function useThreadService(id: string | null): ReturnType {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown | null>(null);
 
-  const fetchThread = useCallback(async () => {
-    if (id == null) {
-      setThread(null);
-      setError(null);
-      setLoading(false);
+  const fetchThread = useCallback(
+    async (threadId?: string) => {
+      const resolvedThread = threadId ?? id;
 
-      return;
-    }
+      if (resolvedThread == null) {
+        setThread(null);
+        setError(null);
+        setLoading(false);
 
-    setLoading(true);
+        return;
+      }
 
-    try {
-      const thread = await fetchJson<Thread>(`/api/threads/${id}?includeMessages=true`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      setLoading(true);
 
-      setThread(thread);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, setThread, setError, id]);
+      try {
+        const thread = await fetchJson<Thread>(`/api/threads/${resolvedThread}?includeMessages=true`, {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        setThread(thread);
+      } catch (err) {
+        setError(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setLoading, setThread, setError, id],
+  );
 
   useEffect(() => {
     fetchThread();

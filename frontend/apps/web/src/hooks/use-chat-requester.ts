@@ -131,6 +131,10 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
     };
   }, [stop]);
 
+  useEffect(() => {
+    setResolvedThreadId(threadId);
+  }, [threadId]);
+
   return [
     {
       stream,

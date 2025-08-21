@@ -1,4 +1,4 @@
-import { useCallback, type FormEvent, type ReactNode } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card } from '@ci/shadcn';
@@ -12,6 +12,7 @@ import { useChatRequester, useModel } from '@/hooks';
 import { ChatSidebar } from './ChatSidebar';
 import { useThreadListService } from './useThreadListService';
 import { useThreadService } from './useThreadService';
+import { type Message } from './types';
 
 export default function ChatPage() {
   usePageTitle('Chat - Companion Intelligence');
@@ -26,11 +27,18 @@ export default function ChatPage() {
     { refetch: refetchThreads, delete: handleDeleteThread },
   ] = useThreadListService();
 
-  const [{ thread, loading: threadLoading }] = useThreadService(initialThreadId ?? null);
+  const [{ thread, loading: threadLoading }, { refetch: refetchThread }] = useThreadService(
+initialThreadId ?? null,
+);
 
-  const handleNewThread = useCallback((threadId: string) => {
-    console.log(threadId);
-  }, []);
+  const handleNewThread = useCallback(
+(threadId: string) => {
+    window.history.replaceState({}, '', `/chat/${threadId}`);
+      refetchThreads();
+      refetchThread(threadId);
+  },
+    [refetchThreads],
+);
 
   const [
     { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, threadId: chatRequestThreadId },
@@ -39,6 +47,22 @@ export default function ChatPage() {
     threadId: initialThreadId ?? null,
     onNewThread: handleNewThread,
   });
+
+  // Message fixation
+  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
+  const hasSetInitialMessages = useRef(false);
+
+  useEffect(() => {
+    setInitialMessages([]);
+    hasSetInitialMessages.current = false;
+  }, [initialThreadId]);
+
+  useEffect(() => {
+    if (thread && !hasSetInitialMessages.current) {
+      setInitialMessages(thread.messages ?? []);
+      hasSetInitialMessages.current = true;
+    }
+  }, [thread]);
 
   // The thread will be created automatically when the first message is sent
   // This is just to get us on the correct URL.
@@ -156,7 +180,7 @@ export default function ChatPage() {
         streaming={chatRequestStreaming}
         disabled={isSubmitDisabled}
         placeholder={inputPlaceholder}
-        messages={thread?.messages}
+        messages={initialMessages}
         emptyState={emptyState}
         readable={stream ?? undefined}
         onSubmit={handleSubmit}
