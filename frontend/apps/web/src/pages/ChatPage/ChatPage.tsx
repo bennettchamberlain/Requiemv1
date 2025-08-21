@@ -75,7 +75,9 @@ export default function ChatPage() {
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
-      navigate(`/chat/${threadId}`);
+      if (resolvedThreadId.current !== threadId) {
+        navigate(`/chat/${threadId}`);
+      }
     },
     [navigate],
   );
