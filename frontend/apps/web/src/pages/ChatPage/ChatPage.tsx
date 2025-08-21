@@ -3,7 +3,7 @@ import { useCallback, type FormEvent, type ReactNode } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card } from '@ci/shadcn';
 import { RefreshCw, MessageSquare, X } from '@ci/shadcn/icons';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { Chat, type FormData } from '@/components/Chat';
 import { ModelSelector } from '@/components/ModelSelector';
@@ -16,13 +16,8 @@ import { useThreadService } from './useThreadService';
 export default function ChatPage() {
   usePageTitle('Chat - Companion Intelligence');
 
+  const { id: initialThreadId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  // Extract route information from pathname instead of useParams
-  // This needs to happen because this page handles /chat and /chat/:id
-  const pathSegments = location.pathname.split('/').filter(Boolean);
-  const threadId = pathSegments.length > 1 ? pathSegments[1] : null;
 
   const [{ selectedModel }] = useModel();
 
@@ -31,15 +26,23 @@ export default function ChatPage() {
     { refetch: refetchThreads, delete: handleDeleteThread },
   ] = useThreadListService();
 
-  const [{ thread, loading: threadLoading }] = useThreadService(threadId);
+  const [{ thread, loading: threadLoading }] = useThreadService(initialThreadId ?? null);
+
+  const handleNewThread = useCallback((threadId: string) => {
+    console.log(threadId);
+  }, []);
 
   const [
     { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, threadId: chatRequestThreadId },
     { submit: submitChatRequest, stop: stopChatRequest },
-  ] = useChatRequester(threadId);
+  ] = useChatRequester({
+    threadId: initialThreadId ?? null,
+    onNewThread: handleNewThread,
+  });
 
+  // The thread will be created automatically when the first message is sent
+  // This is just to get us on the correct URL.
   const handleCreateThread = useCallback(() => {
-    // Note: Thread will be created automatically when the first message is sent
     navigate('/chat');
   }, [navigate]);
 
@@ -120,11 +123,11 @@ export default function ChatPage() {
             <Breadcrumb.Item>
               <Breadcrumb.Link href="/chat">Chat</Breadcrumb.Link>
             </Breadcrumb.Item>
-            {threadId && (
+            {thread && (
               <>
                 <Breadcrumb.Separator className="hidden md:block" />
                 <Breadcrumb.Item>
-                  <Breadcrumb.Page>{thread?.name || thread?.id.slice(0, 8)}</Breadcrumb.Page>
+                  <Breadcrumb.Page>{thread.name || thread.id}</Breadcrumb.Page>
                 </Breadcrumb.Item>
               </>
             )}
@@ -140,7 +143,7 @@ export default function ChatPage() {
         <ChatSidebar
           threads={threads}
           loading={loading}
-          selectedThreadId={threadId}
+          selectedThreadId={chatRequestThreadId}
           onSelectThread={handleSelectThread}
           onNewThread={handleCreateThread}
           onDeleteThread={handleDeleteThread}
