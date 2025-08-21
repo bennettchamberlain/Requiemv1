@@ -20,6 +20,7 @@ import { UserMessage } from './blocks/UserMessage';
 import { ChatInput, type FormData } from './ChatInput';
 import { ChatLoader } from './ChatLoader';
 import { ChatMessage } from './ChatMessage';
+import { useConditionalAutoscroll } from './useConditionalAutoscroll';
 import { Channel, type Decoded, createStreamProcessor } from './utils';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
@@ -46,6 +47,30 @@ export function Chat({
   onSubmit,
   ...chatInputProps
 }: Props) {
+  // We want to maintain reference to the scroll container so that we can auto-scroll
+  // when we deem it appropriate. According to the contract stipulated here, that's when
+  // the user is within 10 pixels of the bottom.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const setScrollRef = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el;
+
+    if (!el) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: 'instant',
+      });
+    });
+  }, []);
+
+  const { onScroll, maybeAutoScroll } = useConditionalAutoscroll(scrollRef, {
+    threshold: 10,
+  });
+
   // These refs are used to point to the stream target for text coming from
   // the LLM endpoint.
   const textStreamingRef = useRef<HTMLDivElement | null>(null);
@@ -147,6 +172,8 @@ export function Chat({
         const textNode = document.createTextNode(payload);
 
         el.appendChild(textNode);
+
+        maybeAutoScroll();
       }
 
       return true; // consumed → read next chunk
@@ -163,6 +190,7 @@ export function Chat({
           const block = <UserMessage key={uuid7()} content={data.message} />;
 
           flushStream(block);
+          maybeAutoScroll(true);
         } catch (err) {
           console.error('Error inserting user block', err);
         }
@@ -199,6 +227,10 @@ export function Chat({
     };
   }, [readable, handleFinished, handleFrameChunk]);
 
+  useEffect(() => {
+    maybeAutoScroll();
+  }, [accumulatedMessages]);
+
   const renderedMessages = useMemo(
     () => messages?.map((message, i) => <ChatMessage key={i} {...message} />),
     [messages],
@@ -212,6 +244,8 @@ export function Chat({
 
       {((messages?.length ?? 0) > 0 || accumulatedMessages.length > 0) && (
         <div
+          ref={setScrollRef}
+          onScroll={onScroll}
           className="
             flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll p-4 pb-8
             [mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_2rem)]
