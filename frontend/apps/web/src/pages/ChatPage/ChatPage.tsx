@@ -26,7 +26,7 @@ export default function ChatPage() {
 
   const [
     { threads, loading: threadsLoading, error: threadsError },
-    { refetch: refetchThreads, delete: handleDeleteThread },
+    { refetch: refetchThreads, delete: deleteThread },
   ] = useThreadListService();
 
   const [{ thread, loading: threadLoading }, { refetch: refetchThread }] = useThreadService(
@@ -80,6 +80,17 @@ export default function ChatPage() {
       }
     },
     [navigate],
+  );
+
+  const handleDeleteThread = useCallback(
+    (threadId: string) => {
+      deleteThread(threadId);
+
+      if (resolvedThreadId.current === threadId) {
+        navigate('/chat');
+      }
+    },
+    [deleteThread],
   );
 
   // Handle form submission
