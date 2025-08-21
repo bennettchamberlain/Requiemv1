@@ -18,35 +18,44 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
+import { createContentSchema } from '@ci/domains/memory/controllers/ContentController';
 
 import { EventService } from '../services/EventService';
 import { CreateEventDto, UpdateEventDto } from '../types';
 
-const createEventSchema = z.object({
+const createEventSchemaRoot = z.object({
   name: z.string().optional(),
   type: z.string().optional(),
   description: z.string().optional(),
   external_id: z.string().optional(),
   source_url: z.string().optional(),
+  start_time: z.string().datetime().optional(),
+  end_time: z.string().datetime().optional(),
   source_data: z
     .object({
       related_objects: z.array(z.string()),
     })
     .optional(),
+  content: z.array(createContentSchema).optional(),
   connection_id: z.string().optional(),
 });
+
+const createEventSchema = z.union([createEventSchemaRoot, z.array(createEventSchemaRoot)]);
 
 const updateEventSchema = z.object({
   name: z.string().optional(),
   type: z.string().optional(),
   description: z.string().optional(),
   external_id: z.string().optional(),
+  start_time: z.string().datetime().optional(),
+  end_time: z.string().datetime().optional(),
   source_url: z.string().optional(),
   source_data: z
     .object({
       related_objects: z.array(z.string()),
     })
     .optional(),
+  content: z.array(createContentSchema).optional(),
   connection_id: z.string().optional(),
 });
 
@@ -59,14 +68,22 @@ export class EventController {
   async create(
     @Req() req: Request,
     @Context() context: RequestContext,
-    @Body(new ValidationPipe(createEventSchema)) input: CreateEventDto,
+    @Body(new ValidationPipe(createEventSchema)) input: CreateEventDto | CreateEventDto[],
   ) {
     try {
       if (context.userId) {
-        input.user = { id: context.userId };
+        if (Array.isArray(input)) {
+          input = input.map((item) => {
+            item.user = { id: context.userId! };
+
+            return item;
+          });
+        } else {
+          input.user = { id: context.userId! };
+        }
       }
 
-      return await this.eventService.create(input);
+      return await this.eventService.create(context, input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
         // TODO: Obfuscate this error message? We're revealing DB details here.
