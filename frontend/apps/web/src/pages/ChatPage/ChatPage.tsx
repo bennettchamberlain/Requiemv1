@@ -10,9 +10,9 @@ import { ModelSelector } from '@/components/ModelSelector';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
 
 import { ChatSidebar } from './ChatSidebar';
+import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
 import { useThreadService } from './useThreadService';
-import { type Message } from './types';
 
 export default function ChatPage() {
   usePageTitle('Chat - Companion Intelligence');
@@ -37,6 +37,7 @@ export default function ChatPage() {
 
   const navigateBackToChat = useCallback(() => {
     incrementNewThreadCount();
+    stopChatRequest();
     navigate('/chat');
   }, [incrementNewThreadCount]);
 
@@ -83,6 +84,7 @@ export default function ChatPage() {
   const handleSelectThread = useCallback(
     (threadId: string) => {
       if (resolvedThreadId.current !== threadId) {
+        stopChatRequest();
         navigate(`/chat/${threadId}`);
       }
     },
