@@ -12,21 +12,32 @@ export function Tag({ text }: Props) {
   return <Badge className={color}>{text}</Badge>;
 }
 
-const palette = ['bg-teal-600'];
+const FNV_PRIME = 16777619;
+const FNV_OFFSET_BASIS = 2166136261;
+const PALETTE = [
+  'bg-red-600',
+  'bg-orange-400',
+  'bg-amber-400',
+  'bg-lime-600',
+  'bg-green-700',
+  'bg-teal-600',
+  'bg-sky-400',
+  'bg-indigo-600',
+  'bg-violet-500',
+  'bg-rose-500',
+];
 
 function getColorFromPalette(text: string) {
   const normalizedText = text.toLowerCase();
 
-  let hash = 0;
+  let hash = FNV_OFFSET_BASIS;
 
   for (let i = 0; i < normalizedText.length; i++) {
-    const charCode = normalizedText.charCodeAt(i);
-
-    hash = (hash << 5) - hash + charCode;
-    hash |= 0;
+    hash ^= normalizedText.charCodeAt(i);
+    hash *= FNV_PRIME;
   }
 
-  const index = Math.abs(hash) % palette.length;
+  const index = Math.abs(hash) % PALETTE.length;
 
-  return palette[index];
+  return PALETTE[index];
 }
