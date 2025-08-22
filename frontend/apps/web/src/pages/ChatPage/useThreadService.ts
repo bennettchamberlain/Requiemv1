@@ -24,35 +24,32 @@ export function useThreadService(id: string | null): ReturnType {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown | null>(null);
 
-  const fetchThread = useCallback(
-    async () => {
-      if (id == null) {
-        setThread(null);
-        setError(null);
-        setLoading(false);
+  const fetchThread = useCallback(async () => {
+    if (id == null) {
+      setThread(null);
+      setError(null);
+      setLoading(false);
 
-        return;
-      }
+      return;
+    }
 
-      setLoading(true);
+    setLoading(true);
 
-      try {
-        const thread = await fetchJson<Thread>(`/api/threads/${id}?includeMessages=true`, {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
+    try {
+      const thread = await fetchJson<Thread>(`/api/threads/${id}?includeMessages=true`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-        setThread(thread);
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [setLoading, setThread, setError, id],
-  );
+      setThread(thread);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [setLoading, setThread, setError, id]);
 
   useEffect(() => {
     fetchThread();
