@@ -88,7 +88,7 @@ export function CapturePage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <div>
+      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
         <Camera onFrameCaptured={handleFrameCaptured} onRecordingFinished={handleRecordingFinished}>
           <div>
             <Camera.Feed />
