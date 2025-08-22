@@ -241,6 +241,19 @@ export function Chat({
   }, [readable, handleFinished, handleFrameChunk]);
 
   useEffect(() => {
+    const el = scrollRef.current;
+
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior: 'instant',
+        });
+      });
+    }
+  }, [messages]);
+
+  useEffect(() => {
     maybeAutoScroll();
   }, [accumulatedMessages]);
 
