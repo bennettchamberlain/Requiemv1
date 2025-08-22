@@ -46,7 +46,6 @@ function AppRoutes() {
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
       </Route>
 
-      {/* Main layout routes */}
       <Route element={<MainLayout />}>
         {/* Intelligence */}
         <Route
@@ -57,6 +56,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/search"
           element={
@@ -65,6 +65,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/memory"
           element={
@@ -73,6 +74,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/insights"
           element={
@@ -81,6 +83,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/actions"
           element={
@@ -89,6 +92,16 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/chat/*"
+          element={
+            <ProtectedRoute>
+              <ChatPage />
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/files"
           element={
@@ -97,6 +110,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/capture"
           element={
@@ -115,6 +129,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/jobs"
           element={
@@ -123,6 +138,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/connections"
           element={
@@ -131,22 +147,12 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/settings"
           element={
             <ProtectedRoute>
               <SettingsPage />
-            </ProtectedRoute>
-          }
-        />
-      </Route>
-
-      <Route element={<MainLayout delegateScrolling={true} contentPadding={false} />}>
-        <Route
-          path="/chat/*"
-          element={
-            <ProtectedRoute>
-              <ChatPage />
             </ProtectedRoute>
           }
         />
