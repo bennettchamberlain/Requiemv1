@@ -4,6 +4,7 @@ import { Button, Dialog } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
 import { Chat } from '@/components/Chat';
+import { Tag } from '@/components/Tag';
 
 interface Props {
   open?: boolean;
@@ -37,12 +38,7 @@ export function FeedModal({ open = false, title, description, tags, imageUrl, on
           {tags && (
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2 py-1 text-xs font-medium bg-teal-100 text-teal-800 rounded-full"
-                >
-                  {tag}
-                </span>
+                <Tag key={tag} text={tag} />
               ))}
             </div>
           )}
