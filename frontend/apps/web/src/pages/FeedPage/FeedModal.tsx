@@ -3,7 +3,7 @@ import React from 'react';
 import { Button, Dialog } from '@ci/shadcn';
 import { X, Send, ThumbsUp, ThumbsDown } from '@ci/shadcn/icons';
 
-import { Chat } from '../Chat/Chat';
+import { Chat } from '@/components/Chat';
 
 interface FeedModalProps {
   isOpen: boolean;

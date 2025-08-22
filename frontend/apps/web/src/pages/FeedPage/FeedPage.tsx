@@ -3,10 +3,12 @@ import React, { useCallback, useState } from 'react';
 import { Portal } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 
+import { PageContent } from '@/components/layout';
+
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
-import { FeedModal } from '../../components/FeedModal';
-import { PageContent } from '@/components/layout';
+
+import { FeedModal } from './FeedModal';
 
 interface FeedItem {
   id: string;
