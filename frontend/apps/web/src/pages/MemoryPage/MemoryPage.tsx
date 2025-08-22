@@ -308,7 +308,7 @@ export function MemoryPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <div className="w-full flex flex-col gap-6">
+      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
         {/* Search Bar */}
         <div className="relative w-full max-w-2xl mx-auto">
           <div className="flex">
