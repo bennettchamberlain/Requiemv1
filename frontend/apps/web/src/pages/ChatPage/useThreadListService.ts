@@ -60,7 +60,7 @@ export function useThreadListService(): ReturnType {
 
       setThreads((prev) => prev.filter((t) => t.id !== id));
     },
-    [],
+    [authToken],
   );
 
   useEffect(() => {
