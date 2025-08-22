@@ -320,16 +320,6 @@ export function FeedPage() {
     }
   }, []);
 
-  const handleLike = useCallback((id: string) => {
-    console.log('Liked card:', id);
-    // Handle like action
-  }, []);
-
-  const handleDislike = useCallback((id: string) => {
-    console.log('Disliked card:', id);
-    // Handle dislike action
-  }, []);
-
   const handleModalClose = useCallback(() => {
     closeModal();
     setSelectedItem(null);
@@ -388,11 +378,12 @@ export function FeedPage() {
       </PageContent>
 
       <FeedModal
-        isOpen={isModalOpen}
+        open={isModalOpen}
+        title={selectedItem?.title}
+        description={selectedItem?.description}
+        tags={selectedItem?.tags}
+        imageUrl={selectedItem?.imageUrl}
         onClose={handleModalClose}
-        item={selectedItem}
-        onLike={handleLike}
-        onDislike={handleDislike}
       />
     </>
   );
