@@ -308,7 +308,7 @@ export function JobsPage() {
       </Portal.Slot>
 
       {/* Header and Stats Section */}
-      <div className="mb-4">
+      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Job Queue</h1>
