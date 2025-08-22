@@ -127,7 +127,7 @@ export function SettingsPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <div className="flex flex-col w-full space-y-6">
+      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
         {/* Header */}
         <div className="flex flex-row items-center justify-between">
           <div>
