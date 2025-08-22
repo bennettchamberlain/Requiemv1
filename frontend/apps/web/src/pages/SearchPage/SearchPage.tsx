@@ -4,6 +4,7 @@ import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Input, Table } from '@ci/shadcn';
 import { AlertCircle, Search, Loader2 } from '@ci/shadcn/icons';
 
+import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
 interface SearchResult {
@@ -119,7 +120,7 @@ export function SearchPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
+      <PageContent>
         {/* Search Input */}
         <div className="flex gap-2">
           <Input
@@ -202,7 +203,7 @@ export function SearchPage() {
             <p className="text-sm mt-2">The search uses semantic similarity to find related information</p>
           </div>
         )}
-      </div>
+      </PageContent>
     </>
   );
 }

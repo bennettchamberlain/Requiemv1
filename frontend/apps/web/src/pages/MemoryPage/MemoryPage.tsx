@@ -27,6 +27,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Link } from 'react-router-dom';
 
+import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
 // Add custom styles for Leaflet
@@ -308,7 +309,7 @@ export function MemoryPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
+      <PageContent>
         {/* Search Bar */}
         <div className="relative w-full max-w-2xl mx-auto">
           <div className="flex">
@@ -568,7 +569,7 @@ export function MemoryPage() {
             </Tabs.Content>
           </Tabs>
         )}
-      </div>
+      </PageContent>
     </>
   );
 }

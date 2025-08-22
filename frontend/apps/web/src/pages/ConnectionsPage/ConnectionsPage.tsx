@@ -4,6 +4,7 @@ import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
 import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X } from '@ci/shadcn/icons';
 
+import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
 export interface Provider {
@@ -555,7 +556,7 @@ export function ConnectionsPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
+      <PageContent>
         <div className="flex flex-row items-center justify-between">
           <h1 className="text-2xl font-bold">Connections</h1>
 
@@ -706,7 +707,7 @@ export function ConnectionsPage() {
             <div className="text-xs text-muted-foreground">Total Connections: {Connections.length}</div>
           </>
         )}
-      </div>
+      </PageContent>
 
       {/* Create Connection Modal */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>

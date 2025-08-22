@@ -16,6 +16,7 @@ import {
   Info,
 } from '@ci/shadcn/icons';
 
+import { PageContent } from '@/components/layout';
 import { ThemePicker } from '@/components/ThemePicker';
 
 interface SettingsState {
@@ -127,7 +128,7 @@ export function SettingsPage() {
         </Breadcrumb>
       </Portal.Slot>
 
-      <div className="w-full h-full overflow-auto p-6 flex flex-col gap-6">
+      <PageContent>
         {/* Header */}
         <div className="flex flex-row items-center justify-between">
           <div>
@@ -536,7 +537,7 @@ export function SettingsPage() {
             </div>
           </Card.Content>
         </Card>
-      </div>
+      </PageContent>
     </>
   );
 }
