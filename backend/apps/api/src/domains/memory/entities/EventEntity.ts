@@ -10,7 +10,7 @@ import {
   JoinTable,
 } from 'typeorm';
 
-import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
+import { ConnectionEntity } from '@ci/domains/connections';
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
