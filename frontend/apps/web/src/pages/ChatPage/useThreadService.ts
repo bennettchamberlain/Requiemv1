@@ -13,7 +13,7 @@ type ReturnType = [
     error: unknown;
   },
   {
-    refetch: (threadId?: string) => void;
+    refetch: () => void;
   },
 ];
 
