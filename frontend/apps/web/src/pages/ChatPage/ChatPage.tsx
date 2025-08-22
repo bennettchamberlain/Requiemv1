@@ -58,6 +58,7 @@ export default function ChatPage() {
   const navigateToChatList = useCallback(() => {
     incrementNewThreadCount();
     stopChatRequest();
+    resolvedThreadId.current = null;
     navigate('/chat');
   }, [incrementNewThreadCount]);
 
