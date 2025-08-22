@@ -4,6 +4,7 @@ import { Portal } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
+import { useModalControls } from '@/hooks';
 
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
@@ -306,15 +307,16 @@ const actionInsightData: FeedItem[] = [
 ];
 
 export function FeedPage() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls();
+
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
 
   const handleCardClick = useCallback((id: string) => {
-    console.log('Card clicked:', id);
     const item = [...feedData, ...actionInsightData].find((item) => item.id === id);
+
     if (item) {
       setSelectedItem(item);
-      setIsModalOpen(true);
+      openModal();
     }
   }, []);
 
@@ -329,7 +331,7 @@ export function FeedPage() {
   }, []);
 
   const handleModalClose = useCallback(() => {
-    setIsModalOpen(false);
+    closeModal();
     setSelectedItem(null);
   }, []);
 
