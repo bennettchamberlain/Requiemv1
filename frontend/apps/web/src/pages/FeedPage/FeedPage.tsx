@@ -1,8 +1,12 @@
 import React, { useCallback, useState } from 'react';
 
+import { Portal } from '@ci/common';
+import { Breadcrumb } from '@ci/shadcn';
+
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
 import { FeedModal } from '../../components/FeedModal';
+import { PageContent } from '@/components/layout';
 
 interface FeedItem {
   id: string;
@@ -299,7 +303,7 @@ const actionInsightData: FeedItem[] = [
   },
 ];
 
-export default function FeedPage() {
+export function FeedPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
 
@@ -328,48 +332,57 @@ export default function FeedPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Your Feed</h1>
+    <>
+      <Portal.Slot id="breadcrumbs">
+        <Breadcrumb>
+          <Breadcrumb.List>
+            <Breadcrumb.Item className="hidden md:block">
+              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+            </Breadcrumb.Item>
+            <Breadcrumb.Separator className="hidden md:block" />
+            <Breadcrumb.Item>
+              <Breadcrumb.Page>Feed</Breadcrumb.Page>
+            </Breadcrumb.Item>
+          </Breadcrumb.List>
+        </Breadcrumb>
+      </Portal.Slot>
+
+      <PageContent>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Your Feed</h1>
           <p className="text-gray-600">Personalized recommendations and updates for John Smith</p>
         </div>
 
         {/* Featured Content Carousel */}
-        <div className="mb-8">
-          <Carousel title="Featured Content">
-            {feedData.map((item) => (
-              <BentoCard
-                key={item.id}
-                title={item.title}
-                description={item.description}
-                tags={item.tags}
-                imageUrl={item.imageUrl}
-                onClick={() => handleCardClick(item.id)}
-                className="hover:shadow-lg transition-shadow duration-200"
-              />
-            ))}
-          </Carousel>
-        </div>
+        <Carousel title="Featured Content">
+          {feedData.map((item) => (
+            <BentoCard
+              key={item.id}
+              title={item.title}
+              description={item.description}
+              tags={item.tags}
+              imageUrl={item.imageUrl}
+              onClick={() => handleCardClick(item.id)}
+              className="hover:shadow-lg transition-shadow duration-200"
+            />
+          ))}
+        </Carousel>
 
         {/* Actions & Insights Carousel */}
-        <div>
-          <Carousel title="Actions & Insights">
-            {actionInsightData.map((item) => (
-              <BentoCard
-                key={item.id}
-                title={item.title}
-                description={item.description}
-                tags={item.tags}
-                onClick={() => handleCardClick(item.id)}
-                className="hover:shadow-lg transition-shadow duration-200"
-              />
-            ))}
-          </Carousel>
-        </div>
-      </div>
+        <Carousel title="Actions & Insights">
+          {actionInsightData.map((item) => (
+            <BentoCard
+              key={item.id}
+              title={item.title}
+              description={item.description}
+              tags={item.tags}
+              onClick={() => handleCardClick(item.id)}
+              className="hover:shadow-lg transition-shadow duration-200"
+            />
+          ))}
+        </Carousel>
+      </PageContent>
 
-      {/* Feed Modal */}
       <FeedModal
         isOpen={isModalOpen}
         onClose={handleModalClose}
@@ -377,6 +390,6 @@ export default function FeedPage() {
         onLike={handleLike}
         onDislike={handleDislike}
       />
-    </div>
+    </>
   );
 }
