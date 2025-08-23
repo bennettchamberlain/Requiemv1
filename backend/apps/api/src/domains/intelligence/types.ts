@@ -1,11 +1,16 @@
 import type { User } from '@ci/domains/user';
 
+import type { Thread } from '../conversations/types';
+
 export interface Action {
   id: string;
 
   title: string | null;
   text: string | null;
 
+  threadId: string | null;
+
+  thread?: Thread;
   user?: User;
   tags?: string[];
 }
