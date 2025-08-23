@@ -49,13 +49,13 @@ export function FeedPage() {
       </Portal.Slot>
 
       <PageContent>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Your Feed</h1>
-          <p className="text-gray-600">Personalized recommendations and updates for John Smith</p>
-        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Featured Content</h2>
 
-        {/* Featured Content Carousel */}
-        <Carousel title="Featured Content">
+        <Carousel
+          className="-mx-6"
+          containerClassName="px-6 pb-6 pt-1"
+          slideClassName="flex-none min-w-[550px] basis-[550px] mr-6"
+        >
           {feedData.map((item) => (
             <BentoCard
               key={item.id}
@@ -69,8 +69,13 @@ export function FeedPage() {
           ))}
         </Carousel>
 
-        {/* Actions & Insights Carousel */}
-        <Carousel title="Actions & Insights">
+        <h2 className="text-2xl font-bold text-gray-900">Actions & Insights</h2>
+
+        <Carousel
+          className="-mx-6"
+          containerClassName="px-6 pb-6"
+          slideClassName="flex-none min-w-[550px] basis-[550px] mr-6"
+        >
           {actionInsightData.map((item) => (
             <BentoCard
               key={item.id}
