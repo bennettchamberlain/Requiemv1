@@ -80,7 +80,6 @@ export function Carousel({ children, className, containerClassName, slideClassNa
           canScrollPrev ? 'opacity-100' : 'opacity-50 cursor-not-allowed',
         )}
         onClick={scrollPrev}
-        disabled={!canScrollPrev}
         aria-label="Previous slide"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -94,7 +93,6 @@ export function Carousel({ children, className, containerClassName, slideClassNa
           canScrollNext ? 'opacity-100' : 'opacity-50 cursor-not-allowed',
         )}
         onClick={scrollNext}
-        disabled={!canScrollNext}
         aria-label="Next slide"
       >
         <ChevronRight className="h-4 w-4" />
