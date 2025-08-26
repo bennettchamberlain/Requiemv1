@@ -11,7 +11,7 @@ import { Carousel } from '../../components/Carousel';
 
 import { actionInsightData, feedData } from './data';
 import { FeedModal } from './FeedModal';
-import type { FeedItem } from './types';
+import type { Action, FeedItem } from './types';
 import { useActionsListService } from './useActionListService';
 
 export function FeedPage() {
@@ -19,19 +19,30 @@ export function FeedPage() {
 
   const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls();
 
+  const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
 
-  const handleCardClick = useCallback((id: string) => {
-    const item = [...feedData, ...actionInsightData].find((item) => item.id === id);
+  const handleCardClick = useCallback(
+    (id: string) => {
+      const action = actions.find((item) => item.id === id);
+      const item = [...feedData, ...actionInsightData].find((item) => item.id === id);
 
-    if (item) {
-      setSelectedItem(item);
-      openModal();
-    }
-  }, []);
+      if (action) {
+        setSelectedAction(action);
+        setSelectedItem(null);
+        openModal();
+      } else if (item) {
+        setSelectedAction(null);
+        setSelectedItem(item);
+        openModal();
+      }
+    },
+    [actions],
+  );
 
   const handleModalClose = useCallback(() => {
     closeModal();
+    setSelectedAction(null);
     setSelectedItem(null);
   }, []);
 
@@ -108,10 +119,11 @@ export function FeedPage() {
 
       <FeedModal
         open={isModalOpen}
-        title={selectedItem?.title}
-        description={selectedItem?.description}
-        tags={selectedItem?.tags}
-        imageUrl={selectedItem?.imageUrl}
+        threadId={selectedAction?.threadId}
+        title={(selectedAction ?? selectedItem)?.title}
+        description={selectedAction?.text ?? selectedItem?.description}
+        tags={(selectedAction ?? selectedItem)?.tags}
+        imageUrl={(selectedAction ?? selectedItem)?.imageUrl}
         onClose={handleModalClose}
       />
     </>
