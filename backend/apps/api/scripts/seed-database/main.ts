@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 
 import config from '@ci/configuration';
 import { ConnectionEntity, ProviderEntity } from '@ci/domains/connections';
+import { MessageEntity, ThreadEntity } from '@ci/domains/conversations';
 import { ActionEntity, AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
 import {
   ContactEntity,
@@ -29,6 +30,7 @@ import { seedPlaces } from './seed-places';
 import { seedProviders } from './seed-providers';
 import { seedQuestions } from './seed-questions';
 import { seedThings } from './seed-things';
+import { seedThreads } from './seed-threads';
 import { seedUsers } from './seed-users';
 
 const logger = new Logger(path.basename(__filename));
@@ -44,6 +46,9 @@ const logger = new Logger(path.basename(__filename));
     username: config.db.username,
     password: config.db.password,
     entities: [
+      // Conversation
+      MessageEntity,
+      ThreadEntity,
       // Memory
       ContactEntity,
       ContentEntity,
@@ -89,6 +94,7 @@ const logger = new Logger(path.basename(__filename));
     await seedPlaces(db, path.resolve(dataDir, './js1-data/js1-places.csv'));
     await seedLocations(db, path.resolve(dataDir, './js1-data/js1-locations.csv'));
     await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
+    await seedThreads(db, path.resolve(dataDir, './js1-data/js1-threads.csv'));
     await seedActions(db, path.resolve(dataDir, './js1-data/js1-actions.csv'));
 
     process.exit(0);
