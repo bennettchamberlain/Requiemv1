@@ -1,6 +1,5 @@
+import type { Thread } from '@ci/domains/conversations';
 import type { User } from '@ci/domains/user';
-
-import type { Thread } from '../conversations/types';
 
 export interface Action {
   id: string;
