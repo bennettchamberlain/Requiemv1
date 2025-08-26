@@ -12,8 +12,11 @@ import { Carousel } from '../../components/Carousel';
 import { actionInsightData, feedData } from './data';
 import { FeedModal } from './FeedModal';
 import type { FeedItem } from './types';
+import { useActionsListService } from './useActionListService';
 
 export function FeedPage() {
+  const [{ data: actions, loading, error }] = useActionsListService();
+
   const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls();
 
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
@@ -56,6 +59,20 @@ export function FeedPage() {
           containerClassName="px-6 pb-6 pt-1"
           slideClassName="flex-none min-w-[550px] basis-[550px] mr-6"
         >
+          {!loading &&
+            !error &&
+            actions.map((action) => (
+              <BentoCard
+                key={action.id}
+                title={action.title}
+                description={action.text}
+                tags={action.tags}
+                imageUrl={action.imageUrl}
+                onClick={() => handleCardClick(action.id)}
+                className="hover:shadow-lg transition-shadow duration-200"
+              />
+            ))}
+
           {feedData.map((item) => (
             <BentoCard
               key={item.id}
