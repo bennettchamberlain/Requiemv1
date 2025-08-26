@@ -55,8 +55,8 @@ export function FeedModal({ open = false, title, description, tags, imageUrl, th
           )}
         </Dialog.Header>
 
-        <div className="flex flex-1">
-          <div className="flex flex-col gap-4 p-4 border-r">
+        <div className="flex flex-1 min-h-0">
+          <div className="flex flex-col gap-4 p-4 border-r flex-1/2">
             {imageUrl && (
               <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
                 <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
