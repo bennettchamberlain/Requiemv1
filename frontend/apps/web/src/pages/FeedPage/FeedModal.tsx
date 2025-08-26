@@ -5,6 +5,9 @@ import { Send } from '@ci/shadcn/icons';
 
 import { Chat } from '@/components/Chat';
 import { Tag } from '@/components/Tag';
+import { useChatRequester } from '@/hooks';
+
+import { useThreadService } from './useThreadService';
 
 interface Props {
   open?: boolean;
@@ -12,13 +15,21 @@ interface Props {
   description?: ReactNode;
   tags?: string[];
   imageUrl?: string;
+  threadId?: string;
   onClose?: () => void;
 }
 
-export function FeedModal({ open = false, title, description, tags, imageUrl, onClose }: Props) {
+export function FeedModal({ open = false, title, description, tags, imageUrl, threadId, onClose }: Props) {
   if (!title && !description) {
     return null;
   }
+
+  const [{ thread }] = useThreadService(threadId ?? null);
+
+  const [{ stream, streaming: chatRequestStreaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
+    useChatRequester({
+      threadId: threadId ?? null,
+    });
 
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
@@ -72,6 +83,11 @@ export function FeedModal({ open = false, title, description, tags, imageUrl, on
 
           <Chat
             placeholder="Ask about this content..."
+            streaming={chatRequestStreaming}
+            messages={thread?.messages}
+            readable={stream ?? undefined}
+            onSubmit={submitChatRequest}
+            onStop={stopChatRequest}
             emptyState={
               <div className="text-center text-gray-500 mt-8">
                 <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
