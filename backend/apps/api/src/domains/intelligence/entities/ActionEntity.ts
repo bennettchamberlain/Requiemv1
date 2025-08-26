@@ -28,6 +28,9 @@ export class ActionEntity {
   @Column({ type: 'text', nullable: true })
   text!: string | null;
 
+  @Column({ type: 'text', name: 'image_url', nullable: true })
+  imageUrl!: string | null;
+
   @Column({ type: 'text', name: 'thread_id', nullable: true })
   threadId!: string;
 
@@ -58,6 +61,7 @@ export class ActionEntity {
       id: this.id,
       title: this.title,
       text: this.text,
+      imageUrl: this.imageUrl,
       threadId: this.threadId,
       thread: this.thread?.toThread(),
       user: this.user?.toUser(),

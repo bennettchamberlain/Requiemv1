@@ -7,6 +7,7 @@ export interface Action {
 
   title: string | null;
   text: string | null;
+  imageUrl: string | null;
 
   threadId: string | null;
 
