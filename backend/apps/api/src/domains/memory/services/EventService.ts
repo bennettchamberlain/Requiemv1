@@ -1,21 +1,18 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeleteResult, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
-import { ContentService } from '@ci/domains/memory/services/ContentService';
 
 import { EventEntity } from '../entities/EventEntity';
-import { CreateEventDto, UpdateEventDto, Event, Content } from '../types';
+import { CreateEventDto, UpdateEventDto, Event } from '../types';
 
 @Injectable()
 export class EventService {
   constructor(
     @InjectRepository(EventEntity)
     private readonly eventRepository: Repository<EventEntity>,
-    @Inject(ContentService)
-    private readonly contentService: ContentService,
   ) {}
 
   async create(context: RequestContext, data: CreateEventDto | CreateEventDto[]): Promise<Event | Event[]> {
@@ -24,42 +21,11 @@ export class EventService {
 
     const returned = await Promise.all(
       dataArray.map(async (item) => {
-        let newContent;
-        if (item.content) {
-          newContent = (await Promise.all(
-            item.content.map(async (content) => {
-              return this.contentService.create(context, {
-                ...content,
-                id: uuidv7(),
-                user: item.user,
-              });
-            }),
-          )) as Content[];
-
-          item.source_data = {
-            related_objects: newContent.map((content) => `content_${content.id}`),
-          };
-        }
-
         const event = await this.eventRepository.create({
           ...item,
           id: uuidv7(),
         });
-
         const eventResult = await this.eventRepository.save(event);
-        if (newContent) {
-          await Promise.all(
-            newContent.map(async (content) => {
-              console.log('Calling contentService.update', context, content);
-
-              return await this.contentService.update(context, content.id, {
-                event: {
-                  id: eventResult.id,
-                },
-              });
-            }),
-          );
-        }
 
         return eventResult.toEvent();
       }),
