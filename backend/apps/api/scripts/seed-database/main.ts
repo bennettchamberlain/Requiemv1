@@ -25,6 +25,7 @@ import { seedContacts } from './seed-contacts';
 import { seedContent } from './seed-content';
 import { seedEvents } from './seed-events';
 import { seedLocations } from './seed-locations';
+import { seedMessages } from './seed-messages';
 import { seedPeople } from './seed-people';
 import { seedPlaces } from './seed-places';
 import { seedProviders } from './seed-providers';
@@ -96,6 +97,7 @@ const logger = new Logger(path.basename(__filename));
     await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
     await seedThreads(db, path.resolve(dataDir, './js1-data/js1-threads.csv'));
     await seedActions(db, path.resolve(dataDir, './js1-data/js1-actions.csv'));
+    await seedMessages(db, path.resolve(dataDir, './js1-data/js1-messages.csv'));
 
     process.exit(0);
   } catch (err) {
