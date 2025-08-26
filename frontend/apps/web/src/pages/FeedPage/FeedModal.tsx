@@ -3,11 +3,10 @@ import { type ReactNode, useCallback } from 'react';
 import { Button, Dialog } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
+import { useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
 import { Tag } from '@/components/Tag';
 import { useChatRequester } from '@/hooks';
-
-import { useThreadService } from './useThreadService';
 
 interface Props {
   open?: boolean;

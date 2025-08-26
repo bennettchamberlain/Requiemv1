@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks';
 
 import { type Action } from './types';
 
-export function useActionsListService() {
+export function useActionListService() {
   const [{ authToken }] = useAuth();
 
   const [actions, setActions] = useState<Action[]>([]);

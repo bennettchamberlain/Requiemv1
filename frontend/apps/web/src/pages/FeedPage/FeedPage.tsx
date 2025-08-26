@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { Portal } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 
+import { type Action, useActionListService } from '@/api';
 import { PageContent } from '@/components/layout';
 import { useModalControls } from '@/hooks';
 
@@ -11,11 +12,10 @@ import { Carousel } from '../../components/Carousel';
 
 import { actionInsightData, feedData } from './data';
 import { FeedModal } from './FeedModal';
-import type { Action, FeedItem } from './types';
-import { useActionsListService } from './useActionListService';
+import type { FeedItem } from './types';
 
 export function FeedPage() {
-  const [{ data: actions, loading, error }] = useActionsListService();
+  const [{ data: actions, loading, error }] = useActionListService();
 
   const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls();
 
