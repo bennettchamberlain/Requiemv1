@@ -1,9 +1,14 @@
 import { Portal } from '@ci/common';
 import { Separator, Sidebar } from '@ci/shadcn';
 
+import { CaptureModalToggle } from '@/components/CaptureModalToggle';
+import { CaptureModal } from '@/components/modals/CaptureModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useModalControls } from '@/hooks';
 
 export function PrimaryNavigation() {
+  const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls();
+
   return (
     <header className="flex flex-row items-center justify-between pl-2 pr-4 py-2 border-b">
       <section className="flex flex-row items-center">
@@ -13,9 +18,16 @@ export function PrimaryNavigation() {
       </section>
 
       <section className="flex flex-row items-center gap-2">
+        <CaptureModalToggle openModal={openModal} />
+        <Portal id="actions" />
+      </section>
+
+      <section className="flex flex-row items-center gap-2">
         <ThemeToggle />
         <Portal id="actions" />
       </section>
+
+      <CaptureModal open={isModalOpen} files={[]} onClose={closeModal} />
     </header>
   );
 }
