@@ -6,11 +6,12 @@ import { EventsModule } from '@ci/domains/events';
 import { ThreadsController } from './controllers/ThreadsController';
 import { MessageEntity } from './entities/MessageEntity';
 import { ThreadEntity } from './entities/ThreadEntity';
+import { ThreadFileEntity } from './entities/ThreadFileEntity';
 import { MessageService } from './services/MessageService';
 import { ThreadService } from './services/ThreadService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MessageEntity, ThreadEntity]), EventsModule],
+  imports: [TypeOrmModule.forFeature([MessageEntity, ThreadEntity, ThreadFileEntity]), EventsModule],
   providers: [MessageService, ThreadService],
   controllers: [ThreadsController],
   exports: [MessageService, ThreadService],
@@ -18,7 +19,7 @@ import { ThreadService } from './services/ThreadService';
 export class ConversationModule {}
 
 // Entities
-export { MessageEntity, ThreadEntity };
+export { MessageEntity, ThreadEntity, ThreadFileEntity };
 
 // Services
 export { MessageService, ThreadService };
