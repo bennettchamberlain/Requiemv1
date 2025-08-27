@@ -88,7 +88,7 @@ export function CaptureModal({ open = false, files = [], onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <Dialog.Content className="sm:max-w-[70vw] h-[70vh] p-0 flex flex-col gap-0">
+      <Dialog.Content className="sm:max-w-[70vw] max-h-[70vh] p-0 flex flex-col gap-0">
         <Dialog.Header className="flex flex-row items-center gap-4 p-4 pb-3 border-b bg-stone-50 rounded-t-2xl">
           <Dialog.Title>Upload Images and Videos</Dialog.Title>
           <Dialog.Description className="hidden">Capture audio or video and upload to CI</Dialog.Description>
