@@ -24,7 +24,7 @@ export function PrimaryNavigation() {
           <Portal id="actions" />
         </section>
       </header>
-      <CaptureModal open={isModalOpen} files={[]} onClose={closeModal} />
+      <CaptureModal open={isModalOpen} initialFiles={[]} onClose={closeModal} />
     </>
   );
 }

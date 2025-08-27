@@ -1,92 +1,49 @@
-import { useCallback } from 'react';
+import { useCallback, useRef, useState, type FormEvent } from 'react';
 
-import { Camera, getImageDataURL, getVideoPreviewDataURL } from '@ci/capture';
-import { Dialog, useToast } from '@ci/shadcn';
+import { Camera } from '@ci/capture';
+import { Dialog } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
 import type { File as CIFile } from '@/api/types.ts';
-import { Chat } from '@/components/Chat';
-import { useAuth, useModel } from '@/hooks';
+import { Chat, type FormData } from '@/components/Chat';
+import { useAuth, useChatRequester, useModel } from '@/hooks';
 import { getMediaType } from '@/lib/utils';
 
 interface Props {
   open?: boolean;
-  files?: CIFile[];
+  initialFiles?: CIFile[];
   onClose?: () => void;
 }
 
-export function CaptureModal({ open = false, files = [], onClose }: Props) {
+export function CaptureModal({ open = false, initialFiles = [], onClose }: Props) {
+  const [files, setFiles] = useState<CIFile[]>(initialFiles);
+  const threadId = useRef<string | null>(null);
+
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
+      setFiles([]);
       onClose?.();
     }
   }, []);
 
   const [{ selectedModel }] = useModel();
-
   const [{ authToken }] = useAuth();
-  const { toast } = useToast();
 
-  const handleFrameCaptured = useCallback(
-    async (file: File) => {
-      const formData = new FormData();
+  const [{ stream, loading, streaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
+    useChatRequester({
+      threadId: threadId.current,
+    });
 
-      formData.append('file', file);
+  const handleSubmit = useCallback(
+    async (data: FormData, e?: FormEvent) => {
+      e?.preventDefault();
 
-      const res = await fetch('/api/files/upload', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: formData,
-      });
-
-      const resJson = await res.json();
-
-      if (!res.ok) {
-        console.error('Upload failed', resJson);
-      }
-
-      const threadRes = await fetch('/api/threads', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          files: [
-            {
-              id: resJson.id,
-            },
-          ],
-          model: selectedModel,
-        }),
-      });
-
-      const threadResJson = await threadRes.json();
-
-      if (!threadRes.ok) {
-        console.error('Linking file to thread failed', threadResJson);
-      }
-
-      // files.push(res.body)
-
-      const dataUrl = await getImageDataURL(file);
-
-      toast.custom((id) => (
-        <div
-          className="flex flex-col gap-1 p-4 bg-white border border-gray-200 rounded-md shadow-md"
-          onClick={() => toast.dismiss(id)}
-        >
-          <div className="font-semibold text-sm text-gray-800">Image saved</div>
-          <img src={dataUrl} alt="Saved image" />
-        </div>
-      ));
+      return submitChatRequest(data);
     },
-    [authToken, selectedModel],
+    [submitChatRequest],
   );
 
-  const handleRecordingFinished = useCallback(
+  const handleMediaCaptured = useCallback(
     async (file: File) => {
       const formData = new FormData();
 
@@ -104,8 +61,6 @@ export function CaptureModal({ open = false, files = [], onClose }: Props) {
 
       if (!res.ok) {
         console.error('Upload failed', resJson);
-
-        return;
       }
 
       const threadRes = await fetch('/api/threads', {
@@ -130,19 +85,14 @@ export function CaptureModal({ open = false, files = [], onClose }: Props) {
         console.error('Linking file to thread failed', threadResJson);
       }
 
-      // files.push(res.body)
+      threadId.current = threadResJson.id;
 
-      const dataUrl = await getVideoPreviewDataURL(file);
-
-      toast.custom((id) => (
-        <div
-          className="flex flex-col gap-1 p-4 bg-white border border-gray-200 rounded-md shadow-md"
-          onClick={() => toast.dismiss(id)}
-        >
-          <div className="font-semibold text-sm text-gray-800">Video saved</div>
-          <img src={dataUrl} alt="Preview of saved video" />
-        </div>
-      ));
+      setFiles(
+        files.concat({
+          url: URL.createObjectURL(file),
+          ...resJson,
+        }),
+      );
     },
     [authToken, selectedModel],
   );
@@ -156,7 +106,7 @@ export function CaptureModal({ open = false, files = [], onClose }: Props) {
         </Dialog.Header>
 
         {files.length === 0 && (
-          <Camera onFrameCaptured={handleFrameCaptured} onRecordingFinished={handleRecordingFinished}>
+          <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
             <div>
               <Camera.Feed />
             </div>
@@ -201,6 +151,11 @@ export function CaptureModal({ open = false, files = [], onClose }: Props) {
             {files?.length > 0 && (
               <div className="flex-1 min-w-0">
                 <Chat
+                  loading={loading}
+                  streaming={streaming}
+                  readable={stream ?? undefined}
+                  onSubmit={handleSubmit}
+                  onStop={stopChatRequest}
                   placeholder="Ask about this content..."
                   emptyState={
                     <div className="text-center text-gray-500 mt-8">
