@@ -113,7 +113,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
           </Camera>
         )}
         {files.length > 0 && (
-          <div className="flex flex-1">
+          <div className="flex flex-1 max-h-100">
             {/* Left side: file preview or fallback */}
             <div className="flex flex-col gap-4 p-4 border-r min-w-[320px] max-w-[480px] w-full">
               {files.map((file) => {
@@ -149,7 +149,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
             {/* Right side: Chat */}
             {files?.length > 0 && (
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 max-h-100 overflow-y-auto">
                 <Chat
                   loading={loading}
                   streaming={streaming}
