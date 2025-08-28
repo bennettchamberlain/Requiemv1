@@ -6,7 +6,7 @@ import { Send } from '@ci/shadcn/icons';
 
 import type { File as CIFile } from '@/api/types.ts';
 import { Chat } from '@/components/Chat';
-import { useAuth } from '@/hooks';
+import { useAuth, useModel } from '@/hooks';
 import { getMediaType } from '@/lib/utils';
 
 interface Props {
@@ -22,69 +22,130 @@ export function CaptureModal({ open = false, files = [], onClose }: Props) {
     }
   }, []);
 
+  const [{ selectedModel }] = useModel();
+
   const [{ authToken }] = useAuth();
   const { toast } = useToast();
 
-  const handleFrameCaptured = useCallback(async (file: File) => {
-    const formData = new FormData();
+  const handleFrameCaptured = useCallback(
+    async (file: File) => {
+      const formData = new FormData();
 
-    formData.append('file', file);
+      formData.append('file', file);
 
-    const res = await fetch('/api/files/upload', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: formData,
-    });
+      const res = await fetch('/api/files/upload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: formData,
+      });
 
-    if (!res.ok) {
-      throw new Error('Upload failed');
-    }
+      const resJson = await res.json();
 
-    const dataUrl = await getImageDataURL(file);
+      if (!res.ok) {
+        console.error('Upload failed', resJson);
+      }
 
-    toast.custom((id) => (
-      <div
-        className="flex flex-col gap-1 p-4 bg-white border border-gray-200 rounded-md shadow-md"
-        onClick={() => toast.dismiss(id)}
-      >
-        <div className="font-semibold text-sm text-gray-800">Image saved</div>
-        <img src={dataUrl} alt="Saved image" />
-      </div>
-    ));
-    // files.push();
-  }, []);
+      const threadRes = await fetch('/api/threads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          files: [
+            {
+              id: resJson.id,
+            },
+          ],
+          model: selectedModel,
+        }),
+      });
 
-  const handleRecordingFinished = useCallback(async (file: File) => {
-    const formData = new FormData();
+      const threadResJson = await threadRes.json();
 
-    formData.append('file', file);
+      if (!threadRes.ok) {
+        console.error('Linking file to thread failed', threadResJson);
+      }
 
-    const res = await fetch('/api/files/upload', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: formData,
-    });
+      // files.push(res.body)
 
-    if (!res.ok) {
-      throw new Error('Upload failed');
-    }
+      const dataUrl = await getImageDataURL(file);
 
-    const dataUrl = await getVideoPreviewDataURL(file);
+      toast.custom((id) => (
+        <div
+          className="flex flex-col gap-1 p-4 bg-white border border-gray-200 rounded-md shadow-md"
+          onClick={() => toast.dismiss(id)}
+        >
+          <div className="font-semibold text-sm text-gray-800">Image saved</div>
+          <img src={dataUrl} alt="Saved image" />
+        </div>
+      ));
+    },
+    [authToken, selectedModel],
+  );
 
-    toast.custom((id) => (
-      <div
-        className="flex flex-col gap-1 p-4 bg-white border border-gray-200 rounded-md shadow-md"
-        onClick={() => toast.dismiss(id)}
-      >
-        <div className="font-semibold text-sm text-gray-800">Video saved</div>
-        <img src={dataUrl} alt="Preview of saved video" />
-      </div>
-    ));
-  }, []);
+  const handleRecordingFinished = useCallback(
+    async (file: File) => {
+      const formData = new FormData();
+
+      formData.append('file', file);
+
+      const res = await fetch('/api/files/upload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: formData,
+      });
+
+      const resJson = await res.json();
+
+      if (!res.ok) {
+        console.error('Upload failed', resJson);
+
+        return;
+      }
+
+      const threadRes = await fetch('/api/threads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          files: [
+            {
+              id: resJson.id,
+            },
+          ],
+          model: selectedModel,
+        }),
+      });
+
+      const threadResJson = await threadRes.json();
+
+      if (!threadRes.ok) {
+        console.error('Linking file to thread failed', threadResJson);
+      }
+
+      // files.push(res.body)
+
+      const dataUrl = await getVideoPreviewDataURL(file);
+
+      toast.custom((id) => (
+        <div
+          className="flex flex-col gap-1 p-4 bg-white border border-gray-200 rounded-md shadow-md"
+          onClick={() => toast.dismiss(id)}
+        >
+          <div className="font-semibold text-sm text-gray-800">Video saved</div>
+          <img src={dataUrl} alt="Preview of saved video" />
+        </div>
+      ));
+    },
+    [authToken, selectedModel],
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
