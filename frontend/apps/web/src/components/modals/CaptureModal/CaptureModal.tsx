@@ -32,6 +32,8 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   const [{ stream, loading, streaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
     useChatRequester({
       threadId: threadId.current,
+      enableTools: false,
+      enableThinking: false,
     });
 
   const handleSubmit = useCallback(

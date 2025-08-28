@@ -9,8 +9,10 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import type { Response } from 'express';
-import { ToolCall } from 'ollama';
+import { ToolCall, Message } from 'ollama';
+import { Repository } from 'typeorm';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -19,8 +21,9 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import { MessageService, ThreadService } from '@ci/domains/conversations';
+import { MessageService, ThreadEntity, ThreadService } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
+import { FileService } from '@ci/domains/files';
 
 import { OllamaService } from '../services/OllamaService';
 import type { OllamaModel, PromptInput } from '../types';
@@ -29,7 +32,8 @@ const promptSchema = z.object({
   prompt: z.string(),
   model: z.optional(z.string()),
   threadId: z.string().nullable().optional(),
-  enableTools: z.boolean().default(false),
+  enableTools: z.boolean().default(true),
+  enableThinking: z.boolean().default(true),
 });
 
 @Controller('llm')
@@ -39,10 +43,13 @@ export class OllamaController {
   private readonly frameEncoder = new FrameEncoder();
 
   constructor(
+    @InjectRepository(ThreadEntity)
+    private readonly threadRepository: Repository<ThreadEntity>,
     private readonly eventService: EventService,
     private readonly messageService: MessageService,
     private readonly ollamaService: OllamaService,
     private readonly threadService: ThreadService,
+    private readonly fileService: FileService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -114,17 +121,36 @@ export class OllamaController {
 
     const messages = await this.messageService.findByThread(context, threadId);
 
-    const inputMessages = messages.map((message) => ({
-      role: message.role,
-      content: message.content,
-      ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
-    }));
+    const thread = await this.threadRepository
+      .createQueryBuilder('thread')
+      .where('thread.id = :threadId', { threadId })
+      .leftJoinAndSelect('thread.files', 'files')
+      .getOne();
+
+    const fileContent = await Promise.all(
+      thread!.files?.map(async (file) => this.fileService.getFileContent(context, file.key)) || [],
+    );
+
+    let inputMessages = [
+      {
+        role: 'user',
+        images: fileContent.map((file) => new Uint8Array(file.Body)),
+      },
+    ] as Message[];
+
+    inputMessages = inputMessages.concat(
+      messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
+      })),
+    );
 
     const stream = await this.ollamaService.chatStream(context, inputMessages, {
       model: resolvedModel.model,
       signal,
       enableTools: input.enableTools,
-      enableThinking: true,
+      enableThinking: input.enableThinking,
     });
 
     try {

@@ -1,13 +1,15 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { ConversationModule } from '@ci/domains/conversations';
+import { ConversationModule, ThreadEntity } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
+import { FilesModule } from '@ci/domains/files';
 
 import { OllamaController } from './controllers/OllamaController';
 import { OllamaService } from './services/OllamaService';
 
 @Module({
-  imports: [ConversationModule, EventsModule],
+  imports: [ConversationModule, EventsModule, FilesModule, TypeOrmModule.forFeature([ThreadEntity])],
   providers: [OllamaService],
   controllers: [OllamaController],
   exports: [OllamaService],
