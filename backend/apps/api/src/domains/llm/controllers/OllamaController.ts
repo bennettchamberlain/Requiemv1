@@ -122,20 +122,19 @@ export class OllamaController {
       files.map(async (file) => this.fileService.getFileContent(context, file.key)),
     );
 
-    let inputMessages = [
+    const inputMessages: Message[] = [
       {
         role: 'user',
+        content: '',
         images,
       },
-    ] as Message[];
 
-    inputMessages = inputMessages.concat(
-      messages.map((message) => ({
+      ...messages.map((message) => ({
         role: message.role,
         content: message.content,
         ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
       })),
-    );
+    ];
 
     const stream = await this.ollamaService.chatStream(context, inputMessages, {
       model: resolvedModel.model,
