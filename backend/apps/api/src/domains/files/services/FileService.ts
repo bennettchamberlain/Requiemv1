@@ -1,6 +1,3 @@
-import { buffer } from 'node:stream/consumers';
-import { Readable } from 'stream';
-
 import {
   S3Client,
   HeadBucketCommand,
@@ -20,7 +17,7 @@ import config from '@ci/configuration';
 import { EventService, Events } from '@ci/domains/events';
 
 import { FileEntity } from '../entities/FileEntity';
-import type { File, FileContent } from '../types';
+import type { File } from '../types';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -154,16 +151,19 @@ export class FileService implements OnModuleInit {
     return entity.toFile();
   }
 
-  async getFileContent(context: RequestContext, key: string): Promise<FileContent> {
+  async getFileContent(context: RequestContext, key: string): Promise<Uint8Array> {
     const response = await this.s3.send(
       new GetObjectCommand({
         Bucket: config.staticfiles.bucket,
         Key: key,
       }),
     );
-    const body = await buffer(response.Body as Readable);
 
-    return { Body: body, ContentType: response.ContentType! };
+    if (response.Body) {
+      return response.Body.transformToByteArray();
+    }
+
+    throw new Error(`S3 object body was empty for key: ${key}`);
   }
 
   async generatePresignedLink(context: RequestContext, id: string): Promise<string> {
