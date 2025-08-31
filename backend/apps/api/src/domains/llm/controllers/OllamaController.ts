@@ -9,10 +9,8 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import type { Response } from 'express';
 import { ToolCall, Message } from 'ollama';
-import { Repository } from 'typeorm';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -21,7 +19,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import { MessageService, ThreadEntity, ThreadService } from '@ci/domains/conversations';
+import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 
@@ -43,8 +41,6 @@ export class OllamaController {
   private readonly frameEncoder = new FrameEncoder();
 
   constructor(
-    @InjectRepository(ThreadEntity)
-    private readonly threadRepository: Repository<ThreadEntity>,
     private readonly eventService: EventService,
     private readonly messageService: MessageService,
     private readonly ollamaService: OllamaService,
@@ -120,15 +116,10 @@ export class OllamaController {
     });
 
     const messages = await this.messageService.findByThread(context, threadId);
-
-    const thread = await this.threadRepository
-      .createQueryBuilder('thread')
-      .where('thread.id = :threadId', { threadId })
-      .leftJoinAndSelect('thread.files', 'files')
-      .getOne();
+    const files = await this.fileService.findByThread(context, threadId);
 
     const fileContent = await Promise.all(
-      thread!.files?.map(async (file) => this.fileService.getFileContent(context, file.key)) || [],
+      files.map(async (file) => this.fileService.getFileContent(context, file.key)) || [],
     );
 
     let inputMessages = [
