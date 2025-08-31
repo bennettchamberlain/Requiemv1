@@ -118,7 +118,7 @@ export function useChatRequester({
 
       return success;
     },
-    [authToken, selectedModel, threadId, onNewThread],
+    [authToken, selectedModel, threadId, onNewThread, enableTools, enableThinking],
   );
 
   const stop = useCallback(() => {
