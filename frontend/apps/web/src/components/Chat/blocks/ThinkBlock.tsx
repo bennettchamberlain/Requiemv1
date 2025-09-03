@@ -1,8 +1,8 @@
 import { type RefObject, useMemo, useState } from 'react';
 
 import { ChevronDown, ChevronRight, Brain } from '@ci/shadcn/icons';
-import Markdown from 'react-markdown';
 
+import { Markdown } from '@/components/Markdown';
 import { cn } from '@/lib/utils';
 
 interface Props {

@@ -1,5 +1,6 @@
 import { SendHorizonal } from '@ci/shadcn/icons';
-import Markdown from 'react-markdown';
+
+import { Markdown } from '@/components/Markdown';
 
 interface Props {
   content: string;

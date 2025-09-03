@@ -2,7 +2,8 @@ import { type RefObject, useMemo } from 'react';
 
 import { cn } from '@ci/shadcn';
 import { Bot } from '@ci/shadcn/icons';
-import Markdown from 'react-markdown';
+
+import { Markdown } from '@/components/Markdown';
 
 interface Props {
   content?: string;
