@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 
 import type { Meta, StoryObj } from '@storybook/react';
 
-import { ThinkBlock } from '../../ChatBlocks/ThinkBlock';
+import { ThinkBlock } from './ThinkBlock';
 
 type Props = ComponentProps<typeof ThinkBlock>;
 

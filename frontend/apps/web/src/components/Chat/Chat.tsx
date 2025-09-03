@@ -13,9 +13,9 @@ import {
 
 import { v7 as uuid7 } from 'uuid';
 
-import { ThinkBlock, ToolBlock } from '../ChatBlocks';
-
 import { AssistantMessage } from './blocks/AssistantMessage';
+import { ThinkBlock } from './blocks/ThinkBlock';
+import { ToolBlock } from './blocks/ToolBlock';
 import { UserMessage } from './blocks/UserMessage';
 import { ChatInput, type FormData } from './ChatInput';
 import { ChatLoader } from './ChatLoader';

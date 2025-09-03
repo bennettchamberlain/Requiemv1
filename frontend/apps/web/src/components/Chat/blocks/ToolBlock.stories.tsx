@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 
 import type { Meta, StoryObj } from '@storybook/react';
 
-import { ToolBlock } from '../../ChatBlocks/ToolBlock';
+import { ToolBlock } from './ToolBlock';
 
 type Props = ComponentProps<typeof ToolBlock>;
 

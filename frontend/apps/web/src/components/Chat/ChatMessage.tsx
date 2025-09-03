@@ -1,7 +1,8 @@
-import { parseChatContent, ThinkBlock, ToolBlock } from '../ChatBlocks';
-
 import { AssistantMessage } from './blocks/AssistantMessage';
+import { ThinkBlock } from './blocks/ThinkBlock';
+import { ToolBlock } from './blocks/ToolBlock';
 import { UserMessage } from './blocks/UserMessage';
+import { parseChatContent } from './parser';
 
 interface Props {
   role: string;
