@@ -23,7 +23,7 @@ function AssistantMessage(props: Props) {
   return (
     <div
       className={cn(
-        'relative rounded-xl rounded-tl-none px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed shadow-sm bg-gradient-to-br from-muted to-muted/80 text-foreground border border-border/50 backdrop-blur-sm',
+        'relative rounded-xl rounded-tl-none px-4 py-3 shadow-sm bg-gradient-to-br from-muted to-muted/80 text-foreground border border-border/50 backdrop-blur-sm',
         'has-[>.streaming-content:empty]:hidden',
       )}
     >

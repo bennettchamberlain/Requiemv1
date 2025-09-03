@@ -49,7 +49,7 @@ function ThinkBlock({ content, renderEmptyContent = false, defaultExpanded = tru
           isExpanded ? 'max-h-none opacity-100' : 'max-h-0 opacity-0',
         )}
       >
-        <div className="p-3 border-t border-amber-200/50 dark:border-amber-800/30 space-y-2 whitespace-pre-wrap leading-relaxed">
+        <div className="p-3 border-t border-amber-200/50 dark:border-amber-800/30">
           <div className="streaming-content prose dark:prose-invert" ref={streamingRef}>
             {trimmedContent && <Markdown>{trimmedContent}</Markdown>}
           </div>
