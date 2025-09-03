@@ -69,7 +69,7 @@ function CameraFeed() {
   const MicrophoneIcon = microphoneEnabled ? Mic : MicOff;
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative flex w-full h-full min-h-0 min-w-0 size-fit overflow-hidden items-center justify-center bg-black rounded-lg">
       <video
         className={cn('w-full h-full object-contain block', isActive ? 'block' : 'hidden')}
         ref={videoRef}

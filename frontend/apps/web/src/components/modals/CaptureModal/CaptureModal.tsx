@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
-import { Dialog } from '@ci/shadcn';
+import { Dialog, cn } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
 import type { File as CIFile } from '@/api/types.ts';
@@ -101,7 +101,12 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <Dialog.Content className="sm:max-w-[70vw] max-h-[70vh] p-0 flex flex-col gap-0">
+      <Dialog.Content
+        className={cn(
+          'w-[90vw] sm:max-w-[90vw] sm:max-h-[80vh] p-0 flex flex-col gap-0',
+          files.length > 0 && 'max-[900px]:h-[80vh]',
+        )}
+      >
         <Dialog.Header className="flex flex-row items-center gap-4 p-4 pb-3 border-b bg-stone-50 rounded-t-2xl">
           <Dialog.Title>Upload Images and Videos</Dialog.Title>
           <Dialog.Description className="hidden">Capture audio or video and upload to CI</Dialog.Description>
@@ -109,49 +114,49 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
         {files.length === 0 && (
           <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
-            <div>
-              <Camera.Feed />
-            </div>
+            <Camera.Feed />
           </Camera>
         )}
         {files.length > 0 && (
-          <div className="flex flex-1 max-h-100">
+          <div className="flex flex-col flex-1 min-[900px]:flex-row min-h-0 min-w-0">
             {/* Left side: file preview or fallback */}
-            <div className="flex flex-col gap-4 p-4 border-r min-w-[320px] max-w-[480px] w-full">
-              {files.map((file) => {
-                const fileType = getMediaType(file.contentType);
-                switch (fileType) {
-                  case 'video':
-                    return (
-                      <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
-                        <video controls className="w-full h-full object-cover">
-                          <source src={file.url} type={file.contentType} />
-                          Your browser does not support the video tag.
-                        </video>
-                      </div>
-                    );
-                  case 'audio':
-                    return (
-                      <div className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center">
-                        <audio controls className="w-full">
-                          <source src={file.url} type={file.contentType} />
-                          Your browser does not support the audio element.
-                        </audio>
-                      </div>
-                    );
-                  case 'image':
-                    return (
-                      <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
-                        <img src={file.url} className="w-full h-full object-cover" />
-                      </div>
-                    );
-                }
-              })}
+            <div className="flex max-[900px]:max-h-1/2">
+              <div className="flex flex-col gap-4 p-2 min-[900px]:border-r max-w-[480px] w-full overflow-y-auto m-auto h-full min-h-0">
+                {files.map((file) => {
+                  const fileType = getMediaType(file.contentType);
+                  switch (fileType) {
+                    case 'video':
+                      return (
+                        <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
+                          <video controls className="w-full h-full object-cover">
+                            <source src={file.url} type={file.contentType} />
+                            Your browser does not support the video tag.
+                          </video>
+                        </div>
+                      );
+                    case 'audio':
+                      return (
+                        <div className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center">
+                          <audio controls className="w-full">
+                            <source src={file.url} type={file.contentType} />
+                            Your browser does not support the audio element.
+                          </audio>
+                        </div>
+                      );
+                    case 'image':
+                      return (
+                        <div className="rounded-lg bg-stone-100">
+                          <img src={file.url} className="w-full h-full object-cover" />
+                        </div>
+                      );
+                  }
+                })}
+              </div>
             </div>
 
             {/* Right side: Chat */}
             {files?.length > 0 && (
-              <div className="flex-1 min-w-0 max-h-100 overflow-y-auto">
+              <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
                 <Chat
                   loading={loading}
                   streaming={streaming}
