@@ -50,7 +50,7 @@ function ThinkBlock({ content, renderEmptyContent = false, defaultExpanded = tru
         )}
       >
         <div className="p-3 border-t border-amber-200/50 dark:border-amber-800/30">
-          <div className="streaming-content prose dark:prose-invert" ref={streamingRef}>
+          <div className="streaming-content prose dark:prose-invert max-w-none" ref={streamingRef}>
             {trimmedContent && <Markdown>{trimmedContent}</Markdown>}
           </div>
         </div>

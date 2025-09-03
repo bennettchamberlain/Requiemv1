@@ -27,7 +27,7 @@ function AssistantMessage(props: Props) {
         'has-[>.streaming-content:empty]:hidden',
       )}
     >
-      <div className="streaming-content prose dark:prose-invert" ref={streamingRef}>
+      <div className="streaming-content prose dark:prose-invert max-w-none" ref={streamingRef}>
         {trimmedContent && <Markdown>{trimmedContent}</Markdown>}
       </div>
 
