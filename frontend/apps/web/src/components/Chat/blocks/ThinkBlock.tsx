@@ -1,6 +1,7 @@
 import { type RefObject, useMemo, useState } from 'react';
 
 import { ChevronDown, ChevronRight, Brain } from '@ci/shadcn/icons';
+import Markdown from 'react-markdown';
 
 import { cn } from '@/lib/utils';
 
@@ -50,7 +51,7 @@ function ThinkBlock({ content, renderEmptyContent = false, defaultExpanded = tru
       >
         <div className="p-3 border-t border-amber-200/50 dark:border-amber-800/30 space-y-2 whitespace-pre-wrap leading-relaxed">
           <div className="streaming-content" ref={streamingRef}>
-            {trimmedContent}
+            {trimmedContent && <Markdown>{trimmedContent}</Markdown>}
           </div>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { type RefObject, useMemo } from 'react';
 
 import { cn } from '@ci/shadcn';
 import { Bot } from '@ci/shadcn/icons';
+import Markdown from 'react-markdown';
 
 interface Props {
   content?: string;
@@ -26,7 +27,7 @@ function AssistantMessage(props: Props) {
       )}
     >
       <div className="streaming-content" ref={streamingRef}>
-        {trimmedContent}
+        {trimmedContent && <Markdown>{trimmedContent}</Markdown>}
       </div>
 
       <div className="absolute -top-2 -left-2 p-1 rounded-full bg-gradient-to-br from-gray-400 to-gray-400">
