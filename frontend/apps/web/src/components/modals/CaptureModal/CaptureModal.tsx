@@ -18,7 +18,7 @@ interface Props {
 export function CaptureModal({ open = false, initialFiles = [], onClose }: Props) {
   const [files, setFiles] = useState<CIFile[]>(initialFiles);
   const threadId = useRef<string | null>(null);
-  const { isMobile } = useDeviceLayout();
+  const { isMobileBrowser } = useDeviceLayout();
 
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
@@ -115,7 +115,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
         {files.length === 0 && (
           <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
-            <Camera.Feed showCameraInformation={!isMobile} />
+            <Camera.Feed showCameraInformation={!isMobileBrowser} bigButtons={isMobileBrowser} />
           </Camera>
         )}
         {files.length > 0 && (

@@ -23,16 +23,12 @@ function useInputDevices(): ReturnType {
       const devices = await navigator.mediaDevices.enumerateDevices();
 
       const microphones = devices.filter((device) => device.kind === 'audioinput');
-      console.log('microphones', microphones);
       const cameras = devices.filter((device) => device.kind === 'videoinput');
-      console.log('cameras', cameras);
 
       const defaultMicrophoneGroupId = microphones.find((device) => device.deviceId === 'default')?.groupId;
-      console.log('defaultMicrophoneGroupId', defaultMicrophoneGroupId);
       const defaultCameraGroupId = cameras.find((device) => device.deviceId === 'default')?.groupId;
 
       const filteredMicrophones = microphones.filter((device) => device.deviceId !== 'default');
-      console.log('filteredMicrophones', filteredMicrophones);
       const filteredCameras = cameras.filter((device) => device.deviceId !== 'default');
 
       const availableMicrophones = filteredMicrophones.map(
@@ -43,7 +39,6 @@ function useInputDevices(): ReturnType {
             default: device.groupId === defaultMicrophoneGroupId || filteredMicrophones.length === 1,
           }) satisfies Device,
       );
-      console.log('availableMicrophones', availableMicrophones);
 
       const availableCameras = filteredCameras.map(
         (device) =>

@@ -28,6 +28,7 @@ interface CameraProps {
 
 interface CameraFeedProps {
   showCameraInformation?: boolean;
+  bigButtons?: boolean;
 }
 
 function Camera({ children }: CameraProps) {
@@ -61,7 +62,7 @@ function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...
   );
 }
 
-function CameraFeed({ showCameraInformation = true }: CameraFeedProps) {
+function CameraFeed({ showCameraInformation = true, bigButtons = false }: CameraFeedProps) {
   const [{ isActive, videoRef }] = useStream();
 
   const [{ isRecording }, { captureFrame, toggleRecording }] = useRecorder();
@@ -96,9 +97,15 @@ function CameraFeed({ showCameraInformation = true }: CameraFeedProps) {
               icon={RecordingIcon}
               tooltip={isRecording ? 'Stop recording' : 'Record video'}
               onClick={toggleRecording}
+              bigButtons={bigButtons}
             />
 
-            <Controls.Icon icon={CameraIcon} tooltip="Capture picture" onClick={captureFrame} />
+            <Controls.Icon
+              icon={CameraIcon}
+              tooltip="Capture picture"
+              onClick={captureFrame}
+              bigButtons={bigButtons}
+            />
 
             <Controls.Divider />
 
@@ -106,26 +113,29 @@ function CameraFeed({ showCameraInformation = true }: CameraFeedProps) {
               icon={VideoIcon}
               tooltip={cameraEnabled ? 'Disable video' : 'Enable video'}
               onClick={toggleCamera}
+              bigButtons={bigButtons}
             />
 
             <Controls.Icon
               icon={MicrophoneIcon}
               tooltip={microphoneEnabled ? 'Disable mic' : 'Enable mic'}
               onClick={toggleMicrophone}
+              bigButtons={bigButtons}
             />
 
             <Controls.Divider />
 
             <Controls.Icon
               icon={SwitchCamera}
-              tooltip="Flip camera"
+              tooltip="Swap camera"
               className={
                 facingMode === 'environment' ? '[transform:rotateY(180deg)]' : '[transform:rotateY(0deg)]'
               }
               onClick={swapFacingMode}
+              bigButtons={bigButtons}
             />
 
-            <Controls.Icon icon={Settings} tooltip="Settings" />
+            <Controls.Icon icon={Settings} tooltip="Settings" bigButtons={bigButtons} />
           </Controls>
         </>
       )}

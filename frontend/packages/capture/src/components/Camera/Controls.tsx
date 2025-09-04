@@ -2,8 +2,6 @@ import { Button, Tooltip, cn } from '@ci/shadcn';
 import { type LucideIcon } from '@ci/shadcn/icons';
 import { type ReactNode } from 'react';
 
-import { useDeviceLayout } from '@/hooks';
-
 interface ControlsProps {
   children: ReactNode;
 }
@@ -23,14 +21,14 @@ interface ControlsIconProps {
   tooltip?: string;
   className?: string;
   onClick?: () => void;
+  bigButtons: boolean;
 }
 
-function ControlsIcon({ icon, tooltip, className, onClick }: ControlsIconProps) {
+function ControlsIcon({ icon, tooltip, className, onClick, bigButtons = false }: ControlsIconProps) {
   const Icon = icon;
-  const { isMobile } = useDeviceLayout();
 
-  const buttonSizeClass = isMobile ? 'h-12 w-12' : 'h-6 w-6';
-  const iconSizeClass = !isMobile ? 'h-4 w-4' : 'h-1 w-1';
+  const buttonSizeClass = bigButtons ? 'h-12 w-12' : 'h-6 w-6';
+  const iconSizeClass = bigButtons ? 'h-4 w-4' : 'h-1 w-1';
 
   return (
     <Tooltip>
