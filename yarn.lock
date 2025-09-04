@@ -1545,6 +1545,7 @@ __metadata:
     remark-gfm: "npm:^4.0.1"
     rimraf: "npm:^6.0.1"
     storybook: "npm:^9.0.8"
+    streaming-markdown: "npm:^0.2.15"
     strip-literal: "npm:^3.0.0"
     tailwind-merge: "npm:^3.3.0"
     tailwindcss: "npm:^4.1.7"
@@ -17123,6 +17124,13 @@ __metadata:
   dependencies:
     any-promise: "npm:^1.1.0"
   checksum: 10c0/19d66e4e3c12e0aadd8755027edf7d90b696bd978eec5111a5cd2b67befa8851afd8c1b618121c3059850165c4ee4afc307f84869cf6db7fb24708d3523958f8
+  languageName: node
+  linkType: hard
+
+"streaming-markdown@npm:^0.2.15":
+  version: 0.2.15
+  resolution: "streaming-markdown@npm:0.2.15"
+  checksum: 10c0/3c90131882599a34a8785d812687a0dc627b7ee974b28fd67ca18d745e977e90620004c365353be63313c154062d1c624808b1da0faa0ebb6b8c818de429cb33
   languageName: node
   linkType: hard
 

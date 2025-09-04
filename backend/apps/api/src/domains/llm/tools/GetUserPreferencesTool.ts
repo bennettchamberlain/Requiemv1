@@ -40,7 +40,7 @@ interface GetUserPreferencesOutput {
 @Injectable()
 export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, GetUserPreferencesOutput> {
   readonly schema = {
-    name: 'get_user_preferences',
+    name: 'getUserPreferences',
     description:
       'Get user food preferences, dietary restrictions, allergies, and eating habits. Use this tool when planning meals, cooking, or discussing food choices.',
     category: 'database',
@@ -103,7 +103,7 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
   ): Promise<GetUserPreferencesOutput> {
     // Query for questions with subcategory = 'Food' (much more focused than all Personal Preferences)
     const query = `
-      SELECT 
+      SELECT
         q.text as question,
         a.give_answer_1 as answer,
         q.category,
@@ -111,7 +111,7 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
         a.user_id as "userId",
         q.created_at as "createdAt"
       FROM questions q
-      JOIN answers a ON q.id = a.question_id  
+      JOIN answers a ON q.id = a.question_id
       WHERE q.subcategory = 'Food'
         AND a.give_answer_1 IS NOT NULL
       ORDER BY q.created_at

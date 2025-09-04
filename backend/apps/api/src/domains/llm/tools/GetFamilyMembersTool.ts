@@ -39,7 +39,7 @@ interface GetFamilyMembersOutput {
 @Injectable()
 export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFamilyMembersOutput> {
   readonly schema = {
-    name: 'get_family_members',
+    name: 'getFamilyMembers',
     description:
       'Get information about family members and their names. Use this tool when you need to know WHO the family members are, not their food preferences.',
     category: 'database',
@@ -99,7 +99,7 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     // For demo: skip user ID constraints - just get all people
     const peopleQuery = `
       SELECT id, type, first_name as "firstName", last_name as "lastName", user_id as "userId"
-      FROM people 
+      FROM people
       ORDER BY first_name, last_name
     `;
 

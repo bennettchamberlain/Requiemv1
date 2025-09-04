@@ -29,6 +29,7 @@
     "react-router-dom": "^7.6.1",
     "recharts": "^2.15.3",
     "remark-gfm": "^4.0.1",
+    "streaming-markdown": "^0.2.15",
     "tailwind-merge": "^3.3.0",
     "uuid": "^11.1.0",
     "zod": "^3.25.6"
