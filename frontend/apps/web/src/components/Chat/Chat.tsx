@@ -11,6 +11,8 @@ import {
   useState,
 } from 'react';
 
+import * as smd from 'streaming-markdown';
+import { type Parser as StreamingParser } from 'streaming-markdown';
 import { v7 as uuid7 } from 'uuid';
 
 import { AssistantMessage } from './blocks/AssistantMessage';
@@ -79,7 +81,34 @@ export function Chat({
   // These refs are used to point to the stream target for text coming from
   // the LLM endpoint.
   const textStreamingRef = useRef<HTMLDivElement | null>(null);
+  const textParserRef = useRef<StreamingParser | null>(null);
+
+  const setTextStreamingRef = useCallback((el: HTMLDivElement | null) => {
+    textStreamingRef.current = el;
+
+    if (!el) {
+      return;
+    }
+
+    const renderer = smd.default_renderer(el);
+
+    textParserRef.current = smd.parser(renderer);
+  }, []);
+
   const thinkStreamingRef = useRef<HTMLDivElement | null>(null);
+  const thinkParserRef = useRef<StreamingParser | null>(null);
+
+  const setThinkStreamingRef = useCallback((el: HTMLDivElement | null) => {
+    thinkStreamingRef.current = el;
+
+    if (!el) {
+      return;
+    }
+
+    const renderer = smd.default_renderer(el);
+
+    thinkParserRef.current = smd.parser(renderer);
+  }, []);
 
   // We want to track the channel of the last message we've received.
   // If we receive a message in a new channel we'll know to kick off
@@ -88,8 +117,8 @@ export function Chat({
 
   const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([
     <Fragment key={uuid7()}>
-      <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={thinkStreamingRef} />
-      <AssistantMessage renderEmptyContent={true} streamingRef={textStreamingRef} />
+      <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={setThinkStreamingRef} />
+      <AssistantMessage renderEmptyContent={true} streamingRef={setTextStreamingRef} />
     </Fragment>,
   ]);
 
@@ -101,14 +130,16 @@ export function Chat({
     // we want to pause the text stream until they fixate on the newly created stream
     // receiver elements.
     textStreamingRef.current = null;
+    textParserRef.current = null;
     thinkStreamingRef.current = null;
+    thinkParserRef.current = null;
 
     // These are the new nodes that we'll insert into our accumulated messages.
     // When we hit the next render cycle, the refs will be set and the stream can resume.
     const newStreamNodes = (
       <Fragment key={uuid7()}>
-        <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={thinkStreamingRef} />
-        <AssistantMessage renderEmptyContent={true} streamingRef={textStreamingRef} />
+        <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={setThinkStreamingRef} />
+        <AssistantMessage renderEmptyContent={true} streamingRef={setTextStreamingRef} />
       </Fragment>
     );
 
@@ -161,11 +192,14 @@ export function Chat({
 
       if (chunk.channel === Channel.TEXT || chunk.channel === Channel.THINK) {
         let targetRef: RefObject<HTMLDivElement | null> = textStreamingRef;
+        let parserRef: RefObject<StreamingParser | null> = textParserRef;
 
         if (chunk.channel === Channel.TEXT) {
           targetRef = textStreamingRef;
+          parserRef = textParserRef;
         } else if (chunk.channel === Channel.THINK) {
           targetRef = thinkStreamingRef;
+          parserRef = thinkParserRef;
         }
 
         const el = targetRef.current;
@@ -174,10 +208,13 @@ export function Chat({
           return false; // not ready → buffer it
         }
 
-        const textNode = document.createTextNode(payload);
+        const parser = parserRef.current;
 
-        el.appendChild(textNode);
+        if (parser == null) {
+          return false; // not ready → buffer it
+        }
 
+        smd.parser_write(parser, payload);
         maybeAutoScroll();
       }
 
