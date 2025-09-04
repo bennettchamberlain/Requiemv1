@@ -6,7 +6,7 @@ import { Send } from '@ci/shadcn/icons';
 
 import type { File as CIFile } from '@/api/types.ts';
 import { Chat, type FormData } from '@/components/Chat';
-import { useAuth, useChatRequester, useModel } from '@/hooks';
+import { useAuth, useChatRequester, useModel, useDeviceLayout } from '@/hooks';
 import { getMediaType } from '@/lib/utils';
 
 interface Props {
@@ -18,6 +18,7 @@ interface Props {
 export function CaptureModal({ open = false, initialFiles = [], onClose }: Props) {
   const [files, setFiles] = useState<CIFile[]>(initialFiles);
   const threadId = useRef<string | null>(null);
+  const { isMobile } = useDeviceLayout();
 
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
@@ -114,7 +115,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
         {files.length === 0 && (
           <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
-            <Camera.Feed />
+            <Camera.Feed showCameraInformation={!isMobile} />
           </Camera>
         )}
         {files.length > 0 && (

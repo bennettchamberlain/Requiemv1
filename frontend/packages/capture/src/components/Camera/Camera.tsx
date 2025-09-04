@@ -26,6 +26,10 @@ interface CameraProps {
   children: ReactNode;
 }
 
+interface CameraFeedProps {
+  showCameraInformation?: boolean;
+}
+
 function Camera({ children }: CameraProps) {
   const [, { startCamera, stopCamera }] = useStream();
 
@@ -57,7 +61,7 @@ function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...
   );
 }
 
-function CameraFeed() {
+function CameraFeed({ showCameraInformation = true }: CameraFeedProps) {
   const [{ isActive, videoRef }] = useStream();
 
   const [{ isRecording }, { captureFrame, toggleRecording }] = useRecorder();
@@ -71,7 +75,11 @@ function CameraFeed() {
   return (
     <div className="relative flex w-full h-full min-h-0 min-w-0 size-fit overflow-hidden items-center justify-center bg-black rounded-lg">
       <video
-        className={cn('w-full h-full object-contain block', isActive ? 'block' : 'hidden')}
+        className={cn(
+          'w-full h-full object-contain block',
+          isActive ? 'block' : 'hidden',
+          facingMode === 'user' ? '[transform:rotateY(180deg)]' : '',
+        )}
         ref={videoRef}
         autoPlay
         playsInline
@@ -80,7 +88,7 @@ function CameraFeed() {
 
       {isActive && (
         <>
-          <CameraInformation />
+          {showCameraInformation && <CameraInformation />}
 
           <Controls>
             <Controls.Icon
@@ -110,7 +118,7 @@ function CameraFeed() {
 
             <Controls.Icon
               icon={SwitchCamera}
-              tooltip="Swap camera"
+              tooltip="Flip camera"
               className={
                 facingMode === 'environment' ? '[transform:rotateY(180deg)]' : '[transform:rotateY(0deg)]'
               }

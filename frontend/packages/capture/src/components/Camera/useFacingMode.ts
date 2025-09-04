@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 type FacingMode = 'environment' | 'user';
 
 function useFacingMode() {
-  const [facingMode, setFacingMode] = useState<FacingMode>('environment');
+  const [facingMode, setFacingMode] = useState<FacingMode>('user');
 
   const swapFacingMode = useCallback(
     () => setFacingMode((current) => (current === 'environment' ? 'user' : 'environment')),
