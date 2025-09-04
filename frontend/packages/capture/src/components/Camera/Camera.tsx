@@ -68,19 +68,21 @@ function CameraFeed({ showCameraInformation = true, bigButtons = false }: Camera
   const [{ isRecording }, { captureFrame, toggleRecording }] = useRecorder();
   const [{ microphoneEnabled, cameraEnabled }, { toggleMicrophone, toggleCamera }] = useMuteControls();
   const [{ facingMode }, { swapFacingMode }] = useFacingMode();
+  const [{ cameras, selectedCamera, setSelectedCamera }] = useInputDevices();
 
   const RecordingIcon = isRecording ? CircleStop : Circle;
   const VideoIcon = cameraEnabled ? Video : VideoOff;
   const MicrophoneIcon = microphoneEnabled ? Mic : MicOff;
 
+  function swapCamera() {
+    swapFacingMode!();
+    setSelectedCamera(cameras.filter((camera) => camera.id !== selectedCamera?.id)[0] || selectedCamera);
+  }
+
   return (
     <div className="relative flex w-full h-full min-h-0 min-w-0 size-fit overflow-hidden items-center justify-center bg-black rounded-lg">
       <video
-        className={cn(
-          'w-full h-full object-contain block',
-          isActive ? 'block' : 'hidden',
-          facingMode === 'user' ? '[transform:rotateY(180deg)]' : '',
-        )}
+        className={cn('w-full h-full object-contain block', isActive ? 'block' : 'hidden')}
         ref={videoRef}
         autoPlay
         playsInline
@@ -131,7 +133,7 @@ function CameraFeed({ showCameraInformation = true, bigButtons = false }: Camera
               className={
                 facingMode === 'environment' ? '[transform:rotateY(180deg)]' : '[transform:rotateY(0deg)]'
               }
-              onClick={swapFacingMode}
+              onClick={swapCamera}
               bigButtons={bigButtons}
             />
 

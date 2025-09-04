@@ -9,6 +9,7 @@ type ReturnType = [
     cameras: Device[];
     selectedMicrophone: Device | null;
     selectedCamera: Device | null;
+    setSelectedCamera: (device: Device) => void;
   },
 ];
 
@@ -62,6 +63,7 @@ function useInputDevices(): ReturnType {
       cameras,
       selectedMicrophone,
       selectedCamera,
+      setSelectedCamera,
     },
   ];
 }

@@ -12,7 +12,7 @@ const MOBILE_BREAKPOINT = 768; // Corresponds to md in Tailwind CSS
  * @returns An object with `isMobile`, `isLandscape`, and `isPortrait` booleans.
  * Values will be `undefined` on the initial server-side render.
  */
-const mobileBrowserRegex = /Mobi|Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+const MOBILE_BROWSER_REGEX = /Mobi|Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
 function useDeviceLayout() {
   const [deviceState, setDeviceState] = useState<{
@@ -39,7 +39,7 @@ function useDeviceLayout() {
         isMobile: mobileQuery.matches,
         isLandscape: orientationQuery.matches,
         isPortrait: !orientationQuery.matches,
-        isMobileBrowser: mobileBrowserRegex.test(navigator.userAgent),
+        isMobileBrowser: MOBILE_BROWSER_REGEX.test(navigator.userAgent),
       });
     };
 
