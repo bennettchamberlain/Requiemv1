@@ -9,7 +9,7 @@ interface Props {
 export function UserMessage({ content }: Props) {
   return (
     <div className="relative self-end max-w-[40%] rounded-xl rounded-br-none px-4 py-3 shadow-sm bg-gradient-to-br from-primary to-primary/90 text-primary-foreground">
-      <div className="prose dark:prose-invert max-w-none">
+      <div className="prose-invert dark:prose max-w-none">
         <Markdown>{content}</Markdown>
       </div>
 
