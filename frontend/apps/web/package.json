@@ -25,8 +25,10 @@
     "leaflet": "^1.9.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.6.1",
     "recharts": "^2.15.3",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.3.0",
     "uuid": "^11.1.0",
     "zod": "^3.25.6"
@@ -36,6 +38,7 @@
     "@storybook/addon-docs": "^9.0.8",
     "@storybook/react": "^9.0.8",
     "@storybook/react-vite": "^9.0.8",
+    "@tailwindcss/typography": "^0.5.16",
     "@tailwindcss/vite": "^4.1.7",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",

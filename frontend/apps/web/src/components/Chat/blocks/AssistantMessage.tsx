@@ -3,6 +3,8 @@ import { type RefObject, useMemo } from 'react';
 import { cn } from '@ci/shadcn';
 import { Bot } from '@ci/shadcn/icons';
 
+import { Markdown } from '@/components/Markdown';
+
 interface Props {
   content?: string;
   renderEmptyContent?: boolean;
@@ -21,12 +23,12 @@ function AssistantMessage(props: Props) {
   return (
     <div
       className={cn(
-        'relative rounded-xl rounded-tl-none px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed shadow-sm bg-gradient-to-br from-muted to-muted/80 text-foreground border border-border/50 backdrop-blur-sm',
+        'relative rounded-xl rounded-tl-none px-4 py-3 shadow-sm bg-gradient-to-br from-muted to-muted/80 text-foreground border border-border/50 backdrop-blur-sm',
         'has-[>.streaming-content:empty]:hidden',
       )}
     >
-      <div className="streaming-content" ref={streamingRef}>
-        {trimmedContent}
+      <div className="streaming-content prose dark:prose-invert max-w-none" ref={streamingRef}>
+        {trimmedContent && <Markdown>{trimmedContent}</Markdown>}
       </div>
 
       <div className="absolute -top-2 -left-2 p-1 rounded-full bg-gradient-to-br from-gray-400 to-gray-400">
