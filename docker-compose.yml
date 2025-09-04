@@ -43,6 +43,7 @@ services:
     volumes:
       - ./infrastructure/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
       - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
+      - ./infrastructure/nginx/public:/usr/share/nginx/html:ro
     networks:
       - web
     extra_hosts:
