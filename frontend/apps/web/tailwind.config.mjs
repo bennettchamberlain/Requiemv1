@@ -6,8 +6,17 @@ export default {
       typography: () => ({
         DEFAULT: {
           css: {
+            p: {
+              '@apply text-base': {},
+            },
+            li: {
+              '@apply text-base': {},
+            },
             hr: {
-              '@apply mt-6 mb-6 max-w-[90%] mx-auto': {},
+              '@apply mt-6 mb-6 max-w-[95%] mx-auto': {},
+            },
+            'h1, h2, h3, h4, h5, h6': {
+              '@apply mt-0': {},
             },
           },
         },
