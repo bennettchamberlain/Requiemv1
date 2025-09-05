@@ -255,12 +255,25 @@ export function MemoryPage() {
           .addTo(mapRef.current!)
           .bindPopup(
             `
-            <div class="p-2">
+            <div class="p-3">
+              ${memory.category === 'Image' && memory.metadata?.url ? 
+                `<div class="mb-3 -mx-3 -mt-3">
+                  <img src="${memory.metadata.url}" alt="${memory.title}" class="w-full h-32 object-cover rounded-t-lg" />
+                </div>` : ''
+              }
               <div class="font-bold text-lg mb-1">${memory.title}</div>
-              <div class="text-sm mb-2">${memory.description}</div>
+              <div class="text-sm mb-2 text-gray-600">${memory.description || 'No description'}</div>
               <div class="text-xs text-gray-500">${new Date(memory.timestamp).toLocaleString()}</div>
-              <div class="mt-2 text-xs inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                ${memory.category}
+              <div class="mt-2 flex items-center gap-2">
+                <span class="text-xs inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                  ${memory.category}
+                </span>
+                ${memory.category === 'Video' && memory.metadata?.url ? 
+                  '<span class="text-xs text-gray-500">📹 Video</span>' : ''
+                }
+                ${memory.category === 'Audio' && memory.metadata?.url ? 
+                  '<span class="text-xs text-gray-500">🎵 Audio</span>' : ''
+                }
               </div>
             </div>
           `,
@@ -538,7 +551,7 @@ export function MemoryPage() {
                         {memoriesWithLocation.map((memory) => (
                           <div
                             key={memory.id}
-                            className="group relative flex items-start gap-3 p-4 rounded-lg border bg-card hover:bg-accent hover:border-accent-foreground/20 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md"
+                            className="group relative flex items-start gap-3 p-4 rounded-lg border bg-card hover:bg-accent hover:border-accent-foreground/20 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md overflow-hidden"
                             onClick={() => {
                               if (mapRef.current && memory.location) {
                                 mapRef.current.setView([memory.location.lat, memory.location.lng], 16);
@@ -556,12 +569,34 @@ export function MemoryPage() {
                               }
                             }}
                           >
-                            <div className="flex-shrink-0">
-                              <div className="p-2.5 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors">
-                                <MapPin className="h-4 w-4 text-primary" />
+                            {/* Show thumbnail for image memories */}
+                            {memory.category === 'Image' && memory.metadata?.url && (
+                              <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <img
+                                  src={memory.metadata.url as string}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
                               </div>
+                            )}
+                            
+                            <div className="flex-shrink-0 relative z-10">
+                              {/* Show image thumbnail if available */}
+                              {memory.category === 'Image' && memory.metadata?.url ? (
+                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-muted">
+                                  <img
+                                    src={memory.metadata.url as string}
+                                    alt={memory.title}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="p-2.5 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors">
+                                  {getMemoryIcon(memory)}
+                                </div>
+                              )}
                             </div>
-                            <div className="flex-grow min-w-0">
+                            <div className="flex-grow min-w-0 relative z-10">
                               <div className="flex justify-between items-start gap-2">
                                 <h5 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
                                   {memory.title}
@@ -584,6 +619,13 @@ export function MemoryPage() {
                                   <span className="text-xs text-muted-foreground">
                                     +{memory.tags.length} tag{memory.tags.length !== 1 ? 's' : ''}
                                   </span>
+                                )}
+                                {/* Show media indicator icons */}
+                                {memory.category === 'Video' && memory.metadata?.url && (
+                                  <Tv className="h-3 w-3 text-muted-foreground" />
+                                )}
+                                {memory.category === 'Audio' && memory.metadata?.url && (
+                                  <Phone className="h-3 w-3 text-muted-foreground" />
                                 )}
                               </div>
                             </div>
