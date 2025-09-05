@@ -14,7 +14,6 @@ import {
   Laptop,
   Tv,
   User,
-  MapPin,
   Calendar,
   FileText,
   Package,
@@ -222,10 +221,13 @@ export function MemoryPage() {
     mapRef.current = L.map(mapContainerRef.current).setView([37.7749, -122.4194], 12);
 
     // Use satellite imagery
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: '',
-      maxZoom: 20,
-    }).addTo(mapRef.current);
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: '',
+        maxZoom: 20,
+      },
+    ).addTo(mapRef.current);
 
     // Clear existing markers
     mapRef.current.eachLayer((layer) => {
@@ -254,10 +256,12 @@ export function MemoryPage() {
           .bindPopup(
             `
             <div class="p-3">
-              ${memory.category === 'Image' && memory.metadata?.url ? 
-                `<div class="mb-3 -mx-3 -mt-3">
+              ${
+                memory.category === 'Image' && memory.metadata?.url
+                  ? `<div class="mb-3 -mx-3 -mt-3">
                   <img src="${memory.metadata.url}" alt="${memory.title}" class="w-full h-32 object-cover rounded-t-lg" />
-                </div>` : ''
+                </div>`
+                  : ''
               }
               <div class="font-bold text-lg mb-1">${memory.title}</div>
               <div class="text-sm mb-2 text-gray-600">${memory.description || 'No description'}</div>
@@ -266,11 +270,15 @@ export function MemoryPage() {
                 <span class="text-xs inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-800">
                   ${memory.category}
                 </span>
-                ${memory.category === 'Video' && memory.metadata?.url ? 
-                  '<span class="text-xs text-gray-500">📹 Video</span>' : ''
+                ${
+                  memory.category === 'Video' && memory.metadata?.url
+                    ? '<span class="text-xs text-gray-500">📹 Video</span>'
+                    : ''
                 }
-                ${memory.category === 'Audio' && memory.metadata?.url ? 
-                  '<span class="text-xs text-gray-500">🎵 Audio</span>' : ''
+                ${
+                  memory.category === 'Audio' && memory.metadata?.url
+                    ? '<span class="text-xs text-gray-500">🎵 Audio</span>'
+                    : ''
                 }
               </div>
             </div>
@@ -568,7 +576,7 @@ export function MemoryPage() {
                             }}
                           >
                             {/* Show thumbnail for image memories */}
-                            {memory.category === 'Image' && memory.metadata?.url && (
+                            {memory.category === 'Image' && memory.metadata?.url ? (
                               <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity">
                                 <img
                                   src={memory.metadata.url as string}
@@ -576,8 +584,10 @@ export function MemoryPage() {
                                   className="w-full h-full object-cover"
                                 />
                               </div>
+                            ) : (
+                              <div></div>
                             )}
-                            
+
                             <div className="flex-shrink-0 relative z-10">
                               {/* Show image thumbnail if available */}
                               {memory.category === 'Image' && memory.metadata?.url ? (
@@ -619,11 +629,15 @@ export function MemoryPage() {
                                   </span>
                                 )}
                                 {/* Show media indicator icons */}
-                                {memory.category === 'Video' && memory.metadata?.url && (
+                                {memory.category === 'Video' && memory.metadata?.url ? (
                                   <Tv className="h-3 w-3 text-muted-foreground" />
+                                ) : (
+                                  <div></div>
                                 )}
-                                {memory.category === 'Audio' && memory.metadata?.url && (
+                                {memory.category === 'Audio' && memory.metadata?.url ? (
                                   <Phone className="h-3 w-3 text-muted-foreground" />
+                                ) : (
+                                  <div></div>
                                 )}
                               </div>
                             </div>
