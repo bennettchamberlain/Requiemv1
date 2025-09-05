@@ -14,7 +14,6 @@ import {
   Laptop,
   Tv,
   User,
-  MapPin,
   Calendar,
   FileText,
   Package,
@@ -221,13 +220,14 @@ export function MemoryPage() {
     // Initialize map
     mapRef.current = L.map(mapContainerRef.current).setView([37.7749, -122.4194], 12);
 
-    // Use a more modern map style
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 20,
-    }).addTo(mapRef.current);
+    // Use satellite imagery
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: '',
+        maxZoom: 20,
+      },
+    ).addTo(mapRef.current);
 
     // Clear existing markers
     mapRef.current.eachLayer((layer) => {
@@ -255,12 +255,31 @@ export function MemoryPage() {
           .addTo(mapRef.current!)
           .bindPopup(
             `
-            <div class="p-2">
+            <div class="p-3">
+              ${
+                memory.category === 'Image' && memory.metadata?.url
+                  ? `<div class="mb-3 -mx-3 -mt-3">
+                  <img src="${memory.metadata.url}" alt="${memory.title}" class="w-full h-32 object-cover rounded-t-lg" />
+                </div>`
+                  : ''
+              }
               <div class="font-bold text-lg mb-1">${memory.title}</div>
-              <div class="text-sm mb-2">${memory.description}</div>
+              <div class="text-sm mb-2 text-gray-600">${memory.description || 'No description'}</div>
               <div class="text-xs text-gray-500">${new Date(memory.timestamp).toLocaleString()}</div>
-              <div class="mt-2 text-xs inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                ${memory.category}
+              <div class="mt-2 flex items-center gap-2">
+                <span class="text-xs inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                  ${memory.category}
+                </span>
+                ${
+                  memory.category === 'Video' && memory.metadata?.url
+                    ? '<span class="text-xs text-gray-500">📹 Video</span>'
+                    : ''
+                }
+                ${
+                  memory.category === 'Audio' && memory.metadata?.url
+                    ? '<span class="text-xs text-gray-500">🎵 Audio</span>'
+                    : ''
+                }
               </div>
             </div>
           `,
@@ -363,11 +382,9 @@ export function MemoryPage() {
         {/* Tabs */}
         {!loading && !error && (
           <Tabs defaultValue="map" className="w-full" onValueChange={setActiveTab} value={activeTab}>
-            <Tabs.List className="grid grid-cols-4 w-full max-w-2xl mx-auto">
+            <Tabs.List className="grid grid-cols-2 w-full max-w-md mx-auto">
               <Tabs.Trigger value="map">Map</Tabs.Trigger>
               <Tabs.Trigger value="list">List</Tabs.Trigger>
-              <Tabs.Trigger value="calendar">Calendar</Tabs.Trigger>
-              <Tabs.Trigger value="insights">Insights</Tabs.Trigger>
             </Tabs.List>
 
             <Tabs.Content value="list" className="mt-6">
@@ -514,7 +531,7 @@ export function MemoryPage() {
                   <div className="space-y-4">
                     <div
                       ref={mapContainerRef}
-                      className="h-[500px] w-full rounded-lg border overflow-hidden shadow-sm"
+                      className="h-[300px] w-full rounded-lg border overflow-hidden shadow-sm"
                     ></div>
 
                     <div className="mt-6">
@@ -540,7 +557,7 @@ export function MemoryPage() {
                         {memoriesWithLocation.map((memory) => (
                           <div
                             key={memory.id}
-                            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                            className="group relative flex items-start gap-3 p-4 rounded-lg border bg-card hover:bg-accent hover:border-accent-foreground/20 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md overflow-hidden"
                             onClick={() => {
                               if (mapRef.current && memory.location) {
                                 mapRef.current.setView([memory.location.lat, memory.location.lng], 16);
@@ -558,22 +575,71 @@ export function MemoryPage() {
                               }
                             }}
                           >
-                            <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
-                              <MapPin className="h-4 w-4" />
+                            {/* Show thumbnail for image memories */}
+                            {memory.category === 'Image' && memory.metadata?.url ? (
+                              <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <img
+                                  src={memory.metadata.url as string}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <div></div>
+                            )}
+
+                            <div className="flex-shrink-0 relative z-10">
+                              {/* Show image thumbnail if available */}
+                              {memory.category === 'Image' && memory.metadata?.url ? (
+                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-muted">
+                                  <img
+                                    src={memory.metadata.url as string}
+                                    alt={memory.title}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="p-2.5 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors">
+                                  {getMemoryIcon(memory)}
+                                </div>
+                              )}
                             </div>
-                            <div className="flex-grow min-w-0">
-                              <div className="flex justify-between items-start">
-                                <h5 className="font-medium text-sm truncate">{memory.title}</h5>
-                                <span className="text-xs text-muted-foreground ml-2">
+                            <div className="flex-grow min-w-0 relative z-10">
+                              <div className="flex justify-between items-start gap-2">
+                                <h5 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
+                                  {memory.title}
+                                </h5>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
                                   {new Date(memory.timestamp).toLocaleTimeString([], {
                                     hour: '2-digit',
                                     minute: '2-digit',
                                   })}
                                 </span>
                               </div>
-                              <p className="text-muted-foreground text-xs truncate">
-                                {memory.location?.name || 'Unknown location'}
+                              <p className="text-muted-foreground text-xs mt-1 truncate">
+                                {memory.location?.name || memory.location?.address || 'Unknown location'}
                               </p>
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
+                                  {memory.category}
+                                </span>
+                                {memory.tags && memory.tags.length > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    +{memory.tags.length} tag{memory.tags.length !== 1 ? 's' : ''}
+                                  </span>
+                                )}
+                                {/* Show media indicator icons */}
+                                {memory.category === 'Video' && memory.metadata?.url ? (
+                                  <Tv className="h-3 w-3 text-muted-foreground" />
+                                ) : (
+                                  <div></div>
+                                )}
+                                {memory.category === 'Audio' && memory.metadata?.url ? (
+                                  <Phone className="h-3 w-3 text-muted-foreground" />
+                                ) : (
+                                  <div></div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -581,24 +647,6 @@ export function MemoryPage() {
                     </div>
                   </div>
                 )}
-              </div>
-            </Tabs.Content>
-
-            <Tabs.Content value="calendar" className="mt-6">
-              <div className="rounded-lg border p-8 text-center">
-                <h3 className="text-lg font-medium">Calendar View</h3>
-                <p className="text-muted-foreground mt-2">
-                  Your memories will be displayed in a calendar format here.
-                </p>
-              </div>
-            </Tabs.Content>
-
-            <Tabs.Content value="insights" className="mt-6">
-              <div className="rounded-lg border p-8 text-center">
-                <h3 className="text-lg font-medium">Insights</h3>
-                <p className="text-muted-foreground mt-2">
-                  Analytics and insights about your memories will be displayed here.
-                </p>
               </div>
             </Tabs.Content>
           </Tabs>
