@@ -363,11 +363,9 @@ export function MemoryPage() {
         {/* Tabs */}
         {!loading && !error && (
           <Tabs defaultValue="map" className="w-full" onValueChange={setActiveTab} value={activeTab}>
-            <Tabs.List className="grid grid-cols-4 w-full max-w-2xl mx-auto">
+            <Tabs.List className="grid grid-cols-2 w-full max-w-md mx-auto">
               <Tabs.Trigger value="map">Map</Tabs.Trigger>
               <Tabs.Trigger value="list">List</Tabs.Trigger>
-              <Tabs.Trigger value="calendar">Calendar</Tabs.Trigger>
-              <Tabs.Trigger value="insights">Insights</Tabs.Trigger>
             </Tabs.List>
 
             <Tabs.Content value="list" className="mt-6">
@@ -595,24 +593,6 @@ export function MemoryPage() {
                     </div>
                   </div>
                 )}
-              </div>
-            </Tabs.Content>
-
-            <Tabs.Content value="calendar" className="mt-6">
-              <div className="rounded-lg border p-8 text-center">
-                <h3 className="text-lg font-medium">Calendar View</h3>
-                <p className="text-muted-foreground mt-2">
-                  Your memories will be displayed in a calendar format here.
-                </p>
-              </div>
-            </Tabs.Content>
-
-            <Tabs.Content value="insights" className="mt-6">
-              <div className="rounded-lg border p-8 text-center">
-                <h3 className="text-lg font-medium">Insights</h3>
-                <p className="text-muted-foreground mt-2">
-                  Analytics and insights about your memories will be displayed here.
-                </p>
               </div>
             </Tabs.Content>
           </Tabs>
