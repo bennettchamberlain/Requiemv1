@@ -39,6 +39,7 @@ services:
       context: ./backend/apps/stt
       dockerfile: Dockerfile
     image: ci/stt-service
+    pull_policy: build
     container_name: stt-service
     ports:
       - 9001:9001
