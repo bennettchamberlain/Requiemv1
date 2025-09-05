@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libgomp1 \
     libc6-dev \
+    tini \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,5 +28,5 @@ RUN mkdir -p /app/models
 # Expose port
 EXPOSE 9001
 
-# Run the application
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "stt_service.py"]
