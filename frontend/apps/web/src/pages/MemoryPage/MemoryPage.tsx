@@ -514,7 +514,7 @@ export function MemoryPage() {
                   <div className="space-y-4">
                     <div
                       ref={mapContainerRef}
-                      className="h-[500px] w-full rounded-lg border overflow-hidden shadow-sm"
+                      className="h-[300px] w-full rounded-lg border overflow-hidden shadow-sm"
                     ></div>
 
                     <div className="mt-6">
@@ -540,7 +540,7 @@ export function MemoryPage() {
                         {memoriesWithLocation.map((memory) => (
                           <div
                             key={memory.id}
-                            className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                            className="group relative flex items-start gap-3 p-4 rounded-lg border bg-card hover:bg-accent hover:border-accent-foreground/20 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md"
                             onClick={() => {
                               if (mapRef.current && memory.location) {
                                 mapRef.current.setView([memory.location.lat, memory.location.lng], 16);
@@ -558,22 +558,36 @@ export function MemoryPage() {
                               }
                             }}
                           >
-                            <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
-                              <MapPin className="h-4 w-4" />
+                            <div className="flex-shrink-0">
+                              <div className="p-2.5 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors">
+                                <MapPin className="h-4 w-4 text-primary" />
+                              </div>
                             </div>
                             <div className="flex-grow min-w-0">
-                              <div className="flex justify-between items-start">
-                                <h5 className="font-medium text-sm truncate">{memory.title}</h5>
-                                <span className="text-xs text-muted-foreground ml-2">
+                              <div className="flex justify-between items-start gap-2">
+                                <h5 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
+                                  {memory.title}
+                                </h5>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
                                   {new Date(memory.timestamp).toLocaleTimeString([], {
                                     hour: '2-digit',
                                     minute: '2-digit',
                                   })}
                                 </span>
                               </div>
-                              <p className="text-muted-foreground text-xs truncate">
-                                {memory.location?.name || 'Unknown location'}
+                              <p className="text-muted-foreground text-xs mt-1 truncate">
+                                {memory.location?.name || memory.location?.address || 'Unknown location'}
                               </p>
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
+                                  {memory.category}
+                                </span>
+                                {memory.tags && memory.tags.length > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    +{memory.tags.length} tag{memory.tags.length !== 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ))}
