@@ -1,13 +1,9 @@
-FROM python:3.11
+FROM python:3.11-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    git \
-    wget \
-    build-essential \
     libgomp1 \
-    libc6-dev \
     tini \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
