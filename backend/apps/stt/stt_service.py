@@ -74,6 +74,8 @@ class TranscribeRequest(BaseModel):
 class TranscribeResponse(BaseModel):
     text: str
     language: Optional[str] = None
+    segments: Optional[list] = None
+    words: Optional[list] = None
 
 
 @app.post("/stt/transcribe", response_model=TranscribeResponse)
@@ -111,18 +113,30 @@ async def transcribe_audio(request: TranscribeRequest):
         result = model.transcribe(
             audio_data, 
             language=request.language,  # None means auto-detect
-            fp16=False  # Use fp32 for better compatibility
+            fp16=False,  # Use fp32 for better compatibility
+            word_timestamps=True  # Enable word-level timestamps
         )
         
         # Extract text and clean it up
         text = result["text"].strip()
         detected_language = result.get("language", "unknown")
         
-        logger.info(f"Transcription completed. Language: {detected_language}, Text length: {len(text)}")
+        # Extract segments and words with timestamps
+        segments = result.get("segments", [])
+        words = []
+        
+        # Flatten all words from all segments
+        for segment in segments:
+            if "words" in segment:
+                words.extend(segment["words"])
+        
+        logger.info(f"Transcription completed. Language: {detected_language}, Text length: {len(text)}, Words: {len(words)}")
         
         return TranscribeResponse(
             text=text,
-            language=detected_language
+            language=detected_language,
+            segments=segments,
+            words=words
         )
         
     except Exception as e:
