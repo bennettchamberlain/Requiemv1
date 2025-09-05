@@ -50,7 +50,7 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "local", "infra", "staging" ]
+    profiles: [ "all", "infra" ]
 
   webserver:
     image: nginx:stable
