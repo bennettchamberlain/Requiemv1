@@ -34,6 +34,25 @@ services:
     command: server /data
     profiles: [ "all", "infra" ]
 
+  stt-service:
+    build:
+      context: ./backend/apps/stt
+      dockerfile: Dockerfile
+    image: ci/stt-service
+    pull_policy: build
+    container_name: stt-service
+    ports:
+      - 9001:9001
+    volumes:
+      - stt-service-models:/app/models
+      - stt-service-cache:/root/.cache
+    environment:
+      - PYTHONPATH=/app
+    networks:
+      - web
+    restart: unless-stopped
+    profiles: [ "all", "infra" ]
+
   webserver:
     image: nginx:stable
     container_name: webserver
@@ -96,6 +115,8 @@ volumes:
   postgres-data:
   minio-data:
   open-webui:
+  stt-service-models:
+  stt-service-cache:
 
 networks:
   web:
