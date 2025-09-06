@@ -26,6 +26,11 @@ interface CameraProps {
   children: ReactNode;
 }
 
+interface CameraFeedProps {
+  showCameraInformation?: boolean;
+  bigButtons?: boolean;
+}
+
 function Camera({ children }: CameraProps) {
   const [, { startCamera, stopCamera }] = useStream();
 
@@ -57,19 +62,25 @@ function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...
   );
 }
 
-function CameraFeed() {
+function CameraFeed({ showCameraInformation = true, bigButtons = false }: CameraFeedProps) {
   const [{ isActive, videoRef }] = useStream();
 
   const [{ isRecording }, { captureFrame, toggleRecording }] = useRecorder();
   const [{ microphoneEnabled, cameraEnabled }, { toggleMicrophone, toggleCamera }] = useMuteControls();
   const [{ facingMode }, { swapFacingMode }] = useFacingMode();
+  const [{ cameras, selectedCamera, setSelectedCamera }] = useInputDevices();
 
   const RecordingIcon = isRecording ? CircleStop : Circle;
   const VideoIcon = cameraEnabled ? Video : VideoOff;
   const MicrophoneIcon = microphoneEnabled ? Mic : MicOff;
 
+  function swapCamera() {
+    swapFacingMode!();
+    setSelectedCamera(cameras.filter((camera) => camera.id !== selectedCamera?.id)[0] || selectedCamera);
+  }
+
   return (
-    <div className="relative w-full h-full">
+    <div className="relative flex w-full h-full min-h-0 min-w-0 size-fit overflow-hidden items-center justify-center bg-black rounded-lg">
       <video
         className={cn('w-full h-full object-contain block', isActive ? 'block' : 'hidden')}
         ref={videoRef}
@@ -80,7 +91,7 @@ function CameraFeed() {
 
       {isActive && (
         <>
-          <CameraInformation />
+          {showCameraInformation && <CameraInformation />}
 
           <Controls>
             <Controls.Icon
@@ -88,9 +99,15 @@ function CameraFeed() {
               icon={RecordingIcon}
               tooltip={isRecording ? 'Stop recording' : 'Record video'}
               onClick={toggleRecording}
+              bigButtons={bigButtons}
             />
 
-            <Controls.Icon icon={CameraIcon} tooltip="Capture picture" onClick={captureFrame} />
+            <Controls.Icon
+              icon={CameraIcon}
+              tooltip="Capture picture"
+              onClick={captureFrame}
+              bigButtons={bigButtons}
+            />
 
             <Controls.Divider />
 
@@ -98,12 +115,14 @@ function CameraFeed() {
               icon={VideoIcon}
               tooltip={cameraEnabled ? 'Disable video' : 'Enable video'}
               onClick={toggleCamera}
+              bigButtons={bigButtons}
             />
 
             <Controls.Icon
               icon={MicrophoneIcon}
               tooltip={microphoneEnabled ? 'Disable mic' : 'Enable mic'}
               onClick={toggleMicrophone}
+              bigButtons={bigButtons}
             />
 
             <Controls.Divider />
@@ -114,10 +133,11 @@ function CameraFeed() {
               className={
                 facingMode === 'environment' ? '[transform:rotateY(180deg)]' : '[transform:rotateY(0deg)]'
               }
-              onClick={swapFacingMode}
+              onClick={swapCamera}
+              bigButtons={bigButtons}
             />
 
-            <Controls.Icon icon={Settings} tooltip="Settings" />
+            <Controls.Icon icon={Settings} tooltip="Settings" bigButtons={bigButtons} />
           </Controls>
         </>
       )}

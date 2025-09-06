@@ -21,10 +21,14 @@ interface ControlsIconProps {
   tooltip?: string;
   className?: string;
   onClick?: () => void;
+  bigButtons: boolean;
 }
 
-function ControlsIcon({ icon, tooltip, className, onClick }: ControlsIconProps) {
+function ControlsIcon({ icon, tooltip, className, onClick, bigButtons = false }: ControlsIconProps) {
   const Icon = icon;
+
+  const buttonSizeClass = bigButtons ? 'h-12 w-12' : 'h-6 w-6';
+  const iconSizeClass = bigButtons ? 'h-4 w-4' : 'h-1 w-1';
 
   return (
     <Tooltip>
@@ -32,12 +36,16 @@ function ControlsIcon({ icon, tooltip, className, onClick }: ControlsIconProps) 
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 p-0 cursor-pointer hover:bg-white/10 active:scale-80 transition-transform transition group"
+          className={cn(
+            'p-0 cursor-pointer hover:bg-white/10 active:scale-80 transition-transform transition group',
+            buttonSizeClass,
+          )}
           onClick={onClick}
         >
           <Icon
             className={cn(
-              'h-1 w-1 text-white hover:drop-shadow-[0_0_2px_rgba(255,255,255,0.5)] transition-transform',
+              'text-white hover:drop-shadow-[0_0_2px_rgba(255,255,255,0.5)] transition-transform',
+              iconSizeClass,
               className,
             )}
           />
