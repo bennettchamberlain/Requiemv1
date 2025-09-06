@@ -125,3 +125,24 @@
   }
 }
 
+/* PWA standalone mode specific styles */
+@media (display-mode: standalone) {
+  html, body {
+    min-height: 100lvh;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    overscroll-behavior: contain;
+  }
+
+  body {
+    /* Prevent dragging in PWA mode */
+    -webkit-app-region: no-drag;
+  }
+
+  /* Touch optimization for better mobile experience */
+  button, input, select, textarea, a {
+    /* Eliminate 300ms click delay on mobile */
+    touch-action: manipulation;
+  }
+}
