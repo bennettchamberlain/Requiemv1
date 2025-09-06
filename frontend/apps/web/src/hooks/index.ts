@@ -4,3 +4,4 @@ export { useCounter } from './use-counter';
 export { useModalControls } from './use-modal-controls';
 export { ModelProvider, useModel } from './use-model';
 export { ThemeProvider, useTheme } from './use-theme';
+export { usePreventOverscroll } from './use-prevent-overscroll';
