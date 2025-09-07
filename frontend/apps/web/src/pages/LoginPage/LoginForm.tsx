@@ -66,10 +66,10 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
           )}
         />
 
-        {error && (
+        {error != null && (
           <Alert variant={'destructive'}>
             <AlertCircleIcon />
-            <Alert.Title>{error.message}</Alert.Title>
+            <Alert.Title>{(error as Error).message}</Alert.Title>
           </Alert>
         )}
 
