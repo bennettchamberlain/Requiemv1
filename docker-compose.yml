@@ -53,6 +53,25 @@ services:
     restart: unless-stopped
     profiles: [ "all", "infra" ]
 
+  tts-service:
+    build:
+      context: ./backend/apps/tts
+      dockerfile: Dockerfile
+    image: ci/tts-service
+    pull_policy: build
+    container_name: tts-service
+    ports:
+      - 9002:9002
+    volumes:
+      - tts-service-models:/app/models
+      - tts-service-cache:/root/.cache
+    environment:
+      - PYTHONPATH=/app
+    networks:
+      - web
+    restart: unless-stopped
+    profiles: [ "all", "infra" ]
+
   webserver:
     image: nginx:stable
     container_name: webserver
@@ -117,6 +136,8 @@ volumes:
   open-webui:
   stt-service-models:
   stt-service-cache:
+  tts-service-models:
+  tts-service-cache:
 
 networks:
   web:
