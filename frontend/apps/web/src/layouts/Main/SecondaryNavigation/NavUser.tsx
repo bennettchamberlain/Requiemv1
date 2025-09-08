@@ -15,7 +15,7 @@ export function NavUser() {
       email: user?.email || '',
       avatar: '/avatars/shadcn.jpg',
     }),
-    ['user'],
+    [user],
   );
 
   const initials = useMemo(() => {

@@ -3,6 +3,7 @@ import { type ReactNode, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { RedirectKnownUser } from '@/components/RedirectKnownUser';
 import { AuthProvider, DeviceLayoutProvider, ModelProvider, ThemeProvider } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
@@ -43,7 +44,15 @@ function AppRoutes() {
       <Route path="/" element={<SplashPage />} />
 
       <Route element={<CenteredLayout />}>
-        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/login"
+          element={
+            <RedirectKnownUser>
+              <LoginPage />
+            </RedirectKnownUser>
+          }
+        />
+
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
       </Route>
 

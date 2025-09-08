@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 
 const ACCESS_TOKEN_KEY = 'accessToken';
 const SESSION_TOKEN_KEY = 'sessionToken';
+const ACCESS_TOKEN_COOKIE = 'CI_accessToken';
+const SESSION_TOKEN_COOKIE = 'CI_sessionToken';
 
 interface JwtPayload {
   sub: string;
@@ -25,66 +27,72 @@ interface AuthResponse {
   user: User;
 }
 
-type Value = [
+type ReturnValue = [
   {
     expired: boolean;
     authToken?: string | null;
     user?: User | null;
     loading: boolean;
-    error: Error | null;
+    error: unknown | null;
   },
   {
-    login: (username: string, password: string) => void;
+    login: (username: string, password: string) => Promise<void>;
     logout: () => void;
-    signup: (name: string, email: string, password: string) => void;
   },
 ];
 
-function useAuth(): Value {
+function useAuth(): ReturnValue {
   const navigate = useNavigate();
 
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [loginLoading, setLoginLoading] = useState<boolean>(false);
+  const [loginError, setLoginError] = useState<unknown | null>(null);
+  const [refreshError, setRefreshError] = useState<unknown | null>(null);
+  const [initialLoading, setInitialLoading] = useState<boolean>(true);
 
-  const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-  const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
+  const [accessToken, setAccessToken] = useState<string | null>(
+    localStorage.getItem(ACCESS_TOKEN_KEY) ?? null,
+  );
+
+  const [sessionToken, setSessionToken] = useState<string | null>(
+    localStorage.getItem(SESSION_TOKEN_KEY) ?? null,
+  );
 
   const decoded = useMemo(() => (accessToken ? jwtDecode<JwtPayload>(accessToken) : null), [accessToken]);
   const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
 
-  const getSelfProfile = useCallback(async () => {
-    if (accessToken == null || isExpired() || (decoded && decoded.sub === user?.id)) {
-      setLoading(false);
+  const updateAccessToken = useCallback((token: string | null) => {
+    if (token) {
+      const decoded = jwtDecode<JwtPayload>(token);
 
-      return false;
+      setAccessToken(token);
+      localStorage.setItem(ACCESS_TOKEN_KEY, token);
+      document.cookie = `${ACCESS_TOKEN_COOKIE}=${token}; SameSite=None; Secure; expires=${new Date(decoded.exp * 1000).toUTCString()}`;
+    } else {
+      setAccessToken(null);
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      deleteCookie(ACCESS_TOKEN_COOKIE);
     }
+  }, []);
 
-    setLoading(true);
-    setError(null);
+  const updateSessionToken = useCallback((token: string | null) => {
+    if (token) {
+      const decoded = jwtDecode<JwtPayload>(token);
 
-    try {
-      const data: User = await fetchJson('/api/users/me', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      setUser(data);
-    } catch (error: unknown) {
-      setUser(null);
-      setError(error as Error);
-    } finally {
-      setLoading(false);
+      setSessionToken(token);
+      localStorage.setItem(SESSION_TOKEN_KEY, token);
+      document.cookie = `${SESSION_TOKEN_COOKIE}=${token}; SameSite=None; Secure; expires=${new Date(decoded.exp * 1000).toUTCString()}`;
+    } else {
+      setSessionToken(null);
+      localStorage.removeItem(SESSION_TOKEN_KEY);
+      deleteCookie(SESSION_TOKEN_COOKIE);
     }
-  }, [setUser, setLoading, setError, isExpired, decoded, user, loading]);
+  }, []);
 
   const login = useCallback(
     async (email: string, password: string) => {
-      setLoading(true);
-      setError(null);
+      setLoginLoading(true);
+      setLoginError(null);
 
       try {
         const data: AuthResponse = await fetchJson('/api/authenticate', {
@@ -95,101 +103,100 @@ function useAuth(): Value {
             password,
           }),
         });
-        const accessDecoded = jwtDecode(data.accessToken);
-        document.cookie = `CI_accessToken=${data.accessToken}; SameSite=None; Secure; expires=${new Date(accessDecoded.exp! * 1000).toUTCString()}`;
-        const sessionDecoded = jwtDecode(data.accessToken);
-        document.cookie = `CI_sessionToken=${data.sessionToken}; SameSite=None; Secure; expires=${new Date(sessionDecoded.exp! * 1000).toUTCString()}`;
 
-        localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
-        localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
+        updateAccessToken(data.accessToken);
+        updateSessionToken(data.sessionToken);
         setUser(data.user);
+        setInitialLoading(false);
 
         navigate('/feed');
-      } catch (error: unknown) {
+      } catch (err: unknown) {
         setUser(null);
-        setError(error as Error);
+        setLoginError(err);
       } finally {
-        setLoading(false);
+        setLoginLoading(false);
       }
     },
-    [setUser, setError, setLoading],
+    [navigate, updateAccessToken, updateSessionToken],
   );
 
   const logout = useCallback(() => {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
     // TODO: This isn't good enough, we need to POST to the API to destroy the session.
-    localStorage.removeItem(SESSION_TOKEN_KEY);
-
+    updateAccessToken(null);
+    updateSessionToken(null);
     setUser(null);
-    setLoading(false);
-    setError(null);
+    setLoginLoading(false);
+    setLoginError(null);
+    setInitialLoading(false);
 
     navigate('/');
-  }, [setUser, setLoading, setError]);
-
-  const signup = useCallback(
-    async (name: string, email: string, password: string) => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const data: AuthResponse = await fetchJson('/api/signup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name,
-            email,
-            password,
-          }),
-        });
-
-        localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
-        localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
-        setUser(data.user);
-
-        navigate('/dashboard');
-      } catch (error: unknown) {
-        setUser(null);
-        setError(error as Error);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [setUser, setError, setLoading],
-  );
+  }, [navigate, updateAccessToken, updateSessionToken]);
 
   const refresh = useCallback(async () => {
-    const data: AuthResponse = await fetchJson('/api/authenticate/refresh', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionToken}`,
-      },
-    });
+    setRefreshError(null);
 
-    localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
-    localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
-    setUser(data.user);
-  }, [setUser]);
+    try {
+      const data: AuthResponse = await fetchJson('/api/authenticate/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionToken}`,
+        },
+      });
+
+      setUser(data.user);
+      updateAccessToken(data.accessToken);
+      updateSessionToken(data.sessionToken);
+    } catch (err: unknown) {
+      setRefreshError(err);
+
+      setUser(null);
+      updateAccessToken(null);
+      updateSessionToken(null);
+    }
+  }, [sessionToken, updateAccessToken, updateSessionToken]);
+
+  const fetchUser = useCallback(async () => {
+    try {
+      const data: User = await fetchJson('/api/users/me', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      setUser(data);
+    } catch {
+      if (sessionToken) {
+        await refresh();
+      }
+    }
+  }, [accessToken, sessionToken, refresh]);
 
   useAutoRefreshToken(accessToken, sessionToken, refresh);
 
   useEffect(() => {
-    getSelfProfile();
-  }, [decoded]);
+    (async () => {
+      if (accessToken && !isExpired()) {
+        await fetchUser();
+      } else if (sessionToken) {
+        await refresh();
+      }
+
+      setInitialLoading(false);
+    })();
+  }, []);
 
   return [
     {
       expired: isExpired(),
       authToken: accessToken,
       user,
-      loading,
-      error,
+      loading: initialLoading || loginLoading,
+      error: loginError ?? refreshError,
     },
     {
       login,
       logout,
-      signup,
     },
   ];
 }
@@ -197,16 +204,16 @@ function useAuth(): Value {
 function useAutoRefreshToken(
   accessToken: string | null | undefined,
   refreshToken: string | null | undefined,
-  onRefresh: (refreshToken: string) => Promise<void>,
+  onRefresh: () => Promise<void>,
 ) {
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!accessToken || !refreshToken) {
       return;
     }
 
-    const decoded = jwtDecode(accessToken);
+    const decoded = jwtDecode<JwtPayload>(accessToken);
     const exp = (decoded.exp || 0) * 1000;
     const now = Date.now();
     const refreshAt = exp - 60 * 1000;
@@ -217,7 +224,7 @@ function useAutoRefreshToken(
     }
 
     timeoutRef.current = setTimeout(() => {
-      onRefresh(refreshToken);
+      onRefresh();
     }, delay);
 
     return () => {
@@ -226,6 +233,10 @@ function useAutoRefreshToken(
       }
     };
   }, [accessToken, refreshToken, onRefresh]);
+}
+
+function deleteCookie(name: string) {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=None; Secure;`;
 }
 
 const { Provider, useHookContext } = createHookContext(useAuth);
