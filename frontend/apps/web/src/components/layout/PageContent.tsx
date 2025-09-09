@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { useDeviceLayout } from '@ci/common';
 import { cn } from '@ci/shadcn';
-
-import { useDeviceLayout } from '@/hooks';
 
 interface Props {
   children?: ReactNode;

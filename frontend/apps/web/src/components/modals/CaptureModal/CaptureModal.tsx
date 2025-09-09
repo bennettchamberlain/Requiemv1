@@ -1,12 +1,13 @@
 import { useCallback, useRef, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
+import { useDeviceLayout } from '@ci/common';
 import { Dialog, cn } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
 import type { File as CIFile } from '@/api/types.ts';
 import { Chat, type FormData } from '@/components/Chat';
-import { useAuth, useChatRequester, useModel, useDeviceLayout } from '@/hooks';
+import { useAuth, useChatRequester, useModel } from '@/hooks';
 import { getMediaType } from '@/lib/utils';
 
 interface Props {
