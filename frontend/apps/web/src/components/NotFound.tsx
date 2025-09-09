@@ -1,8 +1,12 @@
 import { Button, Card } from '@ci/shadcn';
-import { useNavigate } from 'react-router-dom'; // or use your router
+import { Link } from 'react-router-dom';
+
+import { useAuth } from '@/hooks';
 
 export default function NotFoundPage() {
-  const navigate = useNavigate();
+  const [{ user, expired }] = useAuth();
+
+  const homePath = !expired && user ? '/feed' : '/';
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -15,8 +19,8 @@ export default function NotFoundPage() {
             Sorry, the page you are looking for was not found.
           </p>
           <div className="flex justify-center">
-            <Button variant="default" onClick={() => navigate('/')}>
-              Go Home
+            <Button variant="default" asChild>
+              <Link to={homePath}>Go Home</Link>
             </Button>
           </div>
         </Card.Content>

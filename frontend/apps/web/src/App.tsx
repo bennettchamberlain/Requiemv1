@@ -3,13 +3,13 @@ import { type ReactNode, lazy } from 'react';
 import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
+import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
 import { AuthProvider, ModelProvider, ThemeProvider } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
-import NotFound from '@/pages/NotFound';
 import SplashPage from '@/pages/SplashPage';
 
 const ActionsPage = lazy(() => import('@/pages/ActionsPage'));
@@ -161,7 +161,7 @@ function AppRoutes() {
       </Route>
 
       {/* Fallback */}
-      <Route path="*" element={<NotFound />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }
