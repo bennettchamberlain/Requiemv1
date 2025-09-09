@@ -23,6 +23,7 @@ const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const SystemPage = lazy(() => import('@/pages/SystemPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
@@ -155,6 +156,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/system"
+          element={
+            <ProtectedRoute>
+              <SystemPage />
             </ProtectedRoute>
           }
         />
