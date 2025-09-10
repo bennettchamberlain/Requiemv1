@@ -1,13 +1,29 @@
 import { Suspense } from 'react';
 
-import { LoadingPage, Portal } from '@ci/common';
+import { LoadingPage, Portal, useDeviceLayout } from '@ci/common';
 import { Sidebar, Toaster } from '@ci/shadcn';
 import { Outlet } from 'react-router-dom';
 
+import { MobileNavigation } from './MobileNavigation/MobileNavigation';
 import { PrimaryNavigation } from './PrimaryNavigation';
 import { SecondaryNavigation } from './SecondaryNavigation';
 
 export function Main() {
+  const { isMobile } = useDeviceLayout();
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-dvh">
+        <main className="flex-1 min-w-0 overflow-hidden min-h-0">
+          <Suspense fallback={<LoadingPage />}>
+            <Outlet />
+          </Suspense>
+        </main>
+        <MobileNavigation />
+      </div>
+    );
+  }
+
   return (
     <>
       <Sidebar.Provider>
