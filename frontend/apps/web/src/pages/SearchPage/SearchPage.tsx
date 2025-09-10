@@ -1,8 +1,18 @@
 import { useState } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Input, Card, Badge } from '@ci/shadcn';
-import { AlertCircle, Search, Loader2, FileText, Image, Database, Hash } from '@ci/shadcn/icons';
+import { Breadcrumb, Button, Input, Card, Badge, Table, ToggleGroup } from '@ci/shadcn';
+import {
+  AlertCircle,
+  Search,
+  Loader2,
+  FileText,
+  Image,
+  Database,
+  Hash,
+  Grid3X3,
+  List,
+} from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
@@ -130,6 +140,7 @@ export function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
   const performSearch = async () => {
     if (!searchQuery.trim()) {
@@ -243,6 +254,22 @@ export function SearchPage() {
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             <span className="ml-2">Search</span>
           </Button>
+
+          {/* Desktop: Toggle and refresh button */}
+          <div className="hidden lg:flex items-center gap-2">
+            <ToggleGroup
+              type="single"
+              value={viewMode}
+              onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
+            >
+              <ToggleGroup.Item value="card" aria-label="Card view">
+                <Grid3X3 className="h-4 w-4" />
+              </ToggleGroup.Item>
+              <ToggleGroup.Item value="table" aria-label="Table view">
+                <List className="h-4 w-4" />
+              </ToggleGroup.Item>
+            </ToggleGroup>
+          </div>
         </div>
 
         {/* Error Display */}
@@ -273,11 +300,37 @@ export function SearchPage() {
             </div>
 
             {searchResults.length > 0 ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {searchResults.map((result) => (
-                  <SearchResultCard key={result.id} result={result} />
-                ))}
-              </div>
+              <>
+                <div
+                  className={`grid gap-4 md:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
+                >
+                  {searchResults.map((result) => (
+                    <SearchResultCard key={result.id} result={result} />
+                  ))}
+                </div>
+                {viewMode === 'table' && (
+                  <Table>
+                    <Table.Header>
+                      <Table.Row>
+                        <Table.Head>Type</Table.Head>
+                        <Table.Head>ID</Table.Head>
+                        <Table.Head>Data Path</Table.Head>
+                        <Table.Head>Content</Table.Head>
+                      </Table.Row>
+                    </Table.Header>
+                    <Table.Body>
+                      {searchResults.map((result) => (
+                        <Table.Row key={result.id}>
+                          <Table.Cell>{result.type}</Table.Cell>
+                          <Table.Cell>{result.id}</Table.Cell>
+                          <Table.Cell className="max-w-md">{result.path}</Table.Cell>
+                          <Table.Cell className="font-mono text-xs">{result.text}</Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table>
+                )}
+              </>
             ) : (
               hasSearched && (
                 <div className="text-center py-8 text-muted-foreground">
