@@ -129,7 +129,7 @@ function Logout() {
   return (
     <div className="flex justify-center">
       <Button variant="destructive" className="justify-center p-6" onClick={logout} asChild>
-        <Link to="/connections">
+        <Link to="/">
           <LogOut className="h-4 w-4" />
           Logout
         </Link>
