@@ -13,7 +13,7 @@ interface SearchResult {
   id: string;
   path: string;
   imageUrl?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 function SearchResultCard({ result }: { result: SearchResult }) {
@@ -50,7 +50,10 @@ function SearchResultCard({ result }: { result: SearchResult }) {
   };
 
   const truncateText = (text: string, maxLength: number = 150) => {
-    if (text.length <= maxLength) return text;
+    if (text.length <= maxLength) {
+      return text;
+    }
+
     return text.substring(0, maxLength) + '...';
   };
 
@@ -60,6 +63,7 @@ function SearchResultCard({ result }: { result: SearchResult }) {
     if (parts.length > 3) {
       return `.../${parts.slice(-3).join('/')}`;
     }
+
     return path;
   };
 
@@ -78,7 +82,7 @@ function SearchResultCard({ result }: { result: SearchResult }) {
           />
         </div>
       )}
-      
+
       <Card.Header className="space-y-3">
         <div className="flex items-start justify-between gap-2">
           <Badge variant="secondary" className={`${getTypeColor(result.type)} flex items-center gap-1`}>
@@ -89,28 +93,26 @@ function SearchResultCard({ result }: { result: SearchResult }) {
             {result.id.substring(0, 8)}...
           </code>
         </div>
-        
+
         {result.path && (
-          <div className="text-xs text-muted-foreground font-mono">
-            {formatPath(result.path)}
-          </div>
+          <div className="text-xs text-muted-foreground font-mono">{formatPath(result.path)}</div>
         )}
       </Card.Header>
-      
+
       <Card.Content>
-        <p className="text-sm text-muted-foreground line-clamp-4">
-          {truncateText(result.text, 200)}
-        </p>
-        
+        <p className="text-sm text-muted-foreground line-clamp-4">{truncateText(result.text, 200)}</p>
+
         {result.metadata && Object.keys(result.metadata).length > 0 && (
           <div className="mt-4 pt-4 border-t">
             <div className="flex flex-wrap gap-2">
-              {Object.entries(result.metadata).slice(0, 3).map(([key, value]) => (
-                <div key={key} className="text-xs">
-                  <span className="text-muted-foreground">{key}:</span>{' '}
-                  <span className="font-medium">{String(value)}</span>
-                </div>
-              ))}
+              {Object.entries(result.metadata)
+                .slice(0, 3)
+                .map(([key, value]) => (
+                  <div key={key} className="text-xs">
+                    <span className="text-muted-foreground">{key}:</span>{' '}
+                    <span className="font-medium">{String(value)}</span>
+                  </div>
+                ))}
             </div>
           </div>
         )}
