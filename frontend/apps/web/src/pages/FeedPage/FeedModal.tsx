@@ -1,12 +1,13 @@
 import { type ReactNode, useCallback } from 'react';
 
+import { useDeviceLayout } from '@ci/common';
 import { Button, Dialog, cn } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
 import { useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
 import { Tag } from '@/components/Tag';
-import { useChatRequester, useDeviceLayout } from '@/hooks';
+import { useChatRequester } from '@/hooks';
 
 interface Props {
   open?: boolean;

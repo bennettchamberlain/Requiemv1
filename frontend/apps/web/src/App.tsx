@@ -1,10 +1,11 @@
 import { type ReactNode, lazy } from 'react';
 
+import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
-import { AuthProvider, DeviceLayoutProvider, ModelProvider, ThemeProvider } from '@/hooks';
+import { AuthProvider, ModelProvider, ThemeProvider } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';

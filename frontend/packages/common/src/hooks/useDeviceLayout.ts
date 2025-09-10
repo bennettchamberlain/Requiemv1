@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { createHookContext } from '@ci/common';
+import { createHookContext } from '../utils/createHookContext';
 
 // Define the breakpoint for mobile devices
 const MOBILE_BREAKPOINT = 768; // Corresponds to md in Tailwind CSS

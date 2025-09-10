@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { Portal } from '@ci/common';
+import { Portal, useDeviceLayout } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 
 import { type Action, useActionListService } from '@/api';
 import { PageContent } from '@/components/layout';
-import { useDeviceLayout, useModalControls } from '@/hooks';
+import { useModalControls } from '@/hooks';
 
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';

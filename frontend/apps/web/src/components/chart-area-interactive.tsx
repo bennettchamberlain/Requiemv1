@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 
+import { useDeviceLayout } from '@ci/common';
 import { Card, Select, ToggleGroup } from '@ci/shadcn';
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts';
 
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { useDeviceLayout } from '@/hooks';
 
 export const description = 'An interactive area chart';
 
