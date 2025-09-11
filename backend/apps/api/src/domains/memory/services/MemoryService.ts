@@ -118,7 +118,9 @@ export class MemoryService {
     const query = this.eventRepo
       .createQueryBuilder('event')
       .leftJoinAndSelect('event.tags', 'tags')
-      .leftJoinAndSelect('event.user', 'user');
+      .leftJoinAndSelect('event.user', 'user')
+      .limit(params.limit || 100)
+      .offset(params.offset || 0);
 
     if (params.query) {
       query.andWhere(
