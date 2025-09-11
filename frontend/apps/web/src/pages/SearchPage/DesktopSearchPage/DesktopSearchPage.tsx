@@ -131,7 +131,7 @@ function SearchResultCard({ result }: { result: SearchResult }) {
   );
 }
 
-export function SearchPage() {
+export function DesktopSearchPage() {
   usePageTitle('Search - Companion Intelligence');
   const [{ authToken }] = useAuth();
 
