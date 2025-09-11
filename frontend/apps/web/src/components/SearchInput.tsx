@@ -1,12 +1,4 @@
-import {
-  type BaseSyntheticEvent,
-  type FormEvent,
-  type ForwardedRef,
-  type KeyboardEvent,
-  type MouseEvent,
-  forwardRef,
-  useCallback,
-} from 'react';
+import { type ForwardedRef, type KeyboardEvent, type MouseEvent, forwardRef, useCallback } from 'react';
 
 import { Button, Textarea, Form, Tooltip, useForm, formDataResolver, formDataSchema as s } from '@ci/shadcn';
 import { Mic, Search } from '@ci/shadcn/icons';
@@ -34,7 +26,7 @@ interface Props {
   streaming?: boolean;
   placeholder?: string;
   onRecord?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
-  onSubmit?: (data: FormData, e?: FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>;
+  onSubmit?: (data: FormData) => boolean | void | Promise<boolean | void>;
 }
 
 function SearchInput(
@@ -54,11 +46,9 @@ function SearchInput(
   );
 
   const handleSubmit = useCallback(
-    async (data: FormData, e?: BaseSyntheticEvent) => {
-      e?.preventDefault();
-
+    async (data: FormData) => {
       if (data.query.trim()) {
-        const success = await onSubmit?.(data, e as FormEvent<HTMLFormElement>);
+        const success = await onSubmit?.(data);
 
         if (success === true) {
           form.reset();
