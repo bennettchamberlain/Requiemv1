@@ -32,14 +32,18 @@ export class ProxyService {
     try {
       const headers = this.prepareProxyHeaders(req);
       const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
-      const body = hasBody ? (Readable.toWeb(req) as unknown as BodyInit) : undefined;
+
+      // Use the already-parsed request body from Express
+      let body: BodyInit | undefined;
+      if (hasBody && req.body) {
+        body = JSON.stringify(req.body);
+      }
 
       const upstreamResponse = await fetch(targetUrlString, {
         method: req.method,
         headers,
         signal: abortController.signal,
         body,
-        duplex: hasBody ? 'half' : undefined,
       } as FetchInit);
 
       res.statusCode = upstreamResponse.status;
