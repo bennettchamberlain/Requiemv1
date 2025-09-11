@@ -1,4 +1,11 @@
-import { type ForwardedRef, type KeyboardEvent, type MouseEvent, forwardRef, useCallback } from 'react';
+import {
+  type ForwardedRef,
+  type KeyboardEvent,
+  type MouseEvent,
+  type RefObject,
+  forwardRef,
+  useCallback,
+} from 'react';
 
 import { Button, Textarea, Form, Tooltip, useForm, formDataResolver, formDataSchema as s } from '@ci/shadcn';
 import { Mic, Search } from '@ci/shadcn/icons';
@@ -105,7 +112,15 @@ function SearchInput(
                 render={({ field }) => (
                   <Textarea
                     {...field}
-                    ref={forwardedRef}
+                    ref={(el) => {
+                      field.ref(el);
+
+                      if (typeof forwardedRef === 'function') {
+                        forwardedRef(el);
+                      } else if (forwardedRef) {
+                        (forwardedRef as RefObject<HTMLTextAreaElement | null>).current = el;
+                      }
+                    }}
                     placeholder={placeholder}
                     disabled={loading || disabled}
                     className="
