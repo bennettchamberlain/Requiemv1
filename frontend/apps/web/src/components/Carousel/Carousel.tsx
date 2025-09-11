@@ -13,6 +13,7 @@ interface CarouselProps {
   containerClassName?: string;
   slideClassName?: string;
   mobile?: boolean;
+  initialIndex?: number;
 }
 
 export function Carousel({
@@ -21,6 +22,7 @@ export function Carousel({
   containerClassName,
   slideClassName,
   mobile = false,
+  initialIndex = 0,
 }: CarouselProps) {
   const [emblaRef, emblaApi] = useEmblaCarousel(
     !mobile
@@ -72,6 +74,15 @@ export function Carousel({
       emblaApi.off('select', onUpdate);
       emblaApi.off('reInit', onUpdate);
     };
+  }, [emblaApi]);
+
+  // Jump to selected item on mount.
+  useEffect(() => {
+    if (!emblaApi) {
+      return;
+    }
+
+    emblaApi.scrollTo(initialIndex, true);
   }, [emblaApi]);
 
   if (mobile) {
