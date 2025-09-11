@@ -13,7 +13,7 @@ export function Main() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col h-dvh">
+      <div className="flex flex-col h-lvh">
         <main className="flex-1 min-w-0 overflow-hidden min-h-0">
           <Suspense fallback={<LoadingPage />}>
             <Outlet />
@@ -33,7 +33,7 @@ export function Main() {
           <Suspense fallback={<LoadingPage />}>
             <Toaster />
 
-            <div className="flex flex-col h-screen">
+            <div className="flex flex-col h-lvh">
               <PrimaryNavigation />
 
               <div className="flex flex-row flex-1 min-h-0">

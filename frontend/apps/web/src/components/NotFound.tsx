@@ -9,7 +9,7 @@ export default function NotFoundPage() {
   const homePath = !expired && user ? '/feed' : '/';
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+    <div className="flex h-lvh w-full items-center justify-center p-6 md:p-10">
       <Card className="w-full max-w-md shadow-2xl rounded-2xl border">
         <Card.Header>
           <Card.Title className="text-4xl font-bold text-center">404</Card.Title>

@@ -5,7 +5,7 @@ import logo from '@/assets/logo.svg';
 
 export function MobileNavigation() {
   return (
-    <div className="flex flex-col border-t bg-secondary">
+    <div className="flex flex-col border-t bg-secondary pb-[env(safe-area-inset-bottom)]">
       <div className="flex flex-row items-center justify-between">
         <NavButton to="/feed" icon={Inbox} label="Feed" />
         <NavButton to="/search" icon={Search} label="Search" />

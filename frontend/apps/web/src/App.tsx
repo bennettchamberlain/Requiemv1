@@ -6,7 +6,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
-import { AuthProvider, ModelProvider, ThemeProvider } from '@/hooks';
+import { AuthProvider, ModelProvider, ThemeProvider, usePreventOverscroll } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
@@ -177,6 +177,8 @@ function AppRoutes() {
 }
 
 export default function App() {
+  usePreventOverscroll();
+
   return (
     <Providers>
       <AppRoutes />
