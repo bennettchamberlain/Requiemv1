@@ -12,12 +12,12 @@ export class STTController {
   constructor(private readonly proxyService: ProxyService) {}
 
   @UseGuards(JwtAuthGuard)
-  @Post()
-  convert(@Context() context: RequestContext, @Req() req: Request, @Res() res: Response) {
+  @Post('transcribe')
+  async transcribe(@Context() context: RequestContext, @Req() req: Request, @Res() res: Response) {
     if (context.userId == null) {
       throw new UnauthorizedException();
     }
 
-    return this.proxyService.proxyRequest(req, res, `${config.services.stt.host}/stt`);
+    return await this.proxyService.proxyRequest(req, res, `${config.services.stt.host}/stt/transcribe`);
   }
 }
