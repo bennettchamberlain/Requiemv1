@@ -1,4 +1,4 @@
-import { type ReactNode, Children, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, Children, useCallback, useEffect, useRef, useState } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
 import { Button, cn } from '@ci/shadcn';
@@ -24,6 +24,8 @@ export function Carousel({
   initialIndex = 0,
 }: CarouselProps) {
   const { isMobile } = useDeviceLayout();
+
+  const hasAutoScrolled = useRef<boolean>(false);
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
     align: 'start',
@@ -79,8 +81,17 @@ export function Carousel({
       return;
     }
 
+    if (hasAutoScrolled.current) {
+      return;
+    }
+
+    if (initialIndex < 0) {
+      return;
+    }
+
     emblaApi.scrollTo(initialIndex, true);
-  }, [emblaApi]);
+    hasAutoScrolled.current = true;
+  }, [emblaApi, initialIndex]);
 
   if (isMobile) {
     return (
