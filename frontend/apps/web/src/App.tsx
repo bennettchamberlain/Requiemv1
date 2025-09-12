@@ -61,7 +61,7 @@ function AppRoutes() {
       <Route element={<MainLayout />}>
         {/* Intelligence */}
         <Route
-          path="/feed"
+          path="/feed/:id?"
           element={
             <ProtectedRoute>
               <FeedPage />
