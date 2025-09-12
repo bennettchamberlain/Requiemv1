@@ -189,19 +189,22 @@ export default function ChatPage() {
         />
       </Portal.Slot>
 
-      <Chat
-        key={initialThreadId ?? `new-thread-${newThreadCount}`}
-        loading={loading}
-        streaming={chatRequestStreaming}
-        disabled={isSubmitDisabled}
-        placeholder={inputPlaceholder}
-        messages={initialMessages}
-        emptyState={emptyState}
-        readable={stream ?? undefined}
-        onSubmit={handleSubmit}
-        onStop={stopChatRequest}
-        autoFocus={true}
-      />
+      <div className="flex flex-col h-full">
+        <div className="pt-[env(safe-area-inset-top)] bg-secondary border-b" />
+        <Chat
+          key={initialThreadId ?? `new-thread-${newThreadCount}`}
+          loading={loading}
+          streaming={chatRequestStreaming}
+          disabled={isSubmitDisabled}
+          placeholder={inputPlaceholder}
+          messages={initialMessages}
+          emptyState={emptyState}
+          readable={stream ?? undefined}
+          onSubmit={handleSubmit}
+          onStop={stopChatRequest}
+          autoFocus={true}
+        />
+      </div>
     </>
   );
 }
