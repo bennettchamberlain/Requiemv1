@@ -1,7 +1,5 @@
 import type { FeedItem } from './types';
 
-export const feedData: FeedItem[] = [];
-
 // Action and Insight cards (no images)
 export const actionInsightData: FeedItem[] = [
   {
