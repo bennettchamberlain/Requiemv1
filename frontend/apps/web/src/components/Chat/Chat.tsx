@@ -306,7 +306,7 @@ export function Chat({
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 w-full">
+    <div className="flex flex-col h-full min-h-0 w-full relative">
       {(messages?.length ?? 0) === 0 && accumulatedMessages.length === 1 && (
         <div className="flex flex-col flex-1 min-h-0 p-4 items-center justify-center">{emptyState}</div>
       )}
