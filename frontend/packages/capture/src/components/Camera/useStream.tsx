@@ -60,10 +60,8 @@ function useStream(): ReturnType {
       const stream: MediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
-          height: { ideal: 720 },
+          height: { ideal: 960 },
           frameRate: { ideal: 30, max: 60 },
-          facingMode: 'environment', // or 'user' for front camera
-          aspectRatio: 1.7777777778, // 16:9
         },
         audio: {
           echoCancellation: true,
