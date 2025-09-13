@@ -1,6 +1,8 @@
 import { createHookContext } from '@ci/common';
 import { type RefObject, useCallback, useRef, useState } from 'react';
 
+import { useFacingMode } from './useFacingMode';
+
 type ReturnType = [
   {
     isActive: boolean;
@@ -16,6 +18,8 @@ type ReturnType = [
 ];
 
 function useStream(): ReturnType {
+  const [{ facingMode }] = useFacingMode();
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
@@ -62,6 +66,7 @@ function useStream(): ReturnType {
           width: { ideal: 1280 },
           height: { ideal: 960 },
           frameRate: { ideal: 30, max: 60 },
+          facingMode,
         },
         audio: {
           echoCancellation: true,

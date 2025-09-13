@@ -33,6 +33,7 @@ interface CameraFeedProps {
 
 function Camera({ children }: CameraProps) {
   const [, { startCamera, stopCamera }] = useStream();
+  const [{ facingMode }] = useFacingMode();
 
   useEffect(() => {
     startCamera();
@@ -41,24 +42,24 @@ function Camera({ children }: CameraProps) {
       console.log('CameraFeed component unmounting. Stopping camera...');
       stopCamera();
     };
-  }, []);
+  }, [facingMode]);
 
   return <>{children}</>;
 }
 
 function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...props }: CameraProps) {
   return (
-    <StreamProvider args={[]}>
-      <RecorderProvider args={[{ onFrameCaptured, onRecordingFinished }]}>
-        <MuteControlsProvider args={[]}>
-          <FacingModeProvider args={[]}>
+    <FacingModeProvider args={[]}>
+      <StreamProvider args={[]}>
+        <RecorderProvider args={[{ onFrameCaptured, onRecordingFinished }]}>
+          <MuteControlsProvider args={[]}>
             <InputDevicesProvider args={[]}>
               <Camera {...props}>{children}</Camera>
             </InputDevicesProvider>
-          </FacingModeProvider>
-        </MuteControlsProvider>
-      </RecorderProvider>
-    </StreamProvider>
+          </MuteControlsProvider>
+        </RecorderProvider>
+      </StreamProvider>
+    </FacingModeProvider>
   );
 }
 
