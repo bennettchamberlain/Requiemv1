@@ -19,6 +19,7 @@ import { InputDevicesProvider, useInputDevices } from './useInputDevices';
 import { MuteControlsProvider, useMuteControls } from './useMuteControls';
 import { RecorderProvider, useRecorder } from './useRecorder';
 import { StreamProvider, useStream } from './useStream';
+import { RecordingModeProvider } from './useRecordingMode';
 
 interface CameraProps {
   onFrameCaptured?: (file: File) => void;
@@ -50,15 +51,17 @@ function Camera({ children }: CameraProps) {
 function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...props }: CameraProps) {
   return (
     <FacingModeProvider args={[]}>
-      <StreamProvider args={[]}>
-        <RecorderProvider args={[{ onFrameCaptured, onRecordingFinished }]}>
-          <MuteControlsProvider args={[]}>
-            <InputDevicesProvider args={[]}>
-              <Camera {...props}>{children}</Camera>
-            </InputDevicesProvider>
-          </MuteControlsProvider>
-        </RecorderProvider>
-      </StreamProvider>
+      <RecordingModeProvider args={[]}>
+        <StreamProvider args={[]}>
+          <RecorderProvider args={[{ onFrameCaptured, onRecordingFinished }]}>
+            <MuteControlsProvider args={[]}>
+              <InputDevicesProvider args={[]}>
+                <Camera {...props}>{children}</Camera>
+              </InputDevicesProvider>
+            </MuteControlsProvider>
+          </RecorderProvider>
+        </StreamProvider>
+      </RecordingModeProvider>
     </FacingModeProvider>
   );
 }
