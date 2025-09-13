@@ -2,11 +2,12 @@ import { useCallback, useRef, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
 import { useDeviceLayout } from '@ci/common';
-import { Dialog, cn } from '@ci/shadcn';
-import { Send } from '@ci/shadcn/icons';
+import { Dialog, cn, Button } from '@ci/shadcn';
+import { Send, X } from '@ci/shadcn/icons';
 
 import type { File as CIFile } from '@/api/types.ts';
 import { Chat, type FormData } from '@/components/Chat';
+import { InlineModal } from '@/components/InlineModal';
 import { useAuth, useChatRequester, useModel } from '@/hooks';
 import { getMediaType } from '@/lib/utils';
 
@@ -19,7 +20,7 @@ interface Props {
 export function CaptureModal({ open = false, initialFiles = [], onClose }: Props) {
   const [files, setFiles] = useState<CIFile[]>(initialFiles);
   const threadId = useRef<string | null>(null);
-  const { isMobileBrowser } = useDeviceLayout();
+  const { isMobile } = useDeviceLayout();
 
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
@@ -101,6 +102,24 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     [authToken, selectedModel],
   );
 
+  if (isMobile) {
+    return (
+      <InlineModal open={open} onClose={onClose}>
+        <div className="flex flex-row items-center justify-end pt-[env(safe-area-inset-top)] bg-black">
+          <div className="flex-1 text-right text-white">
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X />
+            </Button>
+          </div>
+        </div>
+
+        <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
+          <Camera.Feed />
+        </Camera>
+      </InlineModal>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <Dialog.Content
@@ -116,7 +135,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
         {files.length === 0 && (
           <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
-            <Camera.Feed showCameraInformation={!isMobileBrowser} bigButtons={isMobileBrowser} />
+            <Camera.Feed />
           </Camera>
         )}
         {files.length > 0 && (
