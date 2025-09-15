@@ -39,6 +39,7 @@ interface Props extends ChatInputProps {
   messages?: Message[];
   readable?: ReadableStream<Uint8Array>;
   emptyState?: ReactNode;
+  children?: ReactNode;
 }
 
 const textDecoder = new TextDecoder();
@@ -52,6 +53,7 @@ export function Chat({
   streaming,
   emptyState,
   onSubmit,
+  children,
   ...chatInputProps
 }: Props) {
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
@@ -307,11 +309,11 @@ export function Chat({
 
   return (
     <div className="flex flex-col h-full min-h-0 w-full relative">
-      {(messages?.length ?? 0) === 0 && accumulatedMessages.length === 1 && (
+      {children == null && (messages?.length ?? 0) === 0 && accumulatedMessages.length === 1 && (
         <div className="flex flex-col flex-1 min-h-0 p-4 items-center justify-center">{emptyState}</div>
       )}
 
-      {((messages?.length ?? 0) > 0 || accumulatedMessages.length > 1) && (
+      {(children != null || (messages?.length ?? 0) > 0 || accumulatedMessages.length > 1) && (
         <div
           ref={setScrollRef}
           onScroll={onScroll}
@@ -325,6 +327,7 @@ export function Chat({
             '[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]',
           )}
         >
+          {children}
           {renderedMessages}
           {accumulatedMessages}
         </div>

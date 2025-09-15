@@ -1,12 +1,15 @@
 import { type ReactNode, useEffect } from 'react';
 
+import { cn } from '@ci/shadcn';
+
 interface Props {
   open: boolean;
   onClose?: () => void;
   children: ReactNode;
+  className?: string;
 }
 
-export function InlineModal({ open, onClose, children }: Props) {
+export function InlineModal({ open, onClose, children, className }: Props) {
   useEffect(() => {
     if (!open) {
       return;
@@ -30,6 +33,8 @@ export function InlineModal({ open, onClose, children }: Props) {
   }
 
   return (
-    <div className="absolute flex flex-col inset-0 z-10 bg-background animate-in fade-in-0">{children}</div>
+    <div className={cn('absolute flex flex-col inset-0 z-10 bg-background animate-in fade-in-0', className)}>
+      {children}
+    </div>
   );
 }
