@@ -27,8 +27,6 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   const [files, setFiles] = useState<FileData[]>(initialFiles);
   const [threadId, setThreadId] = useState<string | null>(null);
 
-  console.log(files, threadId);
-
   const [{ file: fileData }, { upload }] = useUploadFile();
 
   const [{ stream, loading, streaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
@@ -95,6 +93,16 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     })();
   }, [fileData]);
 
+  const handleSelectLastCapture = useCallback(async () => {
+    if (fileData == null) {
+      return;
+    }
+
+    await createFileThread(fileData.id);
+
+    setFiles((current) => [...current, fileData]);
+  }, [fileData, createFileThread]);
+
   const handleSubmit = useCallback(
     async (data: FormData, e?: FormEvent) => {
       e?.preventDefault();
@@ -105,26 +113,52 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   );
 
   if (isMobile) {
+    if (files.length === 0) {
+      return (
+        <InlineModal open={open} onClose={onClose} className="fixed">
+          <div className="absolute top-[env(safe-area-inset-top)] right-0 z-10">
+            <div className="flex-1 text-right text-white">
+              <Button variant="ghost" size="icon" onClick={onClose}>
+                <X />
+              </Button>
+            </div>
+          </div>
+
+          <Camera
+            onFrameCaptured={handleMediaCaptured}
+            onRecordingFinished={handleMediaCaptured}
+            className="h-full"
+          >
+            <Camera.Feed />
+            <div className="absolute w-full bottom-0">
+              <Camera.MobileControls onSelectLastCapture={handleSelectLastCapture} />
+            </div>
+          </Camera>
+        </InlineModal>
+      );
+    }
+
     return (
       <InlineModal open={open} onClose={onClose}>
-        <div className="absolute top-[env(safe-area-inset-top)] right-0 z-10">
-          <div className="flex-1 text-right text-white">
+        <div className="flex flex-row items-center justify-between border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(1rem,env(safe-area-inset-top))]">
+          <div className="flex-1" />
+          <div className="text-xl font-bold text-transparent">{files[0].name}</div>
+          <div className="flex-1 text-right">
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X />
             </Button>
           </div>
         </div>
 
-        <Camera
-          onFrameCaptured={handleMediaCaptured}
-          onRecordingFinished={handleMediaCaptured}
-          className="h-full"
+        <Chat
+          placeholder="Ask about this content..."
+          streaming={streaming}
+          readable={stream ?? undefined}
+          onSubmit={submitChatRequest}
+          onStop={stopChatRequest}
         >
-          <Camera.Feed />
-          <div className="absolute w-full bottom-0">
-            <Camera.MobileControls />
-          </div>
-        </Camera>
+          <Files files={files} />
+        </Chat>
       </InlineModal>
     );
   }
