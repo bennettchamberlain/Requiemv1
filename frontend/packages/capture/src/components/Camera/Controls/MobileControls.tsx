@@ -12,7 +12,7 @@ import { MediaBackground } from './MediaBackground';
 export function MobileControls() {
   const [{ isRecording, lastCapture }, { captureFrame, toggleRecording }] = useRecorder();
   const [{ facingMode }, { swapFacingMode }] = useFacingMode();
-  const [{ recordingMode }, { swapRecordingMode }] = useRecordingMode();
+  const [{ recordingMode }, { setPhotoMode, setVideoMode }] = useRecordingMode();
 
   const handleRecordClick = useCallback(() => {
     if (recordingMode === 'photo') {
@@ -30,7 +30,7 @@ export function MobileControls() {
             'py-4 text-center text-sm basis-1/2',
             recordingMode === 'photo' ? 'text-yellow-300' : 'text-white',
           )}
-          onClick={swapRecordingMode}
+          onClick={setPhotoMode}
         >
           PHOTO
         </div>
@@ -39,7 +39,7 @@ export function MobileControls() {
             'py-4 text-center text-sm basis-1/2',
             recordingMode === 'video' ? 'text-yellow-300' : 'text-white',
           )}
-          onClick={swapRecordingMode}
+          onClick={setVideoMode}
         >
           VIDEO
         </div>

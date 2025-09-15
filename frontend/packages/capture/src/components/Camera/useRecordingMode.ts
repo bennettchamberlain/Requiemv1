@@ -3,12 +3,25 @@ import { useCallback, useState } from 'react';
 
 type RecordingMode = 'photo' | 'video';
 
-function useRecordingMode() {
+type ReturnType = [
+  {
+    recordingMode: RecordingMode;
+  },
+  {
+    setPhotoMode: () => void;
+    setVideoMode: () => void;
+    swapRecordingMode: () => void;
+  },
+];
+
+function useRecordingMode(): ReturnType {
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('photo');
 
+  const setPhotoMode = useCallback(() => setRecordingMode('photo'), []);
+  const setVideoMode = useCallback(() => setRecordingMode('video'), []);
   const swapRecordingMode = useCallback(
     () => setRecordingMode((current) => (current === 'photo' ? 'video' : 'photo')),
-    [setRecordingMode],
+    [],
   );
 
   return [
@@ -16,6 +29,8 @@ function useRecordingMode() {
       recordingMode,
     },
     {
+      setPhotoMode,
+      setVideoMode,
       swapRecordingMode,
     },
   ];
