@@ -159,35 +159,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
             {/* Left side: file preview or fallback */}
             <div className="flex max-[900px]:max-h-1/2">
               <div className="flex flex-col gap-4 p-2 min-[900px]:border-r max-w-[480px] w-full overflow-y-auto m-auto h-full min-h-0">
-                {files.map((file) => {
-                  const fileType = getMediaType(file.contentType);
-                  switch (fileType) {
-                    case 'video':
-                      return (
-                        <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
-                          <video controls className="w-full h-full object-cover">
-                            <source src={`/static${file.url}`} type={file.contentType} />
-                            Your browser does not support the video tag.
-                          </video>
-                        </div>
-                      );
-                    case 'audio':
-                      return (
-                        <div className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center">
-                          <audio controls className="w-full">
-                            <source src={`/static${file.url}`} type={file.contentType} />
-                            Your browser does not support the audio element.
-                          </audio>
-                        </div>
-                      );
-                    case 'image':
-                      return (
-                        <div className="rounded-lg bg-stone-100">
-                          <img src={`/static${file.url}`} className="w-full h-full object-cover" />
-                        </div>
-                      );
-                  }
-                })}
+                <Files files={files} />
               </div>
             </div>
 
@@ -216,5 +188,46 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
         )}
       </Dialog.Content>
     </Dialog>
+  );
+}
+
+function Files({ files }: { files?: FileData[] | null }) {
+  if (files == null) {
+    return null;
+  }
+
+  return (
+    <>
+      {files.map((file) => {
+        const fileType = getMediaType(file.contentType);
+
+        switch (fileType) {
+          case 'video':
+            return (
+              <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
+                <video controls className="w-full h-full object-cover">
+                  <source src={`/static${file.url}`} type={file.contentType} />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            );
+          case 'audio':
+            return (
+              <div className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center">
+                <audio controls className="w-full">
+                  <source src={`/static${file.url}`} type={file.contentType} />
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            );
+          case 'image':
+            return (
+              <div className="rounded-lg bg-stone-100">
+                <img src={`/static${file.url}`} className="w-full h-full object-cover" />
+              </div>
+            );
+        }
+      })}
+    </>
   );
 }
