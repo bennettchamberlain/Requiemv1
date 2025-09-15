@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect } from 'react';
 
+import { cn } from '@ci/shadcn';
+
 import { Feed } from './Feed';
 import { FacingModeProvider, useFacingMode } from './useFacingMode';
 import { InputDevicesProvider } from './useInputDevices';
@@ -7,14 +9,17 @@ import { MuteControlsProvider } from './useMuteControls';
 import { RecorderProvider } from './useRecorder';
 import { RecordingModeProvider } from './useRecordingMode';
 import { StreamProvider, useStream } from './useStream';
+import { DesktopControls, MobileControls } from './Controls';
+import { Information } from './Information';
 
 interface CameraProps {
   onFrameCaptured?: (file: File) => void;
   onRecordingFinished?: (file: File) => void;
   children: ReactNode;
+  className?: string;
 }
 
-function Camera({ children }: CameraProps) {
+function Camera({ children, className }: CameraProps) {
   const [, { startCamera, stopCamera }] = useStream();
   const [{ facingMode }] = useFacingMode();
 
@@ -27,7 +32,7 @@ function Camera({ children }: CameraProps) {
     };
   }, [facingMode]);
 
-  return <>{children}</>;
+  return <div className={cn('relative w-full h-full overflow-hidden bg-black', className)}>{children}</div>;
 }
 
 function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...props }: CameraProps) {
@@ -49,11 +54,17 @@ function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...
 }
 
 type CameraComponent = typeof CameraWithContext & {
+  DesktopControls: typeof DesktopControls;
   Feed: typeof Feed;
+  Information: typeof Information;
+  MobileControls: typeof MobileControls;
 };
 
 const AugmentedCamera = CameraWithContext as CameraComponent;
 
+AugmentedCamera.DesktopControls = DesktopControls;
 AugmentedCamera.Feed = Feed;
+AugmentedCamera.Information = Information;
+AugmentedCamera.MobileControls = MobileControls;
 
 export { AugmentedCamera as Camera };
