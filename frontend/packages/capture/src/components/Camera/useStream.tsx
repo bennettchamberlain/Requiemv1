@@ -124,7 +124,7 @@ function useStream(): ReturnType {
 
       stopCamera();
     }
-  }, [isActive, stopCamera, setIsActive]);
+  }, [facingMode, isActive, stopCamera, setIsActive]);
 
   return [
     {
