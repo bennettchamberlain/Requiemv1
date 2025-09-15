@@ -24,7 +24,7 @@ export function Icon({ icon: Icon, tooltip, className, onClick }: Props) {
       asChild={isMobile}
     >
       <Icon
-        strokeWidth={isMobile ? 1 : undefined}
+        strokeWidth={isMobile ? 0.75 : undefined}
         className={cn(
           'text-white hover:drop-shadow-[0_0_2px_rgba(255,255,255,0.5)] transition-transform',
           className,
