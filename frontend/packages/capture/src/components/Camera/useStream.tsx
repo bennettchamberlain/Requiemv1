@@ -59,8 +59,6 @@ function useStream(): ReturnType {
     console.log('Attempting to get user media (camera access)...');
 
     try {
-      // const stream: MediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
-
       const stream: MediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
