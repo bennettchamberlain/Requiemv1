@@ -9,7 +9,11 @@ import { useRecordingMode } from '../useRecordingMode';
 import { Icon } from './Icon';
 import { MediaBackground } from './MediaBackground';
 
-export function MobileControls() {
+interface Props {
+  onSelectLastCapture?: () => void;
+}
+
+export function MobileControls({ onSelectLastCapture }: Props) {
   const [{ isRecording, lastCapture }, { captureFrame, toggleRecording }] = useRecorder();
   const [{ facingMode }, { swapFacingMode }] = useFacingMode();
   const [{ recordingMode }, { setPhotoMode, setVideoMode }] = useRecordingMode();
@@ -48,7 +52,7 @@ export function MobileControls() {
       <div className="w-full flex flex-row items-center pb-[max(2.5rem,env(safe-area-inset-bottom))] select-none">
         <div className="flex items-center justify-start flex-1">
           {lastCapture && (
-            <div className="w-12 h-12 ml-10">
+            <div className="w-12 h-12 ml-10" onClick={onSelectLastCapture}>
               <MediaBackground file={lastCapture} />
             </div>
           )}
