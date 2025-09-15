@@ -1,5 +1,6 @@
 import { type MouseEvent, useCallback } from 'react';
 
+import { Portal } from '@ci/common';
 import { Camera, Inbox, MonitorCog, Search, type LucideIcon } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
@@ -20,7 +21,11 @@ export function MobileNavigation() {
 
   return (
     <>
-      {isOpen && <CaptureModal open={isOpen} onClose={close} />}
+      {isOpen && (
+        <Portal.Slot id="content-modal">
+          <CaptureModal open onClose={close} />
+        </Portal.Slot>
+      )}
 
       <div className="flex flex-col border-t bg-secondary pb-[env(safe-area-inset-bottom)]">
         <div className="flex flex-row items-center justify-between">
