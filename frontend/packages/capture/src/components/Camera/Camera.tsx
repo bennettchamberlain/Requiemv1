@@ -32,7 +32,7 @@ function Camera({ children, className }: CameraProps) {
     };
   }, [facingMode]);
 
-  return <div className={cn('relative w-full h-full overflow-hidden bg-black', className)}>{children}</div>;
+  return <div className={cn('relative bg-black', className)}>{children}</div>;
 }
 
 function CameraWithContext({ children, onFrameCaptured, onRecordingFinished, ...props }: CameraProps) {

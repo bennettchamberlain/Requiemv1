@@ -105,7 +105,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   if (isMobile) {
     return (
       <InlineModal open={open} onClose={onClose}>
-        <div className="flex flex-row items-center justify-end pt-[env(safe-area-inset-top)] bg-black">
+        <div className="absolute top-[env(safe-area-inset-top)] right-0 z-10">
           <div className="flex-1 text-right text-white">
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X />
@@ -113,8 +113,15 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
           </div>
         </div>
 
-        <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
+        <Camera
+          onFrameCaptured={handleMediaCaptured}
+          onRecordingFinished={handleMediaCaptured}
+          className="h-full"
+        >
           <Camera.Feed />
+          <div className="absolute w-full bottom-0">
+            <Camera.MobileControls />
+          </div>
         </Camera>
       </InlineModal>
     );
@@ -124,7 +131,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <Dialog.Content
         className={cn(
-          'w-[90vw] sm:max-w-[90vw] sm:max-h-[80vh] p-0 flex flex-col gap-0',
+          'w-[90vw] h-[90vh] sm:max-w-[90vw] sm:max-h-[80vh] p-0 flex flex-col gap-0',
           files.length > 0 && 'max-[900px]:h-[80vh]',
         )}
       >
@@ -134,8 +141,14 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
         </Dialog.Header>
 
         {files.length === 0 && (
-          <Camera onFrameCaptured={handleMediaCaptured} onRecordingFinished={handleMediaCaptured}>
+          <Camera
+            onFrameCaptured={handleMediaCaptured}
+            onRecordingFinished={handleMediaCaptured}
+            className="h-full"
+          >
+            <Camera.Information />
             <Camera.Feed />
+            <Camera.DesktopControls />
           </Camera>
         )}
         {files.length > 0 && (
