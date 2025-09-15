@@ -1,11 +1,12 @@
-import { useCallback, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
-import { useDeviceLayout } from '@ci/common';
+import { fetchJson, useDeviceLayout } from '@ci/common';
 import { Dialog, cn, Button } from '@ci/shadcn';
 import { Send, X } from '@ci/shadcn/icons';
 
-import type { File as CIFile } from '@/api/types.ts';
+import { useUploadFile } from '@/api';
+import type { File as FileData, Thread } from '@/api/types';
 import { Chat, type FormData } from '@/components/Chat';
 import { InlineModal } from '@/components/InlineModal';
 import { useAuth, useChatRequester, useModel } from '@/hooks';
@@ -13,62 +14,50 @@ import { getMediaType } from '@/lib/utils';
 
 interface Props {
   open?: boolean;
-  initialFiles?: CIFile[];
+  initialFiles?: FileData[];
   onClose?: () => void;
 }
 
 export function CaptureModal({ open = false, initialFiles = [], onClose }: Props) {
-  const [files, setFiles] = useState<CIFile[]>(initialFiles);
-  const threadId = useRef<string | null>(null);
+  const [{ authToken }] = useAuth();
+  const [{ selectedModel }] = useModel();
+
   const { isMobile } = useDeviceLayout();
 
-  const handleOpenChange = useCallback((open: boolean) => {
-    if (!open) {
-      setFiles([]);
-      onClose?.();
-    }
-  }, []);
+  const [files, setFiles] = useState<FileData[]>(initialFiles);
+  const [threadId, setThreadId] = useState<string | null>(null);
 
-  const [{ selectedModel }] = useModel();
-  const [{ authToken }] = useAuth();
+  console.log(files, threadId);
+
+  const [{ file: fileData }, { upload }] = useUploadFile();
 
   const [{ stream, loading, streaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
     useChatRequester({
-      threadId: threadId.current,
+      threadId,
       enableTools: false,
       enableThinking: false,
     });
 
-  const handleSubmit = useCallback(
-    async (data: FormData, e?: FormEvent) => {
-      e?.preventDefault();
-
-      return submitChatRequest(data);
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        setFiles([]);
+        onClose?.();
+      }
     },
-    [submitChatRequest],
+    [onClose],
   );
 
   const handleMediaCaptured = useCallback(
     async (file: File) => {
-      const formData = new FormData();
+      upload(file);
+    },
+    [upload],
+  );
 
-      formData.append('file', file);
-
-      const res = await fetch('/api/files/upload', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: formData,
-      });
-
-      const resJson = await res.json();
-
-      if (!res.ok) {
-        console.error('Upload failed', resJson);
-      }
-
-      const threadRes = await fetch('/api/threads', {
+  const createFileThread = useCallback(
+    async (fileId: string) => {
+      const thread = await fetchJson<Thread>('/api/threads', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -77,29 +66,42 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
         body: JSON.stringify({
           files: [
             {
-              id: resJson.id,
+              id: fileId,
             },
           ],
           model: selectedModel,
         }),
       });
 
-      const threadResJson = await threadRes.json();
-
-      if (!threadRes.ok) {
-        console.error('Linking file to thread failed', threadResJson);
-      }
-
-      threadId.current = threadResJson.id;
-
-      setFiles(
-        files.concat({
-          url: URL.createObjectURL(file),
-          ...resJson,
-        }),
-      );
+      setThreadId(thread.id);
     },
     [authToken, selectedModel],
+  );
+
+  useEffect(() => {
+    (async () => {
+      if (fileData == null) {
+        return;
+      }
+
+      // We do this with an additional user interaction on mobile, so skip here
+      if (isMobile) {
+        return;
+      }
+
+      await createFileThread(fileData.id);
+
+      setFiles((current) => [...current, fileData]);
+    })();
+  }, [fileData]);
+
+  const handleSubmit = useCallback(
+    async (data: FormData, e?: FormEvent) => {
+      e?.preventDefault();
+
+      return submitChatRequest(data);
+    },
+    [submitChatRequest],
   );
 
   if (isMobile) {
@@ -151,6 +153,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
             <Camera.DesktopControls />
           </Camera>
         )}
+
         {files.length > 0 && (
           <div className="flex flex-col flex-1 min-[900px]:flex-row min-h-0 min-w-0">
             {/* Left side: file preview or fallback */}
@@ -163,7 +166,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
                       return (
                         <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
                           <video controls className="w-full h-full object-cover">
-                            <source src={file.url} type={file.contentType} />
+                            <source src={`/static${file.url}`} type={file.contentType} />
                             Your browser does not support the video tag.
                           </video>
                         </div>
@@ -172,7 +175,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
                       return (
                         <div className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center">
                           <audio controls className="w-full">
-                            <source src={file.url} type={file.contentType} />
+                            <source src={`/static${file.url}`} type={file.contentType} />
                             Your browser does not support the audio element.
                           </audio>
                         </div>
@@ -180,7 +183,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
                     case 'image':
                       return (
                         <div className="rounded-lg bg-stone-100">
-                          <img src={file.url} className="w-full h-full object-cover" />
+                          <img src={`/static${file.url}`} className="w-full h-full object-cover" />
                         </div>
                       );
                   }
@@ -188,30 +191,27 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
               </div>
             </div>
 
-            {/* Right side: Chat */}
-            {files?.length > 0 && (
-              <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
-                <Chat
-                  loading={loading}
-                  streaming={streaming}
-                  readable={stream ?? undefined}
-                  onSubmit={handleSubmit}
-                  onStop={stopChatRequest}
-                  placeholder="Ask about this content..."
-                  emptyState={
-                    <div className="text-center text-gray-500 mt-8">
-                      <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
-                        <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
-                      </div>
-                      <p className="text-sm">Start a conversation about this content</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Ask questions, get recommendations, or explore ideas
-                      </p>
+            <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
+              <Chat
+                loading={loading}
+                streaming={streaming}
+                readable={stream ?? undefined}
+                onSubmit={handleSubmit}
+                onStop={stopChatRequest}
+                placeholder="Ask about this content..."
+                emptyState={
+                  <div className="text-center text-gray-500 mt-8">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
+                      <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
                     </div>
-                  }
-                />
-              </div>
-            )}
+                    <p className="text-sm">Start a conversation about this content</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Ask questions, get recommendations, or explore ideas
+                    </p>
+                  </div>
+                }
+              />
+            </div>
           </div>
         )}
       </Dialog.Content>
