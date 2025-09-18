@@ -4,7 +4,6 @@ import { Button, cn } from '@ci/shadcn';
 import { Mic, MicOff, Volume2, X } from '@ci/shadcn/icons';
 
 import { useSpeechService } from '@/api';
-import { cleanTextForTTS } from '@/lib/text-utils';
 
 import { AudioWaveform } from './AudioWaveform';
 
@@ -204,14 +203,10 @@ export function VoiceMode({
         return;
       }
 
-      // Clean the text before sending to TTS
-      const cleanedText = cleanTextForTTS(text);
-
-      console.log('🎤 Starting TTS for text:', cleanedText.substring(0, 100) + '...');
       setIsPlaying(true);
 
       try {
-        const audioBlob = await synthesizeSpeech(cleanedText);
+        const audioBlob = await synthesizeSpeech(text);
         console.log('🎤 TTS completed, blob size:', audioBlob.size, 'type:', audioBlob.type);
 
         const audioUrl = URL.createObjectURL(audioBlob);

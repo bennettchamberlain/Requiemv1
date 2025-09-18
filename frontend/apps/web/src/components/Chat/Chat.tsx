@@ -96,9 +96,6 @@ export function Chat({
   const textStreamingRef = useRef<HTMLDivElement | null>(null);
   const textParserRef = useRef<StreamingParser | null>(null);
 
-  // Track the accumulated text content for TTS
-  const accumulatedTextRef = useRef<string>('');
-
   const setTextStreamingRef = useCallback((el: HTMLDivElement | null) => {
     textStreamingRef.current = el;
 
@@ -236,11 +233,6 @@ export function Chat({
 
         smd.parser_write(parser, payload);
 
-        // Accumulate text content for TTS (only for TEXT channel, not THINK)
-        if (chunk.channel === Channel.TEXT) {
-          accumulatedTextRef.current += payload;
-        }
-
         maybeAutoScroll();
       }
 
@@ -259,9 +251,6 @@ export function Chat({
 
           flushStream(block);
           maybeAutoScroll(true);
-
-          // Reset accumulated text for new response
-          accumulatedTextRef.current = '';
         } catch (err) {
           console.error('Error inserting user block', err);
         }
@@ -285,19 +274,12 @@ export function Chat({
   const handleFinished = useCallback(() => {
     const lastChannel = lastChannelRef.current;
 
-    if (lastChannel != null) {
-      flushStream();
+    if (lastChannel === Channel.TEXT) {
+      onResponseFinished?.(textStreamingRef.current?.textContent ?? '');
     }
 
-    // Trigger TTS for voice mode when response is finished
-    if (isVoiceModeActive && accumulatedTextRef.current.trim()) {
-      console.log(
-        '🎤 handleFinished: Triggering TTS with text:',
-        accumulatedTextRef.current.substring(0, 100) + '...',
-      );
-      onResponseFinished?.(accumulatedTextRef.current);
-      // Reset accumulated text for next response
-      accumulatedTextRef.current = '';
+    if (lastChannel != null) {
+      flushStream();
     }
 
     const input = autoFocusRef.current;
@@ -307,7 +289,7 @@ export function Chat({
         input.focus();
       });
     }
-  }, [flushStream, autoFocus, isVoiceModeActive, onResponseFinished]);
+  }, [flushStream, autoFocus, onResponseFinished]);
 
   useEffect(() => {
     if (!readable) {
