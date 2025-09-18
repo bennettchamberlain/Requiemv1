@@ -50,6 +50,10 @@ function useModel(): Value {
   );
 
   const fetchModels = useCallback(async () => {
+    setActiveModels([]);
+    setLoading(true);
+    setError(null);
+
     try {
       const data: Model[] = await fetchJson('/api/llm/models', {
         method: 'GET',
