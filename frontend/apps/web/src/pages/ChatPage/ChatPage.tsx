@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
+import { Portal, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card } from '@ci/shadcn';
 import { RefreshCw, Send, X } from '@ci/shadcn/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -17,6 +17,8 @@ import { useThreadListService } from './useThreadListService';
 
 export default function ChatPage() {
   usePageTitle('Chat - Companion Intelligence');
+
+  const { isMobile } = useDeviceLayout();
 
   const resolvedThreadId = useRef<string | null>(null);
   const hasSetInitialMessages = useRef(false);
@@ -212,7 +214,7 @@ export default function ChatPage() {
       </Portal.Slot>
 
       <Portal.Slot id="actions">
-        <ModelSelector />
+        <ModelSelector withToggles />
       </Portal.Slot>
 
       <Portal.Slot id="tertiary-navigation">
@@ -228,7 +230,12 @@ export default function ChatPage() {
       </Portal.Slot>
 
       <div className="flex flex-col h-full">
-        <div className="pt-[env(safe-area-inset-top)] bg-secondary border-b" />
+        {isMobile && (
+          <div className="flex flex-row items-center justify-end border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+            <ModelSelector withToggles />
+          </div>
+        )}
+
         <Chat
           key={initialThreadId ?? `new-thread-${newThreadCount}`}
           loading={loading}

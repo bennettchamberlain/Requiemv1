@@ -16,12 +16,16 @@ interface Model {
 type Value = [
   {
     selectedModel: string | null;
+    thinkingEnabled: boolean;
+    toolsEnabled: boolean;
     activeModels: Model[];
     loading: boolean;
     error: Error | null;
   },
   {
     selectModel: (model: string | null) => void;
+    toggleThinking: () => void;
+    toggleTools: () => void;
     refetch: () => void;
   },
 ];
@@ -33,6 +37,8 @@ function useModel(): Value {
   const [activeModels, setActiveModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
+  const [toolsEnabled, setToolsEnabled] = useState<boolean>(false);
+  const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(false);
 
   const initialRequestRef = useRef<boolean>(false);
 
@@ -48,6 +54,9 @@ function useModel(): Value {
     },
     [setSelectedModel],
   );
+
+  const toggleThinking = useCallback(() => setThinkingEnabled((current) => !current), []);
+  const toggleTools = useCallback(() => setToolsEnabled((current) => !current), []);
 
   const fetchModels = useCallback(async () => {
     setActiveModels([]);
@@ -97,12 +106,16 @@ function useModel(): Value {
   return [
     {
       selectedModel,
+      thinkingEnabled,
+      toolsEnabled,
       activeModels,
       loading,
       error,
     },
     {
       selectModel,
+      toggleThinking,
+      toggleTools,
       refetch: fetchModels,
     },
   ];
