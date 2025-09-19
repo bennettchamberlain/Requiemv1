@@ -44,10 +44,9 @@ install: ## Install and build the MCP server
 custom-install: ## Custom installation steps for filesystem server
 	@printf "$(GREEN)✓$(RESET) Creating wrapper script...\n"
 	@echo '#!/usr/bin/env node' > index.js
-	@echo 'import { resolve } from "path";' >> index.js
+	@echo 'import { resolve, dirname } from "path";' >> index.js
 	@echo 'import { spawn } from "child_process";' >> index.js
 	@echo 'import { fileURLToPath } from "url";' >> index.js
-	@echo 'import { dirname } from "path";' >> index.js
 	@echo '' >> index.js
 	@echo 'const __filename = fileURLToPath(import.meta.url);' >> index.js
 	@echo 'const __dirname = dirname(__filename);' >> index.js
@@ -132,4 +131,3 @@ status: ## Show server status
 help: ## Show this help message
 	@printf "📋 $(SERVER_NAME) MCP Server Commands\n\n"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
-

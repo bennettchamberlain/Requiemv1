@@ -334,16 +334,19 @@ mcp-check: ## Check MCP server installation and status
 
 mcp-clean: ## Remove all MCP servers
 	@printf "🧹 Cleaning MCP servers...\n\n"
-	@printf "$(YELLOW)⚠$(RESET)  This will delete all MCP server installations!\n"
+	@printf "$(YELLOW)⚠$(RESET)  This will clean all MCP server builds but preserve Makefiles!\n"
 	@printf "Are you sure? [y/N] " && read ans && [ $$ans = y ] || exit 1
 	
-	@if [ -d "$(MCP_SERVERS_DIR)" ]; then \
-		printf "$(RED)✗$(RESET) Removing MCP servers directory...\n"; \
-		rm -rf $(MCP_SERVERS_DIR); \
-		printf "$(GREEN)✓$(RESET) MCP servers directory removed\n"; \
-	fi
+	@for server in $(MCP_SERVERS); do \
+		if [ -d "$(MCP_SERVERS_DIR)/$$server" ] && [ -f "$(MCP_SERVERS_DIR)/$$server/Makefile" ]; then \
+			printf "$(GREEN)✓$(RESET) Cleaning $$server server...\n"; \
+			$(MAKE) -C "$(MCP_SERVERS_DIR)/$$server" clean; \
+		else \
+			printf "$(YELLOW)⚠$(RESET) $$server server directory or Makefile not found\n"; \
+		fi; \
+	done
 	
-	@printf "\n$(GREEN)✓$(RESET) MCP servers cleaned!\n"
+	@printf "\n$(GREEN)✓$(RESET) MCP servers cleaned (Makefiles preserved)!\n"
 	@printf "$(GREEN)✓$(RESET) Run 'make mcp' to reinstall\n\n"
 
 mcp-update: ## Update all MCP servers

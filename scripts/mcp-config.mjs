@@ -41,7 +41,6 @@ const SERVER_TEMPLATES = {
     name: 'Web Search Engine',
     command: 'node',
     args: ['dist/index.js'],
-    workingDirectory: null, // Will be set dynamically
     enabled: false,
     description: 'Multi-engine web search with content extraction',
     timeout: 60000,
@@ -51,10 +50,6 @@ const SERVER_TEMPLATES = {
       timeoutMs: 20000,
       retryCount: 2,
       restartOnFailure: true,
-    },
-    env: {
-      NODE_PATH: '${PROJECT_ROOT}/node_modules:${PROJECT_ROOT}/.yarn/cache',
-      PLAYWRIGHT_BROWSERS_PATH: '${PROJECT_ROOT}/mcp-servers/web-search/playwright-browsers',
     },
   },
 };
@@ -222,8 +217,7 @@ function registerFilesystemServer() {
   }
 
   const serverConfig = { ...SERVER_TEMPLATES['filesystem'] };
-  // Use the path with environment variable resolution
-  serverConfig.workingDirectory = '${PROJECT_ROOT}/mcp-servers/filesystem';
+  // No workingDirectory needed for npx approach
 
   registerServer('filesystem', serverConfig);
 
@@ -242,9 +236,8 @@ function registerWebSearchServer() {
   }
 
   const serverConfig = { ...SERVER_TEMPLATES['web-search'] };
-  // Use the path with environment variable resolution
+  // Use local build approach - needs working directory and environment
   serverConfig.workingDirectory = '${PROJECT_ROOT}/mcp-servers/web-search';
-  // Set environment variable for Playwright
   serverConfig.env = {
     PLAYWRIGHT_BROWSERS_PATH: '${PROJECT_ROOT}/mcp-servers/web-search/playwright-browsers',
   };
