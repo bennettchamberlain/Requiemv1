@@ -5,7 +5,8 @@ import { Mic, MicOff, Volume2, X } from '@ci/shadcn/icons';
 
 import { useSpeechService } from '@/api';
 
-import { AudioWaveform } from './AudioWaveform';
+import { AudioWaveform } from '../AudioWaveform';
+import { useTranscriptionService } from '@/api/useTranscriptionService';
 
 interface VoiceModeProps {
   isActive: boolean;
@@ -36,7 +37,7 @@ export function VoiceMode({
   const companionAnalyserRef = useRef<AnalyserNode | null>(null);
   const companionStreamRef = useRef<MediaStream | null>(null);
 
-  const { state: speechState, transcribeAudio, synthesizeSpeech } = useSpeechService();
+  const { error, transcribeAudio } = useTranscriptionService();
 
   // Set up companion audio stream for waveform visualization
   const setupCompanionAudioStream = useCallback((audioElement: HTMLAudioElement) => {
@@ -195,71 +196,6 @@ export function VoiceMode({
       startRecording();
     }
   }, [isRecording, startRecording, stopRecording]);
-
-  // TTS and audio playback
-  const playCompanionResponse = useCallback(
-    async (text: string) => {
-      if (!text.trim()) {
-        return;
-      }
-
-      setIsPlaying(true);
-
-      try {
-        const audioBlob = await synthesizeSpeech(text);
-        console.log('🎤 TTS completed, blob size:', audioBlob.size, 'type:', audioBlob.type);
-
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-
-        // Set up audio stream for waveform visualization
-        setupCompanionAudioStream(audio);
-
-        audio.onended = () => {
-          console.log('🎤 Audio playback ended');
-          URL.revokeObjectURL(audioUrl);
-          setIsPlaying(false);
-          // Clean up companion stream when audio ends
-          if (companionAudioContextRef.current) {
-            companionAudioContextRef.current.close();
-            companionAudioContextRef.current = null;
-          }
-
-          companionStreamRef.current = null;
-          setCompanionStream(null);
-        };
-
-        audio.onerror = (e) => {
-          console.error('🎤 Audio playback error:', e);
-          URL.revokeObjectURL(audioUrl);
-          setIsPlaying(false);
-          setError('Failed to play audio - check browser console for details');
-          // Clean up on error
-          if (companionAudioContextRef.current) {
-            companionAudioContextRef.current.close();
-            companionAudioContextRef.current = null;
-          }
-
-          companionStreamRef.current = null;
-          setCompanionStream(null);
-        };
-
-        audio.onloadstart = () => console.log('🎤 Audio loading started');
-        audio.oncanplay = () => console.log('🎤 Audio can play');
-        audio.oncanplaythrough = () => console.log('🎤 Audio can play through');
-
-        currentAudioRef.current = audio;
-        console.log('🎤 Starting audio playback...');
-        await audio.play();
-        console.log('🎤 Audio playback started successfully');
-      } catch (err) {
-        console.error('🎤 Error in TTS/playback:', err);
-        setError(`Failed to play audio: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        setIsPlaying(false);
-      }
-    },
-    [synthesizeSpeech, setupCompanionAudioStream],
-  );
 
   // Auto-play companion responses when they become available
   useEffect(() => {

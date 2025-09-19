@@ -26,7 +26,7 @@ import { ChatLoader } from './ChatLoader';
 import { ChatMessage } from './ChatMessage';
 import { useConditionalAutoscroll } from './useConditionalAutoscroll';
 import { Channel, type Decoded, createStreamProcessor } from './utils';
-import { VoiceMode } from './VoiceMode';
+import { VoiceMode } from './VoiceMode/VoiceMode';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
