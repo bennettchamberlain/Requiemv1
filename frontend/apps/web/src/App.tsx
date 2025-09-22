@@ -21,6 +21,7 @@ import SplashPage from '@/pages/SplashPage';
 const ActionsPage = lazy(() => import('@/pages/ActionsPage'));
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'));
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
@@ -146,6 +147,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <JobsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/connect"
+          element={
+            <ProtectedRoute>
+              <ConnectPage />
             </ProtectedRoute>
           }
         />
