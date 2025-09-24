@@ -16,34 +16,35 @@ RESET := \033[0m
 
 install: ## Install and build the MCP server
 	@printf "📦 Installing $(SERVER_NAME) MCP server...\n"
-	
+
 	# Clone repository if source files don't exist
 	@if [ ! -f "package.json" ]; then \
 		printf "$(GREEN)✓$(RESET) Cloning repository...\n"; \
 		git clone --depth 1 "$(REPO_URL)" temp-clone; \
+		rm -f temp-clone/.gitignore temp-clone/Makefile; \
 		mv temp-clone/* .; \
 		mv temp-clone/.[!.]* . 2>/dev/null || true; \
 		rmdir temp-clone; \
 	else \
 		printf "$(GREEN)✓$(RESET) Source files already exist\n"; \
 	fi
-	
+
 	# Install Node version if .tool-versions doesn't exist
 	@if [ ! -f ".tool-versions" ]; then \
 		echo "nodejs $(NODE_VERSION)" > .tool-versions; \
 		printf "$(GREEN)✓$(RESET) Created .tool-versions file\n"; \
 	fi
-	
+
 	# Install dependencies
 	@printf "$(GREEN)✓$(RESET) Installing dependencies...\n"
 	@npm install --include=dev
-	
+
 	# Run custom installation steps
 	@$(MAKE) custom-install
-	
+
 	# Build the server
 	@$(MAKE) build
-	
+
 	@printf "$(GREEN)✓$(RESET) $(SERVER_NAME) server installed successfully!\n"
 
 custom-install: ## Custom installation steps for web-search server
