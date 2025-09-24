@@ -2497,7 +2497,6 @@ __metadata:
   resolution: "@ci/ci-server@workspace:."
   dependencies:
     "@eslint/js": "npm:^9.27.0"
-    "@modelcontextprotocol/sdk": "npm:^1.17.5"
     "@storybook/react-vite": "npm:^9.0.8"
     "@types/pg": "npm:^8"
     eslint: "npm:^9.27.0"
@@ -4064,7 +4063,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@modelcontextprotocol/sdk@npm:^1.0.0, @modelcontextprotocol/sdk@npm:^1.17.5":
+"@modelcontextprotocol/sdk@npm:^1.0.0":
   version: 1.18.0
   resolution: "@modelcontextprotocol/sdk@npm:1.18.0"
   dependencies:
