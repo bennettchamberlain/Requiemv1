@@ -1,9 +1,15 @@
+import { useCallback } from 'react';
+
 import { Portal } from '@ci/common';
 import { Breadcrumb, cn } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
 
 export function ConnectPage() {
+  const handleConnect = useCallback((providerId: string) => {
+    console.log(providerId);
+  }, []);
+
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -27,18 +33,21 @@ export function ConnectPage() {
             background="bg-sky-400"
             border="border-sky-300"
             text="Bring your Microsoft account into the mix for email and scheduling. Keep track of what matters without extra steps."
+            onClick={() => handleConnect('0198779b-3c33-73da-84e5-82e0df145260')}
           />
           <Card
             logo="/branding/google/logo.svg"
             background="bg-violet-400"
             border="border-violet-300"
             text="Link your Google account for quick access to Gmail, Calendar, and Drive. Everything you need, always in sync."
+            onClick={() => handleConnect('0198779b-182c-716e-9275-b81d99a47fdb')}
           />
           <Card
             logo="/branding/meta/logo.svg"
             background="bg-blue-500"
             border="border-blue-400"
             text="Sync with Meta to stay connected with your community, manage Marketplace items, and track your Quest activity."
+            disabled
           />
         </div>
       </PageContent>
@@ -47,20 +56,24 @@ export function ConnectPage() {
 }
 
 interface CardProps {
-  className?: string;
   background: string;
   border: string;
   logo: string;
   text: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  className?: string;
 }
 
-function Card({ className, background, border, logo, text }: CardProps) {
+function Card({ background, border, logo, text, disabled = false, onClick, className }: CardProps) {
   return (
     <div
       className={cn(
-        'text-gray-700 dark:text-gray-200 rounded-lg bg-white shadow-md dark:bg-gray-800 dark:text-gray-200',
+        'text-gray-700 dark:text-gray-200 rounded-lg bg-white shadow-md dark:bg-gray-800 dark:text-gray-200 select-none',
+        onClick && !disabled ? 'cursor-pointer' : 'opacity-50',
         className,
       )}
+      onClick={!disabled ? onClick : undefined}
     >
       <div className={cn('flex items-center justify-center p-10 rounded-t-lg', background)}>
         <div
