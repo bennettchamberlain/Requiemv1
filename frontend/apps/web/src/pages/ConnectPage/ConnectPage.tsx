@@ -1,14 +1,72 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
-import { Portal } from '@ci/common';
+import { fetchJson, Portal } from '@ci/common';
 import { Breadcrumb, cn } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
+import { useAuth } from '@/hooks';
+
+interface ConnectResponse {
+  redirectUrl: string;
+}
+
+type ReturnType = [
+  {
+    redirectUrl: string | null;
+    loading: boolean;
+    error: unknown | null;
+  },
+  {
+    connect: (providerId: string) => Promise<void>;
+  },
+];
+
+function useConnectService(): ReturnType {
+  const [{ authToken }] = useAuth();
+
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<unknown | null>(null);
+
+  const connect = useCallback(
+    async (providerId: string) => {
+      setRedirectUrl(null);
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetchJson<ConnectResponse>(`/api/providers/${providerId}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        setRedirectUrl(response.redirectUrl);
+      } catch (err: unknown) {
+        setError(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [authToken],
+  );
+
+  return [
+    {
+      redirectUrl,
+      loading,
+      error,
+    },
+    {
+      connect,
+    },
+  ];
+}
 
 export function ConnectPage() {
-  const handleConnect = useCallback((providerId: string) => {
-    console.log(providerId);
-  }, []);
+  const [{ redirectUrl, loading, error }, { connect }] = useConnectService();
 
   return (
     <>
@@ -27,20 +85,24 @@ export function ConnectPage() {
       </Portal.Slot>
 
       <PageContent>
+        {redirectUrl && <div>{redirectUrl}</div>}
+        {loading && <div>Loading...</div>}
+        {error != null && <div>{String(error)}</div>}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4 max-w-[1040px] mx-auto">
           <Card
             logo="/branding/microsoft/logo.svg"
             background="bg-sky-400"
             border="border-sky-300"
             text="Bring your Microsoft account into the mix for email and scheduling. Keep track of what matters without extra steps."
-            onClick={() => handleConnect('0198779b-3c33-73da-84e5-82e0df145260')}
+            onClick={() => connect('0198779b-3c33-73da-84e5-82e0df145260')}
           />
           <Card
             logo="/branding/google/logo.svg"
             background="bg-violet-400"
             border="border-violet-300"
             text="Link your Google account for quick access to Gmail, Calendar, and Drive. Everything you need, always in sync."
-            onClick={() => handleConnect('0198779b-182c-716e-9275-b81d99a47fdb')}
+            onClick={() => connect('0198779b-182c-716e-9275-b81d99a47fdb')}
           />
           <Card
             logo="/branding/meta/logo.svg"
