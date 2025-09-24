@@ -1,18 +1,20 @@
 import { useCallback, useState } from 'react';
 
-import { useAuth } from '@/hooks/use-auth';
-import { AUDIO_CONSTANTS } from '@/lib/audio-utils';
 import { fetchJson } from '@ci/common';
+
+import { useAuth } from '@/hooks/use-auth';
+
+const TIMEOUT_MS = 60000; // 60 seconds
 
 type ReturnType = [
   {
-  text: string | null;
-  loading: boolean;
-  error: unknown | null;
+    text: string | null;
+    loading: boolean;
+    error: unknown | null;
   },
   {
-    transcribeAudio: (audioBlob: Blob) => void;
-  }
+    transcribeAudio: (audioBlob: Blob) => Promise<void>;
+  },
 ];
 
 interface STTResponse {
@@ -23,17 +25,15 @@ export function useTranscriptionService(): ReturnType {
   const [{ authToken }] = useAuth();
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<unknown  | null>(null);
-  
+  const [error, setError] = useState<unknown | null>(null);
 
   const transcribeAudio = useCallback(
-    async (audioBlob: Blob) => {
+    async (audioBlob: Blob): Promise<void> => {
       setLoading(true);
       setError(null);
       setText(null);
 
       try {
-    
         // Convert audio blob to base64 using utility function
         const base64Audio = await convertBlobToBase64(audioBlob);
 
@@ -46,14 +46,14 @@ export function useTranscriptionService(): ReturnType {
             Authorization: `Bearer ${authToken}`,
           },
           body: JSON.stringify({ audio: base64Audio }),
-          timeout: AUDIO_CONSTANTS.TIMEOUT_MS,
+          timeout: TIMEOUT_MS,
         });
 
         setText(response.text);
       } catch (error) {
         setError(error);
-      }
-      finally {
+        throw error;
+      } finally {
         setLoading(false);
       }
     },

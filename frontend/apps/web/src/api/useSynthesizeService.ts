@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
 
-import { useAuth } from '@/hooks/use-auth';
-import { AUDIO_CONSTANTS } from '@/lib/audio-utils';
 import { fetchJson } from '@ci/common';
+
+import { useAuth } from '@/hooks/use-auth';
+import { MimeTypes } from '@/lib/mime_types';
 
 type ReturnType = [
   {
@@ -11,8 +12,8 @@ type ReturnType = [
     error: unknown | null;
   },
   {
-    synthesizeSpeech: (text: string) => void;
-  }
+    synthesizeSpeech: (text: string) => Promise<void>;
+  },
 ];
 
 interface TTSResponse {
@@ -23,10 +24,10 @@ export function useSynthesizeService(): ReturnType {
   const [{ authToken }] = useAuth();
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<unknown  | null>(null);
+  const [error, setError] = useState<unknown | null>(null);
 
   const synthesizeSpeech = useCallback(
-    async (text: string) => {
+    async (text: string): Promise<void> => {
       setLoading(true);
       setError(null);
       setAudioBlob(null);
@@ -42,14 +43,14 @@ export function useSynthesizeService(): ReturnType {
         });
 
         // Convert base64 to audio blob using utility function
-        const audioBlob = convertBase64ToBlob(result.audio, AUDIO_CONSTANTS.MIME_TYPES.WAV);
+        const audioBlob = convertBase64ToBlob(result.audio, MimeTypes.WAV);
         console.log('🎤 Created audio blob:', { size: audioBlob.size, type: audioBlob.type });
 
         setAudioBlob(audioBlob);
       } catch (error) {
-       setError(error);
-      }
-      finally {
+        setError(error);
+        throw error;
+      } finally {
         setLoading(false);
       }
     },

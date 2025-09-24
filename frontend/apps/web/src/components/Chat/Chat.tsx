@@ -27,6 +27,7 @@ import { ChatMessage } from './ChatMessage';
 import { useConditionalAutoscroll } from './useConditionalAutoscroll';
 import { Channel, type Decoded, createStreamProcessor } from './utils';
 import { VoiceMode } from './VoiceMode/VoiceMode';
+import { useVoiceModeContext } from './VoiceModeProvider';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
@@ -41,9 +42,6 @@ interface Props extends ChatInputProps {
   readable?: ReadableStream<Uint8Array>;
   emptyState?: ReactNode;
   children?: ReactNode;
-  onVoiceModeToggle?: () => void;
-  isVoiceModeActive?: boolean;
-  companionResponse?: string;
   onResponseFinished?: (text: string) => void;
 }
 
@@ -59,13 +57,12 @@ export function Chat({
   emptyState,
   onSubmit,
   children,
-  onVoiceModeToggle,
-  isVoiceModeActive = false,
-  companionResponse,
   onResponseFinished,
   ...chatInputProps
 }: Props) {
+  const { isVoiceModeActive, toggleVoiceMode } = useVoiceModeContext();
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastProcessedResponseRef = useRef<string>('');
 
   // We want to maintain reference to the scroll container so that we can auto-scroll
   // when we deem it appropriate. According to the contract stipulated here, that's when
@@ -95,6 +92,8 @@ export function Chat({
   // the LLM endpoint.
   const textStreamingRef = useRef<HTMLDivElement | null>(null);
   const textParserRef = useRef<StreamingParser | null>(null);
+  const accumulatedTextRef = useRef<string>('');
+  const isProcessingResponseRef = useRef<boolean>(false);
 
   const setTextStreamingRef = useCallback((el: HTMLDivElement | null) => {
     textStreamingRef.current = el;
@@ -150,6 +149,10 @@ export function Chat({
     textParserRef.current = null;
     thinkStreamingRef.current = null;
     thinkParserRef.current = null;
+
+    // Reset accumulated text for new response
+    accumulatedTextRef.current = '';
+    isProcessingResponseRef.current = false;
 
     // These are the new nodes that we'll insert into our accumulated messages.
     // When we hit the next render cycle, the refs will be set and the stream can resume.
@@ -214,6 +217,8 @@ export function Chat({
         if (chunk.channel === Channel.TEXT) {
           targetRef = textStreamingRef;
           parserRef = textParserRef;
+          // Accumulate text for TTS
+          accumulatedTextRef.current += payload;
         } else if (chunk.channel === Channel.THINK) {
           targetRef = thinkStreamingRef;
           parserRef = thinkParserRef;
@@ -274,12 +279,32 @@ export function Chat({
   const handleFinished = useCallback(() => {
     const lastChannel = lastChannelRef.current;
 
-    if (lastChannel === Channel.TEXT) {
-      onResponseFinished?.(textStreamingRef.current?.textContent ?? '');
+    // Prevent multiple processing of the same response
+    if (isProcessingResponseRef.current) {
+      return;
     }
 
+    // Capture accumulated text BEFORE flushing the stream
+    let responseText = '';
+    if (lastChannel === Channel.TEXT) {
+      responseText = accumulatedTextRef.current;
+    }
+
+    // First, check that we have a valid channel and flush the stream
     if (lastChannel != null) {
       flushStream();
+    }
+
+    // Only handle response finished for TEXT channel with meaningful content
+    if (lastChannel === Channel.TEXT && responseText.trim()) {
+      isProcessingResponseRef.current = true;
+
+      onResponseFinished?.(responseText);
+
+      // Track this response to prevent reprocessing
+      if (responseText !== lastProcessedResponseRef.current) {
+        lastProcessedResponseRef.current = responseText;
+      }
     }
 
     const input = autoFocusRef.current;
@@ -362,9 +387,8 @@ export function Chat({
 
         <VoiceMode
           isActive={isVoiceModeActive}
-          onToggle={onVoiceModeToggle || (() => {})}
+          onToggle={toggleVoiceMode}
           onSubmitMessage={submitVoiceMessage}
-          companionResponse={companionResponse}
         />
 
         <ChatInput
@@ -372,7 +396,7 @@ export function Chat({
           loading={loading}
           streaming={streaming}
           onSubmit={handleSubmit}
-          onVoiceModeToggle={onVoiceModeToggle}
+          onVoiceModeToggle={toggleVoiceMode}
           isVoiceModeActive={isVoiceModeActive}
           {...chatInputProps}
         />
