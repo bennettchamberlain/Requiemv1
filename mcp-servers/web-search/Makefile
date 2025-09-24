@@ -20,7 +20,7 @@ install: ## Install and build the MCP server
 	# Clone repository if source files don't exist
 	@if [ ! -f "package.json" ]; then \
 		printf "$(GREEN)✓$(RESET) Cloning repository...\n"; \
-		git clone "$(REPO_URL)" temp-clone; \
+		git clone --depth 1 "$(REPO_URL)" temp-clone; \
 		mv temp-clone/* .; \
 		mv temp-clone/.[!.]* . 2>/dev/null || true; \
 		rmdir temp-clone; \
