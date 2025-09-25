@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { fetchJson, Portal } from '@ci/common';
-import { Breadcrumb, cn } from '@ci/shadcn';
+import { fetchJson, LoadingPage, Portal } from '@ci/common';
+import { Breadcrumb, cn, useToast } from '@ci/shadcn';
+import { useNavigate } from 'react-router-dom';
 
+import { InlineModal } from '@/components/InlineModal';
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
@@ -66,6 +68,9 @@ function useConnectService(): ReturnType {
 }
 
 export function ConnectPage() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
   const [{ authorizationUrl, loading, error }, { connect }] = useConnectService();
 
   useEffect(() => {
@@ -77,8 +82,21 @@ export function ConnectPage() {
     window.location.href = authorizationUrl;
   }, [authorizationUrl]);
 
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    toast.error('Error connecting to API');
+    navigate(-1);
+  }, [error]);
+
   return (
     <>
+      <InlineModal open={loading || !!authorizationUrl}>
+        <LoadingPage />
+      </InlineModal>
+
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
@@ -94,9 +112,6 @@ export function ConnectPage() {
       </Portal.Slot>
 
       <PageContent>
-        {(loading || authorizationUrl) && <div>Loading...</div>}
-        {error != null && <div>{String(error)}</div>}
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4 max-w-[1040px] mx-auto">
           <Card
             logo="/branding/microsoft/logo.svg"

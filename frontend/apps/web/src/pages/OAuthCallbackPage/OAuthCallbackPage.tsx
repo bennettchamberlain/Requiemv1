@@ -1,17 +1,28 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { usePageTitle } from '@ci/common';
-import { LoaderCircle } from '@ci/shadcn/icons';
+import { fetchJson, LoadingPage, usePageTitle } from '@ci/common';
+import { useToast } from '@ci/shadcn';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
+
+interface CompleteResponse {
+  success: boolean;
+  connection?: {
+    name: string;
+  };
+  error?: string;
+}
 
 export function OAuthCallbackPage() {
   usePageTitle('Complete Connection - Companion Intelligence');
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { toast } = useToast();
   const [{ authToken }] = useAuth();
+
+  const initialRequestRef = useRef<boolean>(false);
 
   const code = searchParams.get('code');
   const state = searchParams.get('state');
@@ -42,9 +53,15 @@ export function OAuthCallbackPage() {
   }
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      (async () => {
-        const response = await fetch(`/api/connections/complete`, {
+    if (!authToken || initialRequestRef.current) {
+      return;
+    }
+
+    (async () => {
+      initialRequestRef.current = true;
+
+      try {
+        const response = await fetchJson<CompleteResponse>(`/api/connections/complete`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -56,18 +73,18 @@ export function OAuthCallbackPage() {
           }),
         });
 
-        console.log(response);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        if (response.connection) {
+          toast.success(`Created connection`);
+        } else if (response.error) {
+          toast.error(response.error);
         }
-
+      } catch (err: unknown) {
+        toast.error(String(err));
+      } finally {
         navigate('/connections');
-      })();
-    }, 2000);
+      }
+    })();
+  }, [authToken]);
 
-    return () => clearTimeout(timeout);
-  }, [navigate]);
-
-  return <LoaderCircle className="h-15 w-15 animate-spin" />;
+  return <LoadingPage />;
 }

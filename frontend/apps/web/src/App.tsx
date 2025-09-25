@@ -63,8 +63,6 @@ function AppRoutes() {
             </RedirectKnownUser>
           }
         />
-
-        <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
       </Route>
 
       <Route element={<MainLayout />}>
@@ -183,6 +181,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <SystemPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/oauth/callback"
+          element={
+            <ProtectedRoute>
+              <OAuthCallbackPage />
             </ProtectedRoute>
           }
         />
