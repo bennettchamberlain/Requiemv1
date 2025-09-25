@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
@@ -33,7 +33,6 @@ export function ConnectionsPage() {
 
   const [{ authToken }] = useAuth();
 
-  const [Providers, setProviders] = useState<Provider[]>([]);
   const [Connections, setConnections] = useState<Connection[]>([]);
 
   // const [changes, setChanges] = useState(0);
@@ -113,68 +112,9 @@ export function ConnectionsPage() {
     }
   }, [authToken]);
 
-  const fetchProviders = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      if (!authToken) {
-        console.error('ConnectionsPage: No authentication token found');
-        throw new Error('Authentication token not found');
-      }
-
-      const response = await fetch('/api/providers', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        // Handle different HTTP error codes
-        console.error(
-          `ConnectionsPage: API request failed with status ${response.status}: ${response.statusText}`,
-        );
-        if (response.status === 401) {
-          throw new Error('Unauthorized: You do not have permission to access this resource');
-        } else if (response.status === 403) {
-          throw new Error('Forbidden: Access denied');
-        } else if (response.status === 404) {
-          throw new Error('API endpoint not found');
-        } else if (response.status >= 500) {
-          throw new Error('Server error: Please try again later');
-        } else {
-          throw new Error(`Error fetching providers: ${response.statusText}`);
-        }
-      }
-
-      const data = await response.json();
-
-      // Handle both array response and paginated response
-      let ProvidersData: Provider[] = [];
-      if (Array.isArray(data)) {
-        ProvidersData = data;
-      } else if (data.data && Array.isArray(data.data)) {
-        ProvidersData = data.data;
-      } else {
-        console.error('ConnectionsPage: Invalid response format', data);
-        throw new Error('Invalid response format: Expected an array of providers');
-      }
-
-      setProviders(ProvidersData);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('ConnectionsPage: Error in fetchProviders():', errorMessage, err);
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [authToken]);
-
-  const fetchState = useCallback(async () => {
-    await fetchConnections();
-    await fetchProviders();
-  }, [fetchConnections, fetchProviders]);
+  useEffect(() => {
+    fetchConnections();
+  }, [fetchConnections]);
 
   const truncateText = (text: string | undefined, maxLength: number = 50) => {
     if (!text) {
@@ -394,7 +334,7 @@ export function ConnectionsPage() {
             <div>
               <h3 className="font-medium">Error loading</h3>
               <p className="text-sm">{error}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => fetchState()}>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => fetchConnections()}>
                 Try Again
               </Button>
             </div>
@@ -413,79 +353,71 @@ export function ConnectionsPage() {
                 </Table.Row>
               </Table.Header>
               <Table.Body>
-                {Providers.length === 0 ? (
-                  <Table.Row>
-                    <Table.Cell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No Providers found in the system
+                {Connections.map((connection) => (
+                  <Table.Row key={connection.id}>
+                    <Table.Cell className="text-sm">{connection.name}</Table.Cell>
+                    <Table.Cell className="text-sm">{connection.provider?.name || 'N/A'}</Table.Cell>
+                    <Table.Cell className="text-sm">
+                      {connection.accessToken ? (
+                        <span className="flex items-center gap-1 text-green-600">
+                          <Link2 className="h-3 w-3" />
+                          Connected
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <X className="h-3 w-3" />
+                          Not connected
+                        </span>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell className="text-sm">{truncateText(connection.schedule ?? '')}</Table.Cell>
+                    <Table.Cell className="text-sm">
+                      <Toggle
+                        aria-label="Toggle italic"
+                        onClick={() => {
+                          connectionToggle(connection);
+                        }}
+                      >
+                        {connection.active ? 'enabled' : 'disabled'}
+                      </Toggle>
+                    </Table.Cell>
+                    <Table.Cell className="text-sm">
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => connectionEdit(connection)}
+                          disabled={deleteLoading === connection.id}
+                          title="Edit"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteConnection(connection.id)}
+                          disabled={deleteLoading === connection.id}
+                          title="Delete"
+                        >
+                          {deleteLoading === connection.id ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleSyncConnection(connection.id)}
+                          disabled={deleteLoading === connection.id}
+                          title="Sync Data"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </Table.Cell>
                   </Table.Row>
-                ) : (
-                  Connections.map((connection) => (
-                    <Table.Row key={connection.id}>
-                      <Table.Cell className="text-sm">{connection.name}</Table.Cell>
-                      <Table.Cell className="text-sm">{connection.provider?.name || 'N/A'}</Table.Cell>
-                      <Table.Cell className="text-sm">
-                        {connection.accessToken ? (
-                          <span className="flex items-center gap-1 text-green-600">
-                            <Link2 className="h-3 w-3" />
-                            Connected
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 text-muted-foreground">
-                            <X className="h-3 w-3" />
-                            Not connected
-                          </span>
-                        )}
-                      </Table.Cell>
-                      <Table.Cell className="text-sm">{truncateText(connection.schedule ?? '')}</Table.Cell>
-                      <Table.Cell className="text-sm">
-                        <Toggle
-                          aria-label="Toggle italic"
-                          onClick={() => {
-                            connectionToggle(connection);
-                          }}
-                        >
-                          {connection.active ? 'enabled' : 'disabled'}
-                        </Toggle>
-                      </Table.Cell>
-                      <Table.Cell className="text-sm">
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => connectionEdit(connection)}
-                            disabled={deleteLoading === connection.id}
-                            title="Edit"
-                          >
-                            <Settings className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteConnection(connection.id)}
-                            disabled={deleteLoading === connection.id}
-                            title="Delete"
-                          >
-                            {deleteLoading === connection.id ? (
-                              <RefreshCw className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleSyncConnection(connection.id)}
-                            disabled={deleteLoading === connection.id}
-                            title="Sync Data"
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </Table.Cell>
-                    </Table.Row>
-                  ))
-                )}
+                ))}
               </Table.Body>
             </Table>
 
