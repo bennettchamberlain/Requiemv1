@@ -219,6 +219,15 @@ local: ## Run the local dependencies from Docker images
 
 migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
+	@printf "⏳ Waiting for PostgreSQL to be ready...\n"
+	@until nc -z localhost 5432 > /dev/null 2>&1; do \
+		printf "."; \
+		sleep 1; \
+	done; \
+	printf "\n$(GREEN)✓$(RESET) PostgreSQL port is open!\n"
+	@printf "⏳ Waiting for PostgreSQL to accept connections...\n"
+	@sleep 3
+	@printf "$(GREEN)✓$(RESET) PostgreSQL is ready!\n\n"
 	@cd backend/apps/api && yarn migrate
 	@printf "\nMigrations successfully run.\n"
 
