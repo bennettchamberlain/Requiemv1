@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson, Portal } from '@ci/common';
 import { Breadcrumb, cn } from '@ci/shadcn';
@@ -68,6 +68,15 @@ function useConnectService(): ReturnType {
 export function ConnectPage() {
   const [{ authorizationUrl, loading, error }, { connect }] = useConnectService();
 
+  useEffect(() => {
+    if (!authorizationUrl) {
+      return;
+    }
+
+    // We have to do `window.location` since this is an external URL.
+    window.location.href = authorizationUrl;
+  }, [authorizationUrl]);
+
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -85,8 +94,7 @@ export function ConnectPage() {
       </Portal.Slot>
 
       <PageContent>
-        {authorizationUrl && <div>{authorizationUrl}</div>}
-        {loading && <div>Loading...</div>}
+        {(loading || authorizationUrl) && <div>Loading...</div>}
         {error != null && <div>{String(error)}</div>}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4 max-w-[1040px] mx-auto">
