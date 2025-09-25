@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
@@ -175,81 +175,6 @@ export function ConnectionsPage() {
     await fetchConnections();
     await fetchProviders();
   }, [fetchConnections, fetchProviders]);
-
-  useEffect(() => {
-    // Check for OAuth callback
-    const urlParams = new URLSearchParams(window.location.search);
-    const oauthStatus = urlParams.get('oauth');
-    const connectionId = urlParams.get('connectionId');
-    const errorMessage = urlParams.get('message');
-
-    if (oauthStatus === 'success' && connectionId) {
-      // Make API call to complete the OAuth callback
-      completeOAuthCallback(connectionId, true);
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (oauthStatus === 'error') {
-      // Make API call to complete the OAuth callback with error
-      const errorMsg = errorMessage || 'OAuth authentication failed';
-      completeOAuthCallback(connectionId || '', false, errorMsg);
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
-    fetchState();
-  }, [authToken, fetchState]);
-
-  const completeOAuthCallback = useCallback(
-    async (connectionId: string, success: boolean, error?: string) => {
-      try {
-        if (!authToken) {
-          throw new Error('Authentication token not found');
-        }
-
-        const response = await fetch('/api/connections/callback/complete', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            connectionId,
-            success,
-            error,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || `Error completing OAuth callback: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-          setSuccessMessage(
-            `Successfully authenticated connection: ${result.connection?.name || connectionId}`,
-          );
-          // Update the connection in the local state if we have the updated data
-          if (result.connection) {
-            setConnections((prevConnections) =>
-              prevConnections.map((conn) => (conn.id === connectionId ? result.connection : conn)),
-            );
-          } else {
-            // Only fetch if we don't have the updated connection data
-            await fetchConnections();
-          }
-        } else {
-          setError(result.error || 'OAuth authentication failed');
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-        console.error('Error completing OAuth callback:', errorMessage, err);
-        setError(errorMessage);
-      }
-    },
-    [authToken, fetchConnections],
-  );
 
   const truncateText = (text: string | undefined, maxLength: number = 50) => {
     if (!text) {
