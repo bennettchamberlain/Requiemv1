@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
 import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X } from '@ci/shadcn/icons';
+import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
@@ -295,24 +296,6 @@ export function ConnectionsPage() {
     setShowEditModal(true);
   };
 
-  const connectionCreate = () => {
-    console.log('connection create called');
-
-    if (Providers.length === 0) {
-      setError('No providers available. Please add providers first.');
-
-      return;
-    }
-
-    // Reset form and open create modal
-    setCreateFormData({
-      name: '',
-      providerId: Providers[0].id,
-    });
-    setModalError(null);
-    setShowCreateModal(true);
-  };
-
   const handleCreateSubmit = async () => {
     try {
       setModalLoading(true);
@@ -560,14 +543,9 @@ export function ConnectionsPage() {
         <div className="flex flex-row items-center justify-between">
           <h1 className="text-2xl font-bold">Connections</h1>
 
-          <div className="flex flex-row items-center gap-2">
-            <Button variant="outline" size="icon" disabled={loading} title="Refresh Providers">
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-            <Button variant="outline" disabled={loading} onClick={connectionCreate} title="Create Connection">
-              Create
-            </Button>
-          </div>
+          <Button variant="outline" title="Create Connection" asChild>
+            <Link to={'/connect'}>Create</Link>
+          </Button>
         </div>
 
         {successMessage && (
