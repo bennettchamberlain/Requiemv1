@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select, useToast } from '@ci/shadcn';
-import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X, Plus } from '@ci/shadcn/icons';
+import { Breadcrumb, Button, Table, Dialog, Input, Label, Select, useToast } from '@ci/shadcn';
+import { AlertCircle, RefreshCw, Settings, Trash2, Plus } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -126,19 +126,6 @@ export function ConnectionsPage() {
     }
 
     return text.substring(0, maxLength) + '...';
-  };
-
-  const connectionToggle = (connection: Connection) => {
-    console.log('Toggling connection', connection);
-
-    /*
-    const c = connections.find(c => c.id === connector.id);
-    if(c) {
-        c.active = !c.active;
-        setChanges(changes+1);
-    }
-    setConnectors(connections);
-    */
   };
 
   const connectionEdit = (connection: Connection) => {
@@ -344,9 +331,7 @@ export function ConnectionsPage() {
                 <Table.Row>
                   <Table.Head>Name</Table.Head>
                   <Table.Head>Provider</Table.Head>
-                  <Table.Head>Status</Table.Head>
                   <Table.Head>Schedule</Table.Head>
-                  <Table.Head>Enabled</Table.Head>
                   <Table.Head>Actions</Table.Head>
                 </Table.Row>
               </Table.Header>
@@ -355,30 +340,7 @@ export function ConnectionsPage() {
                   <Table.Row key={connection.id}>
                     <Table.Cell className="text-sm">{connection.name}</Table.Cell>
                     <Table.Cell className="text-sm">{connection.provider?.name || 'N/A'}</Table.Cell>
-                    <Table.Cell className="text-sm">
-                      {connection.accessToken ? (
-                        <span className="flex items-center gap-1 text-green-600">
-                          <Link2 className="h-3 w-3" />
-                          Connected
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <X className="h-3 w-3" />
-                          Not connected
-                        </span>
-                      )}
-                    </Table.Cell>
                     <Table.Cell className="text-sm">{truncateText(connection.schedule ?? '')}</Table.Cell>
-                    <Table.Cell className="text-sm">
-                      <Toggle
-                        aria-label="Toggle italic"
-                        onClick={() => {
-                          connectionToggle(connection);
-                        }}
-                      >
-                        {connection.active ? 'enabled' : 'disabled'}
-                      </Toggle>
-                    </Table.Cell>
                     <Table.Cell className="text-sm">
                       <div className="flex gap-2">
                         <Button
