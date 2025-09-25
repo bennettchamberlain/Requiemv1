@@ -42,13 +42,8 @@ export function ConnectionsPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Modal state
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
-  const [createFormData, setCreateFormData] = useState({
-    name: '',
-    providerId: '',
-  });
   const [editFormData, setEditFormData] = useState({
     name: '',
     clientid: '',
@@ -294,60 +289,6 @@ export function ConnectionsPage() {
     });
     setModalError(null);
     setShowEditModal(true);
-  };
-
-  const handleCreateSubmit = async () => {
-    try {
-      setModalLoading(true);
-      setModalError(null);
-
-      if (!authToken) {
-        throw new Error('Authentication token not found');
-      }
-
-      if (!createFormData.name) {
-        throw new Error('Name is required');
-      }
-
-      if (!createFormData.providerId) {
-        throw new Error('Provider is required');
-      }
-
-      console.log('Creating connection with data:', createFormData);
-
-      const response = await fetch('/api/connections', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: createFormData.name,
-          providerId: createFormData.providerId,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Error creating connection: ${response.statusText}`);
-      }
-
-      const newConnection = await response.json();
-      console.log('Successfully created connection:', newConnection);
-
-      // Add the new connection to the local state
-      setConnections((prevConnections) => [...prevConnections, newConnection]);
-
-      // Close modal
-      setShowCreateModal(false);
-      setSuccessMessage('Connection created successfully');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('Error creating connection:', errorMessage, err);
-      setModalError(errorMessage);
-    } finally {
-      setModalLoading(false);
-    }
   };
 
   const handleEditSubmit = async () => {
@@ -686,72 +627,6 @@ export function ConnectionsPage() {
           </>
         )}
       </PageContent>
-
-      {/* Create Connection Modal */}
-      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <Dialog.Content className="sm:max-w-[500px]">
-          <Dialog.Header>
-            <Dialog.Title>Create Connection</Dialog.Title>
-            <Dialog.Description>Create a new connection to a provider.</Dialog.Description>
-          </Dialog.Header>
-
-          <div className="grid gap-4 py-4">
-            {modalError && (
-              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">{modalError}</div>
-            )}
-
-            <div className="grid gap-2">
-              <Label htmlFor="create-name">Connection Name</Label>
-              <Input
-                id="create-name"
-                placeholder="My Google Connection"
-                value={createFormData.name}
-                onChange={(e) => setCreateFormData({ ...createFormData, name: e.target.value })}
-                disabled={modalLoading}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="create-provider">Provider</Label>
-              <Select
-                value={createFormData.providerId}
-                onValueChange={(value) => setCreateFormData({ ...createFormData, providerId: value })}
-                disabled={modalLoading}
-              >
-                <Select.Trigger id="create-provider">
-                  <Select.Value />
-                </Select.Trigger>
-                <Select.Content>
-                  {Providers.map((provider) => (
-                    <Select.Item key={provider.id} value={provider.id}>
-                      {provider.name}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select>
-            </div>
-          </div>
-
-          <Dialog.Footer>
-            <Button variant="outline" onClick={() => setShowCreateModal(false)} disabled={modalLoading}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateSubmit}
-              disabled={modalLoading || !createFormData.name || !createFormData.providerId}
-            >
-              {modalLoading ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                  Creating...
-                </>
-              ) : (
-                'Create'
-              )}
-            </Button>
-          </Dialog.Footer>
-        </Dialog.Content>
-      </Dialog>
 
       {/* Edit Connection Modal */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
