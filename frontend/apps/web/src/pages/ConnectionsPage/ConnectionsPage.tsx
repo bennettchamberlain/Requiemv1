@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
-import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X } from '@ci/shadcn/icons';
+import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X, Plus } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -484,8 +484,10 @@ export function ConnectionsPage() {
         <div className="flex flex-row items-center justify-between">
           <h1 className="text-2xl font-bold">Connections</h1>
 
-          <Button variant="outline" title="Create Connection" asChild>
-            <Link to={'/connect'}>Create</Link>
+          <Button variant="outline" size="icon" title="Create Connection" asChild>
+            <Link to={'/connect'}>
+              <Plus />
+            </Link>
           </Button>
         </div>
 
