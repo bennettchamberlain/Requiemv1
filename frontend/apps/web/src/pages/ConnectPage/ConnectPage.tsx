@@ -170,7 +170,7 @@ function Card({ background, border, logo, text, disabled = false, onClick, class
           <img src={logo} className="w-12 h-12" />
         </div>
       </div>
-      <div className="font-semibold p-6 py-10">{text}</div>
+      <div className="font-semibold text-sm p-6">{text}</div>
     </div>
   );
 }
