@@ -1,13 +1,3 @@
-import type { User } from '@ci/domains/user';
-
-export interface ApiLog {
-  readonly id: string;
-  readonly content: string;
-  readonly user?: User;
-  readonly connection?: Connection;
-  readonly created_at: Date;
-}
-
 export interface Connection {
   readonly id: string;
   readonly name: string | null;
