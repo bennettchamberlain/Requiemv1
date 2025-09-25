@@ -53,7 +53,6 @@ export function ConnectionsPage() {
   });
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
-  const [oauthInProgress, setOauthInProgress] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
   const fetchConnections = useCallback(async () => {
@@ -346,42 +345,6 @@ export function ConnectionsPage() {
     }
   };
 
-  const handleConnect = async (connection: Connection) => {
-    if (!connection.clientid || !connection.clientsecret) {
-      setError('Please configure OAuth credentials first');
-      connectionEdit(connection);
-
-      return;
-    }
-
-    console.log('Initiating OAuth flow for connection', connection.id);
-    setOauthInProgress(true);
-
-    try {
-      const response = await fetch(`/api/connections/${connection.id}/connect`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to get OAuth URL: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('Got OAuth URL', data);
-
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    } catch (err) {
-      console.error('Failed to initiate OAuth flow:', err);
-      setError('Failed to start authentication process');
-      setOauthInProgress(false);
-    }
-  };
-
   const handleDeleteConnection = async (connectionId: string) => {
     if (!confirm('Are you sure you want to delete this connection?')) {
       return;
@@ -495,10 +458,10 @@ export function ConnectionsPage() {
           <div className="bg-green-50 text-green-800 rounded-md p-4 text-sm">{successMessage}</div>
         )}
 
-        {loading || oauthInProgress ? (
+        {loading ? (
           <div className="text-center py-8">
             <RefreshCw className="h-8 w-8 animate-spin mx-auto" />
-            <p>{oauthInProgress ? 'Redirecting to authentication...' : 'Loading...'}</p>
+            <p>Loading...</p>
           </div>
         ) : error ? (
           <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
@@ -566,7 +529,7 @@ export function ConnectionsPage() {
                             size="sm"
                             variant="ghost"
                             onClick={() => connectionEdit(connection)}
-                            disabled={deleteLoading === connection.id || oauthInProgress}
+                            disabled={deleteLoading === connection.id}
                             title="Edit"
                           >
                             <Settings className="h-4 w-4" />
@@ -574,32 +537,8 @@ export function ConnectionsPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => handleConnect(connection)}
-                            disabled={
-                              deleteLoading === connection.id ||
-                              oauthInProgress ||
-                              !connection.clientid ||
-                              !connection.clientsecret
-                            }
-                            title={
-                              !connection.clientid || !connection.clientsecret
-                                ? 'Configure OAuth credentials first'
-                                : connection.accessToken
-                                  ? 'Reconnect'
-                                  : 'Connect'
-                            }
-                          >
-                            {connection.accessToken ? (
-                              <RefreshCw className="h-4 w-4" />
-                            ) : (
-                              <Link2 className="h-4 w-4" />
-                            )}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
                             onClick={() => handleDeleteConnection(connection.id)}
-                            disabled={deleteLoading === connection.id || oauthInProgress}
+                            disabled={deleteLoading === connection.id}
                             title="Delete"
                           >
                             {deleteLoading === connection.id ? (
@@ -612,7 +551,7 @@ export function ConnectionsPage() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleSyncConnection(connection.id)}
-                            disabled={deleteLoading === connection.id || oauthInProgress}
+                            disabled={deleteLoading === connection.id}
                             title="Sync Data"
                           >
                             <RefreshCw className="h-4 w-4" />
@@ -643,13 +582,6 @@ export function ConnectionsPage() {
               <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">{modalError}</div>
             )}
 
-            {selectedConnection?.accessToken && (
-              <div className="bg-green-50 text-green-800 rounded-md p-3 text-sm flex items-center gap-2">
-                <Link2 className="h-4 w-4" />
-                This connection is authenticated. You can reconnect if needed.
-              </div>
-            )}
-
             <div className="grid gap-2">
               <Label htmlFor="edit-name">Connection Name</Label>
               <Input
@@ -669,40 +601,6 @@ export function ConnectionsPage() {
                 </div>
               </div>
             )}
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-clientid">Client ID (Optional)</Label>
-              <Input
-                id="edit-clientid"
-                placeholder="your-client-id"
-                value={editFormData.clientid}
-                onChange={(e) => setEditFormData({ ...editFormData, clientid: e.target.value })}
-                disabled={modalLoading}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-clientkey">Client Key (Optional)</Label>
-              <Input
-                id="edit-clientkey"
-                placeholder="your-client-key"
-                value={editFormData.clientkey}
-                onChange={(e) => setEditFormData({ ...editFormData, clientkey: e.target.value })}
-                disabled={modalLoading}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-clientsecret">Client Secret (Optional)</Label>
-              <Input
-                id="edit-clientsecret"
-                type="password"
-                placeholder="your-client-secret"
-                value={editFormData.clientsecret}
-                onChange={(e) => setEditFormData({ ...editFormData, clientsecret: e.target.value })}
-                disabled={modalLoading}
-              />
-            </div>
 
             <div className="grid gap-2">
               <Label htmlFor="edit-schedule">Sync Schedule</Label>
@@ -737,37 +635,6 @@ export function ConnectionsPage() {
                 'Save'
               )}
             </Button>
-            {selectedConnection && editFormData.clientid && editFormData.clientsecret && (
-              <Button
-                variant="secondary"
-                onClick={async () => {
-                  console.log('handleConnect clicked', {
-                    editFormData,
-                    selectedConnection,
-                  });
-                  // Save first if there are changes
-                  if (
-                    editFormData.name !== selectedConnection.name ||
-                    editFormData.clientid !== selectedConnection.clientid ||
-                    editFormData.clientsecret !== selectedConnection.clientsecret ||
-                    editFormData.schedule !== selectedConnection.schedule
-                  ) {
-                    await handleEditSubmit();
-                  }
-
-                  setShowEditModal(false);
-                  // Use the updated connection data
-                  const updatedConnection = {
-                    ...selectedConnection,
-                    ...editFormData,
-                  };
-                  handleConnect(updatedConnection);
-                }}
-                disabled={modalLoading}
-              >
-                {selectedConnection.accessToken ? 'Save & Reconnect' : 'Save & Connect'}
-              </Button>
-            )}
           </Dialog.Footer>
         </Dialog.Content>
       </Dialog>
