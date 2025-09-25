@@ -7,12 +7,12 @@ import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
 interface ConnectResponse {
-  redirectUrl: string;
+  authorizationUrl: string;
 }
 
 type ReturnType = [
   {
-    redirectUrl: string | null;
+    authorizationUrl: string | null;
     loading: boolean;
     error: unknown | null;
   },
@@ -24,13 +24,13 @@ type ReturnType = [
 function useConnectService(): ReturnType {
   const [{ authToken }] = useAuth();
 
-  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown | null>(null);
 
   const connect = useCallback(
     async (providerId: string) => {
-      setRedirectUrl(null);
+      setAuthorizationUrl(null);
       setLoading(true);
       setError(null);
 
@@ -43,7 +43,7 @@ function useConnectService(): ReturnType {
           },
         });
 
-        setRedirectUrl(response.redirectUrl);
+        setAuthorizationUrl(response.authorizationUrl);
       } catch (err: unknown) {
         setError(err);
       } finally {
@@ -55,7 +55,7 @@ function useConnectService(): ReturnType {
 
   return [
     {
-      redirectUrl,
+      authorizationUrl,
       loading,
       error,
     },
@@ -66,7 +66,7 @@ function useConnectService(): ReturnType {
 }
 
 export function ConnectPage() {
-  const [{ redirectUrl, loading, error }, { connect }] = useConnectService();
+  const [{ authorizationUrl, loading, error }, { connect }] = useConnectService();
 
   return (
     <>
@@ -85,7 +85,7 @@ export function ConnectPage() {
       </Portal.Slot>
 
       <PageContent>
-        {redirectUrl && <div>{redirectUrl}</div>}
+        {authorizationUrl && <div>{authorizationUrl}</div>}
         {loading && <div>Loading...</div>}
         {error != null && <div>{String(error)}</div>}
 

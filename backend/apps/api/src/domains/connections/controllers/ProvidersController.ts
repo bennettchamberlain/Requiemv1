@@ -64,13 +64,10 @@ export class ProvidersController {
       clientsecret: clientSecret,
     });
 
-    // TODO: This is inefficient, we shouldn't need to round trip here, just expose getAuthorizationUrl.
-    const connectionResult = await this.connectionService.connect(context, connection.id);
+    const authorizationUrl = await this.connectionService.getAuthorizationUrl(connection, id);
 
     return {
-      redirectUrl: connectionResult.url,
-      context,
-      connection,
+      authorizationUrl,
     };
   }
 }
