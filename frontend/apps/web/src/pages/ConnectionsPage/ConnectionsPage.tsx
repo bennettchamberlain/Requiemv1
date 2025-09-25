@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select } from '@ci/shadcn';
+import { Breadcrumb, Button, Table, Toggle, Dialog, Input, Label, Select, useToast } from '@ci/shadcn';
 import { AlertCircle, RefreshCw, Settings, Trash2, Link2, X, Plus } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
@@ -31,14 +31,14 @@ export interface Connection {
 export function ConnectionsPage() {
   usePageTitle('Connections - Companion Intelligence');
 
+  const { toast } = useToast();
+
   const [{ authToken }] = useAuth();
 
   const [Connections, setConnections] = useState<Connection[]>([]);
 
-  // const [changes, setChanges] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -200,7 +200,8 @@ export function ConnectionsPage() {
 
       // Close modal
       setShowEditModal(false);
-      setSuccessMessage('Connection updated successfully');
+
+      toast.success('Connection updated successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error updating connection:', errorMessage, err);
@@ -236,11 +237,13 @@ export function ConnectionsPage() {
 
       // Remove the connection from the local state
       setConnections((prevConnections) => prevConnections.filter((conn) => conn.id !== connectionId));
-      setSuccessMessage('Connection deleted successfully');
+
+      toast.success('Connection deleted successfully');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error deleting connection:', errorMessage, err);
-      setError(errorMessage);
+
+      toast.error(errorMessage);
     } finally {
       setDeleteLoading(null);
     }
@@ -280,13 +283,12 @@ export function ConnectionsPage() {
         ),
       );
 
-      setSuccessMessage(
-        `Data synced successfully for connection: ${result.connection?.name || connectionId}`,
-      );
+      toast.success(`Data synced successfully for connection: ${result.connection?.name || connectionId}`);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error syncing connection:', errorMessage, err);
-      setError(errorMessage);
+
+      toast.error(errorMessage);
     } finally {
       setDeleteLoading(null);
     }
@@ -318,10 +320,6 @@ export function ConnectionsPage() {
             </Link>
           </Button>
         </div>
-
-        {successMessage && (
-          <div className="bg-green-50 text-green-800 rounded-md p-4 text-sm">{successMessage}</div>
-        )}
 
         {loading ? (
           <div className="text-center py-8">
