@@ -6,8 +6,8 @@ import { v7 as uuid7 } from 'uuid';
 import { LoggerService } from '@ci/common/services/LoggerService';
 import type { RequestContext } from '@ci/common/types';
 
+import { ApiLogService } from '../../etl/services/ApiLogService';
 import { ClientFactory } from '../clients';
-import { ApiLogEntity } from '../entities/ApiLogEntity';
 import { ConnectionEntity } from '../entities/ConnectionEntity';
 import type {
   CreateConnectionDto,
@@ -24,9 +24,8 @@ export class ConnectionService {
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
-    @InjectRepository(ApiLogEntity)
-    private readonly apiLogRepository: Repository<ApiLogEntity>,
     private readonly clientFactory: ClientFactory,
+    private readonly apiLogService: ApiLogService,
   ) {}
 
   async create(context: RequestContext, data: CreateConnectionDto): Promise<Connection> {
@@ -180,7 +179,7 @@ export class ConnectionService {
     });
   }
 
-  async sync(context: RequestContext, connectionId: string, persistData = true) {
+  async sync(context: RequestContext, connectionId: string, persistData: boolean = true) {
     this.logger.log('Starting manual sync for connection', {
       connectionId,
       userId: context.userId,
@@ -192,15 +191,10 @@ export class ConnectionService {
       const syncResponse = await client.sync(connection);
 
       if (persistData) {
-        await this.apiLogRepository.save({
-          id: uuid7(),
-          content: JSON.stringify(syncResponse),
-          connection: {
-            id: connectionId,
-          },
-          user: {
-            id: context.userId,
-          },
+        await this.apiLogService.create({
+          content: syncResponse,
+          userId: context.userId!,
+          connectionId: connectionId,
         });
       }
 
