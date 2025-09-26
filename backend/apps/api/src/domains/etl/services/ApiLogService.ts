@@ -3,11 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
+import { LoggerService } from '@ci/common/services';
+
 import { ApiLogEntity } from '../entities/ApiLogEntity';
 import type { ApiLog } from '../types';
 
 @Injectable()
 export class ApiLogService {
+  private logger = new LoggerService(ApiLogService.name);
+
   constructor(
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
@@ -21,6 +25,13 @@ export class ApiLogService {
     embedding?: number[];
     location?: { type: 'Point'; coordinates: [number, number] };
   }): Promise<ApiLog> {
+    this.logger.log('Creating API log entry', {
+      userId: data.userId,
+      connectionId: data.connectionId,
+      scope: data.scope,
+      hasContent: !!data.content,
+    });
+
     const entity = this.apiLogRepository.create({
       id: uuid7(),
       user_id: data.userId,
@@ -32,6 +43,13 @@ export class ApiLogService {
     });
 
     const saved = await this.apiLogRepository.save(entity);
+
+    this.logger.log('API log entry created successfully', {
+      id: saved.id,
+      userId: data.userId,
+      connectionId: data.connectionId,
+      scope: data.scope,
+    });
 
     return saved.toApiLog();
   }
