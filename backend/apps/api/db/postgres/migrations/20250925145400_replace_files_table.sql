@@ -22,6 +22,9 @@ CREATE TABLE files (
     filename TEXT NOT NULL, -- Just the filename: file.pdf, IMG_001.jpg
     file_extension TEXT, -- pdf, jpg, docx, etc.
     original_filename TEXT, -- Original name if file was renamed
+    -- for s3/minio stored files
+    bucket TEXT,
+    key UUID,
     
     -- Storage and device context
     storage_type TEXT NOT NULL, -- 'local', 'cloud', 'mobile'   
