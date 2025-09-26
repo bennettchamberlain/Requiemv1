@@ -49,6 +49,9 @@ export class ConnectionEntity {
   @Column({ type: 'timestamptz', nullable: true, name: 'token_expiry' })
   tokenExpiry!: Date | null;
 
+  @Column({ type: 'jsonb', nullable: true, name: 'sync_state' })
+  syncState!: Record<string, unknown> | null;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -75,6 +78,7 @@ export class ConnectionEntity {
       accessToken: this.accessToken ?? null,
       refreshToken: this.refreshToken ?? null,
       tokenExpiry: this.tokenExpiry ?? null,
+      syncState: this.syncState ?? null,
       provider: this.provider?.toProvider(),
     } satisfies Connection;
   }

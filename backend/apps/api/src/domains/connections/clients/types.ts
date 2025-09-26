@@ -10,6 +10,7 @@ export interface SyncResponse {
 export interface SyncResult {
   api: string;
   data: unknown;
+  syncState?: Record<string, unknown>;
   error?: string;
 }
 

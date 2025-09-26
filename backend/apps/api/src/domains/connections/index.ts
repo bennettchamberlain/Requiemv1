@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
 
 import { ClientFactory } from './clients';
@@ -13,10 +12,10 @@ import { ConnectionService } from './services/ConnectionService';
 import { ProviderService } from './services/ProviderService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ConnectionEntity, ProviderEntity]), EventsModule, EtlModule],
+  imports: [TypeOrmModule.forFeature([ConnectionEntity, ProviderEntity]), EventsModule],
   providers: [ClientFactory, ConnectionService, ProviderService],
   controllers: [ConnectionsController, ProvidersController],
-  exports: [],
+  exports: [ConnectionService, ProviderService],
 })
 export class ConnectionsModule {}
 
@@ -24,7 +23,7 @@ export class ConnectionsModule {}
 export { ConnectionEntity, ProviderEntity };
 
 // Services
-export {};
+export { ConnectionService, ProviderService };
 
 // Types
 export type {} from './types';

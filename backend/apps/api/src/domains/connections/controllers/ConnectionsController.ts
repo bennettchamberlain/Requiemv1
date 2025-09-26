@@ -132,10 +132,10 @@ export class ConnectionsController {
   @Post(':id/sync')
   @HttpCode(200)
   async sync(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.sync(context, id, false);
+    return this.connectionService.sync(context, id);
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_MINUTE)
   async cronProcessConnections() {
     if (!config.features['scheduled.connection.fetching']) {
       return;
@@ -147,6 +147,16 @@ export class ConnectionsController {
 
     for (const [userId, connectionIds] of activeConnections) {
       for (const connectionId of connectionIds) {
+        // Skip Google connections as they are handled by GoogleController
+        const connection = await this.connectionService.findById(connectionId);
+        if (connection?.provider?.id === config.auth.providers.google.id) {
+          this.logger.log('Skipping Google connection - handled by GoogleController', {
+            connectionId,
+            userId,
+          });
+          continue;
+        }
+
         this.eventService.send(Events.SYNC_CONNECTION, {
           userId,
           connectionId,
