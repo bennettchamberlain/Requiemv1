@@ -1,0 +1,52 @@
+-- migrate:up
+-- =================================================================
+-- TIMESERIES SYSTEM EVENTS TABLE
+-- =================================================================
+-- High-frequency system event logging using TimescaleDB
+
+CREATE TABLE event_history (
+    time TIMESTAMPTZ NOT NULL,
+    source TEXT NOT NULL,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE, -- Note: references users(id)
+    
+    -- Event data
+    event_type TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    resolution TEXT CHECK (resolution IN ('success', 'error', 'timeout', 'cancelled', 'retry')),
+    
+    -- Tracking
+    event_id UUID DEFAULT gen_uuid_v7(),
+    correlation_id UUID, -- For tracing related events
+    causation_id UUID, -- What caused this event
+    
+    -- Logging
+    log_level log_level DEFAULT 'info',
+    error_message TEXT,
+    stack_trace TEXT,
+    
+    PRIMARY KEY (time, source, event_id)
+);
+
+-- Convert to hypertable for time-series optimization
+SELECT create_hypertable('event_history', 'time', 'source', 4);
+ALTER TABLE event_history SET (timescaledb.compress = true);
+
+-- Indexes for common queries
+CREATE INDEX event_history_user_idx ON event_history(user_id, time DESC) WHERE user_id IS NOT NULL;
+CREATE INDEX event_history_type_idx ON event_history(event_type, time DESC);
+CREATE INDEX event_history_resolution_idx ON event_history(resolution, time DESC) WHERE resolution != 'success';
+CREATE INDEX event_history_correlation_idx ON event_history(correlation_id) WHERE correlation_id IS NOT NULL;
+CREATE INDEX event_history_log_level_idx ON event_history(log_level, time DESC) WHERE log_level >= 'warn';
+
+-- Compression policy for older events (compress after 7 days)
+SELECT add_compression_policy('event_history', INTERVAL '7 days');
+
+-- migrate:down
+-- Drop indexes and hypertable
+DROP INDEX IF EXISTS event_history_log_level_idx;
+DROP INDEX IF EXISTS event_history_correlation_idx;
+DROP INDEX IF EXISTS event_history_resolution_idx;
+DROP INDEX IF EXISTS event_history_type_idx;
+DROP INDEX IF EXISTS event_history_user_idx;
+
+DROP TABLE IF EXISTS event_history;

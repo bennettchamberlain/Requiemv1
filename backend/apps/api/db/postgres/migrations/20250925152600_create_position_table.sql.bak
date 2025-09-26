@@ -1,0 +1,78 @@
+-- migrate:up
+-- =================================================================
+-- TIMESERIES LOCATION/POSITION TRACKING TABLE
+-- =================================================================
+-- GPS and location tracking with PostGIS and semantic location context
+
+CREATE TABLE position (
+    time TIMESTAMPTZ NOT NULL,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Note: references users(id)
+    device_id UUID REFERENCES devices(device_id) ON DELETE SET NULL,
+    
+    -- Spatial data (PostGIS) - nullable to support relative positioning
+    location GEOGRAPHY(POINT, 4326),
+    altitude_meters DOUBLE PRECISION,
+    
+    -- Accuracy and quality
+    accuracy_meters DOUBLE PRECISION CHECK (accuracy_meters > 0),
+    hdop DOUBLE PRECISION, -- Horizontal dilution of precision
+    vdop DOUBLE PRECISION, -- Vertical dilution of precision
+    
+    -- Movement data
+    heading_degrees DOUBLE PRECISION CHECK (heading_degrees >= 0 AND heading_degrees <= 360),
+    
+    -- Source and context
+    source location_source NOT NULL,
+    activity_type TEXT, -- 'walking', 'driving', 'stationary', 'running', 'cycling'
+    
+    -- Semantic location (linked to entity)
+    location_entity_id UUID REFERENCES entities(entity_id), -- Reference to Location entity
+    
+    -- Relative positioning support
+    reference_entity_id UUID REFERENCES entities(entity_id), -- Reference point location entity
+    relative_coordinates JSONB DEFAULT '{}', -- Store relative position (x, y, z) offsets
+    relative_orientation JSONB DEFAULT '{}', -- Store orientation (phi, theta, etc.)
+    
+    -- Vector embedding for semantic location context
+    location_embedding embedding768,
+    
+    -- Privacy
+    is_private BOOLEAN DEFAULT FALSE, -- Should this location be hidden from certain analyses
+    
+    PRIMARY KEY (time, user_id),
+    
+    -- Ensure either absolute location or relative positioning is provided
+    CONSTRAINT valid_positioning CHECK (
+        (location IS NOT NULL) OR 
+        (reference_entity_id IS NOT NULL AND relative_coordinates IS NOT NULL 
+         AND relative_coordinates != '{}' AND relative_coordinates ? 'x')
+    )
+);
+
+-- Convert to hypertable with user-based partitioning
+SELECT create_hypertable('position', 'time', 'user_id', 4);
+ALTER TABLE position SET (timescaledb.compress = true);
+
+-- Indexes for spatial and time-series queries
+CREATE INDEX position_location_gist_idx ON position USING GIST (location) WHERE location IS NOT NULL;
+CREATE INDEX position_user_time_idx ON position(user_id, time DESC);
+CREATE INDEX position_entity_idx ON position(location_entity_id) WHERE location_entity_id IS NOT NULL;
+CREATE INDEX position_reference_idx ON position(reference_entity_id) WHERE reference_entity_id IS NOT NULL;
+CREATE INDEX position_activity_idx ON position(activity_type, time DESC) WHERE activity_type IS NOT NULL;
+CREATE INDEX position_source_idx ON position(source, time DESC);
+CREATE INDEX position_accuracy_idx ON position(accuracy_meters) WHERE accuracy_meters > 100; -- Low accuracy locations
+
+-- Compression policy for older position data (compress after 14 days)
+SELECT add_compression_policy('position', INTERVAL '14 days');
+
+-- migrate:down
+-- Drop indexes and hypertable
+DROP INDEX IF EXISTS position_accuracy_idx;
+DROP INDEX IF EXISTS position_source_idx;
+DROP INDEX IF EXISTS position_activity_idx;
+DROP INDEX IF EXISTS position_reference_idx;
+DROP INDEX IF EXISTS position_entity_idx;
+DROP INDEX IF EXISTS position_user_time_idx;
+DROP INDEX IF EXISTS position_location_gist_idx;
+
+DROP TABLE IF EXISTS position;
