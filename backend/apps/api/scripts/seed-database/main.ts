@@ -84,12 +84,11 @@ const logger = new Logger(path.basename(__filename));
 
     // Providers Data
     await seedProviders(db, path.resolve(dataDir, './providers-data/providers.csv'));
-
+    // John Smith
+    await seedUsers(db, path.resolve(dataDir, './js1-data/js1-users.csv'));
     // Intelligence Data
     await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
 
-    // John Smith
-    await seedUsers(db, path.resolve(dataDir, './js1-data/js1-users.csv'));
     await seedEvents(db, path.resolve(dataDir, './js1-data/js1-events.csv'));
     await seedPeople(db, path.resolve(dataDir, './js1-data/js1-people.csv'));
     await seedContacts(db, path.resolve(dataDir, './js1-data/js1-contacts.csv'));

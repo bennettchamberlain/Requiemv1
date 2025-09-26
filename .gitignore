@@ -26,3 +26,7 @@ node_modules
 
 .specstory/ 
 .env
+
+.idea/
+
+AGENTS.md
