@@ -9,6 +9,7 @@ export interface Connection {
   readonly accessToken: string | null;
   readonly refreshToken: string | null;
   readonly tokenExpiry: Date | null;
+  readonly syncState: Record<string, unknown> | null;
   readonly provider?: Provider;
 }
 
