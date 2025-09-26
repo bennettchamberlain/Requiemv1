@@ -100,6 +100,8 @@ dev: ## Boot the application
 	@printf "\n"
 	$(MAKE) index
 	@printf "\n"
+	$(MAKE) mcp
+	@printf "\n"
 	$(MAKE) local
 
 	@SESSION="companion"; \

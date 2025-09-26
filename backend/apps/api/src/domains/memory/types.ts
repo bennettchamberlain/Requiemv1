@@ -1,6 +1,6 @@
 export interface Memory {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact';
+  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'other';
   title: string;
   description: string | null;
   timestamp: Date;
@@ -16,6 +16,7 @@ export interface Memory {
     personRef?: string;
     contentRef?: string;
     thingRef?: string;
+    entityType?: string;
     [key: string]: unknown;
   };
 }
