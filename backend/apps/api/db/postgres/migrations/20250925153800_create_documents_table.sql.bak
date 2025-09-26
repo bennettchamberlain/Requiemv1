@@ -1,0 +1,80 @@
+-- migrate:up
+-- =================================================================
+-- DOCUMENT AND KNOWLEDGE MANAGEMENT TABLE
+-- =================================================================
+-- Documents for RAG system and knowledge management
+
+CREATE TABLE documents (
+    document_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Note: references users(id)
+    document_entity_id UUID REFERENCES entities(entity_id), -- Document entity in knowledge graph
+    
+    -- Document metadata
+    title TEXT NOT NULL,
+    content_type document_content_type NOT NULL,
+    file_path TEXT, -- Local file system path
+    file_hash TEXT, -- For deduplication
+    file_size_bytes BIGINT CHECK (file_size_bytes > 0),
+    
+    -- Content
+    content TEXT, -- Extracted text content
+    content_language TEXT DEFAULT 'en',
+    
+    -- Metadata and properties
+    metadata JSONB DEFAULT '{}', -- Author, creation date, tags, etc.
+    source_url TEXT, -- If downloaded from web
+    tags TEXT[],
+    
+    -- Vector embeddings for RAG
+    title_embedding embedding768,
+    content_embedding embedding768, -- Full document embedding
+    summary_embedding embedding768, -- Summary embedding
+    
+    -- AI-generated
+    summary TEXT,
+    key_topics TEXT[],
+    entities_extracted JSONB DEFAULT '{}', -- Named entities found
+    
+    -- Access control
+    access_level access_level DEFAULT 'private',
+    shared_with_users UUID[], -- Array of user_ids
+    
+    -- Timestamps
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    indexed_at TIMESTAMPTZ,
+    last_accessed_at TIMESTAMPTZ,
+    
+    -- Version control
+    version INTEGER DEFAULT 1,
+    previous_version_id UUID REFERENCES documents(document_id)
+);
+
+-- Indexes for document management and search
+CREATE INDEX documents_user_idx ON documents(user_id, created_at DESC);
+CREATE INDEX documents_entity_idx ON documents(document_entity_id) WHERE document_entity_id IS NOT NULL;
+CREATE INDEX documents_content_type_idx ON documents(content_type, created_at DESC);
+CREATE INDEX documents_hash_idx ON documents(file_hash) WHERE file_hash IS NOT NULL;
+CREATE INDEX documents_tags_gin_idx ON documents USING GIN (tags) WHERE tags IS NOT NULL;
+CREATE INDEX documents_access_idx ON documents(access_level, user_id);
+CREATE INDEX documents_version_idx ON documents(previous_version_id) WHERE previous_version_id IS NOT NULL;
+CREATE INDEX documents_indexed_idx ON documents(indexed_at) WHERE indexed_at IS NOT NULL;
+
+-- Full-text search on content
+CREATE INDEX documents_content_fts_idx ON documents USING GIN (to_tsvector('english', content)) WHERE content IS NOT NULL;
+CREATE INDEX documents_title_fts_idx ON documents USING GIN (to_tsvector('english', title));
+
+-- migrate:down
+-- Drop indexes and table
+DROP INDEX IF EXISTS documents_title_fts_idx;
+DROP INDEX IF EXISTS documents_content_fts_idx;
+DROP INDEX IF EXISTS documents_indexed_idx;
+DROP INDEX IF EXISTS documents_version_idx;
+DROP INDEX IF EXISTS documents_access_idx;
+DROP INDEX IF EXISTS documents_tags_gin_idx;
+DROP INDEX IF EXISTS documents_hash_idx;
+DROP INDEX IF EXISTS documents_content_type_idx;
+DROP INDEX IF EXISTS documents_entity_idx;
+DROP INDEX IF EXISTS documents_user_idx;
+
+DROP TABLE IF EXISTS documents;
