@@ -25,7 +25,7 @@ CREATE TABLE files (
     -- for s3/minio stored files
     bucket TEXT,
     key UUID,
-    
+
     -- Storage and device context
     storage_type TEXT NOT NULL, -- 'local', 'cloud', 'mobile'   
     storage_provider TEXT, -- 'google_drive', 'dropbox', 'icloud', 'local', 'iphone', 'android'
@@ -46,7 +46,7 @@ CREATE TABLE files (
     discovered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- When we first found this file
     last_scanned_at TIMESTAMPTZ DEFAULT NOW(), -- When we last analyzed this file
     version_number INTEGER DEFAULT 1, -- For tracking file versions
-    
+    message_id UUID REFERENCES messages(message_id) ON DELETE SET NULL, -- Associated thread
     -- Content analysis and understanding
     title TEXT, -- Extracted or inferred title
     summary TEXT, -- AI-generated summary of content

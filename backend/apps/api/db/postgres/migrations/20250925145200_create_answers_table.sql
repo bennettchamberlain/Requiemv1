@@ -21,7 +21,7 @@ CREATE TABLE answers (
     
     -- Context when answered
     answered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    session_context JSONB DEFAULT '{}', -- Conversation or session context
+    session_context JSONB DEFAULT '{}', -- thread or session context
     emotional_state TEXT, -- User's emotional state if detectable
     location_context TEXT, -- Where this was answered if relevant
     
