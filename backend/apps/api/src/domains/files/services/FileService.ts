@@ -112,9 +112,10 @@ export class FileService implements OnModuleInit {
   async findByThread(context: RequestContext, threadId: string): Promise<File[]> {
     const result = await this.fileRepository
       .createQueryBuilder('files')
-      .innerJoin('thread_file', 'thread_file', 'thread_file.file_id = files.id')
-      .where('thread_file.thread_id = :threadId', { threadId })
+      .innerJoin('messages', 'messages', 'messages.message_id = files.message_id')
+      .where('messages.thread_id = :threadId', { threadId })
       .andWhere('files.user_id = :userId', { userId: context.userId })
+      .andWhere('messages.is_deleted = false') // Only get files from non-deleted messages
       .getMany();
 
     return this.signFiles(result);

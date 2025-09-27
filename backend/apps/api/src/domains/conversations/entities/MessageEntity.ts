@@ -1,6 +1,5 @@
 import {
   Entity,
-  DeleteDateColumn,
   PrimaryColumn,
   Column,
   CreateDateColumn,
@@ -17,28 +16,26 @@ import { ThreadEntity } from './ThreadEntity';
 
 @Entity({ name: 'messages' })
 export class MessageEntity {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid', name: 'message_id' })
   id!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'model_name' })
   model!: string | null;
 
-  @Column({ type: 'text', nullable: true })
-  role!: string | null;
+  @Column({ type: 'text', nullable: false })
+  role!: string;
 
-  @Column({ type: 'text', nullable: true })
-  text!: string | null;
+  @Column({ type: 'text', nullable: false, name: 'content' })
+  text!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'content_type' })
   mimetype!: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, default: '[]' })
   tool_calls!: Record<string, unknown>[] | null;
 
-  @Column({ type: 'boolean' })
-  prompt!: boolean;
-
-  @Column({ type: 'boolean' })
+  // Direct boolean field for canceled - maps to is_deleted in database
+  @Column({ type: 'boolean', default: false, name: 'is_deleted' })
   canceled!: boolean;
 
   @ManyToOne(() => UserEntity)
@@ -50,7 +47,7 @@ export class MessageEntity {
   thread?: ThreadEntity;
 
   @ManyToOne(() => MessageEntity, { nullable: true })
-  @JoinColumn({ name: 'prompt_message_id' })
+  @JoinColumn({ name: 'parent_message_id' })
   promptMessage?: MessageEntity;
 
   @CreateDateColumn({ type: 'timestamptz' })
@@ -59,25 +56,11 @@ export class MessageEntity {
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
 
-  @DeleteDateColumn({ type: 'timestamptz' })
-  deleted_at!: Date;
-
   toMessage(): Message {
-    let role: string | undefined;
-
-    if (this.role) {
-      role = this.role;
-    } else if (this.prompt === true) {
-      role = 'user';
-    } else if (this.prompt === false) {
-      role = 'assistant';
-    }
-
     return {
       id: this.id,
       model: this.model ?? null,
-      // TODO: This is a little janky and is symptomatic of lax nullability in the DB, fix this later.
-      role: role ?? 'assistant',
+      role: this.role,
       content: this.text ?? '',
       mimetype: this.mimetype ?? null,
       toolCalls: this.tool_calls ?? null,

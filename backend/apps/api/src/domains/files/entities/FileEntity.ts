@@ -14,7 +14,7 @@ import type { File } from '../types';
 
 @Entity({ name: 'files' })
 export class FileEntity {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid', name: 'file_id' })
   id!: string;
 
   @Column({ type: 'text' })
@@ -23,18 +23,21 @@ export class FileEntity {
   @Column({ type: 'uuid' })
   key!: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', name: 'original_filename' })
   original_name!: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', name: 'mime_type' })
   content_type!: string;
 
-  @Column({ type: 'bigint' })
+  @Column({ type: 'bigint', name: 'file_size_bytes' })
   size!: number;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
+
+  @Column({ type: 'uuid', nullable: true })
+  message_id!: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
