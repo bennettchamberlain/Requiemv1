@@ -1,17 +1,17 @@
 -- migrate:up
 -- =================================================================
--- SAFELY REPLACE CHAT SYSTEM WITH COMPREHENSIVE CONVERSATIONS/MESSAGES
+-- SAFELY REPLACE CHAT SYSTEM WITH COMPREHENSIVE threadS/MESSAGES
 -- =================================================================
 -- Handle all dependencies before dropping threads/messages
 
 -- Step 1: Drop thread_file table first (it references both threads and files)
 DROP TABLE IF EXISTS thread_file;
 
--- Step 2: Update actions table to reference conversations instead of threads
+-- Step 2: Update actions table to reference threads instead of threads
 -- First add the new column
-ALTER TABLE actions ADD COLUMN conversation_id UUID;
--- Copy any existing thread_id data to conversation_id (if needed for data preservation)
--- UPDATE actions SET conversation_id = thread_id WHERE thread_id IS NOT NULL;
+
+-- Copy any existing thread_id data to thread_id (if needed for data preservation)
+-- UPDATE actions SET thread_id = thread_id WHERE thread_id IS NOT NULL;
 -- Drop the old thread_id column
 ALTER TABLE actions DROP COLUMN IF EXISTS thread_id;
 
@@ -19,43 +19,43 @@ ALTER TABLE actions DROP COLUMN IF EXISTS thread_id;
 DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS threads;
 
--- Step 4: Create comprehensive conversations table from CI-Database
-CREATE TABLE conversations (
-    conversation_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
+-- Step 4: Create comprehensive threads table from CI-Database
+CREATE TABLE threads (
+    thread_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
-    -- Conversation metadata
-    title TEXT, -- Auto-generated or user-set conversation title
-    summary TEXT, -- AI-generated summary of conversation topics
+    -- thread metadata
+    title TEXT, -- Auto-generated or user-set thread title
+    summary TEXT, -- AI-generated summary of thread topics
     
     -- Temporal tracking
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     last_message_at TIMESTAMPTZ,
     
-    -- Conversation state
-    status conversation_status DEFAULT 'active',
+    -- thread state
+    status thread_status DEFAULT 'active',
     is_archived BOOLEAN DEFAULT FALSE,
     
     -- Context and intelligence - this should be all AI generated, provides better history
     main_topics TEXT[], -- Extracted main discussion topics
     mentioned_entities TEXT[], -- People, places, concepts mentioned
-    context_embedding embedding768, -- Vector embedding of conversation context
+    context_embedding embedding768, -- Vector embedding of thread context
     
-    -- Conversation settings
-    model_config JSONB DEFAULT '{}', -- Model settings for this conversation
+    -- thread settings
+    model_config JSONB DEFAULT '{}', -- Model settings for this thread
     temperature DOUBLE PRECISION,
     max_tokens INTEGER,
     system_prompt TEXT,
     
-    -- Conversation statistics
+    -- thread statistics
     message_count INTEGER DEFAULT 0,
     total_tokens_used INTEGER DEFAULT 0,
     avg_response_time_ms INTEGER,
     
     -- Branching and forking
-    parent_conversation_id UUID REFERENCES conversations(conversation_id),
-    fork_point_message_id UUID, -- Which message this conversation forked from
+    parent_thread_id UUID REFERENCES threads(thread_id),
+    fork_point_message_id UUID, -- Which message this thread forked from
     
     -- Privacy and sharing
     is_private BOOLEAN DEFAULT TRUE,
@@ -65,12 +65,12 @@ CREATE TABLE conversations (
 -- Step 5: Create comprehensive messages table from CI-Database  
 CREATE TABLE messages (
     message_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
-    conversation_id UUID NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+    thread_id UUID NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
     -- Message ordering and hierarchy
-    parent_message_id UUID REFERENCES messages(message_id), -- For branching conversations
-    depth INTEGER DEFAULT 0, -- Depth in conversation tree
+    parent_message_id UUID REFERENCES messages(message_id), -- For branching threads
+    depth INTEGER DEFAULT 0, -- Depth in thread tree
     sequence_number INTEGER,
     
     -- Message content and type
@@ -116,55 +116,22 @@ CREATE TABLE messages (
     
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
     
     -- Constraints
-    CONSTRAINT valid_sequence_per_conversation UNIQUE (conversation_id, sequence_number),
-    CONSTRAINT content_not_empty CHECK (LENGTH(TRIM(content)) > 0)
+   -- CONSTRAINT valid_sequence_per_thread UNIQUE (thread_id, sequence_number),
+   -- CONSTRAINT content_not_empty CHECK (LENGTH(TRIM(content)) > 0)
 );
 
--- Step 6: Add FK constraint back to actions table
-ALTER TABLE actions ADD CONSTRAINT actions_conversation_fk 
-    FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id);
+-- Step 6: Add thread_id column back to actions table and create FK constraint
+ALTER TABLE actions ADD COLUMN thread_id UUID;
+ALTER TABLE actions ADD CONSTRAINT actions_thread_fk 
+    FOREIGN KEY (thread_id) REFERENCES threads(thread_id);
 
 -- migrate:down
 -- Revert all changes
-ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_conversation_fk;
-ALTER TABLE actions DROP COLUMN IF EXISTS conversation_id;
+ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_thread_fk;
+ALTER TABLE actions DROP COLUMN IF EXISTS thread_id;
 
 DROP TABLE IF EXISTS messages;
-DROP TABLE IF EXISTS conversations;
-
--- Recreate original threads table
-CREATE TABLE threads (
-    id UUID PRIMARY KEY,
-    name TEXT,
-    user_id UUID REFERENCES users(id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Recreate original messages table
-CREATE TABLE messages (
-    id UUID PRIMARY KEY,
-    model TEXT,
-    text TEXT,
-    mimetype TEXT,
-    prompt BOOLEAN,
-    canceled BOOLEAN,
-    user_id UUID REFERENCES users(id),
-    thread_id UUID REFERENCES threads(id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Recreate actions thread_id column
-ALTER TABLE actions ADD COLUMN thread_id UUID REFERENCES threads(id);
-
--- Recreate thread_file table
-CREATE TABLE thread_file (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    thread_id UUID REFERENCES threads(id) NOT NULL,
-    file_id UUID REFERENCES files(id) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+DROP TABLE IF EXISTS threads;

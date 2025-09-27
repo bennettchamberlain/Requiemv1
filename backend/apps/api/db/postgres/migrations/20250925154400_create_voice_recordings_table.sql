@@ -31,7 +31,7 @@ CREATE TABLE voice_recordings (
     qualities JSONB, -- pitch, tone, speed, etc.
     
     -- Context and classification
-    recording_type TEXT CHECK (recording_type IN ('conversation', 'monologue', 'phone_call', 'meeting', 'note_to_self')),
+    recording_type TEXT CHECK (recording_type IN ('thread', 'monologue', 'phone_call', 'meeting', 'note_to_self')),
     environment_noise_level TEXT, -- 'quiet', 'moderate', 'noisy'
     other_speakers_detected INTEGER DEFAULT 0,
     

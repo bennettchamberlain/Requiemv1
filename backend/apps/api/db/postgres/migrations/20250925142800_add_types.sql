@@ -116,8 +116,8 @@ CREATE TYPE log_level AS ENUM (
     'fatal'
 );
 
--- Conversation status
-CREATE TYPE conversation_status AS ENUM (
+-- thread status
+CREATE TYPE thread_status AS ENUM (
     'active',
     'paused',
     'completed',
@@ -168,7 +168,7 @@ DROP DOMAIN IF EXISTS embedding768;
 
 -- Drop all the ENUM types
 DROP TYPE IF EXISTS message_role;
-DROP TYPE IF EXISTS conversation_status;
+DROP TYPE IF EXISTS thread_status;
 DROP TYPE IF EXISTS log_level;
 DROP TYPE IF EXISTS access_level;
 DROP TYPE IF EXISTS document_content_type;

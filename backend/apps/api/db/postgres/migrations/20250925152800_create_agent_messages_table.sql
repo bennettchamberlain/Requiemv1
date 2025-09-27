@@ -12,7 +12,7 @@ CREATE TABLE agent_messages (
     -- Task hierarchy
     parent_message_id UUID REFERENCES agent_messages(message_id),
     root_message_id UUID, -- Top-level task in a chain
-    conversation_id UUID REFERENCES conversations(conversation_id), -- Groups related messages
+    thread_id UUID REFERENCES threads(thread_id), -- Groups related messages
     
     -- Temporal attributes
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -76,8 +76,8 @@ CREATE INDEX agent_messages_user_active_idx ON agent_messages (user_id, status, 
     WHERE status NOT IN ('completed', 'failed', 'cancelled');
 CREATE INDEX agent_messages_scheduled_idx ON agent_messages (scheduled_for)
     WHERE scheduled_for IS NOT NULL AND status = 'queued';
-CREATE INDEX agent_messages_conversation_idx ON agent_messages (conversation_id, created_at)
-    WHERE conversation_id IS NOT NULL;
+CREATE INDEX agent_messages_thread_idx ON agent_messages (thread_id, created_at)
+    WHERE thread_id IS NOT NULL;
 CREATE INDEX agent_messages_agent_idx ON agent_messages (agent_id, status, created_at);
 CREATE INDEX agent_messages_parent_idx ON agent_messages (parent_message_id) WHERE parent_message_id IS NOT NULL;
 CREATE INDEX agent_messages_retry_idx ON agent_messages (retry_after) WHERE retry_after IS NOT NULL;
@@ -87,7 +87,7 @@ CREATE INDEX agent_messages_retry_idx ON agent_messages (retry_after) WHERE retr
 DROP INDEX IF EXISTS agent_messages_retry_idx;
 DROP INDEX IF EXISTS agent_messages_parent_idx;
 DROP INDEX IF EXISTS agent_messages_agent_idx;
-DROP INDEX IF EXISTS agent_messages_conversation_idx;
+DROP INDEX IF EXISTS agent_messages_thread_idx;
 DROP INDEX IF EXISTS agent_messages_scheduled_idx;
 DROP INDEX IF EXISTS agent_messages_user_active_idx;
 DROP INDEX IF EXISTS agent_messages_queue_idx;
