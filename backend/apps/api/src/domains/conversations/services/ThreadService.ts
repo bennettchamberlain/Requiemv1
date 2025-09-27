@@ -39,6 +39,7 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
+        is_archived: false,
       },
     });
   }
@@ -49,6 +50,7 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
+        is_archived: false,
       },
     });
 
@@ -62,6 +64,7 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
+        is_archived: false,
       },
     });
 
@@ -79,6 +82,7 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
+        is_archived: false,
       },
       data,
     );
@@ -97,12 +101,18 @@ export class ThreadService {
       throw new NotFoundException();
     }
 
-    const result = await this.threadRepository.softDelete({
-      id,
-      user: {
-        id: context.userId,
+    // Update is_archived instead of using TypeORM's softDelete
+    const result = await this.threadRepository.update(
+      {
+        id,
+        user: {
+          id: context.userId,
+        },
       },
-    });
+      {
+        is_archived: true,
+      },
+    );
 
     // The likelihood of this triggering is essentially 0%,
     // but we're still coding defensively.
@@ -110,14 +120,20 @@ export class ThreadService {
       throw new NotFoundException();
     }
 
-    await this.messageRepository.softDelete({
-      user: {
-        id: context.userId,
+    // Also archive related messages by setting is_deleted = true
+    await this.messageRepository.update(
+      {
+        user: {
+          id: context.userId,
+        },
+        thread: {
+          id,
+        },
       },
-      thread: {
-        id,
+      {
+        canceled: true, // This maps to is_deleted in the database
       },
-    });
+    );
 
     return true;
   }

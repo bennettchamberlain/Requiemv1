@@ -46,6 +46,7 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
     });
   }
@@ -56,6 +57,7 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
     });
 
@@ -71,6 +73,7 @@ export class MessageService {
         thread: {
           id: threadId,
         },
+        canceled: false,
       },
       order: {
         id: 'asc',
@@ -87,6 +90,7 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
     });
 
@@ -104,6 +108,7 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
       data,
     );
@@ -122,12 +127,17 @@ export class MessageService {
       throw new NotFoundException();
     }
 
-    const result = await this.messsageRepository.softDelete({
-      id,
-      user: {
-        id: context.userId,
+    const result = await this.messsageRepository.update(
+      {
+        id,
+        user: {
+          id: context.userId,
+        },
       },
-    });
+      {
+        canceled: true,
+      },
+    );
 
     // The likelihood of this triggering is essentially 0%,
     // but we're still coding defensively.
