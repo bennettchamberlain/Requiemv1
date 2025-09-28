@@ -9,6 +9,8 @@ import {
   JoinColumn,
   JoinTable,
   AfterLoad,
+  Repository,
+  SelectQueryBuilder,
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
@@ -19,7 +21,7 @@ export class PersonEntity {
   @PrimaryColumn('uuid', { name: 'entity_id' })
   id!: string;
 
-  @Column({ type: 'text', name: 'entity_type' })
+  @Column({ type: 'text', name: 'entity_type', default: 'Person' })
   entity_type!: string;
 
   @Column({ type: 'text', nullable: true })
@@ -31,7 +33,7 @@ export class PersonEntity {
   @Column({ type: 'jsonb', default: '{}' })
   properties!: Record<string, unknown>;
 
-  // Backward compatibility fields - populated from properties JSONB
+  // Backward compatibility fields - populated from properties JSONB after load
   type!: string | null;
 
   first_name!: string | null;
@@ -79,6 +81,16 @@ export class PersonEntity {
     this.external_id = (this.properties?.external_id as string) || null;
     this.source_url = (this.properties?.source_url as string) || null;
     this.source_data = (this.properties?.source_data as Record<string, unknown>) || null;
+  }
+
+  // Helper method for creating filtered queries
+  static createPersonQuery(
+    repository: Repository<PersonEntity>,
+    alias: string = 'person',
+  ): SelectQueryBuilder<PersonEntity> {
+    return repository
+      .createQueryBuilder(alias)
+      .where(`${alias}.entity_type = :entityType`, { entityType: 'Person' });
   }
 
   @ManyToOne(() => UserEntity, { nullable: true })
