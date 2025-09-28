@@ -8,39 +8,66 @@ import {
   ManyToOne,
   JoinColumn,
   JoinTable,
+  AfterLoad,
+  Repository,
+  SelectQueryBuilder,
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
-@Entity({ name: 'places' })
+@Entity({ name: 'entities' })
 export class PlaceEntity {
-  @PrimaryColumn('uuid')
+  @PrimaryColumn('uuid', { name: 'entity_id' })
   id!: string;
 
-  @Column({ type: 'text', nullable: true })
-  type!: string | null;
+  @Column({ type: 'text', name: 'entity_type', default: 'Location' })
+  entity_type!: string;
 
   @Column({ type: 'text', nullable: true })
   name!: string | null;
 
   @Column({ type: 'text', nullable: true })
+  description!: string | null;
+
+  @Column({ type: 'jsonb', default: '{}' })
+  properties!: Record<string, unknown>;
+
+  // Backward compatibility fields - populated from properties JSONB after load
+  type!: string | null;
+
   geo_format!: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
   geolocation!: Record<string, unknown> | null;
 
-  @Column({ type: 'jsonb', nullable: true })
   location_boundary!: Record<string, unknown> | null;
 
-  @Column({ type: 'boolean', nullable: true })
   estimated!: boolean | null;
 
-  @Column({ type: 'boolean', nullable: true })
   tracked!: boolean | null;
 
-  @Column({ type: 'boolean', nullable: true })
   uploaded!: boolean | null;
+
+  @AfterLoad()
+  loadPropertiesFromJsonb() {
+    this.type = (this.properties?.type as string) || null;
+    this.geo_format = (this.properties?.geo_format as string) || null;
+    this.geolocation = (this.properties?.geolocation as Record<string, unknown>) || null;
+    this.location_boundary = (this.properties?.location_boundary as Record<string, unknown>) || null;
+    this.estimated = (this.properties?.estimated as boolean) || null;
+    this.tracked = (this.properties?.tracked as boolean) || null;
+    this.uploaded = (this.properties?.uploaded as boolean) || null;
+  }
+
+  // Helper method for creating filtered queries
+  static createPlaceQuery(
+    repository: Repository<PlaceEntity>,
+    alias: string = 'place',
+  ): SelectQueryBuilder<PlaceEntity> {
+    return repository
+      .createQueryBuilder(alias)
+      .where(`${alias}.entity_type = :entityType`, { entityType: 'Location' });
+  }
 
   @ManyToOne(() => UserEntity, { nullable: true })
   @JoinColumn({ name: 'user_id' })
