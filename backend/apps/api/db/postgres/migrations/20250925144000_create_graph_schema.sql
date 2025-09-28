@@ -8,7 +8,7 @@
 CREATE TABLE entities (
     entity_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
     entity_type TEXT NOT NULL, -- 'Person', 'Concept', 'Location', 'Object', etc.
-    
+    outgoing_relationships UUID[] DEFAULT '{}',
     -- Common properties all entities might have
     name TEXT,
     description TEXT,
@@ -116,3 +116,33 @@ DROP INDEX IF EXISTS entities_type_idx;
 -- Drop tables (relationships first due to FK)
 DROP TABLE IF EXISTS relationships;
 DROP TABLE IF EXISTS entities;
+
+
+CREATE OR REPLACE FUNCTION update_entity_outgoing_relationships()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Update the outgoing_relationships for the from_entity_id
+    UPDATE entities
+    SET outgoing_relationships = (
+        SELECT ARRAY_AGG(relationship_id)
+        FROM relationships
+        WHERE from_entity_id = NEW.from_entity_id
+          AND is_active = TRUE
+    )
+    WHERE entity_id = NEW.from_entity_id;
+
+    -- If the relationship is being deleted or updated, also update the old from_entity_id (if it changed)
+    IF TG_OP = 'UPDATE' OR TG_OP = 'DELETE' THEN
+        UPDATE entities
+        SET outgoing_relationships = (
+            SELECT ARRAY_AGG(relationship_id)
+            FROM relationships
+            WHERE from_entity_id = OLD.from_entity_id
+              AND is_active = TRUE
+        )
+        WHERE entity_id = OLD.from_entity_id;
+    END IF;
+
+    RETURN NULL; -- For AFTER triggers, the return value is ignored
+END;
+$$ LANGUAGE plpgsql;
