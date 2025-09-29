@@ -31,6 +31,7 @@ const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
+const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
@@ -181,6 +182,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <SystemPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tools"
+          element={
+            <ProtectedRoute>
+              <ToolsPage />
             </ProtectedRoute>
           }
         />
