@@ -22,14 +22,14 @@ const logger = new Logger(path.basename(__filename));
     password: config.db.password,
     entities: [
       AnswerEntity,
-      ConnectionEntity, // Unused, but relationally dependent
+      ConnectionEntity,
       ContentEntity,
       EmbeddingEntity,
-      EventEntity, // Unused, but relationally dependent
-      ProviderEntity, // Unused, but relationally dependent
+      EventEntity,
+      ProviderEntity,
       QuestionEntity,
-      TagEntity, // Unused, but relationally dependent
-      UserEntity, // Unused, but relationally dependent
+      TagEntity,
+      UserEntity,
     ],
     synchronize: false,
     logging: ['error', 'schema'],
@@ -43,34 +43,51 @@ const logger = new Logger(path.basename(__filename));
     const embeddingRepo = db.getRepository(EmbeddingEntity);
     const embeddingService = new EmbeddingService(embeddingRepo);
 
+    // Index questions and write embeddings back to the questions table
     await db.transaction(async (manager) => {
-      const questions = await manager.find(QuestionEntity, {
-        relations: ['user'],
-      });
+      const questions = await manager.find(QuestionEntity);
 
       logger.log(`Indexing ${questions.length} question records`);
 
-      for (const [index, entity] of questions.entries()) {
+      for (const [index, question] of questions.entries()) {
         logger.log(`Generating vector embeddings for question, ${index + 1} / ${questions.length}`);
 
-        await embeddingService.indexEntity(entity, 'text');
+        // Generate embedding via the embedding service (stores in embeddings table)
+        const indexableEntity = Object.assign(question, { id: question.question_id });
+        const embeddingVector = await embeddingService.indexEntity(indexableEntity, 'question_text');
+
+        // Update the question table with the embedding vector
+        await manager.query(`UPDATE questions SET question_embedding = $1 WHERE question_id = $2`, [
+          `[${embeddingVector.join(',')}]`,
+          question.question_id,
+        ]);
       }
     });
 
+    // Index answers and write embeddings back to the answers table
     await db.transaction(async (manager) => {
       const answers = await manager.find(AnswerEntity, {
-        relations: ['user'],
+        relations: ['user', 'question'],
       });
 
       logger.log(`Indexing ${answers.length} answer records`);
 
-      for (const [index, entity] of answers.entries()) {
+      for (const [index, answer] of answers.entries()) {
         logger.log(`Generating vector embeddings for answer, ${index + 1} / ${answers.length}`);
 
-        await embeddingService.indexEntity(entity, 'give_answer_1');
+        // Generate embedding via the embedding service (stores in embeddings table)
+        const indexableEntity = Object.assign(answer, { id: answer.answer_id });
+        const embeddingVector = await embeddingService.indexEntity(indexableEntity, 'answer_text');
+
+        // Update the answers table with the embedding vector
+        await manager.query(`UPDATE answers SET answer_embedding = $1 WHERE answer_id = $2`, [
+          `[${embeddingVector.join(',')}]`,
+          answer.answer_id,
+        ]);
       }
     });
 
+    // Index content (no direct embedding column to update, only uses embeddings table)
     await db.transaction(async (manager) => {
       const content = await manager.find(ContentEntity, {
         relations: ['user'],
@@ -89,6 +106,7 @@ const logger = new Logger(path.basename(__filename));
       }
     });
 
+    logger.log('✅ All embeddings generated and stored successfully!');
     process.exit(0);
   } catch (err) {
     error = err as Error;
