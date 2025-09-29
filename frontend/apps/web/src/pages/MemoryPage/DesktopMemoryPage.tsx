@@ -37,7 +37,7 @@ import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
-import { loadGoogleMaps } from '@/utils/googleMaps';
+import { loadGoogleMaps } from '@/pages/MemoryPage/googleMaps';
 
 // Add custom styles for Leaflet
 import './memory-map.css';
@@ -117,7 +117,7 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
   return <Clock className={iconClass} />;
 }
 
-export function DesktopMemoryPage() {
+export default function DesktopMemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
   const [{ authToken }] = useAuth();
 

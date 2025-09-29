@@ -40,7 +40,7 @@ import L from 'leaflet';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
-import { loadGoogleMaps } from '@/utils/googleMaps';
+import { loadGoogleMaps } from '@/pages/MemoryPage/googleMaps';
 
 // Add custom styles for Leaflet
 import './memory-map.css';
@@ -120,7 +120,7 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
   return <Clock className={iconClass} />;
 }
 
-export function MobileMemoryPage() {
+export default function MobileMemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
   const [{ authToken }] = useAuth();
 
