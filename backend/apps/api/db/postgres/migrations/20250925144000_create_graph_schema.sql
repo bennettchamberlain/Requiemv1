@@ -5,6 +5,10 @@
 -- Flexible entity-relationship graph system without Apache AGE
 
 -- Core entities table - unified storage for all graph nodes
+DROP TABLE IF EXISTS people;
+DROP TABLE IF EXISTS places;
+DROP TABLE IF EXISTS things;
+DROP TABLE IF EXISTS thing_tag;
 CREATE TABLE entities (
     entity_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
     entity_type TEXT NOT NULL, -- 'Person', 'Concept', 'Location', 'Object', etc.
