@@ -37,7 +37,7 @@ export class AnswerService {
         user: {
           id: context.userId,
         },
-        id: In(ids),
+        answer_id: In(ids),
       },
       relations: ['user', 'question'],
     });
@@ -51,7 +51,7 @@ export class AnswerService {
         user: {
           id: context.userId,
         },
-        id,
+        answer_id: id,
       },
       relations: ['user', 'question'],
     });
@@ -66,7 +66,7 @@ export class AnswerService {
           id: context.userId,
         },
         question: {
-          id: questionId,
+          question_id: questionId,
         },
       },
       relations: ['user', 'question'],
@@ -78,7 +78,7 @@ export class AnswerService {
   async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<boolean> {
     const result = await this.answerRepository.update(
       {
-        id,
+        answer_id: id,
         user: {
           id: context.userId,
         },

@@ -15,29 +15,50 @@ import { Answer } from '../types';
 
 import { QuestionEntity } from './QuestionEntity';
 
-@Indexable('answer', ['give_answer_1'])
+@Indexable('answer', ['answer_text'])
 @Entity('answers')
 export class AnswerEntity {
-  @PrimaryColumn()
-  id!: string;
+  @PrimaryColumn('uuid')
+  answer_id!: string;
 
   @Column()
-  rag_answer_1!: string;
+  answer_text!: string;
 
-  @Column()
-  rag_answer_2!: string;
+  @Column({ type: 'double precision', nullable: true })
+  answer_confidence!: number;
 
-  @Column()
-  rag_answer_3!: string;
+  @Column({ default: 'user_input' })
+  answer_source!: string;
 
-  @Column()
-  give_answer_1!: string;
+  @Column({ nullable: true })
+  answer_method!: string;
 
-  @Column()
-  give_answer_2!: string;
+  @Column({ type: 'timestamptz', default: () => 'NOW()' })
+  answered_at!: Date;
 
-  @Column()
-  give_answer_3!: string;
+  @Column({ type: 'jsonb', default: '{}' })
+  session_context!: Record<string, unknown>;
+
+  @Column({ nullable: true })
+  emotional_state!: string;
+
+  @Column({ nullable: true })
+  location_context!: string;
+
+  @Column({ type: 'text', array: true, nullable: true })
+  extracted_entities!: string[];
+
+  @Column({ type: 'double precision', nullable: true })
+  sentiment_score!: number;
+
+  @Column({ type: 'double precision', nullable: true })
+  complexity_score!: number;
+
+  @Column({ default: false })
+  is_sensitive!: boolean;
+
+  @Column({ default: 'private' })
+  sharing_level!: string;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
@@ -55,9 +76,14 @@ export class AnswerEntity {
 
   toAnswer() {
     return {
-      id: this.id,
-      ragAnswer: this.rag_answer_1,
-      answer: this.give_answer_1,
+      id: this.answer_id,
+      answer: this.answer_text,
+      answerConfidence: this.answer_confidence,
+      answerSource: this.answer_source,
+      answerMethod: this.answer_method,
+      answeredAt: this.answered_at,
+      isSensitive: this.is_sensitive,
+      sharingLevel: this.sharing_level,
 
       user: this.user?.toUser(),
       question: this.question?.toQuestion(),
