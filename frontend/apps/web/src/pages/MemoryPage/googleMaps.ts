@@ -24,7 +24,6 @@ export function loadGoogleMaps(): Promise<void> {
   googleMapsLoadingPromise = new Promise((resolve, reject) => {
     // Use the provided Google Maps API key
     const apiKey = 'AIzaSyCPwiAuP9LNzBm9sePxdkD-kED5rZAv5WI';
-    console.log('Using Google Maps API key:', apiKey.substring(0, 10) + '...');
 
     // Check if script is already loading
     const existingScripts = document.querySelectorAll('script[src*="maps.googleapis.com"]');
