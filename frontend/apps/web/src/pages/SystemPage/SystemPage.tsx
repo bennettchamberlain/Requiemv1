@@ -85,9 +85,9 @@ function Navigation() {
         </Button>
 
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/tools">
-            <Wrench className="h-4 w-4" />
-            Tools
+          <Link to="/settings">
+            <Settings2 className="h-4 w-4" />
+            Settings
           </Link>
         </Button>
 
@@ -113,9 +113,9 @@ function Navigation() {
         </Button>
 
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/settings">
-            <Settings2 className="h-4 w-4" />
-            Settings
+          <Link to="/tools">
+            <Wrench className="h-4 w-4" />
+            Tools
           </Link>
         </Button>
       </div>
