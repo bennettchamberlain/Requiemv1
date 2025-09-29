@@ -1,7 +1,6 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
-import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
@@ -27,14 +26,14 @@ export class QuestionsController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Context() context: RequestContext) {
-    return this.questionService.findAll(context);
+  findAll() {
+    return this.questionService.findAll();
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.questionService.findOne(context, id);
+  findOne(@Param('id') id: string) {
+    return this.questionService.findOne(id);
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -68,7 +67,7 @@ export class QuestionsController {
       questionId: payload.questionId,
     });
 
-    const question = await this.questionService.findOne({}, payload.questionId);
+    const question = await this.questionService.findOne(payload.questionId);
 
     if (question) {
       const associatedAnswers = await this.embeddingService.findNearest(context, question.text, 'answer', 10);
@@ -143,7 +142,7 @@ export class QuestionsController {
         this.logger.log('Answer exists, updating existing with RAG response');
 
         await this.answerService.update(context, userAnswer.id, {
-          rag_answer_1: llmResponse.message.content,
+          answer_text: llmResponse.message.content,
         });
       } else {
         this.logger.log('Answer does not exist, creating a new one with a RAG response');

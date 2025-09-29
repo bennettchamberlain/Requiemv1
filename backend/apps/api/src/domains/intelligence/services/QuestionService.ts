@@ -3,8 +3,6 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { RequestContext } from '@ci/common/types';
-
 import { QuestionEntity } from '../entities/QuestionEntity';
 import type { CreateQuestionDto, Question } from '../types';
 
@@ -16,34 +14,17 @@ export class QuestionService {
     private readonly questionRepository: Repository<QuestionEntity>,
   ) {}
 
-  async create(context: RequestContext, data: CreateQuestionDto): Promise<Question> {
-    const instance = await this.questionRepository.create({
-      id: uuidv7(),
-      ...data,
-      user: {
-        id: context.userId,
-      },
-    });
-
-    const entity = await this.questionRepository.save(instance);
-
-    return entity.toQuestion();
-  }
-
-  async findAll(context: RequestContext): Promise<Question[]> {
+  async findAll(): Promise<Question[]> {
     const result = await this.questionRepository.find({
       where: {
-        user: {
-          id: context.userId,
-        },
+        is_active: true,
       },
-      relations: ['user'],
     });
 
     return result.map((entity) => entity.toQuestion());
   }
 
-  async findOne(context: RequestContext, id: string): Promise<Question | null> {
+  async findOne(id: string): Promise<Question | null> {
     // TODO: This is a footgun that we shouldn't leave here for long.
     //
     // What we're actually interested in doing is returning questions owned by the user in
@@ -53,21 +34,10 @@ export class QuestionService {
     //
     // In the short term we're assuming that `findUnansweredByUserId` is sufficiently
     // secure and that no events are spawned manually that would undermine that security.
-    const whereUser =
-      context.userId == null
-        ? {}
-        : {
-            user: {
-              id: context.userId,
-            },
-          };
-
     const result = await this.questionRepository.findOne({
       where: {
-        id,
-        ...whereUser,
+        question_id: id,
       },
-      relations: ['user'],
     });
 
     return result?.toQuestion() ?? null;
@@ -99,12 +69,12 @@ export class QuestionService {
 
     const rows = (await this.dataSource.query(`
       SELECT
-        questions.id as id,
+        questions.question_id as id,
         answers.user_id as user_id
       FROM
         questions
-      LEFT JOIN answers ON answers.question_id = questions.id
-      WHERE answers.rag_answer_1 IS NULL
+      LEFT JOIN answers ON answers.question_id = questions.question_id
+      WHERE answers.answer_id IS NULL OR answers.answer_text IS NULL
       LIMIT 5;
     `)) satisfies Array<Row>;
 
