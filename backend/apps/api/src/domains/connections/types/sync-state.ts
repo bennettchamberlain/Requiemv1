@@ -12,6 +12,7 @@ export interface GmailSyncState {
   watchChannelId?: string;
   watchResourceId?: string;
   watchExpiration?: string; // ISO date string
+  lastFullSyncAt?: string; // ISO date string
 }
 
 export interface GoogleSyncState {

@@ -422,6 +422,7 @@ export class GoogleController {
           watchChannelId: gmailSyncState.watchChannelId,
           watchResourceId: gmailSyncState.watchResourceId,
           watchExpiration: gmailSyncState.watchExpiration,
+          lastFullSyncAt: gmailSyncState.lastFullSyncAt,
         };
 
         this.logger.log('Gmail incremental sync completed', {
@@ -496,6 +497,7 @@ export class GoogleController {
     newSyncState = {
       lastHistoryId: profile.historyId as string,
       trackedLabels: labels,
+      lastFullSyncAt: new Date().toISOString(),
     };
 
     this.logger.log('Gmail full sync completed', {
