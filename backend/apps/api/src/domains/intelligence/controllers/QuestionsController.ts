@@ -70,7 +70,12 @@ export class QuestionsController {
     const question = await this.questionService.findOne(payload.questionId);
 
     if (question) {
-      const associatedAnswers = await this.embeddingService.findNearest(context, question.text, 'answer', 10);
+      const associatedAnswers = await this.embeddingService.findNearest(
+        context,
+        question.text,
+        ['answer'],
+        10,
+      );
 
       const resolvedAnswers = await this.answerService.findSome(
         context,

@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS people;
 DROP TABLE IF EXISTS places;
 DROP TABLE IF EXISTS things;
 DROP TABLE IF EXISTS thing_tag;
+DROP TABLE IF EXISTS relationships;
+DROP TABLE IF EXISTS embeddings;
 CREATE TABLE entities (
     entity_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
     entity_type TEXT NOT NULL, -- 'Person', 'Concept', 'Location', 'Object', etc.

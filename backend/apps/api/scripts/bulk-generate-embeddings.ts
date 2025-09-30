@@ -7,7 +7,7 @@ import config from '@ci/configuration';
 import { ConnectionEntity, ProviderEntity } from '@ci/domains/connections';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
 import { ContentEntity, EventEntity } from '@ci/domains/memory';
-import { EmbeddingEntity, EmbeddingService, TagEntity } from '@ci/domains/search';
+import { EmbeddingService, TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
 const logger = new Logger(path.basename(__filename));
@@ -24,7 +24,6 @@ const logger = new Logger(path.basename(__filename));
       AnswerEntity,
       ConnectionEntity,
       ContentEntity,
-      EmbeddingEntity,
       EventEntity,
       ProviderEntity,
       QuestionEntity,
@@ -40,10 +39,10 @@ const logger = new Logger(path.basename(__filename));
   try {
     await db.initialize();
 
-    const embeddingRepo = db.getRepository(EmbeddingEntity);
-    const embeddingService = new EmbeddingService(embeddingRepo);
+    // Create embedding service with DataSource
+    const embeddingService = new EmbeddingService(db);
 
-    // Index questions and write embeddings back to the questions table
+    // Index questions - embeddings written directly to questions.question_embedding
     await db.transaction(async (manager) => {
       const questions = await manager.find(QuestionEntity);
 
@@ -52,19 +51,13 @@ const logger = new Logger(path.basename(__filename));
       for (const [index, question] of questions.entries()) {
         logger.log(`Generating vector embeddings for question, ${index + 1} / ${questions.length}`);
 
-        // Generate embedding via the embedding service (stores in embeddings table)
+        // Add 'id' property for the embedding service
         const indexableEntity = Object.assign(question, { id: question.question_id });
-        const embeddingVector = await embeddingService.indexEntity(indexableEntity, 'question_text');
-
-        // Update the question table with the embedding vector
-        await manager.query(`UPDATE questions SET question_embedding = $1 WHERE question_id = $2`, [
-          `[${embeddingVector.join(',')}]`,
-          question.question_id,
-        ]);
+        await embeddingService.indexEntity(indexableEntity, 'question_text');
       }
     });
 
-    // Index answers and write embeddings back to the answers table
+    // Index answers - embeddings written directly to answers.answer_embedding
     await db.transaction(async (manager) => {
       const answers = await manager.find(AnswerEntity, {
         relations: ['user', 'question'],
@@ -75,19 +68,15 @@ const logger = new Logger(path.basename(__filename));
       for (const [index, answer] of answers.entries()) {
         logger.log(`Generating vector embeddings for answer, ${index + 1} / ${answers.length}`);
 
-        // Generate embedding via the embedding service (stores in embeddings table)
+        // Add 'id' property for the embedding service
         const indexableEntity = Object.assign(answer, { id: answer.answer_id });
-        const embeddingVector = await embeddingService.indexEntity(indexableEntity, 'answer_text');
-
-        // Update the answers table with the embedding vector
-        await manager.query(`UPDATE answers SET answer_embedding = $1 WHERE answer_id = $2`, [
-          `[${embeddingVector.join(',')}]`,
-          answer.answer_id,
-        ]);
+        await embeddingService.indexEntity(indexableEntity, 'answer_text');
       }
     });
 
-    // Index content (no direct embedding column to update, only uses embeddings table)
+    // Note: Content table doesn't have embedding column yet - skipping for now
+    // Uncomment when content table has content_embedding column added
+    /*
     await db.transaction(async (manager) => {
       const content = await manager.find(ContentEntity, {
         relations: ['user'],
@@ -105,6 +94,7 @@ const logger = new Logger(path.basename(__filename));
         await embeddingService.indexEntity(entity, 'text');
       }
     });
+    */
 
     logger.log('✅ All embeddings generated and stored successfully!');
     process.exit(0);
