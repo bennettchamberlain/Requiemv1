@@ -411,6 +411,42 @@ export class GoogleController {
     return { api: 'Google Calendar', syncState: newSyncState };
   }
 
+  private async fetchGmailMessagesBatch(
+    connectionId: string,
+    messageIds: string[],
+    batchSize: number = 10,
+  ): Promise<any[]> {
+    const fullMessages = [];
+    
+    for (let i = 0; i < messageIds.length; i += batchSize) {
+      const batch = messageIds.slice(i, i + batchSize);
+      const batchPromises = batch.map(async (messageId) => {
+        try {
+          return await this.connectionService.makePaginatedRequest(
+            connectionId,
+            `/gmail/v1/users/me/messages/${messageId}`,
+          );
+        } catch (error) {
+          this.logger.error('Failed to fetch message in batch', {
+            messageId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          return null;
+        }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      fullMessages.push(...batchResults.filter(msg => msg !== null));
+      
+      // Add a small delay between batches to avoid rate limiting
+      if (i + batchSize < messageIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
+    return fullMessages;
+  }
+
   private async syncGmailWithPagination(
     connection: { id: string; syncState: Record<string, unknown> | null },
     userId: string,
@@ -450,23 +486,69 @@ export class GoogleController {
 
         // Save this page of incremental data only if there are new messages
         if (history.length > 0) {
+          // Extract message IDs from history and fetch full messages
+          const messageIds = new Set<string>();
+          for (const historyItem of history) {
+            if (typeof historyItem === 'object' && historyItem !== null) {
+              const h = historyItem as any;
+              if (h.messages && Array.isArray(h.messages)) {
+                for (const msg of h.messages) {
+                  if (msg.id) messageIds.add(msg.id);
+                }
+              }
+              if (h.messagesAdded && Array.isArray(h.messagesAdded)) {
+                for (const added of h.messagesAdded) {
+                  if (added.message?.id) messageIds.add(added.message.id);
+                }
+              }
+            }
+          }
+
+          // Fetch full message details in batches
+          const fullMessages = await this.fetchGmailMessagesBatch(
+            connection.id,
+            Array.from(messageIds),
+          );
+
+          // Save history with full messages
+          const enrichedHistory = history.map((historyItem: any) => {
+            if (historyItem.messages) {
+              historyItem.messages = historyItem.messages.map((msg: any) => {
+                const fullMsg = fullMessages.find((fm: any) => fm.id === msg.id);
+                return fullMsg || msg;
+              });
+            }
+            if (historyItem.messagesAdded) {
+              historyItem.messagesAdded = historyItem.messagesAdded.map((added: any) => {
+                if (added.message) {
+                  const fullMsg = fullMessages.find((fm: any) => fm.id === added.message.id);
+                  added.message = fullMsg || added.message;
+                }
+                return added;
+              });
+            }
+            return historyItem;
+          });
+
           await this.apiLogService.create({
-            content: { history },
+            content: { history: enrichedHistory },
             userId,
             connectionId: connection.id,
             scope: 'Gmail',
           });
 
-          this.logger.log('Saved incremental Gmail data', {
+          this.logger.log('Saved incremental Gmail data with full messages', {
             connectionId: connection.id,
             historyCount: history.length,
+            messageIdCount: messageIds.size,
+            fullMessageCount: fullMessages.length,
             lastHistoryId: gmailSyncState.lastHistoryId,
             latestHistoryId: latestHistoryId,
           });
 
           // Promote Gmail messages to higher-level objects
           await this.gmailPromotionService.promoteGmailMessages(
-            { history },
+            { history: enrichedHistory },
             userId,
             connection.id,
           );
@@ -533,36 +615,54 @@ export class GoogleController {
 
       // Save each page as a separate API log entry
       if (messages.length > 0) {
+        // Extract message IDs
+        const messageIds = messages.map((msg: any) => msg.id).filter(Boolean);
+        
+        // Fetch full message details in batches
+        const fullMessages = await this.fetchGmailMessagesBatch(connection.id, messageIds);
+        
+        // If we couldn't fetch some messages, include the basic info
+        const fetchedIds = new Set(fullMessages.map((msg: any) => msg.id));
+        for (const message of messages) {
+          if (!(message as any).id || !fetchedIds.has((message as any).id)) {
+            fullMessages.push(message);
+          }
+        }
+
         await this.apiLogService.create({
-          content: { messages, nextPageToken: response.nextPageToken },
+          content: { messages: fullMessages, nextPageToken: response.nextPageToken },
           userId,
           connectionId: connection.id,
           scope: 'Gmail',
         });
 
-        this.logger.log('Saved Gmail page', {
+        this.logger.log('Saved Gmail page with full messages', {
           connectionId: connection.id,
           page: pageCount,
           messageCount: messages.length,
+          fullMessageCount: fullMessages.length,
           totalMessages,
           hasNextPage: !!nextPageToken,
         });
 
         // Log sample message details for debugging
-        if (messages.length > 0) {
-          const sampleMessage = messages[0] as any;
-          this.logger.log('Sample Gmail message from page', {
+        if (fullMessages.length > 0) {
+          const sampleMessage = fullMessages[0] as any;
+          this.logger.log('Sample Gmail full message from page', {
             connectionId: connection.id,
             messageId: sampleMessage.id,
             threadId: sampleMessage.threadId,
             snippet: sampleMessage.snippet?.substring(0, 100),
             labelIds: sampleMessage.labelIds,
+            hasPayload: !!sampleMessage.payload,
+            hasHeaders: !!(sampleMessage.payload?.headers),
+            headerCount: sampleMessage.payload?.headers?.length || 0,
           });
         }
 
         // Promote Gmail messages to higher-level objects
         await this.gmailPromotionService.promoteGmailMessages(
-          { messages },
+          { messages: fullMessages },
           userId,
           connection.id,
         );
