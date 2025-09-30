@@ -4,6 +4,8 @@ import { LoggerService } from '@ci/common/services';
 import { EventService, ContentService } from '@ci/domains/memory';
 import type { CreateEventDto } from '@ci/domains/memory/types';
 
+import { PeoplePromotionService } from './PeoplePromotionService';
+
 interface CalendarEvent {
   id?: string;
   summary?: string;
@@ -45,6 +47,7 @@ export class CalendarEventPromotionService {
   constructor(
     private readonly eventService: EventService,
     private readonly contentService: ContentService,
+    private readonly peoplePromotionService: PeoplePromotionService,
   ) {}
 
   async promoteCalendarEvents(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -181,6 +184,21 @@ export class CalendarEventPromotionService {
       // Save using memory domain service
       await this.eventService.create({ userId }, eventDto);
 
+      // Process participants to create people and contacts
+      const participantInfos = eventDetails.participants.map(p => ({
+        email: p.email,
+        name: p.name,
+        type: p.isOrganizer ? 'organizer' : 'attendee',
+        responseStatus: p.responseStatus,
+      }));
+
+      await this.peoplePromotionService.processParticipants(
+        participantInfos,
+        userId,
+        connectionId,
+        'calendar',
+      );
+
       this.logger.log('');
       this.logger.log('✅ EVENT SAVED TO DATABASE SUCCESSFULLY');
       this.logger.log('');
@@ -197,12 +215,6 @@ export class CalendarEventPromotionService {
           this.logger.log('');
         }
       }
-
-      // Transform to memory domain format
-      const eventDto = this.transformToEventDto(eventDetails, event, userId, connectionId);
-      
-      // Save using memory domain service
-      await this.eventService.create({ userId }, eventDto);
     } catch (error) {
       this.logger.error('Error processing individual calendar event', {
         userId,

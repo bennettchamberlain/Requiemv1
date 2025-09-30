@@ -8,6 +8,7 @@ import { SyncStateHelper } from '@ci/domains/connections/types/sync-state';
 
 import { ApiLogService } from '../services/ApiLogService';
 import { CalendarEventPromotionService } from '../services/CalendarEventPromotionService';
+import { GmailPromotionService } from '../services/GmailPromotionService';
 
 @Controller('google')
 export class GoogleController {
@@ -17,6 +18,7 @@ export class GoogleController {
     private readonly apiLogService: ApiLogService,
     private readonly connectionService: ConnectionService,
     private readonly calendarEventPromotionService: CalendarEventPromotionService,
+    private readonly gmailPromotionService: GmailPromotionService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE) // Every minute
@@ -461,6 +463,13 @@ export class GoogleController {
             lastHistoryId: gmailSyncState.lastHistoryId,
             latestHistoryId: latestHistoryId,
           });
+
+          // Promote Gmail messages to higher-level objects
+          await this.gmailPromotionService.promoteGmailMessages(
+            { history },
+            userId,
+            connection.id,
+          );
         } else {
           this.logger.log('No new Gmail messages found in incremental sync', {
             connectionId: connection.id,
@@ -538,6 +547,25 @@ export class GoogleController {
           totalMessages,
           hasNextPage: !!nextPageToken,
         });
+
+        // Log sample message details for debugging
+        if (messages.length > 0) {
+          const sampleMessage = messages[0] as any;
+          this.logger.log('Sample Gmail message from page', {
+            connectionId: connection.id,
+            messageId: sampleMessage.id,
+            threadId: sampleMessage.threadId,
+            snippet: sampleMessage.snippet?.substring(0, 100),
+            labelIds: sampleMessage.labelIds,
+          });
+        }
+
+        // Promote Gmail messages to higher-level objects
+        await this.gmailPromotionService.promoteGmailMessages(
+          { messages },
+          userId,
+          connection.id,
+        );
       }
     } while (nextPageToken);
 
