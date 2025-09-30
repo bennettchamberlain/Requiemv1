@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
+import { EventEntity, PersonEntity, ContactEntity, PlaceEntity } from '@ci/domains/memory';
 
 interface CalendarEvent {
   id?: string;
@@ -39,6 +43,17 @@ interface CalendarEvent {
 @Injectable()
 export class CalendarEventPromotionService {
   private logger = new LoggerService(CalendarEventPromotionService.name);
+
+  constructor(
+    @InjectRepository(EventEntity)
+    private readonly eventRepository: Repository<EventEntity>,
+    @InjectRepository(PersonEntity)
+    private readonly personRepository: Repository<PersonEntity>,
+    @InjectRepository(ContactEntity)
+    private readonly contactRepository: Repository<ContactEntity>,
+    @InjectRepository(PlaceEntity)
+    private readonly placeRepository: Repository<PlaceEntity>,
+  ) {}
 
   async promoteCalendarEvents(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting calendar event promotion', {
@@ -143,7 +158,7 @@ export class CalendarEventPromotionService {
       // Enhanced logging with more details
       this.logger.log('');
       this.logger.log('##########################################################');
-      this.logger.log('📅 CALENDAR EVENT DETAILS');
+      this.logger.log('📅 CALENDAR EVENT DETAILS (SAVING TO DATABASE)');
       this.logger.log('##########################################################');
       this.logger.log('Event ID: ' + eventDetails.id);
       this.logger.log('Summary: ' + eventDetails.summary);
@@ -168,6 +183,13 @@ export class CalendarEventPromotionService {
       this.logger.log('##########################################################');
       this.logger.log('');
 
+      // Save to database
+      await this.saveEventToDatabase(eventDetails, event, userId, connectionId);
+
+      this.logger.log('');
+      this.logger.log('✅ EVENT SAVED TO DATABASE SUCCESSFULLY');
+      this.logger.log('');
+
       // Log if this is a future event
       if (eventDetails.startTime) {
         const startDate = new Date(eventDetails.startTime);
@@ -181,8 +203,8 @@ export class CalendarEventPromotionService {
         }
       }
 
-      // TODO: In the future, this is where we'll save to the database
-      // await this.saveEventToDatabase(eventDetails, userId, connectionId);
+      // Save to database
+      await this.saveEventToDatabase(eventDetails, event, userId, connectionId);
     } catch (error) {
       this.logger.error('Error processing individual calendar event', {
         userId,
@@ -191,6 +213,217 @@ export class CalendarEventPromotionService {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       // Don't throw - continue processing other events
+    }
+  }
+
+  private async saveEventToDatabase(
+    eventDetails: ReturnType<typeof this.extractEventDetails>,
+    rawEvent: CalendarEvent,
+    userId: string,
+    connectionId: string,
+  ): Promise<void> {
+    try {
+      // 1. Create or update the Event
+      let eventEntity = await this.eventRepository.findOne({
+        where: {
+          external_id: eventDetails.id,
+          user: { id: userId },
+        },
+      });
+
+      if (!eventEntity) {
+        eventEntity = this.eventRepository.create({
+          id: uuid7(),
+          external_id: eventDetails.id,
+          user: { id: userId },
+        });
+      }
+
+      // Update event fields
+      eventEntity.name = eventDetails.summary;
+      eventEntity.description = eventDetails.description;
+      eventEntity.type = 'calendar_event';
+      eventEntity.start_time = eventDetails.startTime ? new Date(eventDetails.startTime) : null;
+      eventEntity.end_time = eventDetails.endTime ? new Date(eventDetails.endTime) : null;
+      eventEntity.source_url = `https://calendar.google.com/calendar/event?eid=${eventDetails.id}`;
+      eventEntity.source_data = {
+        ...rawEvent,
+        connectionId,
+        isRecurring: eventDetails.isRecurring,
+        organizerEmail: eventDetails.organizerEmail,
+        participantCount: eventDetails.participants.length,
+      };
+
+      await this.eventRepository.save(eventEntity);
+
+      this.logger.log('Saved event to database', {
+        eventId: eventEntity.id,
+        externalId: eventDetails.id,
+        summary: eventDetails.summary,
+      });
+
+      // 2. Create People and Contacts for participants
+      for (const participant of eventDetails.participants) {
+        await this.createPersonAndContact(participant, userId, connectionId);
+      }
+
+      // 3. Create a Place if location exists
+      if (eventDetails.location) {
+        await this.createPlaceFromLocation(eventDetails.location, userId, connectionId, eventEntity.id);
+      }
+
+    } catch (error) {
+      this.logger.error('Failed to save event to database', {
+        eventId: eventDetails.id,
+        userId,
+        connectionId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+  }
+
+  private async createPersonAndContact(
+    participant: {
+      email: string;
+      name: string;
+      responseStatus: string;
+      isOrganizer: boolean;
+      isSelf: boolean;
+    },
+    userId: string,
+    connectionId: string,
+  ): Promise<void> {
+    try {
+      // Check if person already exists by email
+      let personEntity = await this.personRepository.findOne({
+        where: {
+          user: { id: userId },
+          contacts: {
+            identifier: participant.email,
+          },
+        },
+        relations: ['contacts'],
+      });
+
+      if (!personEntity) {
+        // Create new person
+        personEntity = this.personRepository.create({
+          id: uuid7(),
+          type: 'individual',
+          user: { id: userId },
+        });
+
+        // Parse name into first and last name
+        const nameParts = participant.name.split(' ');
+        if (nameParts.length > 0) {
+          personEntity.first_name = nameParts[0];
+          if (nameParts.length > 1) {
+            personEntity.last_name = nameParts.slice(1).join(' ');
+          }
+        }
+
+        await this.personRepository.save(personEntity);
+
+        this.logger.log('Created new person', {
+          personId: personEntity.id,
+          name: participant.name,
+          email: participant.email,
+        });
+      }
+
+      // Check if contact already exists
+      const existingContact = await this.contactRepository.findOne({
+        where: {
+          identifier: participant.email,
+          user: { id: userId },
+          person: { id: personEntity.id },
+        },
+      });
+
+      if (!existingContact) {
+        // Create contact
+        const contactEntity = this.contactRepository.create({
+          id: uuid7(),
+          identifier: participant.email,
+          handle: participant.email,
+          name: participant.name,
+          provider_name: 'google_calendar',
+          user: { id: userId },
+          person: { id: personEntity.id },
+        });
+
+        await this.contactRepository.save(contactEntity);
+
+        this.logger.log('Created new contact', {
+          contactId: contactEntity.id,
+          personId: personEntity.id,
+          email: participant.email,
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to create person/contact', {
+        participant,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      // Don't throw - continue processing other participants
+    }
+  }
+
+  private async createPlaceFromLocation(
+    location: string,
+    userId: string,
+    connectionId: string,
+    eventId: string,
+  ): Promise<void> {
+    try {
+      // Check if place already exists with this exact name
+      let placeEntity = await this.placeRepository.findOne({
+        where: {
+          name: location,
+          user: { id: userId },
+        },
+      });
+
+      if (!placeEntity) {
+        // Create new place
+        placeEntity = this.placeRepository.create({
+          id: uuid7(),
+          name: location,
+          type: 'venue',
+          user: { id: userId },
+          // Mark as estimated since we don't have exact coordinates yet
+          estimated: true,
+          tracked: false,
+          uploaded: false,
+        });
+
+        // Try to parse location for basic geocoding hints
+        // This is a simple heuristic - in production you'd use a geocoding API
+        const locationLower = location.toLowerCase();
+        if (locationLower.includes('room') || locationLower.includes('conference') || locationLower.includes('office')) {
+          placeEntity.type = 'room';
+        } else if (locationLower.includes('restaurant') || locationLower.includes('cafe') || locationLower.includes('coffee')) {
+          placeEntity.type = 'restaurant';
+        } else if (locationLower.includes('park') || locationLower.includes('beach')) {
+          placeEntity.type = 'outdoor';
+        }
+
+        await this.placeRepository.save(placeEntity);
+
+        this.logger.log('Created new place from location', {
+          placeId: placeEntity.id,
+          name: location,
+          type: placeEntity.type,
+          eventId,
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to create place', {
+        location,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      // Don't throw - place creation is optional
     }
   }
 
