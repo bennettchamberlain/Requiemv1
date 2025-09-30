@@ -162,12 +162,26 @@ export class GoogleController {
 
       await this.updateConnectionSyncState(payload.connectionId, syncResults);
 
-      // Log the sync result
-      this.logger.log('Google sync completed', {
+      // Log the sync result with detailed summary
+      const calendarResult = syncResults.find(r => r.api === 'Google Calendar');
+      const gmailResult = syncResults.find(r => r.api === 'Gmail');
+      
+      this.logger.log('🎉 Google sync completed - SUMMARY', {
         connectionId: payload.connectionId,
         userId: payload.userId,
         success: errors.length === 0,
         message: `Sync completed. ${syncResults.length} APIs processed successfully. ${errors.length} errors occurred.`,
+        calendar: {
+          synced: !!calendarResult,
+          hasSyncToken: !!(calendarResult?.syncState as any)?.syncToken,
+          syncToken: (calendarResult?.syncState as any)?.syncToken,
+        },
+        gmail: {
+          synced: !!gmailResult,
+          hasHistoryId: !!(gmailResult?.syncState as any)?.lastHistoryId,
+          historyId: (gmailResult?.syncState as any)?.lastHistoryId,
+        },
+        errors: errors,
       });
     } catch (error) {
       this.logger.error('Error during Google data sync', error as Error);
@@ -221,6 +235,14 @@ export class GoogleController {
             connectionId: connection.id,
             eventCount: events.length,
             syncToken: response.nextSyncToken,
+          });
+
+          // Log details of incremental sync events
+          this.logger.log('Incremental sync event details', {
+            connectionId: connection.id,
+            eventIds: events.map((e: any) => e.id),
+            eventSummaries: events.map((e: any) => e.summary || 'No summary'),
+            eventStatuses: events.map((e: any) => e.status),
           });
 
           // Promote calendar events to higher-level objects
@@ -309,6 +331,21 @@ export class GoogleController {
           hasSyncToken: !!response.nextSyncToken,
           syncToken: response.nextSyncToken,
         });
+
+        // Log sample event details for debugging
+        if (events.length > 0) {
+          const sampleEvent = events[0] as any;
+          this.logger.log('Sample calendar event from page', {
+            connectionId: connection.id,
+            eventId: sampleEvent.id,
+            summary: sampleEvent.summary,
+            start: sampleEvent.start,
+            end: sampleEvent.end,
+            attendeesCount: sampleEvent.attendees?.length || 0,
+            organizer: sampleEvent.organizer?.email,
+            status: sampleEvent.status,
+          });
+        }
 
         // Promote calendar events to higher-level objects
         await this.calendarEventPromotionService.promoteCalendarEvents(
