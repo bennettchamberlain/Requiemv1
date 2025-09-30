@@ -10,7 +10,7 @@ import type { ToolExecutionContext } from '../../core/types';
 // Input schema for the tool
 const getUserPreferencesInputSchema = z.object({
   category: z.enum(['food', 'environment', 'learning', 'general']).optional(),
-  userId: z.string().optional(), // Remove .uuid() requirement since LLM might not pass it
+  userId: z.string().optional(), // Optional - to query other users like family members
 });
 
 type GetUserPreferencesInput = z.infer<typeof getUserPreferencesInputSchema>;
@@ -42,7 +42,7 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
   readonly schema = {
     name: 'getUserPreferences',
     description:
-      'Get user food preferences, dietary restrictions, allergies, and eating habits. Use this tool when planning meals, cooking, or discussing food choices.',
+      "Get user food preferences, dietary restrictions, allergies, and eating habits. Use this tool when planning meals, cooking, or discussing food choices. By default gets the current user's preferences, but can query other users if userId is provided.",
     category: 'database',
     parameters: {
       type: 'object',
@@ -55,7 +55,8 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
         },
         userId: {
           type: 'string',
-          description: 'User ID to get preferences for (optional, defaults to current user)',
+          description:
+            'User ID to get preferences for (optional, defaults to current user). Use this to get preferences for family members or other people.',
         },
       },
       required: [],
@@ -96,34 +97,43 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
   }
 
   protected async executeInternal(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _context: ToolExecutionContext,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _input: GetUserPreferencesInput,
+    context: ToolExecutionContext,
+    input: GetUserPreferencesInput,
   ): Promise<GetUserPreferencesOutput> {
+    // Determine which user's preferences to fetch
+    // If userId provided in input, use that; otherwise use current user from context
+    const targetUserId = input.userId || context.userId;
+
+    if (!targetUserId) {
+      throw new Error('No user ID available in context or input');
+    }
+
     // Query for questions with subcategory = 'Food' (much more focused than all Personal Preferences)
+    // Updated to use new schema: question_id, answer_id, answer_text
     const query = `
       SELECT 
-        q.text as question,
-        a.give_answer_1 as answer,
-        q.category,
-        q.subcategory,
+        q.question_text as question,
+        a.answer_text as answer,
+        q.question_category as category,
+        q.context_tags,
         a.user_id as "userId",
-        q.created_at as "createdAt"
+        q.created_at as "createdAt",
+        a.answer_id as "answerId"
       FROM questions q
-      JOIN answers a ON q.id = a.question_id  
-      WHERE q.subcategory = 'Food'
-        AND a.give_answer_1 IS NOT NULL
+      JOIN answers a ON q.question_id = a.question_id  
+      WHERE a.user_id = $1
+        AND q.context_tags && ARRAY['Food']::text[]
+        AND a.answer_text IS NOT NULL
       ORDER BY q.created_at
     `;
 
-    const result = await this.dataSource.query(query);
+    const result = await this.dataSource.query(query, [targetUserId]);
 
     const preferences: UserPreference[] = result.map((row: any) => ({
-      id: `${row.userId}-${row.createdAt.getTime()}`, // Generate a unique ID
+      id: row.answerId,
       label: `${row.question}: ${row.answer}`,
-      category: row.category, // Use the actual category from the database
-      subcategory: row.subcategory,
+      category: row.category,
+      subcategory: row.context_tags?.find((tag: string) => tag === 'Food') || 'Food',
       userId: row.userId,
       createdAt: row.createdAt,
       question: row.question,
@@ -133,49 +143,8 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
     return {
       preferences,
       totalCount: preferences.length,
-      userId: result.length > 0 ? result[0].userId : 'demo-user',
+      userId: targetUserId,
     };
-  }
-
-  /**
-   * Infer category based on question and answer content
-   */
-  private inferCategory(question: string, answer: string): string {
-    const lowerQuestion = question.toLowerCase();
-    const lowerAnswer = answer.toLowerCase();
-
-    if (
-      lowerQuestion.includes('food') ||
-      lowerQuestion.includes('eat') ||
-      lowerQuestion.includes('sweet') ||
-      lowerQuestion.includes('savory') ||
-      lowerAnswer.includes('food') ||
-      lowerAnswer.includes('cuisine') ||
-      lowerAnswer.includes('meal') ||
-      lowerAnswer.includes('cook')
-    ) {
-      return 'food';
-    }
-
-    if (
-      lowerQuestion.includes('environment') ||
-      lowerQuestion.includes('work') ||
-      lowerAnswer.includes('quiet') ||
-      lowerAnswer.includes('organized')
-    ) {
-      return 'environment';
-    }
-
-    if (
-      lowerQuestion.includes('learn') ||
-      lowerQuestion.includes('activity') ||
-      lowerAnswer.includes('reading') ||
-      lowerAnswer.includes('practice')
-    ) {
-      return 'learning';
-    }
-
-    return 'general';
   }
 
   protected sanitizeInputForLogging(input: unknown): any {
