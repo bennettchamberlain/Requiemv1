@@ -10,7 +10,7 @@ import type { ToolExecutionContext } from '../../core/types';
 // Input schema for the tool
 const getEntertainmentPreferencesInputSchema = z.object({
   category: z.enum(['movies', 'tv', 'streaming', 'general']).optional(),
-  userId: z.string().optional(), // Optional for demo
+  userId: z.string().optional(), // Optional - to query other users
 });
 
 type GetEntertainmentPreferencesInput = z.infer<typeof getEntertainmentPreferencesInputSchema>;
@@ -54,7 +54,7 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
   readonly schema = {
     name: 'getEntertainmentPreferences',
     description:
-      'Get user entertainment preferences including movie genres, TV show types, streaming preferences, and viewing habits. Use this tool when recommending movies, TV shows, or planning entertainment.',
+      "Get user entertainment preferences including movie genres, TV show types, streaming preferences, and viewing habits. Use this tool when recommending movies, TV shows, or planning entertainment. By default gets current user's preferences, but can query other users if userId is provided.",
     category: 'database',
     parameters: {
       type: 'object',
@@ -66,7 +66,8 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
         },
         userId: {
           type: 'string',
-          description: 'User ID to get preferences for (optional, defaults to current user)',
+          description:
+            'User ID to get preferences for (optional, defaults to current user). Use this to get preferences for family members.',
         },
       },
       required: [],
@@ -108,33 +109,41 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 
   protected async executeInternal(
     context: ToolExecutionContext,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _input: GetEntertainmentPreferencesInput,
+    input: GetEntertainmentPreferencesInput,
   ): Promise<GetEntertainmentPreferencesOutput> {
+    // Determine which user's preferences to fetch
+    const targetUserId = input.userId || context.userId;
+
+    if (!targetUserId) {
+      throw new Error('No user ID available in context or input');
+    }
+
     // Query for questions with subcategory = 'Entertainment'
+    // Updated to use new schema: question_id, answer_id, answer_text
     const query = `
       SELECT
-        q.text as question,
-        a.give_answer_1 as answer,
-        q.category,
-        q.subcategory,
+        q.question_text as question,
+        a.answer_text as answer,
+        q.question_category as category,
+        q.context_tags,
         a.user_id as "userId",
-        q.created_at as "createdAt"
+        q.created_at as "createdAt",
+        a.answer_id as "answerId"
       FROM questions q
-      JOIN answers a ON q.id = a.question_id
-      WHERE q.subcategory = 'Entertainment'
-        AND a.give_answer_1 IS NOT NULL
-        AND a.user_id = $1
+      JOIN answers a ON q.question_id = a.question_id
+      WHERE a.user_id = $1
+        AND q.context_tags && ARRAY['Entertainment']::text[]
+        AND a.answer_text IS NOT NULL
       ORDER BY q.created_at
     `;
 
-    const result = await this.dataSource.query(query, [context.userId]);
+    const result = await this.dataSource.query(query, [targetUserId]);
 
     const preferences: EntertainmentPreference[] = result.map((row: any) => ({
-      id: `${row.userId}-${row.createdAt.getTime()}`, // Generate a unique ID
+      id: row.answerId,
       label: `${row.question}: ${row.answer}`,
-      category: row.category, // Use the actual category from the database
-      subcategory: row.subcategory,
+      category: row.category,
+      subcategory: row.context_tags?.find((tag: string) => tag === 'Entertainment') || 'Entertainment',
       userId: row.userId,
       createdAt: row.createdAt,
       question: row.question,
@@ -144,7 +153,7 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
     return {
       preferences,
       totalCount: preferences.length,
-      userId: result.length > 0 ? result[0].userId : 'demo-user',
+      userId: targetUserId,
     };
   }
 
