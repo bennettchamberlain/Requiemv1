@@ -7,12 +7,13 @@ import { EventsModule } from '@ci/domains/events';
 import { GoogleController } from './controllers/google_controller';
 import { ApiLogEntity } from './entities/ApiLogEntity';
 import { ApiLogService } from './services/ApiLogService';
+import { CalendarEventPromotionService } from './services/CalendarEventPromotionService';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ApiLogEntity]), ConnectionsModule, EventsModule],
-  providers: [ApiLogService],
+  providers: [ApiLogService, CalendarEventPromotionService],
   controllers: [GoogleController],
-  exports: [ApiLogService],
+  exports: [ApiLogService, CalendarEventPromotionService],
 })
 export class EtlModule {}
 
@@ -20,7 +21,7 @@ export class EtlModule {}
 export { ApiLogEntity };
 
 // Services
-export { ApiLogService };
+export { ApiLogService, CalendarEventPromotionService };
 
 // Controllers
 export { GoogleController };

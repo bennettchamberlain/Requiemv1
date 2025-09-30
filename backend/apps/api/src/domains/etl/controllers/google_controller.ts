@@ -7,6 +7,7 @@ import { ConnectionService } from '@ci/domains/connections';
 import { SyncStateHelper } from '@ci/domains/connections/types/sync-state';
 
 import { ApiLogService } from '../services/ApiLogService';
+import { CalendarEventPromotionService } from '../services/CalendarEventPromotionService';
 
 @Controller('google')
 export class GoogleController {
@@ -15,6 +16,7 @@ export class GoogleController {
   constructor(
     private readonly apiLogService: ApiLogService,
     private readonly connectionService: ConnectionService,
+    private readonly calendarEventPromotionService: CalendarEventPromotionService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE) // Every minute
@@ -220,6 +222,13 @@ export class GoogleController {
             eventCount: events.length,
             syncToken: response.nextSyncToken,
           });
+
+          // Promote calendar events to higher-level objects
+          await this.calendarEventPromotionService.promoteCalendarEvents(
+            { items: events },
+            userId,
+            connection.id,
+          );
         } else {
           this.logger.log('No new calendar events found in incremental sync', {
             connectionId: connection.id,
@@ -300,6 +309,13 @@ export class GoogleController {
           hasSyncToken: !!response.nextSyncToken,
           syncToken: response.nextSyncToken,
         });
+
+        // Promote calendar events to higher-level objects
+        await this.calendarEventPromotionService.promoteCalendarEvents(
+          { items: events },
+          userId,
+          connection.id,
+        );
       }
     } while (nextPageToken);
 
