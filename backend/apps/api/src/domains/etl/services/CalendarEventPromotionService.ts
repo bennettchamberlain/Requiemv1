@@ -141,35 +141,43 @@ export class CalendarEventPromotionService {
       const eventDetails = this.extractEventDetails(event);
       
       // Enhanced logging with more details
-      this.logger.log('📅 Processing Calendar Event', {
-        userId,
-        connectionId,
-        eventId: eventDetails.id,
-        summary: eventDetails.summary,
-        startTime: eventDetails.startTime,
-        endTime: eventDetails.endTime,
-        location: eventDetails.location,
-        organizerEmail: eventDetails.organizerEmail,
-        organizerName: eventDetails.organizerName,
-        participantCount: eventDetails.participants.length,
-        participants: eventDetails.participants.slice(0, 5), // Log first 5 participants
-        isRecurring: eventDetails.isRecurring,
-        status: eventDetails.status,
-        created: eventDetails.created,
-        updated: eventDetails.updated,
+      this.logger.log('');
+      this.logger.log('##########################################################');
+      this.logger.log('📅 CALENDAR EVENT DETAILS');
+      this.logger.log('##########################################################');
+      this.logger.log('Event ID: ' + eventDetails.id);
+      this.logger.log('Summary: ' + eventDetails.summary);
+      this.logger.log('Start Time: ' + eventDetails.startTime);
+      this.logger.log('End Time: ' + eventDetails.endTime);
+      this.logger.log('Location: ' + (eventDetails.location || 'No location'));
+      this.logger.log('Organizer: ' + eventDetails.organizerName + ' (' + eventDetails.organizerEmail + ')');
+      this.logger.log('Status: ' + eventDetails.status);
+      this.logger.log('Recurring: ' + (eventDetails.isRecurring ? 'Yes' : 'No'));
+      this.logger.log('Created: ' + eventDetails.created);
+      this.logger.log('Updated: ' + eventDetails.updated);
+      this.logger.log('');
+      this.logger.log('PARTICIPANTS (' + eventDetails.participants.length + ' total):');
+      eventDetails.participants.slice(0, 10).forEach((participant, index) => {
+        this.logger.log(`  ${index + 1}. ${participant.name} (${participant.email})`);
+        this.logger.log(`     - Response: ${participant.responseStatus}`);
+        this.logger.log(`     - Role: ${participant.isOrganizer ? 'Organizer' : 'Attendee'}${participant.isSelf ? ' (You)' : ''}`);
       });
+      if (eventDetails.participants.length > 10) {
+        this.logger.log(`  ... and ${eventDetails.participants.length - 10} more participants`);
+      }
+      this.logger.log('##########################################################');
+      this.logger.log('');
 
       // Log if this is a future event
       if (eventDetails.startTime) {
         const startDate = new Date(eventDetails.startTime);
         const now = new Date();
         if (startDate > now) {
-          this.logger.log('🔮 Future event detected', {
-            eventId: eventDetails.id,
-            summary: eventDetails.summary,
-            startTime: eventDetails.startTime,
-            daysInFuture: Math.ceil((startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
-          });
+          const daysInFuture = Math.ceil((startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          this.logger.log('');
+          this.logger.log('🔮🔮🔮 FUTURE EVENT ALERT 🔮🔮🔮');
+          this.logger.log(`This event is ${daysInFuture} days in the future`);
+          this.logger.log('');
         }
       }
 
