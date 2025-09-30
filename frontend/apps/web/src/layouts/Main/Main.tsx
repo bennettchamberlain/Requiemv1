@@ -14,6 +14,7 @@ export function Main() {
   if (isMobile) {
     return (
       <div className="flex flex-col h-lvh">
+        <Toaster position="top-right" />
         <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
           <Suspense fallback={<LoadingPage />}>
             <Outlet />
