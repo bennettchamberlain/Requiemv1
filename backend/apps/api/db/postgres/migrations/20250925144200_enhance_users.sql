@@ -4,6 +4,8 @@
 -- =================================================================
 -- Add CI-Database functionality to existing CI-Server users table
 -- Preserves existing FK relationships and data
+-- adding embedding to content table for semantic search ( we will probably drop this but I just want to get everything across the finish line here)
+ALTER TABLE content ADD COLUMN IF NOT EXISTS embedding vector(768);
 
 -- Add missing columns from CI-Database schema
 ALTER TABLE users ADD COLUMN IF NOT EXISTS entity_id UUID REFERENCES entities(entity_id);

@@ -28,7 +28,7 @@ CREATE TABLE questions (
     related_questions UUID[], -- Array of related question UUIDs for discovery
     question_thread TEXT, -- Optional grouping identifier for question chains
     is_about UUID[], -- Entities or topics this question is about (references entities table)
-    is_private_to REFERENCES users(id), -- If set, only this user can see/answer
+    is_private_to UUID REFERENCES users(id), -- If set, only this user can see/answer
 
     -- Context and metadata
     context_tags TEXT[], -- Topics this question relates to: 'family', 'work', 'health', etc.

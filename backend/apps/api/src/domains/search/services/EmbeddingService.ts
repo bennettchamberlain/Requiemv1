@@ -9,15 +9,6 @@ import { getIndexableMetadata } from '@ci/common/decorators';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 
-// 768 dimension model, hard coded for now, but doesn't need to stay this way
-// Note: We can consider downsampling by:
-//
-//   * Truncate: embedding.slice(0, 384)
-//   * Pool: chunk & average
-//   * PCA or UMAP (offline dimensionality reduction)
-//
-// All of these will reduce semantic accuracy and we'd to research and consider
-// the tradeoffs.
 const EMBEDDING_MODEL = 'nomic-embed-text';
 
 interface Entity {
@@ -35,7 +26,6 @@ export interface SearchResult {
   user_id?: string;
 }
 
-// Map entity types to their table names and column configurations
 const ENTITY_CONFIG: Record<
   string,
   {
@@ -51,7 +41,7 @@ const ENTITY_CONFIG: Record<
     idColumn: 'question_id',
     textColumn: 'question_text',
     embeddingColumn: 'question_embedding',
-    userColumn: undefined, // questions are global, no user_id
+    userColumn: undefined,
   },
   answer: {
     table: 'answers',
@@ -60,15 +50,6 @@ const ENTITY_CONFIG: Record<
     embeddingColumn: 'answer_embedding',
     userColumn: 'user_id',
   },
-  // Note: 'content' table doesn't have embedding column yet - add when migrated
-  // 'content': {
-  //   table: 'content',
-  //   idColumn: 'id',
-  //   textColumn: 'text',
-  //   embeddingColumn: 'content_embedding', // needs to be added to schema
-  //   userColumn: 'user_id',
-  // },
-  // Add more entity types as needed: documents, messages, etc.
 };
 
 @Injectable()
@@ -79,8 +60,307 @@ export class EmbeddingService {
 
   constructor(private readonly dataSource: DataSource) {}
 
+  /**
+   * Generate an embedding vector for a given text input
+   */
+  async generateEmbedding(input: string): Promise<number[]> {
+    return this.calculateVector(input);
+  }
+
+  /**
+   * Generate an embedding vector and format it as a PostgreSQL-compatible string
+   */
+  async generateEmbeddingString(input: string): Promise<string> {
+    return this.calculateVectorString(input);
+  }
+
+  // ==================== ENTITY-SPECIFIC EMBEDDING METHODS ====================
+
+  /**
+   * Generate and store embedding for a question
+   */
+  async embedQuestion(questionId: string, questionText: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(questionText);
+    await this.dataSource.query(`UPDATE questions SET question_embedding = $1 WHERE question_id = $2`, [
+      embeddingString,
+      questionId,
+    ]);
+  }
+
+  /**
+   * Generate and store embedding for an answer
+   */
+  async embedAnswer(answerId: string, answerText: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(answerText);
+    await this.dataSource.query(`UPDATE answers SET answer_embedding = $1 WHERE answer_id = $2`, [
+      embeddingString,
+      answerId,
+    ]);
+  }
+
+  /**
+   * Generate and store embedding for content
+   */
+  async embedContent(contentId: string, text: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(text);
+    await this.dataSource.query(`UPDATE content SET embedding = $1 WHERE id = $2`, [
+      embeddingString,
+      contentId,
+    ]);
+  }
+
+  /**
+   * Generate and store embedding for an entity
+   */
+  async embedEntity(entityId: string, searchContent: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(searchContent);
+    await this.dataSource.query(`UPDATE entities SET embedding = $1 WHERE entity_id = $2`, [
+      embeddingString,
+      entityId,
+    ]);
+  }
+
+  /**
+   * Generate and store embedding for an inventory item
+   */
+  async embedInventoryItem(objectId: string, objectName: string, objectDescription?: string): Promise<void> {
+    const text = [objectName, objectDescription].filter(Boolean).join(' ');
+    const embeddingString = await this.generateEmbeddingString(text);
+    await this.dataSource.query(`UPDATE inventory SET object_embedding = $1 WHERE object_id = $2`, [
+      embeddingString,
+      objectId,
+    ]);
+  }
+
+  /**
+   * Generate and store embedding for a fact
+   */
+  async embedFact(factId: string, factText: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(factText);
+    await this.dataSource.query(`UPDATE facts SET fact_embedding = $1 WHERE fact_id = $2`, [
+      embeddingString,
+      factId,
+    ]);
+  }
+
+  /**
+   * Generate and store embeddings for a document (title, content, summary)
+   */
+  async embedDocument(documentId: string, title?: string, content?: string, summary?: string): Promise<void> {
+    if (title) {
+      const titleEmbedding = await this.generateEmbeddingString(title);
+      await this.dataSource.query(`UPDATE documents SET title_embedding = $1 WHERE document_id = $2`, [
+        titleEmbedding,
+        documentId,
+      ]);
+    }
+
+    if (content) {
+      const contentEmbedding = await this.generateEmbeddingString(content);
+      await this.dataSource.query(`UPDATE documents SET content_embedding = $1 WHERE document_id = $2`, [
+        contentEmbedding,
+        documentId,
+      ]);
+    }
+
+    if (summary) {
+      const summaryEmbedding = await this.generateEmbeddingString(summary);
+      await this.dataSource.query(`UPDATE documents SET summary_embedding = $1 WHERE document_id = $2`, [
+        summaryEmbedding,
+        documentId,
+      ]);
+    }
+  }
+
+  /**
+   * Generate and store embedding for a document chunk
+   */
+  async embedDocumentChunk(chunkId: string, chunkText: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(chunkText);
+    await this.dataSource.query(`UPDATE document_chunks SET chunk_embedding = $1 WHERE chunk_id = $2`, [
+      embeddingString,
+      chunkId,
+    ]);
+  }
+
+  /**
+   * Generate and store embedding for a message
+   */
+  async embedMessage(messageId: string, content: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(content);
+    await this.dataSource.query(`UPDATE messages SET message_embedding = $1 WHERE message_id = $2`, [
+      embeddingString,
+      messageId,
+    ]);
+  }
+
+  // ==================== BULK EMBEDDING METHODS ====================
+
+  /**
+   * Find and embed all questions missing embeddings
+   */
+  async embedAllQuestions(): Promise<number> {
+    const questions = await this.dataSource.query(`
+      SELECT question_id, question_text 
+      FROM questions 
+      WHERE question_embedding IS NULL 
+      AND question_text IS NOT NULL
+    `);
+
+    for (const question of questions) {
+      await this.embedQuestion(question.question_id, question.question_text);
+    }
+
+    return questions.length;
+  }
+
+  /**
+   * Find and embed all answers missing embeddings
+   */
+  async embedAllAnswers(): Promise<number> {
+    const answers = await this.dataSource.query(`
+      SELECT answer_id, answer_text 
+      FROM answers 
+      WHERE answer_embedding IS NULL 
+      AND answer_text IS NOT NULL
+    `);
+
+    for (const answer of answers) {
+      await this.embedAnswer(answer.answer_id, answer.answer_text);
+    }
+
+    return answers.length;
+  }
+
+  /**
+   * Find and embed all content missing embeddings
+   */
+  async embedAllContent(): Promise<number> {
+    const content = await this.dataSource.query(`
+      SELECT id, text 
+      FROM content 
+      WHERE embedding IS NULL 
+      AND text IS NOT NULL
+    `);
+
+    for (const item of content) {
+      await this.embedContent(item.id, item.text);
+    }
+
+    return content.length;
+  }
+
+  /**
+   * Find and embed all entities missing embeddings
+   */
+  async embedAllEntities(): Promise<number> {
+    const entities = await this.dataSource.query(`
+      SELECT entity_id, search_content 
+      FROM entities 
+      WHERE embedding IS NULL 
+      AND search_content IS NOT NULL
+    `);
+
+    for (const entity of entities) {
+      await this.embedEntity(entity.entity_id, entity.search_content);
+    }
+
+    return entities.length;
+  }
+
+  /**
+   * Find and embed all inventory items missing embeddings
+   */
+  async embedAllInventoryItems(): Promise<number> {
+    const inventory = await this.dataSource.query(`
+      SELECT object_id, object_name, object_description 
+      FROM inventory 
+      WHERE object_embedding IS NULL 
+      AND (object_name IS NOT NULL OR object_description IS NOT NULL)
+    `);
+
+    for (const item of inventory) {
+      await this.embedInventoryItem(item.object_id, item.object_name, item.object_description);
+    }
+
+    return inventory.length;
+  }
+
+  /**
+   * Find and embed all facts missing embeddings
+   */
+  async embedAllFacts(): Promise<number> {
+    const facts = await this.dataSource.query(`
+      SELECT fact_id, fact_text 
+      FROM facts 
+      WHERE fact_embedding IS NULL 
+      AND fact_text IS NOT NULL
+    `);
+
+    for (const fact of facts) {
+      await this.embedFact(fact.fact_id, fact.fact_text);
+    }
+
+    return facts.length;
+  }
+
+  /**
+   * Find and embed all documents missing embeddings
+   */
+  async embedAllDocuments(): Promise<number> {
+    const documents = await this.dataSource.query(`
+      SELECT document_id, title, content, summary 
+      FROM documents 
+      WHERE (title_embedding IS NULL OR content_embedding IS NULL OR summary_embedding IS NULL)
+      AND (title IS NOT NULL OR content IS NOT NULL OR summary IS NOT NULL)
+    `);
+
+    for (const doc of documents) {
+      await this.embedDocument(doc.document_id, doc.title, doc.content, doc.summary);
+    }
+
+    return documents.length;
+  }
+
+  /**
+   * Find and embed all document chunks missing embeddings
+   */
+  async embedAllDocumentChunks(): Promise<number> {
+    const chunks = await this.dataSource.query(`
+      SELECT chunk_id, chunk_text 
+      FROM document_chunks 
+      WHERE chunk_embedding IS NULL 
+      AND chunk_text IS NOT NULL
+    `);
+
+    for (const chunk of chunks) {
+      await this.embedDocumentChunk(chunk.chunk_id, chunk.chunk_text);
+    }
+
+    return chunks.length;
+  }
+
+  /**
+   * Find and embed all messages missing embeddings
+   */
+  async embedAllMessages(): Promise<number> {
+    const messages = await this.dataSource.query(`
+      SELECT message_id, content 
+      FROM messages 
+      WHERE message_embedding IS NULL 
+      AND content IS NOT NULL
+    `);
+
+    for (const message of messages) {
+      await this.embedMessage(message.message_id, message.content);
+    }
+
+    return messages.length;
+  }
+
+  // ==================== LEGACY METHODS ====================
+
   async indexText(context: RequestContext, input: string) {
-    // Just calculate the vector without storing it anywhere
     return this.calculateVector(input);
   }
 
@@ -102,17 +382,13 @@ export class EmbeddingService {
     }
 
     const input = String(dlv(entity, dataPath) ?? '');
-
-    // Calculate the embedding vector
     const vector = await this.calculateVector(input);
-
-    // Get the entity configuration
     const config = ENTITY_CONFIG[type];
+
     if (!config) {
       throw new Error(`Unknown entity type: ${type}`);
     }
 
-    // Write the embedding directly to the source table
     const vectorString = `[${vector.join(',')}]`;
     await this.dataSource.query(
       `UPDATE ${config.table} SET ${config.embeddingColumn} = $1 WHERE ${config.idColumn} = $2`,
@@ -123,9 +399,7 @@ export class EmbeddingService {
   }
 
   async findAll(context: RequestContext): Promise<SearchResult[]> {
-    // Return all entities with embeddings for this user
-    // This searches across all entity types
-    return this.findNearest(context, '', undefined, 1000); // Large limit to get "all"
+    return this.findNearest(context, '', undefined, 1000);
   }
 
   async findNearest(
@@ -135,9 +409,6 @@ export class EmbeddingService {
     topK: number = 25,
   ): Promise<SearchResult[]> {
     const vector = await this.calculateVectorString(input);
-
-    // Determine which entity types to search
-    // Handle cases where types might be undefined, null, or not an array
     const searchTypes =
       Array.isArray(types) && types.length > 0
         ? types.filter((t) => ENTITY_CONFIG[t])
@@ -147,7 +418,6 @@ export class EmbeddingService {
       return [];
     }
 
-    // Build UNION query across all entity types
     const unionQueries: string[] = [];
     const params: (string | number)[] = [vector];
     let paramIndex = 2;
@@ -171,13 +441,9 @@ export class EmbeddingService {
 
       selectClause += ` FROM ${config.table}`;
 
-      // Add WHERE clauses
       const whereClauses: string[] = [];
-
-      // Check that embedding exists
       whereClauses.push(`${config.embeddingColumn} IS NOT NULL`);
 
-      // Add user filtering if applicable
       if (context.userId && config.userColumn) {
         whereClauses.push(`${config.userColumn} = $${paramIndex}`);
         params.push(context.userId);
@@ -191,10 +457,7 @@ export class EmbeddingService {
       unionQueries.push(selectClause);
     }
 
-    // Combine all queries with UNION ALL
     let sql = unionQueries.join(' UNION ALL ');
-
-    // Order by distance and limit
     sql += ` ORDER BY distance ASC LIMIT $${paramIndex}`;
     params.push(topK);
 

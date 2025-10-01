@@ -34,69 +34,54 @@ const logger = new Logger(path.basename(__filename));
     logging: ['error', 'schema'],
   });
 
-  let error: Error | null;
+  let error: Error | null = null;
 
   try {
     await db.initialize();
 
-    // Create embedding service with DataSource
     const embeddingService = new EmbeddingService(db);
 
-    // Index questions - embeddings written directly to questions.question_embedding
-    await db.transaction(async (manager) => {
-      const questions = await manager.find(QuestionEntity);
+    logger.log('Starting bulk embedding generation...');
 
-      logger.log(`Indexing ${questions.length} question records`);
+    const questionsCount = await embeddingService.embedAllQuestions();
+    logger.log(`✅ Generated embeddings for ${questionsCount} questions`);
 
-      for (const [index, question] of questions.entries()) {
-        logger.log(`Generating vector embeddings for question, ${index + 1} / ${questions.length}`);
+    const answersCount = await embeddingService.embedAllAnswers();
+    logger.log(`✅ Generated embeddings for ${answersCount} answers`);
 
-        // Add 'id' property for the embedding service
-        const indexableEntity = Object.assign(question, { id: question.question_id });
-        await embeddingService.indexEntity(indexableEntity, 'question_text');
-      }
-    });
+    const contentCount = await embeddingService.embedAllContent();
+    logger.log(`✅ Generated embeddings for ${contentCount} content records`);
 
-    // Index answers - embeddings written directly to answers.answer_embedding
-    await db.transaction(async (manager) => {
-      const answers = await manager.find(AnswerEntity, {
-        relations: ['user', 'question'],
-      });
+    const entitiesCount = await embeddingService.embedAllEntities();
+    logger.log(`✅ Generated embeddings for ${entitiesCount} entities`);
 
-      logger.log(`Indexing ${answers.length} answer records`);
+    const inventoryCount = await embeddingService.embedAllInventoryItems();
+    logger.log(`✅ Generated embeddings for ${inventoryCount} inventory items`);
 
-      for (const [index, answer] of answers.entries()) {
-        logger.log(`Generating vector embeddings for answer, ${index + 1} / ${answers.length}`);
+    const factsCount = await embeddingService.embedAllFacts();
+    logger.log(`✅ Generated embeddings for ${factsCount} facts`);
 
-        // Add 'id' property for the embedding service
-        const indexableEntity = Object.assign(answer, { id: answer.answer_id });
-        await embeddingService.indexEntity(indexableEntity, 'answer_text');
-      }
-    });
+    const documentsCount = await embeddingService.embedAllDocuments();
+    logger.log(`✅ Generated embeddings for ${documentsCount} documents`);
 
-    // Note: Content table doesn't have embedding column yet - skipping for now
-    // Uncomment when content table has content_embedding column added
-    /*
-    await db.transaction(async (manager) => {
-      const content = await manager.find(ContentEntity, {
-        relations: ['user'],
-      });
+    const chunksCount = await embeddingService.embedAllDocumentChunks();
+    logger.log(`✅ Generated embeddings for ${chunksCount} document chunks`);
 
-      logger.log(`Indexing ${content.length} content records`);
+    const messagesCount = await embeddingService.embedAllMessages();
+    logger.log(`✅ Generated embeddings for ${messagesCount} messages`);
 
-      for (const [index, entity] of content.entries()) {
-        logger.log(`Generating vector embeddings for content, ${index + 1} / ${content.length}`);
+    const totalCount =
+      questionsCount +
+      answersCount +
+      contentCount +
+      entitiesCount +
+      inventoryCount +
+      factsCount +
+      documentsCount +
+      chunksCount +
+      messagesCount;
 
-        if (entity.text == null) {
-          continue;
-        }
-
-        await embeddingService.indexEntity(entity, 'text');
-      }
-    });
-    */
-
-    logger.log('✅ All embeddings generated and stored successfully!');
+    logger.log(`\n🎉 All embeddings generated successfully! Total: ${totalCount} items`);
     process.exit(0);
   } catch (err) {
     error = err as Error;
