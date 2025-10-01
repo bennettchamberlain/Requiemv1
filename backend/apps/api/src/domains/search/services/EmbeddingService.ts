@@ -298,7 +298,7 @@ export class EmbeddingService {
     `);
 
     for (const fact of facts) {
-      await this.embedFact(fact.fact_id, fact.fact_text);
+      await this.embedFact(fact.fact_id, fact.fact_statement);
     }
 
     return facts.length;
