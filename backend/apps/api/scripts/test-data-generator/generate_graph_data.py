@@ -17,7 +17,7 @@ import os
 import random
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from pathlib import Path
@@ -77,74 +77,74 @@ CONCEPTS = [
 ]
 
 FOOD_PREFERENCES = [
-    {"name": "Pizza", "type": "preference_food"},
-    {"name": "Sushi", "type": "preference_food"},
-    {"name": "Tacos", "type": "preference_food"},
-    {"name": "Thai Food", "type": "preference_food"},
-    {"name": "Italian Cuisine", "type": "preference_food"},
-    {"name": "BBQ", "type": "preference_food"},
-    {"name": "Vegetarian", "type": "preference_food"},
-    {"name": "Indian Cuisine", "type": "preference_food"},
-    {"name": "Mexican Food", "type": "preference_food"},
-    {"name": "Chinese Food", "type": "preference_food"},
-    {"name": "Mediterranean", "type": "preference_food"},
-    {"name": "Seafood", "type": "preference_food"}
+    {"name": "Pizza", "type": "food", "cuisine": "Italian", "description": "Flatbread with tomato sauce, cheese, and various toppings", "common_variations": ["Margherita", "Pepperoni", "Hawaiian", "BBQ Chicken"]},
+    {"name": "Sushi", "type": "food", "cuisine": "Japanese", "description": "Vinegared rice with raw fish and vegetables", "common_variations": ["Nigiri", "Maki", "Sashimi", "Temaki"]},
+    {"name": "Tacos", "type": "food", "cuisine": "Mexican", "description": "Corn or wheat tortilla folded around various fillings", "common_variations": ["Carne Asada", "Al Pastor", "Fish", "Vegetarian"]},
+    {"name": "Thai Food", "type": "cuisine", "region": "Southeast Asia", "description": "Cuisine known for balance of sweet, sour, salty, and spicy", "signature_dishes": ["Pad Thai", "Green Curry", "Tom Yum", "Massaman Curry"]},
+    {"name": "Italian Cuisine", "type": "cuisine", "region": "Southern Europe", "description": "Mediterranean cuisine emphasizing fresh ingredients and regional diversity", "signature_dishes": ["Pasta", "Risotto", "Osso Buco", "Tiramisu"]},
+    {"name": "BBQ", "type": "food", "cuisine": "American", "description": "Slow-cooked meat with smoke and spice-based rubs or sauces", "regional_styles": ["Texas", "Kansas City", "Carolina", "Memphis"]},
+    {"name": "Vegetarian", "type": "dietary_preference", "description": "Plant-based diet excluding meat and fish", "common_foods": ["Vegetables", "Legumes", "Grains", "Tofu"]},
+    {"name": "Indian Cuisine", "type": "cuisine", "region": "South Asia", "description": "Diverse cuisine with complex spice combinations and regional variations", "signature_dishes": ["Curry", "Biryani", "Tandoori", "Dosa"]},
+    {"name": "Mexican Food", "type": "cuisine", "region": "North America", "description": "Vibrant cuisine featuring corn, beans, chilies, and indigenous ingredients", "signature_dishes": ["Tacos", "Enchiladas", "Mole", "Tamales"]},
+    {"name": "Chinese Food", "type": "cuisine", "region": "East Asia", "description": "Ancient cuisine with regional styles and wok-based cooking techniques", "regional_styles": ["Cantonese", "Sichuan", "Hunan", "Shanghainese"]},
+    {"name": "Mediterranean", "type": "cuisine", "region": "Mediterranean", "description": "Healthy cuisine emphasizing olive oil, vegetables, fish, and whole grains", "signature_dishes": ["Hummus", "Falafel", "Grilled Fish", "Greek Salad"]},
+    {"name": "Seafood", "type": "food_category", "description": "Fish, shellfish, and other marine life prepared as food", "common_types": ["Fish", "Shrimp", "Crab", "Lobster", "Oysters"]}
 ]
 
 MOVIE_PREFERENCES = [
-    {"name": "Sci-Fi", "type": "preference_movie_genre"},
-    {"name": "Action", "type": "preference_movie_genre"},
-    {"name": "Comedy", "type": "preference_movie_genre"},
-    {"name": "Drama", "type": "preference_movie_genre"},
-    {"name": "Thriller", "type": "preference_movie_genre"},
-    {"name": "Horror", "type": "preference_movie_genre"},
-    {"name": "Documentary", "type": "preference_movie_genre"},
-    {"name": "Animation", "type": "preference_movie_genre"},
-    {"name": "Romance", "type": "preference_movie_genre"},
-    {"name": "Mystery", "type": "preference_movie_genre"}
+    {"name": "Sci-Fi", "type": "movie_genre", "description": "Science fiction exploring futuristic concepts and technology", "themes": ["Space exploration", "AI", "Time travel", "Dystopia"], "example_films": ["Blade Runner", "Interstellar", "The Matrix"]},
+    {"name": "Action", "type": "movie_genre", "description": "High-energy films with physical stunts and excitement", "themes": ["Heroes", "Combat", "Chase sequences", "Explosions"], "example_films": ["Die Hard", "Mad Max", "John Wick"]},
+    {"name": "Comedy", "type": "movie_genre", "description": "Films designed to provoke laughter and amusement", "sub_genres": ["Romantic comedy", "Dark comedy", "Slapstick", "Satire"], "example_films": ["Airplane!", "The Grand Budapest Hotel", "Superbad"]},
+    {"name": "Drama", "type": "movie_genre", "description": "Character-driven narratives exploring emotional themes", "themes": ["Relationships", "Personal growth", "Conflict", "Social issues"], "example_films": ["The Shawshank Redemption", "Schindler's List", "Moonlight"]},
+    {"name": "Thriller", "type": "movie_genre", "description": "Suspenseful films creating tension and anticipation", "sub_genres": ["Psychological", "Crime", "Spy", "Legal"], "example_films": ["Se7en", "Gone Girl", "The Silence of the Lambs"]},
+    {"name": "Horror", "type": "movie_genre", "description": "Films intended to frighten and unsettle audiences", "sub_genres": ["Slasher", "Supernatural", "Psychological", "Gore"], "example_films": ["The Exorcist", "Get Out", "Hereditary"]},
+    {"name": "Documentary", "type": "movie_genre", "description": "Non-fiction films depicting real events and people", "sub_genres": ["Nature", "Biography", "Historical", "Social issues"], "example_films": ["Planet Earth", "Won't You Be My Neighbor?", "Free Solo"]},
+    {"name": "Animation", "type": "movie_genre", "description": "Films using illustrated or computer-generated imagery", "techniques": ["2D", "3D CGI", "Stop-motion", "Anime"], "example_films": ["Spirited Away", "Toy Story", "Spider-Verse"]},
+    {"name": "Romance", "type": "movie_genre", "description": "Films centered on romantic love and relationships", "themes": ["Love stories", "Heartbreak", "Marriage", "Dating"], "example_films": ["The Notebook", "Before Sunrise", "Pride and Prejudice"]},
+    {"name": "Mystery", "type": "movie_genre", "description": "Films involving puzzles, investigations, and revelations", "themes": ["Whodunit", "Detective work", "Clues", "Twists"], "example_films": ["Knives Out", "The Usual Suspects", "Chinatown"]}
 ]
 
 MUSIC_PREFERENCES = [
-    {"name": "Rock", "type": "preference_music_genre"},
-    {"name": "Jazz", "type": "preference_music_genre"},
-    {"name": "Classical", "type": "preference_music_genre"},
-    {"name": "Hip Hop", "type": "preference_music_genre"},
-    {"name": "Electronic", "type": "preference_music_genre"},
-    {"name": "Pop", "type": "preference_music_genre"},
-    {"name": "Country", "type": "preference_music_genre"},
-    {"name": "R&B", "type": "preference_music_genre"},
-    {"name": "Indie", "type": "preference_music_genre"},
-    {"name": "Metal", "type": "preference_music_genre"}
+    {"name": "Rock", "type": "music_genre", "description": "Genre emphasizing electric guitars, strong rhythms, and attitude", "sub_genres": ["Classic Rock", "Hard Rock", "Alternative", "Indie Rock"], "origin": "1950s USA/UK", "characteristics": ["Guitar-driven", "Energetic", "Rebellious"]},
+    {"name": "Jazz", "type": "music_genre", "description": "Sophisticated genre featuring improvisation and complex harmonies", "sub_genres": ["Bebop", "Smooth Jazz", "Fusion", "Cool Jazz"], "origin": "Early 20th century New Orleans", "characteristics": ["Improvisation", "Swing", "Complex chords"]},
+    {"name": "Classical", "type": "music_genre", "description": "Western art music tradition spanning centuries", "periods": ["Baroque", "Classical", "Romantic", "Modern"], "origin": "Medieval Europe", "characteristics": ["Orchestral", "Complex compositions", "Formal structure"]},
+    {"name": "Hip Hop", "type": "music_genre", "description": "Urban genre featuring rhythmic vocals over beats", "sub_genres": ["Trap", "Boom Bap", "Conscious Rap", "Mumble Rap"], "origin": "1970s Bronx, New York", "characteristics": ["Rapping", "Sampling", "Beats"]},
+    {"name": "Electronic", "type": "music_genre", "description": "Music produced primarily with electronic instruments and technology", "sub_genres": ["House", "Techno", "Dubstep", "Ambient"], "origin": "1970s-1980s", "characteristics": ["Synthesizers", "Digital production", "Dance-oriented"]},
+    {"name": "Pop", "type": "music_genre", "description": "Mainstream music designed for broad appeal", "sub_genres": ["Dance Pop", "Teen Pop", "Synth Pop", "Indie Pop"], "origin": "1950s", "characteristics": ["Catchy melodies", "Verse-chorus structure", "Radio-friendly"]},
+    {"name": "Country", "type": "music_genre", "description": "American roots music with rural and working-class themes", "sub_genres": ["Outlaw Country", "Country Pop", "Bluegrass", "Honky Tonk"], "origin": "1920s Southern USA", "characteristics": ["Storytelling", "Acoustic instruments", "Twang"]},
+    {"name": "R&B", "type": "music_genre", "description": "Rhythm and blues combining soul, funk, and pop elements", "sub_genres": ["Contemporary R&B", "Neo-Soul", "Funk"], "origin": "1940s African American communities", "characteristics": ["Soulful vocals", "Groove", "Emotional"]},
+    {"name": "Indie", "type": "music_genre", "description": "Independent music outside mainstream commercial production", "sub_genres": ["Indie Rock", "Indie Folk", "Indie Pop"], "origin": "1970s-1980s", "characteristics": ["DIY ethos", "Experimental", "Non-commercial"]},
+    {"name": "Metal", "type": "music_genre", "description": "Heavy music with distorted guitars and aggressive sound", "sub_genres": ["Heavy Metal", "Thrash", "Death Metal", "Power Metal"], "origin": "Late 1960s-1970s", "characteristics": ["Heavy distortion", "Power", "Technical skill"]}
 ]
 
 ACTIVITY_PREFERENCES = [
-    {"name": "Hiking", "type": "preference_activity"},
-    {"name": "Reading", "type": "preference_activity"},
-    {"name": "Gaming", "type": "preference_activity"},
-    {"name": "Swimming", "type": "preference_activity"},
-    {"name": "Cycling", "type": "preference_activity"},
-    {"name": "Yoga", "type": "preference_activity"},
-    {"name": "Running", "type": "preference_activity"},
-    {"name": "Painting", "type": "preference_activity"},
-    {"name": "Writing", "type": "preference_activity"},
-    {"name": "Dancing", "type": "preference_activity"}
+    {"name": "Hiking", "type": "activity", "category": "Outdoor/Fitness", "description": "Walking in natural environments on trails", "benefits": ["Cardiovascular health", "Mental clarity", "Nature connection"], "equipment": ["Hiking boots", "Backpack", "Water"]},
+    {"name": "Reading", "type": "activity", "category": "Indoor/Educational", "description": "Engaging with written literature and information", "benefits": ["Knowledge", "Vocabulary", "Stress reduction"], "formats": ["Books", "E-readers", "Audiobooks"]},
+    {"name": "Gaming", "type": "activity", "category": "Indoor/Entertainment", "description": "Playing video games across various platforms", "benefits": ["Problem-solving", "Hand-eye coordination", "Social connection"], "platforms": ["PC", "Console", "Mobile", "VR"]},
+    {"name": "Swimming", "type": "activity", "category": "Fitness/Water Sport", "description": "Propelling through water using limbs", "benefits": ["Full-body workout", "Low-impact", "Flexibility"], "styles": ["Freestyle", "Backstroke", "Breaststroke"]},
+    {"name": "Cycling", "type": "activity", "category": "Outdoor/Fitness", "description": "Riding bicycles for exercise or transportation", "benefits": ["Cardiovascular health", "Leg strength", "Eco-friendly transport"], "types": ["Road", "Mountain", "Commuting"]},
+    {"name": "Yoga", "type": "activity", "category": "Fitness/Wellness", "description": "Physical, mental, and spiritual practice combining poses and breathing", "benefits": ["Flexibility", "Stress reduction", "Mind-body connection"], "styles": ["Hatha", "Vinyasa", "Yin", "Hot Yoga"]},
+    {"name": "Running", "type": "activity", "category": "Outdoor/Fitness", "description": "Moving at speed on foot", "benefits": ["Cardiovascular health", "Endurance", "Mental health"], "types": ["Sprinting", "Distance", "Trail running"]},
+    {"name": "Painting", "type": "activity", "category": "Creative/Art", "description": "Creating visual art with pigments on surfaces", "benefits": ["Creativity", "Self-expression", "Relaxation"], "mediums": ["Oil", "Acrylic", "Watercolor", "Digital"]},
+    {"name": "Writing", "type": "activity", "category": "Creative/Educational", "description": "Composing text for various purposes", "benefits": ["Self-expression", "Communication skills", "Mental clarity"], "forms": ["Fiction", "Poetry", "Journalism", "Blogging"]},
+    {"name": "Dancing", "type": "activity", "category": "Fitness/Creative", "description": "Moving rhythmically to music", "benefits": ["Cardiovascular health", "Coordination", "Social connection"], "styles": ["Ballet", "Hip Hop", "Salsa", "Contemporary"]}
 ]
 
 DRINK_PREFERENCES = [
-    {"name": "Coffee", "type": "preference_drink"},
-    {"name": "Tea", "type": "preference_drink"},
-    {"name": "Beer", "type": "preference_drink"},
-    {"name": "Wine", "type": "preference_drink"},
-    {"name": "Cocktails", "type": "preference_drink"},
-    {"name": "Smoothies", "type": "preference_drink"},
-    {"name": "Espresso", "type": "preference_drink"},
-    {"name": "Kombucha", "type": "preference_drink"}
+    {"name": "Coffee", "type": "beverage", "category": "Hot/Caffeinated", "description": "Brewed drink from roasted coffee beans", "caffeine_content": "High", "varieties": ["Espresso", "Americano", "Latte", "Cappuccino"], "origin": "Ethiopia"},
+    {"name": "Tea", "type": "beverage", "category": "Hot/Caffeinated", "description": "Aromatic beverage from Camellia sinensis leaves", "caffeine_content": "Moderate", "varieties": ["Green", "Black", "Oolong", "White", "Herbal"], "origin": "China"},
+    {"name": "Beer", "type": "beverage", "category": "Alcoholic", "description": "Fermented alcoholic drink made from grains", "alcohol_content": "Moderate (4-6%)", "styles": ["Lager", "IPA", "Stout", "Wheat", "Pilsner"]},
+    {"name": "Wine", "type": "beverage", "category": "Alcoholic", "description": "Fermented alcoholic drink made from grapes", "alcohol_content": "Moderate-High (12-15%)", "varieties": ["Red", "White", "Rosé", "Sparkling"]},
+    {"name": "Cocktails", "type": "beverage", "category": "Alcoholic/Mixed", "description": "Mixed drinks combining spirits with other ingredients", "alcohol_content": "Variable", "classic_examples": ["Martini", "Margarita", "Old Fashioned", "Mojito"]},
+    {"name": "Smoothies", "type": "beverage", "category": "Non-Alcoholic/Healthy", "description": "Blended drinks typically made with fruits and vegetables", "caffeine_content": "None", "common_ingredients": ["Fruits", "Vegetables", "Yogurt", "Protein powder"]},
+    {"name": "Espresso", "type": "beverage", "category": "Hot/Caffeinated", "description": "Concentrated coffee brewed by forcing hot water through finely-ground beans", "caffeine_content": "Very High", "styles": ["Single", "Double", "Ristretto", "Lungo"]},
+    {"name": "Kombucha", "type": "beverage", "category": "Fermented/Health", "description": "Fermented tea drink with probiotics", "caffeine_content": "Low", "alcohol_content": "Trace (<0.5%)", "benefits": ["Probiotics", "Antioxidants"]}
 ]
 
 RELATIONSHIP_TYPES = [
     "KNOWS", "WORKS_WITH", "LIVES_IN", "VISITED", "OWNS", "INTERESTED_IN",
     "COLLABORATED_WITH", "STUDIED_AT", "WORKED_AT", "LIVES_NEAR", "USES",
-    "PARTICIPATED_IN", "CREATED", "MENTORED", "TAUGHT", "LEARNED_FROM", "PREFERS",
+    "PARTICIPATED_IN", "CREATED", "MENTORED", "TAUGHT", "LEARNED_FROM", "PREFERS", "DISLIKES",
     "SPOUSE", "PARENT_OF", "CHILD_OF", "SIBLING_OF", "FAMILY_MEMBER"
 ]
 
@@ -155,6 +155,7 @@ class GraphDataGenerator:
         self.user_id = user_id  # Keep for reference, but won't store in entities table
         self.entities: List[Dict[str, Any]] = []
         self.relationships: List[Dict[str, Any]] = []
+        self._user_entity_links: Set[Tuple[str, str]] = set()
     
     @classmethod
     def from_env_file(cls, env_file_path: str = None, user_id: str = None):
@@ -206,7 +207,12 @@ class GraphDataGenerator:
         """Generate UUID v7 style ID"""
         return str(uuid.uuid4())
     
-    def create_person_entity(self, first_name: str, last_name: str) -> Dict[str, Any]:
+    def create_person_entity(
+        self,
+        first_name: str,
+        last_name: str,
+        system_user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Create a person entity with realistic properties"""
         entity_id = self.generate_uuid()
         properties = {
@@ -226,9 +232,11 @@ class GraphDataGenerator:
             "properties": properties,
             "search_content": f"{first_name} {last_name} {' '.join(properties['skills'])}",
             "is_active": True,
-            "is_archived": False
+            "is_archived": False,
+            "linked_table": "users" if system_user_id else None,
+            "linked_id": system_user_id if system_user_id else None,
         }
-        
+
         self.entities.append(entity)
         return entity
     
@@ -275,19 +283,39 @@ class GraphDataGenerator:
         return entity
     
     def create_concept_entity(self, concept_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a concept entity"""
+        """Create a concept entity with rich properties"""
         entity_id = self.generate_uuid()
         
-        # For preferences, description is optional
-        description = concept_data.get("description", f"{concept_data['type']} preference: {concept_data['name']}")
+        # Extract name, type, and description
+        name = concept_data["name"]
+        entity_type_value = concept_data["type"]
+        description = concept_data.get("description", f"{entity_type_value}: {name}")
+        
+        # Copy all fields to properties, excluding name, type, and description
+        # as they have dedicated columns
+        properties = {k: v for k, v in concept_data.items() 
+                     if k not in ["name", "description"]}
+        
+        # Build search content from all available text fields
+        search_parts = [name, entity_type_value, description]
+        
+        # Add any list or string fields to search content
+        for key, value in concept_data.items():
+            if key not in ["name", "type", "description"]:
+                if isinstance(value, list):
+                    search_parts.extend([str(item) for item in value])
+                elif isinstance(value, str):
+                    search_parts.append(value)
+        
+        search_content = " ".join(search_parts)
         
         entity = {
             "entity_id": entity_id,
             "entity_type": "Concept",
-            "name": concept_data["name"],
+            "name": name,
             "description": description,
-            "properties": {"type": concept_data["type"]},
-            "search_content": f"{concept_data['name']} {concept_data['type']} {description}",
+            "properties": properties,
+            "search_content": search_content,
             "is_active": True,
             "is_archived": False
         }
@@ -686,6 +714,7 @@ class GraphDataGenerator:
         if people_needing_prefs:
             print("Generating preference relationships...")
             for person in people_needing_prefs:
+                # PREFERS relationships (15-25 per person)
                 num_preferences = random.randint(15, 25)
                 # Sample random preferences to ensure variety
                 selected_prefs = random.sample(preferences, min(num_preferences, len(preferences)))
@@ -703,6 +732,26 @@ class GraphDataGenerator:
                         "since": (datetime.now() - timedelta(days=days_since)).isoformat(),
                         "context": random.choice(["discovered", "childhood", "recent", "always loved", "acquired taste"])
                     })
+                
+                # DISLIKES relationships (3-8 per person)
+                # Get preferences not already linked with PREFERS
+                remaining_prefs = [p for p in preferences if p not in selected_prefs]
+                if remaining_prefs:
+                    num_dislikes = random.randint(3, min(8, len(remaining_prefs)))
+                    disliked_prefs = random.sample(remaining_prefs, num_dislikes)
+                    
+                    for pref in disliked_prefs:
+                        # Generate dislike strength (0.3 to 1.0)
+                        # Higher strength = stronger dislike
+                        strength = round(random.uniform(0.3, 1.0), 2)
+                        
+                        days_since = random.randint(30, 2190)
+                        
+                        add_relationship_if_unique(person, pref, "DISLIKES", {
+                            "strength": strength,
+                            "since": (datetime.now() - timedelta(days=days_since)).isoformat(),
+                            "reason": random.choice(["bad experience", "never appealed", "tried once", "health reasons", "personal taste"])
+                        })
     
     def find_pref(self, pref_list: List[Dict], name: str) -> Dict[str, Any]:
         """Find a preference by name"""
@@ -722,14 +771,26 @@ class GraphDataGenerator:
             "context": context
         })
     
+    def add_dislike(self, person: Dict, preference: Dict, strength: float, reason: str = "personal taste"):
+        """Helper to add a dislike with strength"""
+        if preference is None:
+            return
+        days_since = random.randint(365, 3650)  # 1-10 years
+        self.create_relationship(person, preference, "DISLIKES", {
+            "strength": strength,
+            "since": (datetime.now() - timedelta(days=days_since)).isoformat(),
+            "reason": reason
+        })
+    
     def assign_family_preferences(self, preferences: List[Dict]):
         """Assign curated preferences to Smith family members"""
         # Group preferences by type for easy lookup
-        food_prefs = [p for p in preferences if p["properties"]["type"] == "preference_food"]
-        movie_prefs = [p for p in preferences if p["properties"]["type"] == "preference_movie_genre"]
-        music_prefs = [p for p in preferences if p["properties"]["type"] == "preference_music_genre"]
-        activity_prefs = [p for p in preferences if p["properties"]["type"] == "preference_activity"]
-        drink_prefs = [p for p in preferences if p["properties"]["type"] == "preference_drink"]
+        # Note: checking the properties dict which contains the 'type' field
+        food_prefs = [p for p in preferences if p["properties"]["type"] in ["food", "cuisine", "dietary_preference", "food_category"]]
+        movie_prefs = [p for p in preferences if p["properties"]["type"] == "movie_genre"]
+        music_prefs = [p for p in preferences if p["properties"]["type"] == "music_genre"]
+        activity_prefs = [p for p in preferences if p["properties"]["type"] == "activity"]
+        drink_prefs = [p for p in preferences if p["properties"]["type"] == "beverage"]
         
         john = self._family_members['john']
         sarah = self._family_members['sarah']
@@ -802,6 +863,28 @@ class GraphDataGenerator:
         self.add_preference(lucas, self.find_pref(activity_prefs, "Cycling"), 0.9, "discovered")
         self.add_preference(lucas, self.find_pref(activity_prefs, "Hiking"), 0.8, "recent")
         self.add_preference(lucas, self.find_pref(drink_prefs, "Smoothies"), 0.95, "always loved")
+        
+        # Add some curated dislikes for each family member
+        # John dislikes
+        self.add_dislike(john, self.find_pref(movie_prefs, "Horror"), 0.9, "too scary")
+        self.add_dislike(john, self.find_pref(food_prefs, "Seafood"), 0.7, "allergies")
+        self.add_dislike(john, self.find_pref(activity_prefs, "Dancing"), 0.6, "not my thing")
+        
+        # Sarah dislikes
+        self.add_dislike(sarah, self.find_pref(movie_prefs, "Horror"), 0.85, "too intense")
+        self.add_dislike(sarah, self.find_pref(food_prefs, "BBQ"), 0.7, "health reasons")
+        self.add_dislike(sarah, self.find_pref(drink_prefs, "Beer"), 0.8, "taste preference")
+        
+        # Emma dislikes
+        self.add_dislike(emma, self.find_pref(movie_prefs, "Horror"), 1.0, "nightmares")
+        self.add_dislike(emma, self.find_pref(food_prefs, "Seafood"), 0.9, "texture issues")
+        self.add_dislike(emma, self.find_pref(activity_prefs, "Running"), 0.7, "prefer other activities")
+        
+        # Lucas dislikes
+        self.add_dislike(lucas, self.find_pref(food_prefs, "Vegetarian"), 0.85, "likes meat")
+        self.add_dislike(lucas, self.find_pref(food_prefs, "Seafood"), 0.95, "yuck!")
+        self.add_dislike(lucas, self.find_pref(movie_prefs, "Romance"), 0.9, "boring")
+        self.add_dislike(lucas, self.find_pref(activity_prefs, "Yoga"), 0.8, "too slow")
     
     def save_to_database(self):
         """Save generated data to PostgreSQL database"""
@@ -840,7 +923,30 @@ class GraphDataGenerator:
                         **rel,
                         "properties": json.dumps(rel["properties"])
                     })
-                
+
+                if self._user_entity_links:
+                    print("Updating user entity links...")
+                    for user_id, entity_id in self._user_entity_links:
+                        cur.execute(
+                            """
+                                UPDATE users
+                                SET entity_id = %s
+                                WHERE id = %s AND (entity_id IS NULL OR entity_id <> %s)
+                            """,
+                            (entity_id, user_id, entity_id),
+                        )
+
+                cur.execute(
+                    """
+                        UPDATE users u
+                        SET entity_id = e.entity_id
+                        FROM entities e
+                        WHERE e.linked_table = 'users'
+                          AND e.linked_id = u.id
+                          AND (u.entity_id IS NULL OR u.entity_id <> e.entity_id)
+                    """
+                )
+
                 conn.commit()
                 print("✅ Test data saved successfully!")
     
