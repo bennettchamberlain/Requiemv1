@@ -19,6 +19,9 @@ export class UserEntity {
   @Column()
   onboarded!: boolean;
 
+  @Column({ type: 'uuid', name: 'entity_id', nullable: true })
+  entityId?: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

@@ -9,78 +9,114 @@ import type { ToolExecutionContext } from '../../core/types';
 
 // Input schema for the tool
 const getUserPreferencesInputSchema = z.object({
-  category: z.enum(['food', 'environment', 'learning', 'general']).optional(),
-  userId: z.string().optional(), // Optional - to query other users like family members
+  category: z
+    .enum(['food', 'entertainment', 'activity', 'beverage', 'music', 'all'])
+    .optional()
+    .default('all'),
+  personName: z.string().optional(),
+  includeContext: z.boolean().default(true),
 });
 
 type GetUserPreferencesInput = z.infer<typeof getUserPreferencesInputSchema>;
 
-// Output interface
-interface UserPreference {
+// Output interfaces
+interface PreferenceNode {
   id: string;
-  label: string;
-  category?: string;
-  subcategory?: string;
-  userId: string;
-  createdAt: Date;
-  question?: string;
-  answer?: string;
+  type: string;
+  name: string;
+  strength: number;
+  relationship: 'PREFERS' | 'DISLIKES';
+  properties?: Record<string, any>;
 }
 
 interface GetUserPreferencesOutput {
-  preferences: UserPreference[];
-  totalCount: number;
-  userId: string;
+  preferences: PreferenceNode[];
+  dislikes: PreferenceNode[];
+  totalPreferences: number;
+  totalDislikes: number;
+  personId: string;
+  personName: string;
+  debugInfo?: {
+    userId: string;
+    entityLookupMethod: string;
+    queryInfo: string;
+  };
 }
 
 /**
- * Tool to retrieve user preferences from the database
- * Useful for dinner planning and food-related conversations
+ * Tool to retrieve user preferences from the graph database
+ * Uses the entity-relationship graph to fetch PREFERS and DISLIKES relationships
+ * Supports querying for current user or family members (e.g., "my wife")
  */
 @Injectable()
 export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, GetUserPreferencesOutput> {
   readonly schema = {
     name: 'getUserPreferences',
     description:
-      "Get user food preferences, dietary restrictions, allergies, and eating habits. Use this tool when planning meals, cooking, or discussing food choices. By default gets the current user's preferences, but can query other users if userId is provided.",
+      'Get user preferences including likes and dislikes for food, entertainment, activities, music, and beverages. ' +
+      'Can query preferences for the current user or family members (e.g., "my wife", "John"). ' +
+      'Returns detailed information about each preference including strength and rich context.',
     category: 'database',
     parameters: {
       type: 'object',
       properties: {
         category: {
           type: 'string',
-          enum: ['food', 'environment', 'learning', 'general'],
-          description:
-            'Filter preferences by category (optional) - not used currently as we focus on food subcategory',
+          enum: ['food', 'entertainment', 'activity', 'beverage', 'music', 'all'],
+          description: 'Filter preferences by category (default: all)',
+          default: 'all',
         },
-        userId: {
+        personName: {
           type: 'string',
           description:
-            'User ID to get preferences for (optional, defaults to current user). Use this to get preferences for family members or other people.',
+            'Name of the person to get preferences for (e.g., "my wife", "Sarah", "John Smith"). If not provided, returns current user preferences.',
+        },
+        includeContext: {
+          type: 'boolean',
+          description:
+            'Include detailed properties about each preference (cuisine style, movie themes, etc.)',
+          default: true,
         },
       },
       required: [],
     },
     examples: [
       {
-        input: {},
+        input: { category: 'food' },
         output: {
           preferences: [
             {
               id: 'uuid-123',
-              label: 'Do you have any food allergies?: No known allergies',
-              category: 'Physical Health',
-              subcategory: 'Food',
-              userId: 'user-uuid',
-              createdAt: new Date(),
-              question: 'Do you have any food allergies?',
-              answer: 'No known allergies',
+              type: 'cuisine',
+              name: 'Italian',
+              strength: 0.9,
+              relationship: 'PREFERS',
+              properties: {
+                description: 'Mediterranean cuisine from Italy',
+                signature_dishes: ['pasta', 'pizza', 'risotto'],
+                regional_styles: ['Northern Italian', 'Southern Italian'],
+              },
             },
           ],
-          totalCount: 1,
-          userId: 'user-uuid',
+          dislikes: [
+            {
+              id: 'uuid-456',
+              type: 'food',
+              name: 'Seafood',
+              strength: 0.7,
+              relationship: 'DISLIKES',
+              properties: {
+                category: 'protein',
+                description: 'Fish and shellfish',
+              },
+            },
+          ],
+          totalPreferences: 1,
+          totalDislikes: 1,
+          personId: 'user-uuid',
+          personName: 'Current User',
         },
-        description: 'Get food-related preferences for comprehensive meal planning',
+        description: 'Get food preferences including likes and dislikes with rich context',
       },
     ],
   };
@@ -100,55 +136,245 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
     context: ToolExecutionContext,
     input: GetUserPreferencesInput,
   ): Promise<GetUserPreferencesOutput> {
-    // Determine which user's preferences to fetch
-    // If userId provided in input, use that; otherwise use current user from context
-    const targetUserId = input.userId || context.userId;
+    let targetPersonId: string | null = null;
+    let targetPersonName: string = 'Current User';
+    const debugInfo: any = {
+      userId: context.userId || 'none',
+      entityLookupMethod: '',
+      queryInfo: '',
+    };
 
-    if (!targetUserId) {
-      throw new Error('No user ID available in context or input');
+    if (!context.userId) {
+      return {
+        preferences: [],
+        dislikes: [],
+        totalPreferences: 0,
+        totalDislikes: 0,
+        personId: '',
+        personName: 'No user context',
+        debugInfo: {
+          ...debugInfo,
+          queryInfo: 'No userId in context',
+        },
+      };
     }
 
-    // Query for questions with subcategory = 'Food' (much more focused than all Personal Preferences)
-    // Updated to use new schema: question_id, answer_id, answer_text
-    const query = `
+    if (input.personName) {
+      debugInfo.entityLookupMethod = 'personName resolution';
+      targetPersonId = await this.resolvePersonEntity(context.userId, input.personName);
+      if (!targetPersonId) {
+        debugInfo.queryInfo = `Person '${input.personName}' not found in entities or social_relationships`;
+
+        return {
+          preferences: [],
+          dislikes: [],
+          totalPreferences: 0,
+          totalDislikes: 0,
+          personId: '',
+          personName: input.personName + ' (not found)',
+          debugInfo,
+        };
+      }
+
+      targetPersonName = input.personName;
+    } else {
+      debugInfo.entityLookupMethod = 'current user entity_id';
+      const userQuery = `
+        SELECT entity_id, username
+        FROM users
+        WHERE id = $1
+      `;
+      const userResult = await this.dataSource.query(userQuery, [context.userId]);
+
+      if (userResult.length === 0) {
+        debugInfo.queryInfo = `User ${context.userId} not found in users table`;
+
+        return {
+          preferences: [],
+          dislikes: [],
+          totalPreferences: 0,
+          totalDislikes: 0,
+          personId: '',
+          personName: 'User not found',
+          debugInfo,
+        };
+      }
+
+      if (!userResult[0].entity_id) {
+        debugInfo.queryInfo = `User ${context.userId} has no entity_id set. User needs to be linked to a Person entity.`;
+
+        return {
+          preferences: [],
+          dislikes: [],
+          totalPreferences: 0,
+          totalDislikes: 0,
+          personId: '',
+          personName: userResult[0].username || 'Current User',
+          debugInfo,
+        };
+      }
+
+      targetPersonId = userResult[0].entity_id;
+      targetPersonName = userResult[0].username || 'Current User';
+    }
+
+    const categoryFilter = this.buildCategoryFilter(input.category);
+    debugInfo.queryInfo = `Querying entity ${targetPersonId} with category filter: ${input.category}`;
+
+    // Query for PREFERS relationships
+    // NOTE: Filter by properties->>'type' because all preferences have entity_type='Concept'
+    const prefersQuery = `
       SELECT 
-        q.question_text as question,
-        a.answer_text as answer,
-        q.question_category as category,
-        q.context_tags,
-        a.user_id as "userId",
-        q.created_at as "createdAt",
-        a.answer_id as "answerId"
-      FROM questions q
-      JOIN answers a ON q.question_id = a.question_id  
-      WHERE a.user_id = $1
-        AND q.context_tags && ARRAY['Food']::text[]
-        AND a.answer_text IS NOT NULL
-      ORDER BY q.created_at
+        e.entity_id,
+        e.properties->>'type' as type,
+        e.name,
+        e.properties,
+        r.strength,
+        'PREFERS' as relationship
+      FROM relationships r
+      JOIN entities e ON r.to_entity_id = e.entity_id
+      WHERE r.from_entity_id = $1
+        AND r.relationship_type = 'PREFERS'
+        AND r.is_active = TRUE
+        ${categoryFilter}
+      ORDER BY r.strength DESC, e.name ASC
     `;
 
-    const result = await this.dataSource.query(query, [targetUserId]);
+    // Query for DISLIKES relationships
+    const dislikesQuery = `
+      SELECT 
+        e.entity_id,
+        e.properties->>'type' as type,
+        e.name,
+        e.properties,
+        r.strength,
+        'DISLIKES' as relationship
+      FROM relationships r
+      JOIN entities e ON r.to_entity_id = e.entity_id
+      WHERE r.from_entity_id = $1
+        AND r.relationship_type = 'DISLIKES'
+        AND r.is_active = TRUE
+        ${categoryFilter}
+      ORDER BY r.strength DESC, e.name ASC
+    `;
 
-    const preferences: UserPreference[] = result.map((row: any) => ({
-      id: row.answerId,
-      label: `${row.question}: ${row.answer}`,
-      category: row.category,
-      subcategory: row.context_tags?.find((tag: string) => tag === 'Food') || 'Food',
-      userId: row.userId,
-      createdAt: row.createdAt,
-      question: row.question,
-      answer: row.answer,
+    const [prefersResult, dislikesResult] = await Promise.all([
+      this.dataSource.query(prefersQuery, [targetPersonId]),
+      this.dataSource.query(dislikesQuery, [targetPersonId]),
+    ]);
+
+    const preferences: PreferenceNode[] = prefersResult.map((row: any) => ({
+      id: row.entity_id,
+      type: row.type || 'unknown',
+      name: row.name,
+      strength: parseFloat(row.strength),
+      relationship: 'PREFERS' as const,
+      properties: input.includeContext ? row.properties : undefined,
     }));
+
+    const dislikes: PreferenceNode[] = dislikesResult.map((row: any) => ({
+      id: row.entity_id,
+      type: row.type || 'unknown',
+      name: row.name,
+      strength: parseFloat(row.strength),
+      relationship: 'DISLIKES' as const,
+      properties: input.includeContext ? row.properties : undefined,
+    }));
+
+    if (preferences.length === 0 && dislikes.length === 0) {
+      debugInfo.queryInfo += ` | No PREFERS or DISLIKES relationships found for this entity.`;
+    }
 
     return {
       preferences,
-      totalCount: preferences.length,
-      userId: targetUserId,
+      dislikes,
+      totalPreferences: preferences.length,
+      totalDislikes: dislikes.length,
+      personId: targetPersonId!,
+      personName: targetPersonName,
+      debugInfo,
     };
   }
 
+  /**
+   * Resolve a person name to an entity ID
+   */
+  private async resolvePersonEntity(userId: string, personName: string): Promise<string | null> {
+    const lowerName = personName.toLowerCase().trim();
+
+    // Check for relationship descriptors
+    const relationshipPatterns: Record<string, string[]> = {
+      romantic_partner: ['wife', 'husband', 'spouse', 'partner'],
+      family: ['mother', 'mom', 'father', 'dad', 'brother', 'sister', 'son', 'daughter'],
+      friend: ['friend', 'best friend'],
+    };
+
+    for (const [relType, patterns] of Object.entries(relationshipPatterns)) {
+      if (patterns.some((p) => lowerName.includes(p))) {
+        const query = `
+          SELECT e.entity_id, e.name
+          FROM users u
+          JOIN social_relationships sr ON sr.user_id = u.id
+          JOIN entities e ON e.entity_id = sr.person_entity_id
+          WHERE u.id = $1 
+            AND sr.relationship_type = $2
+            AND e.entity_type = 'Person'
+          LIMIT 1
+        `;
+        const result = await this.dataSource.query(query, [userId, relType]);
+        if (result.length > 0) {
+          return result[0].entity_id ?? null;
+        }
+      }
+    }
+
+    // Search by name
+    const nameQuery = `
+      SELECT entity_id, name
+      FROM entities
+      WHERE entity_type = 'Person'
+        AND (
+          LOWER(name) = $1
+          OR LOWER(name) LIKE $2
+        )
+      LIMIT 1
+    `;
+    const nameResult = await this.dataSource.query(nameQuery, [lowerName, `%${lowerName}%`]);
+    if (nameResult.length > 0) {
+      return nameResult[0].entity_id ?? null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Build SQL WHERE clause for category filtering
+   * NOTE: Filters by properties->>'type' because all preferences have entity_type='Concept'
+   */
+  private buildCategoryFilter(category: string): string {
+    if (category === 'all') {
+      return '';
+    }
+
+    const categoryMap: Record<string, string[]> = {
+      food: ['food', 'cuisine', 'dietary_preference', 'food_category'],
+      entertainment: ['movie_genre', 'tv_genre', 'book_genre'],
+      activity: ['activity', 'sport', 'hobby'],
+      beverage: ['beverage', 'drink'],
+      music: ['music_genre', 'music_style'],
+    };
+
+    const types = categoryMap[category] || [];
+    if (types.length === 0) {
+      return '';
+    }
+
+    const typeList = types.map((t) => `'${t}'`).join(', ');
+
+    return `AND e.properties->>'type' IN (${typeList})`;
+  }
+
   protected sanitizeInputForLogging(input: unknown): any {
-    // No sensitive data in preferences input
     return input;
   }
 }

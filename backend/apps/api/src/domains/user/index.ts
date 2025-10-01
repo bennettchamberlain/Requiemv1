@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { GraphNodeEntity } from '@ci/domains/memory/entities/GraphNodeEntity';
+
 import { UserController } from './controllers/UserController';
 import { SignupCodeEntity } from './entities/SignupCodeEntity';
 import { UserEntity } from './entities/UserEntity';
@@ -8,7 +10,7 @@ import { SignupCodeService } from './services/SignupCodeService';
 import { UserService } from './services/UserService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, SignupCodeEntity])],
+  imports: [TypeOrmModule.forFeature([UserEntity, SignupCodeEntity, GraphNodeEntity])],
   providers: [UserService, SignupCodeService],
   controllers: [UserController],
   exports: [UserService, SignupCodeService],
