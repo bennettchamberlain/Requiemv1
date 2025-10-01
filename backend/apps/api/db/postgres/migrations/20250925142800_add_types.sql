@@ -6,12 +6,6 @@
 -- Ensure vector extension is available in this context
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- User privacy levels
-CREATE TYPE privacy_level AS ENUM (
-    'minimal',
-    'standard',
-    'full'
-);
 
 -- Communication types
 CREATE TYPE communication_type AS ENUM (
@@ -56,25 +50,12 @@ CREATE TYPE agent_status AS ENUM (
     'anomalous_completion'
 );
 
--- Activity types
-CREATE TYPE activity_type AS ENUM (
-    'work',
-    'personal',
-    'health',
-    'social',
-    'travel',
-    'entertainment',
-    'education',
-    'maintenance',
-    'exploration',
-    'other'
-);
 
 -- Location source types
 CREATE TYPE location_source AS ENUM (
     'gps',
     'wifi',
-    'cell_tower',
+    'cell_tower', 
     'manual',
     'inferred',
     'other'
@@ -97,7 +78,7 @@ CREATE TYPE document_content_type AS ENUM (
     'other'
 );
 
--- Access levels
+-- Access levels  -- This is probably violating YAGNI but we've spoken about the boxes talking to each other so I figured it is reasonable
 CREATE TYPE access_level AS ENUM (
     'private',
     'family',

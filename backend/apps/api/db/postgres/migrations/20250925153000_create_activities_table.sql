@@ -22,7 +22,7 @@ CREATE TABLE activities (
     
     -- Activity details
     activity_name TEXT NOT NULL,
-    activity_type activity_type NOT NULL,
+    activity_type TEXT NOT NULL,
     description TEXT,
     
     -- Location context
