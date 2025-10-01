@@ -59,7 +59,7 @@ CREATE TABLE inventory (
     manuals JSONB DEFAULT '{}', -- Paths to manuals/documentation
     
     -- Semantic representation
-    object_embedding embedding768,
+    object_embedding vector(768),
     
     -- Relationships
     related_object_ids UUID[], -- Related items in inventory

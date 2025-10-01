@@ -26,9 +26,9 @@ CREATE TABLE documents (
     tags TEXT[],
     
     -- Vector embeddings for RAG
-    title_embedding embedding768,
-    content_embedding embedding768, -- Full document embedding
-    summary_embedding embedding768, -- Summary embedding
+    title_embedding vector(768),
+    content_embedding vector(768), -- Full document embedding
+    summary_embedding vector(768), -- Summary embedding
     
     -- AI-generated
     summary TEXT,

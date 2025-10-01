@@ -42,7 +42,7 @@ CREATE TABLE agents (
     required_permissions JSONB, -- System permissions needed
     
     -- AI/ML features
-    agent_embedding embedding768, -- For semantic agent selection
+    agent_embedding vector(768), -- For semantic agent selection
     
     -- Lifecycle
     is_active BOOLEAN DEFAULT TRUE,

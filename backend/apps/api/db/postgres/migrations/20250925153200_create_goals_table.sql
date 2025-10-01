@@ -48,7 +48,7 @@ CREATE TABLE goals (
     update_frequency TEXT, -- 'daily', 'weekly', 'monthly', 'manual'
     
     -- Semantic representation
-    goal_embedding embedding768,
+    goal_embedding vector(768),
     
     -- Relationships
     related_goal_ids UUID[], -- Related but not parent/child goals

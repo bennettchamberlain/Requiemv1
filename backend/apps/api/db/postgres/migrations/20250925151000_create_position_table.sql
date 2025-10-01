@@ -34,7 +34,7 @@ CREATE TABLE position (
     relative_orientation JSONB DEFAULT '{}', -- Store orientation (phi, theta, etc.)
     
     -- Vector embedding for semantic location context
-    location_embedding embedding768,
+    location_embedding vector(768),
     
     -- Privacy
     is_private BOOLEAN DEFAULT FALSE, -- Should this location be hidden from certain analyses

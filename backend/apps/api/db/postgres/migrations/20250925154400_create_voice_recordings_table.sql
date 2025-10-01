@@ -41,8 +41,8 @@ CREATE TABLE voice_recordings (
     is_processed BOOLEAN DEFAULT FALSE, -- voice analysis complete
     
     -- Embeddings for semantic search
-    transcript_embedding embedding768,
-    voice_embedding embedding768, -- acoustic features for voice similarity
+    transcript_embedding vector(768),
+    voice_embedding vector(768), -- acoustic features for voice similarity
     
     -- Audit fields
     created_at TIMESTAMPTZ DEFAULT NOW(),

@@ -55,8 +55,8 @@ CREATE TABLE files (
     language TEXT DEFAULT 'en', -- Detected language
     
     -- Semantic representation
-    content_embedding embedding768, -- Semantic embedding of file content
-    title_embedding embedding768, -- Embedding of title/filename for search
+    content_embedding vector(768), -- Semantic embedding of file content
+    title_embedding vector(768), -- Embedding of title/filename for search
     
     -- Content categorization and tagging
     tags TEXT[], -- User or system generated tags

@@ -17,7 +17,7 @@ CREATE TABLE document_chunks (
     -- Content
     content TEXT NOT NULL, -- If it is an image, use a VLM to describe the image
     is_derived BOOLEAN DEFAULT FALSE,
-    chunk_embedding embedding768 NOT NULL,
+    chunk_embedding vector(768) NOT NULL,
     
     -- Metadata
     section_title TEXT, -- If chunk belongs to a specific section
@@ -43,7 +43,7 @@ CREATE TABLE facts (
     preserved_relationships JSONB DEFAULT '{}', -- Preserved relationship data for re-integration
     
     -- Semantic representation
-    fact_embedding embedding768,
+    fact_embedding vector(768),
     
     -- Metadata
     source TEXT NOT NULL, -- Where this fact came from
