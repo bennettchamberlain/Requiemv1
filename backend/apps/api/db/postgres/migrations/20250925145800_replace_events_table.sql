@@ -64,7 +64,7 @@ CREATE TABLE events (
     
     -- Semantic analysis
     tags TEXT[], -- User or system generated tags
-    event_embedding embedding768, -- Semantic representation for similarity
+    event_embedding vector(768), -- Semantic representation for similarity
     sentiment_score DOUBLE PRECISION CHECK (sentiment_score >= -1 AND sentiment_score <= 1),
     energy_level INTEGER CHECK (energy_level >= 1 AND energy_level <= 10),
     productivity_impact DOUBLE PRECISION, -- How this affects user productivity

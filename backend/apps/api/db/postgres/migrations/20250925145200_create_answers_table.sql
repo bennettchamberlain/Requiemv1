@@ -26,7 +26,8 @@ CREATE TABLE answers (
     location_context TEXT, -- Where this was answered if relevant
     
     -- Answer analysis
-    answer_embedding embedding768, -- For semantic analysis of responses
+    answer_embedding vector(768), -- For semantic analysis of responses
+    secondary_embedding vector(768),
     extracted_entities TEXT[], -- People, places, concepts mentioned
     sentiment_score DOUBLE PRECISION CHECK (sentiment_score >= -1 AND sentiment_score <= 1),
     complexity_score DOUBLE PRECISION, -- How complex/detailed the answer is

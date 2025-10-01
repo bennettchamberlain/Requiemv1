@@ -133,15 +133,6 @@ CREATE TYPE message_role AS ENUM (
     'thinking'
 );
 
--- Custom domain for vector embeddings
-DO $$
-BEGIN
-    CREATE DOMAIN embedding768 AS vector(768);
-EXCEPTION
-    WHEN undefined_object THEN
-        CREATE DOMAIN embedding768 AS TEXT;
-        RAISE NOTICE 'Vector extension not accessible, using TEXT fallback for embedding768';
-END $$;
 
 -- UUID v7 Generation Function
 CREATE OR REPLACE FUNCTION gen_uuid_v7()

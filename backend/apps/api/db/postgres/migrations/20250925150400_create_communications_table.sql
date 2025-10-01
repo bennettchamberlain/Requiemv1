@@ -31,7 +31,7 @@ CREATE TABLE communications (
     sentiment_score DOUBLE PRECISION CHECK (sentiment_score >= -1 AND sentiment_score <= 1),
     importance_score DOUBLE PRECISION CHECK (importance_score >= 0 AND importance_score <= 1),
     urgency_score DOUBLE PRECISION CHECK (urgency_score >= 0 AND urgency_score <= 1),
-    content_embedding embedding768,
+    content_embedding vector(768),
     category TEXT, -- 'personal', 'work', 'spam', 'promotional', etc.
     summary TEXT,
     tags TEXT[],

@@ -31,7 +31,7 @@ CREATE TABLE habits (
     data_sources TEXT[], -- Which data sources can detect this
     
     -- Semantic representation
-    habit_embedding embedding768,
+    habit_embedding vector(768),
     
     -- Status
     is_active BOOLEAN DEFAULT TRUE,

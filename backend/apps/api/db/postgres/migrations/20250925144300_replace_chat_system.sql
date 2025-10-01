@@ -40,7 +40,7 @@ CREATE TABLE threads (
     -- Context and intelligence - this should be all AI generated, provides better history
     main_topics TEXT[], -- Extracted main discussion topics
     mentioned_entities TEXT[], -- People, places, concepts mentioned
-    context_embedding embedding768, -- Vector embedding of thread context
+    context_embedding vector(768), -- Vector embedding of thread context
     
     -- thread settings
     model_config JSONB DEFAULT '{}', -- Model settings for this thread
@@ -103,7 +103,7 @@ CREATE TABLE messages (
     tool_call_results JSONB DEFAULT '[]', -- Results from tool calls
     
     -- Semantic analysis
-    message_embedding embedding768, -- Vector representation for similarity search
+    message_embedding vector(768), -- Vector representation for similarity search
     extracted_entities TEXT[], -- People, places, concepts mentioned
     sentiment_score DOUBLE PRECISION CHECK (sentiment_score >= -1 AND sentiment_score <= 1),
     intent_categories TEXT[], -- Categorized user intents

@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS questions CASCADE;
 -- Create comprehensive questions table from CI-Database
 CREATE TABLE questions (
     question_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
+
     
     -- Question content
     question_text TEXT NOT NULL,
@@ -26,7 +27,9 @@ CREATE TABLE questions (
     parent_question_id UUID REFERENCES questions(question_id) ON DELETE SET NULL,
     related_questions UUID[], -- Array of related question UUIDs for discovery
     question_thread TEXT, -- Optional grouping identifier for question chains
-    
+    is_about UUID[], -- Entities or topics this question is about (references entities table)
+    is_private_to REFERENCES users(id), -- If set, only this user can see/answer
+
     -- Context and metadata
     context_tags TEXT[], -- Topics this question relates to: 'family', 'work', 'health', etc.
     difficulty_level INTEGER CHECK (difficulty_level >= 1 AND difficulty_level <= 5),
@@ -34,7 +37,7 @@ CREATE TABLE questions (
     
     -- Semantic representation for similarity and discovery
     question_embedding vector(768), -- Full question text embedding
-    question_intent_embedding vector(768), -- Intent/purpose embedding
+    secondary_embedding vector(768), -- Intent/purpose embedding
     
     -- Question lifecycle
     is_seed_question BOOLEAN DEFAULT FALSE, -- Part of initial question set

@@ -47,7 +47,7 @@ CREATE TABLE activities (
     stress_level DOUBLE PRECISION CHECK (stress_level >= 0 AND stress_level <= 1),
     
     -- Semantic representation
-    activity_embedding embedding768,
+    activity_embedding vector(768),
     
     -- Links to related data
     related_goal_ids UUID[], -- Goals this activity contributes to

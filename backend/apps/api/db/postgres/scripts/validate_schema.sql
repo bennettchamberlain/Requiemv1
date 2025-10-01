@@ -76,16 +76,6 @@ SELECT
     'File-conversation linking'
 FROM conversation_file;
 
--- Check that key constraints and types are working
-SELECT 
-    'Vector domain test' as test,
-    CASE 
-        WHEN data_type = 'USER-DEFINED' THEN 'PASS - embedding768 domain exists'
-        ELSE 'FAIL - embedding768 domain missing'
-    END as result
-FROM information_schema.columns 
-WHERE table_name = 'questions' AND column_name = 'question_embedding'
-LIMIT 1;
 
 -- Check TimescaleDB extension
 SELECT 

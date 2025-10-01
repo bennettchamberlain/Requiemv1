@@ -51,7 +51,7 @@ CREATE TABLE agent_messages (
     retry_after TIMESTAMPTZ,
     
     -- Semantic matching
-    task_embedding embedding768, -- For finding similar tasks
+    task_embedding vector(768), -- For finding similar tasks
     
     -- Resource usage
     tokens_used INTEGER,
