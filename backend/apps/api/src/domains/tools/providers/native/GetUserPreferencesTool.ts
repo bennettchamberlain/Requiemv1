@@ -163,7 +163,7 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
       debugInfo.entityLookupMethod = 'personName resolution';
       targetPersonId = await this.resolvePersonEntity(context.userId, input.personName);
       if (!targetPersonId) {
-        debugInfo.queryInfo = `Person '${input.personName}' not found in entities or social_relationships`;
+        debugInfo.queryInfo = `Person '${input.personName}' not found in graph relationships`;
 
         return {
           preferences: [],
@@ -298,37 +298,67 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
 
   /**
    * Resolve a person name to an entity ID
+   * Uses the graph relationships table to find family members
    */
   private async resolvePersonEntity(userId: string, personName: string): Promise<string | null> {
     const lowerName = personName.toLowerCase().trim();
 
-    // Check for relationship descriptors
-    const relationshipPatterns: Record<string, string[]> = {
-      romantic_partner: ['wife', 'husband', 'spouse', 'partner'],
-      family: ['mother', 'mom', 'father', 'dad', 'brother', 'sister', 'son', 'daughter'],
-      friend: ['friend', 'best friend'],
+    // First, get the user's entity_id
+    const userQuery = `
+      SELECT entity_id FROM users WHERE id = $1
+    `;
+    const userResult = await this.dataSource.query(userQuery, [userId]);
+    if (userResult.length === 0 || !userResult[0].entity_id) {
+      return null;
+    }
+
+    const userEntityId = userResult[0].entity_id;
+
+    // Check for relationship descriptors and map to graph relationship types
+    const relationshipPatterns: Record<string, { keywords: string[]; relTypes: string[] }> = {
+      spouse: {
+        keywords: ['wife', 'husband', 'spouse', 'partner'],
+        relTypes: ['SPOUSE'],
+      },
+      parent: {
+        keywords: ['mother', 'mom', 'father', 'dad'],
+        relTypes: ['PARENT_OF'], // User is child, looking for parent
+      },
+      child: {
+        keywords: ['son', 'daughter', 'child'],
+        relTypes: ['CHILD_OF'], // User is parent, looking for child
+      },
+      sibling: {
+        keywords: ['brother', 'sister', 'sibling'],
+        relTypes: ['SIBLING_OF'],
+      },
     };
 
-    for (const [relType, patterns] of Object.entries(relationshipPatterns)) {
-      if (patterns.some((p) => lowerName.includes(p))) {
+    // Check if query matches a relationship descriptor
+    for (const config of Object.values(relationshipPatterns)) {
+      if (config.keywords.some((keyword) => lowerName.includes(keyword))) {
+        // Search in relationships table for this type of relationship
+        const relTypeList = config.relTypes.map((t) => `'${t}'`).join(',');
+
         const query = `
           SELECT e.entity_id, e.name
-          FROM users u
-          JOIN social_relationships sr ON sr.user_id = u.id
-          JOIN entities e ON e.entity_id = sr.person_entity_id
-          WHERE u.id = $1 
-            AND sr.relationship_type = $2
+          FROM relationships r
+          JOIN entities e ON e.entity_id = r.to_entity_id
+          WHERE r.from_entity_id = $1
+            AND r.relationship_type IN (${relTypeList})
+            AND r.is_active = TRUE
             AND e.entity_type = 'Person'
           LIMIT 1
         `;
-        const result = await this.dataSource.query(query, [userId, relType]);
+
+        const result = await this.dataSource.query(query, [userEntityId]);
         if (result.length > 0) {
           return result[0].entity_id ?? null;
         }
       }
     }
 
-    // Search by name
+    // If no relationship descriptor matched, search by name in entities
     const nameQuery = `
       SELECT entity_id, name
       FROM entities
