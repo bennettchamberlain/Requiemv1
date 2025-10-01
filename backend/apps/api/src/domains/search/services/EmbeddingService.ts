@@ -273,14 +273,14 @@ export class EmbeddingService {
    */
   async embedAllInventoryItems(): Promise<number> {
     const inventory = await this.dataSource.query(`
-      SELECT object_id, object_name, object_description 
+      SELECT object_id, name, description 
       FROM inventory 
       WHERE object_embedding IS NULL 
-      AND (object_name IS NOT NULL OR object_description IS NOT NULL)
+      AND (name IS NOT NULL OR description IS NOT NULL)
     `);
 
     for (const item of inventory) {
-      await this.embedInventoryItem(item.object_id, item.object_name, item.object_description);
+      await this.embedInventoryItem(item.object_id, item.name, item.description);
     }
 
     return inventory.length;
@@ -291,10 +291,10 @@ export class EmbeddingService {
    */
   async embedAllFacts(): Promise<number> {
     const facts = await this.dataSource.query(`
-      SELECT fact_id, fact_text 
+      SELECT fact_id, fact_statement 
       FROM facts 
       WHERE fact_embedding IS NULL 
-      AND fact_text IS NOT NULL
+      AND fact_statement IS NOT NULL
     `);
 
     for (const fact of facts) {
@@ -327,10 +327,10 @@ export class EmbeddingService {
    */
   async embedAllDocumentChunks(): Promise<number> {
     const chunks = await this.dataSource.query(`
-      SELECT chunk_id, chunk_text 
+      SELECT chunk_id, content 
       FROM document_chunks 
       WHERE chunk_embedding IS NULL 
-      AND chunk_text IS NOT NULL
+      AND content IS NOT NULL
     `);
 
     for (const chunk of chunks) {
