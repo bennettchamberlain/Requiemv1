@@ -161,6 +161,13 @@ export class ConnectionService {
     return groupedByUserId;
   }
 
+  async getAuthorizationUrl(connection: Connection, providerId?: string) {
+    const resolvedProviderId = providerId ?? connection.provider?.id;
+    const client = this.clientFactory.getClientByProviderId(resolvedProviderId);
+
+    return client.getAuthorizationUrl(connection);
+  }
+
   async connect(context: RequestContext, connectionId: string): Promise<{ url: string }> {
     const connection = await this.findOne(context, connectionId);
     const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
