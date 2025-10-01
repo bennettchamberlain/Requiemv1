@@ -10,6 +10,7 @@ import {
   MessagesSquare,
   Search,
   Settings2,
+  Wrench,
   Zap,
 } from '@ci/shadcn/icons';
 
@@ -69,6 +70,11 @@ const SYSTEM = [
     name: 'Jobs',
     url: '/jobs',
     icon: ListTodo,
+  },
+  {
+    name: 'Tools',
+    url: '/tools',
+    icon: Wrench,
   },
   {
     name: 'Connections',
