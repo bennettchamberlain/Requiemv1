@@ -16,7 +16,7 @@ import { UserEntity } from '@ci/domains/user';
 
 @Entity({ name: 'events' })
 export class EventEntity {
-  @PrimaryColumn('uuid')
+  @PrimaryColumn('uuid', { name: 'event_id' })
   id!: string;
 
   @Column({ type: 'text', nullable: true })
