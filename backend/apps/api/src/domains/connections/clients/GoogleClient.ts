@@ -4,6 +4,43 @@ import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResult, SyncResponse } from './types';
 
 export class GoogleClient extends BaseOAuth2Client {
+  protected readonly baseUrl = 'https://www.googleapis.com';
+
+  protected readonly authorizationEndpoint = 'https://accounts.google.com/o/oauth2/v2/auth';
+
+  protected readonly tokenEndpoint = 'https://oauth2.googleapis.com/token';
+
+  protected readonly scopes = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/calendar.readonly',
+  ];
+
+  protected get clientId() {
+    const clientIdVariable = 'GOOGLE_CLIENT_ID';
+    const clientId = process.env[clientIdVariable];
+
+    if (!clientId) {
+      this.logger.error(`Expected environment variable ${clientIdVariable} not specified`);
+
+      throw new Error('Client id not configured for provider');
+    }
+
+    return clientId;
+  }
+
+  protected get clientSecret() {
+    const clientSecretVariable = 'GOOGLE_CLIENT_SECRET';
+    const clientSecret = process.env[clientSecretVariable];
+
+    if (!clientSecret) {
+      this.logger.error(`Expected environment variable ${clientSecretVariable} not specified`);
+
+      throw new Error('Client secret not configured for provider');
+    }
+
+    return clientSecret;
+  }
+
   async sync(connection: Connection): Promise<SyncResponse> {
     this.logger.log('Syncing Google data', { connectionId: connection.id });
 
