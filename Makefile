@@ -227,6 +227,8 @@ migrate: ## Run database migrations
 seed: ## Seed backend database
 	@printf "🌱 Seeding database...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
+	@printf "\nAdding graph test data...\n\n"
+	@cd backend/apps/api/scripts/test-data-generator && ./run.sh --family
 	@printf "\nDatabase successfully seeded. 🌳\n"
 
 staging: ## Run the staging server from Docker images
