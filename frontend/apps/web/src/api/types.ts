@@ -22,7 +22,7 @@ export interface Message {
   content: string;
   mimetype: string | null;
   toolCalls: object[] | null;
-  canceled: boolean;
+  deleted: boolean;
 }
 
 export interface Thread {
