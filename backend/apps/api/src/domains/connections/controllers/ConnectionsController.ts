@@ -1,5 +1,4 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -7,7 +6,6 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import config from '@ci/configuration';
 import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
 
 import { ConnectionService } from '../services/ConnectionService';
@@ -132,38 +130,36 @@ export class ConnectionsController {
   @Post(':id/sync')
   @HttpCode(200)
   async sync(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.sync(context, id);
-  }
+    this.logger.log('Manual sync requested', {
+      connectionId: id,
+      userId: context.userId,
+    });
 
-  @Cron(CronExpression.EVERY_MINUTE)
-  async cronProcessConnections() {
-    if (!config.features['scheduled.connection.fetching']) {
-      return;
-    }
+    try {
+      // Use ConnectionService.sync which handles the sync logic
+      const result = await this.connectionService.sync(context, id);
 
-    this.logger.log('Processing connection sync cron');
+      return {
+        success: true,
+        message: 'Sync completed successfully',
+        responseCount: result.length,
+      };
+    } catch (error) {
+      this.logger.error('Manual sync failed', {
+        connectionId: id,
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
 
-    const activeConnections = await this.connectionService.findSyncTargetsByUserId();
-
-    for (const [userId, connectionIds] of activeConnections) {
-      for (const connectionId of connectionIds) {
-        // Skip Google connections as they are handled by GoogleController
-        const connection = await this.connectionService.findById(connectionId);
-        if (connection?.provider?.id === config.auth.providers.google.id) {
-          this.logger.log('Skipping Google connection - handled by GoogleController', {
-            connectionId,
-            userId,
-          });
-          continue;
-        }
-
-        this.eventService.send(Events.SYNC_CONNECTION, {
-          userId,
-          connectionId,
-        });
-      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
     }
   }
+
+  // REMOVED: This cron was disabled to avoid conflicts with EtlController.cronCheckGoogleConnections()
+  // The EtlController handles sync with proper data persistence and sync state updates
 
   @OnEvent(Events.SYNC_CONNECTION)
   async syncConnection(payload: EventPayloads[Events.SYNC_CONNECTION]) {
@@ -177,12 +173,13 @@ export class ConnectionsController {
     });
 
     try {
+      // Use ConnectionService.sync which handles the sync logic
       const result = await this.connectionService.sync(context, payload.connectionId);
 
       this.logger.log('Connection sync completed', {
         connectionId: payload.connectionId,
-        success: result.success,
-        message: result.message,
+        userId: payload.userId,
+        responseCount: result.length,
       });
     } catch (error) {
       // Keep in mind this swallows the error and marks the job as a success.
