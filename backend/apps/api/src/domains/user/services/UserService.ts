@@ -30,8 +30,8 @@ export class UserService {
     return userResult.toUser();
   }
 
-  async findAll(query: object): Promise<User[]> {
-    const result = await this.userRepository.find(query);
+  async findAll(): Promise<User[]> {
+    const result = await this.userRepository.find();
 
     return result.map((entity) => entity.toUser());
   }
@@ -74,5 +74,15 @@ export class UserService {
     }
 
     return result.toUser();
+  }
+
+  async checkEmailAvailability(email: string): Promise<boolean> {
+    const result = await this.userRepository.findOne({
+      where: {
+        email,
+      },
+    });
+
+    return !!result;
   }
 }

@@ -70,13 +70,9 @@ export class SessionController {
       throw new BadRequestException('Must provide a valid signup code');
     }
 
-    const userExists = await this.userService.findAll({
-      where: {
-        email,
-      },
-    });
+    const userExists = await this.userService.checkEmailAvailability(email);
 
-    if (userExists.length > 0) {
+    if (userExists) {
       throw new BadRequestException('Email already in use');
     }
 
@@ -85,8 +81,6 @@ export class SessionController {
       email,
       password,
     });
-
-    console.log('new user', user);
 
     await this.signupCodeService.update(signup_code, {
       used: true,
