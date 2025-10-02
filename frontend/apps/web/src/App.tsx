@@ -28,6 +28,7 @@ const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
+const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
@@ -52,8 +53,9 @@ function Providers({ children }: { children: ReactNode }) {
 function AppRoutes() {
   return (
     <Routes>
-      {/* No navigation for these pages */}
       <Route path="/" element={<SplashPage />} />
+
+      <Route path="/onboarding" element={<OnboardingPage />} />
 
       <Route element={<CenteredLayout />}>
         <Route
