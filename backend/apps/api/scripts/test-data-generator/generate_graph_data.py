@@ -42,16 +42,37 @@ COMPANIES = [
 ]
 
 LOCATIONS = [
-    {"name": "San Francisco", "type": "City", "lat": 37.7749, "lng": -122.4194},
-    {"name": "New York", "type": "City", "lat": 40.7128, "lng": -74.0060},
-    {"name": "Austin", "type": "City", "lat": 30.2672, "lng": -97.7431},
-    {"name": "Seattle", "type": "City", "lat": 47.6062, "lng": -122.3321},
-    {"name": "Boston", "type": "City", "lat": 42.3601, "lng": -71.0589},
-    {"name": "Central Park", "type": "Park", "lat": 40.7829, "lng": -73.9654},
-    {"name": "Golden Gate Park", "type": "Park", "lat": 37.7694, "lng": -122.4862},
-    {"name": "Stanford University", "type": "University", "lat": 37.4275, "lng": -122.1697},
-    {"name": "MIT", "type": "University", "lat": 42.3601, "lng": -71.0942},
-    {"name": "Coffee Bean Cafe", "type": "Cafe", "lat": 37.7849, "lng": -122.4094}
+    # John Smith's primary locations - Home in Laguna Beach, work in LA area
+    {"name": "John Smith's Residence", "type": "Home", "lat": 33.5427, "lng": -117.7854},  # Laguna Beach, CA
+    {"name": "Acme Construction HQ", "type": "Work Site", "lat": 34.0300, "lng": -118.4800},
+    {"name": "Highway Overpass Project Site A", "type": "Work Site", "lat": 34.0400, "lng": -118.5100},
+    {"name": "Santa Monica Fitness Gym", "type": "Gym", "lat": 34.0150, "lng": -118.4950},
+    {"name": "Ocean View Park", "type": "Park", "lat": 34.0100, "lng": -118.4980},
+    {"name": "St. Michael's Private School", "type": "School", "lat": 34.0250, "lng": -118.4850},
+    {"name": "SoundWave Studios", "type": "Music Studio", "lat": 34.0350, "lng": -118.4700},
+    {"name": "The Rhythm Room", "type": "Music Studio", "lat": 34.0320, "lng": -118.4750},
+    {"name": "Westside Park Soccer Field", "type": "Park", "lat": 34.0180, "lng": -118.5050},
+    {"name": "Tina's Ballet Academy", "type": "School", "lat": 34.0280, "lng": -118.4880},
+    # Conference and travel locations
+    {"name": "GreenBuild Conference Center LA", "type": "Conference Center", "lat": 34.0522, "lng": -118.2437},
+    {"name": "Palm Springs Getaway Hotel", "type": "Hotel", "lat": 33.8303, "lng": -116.5453},
+    # Additional local places (clinics, gyms, work sites, music venues, parks)
+    {"name": "Local Clinic 1", "type": "Clinic", "lat": 34.005222, "lng": -118.46844},
+    {"name": "Local Clinic 2", "type": "Clinic", "lat": 34.02045, "lng": -118.463387},
+    {"name": "Local Clinic 3", "type": "Clinic", "lat": 34.009594, "lng": -118.49982},
+    {"name": "Westside Gym", "type": "Gym", "lat": 34.032695, "lng": -118.496525},
+    {"name": "Fitness Center", "type": "Gym", "lat": 34.032988, "lng": -118.473816},
+    {"name": "Work Site B", "type": "Work Site", "lat": 34.049869, "lng": -118.454499},
+    {"name": "Work Site C", "type": "Work Site", "lat": 33.990009, "lng": -118.473709},
+    {"name": "Work Site D", "type": "Work Site", "lat": 34.031064, "lng": -118.495344},
+    {"name": "Community Park", "type": "Park", "lat": 34.046953, "lng": -118.460672},
+    {"name": "Recreation Park", "type": "Park", "lat": 33.998429, "lng": -118.464188},
+    {"name": "Music Studio A", "type": "Music Studio", "lat": 34.005949, "lng": -118.49511},
+    {"name": "Music Studio B", "type": "Music Studio", "lat": 33.996748, "lng": -118.471949},
+    {"name": "Music Studio C", "type": "Music Studio", "lat": 34.030576, "lng": -118.478376},
+    {"name": "Conference Center A", "type": "Conference Center", "lat": 33.991395, "lng": -118.472243},
+    {"name": "Conference Center B", "type": "Conference Center", "lat": 34.041697, "lng": -118.492042},
+    {"name": "Conference Center C", "type": "Conference Center", "lat": 34.044401, "lng": -118.452686},
 ]
 
 OBJECTS = [
@@ -480,13 +501,13 @@ class GraphDataGenerator:
             "description": "Family residence in a quiet suburban neighborhood",
             "properties": {
                 "type": "Residence",
-                "latitude": 42.3875,
-                "longitude": -71.0995,
-                "address": "123 Maple Street, Somerville, MA",
+                "latitude": 33.5427,
+                "longitude": 117.7854,
+                "address": "123 Maple Street, Laguna Beach, CA",
                 "bedrooms": 4,
-                "neighborhood": "Davis Square area"
+                "neighborhood": "Generic area"
             },
-            "search_content": "Smith Family Home residence Somerville",
+            "search_content": "Smith Family Home residence in LA",
             "is_active": True,
             "is_archived": False
         }
