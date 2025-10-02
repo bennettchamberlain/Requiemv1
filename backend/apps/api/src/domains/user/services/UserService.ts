@@ -30,8 +30,8 @@ export class UserService {
     return userResult.toUser();
   }
 
-  async findAll(): Promise<User[]> {
-    const result = await this.userRepository.find();
+  async findAll(query: object): Promise<User[]> {
+    const result = await this.userRepository.find(query);
 
     return result.map((entity) => entity.toUser());
   }
