@@ -55,7 +55,14 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<SplashPage />} />
 
-      <Route path="/onboarding" element={<OnboardingPage />} />
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute>
+            <OnboardingPage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route element={<CenteredLayout />}>
         <Route

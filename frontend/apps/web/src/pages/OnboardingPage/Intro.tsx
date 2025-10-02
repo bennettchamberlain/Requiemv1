@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+import { useAuth } from '@/hooks';
+
 interface TypingEffectProps {
   text: string;
   speed?: number;
@@ -71,9 +73,11 @@ function TypingEffect({
 }
 
 export function Intro() {
+  const [{ user }] = useAuth();
+
   const messages = [
     {
-      text: 'Welcome, John',
+      text: `Welcome, ${user?.name}`,
       className: 'text-2xl mb-4 text-center',
       pause: 350,
     },
