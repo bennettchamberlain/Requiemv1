@@ -325,7 +325,7 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
         relTypes: ['PARENT_OF'], // User is child, looking for parent
       },
       child: {
-        keywords: ['son', 'daughter', 'child'],
+        keywords: ['son', 'daughter', 'child', 'kid', 'children', 'kids'], //I know a string map is lazy but we're in this for demos right?
         relTypes: ['CHILD_OF'], // User is parent, looking for child
       },
       sibling: {

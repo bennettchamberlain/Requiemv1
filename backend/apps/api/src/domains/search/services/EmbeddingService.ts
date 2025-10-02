@@ -175,8 +175,8 @@ export class EmbeddingService {
   /**
    * Generate and store embedding for a document chunk
    */
-  async embedDocumentChunk(chunkId: string, chunkText: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(chunkText);
+  async embedDocumentChunk(chunkId: string, chunkContent: string): Promise<void> {
+    const embeddingString = await this.generateEmbeddingString(chunkContent);
     await this.dataSource.query(`UPDATE document_chunks SET chunk_embedding = $1 WHERE chunk_id = $2`, [
       embeddingString,
       chunkId,
@@ -334,7 +334,7 @@ export class EmbeddingService {
     `);
 
     for (const chunk of chunks) {
-      await this.embedDocumentChunk(chunk.chunk_id, chunk.chunk_text);
+      await this.embedDocumentChunk(chunk.chunk_id, chunk.content);
     }
 
     return chunks.length;
