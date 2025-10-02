@@ -1,17 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not, IsNull, MoreThan } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import type { SyncResponse } from '@ci/domains/connections/clients/types';
+import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
 import { ConnectionService } from '@ci/domains/connections/services/ConnectionService';
 import type { Connection } from '@ci/domains/connections/types';
 
 import { ApiLogEntity } from '../entities/ApiLogEntity';
-
-import { GoogleService } from './GoogleService';
 
 @Injectable()
 export class EtlService {
@@ -20,12 +19,13 @@ export class EtlService {
   constructor(
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
+    @InjectRepository(ConnectionEntity)
+    private readonly connectionRepository: Repository<ConnectionEntity>,
     private readonly connectionService: ConnectionService,
-    private readonly googleService: GoogleService,
   ) {}
 
   /**
-   * Main entry point for ETL sync - routes to appropriate handler based on connection type
+   * Main entry point for ETL sync - handles sync for any connection type
    */
   async handleConnectionSync(context: RequestContext, connectionId: string): Promise<void> {
     this.logger.log('Starting ETL sync for connection', {
@@ -34,7 +34,7 @@ export class EtlService {
     });
 
     try {
-      // Get the connection to determine its type
+      // Get the connection
       const connection = await this.connectionService.findById(connectionId);
       if (!connection) {
         this.logger.error('Connection not found', { connectionId });
@@ -42,16 +42,20 @@ export class EtlService {
         return;
       }
 
-      // Route to appropriate handler based on provider
-      const providerName = connection.provider?.name;
-      if (providerName === 'Google') {
-        await this.handleGoogleSync(context, connection);
-      } else {
-        this.logger.warn('Unsupported provider for ETL sync', {
-          connectionId,
-          providerName,
-          providerId: connection.provider?.id,
-        });
+      // Validate connection
+      if (!this.isConnectionValid(connection)) {
+        this.logger.warn('Skipping sync for invalid connection', { connectionId });
+
+        return;
+      }
+
+      // Perform sync
+      const syncResponses = await this.connectionService.sync(context, connection.id);
+      const updatedSyncState = await this.processSyncResponses(context, connection, syncResponses);
+
+      // Update sync state if there are changes
+      if (Object.keys(updatedSyncState).length > 0) {
+        await this.updateSyncState(connection.id, updatedSyncState);
       }
     } catch (error) {
       this.logger.error('Error in ETL sync', {
@@ -63,18 +67,50 @@ export class EtlService {
     }
   }
 
-  private async handleGoogleSync(context: RequestContext, connection: Connection): Promise<void> {
-    if (!this.googleService.isConnectionValid(connection)) {
-      this.logger.warn('Skipping sync for invalid connection', { connectionId: connection.id });
+  private isConnectionValid(connection: Connection): boolean {
+    return (
+      connection.active &&
+      !!connection.accessToken &&
+      !!connection.tokenExpiry &&
+      connection.tokenExpiry > new Date()
+    );
+  }
 
-      return;
-    }
+  async findActiveConnections(): Promise<Array<Connection & { userId: string }>> {
+    const entities = await this.connectionRepository.find({
+      where: {
+        active: true,
+        accessToken: Not(IsNull()), // Must have an access token
+        tokenExpiry: MoreThan(new Date()), // Token must not be expired
+      },
+      relations: ['user', 'provider'],
+    });
 
-    const syncResponses = await this.connectionService.sync(context, connection.id);
-    const updatedSyncState = await this.processSyncResponses(context, connection, syncResponses);
+    return entities.map((entity) => ({
+      ...entity.toConnection(),
+      userId: entity.user?.id || '',
+    }));
+  }
 
-    if (Object.keys(updatedSyncState).length > 0) {
-      await this.googleService.updateSyncState(connection.id, updatedSyncState);
+  private async updateSyncState(connectionId: string, syncState: Record<string, unknown>): Promise<void> {
+    try {
+      const entity = await this.connectionRepository.findOne({ where: { id: connectionId } });
+      if (!entity) {
+        throw new Error(`Connection not found: ${connectionId}`);
+      }
+
+      // Merge with existing sync state
+      const existingSyncState = entity.syncState || {};
+      const mergedSyncState = { ...existingSyncState, ...syncState };
+
+      entity.syncState = mergedSyncState;
+      await this.connectionRepository.save(entity);
+    } catch (error) {
+      this.logger.error('Failed to update sync state', {
+        connectionId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
     }
   }
 

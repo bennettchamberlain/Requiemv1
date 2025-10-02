@@ -6,7 +6,6 @@ import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 
 import { EtlService } from '../services/EtlService';
-import { GoogleService } from '../services/GoogleService';
 
 interface ConnectionWithUser {
   id: string;
@@ -17,10 +16,7 @@ interface ConnectionWithUser {
 export class EtlController {
   private logger = new LoggerService(EtlController.name);
 
-  constructor(
-    private readonly etlService: EtlService,
-    private readonly googleService: GoogleService,
-  ) {}
+  constructor(private readonly etlService: EtlService) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async syncGoogleConnections(): Promise<void> {
@@ -29,7 +25,7 @@ export class EtlController {
     }
 
     try {
-      const connections = await this.googleService.findActiveConnections();
+      const connections = await this.etlService.findActiveConnections();
 
       for (const connection of connections) {
         await this.syncConnection(connection);

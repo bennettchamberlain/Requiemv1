@@ -8,13 +8,12 @@ import { EventsModule } from '@ci/domains/events';
 import { EtlController } from './controllers/EtlController';
 import { ApiLogEntity } from './entities/ApiLogEntity';
 import { EtlService } from './services/EtlService';
-import { GoogleService } from './services/GoogleService';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity]), ConnectionsModule, EventsModule],
-  providers: [EtlService, GoogleService],
+  providers: [EtlService],
   controllers: [EtlController],
-  exports: [EtlService, GoogleService],
+  exports: [EtlService],
 })
 export class EtlModule {}
 
