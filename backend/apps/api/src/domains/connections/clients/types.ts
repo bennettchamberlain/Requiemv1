@@ -5,6 +5,7 @@ export interface SyncResponse {
     results: SyncResult[];
     errors: string[];
   };
+  cursor?: unknown;
 }
 
 export interface SyncResult {
