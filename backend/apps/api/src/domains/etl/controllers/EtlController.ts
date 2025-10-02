@@ -32,9 +32,7 @@ export class EtlController {
       const connections = await this.googleService.findActiveGoogleConnections();
 
       for (const connection of connections) {
-        if (this.googleService.isConnectionValid(connection)) {
-          await this.syncConnection(connection);
-        }
+        await this.syncConnection(connection);
       }
     } catch (error) {
       this.logger.error('Error syncing Google connections', error as Error);
