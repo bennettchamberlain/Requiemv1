@@ -4,6 +4,40 @@ import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResult, SyncResponse } from './types';
 
 export class MicrosoftClient extends BaseOAuth2Client {
+  protected readonly baseUrl = 'https://graph.microsoft.com';
+
+  protected readonly authorizationEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
+
+  protected readonly tokenEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+
+  protected readonly scopes = ['https://graph.microsoft.com/User.Read'];
+
+  protected get clientId() {
+    const clientIdVariable = 'MICROSOFT_CLIENT_ID';
+    const clientId = process.env[clientIdVariable];
+
+    if (!clientId) {
+      this.logger.error(`Expected environment variable ${clientIdVariable} not specified`);
+
+      throw new Error('Client id not configured for provider');
+    }
+
+    return clientId;
+  }
+
+  protected get clientSecret() {
+    const clientSecretVariable = 'MICROSOFT_CLIENT_SECRET';
+    const clientSecret = process.env[clientSecretVariable];
+
+    if (!clientSecret) {
+      this.logger.error(`Expected environment variable ${clientSecretVariable} not specified`);
+
+      throw new Error('Client secret not configured for provider');
+    }
+
+    return clientSecret;
+  }
+
   async sync(connection: Connection): Promise<SyncResponse> {
     this.logger.log('Syncing Microsoft data', { connectionId: connection.id });
 

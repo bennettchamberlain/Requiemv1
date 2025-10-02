@@ -10,21 +10,6 @@ export class ProviderEntity {
   @Column({ type: 'text', nullable: true })
   name!: string | null;
 
-  @Column({ type: 'text', nullable: true, name: 'token_host' })
-  tokenHost!: string | null;
-
-  @Column({ type: 'text', nullable: true, name: 'token_path' })
-  tokenPath!: string | null;
-
-  @Column({ type: 'text', nullable: true, name: 'authorize_path' })
-  authorizePath!: string | null;
-
-  @Column({ type: 'text', nullable: true, name: 'api_base_url' })
-  apiBaseUrl!: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  scopes!: string | null;
-
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
@@ -35,11 +20,6 @@ export class ProviderEntity {
     return {
       id: this.id,
       name: this.name ?? null,
-      tokenHost: this.tokenHost ?? null,
-      tokenPath: this.tokenPath ?? null,
-      authorizePath: this.authorizePath ?? null,
-      apiBaseUrl: this.apiBaseUrl ?? null,
-      scopes: this.scopes ?? null,
     } satisfies Provider;
   }
 }

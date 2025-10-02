@@ -12,9 +12,6 @@ export interface Connection {
   readonly id: string;
   readonly name: string | null;
   readonly active: boolean;
-  readonly clientid: string | null;
-  readonly clientkey: string | null;
-  readonly clientsecret: string | null;
   readonly schedule: string | null;
   readonly accessToken: string | null;
   readonly refreshToken: string | null;
@@ -25,11 +22,6 @@ export interface Connection {
 export interface Provider {
   readonly id: string;
   readonly name: string | null;
-  readonly tokenHost: string | null;
-  readonly tokenPath: string | null;
-  readonly authorizePath: string | null;
-  readonly apiBaseUrl: string | null;
-  readonly scopes: string | null;
 }
 
 export interface CompleteConnectionDto {
