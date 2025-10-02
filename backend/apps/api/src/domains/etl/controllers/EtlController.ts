@@ -29,7 +29,7 @@ export class EtlController {
     }
 
     try {
-      const connections = await this.googleService.findActiveGoogleConnections();
+      const connections = await this.googleService.findActiveConnections();
 
       for (const connection of connections) {
         await this.syncConnection(connection);

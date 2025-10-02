@@ -3,7 +3,6 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, Not, IsNull, MoreThan } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
-import config from '@ci/configuration';
 import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
 import type { Connection } from '@ci/domains/connections/types';
 
@@ -17,13 +16,10 @@ export class GoogleService {
     private readonly connectionRepository: Repository<ConnectionEntity>,
   ) {}
 
-  async findActiveGoogleConnections(): Promise<Array<Connection & { userId: string }>> {
+  async findActiveConnections(): Promise<Array<Connection & { userId: string }>> {
     const entities = await this.connectionRepository.find({
       where: {
         active: true,
-        provider: {
-          id: config.auth.providers.google.id, // Use the actual Google provider ID from config
-        },
         accessToken: Not(IsNull()), // Must have an access token
         tokenExpiry: MoreThan(new Date()), // Token must not be expired
       },
