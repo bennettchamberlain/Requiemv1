@@ -179,7 +179,7 @@ export class ConnectionService {
   async callback(context: RequestContext, connectionId: string, code: string): Promise<Connection> {
     const connection = await this.findOne(context, connectionId);
     const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-    const tokenExchange = await client.exchangeAuthorizationCode(connection, code);
+    const tokenExchange = await client.exchangeAuthorizationCode(code);
 
     return this.update(context, connectionId, {
       ...tokenExchange,
