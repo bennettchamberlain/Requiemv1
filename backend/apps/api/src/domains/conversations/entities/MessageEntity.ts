@@ -36,7 +36,7 @@ export class MessageEntity {
 
   // Direct boolean field for canceled - maps to is_deleted in database
   @Column({ type: 'boolean', default: false, name: 'is_deleted' })
-  deleted!: boolean;
+  canceled!: boolean;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
@@ -64,7 +64,7 @@ export class MessageEntity {
       content: this.text ?? '',
       mimetype: this.mimetype ?? null,
       toolCalls: this.tool_calls ?? null,
-      deleted: this.deleted ?? null,
+      canceled: this.canceled ?? null,
 
       user: this.user?.toUser(),
       thread: this.thread?.toThread(),
