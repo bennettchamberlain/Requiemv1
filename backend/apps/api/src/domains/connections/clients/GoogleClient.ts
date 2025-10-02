@@ -1,68 +1,145 @@
+import type { CalendarSyncState, GmailSyncState, CalendarSyncResult } from '@ci/domains/etl/types/syncTypes';
+
 import type { Connection } from '../types';
-import { SyncStateHelper, type CalendarSyncState, type GmailSyncState } from '../types/sync-state';
 
 import { BaseOAuth2Client } from './BaseOAuth2Client';
-import type { SyncResult, SyncResponse } from './types';
+import type { SyncResponse } from './types';
 
 export class GoogleClient extends BaseOAuth2Client {
-  async sync(connection: Connection): Promise<SyncResponse> {
-    this.logger.log('Syncing Google data', { connectionId: connection.id });
-
-    const syncResults: SyncResult[] = [];
-    const errors: string[] = [];
+  async sync(connection: Connection): Promise<SyncResponse[]> {
+    const responses: SyncResponse[] = [];
 
     // Google Calendar API - Incremental sync
     try {
-      const calendarSyncState = SyncStateHelper.getCalendarSyncState(connection.syncState);
-      this.logger.log('Calendar sync state', {
-        connectionId: connection.id,
-        hasSyncState: !!connection.syncState,
-        calendarSyncState,
-        syncToken: calendarSyncState?.syncToken,
-      });
+      const calendarSyncState = connection.syncState?.calendar as CalendarSyncState | null;
 
-      const calendarData = await this.syncCalendar(connection, calendarSyncState);
+      const calendarResults = await this.syncCalendar(connection, calendarSyncState);
 
-      syncResults.push({
-        api: 'Google Calendar',
-        data: calendarData,
-        syncState: calendarData.syncState as Record<string, unknown>,
-      });
+      // Process Calendar results - only create API logs for results with actual data
+      for (const result of calendarResults) {
+        this.logger.log('Processing Calendar result', {
+          connectionId: connection.id,
+          hasData: result.data !== null,
+          syncState: result.syncState,
+          syncToken: result.syncState?.syncToken,
+        });
+
+        if (result.data !== null) {
+          // Only create API log if there's actual data
+          responses.push({
+            success: true,
+            message: 'Google Calendar sync completed successfully',
+            data: {
+              results: [
+                {
+                  api: 'Google Calendar',
+                  data: result.data,
+                  syncState: result.syncState as Record<string, unknown>,
+                },
+              ],
+              errors: [],
+            },
+            cursor: { calendar: result.syncState },
+          });
+        } else {
+          // Update sync state without creating API log
+          responses.push({
+            success: true,
+            message: 'Google Calendar sync completed (no new data)',
+            data: {
+              results: [],
+              errors: [],
+            },
+            cursor: { calendar: result.syncState },
+          });
+        }
+      }
     } catch (error) {
       const errorMsg = `Google Calendar API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       this.logger.error('Calendar sync failed', { connectionId: connection.id, error: errorMsg });
-      errors.push(errorMsg);
+
+      responses.push({
+        success: false,
+        message: errorMsg,
+        data: {
+          results: [],
+          errors: [errorMsg],
+        },
+      });
     }
 
     // Gmail API - Incremental sync
     try {
-      const gmailSyncState = SyncStateHelper.getGmailSyncState(connection.syncState);
-      this.logger.log('Gmail sync state', {
-        connectionId: connection.id,
-        hasSyncState: !!connection.syncState,
-        gmailSyncState,
-        lastHistoryId: gmailSyncState?.lastHistoryId,
-      });
+      const gmailSyncState = connection.syncState?.gmail as GmailSyncState | null;
 
-      const gmailData = await this.syncGmail(connection, gmailSyncState);
+      const gmailResults = await this.syncGmail(connection, gmailSyncState);
 
-      syncResults.push({
-        api: 'Gmail',
-        data: gmailData,
-        syncState: gmailData.syncState as Record<string, unknown>,
-      });
+      // Process Gmail results - only create API logs for results with actual data
+      for (const result of gmailResults) {
+        if (result.data !== null) {
+          // Only create API log if there's actual data
+          responses.push({
+            success: true,
+            message: 'Gmail sync completed successfully',
+            data: {
+              results: [
+                {
+                  api: 'Gmail',
+                  data: result.data,
+                  syncState: result.syncState as Record<string, unknown>,
+                },
+              ],
+              errors: [],
+            },
+            cursor: { gmail: result.syncState },
+          });
+        } else {
+          // Update sync state without creating API log
+          responses.push({
+            success: true,
+            message: 'Gmail sync completed (no new data)',
+            data: {
+              results: [],
+              errors: [],
+            },
+            cursor: { gmail: result.syncState },
+          });
+        }
+      }
     } catch (error) {
       const errorMsg = `Gmail API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       this.logger.error('Gmail sync failed', { connectionId: connection.id, error: errorMsg });
-      errors.push(errorMsg);
+
+      responses.push({
+        success: false,
+        message: errorMsg,
+        data: {
+          results: [],
+          errors: [errorMsg],
+        },
+      });
     }
 
     // Google Drive API - Simple sync (no incremental support yet)
     // Note: Drive API requires specific scopes and may not be available for all connections
     try {
       const driveData = await this.request(connection, '/drive/v3/files?pageSize=10');
+      const currentTime = new Date().toISOString();
 
-      syncResults.push({ api: 'Google Drive', data: driveData });
+      responses.push({
+        success: true,
+        message: 'Google Drive sync completed successfully',
+        data: {
+          results: [
+            {
+              api: 'Google Drive',
+              data: driveData,
+            },
+          ],
+          errors: [],
+        },
+        cursor: { drive: { lastSyncAt: currentTime } }, // Track Drive sync time
+      });
 
       this.logger.log('Drive sync completed', {
         connectionId: connection.id,
@@ -76,63 +153,24 @@ export class GoogleClient extends BaseOAuth2Client {
         connectionId: connection.id,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      // Don't add to errors array - this is expected for connections without Drive scope
+      // Don't add to responses array - this is expected for connections without Drive scope
     }
 
-    return {
-      success: errors.length === 0,
-      message: `Sync completed. ${syncResults.length} APIs processed successfully. ${errors.length} errors occurred.`,
-      data: {
-        results: syncResults,
-        errors,
-      },
-    };
+    return responses;
   }
 
   private async syncCalendar(
     connection: Connection,
     syncState: CalendarSyncState | null,
-  ): Promise<{ events: unknown; syncState: CalendarSyncState }> {
-    let allEvents: unknown[] = [];
-    let newSyncState: CalendarSyncState;
-
+  ): Promise<CalendarSyncResult[]> {
+    // Try incremental sync first if sync token exists
     if (syncState?.syncToken) {
-      // Incremental sync using syncToken
-      this.logger.log('Performing incremental calendar sync', {
-        connectionId: connection.id,
-        syncToken: syncState.syncToken,
-      });
-
       try {
-        const response = (await this.request(
-          connection,
-          `/calendar/v3/calendars/primary/events?syncToken=${syncState.syncToken}&showDeleted=true&singleEvents=true`,
-        )) as Record<string, unknown>;
-
-        allEvents = (response.items as unknown[]) || [];
-
-        newSyncState = {
-          syncToken: response.nextSyncToken as string,
-          lastFullSyncAt: syncState.lastFullSyncAt,
-          lastUpdatedMinUsed: syncState.lastUpdatedMinUsed,
-        };
-
-        this.logger.log('Calendar incremental sync completed', {
-          connectionId: connection.id,
-          eventCount: allEvents.length,
-          syncToken: newSyncState.syncToken,
-        });
-
-        return {
-          events: { items: allEvents, nextSyncToken: newSyncState.syncToken },
-          syncState: newSyncState,
-        };
+        return await this.performIncrementalSync(connection, syncState);
       } catch (error) {
-        // If we get 410 Gone, the syncToken is stale - do a fresh full sync
         if (error instanceof Error && error.message.includes('410')) {
-          this.logger.warn('Calendar syncToken is stale, performing fresh full sync', {
+          this.logger.warn('Sync token is stale, performing full sync', {
             connectionId: connection.id,
-            oldSyncToken: syncState.syncToken,
           });
           // Fall through to full sync
         } else {
@@ -141,17 +179,18 @@ export class GoogleClient extends BaseOAuth2Client {
       }
     }
 
-    // Full sync - bootstrap (either first time or after stale token)
-    this.logger.log('Performing full calendar sync', {
-      connectionId: connection.id,
-    });
+    // Perform full sync to get all events and sync token
+    return await this.performFullSync(connection);
+  }
 
-    const timeMin = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days ago
+  private async performFullSync(connection: Connection): Promise<CalendarSyncResult[]> {
+    const results: Array<{ data: unknown; syncState: CalendarSyncState }> = [];
     let nextPageToken: string | undefined;
-    let totalEvents = 0;
+    let lastResponse: Record<string, unknown> | null = null;
 
+    // Fetch all events to get sync token (no time restrictions)
     do {
-      let endpoint = `/calendar/v3/calendars/primary/events?maxResults=2500&timeMin=${timeMin}&showDeleted=true&singleEvents=true`;
+      let endpoint = `/calendar/v3/calendars/primary/events?maxResults=2500&showDeleted=true&singleEvents=true`;
       if (nextPageToken) {
         endpoint += `&pageToken=${nextPageToken}`;
       }
@@ -159,47 +198,75 @@ export class GoogleClient extends BaseOAuth2Client {
       const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       const events = (response.items as unknown[]) || [];
 
-      allEvents = allEvents.concat(events);
-      totalEvents += events.length;
       nextPageToken = response.nextPageToken as string | undefined;
+      lastResponse = response;
 
-      this.logger.log('Calendar full sync page completed', {
-        connectionId: connection.id,
-        pageEventCount: events.length,
-        totalEvents,
-        hasNextPage: !!nextPageToken,
+      // Store page data
+      results.push({
+        data: { items: events, pageToken: nextPageToken },
+        syncState: {} as CalendarSyncState, // Will be updated after all pages
       });
     } while (nextPageToken);
 
-    // Get the final syncToken for future incremental syncs
-    const finalResponse = (await this.request(
-      connection,
-      `/calendar/v3/calendars/primary/events?maxResults=1&timeMin=${timeMin}&showDeleted=true&singleEvents=true`,
-    )) as Record<string, unknown>;
+    // Get sync token from last response
+    if (!lastResponse?.nextSyncToken) {
+      throw new Error('Failed to get nextSyncToken from Google Calendar API');
+    }
 
-    newSyncState = {
-      syncToken: finalResponse.nextSyncToken as string,
+    const newSyncState: CalendarSyncState = {
+      syncToken: lastResponse.nextSyncToken as string,
       lastFullSyncAt: new Date().toISOString(),
-      lastUpdatedMinUsed: timeMin,
     };
 
-    this.logger.log('Calendar full sync completed', {
-      connectionId: connection.id,
-      totalEventCount: allEvents.length,
-      syncToken: newSyncState.syncToken,
+    // Update all results with the final sync state
+    results.forEach((result) => {
+      result.syncState = newSyncState;
     });
 
-    return {
-      events: { items: allEvents, nextSyncToken: newSyncState.syncToken },
-      syncState: newSyncState,
+    return results;
+  }
+
+  private async performIncrementalSync(
+    connection: Connection,
+    syncState: CalendarSyncState,
+  ): Promise<CalendarSyncResult[]> {
+    const response = (await this.request(
+      connection,
+      `/calendar/v3/calendars/primary/events?syncToken=${syncState.syncToken}&showDeleted=true`,
+    )) as Record<string, unknown>;
+
+    const events = (response.items as unknown[]) || [];
+    const newSyncToken = response.nextSyncToken as string;
+
+    const newSyncState: CalendarSyncState = {
+      syncToken: newSyncToken,
+      lastFullSyncAt: syncState.lastFullSyncAt,
+      lastUpdatedMinUsed: syncState.lastUpdatedMinUsed,
     };
+
+    // Return data only if there are events
+    if (events.length > 0) {
+      return [
+        {
+          data: { items: events, nextSyncToken: newSyncToken },
+          syncState: newSyncState,
+        },
+      ];
+    } else {
+      return [
+        {
+          data: null,
+          syncState: newSyncState,
+        },
+      ];
+    }
   }
 
   private async syncGmail(
     connection: Connection,
     syncState: GmailSyncState | null,
-  ): Promise<{ messages: unknown; syncState: GmailSyncState }> {
-    let allMessages: unknown[] = [];
+  ): Promise<Array<{ data: unknown; syncState: GmailSyncState }>> {
+    const results: Array<{ data: unknown; syncState: GmailSyncState }> = [];
     let newSyncState: GmailSyncState;
 
     if (syncState?.lastHistoryId) {
@@ -215,26 +282,32 @@ export class GoogleClient extends BaseOAuth2Client {
           `/gmail/v1/users/me/history?startHistoryId=${syncState.lastHistoryId}`,
         )) as Record<string, unknown>;
 
-        allMessages = (response.history as unknown[]) || [];
+        const history = (response.history as unknown[]) || [];
+        const newHistoryId = response.historyId as string;
 
         newSyncState = {
-          lastHistoryId: syncState.lastHistoryId,
+          lastHistoryId: newHistoryId,
           trackedLabels: syncState.trackedLabels || ['INBOX'],
           watchChannelId: syncState.watchChannelId,
           watchResourceId: syncState.watchResourceId,
           watchExpiration: syncState.watchExpiration,
         };
 
-        this.logger.log('Gmail incremental sync completed', {
-          connectionId: connection.id,
-          historyCount: allMessages.length,
-          lastHistoryId: newSyncState.lastHistoryId,
-        });
+        // Always return the updated sync state, but only include data if there's history
+        if (history.length > 0) {
+          results.push({
+            data: { history, historyId: newHistoryId },
+            syncState: newSyncState,
+          });
+        } else {
+          // Return sync state update without data
+          results.push({
+            data: null, // No data to log
+            syncState: newSyncState,
+          });
+        }
 
-        return {
-          messages: { history: allMessages },
-          syncState: newSyncState,
-        };
+        return results;
       } catch (error) {
         // If we get historyIdOutOfRange, do a fresh baseline
         if (error instanceof Error && error.message.includes('historyIdOutOfRange')) {
@@ -254,6 +327,8 @@ export class GoogleClient extends BaseOAuth2Client {
 
     const labels = syncState?.trackedLabels || ['INBOX'];
     let nextPageToken: string | undefined;
+    let totalMessages = 0;
+    let pageCount = 0;
 
     // Get all message IDs first
     do {
@@ -265,14 +340,22 @@ export class GoogleClient extends BaseOAuth2Client {
       const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       const messages = (response.messages as unknown[]) || [];
 
-      allMessages = allMessages.concat(messages);
+      totalMessages += messages.length;
       nextPageToken = response.nextPageToken as string | undefined;
+      pageCount++;
 
       this.logger.log('Gmail full sync page completed', {
         connectionId: connection.id,
         pageMessageCount: messages.length,
-        totalMessages: allMessages.length,
+        totalMessages,
+        pageNumber: pageCount,
         hasNextPage: !!nextPageToken,
+      });
+
+      // Create a result for this page (but don't include syncState yet)
+      results.push({
+        data: { messages, pageToken: nextPageToken, pageNumber: pageCount },
+        syncState: {} as GmailSyncState, // Will be updated after all pages
       });
     } while (nextPageToken);
 
@@ -284,15 +367,18 @@ export class GoogleClient extends BaseOAuth2Client {
       trackedLabels: labels,
     };
 
+    // Update all results with the final sync state
+    results.forEach((result) => {
+      result.syncState = newSyncState;
+    });
+
     this.logger.log('Gmail full sync completed', {
       connectionId: connection.id,
-      totalMessageCount: allMessages.length,
+      totalMessageCount: totalMessages,
+      totalPages: pageCount,
       historyId: newSyncState.lastHistoryId,
     });
 
-    return {
-      messages: { messages: allMessages },
-      syncState: newSyncState,
-    };
+    return results;
   }
 }
