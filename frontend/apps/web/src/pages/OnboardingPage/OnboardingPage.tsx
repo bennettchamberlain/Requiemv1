@@ -8,6 +8,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 
 import focusAreasImage from './focus-areas.png';
 import { FocusAreas } from './FocusAreas';
+import { Intro } from './Intro';
 import peopleImage from './people.png';
 import { SocialConnections } from './SocialConnections';
 
@@ -16,9 +17,10 @@ export function OnboardingPage() {
 
   const [step, setStep] = useState(0);
 
-  const steps = [<FocusAreas />, <SocialConnections />];
+  const steps = [<Intro />, <FocusAreas />, <SocialConnections />];
 
   const images = [
+    null,
     <div
       className="flex-1 bg-cover bg-center hidden md:block"
       style={{
