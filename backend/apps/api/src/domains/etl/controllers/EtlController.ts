@@ -19,8 +19,8 @@ export class EtlController {
   constructor(private readonly etlService: EtlService) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
-  async syncGoogleConnections(): Promise<void> {
-    if (!config.features['scheduled.google.sync']) {
+  async syncConnections(): Promise<void> {
+    if (!config.features['scheduled.connection.sync']) {
       return;
     }
 
@@ -31,7 +31,7 @@ export class EtlController {
         await this.syncConnection(connection);
       }
     } catch (error) {
-      this.logger.error('Error syncing Google connections', error as Error);
+      this.logger.error('Error syncing connections', error as Error);
     }
   }
 
