@@ -1,8 +1,8 @@
 -- migrate:up
 -- =================================================================
--- PURE POSTGRESQL GRAPH SCHEMA
+-- GRAPH SCHEMA
 -- =================================================================
--- Flexible entity-relationship graph system without Apache AGE
+-- Flexible entity-relationship graph system
 
 -- Core entities table - unified storage for all graph nodes
 --DROP TABLE IF EXISTS people;

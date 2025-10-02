@@ -33,18 +33,27 @@ export class MemoryService {
         .where('entity.is_active = true')
         .andWhere('entity.is_archived = false');
 
+      // Default: Include Person, Location, Event, Contact, Content
+      // Exclude: Object, Concept
+      const defaultIncludedTypes = ['Person', 'Location', 'Event', 'Contact', 'Content', 'Place'];
+
+      // If categories are specified, use those; otherwise use defaults
+      if (params.categories && params.categories.length > 0) {
+        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...categories)', {
+          categories: params.categories,
+        });
+      } else {
+        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...defaultTypes)', {
+          defaultTypes: defaultIncludedTypes,
+        });
+      }
+
       // Apply filters
       if (params.query) {
         queryBuilder = queryBuilder.andWhere(
           '(entity.name ILIKE :query OR entity.description ILIKE :query OR entity.search_content ILIKE :query)',
           { query: `%${params.query}%` },
         );
-      }
-
-      if (params.categories && params.categories.length > 0) {
-        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...categories)', {
-          categories: params.categories,
-        });
       }
 
       // Apply date filtering based on created_at for now
