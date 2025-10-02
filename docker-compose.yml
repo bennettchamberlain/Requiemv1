@@ -142,6 +142,8 @@ services:
       - web
     restart: unless-stopped
     profiles: [ "all", "infra" ]
+    volumes:
+      - ./infrastructure/iframely/config.js:/iframely/config.js
     deploy:
       resources:
         limits:
