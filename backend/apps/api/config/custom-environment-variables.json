@@ -34,7 +34,7 @@
   },
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
-    "scheduled.connection.fetching": "ENABLE_SCHEDULED_CONNECTION_FETCHING"
+    "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

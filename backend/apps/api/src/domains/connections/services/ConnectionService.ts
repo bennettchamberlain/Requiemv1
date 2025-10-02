@@ -7,7 +7,6 @@ import { LoggerService } from '@ci/common/services/LoggerService';
 import type { RequestContext } from '@ci/common/types';
 
 import { ClientFactory } from '../clients';
-import { ApiLogEntity } from '../entities/ApiLogEntity';
 import { ConnectionEntity } from '../entities/ConnectionEntity';
 import type {
   CreateConnectionDto,
@@ -24,8 +23,6 @@ export class ConnectionService {
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
-    @InjectRepository(ApiLogEntity)
-    private readonly apiLogRepository: Repository<ApiLogEntity>,
     private readonly clientFactory: ClientFactory,
   ) {}
 
@@ -143,7 +140,9 @@ export class ConnectionService {
         connections.user_id as user_id
       FROM
         connections
-      WHERE active = true;
+      WHERE active = true 
+        AND access_token IS NOT NULL 
+        AND token_expiry > NOW();
     `)) satisfies Array<Row>;
 
     const groupedByUserId = new Map<string, string[]>();
@@ -187,7 +186,7 @@ export class ConnectionService {
     });
   }
 
-  async sync(context: RequestContext, connectionId: string, persistData = true) {
+  async sync(context: RequestContext, connectionId: string) {
     this.logger.log('Starting manual sync for connection', {
       connectionId,
       userId: context.userId,
@@ -196,29 +195,30 @@ export class ConnectionService {
     try {
       const connection = await this.findOne(context, connectionId);
       const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-      const syncResponse = await client.sync(connection);
+      const syncResponses = await client.sync(connection);
 
-      if (persistData) {
-        await this.apiLogRepository.save({
-          id: uuid7(),
-          content: JSON.stringify(syncResponse),
-          connection: {
-            id: connectionId,
-          },
-          user: {
-            id: context.userId,
-          },
-        });
-      }
+      // Aggregate results from all endpoint syncs
+      const allSuccessful = syncResponses.every((response) => response.success);
+      const totalResults = syncResponses.reduce(
+        (sum, response) => sum + (response.data?.results?.length || 0),
+        0,
+      );
+      const totalErrors = syncResponses.reduce(
+        (sum, response) => sum + (response.data?.errors?.length || 0),
+        0,
+      );
 
       this.logger.log('Sync completed', {
         connectionId,
         userId: context.userId,
-        success: syncResponse.success,
-        message: syncResponse.message,
+        success: allSuccessful,
+        totalEndpoints: syncResponses.length,
+        totalResults,
+        totalErrors,
       });
 
-      return syncResponse;
+      // Return the array of responses as requested
+      return syncResponses;
     } catch (error) {
       this.logger.error('Sync failed', {
         connectionId,
@@ -228,5 +228,14 @@ export class ConnectionService {
 
       throw error;
     }
+  }
+
+  async findById(connectionId: string): Promise<Connection | null> {
+    const entity = await this.connectionRepository.findOne({
+      where: { id: connectionId },
+      relations: ['user', 'provider'],
+    });
+
+    return entity?.toConnection() ?? null;
   }
 }

@@ -80,7 +80,7 @@ export const ConfigSchema = z.object({
   }),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
-    'scheduled.connection.fetching': booleanStringSchema,
+    'scheduled.connection.sync': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
