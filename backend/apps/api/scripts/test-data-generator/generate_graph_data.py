@@ -244,7 +244,10 @@ class GraphDataGenerator:
             "linkedin": f"linkedin.com/in/{first_name.lower()}-{last_name.lower()}",
             "skills": random.sample(["Python", "JavaScript", "React", "Node.js", "AI/ML", "Design", "Product Management"], 3)
         }
-        
+
+        if system_user_id:
+            properties["user_id"] = system_user_id
+
         entity = {
             "entity_id": entity_id,
             "entity_type": "Person",
@@ -257,6 +260,9 @@ class GraphDataGenerator:
             "linked_table": "users" if system_user_id else None,
             "linked_id": system_user_id if system_user_id else None,
         }
+
+        if system_user_id:
+            self._user_entity_links.add((system_user_id, entity_id))
 
         self.entities.append(entity)
         return entity
@@ -435,11 +441,14 @@ class GraphDataGenerator:
             "occupation": occupation,
             "bio": bio
         }
-        
+
         # Add email for adults
         if age >= 18:
             properties["email"] = f"{first_name.lower()}.{last_name.lower()}@family.com"
-        
+
+        if system_user_id:
+            properties["user_id"] = system_user_id
+
         entity = {
             "entity_id": entity_id,
             "entity_type": "Person",
@@ -452,7 +461,10 @@ class GraphDataGenerator:
             "linked_table": "users" if system_user_id else None,
             "linked_id": system_user_id if system_user_id else None
         }
-        
+
+        if system_user_id:
+            self._user_entity_links.add((system_user_id, entity_id))
+
         self.entities.append(entity)
         return entity
     
@@ -919,14 +931,18 @@ class GraphDataGenerator:
                     cur.execute("""
                         INSERT INTO entities (
                             entity_id, entity_type, name, description, properties,
-                            search_content, is_active, is_archived, created_at, updated_at, last_accessed
+                            search_content, linked_table, linked_id,
+                            is_active, is_archived, created_at, updated_at, last_accessed
                         ) VALUES (
                             %(entity_id)s, %(entity_type)s, %(name)s, %(description)s, %(properties)s,
-                            %(search_content)s, %(is_active)s, %(is_archived)s, NOW(), NOW(), NOW()
+                            %(search_content)s, %(linked_table)s, %(linked_id)s,
+                            %(is_active)s, %(is_archived)s, NOW(), NOW(), NOW()
                         ) ON CONFLICT (entity_id) DO NOTHING
                     """, {
                         **entity,
-                        "properties": json.dumps(entity["properties"])
+                        "properties": json.dumps(entity["properties"]),
+                        "linked_table": entity.get("linked_table"),
+                        "linked_id": entity.get("linked_id"),
                     })
                 
                 # Insert relationships

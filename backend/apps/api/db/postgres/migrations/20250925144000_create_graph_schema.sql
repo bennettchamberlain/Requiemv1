@@ -16,6 +16,7 @@ CREATE TABLE entities (
     entity_id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
     entity_type TEXT NOT NULL, -- 'Person', 'Concept', 'Location', 'Object', etc.
     outgoing_relationships UUID[] DEFAULT '{}',
+    owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     -- Common properties all entities might have
     name TEXT,
     description TEXT,
