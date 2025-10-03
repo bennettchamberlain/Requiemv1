@@ -16,39 +16,39 @@ export class PromoteService {
 
   constructor(
     @InjectRepository(ApiLogEntity)
+    private readonly apiLogRepository: Repository<ApiLogEntity>,
     private readonly calendarEventPromotionService: GoogleCalendarEventPromotionService,
     private readonly gmailPromotionService: GmailPromotionService,
-    private readonly apiLogRepository: Repository<ApiLogEntity>,
   ) {}
 
   /**
-   * Main entry point for PromoteService
+   * Promote API logs for a specific user
    */
-  async promoteApiLogs(context: RequestContext): Promise<void> {
-    this.logger.log('Starting promote api logs', {
-      userId: context.userId,
+  async promoteApiLogs(userId: string): Promise<void> {
+    this.logger.log('Starting promote api logs for user', {
+      userId,
     });
 
     try {
       const unprocessedApiLogs = await this.apiLogRepository.find({
         where: {
-          user_id: context.userId,
+          user_id: userId,
           last_processed: IsNull(),
         },
         order: {
           created_at: 'ASC',
         },
-        take: 100,
+        take: 1,
       });
 
       this.logger.log('Found unprocessed API logs', {
-        userId: context.userId,
+        userId,
         count: unprocessedApiLogs.length,
       });
 
       if (unprocessedApiLogs.length === 0) {
         this.logger.log('No unprocessed API logs found', {
-          userId: context.userId,
+          userId,
         });
 
         return;
@@ -56,16 +56,16 @@ export class PromoteService {
 
       // Process each API log
       for (const apiLog of unprocessedApiLogs) {
-        await this.processApiLog(apiLog, context);
+        await this.processApiLog(apiLog, { userId } as RequestContext);
       }
 
       this.logger.log('Completed processing API logs', {
-        userId: context.userId,
+        userId,
         processedCount: unprocessedApiLogs.length,
       });
     } catch (error) {
-      this.logger.error('Error in promoteApiLogs', {
-        userId: context.userId,
+      this.logger.error('Error in promoteApiLogsForUser', {
+        userId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
