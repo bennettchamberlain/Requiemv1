@@ -1,59 +1,141 @@
-// import { Injectable } from '@nestjs/common';
-// import { InjectRepository } from '@nestjs/typeorm';
-// import { Repository } from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, IsNull } from 'typeorm';
 
-// import { LoggerService } from '@ci/common/services';
-// import type { RequestContext } from '@ci/common/types';
+import { LoggerService } from '@ci/common/services';
+import type { RequestContext } from '@ci/common/types';
 
-// //import { ConnectionService } from '@ci/domains/connections';
+import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
 
-// import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
+import { GoogleCalendarEventPromotionService } from './CalendarPromotionService';
+import { GmailPromotionService } from './GmailPromotionService';
 
-// import { GoogleCalendarEventPromotionService } from './GoogleCalendarEventPromotionService';
-// import { GmailPromotionService } from './GmailPromotionService';
-// import { PeoplePromotionService  } from './PeoplePromotionService';
+@Injectable()
+export class PromoteService {
+  private logger = new LoggerService(PromoteService.name);
 
-// @Injectable()
-// export class PromoteService {
-//   private logger = new LoggerService(PromoteService.name);
+  constructor(
+    @InjectRepository(ApiLogEntity)
+    private readonly calendarEventPromotionService: GoogleCalendarEventPromotionService,
+    private readonly gmailPromotionService: GmailPromotionService,
+    private readonly apiLogRepository: Repository<ApiLogEntity>,
+  ) {}
 
-//   constructor(
-//     @InjectRepository(ApiLogEntity)
-//     private readonly calendarEventPromotionService: GoogleCalendarEventPromotionService,
-//     private readonly gmailPromotionService: GmailPromotionService,
-//     private readonly peoplePromotionService: PeoplePromotionService,
-//     private readonly apiLogRepository: Repository<ApiLogEntity>,
-//   ) {}
+  /**
+   * Main entry point for PromoteService
+   */
+  async promoteApiLogs(context: RequestContext): Promise<void> {
+    this.logger.log('Starting promote api logs', {
+      userId: context.userId,
+    });
 
-//   /**
-//    * Main entry point for PromoteService
-//    */
-//   async promoteApiLogs(context: RequestContext): Promise<void> {
-//     this.logger.log('Starting promote api logs', {
-//       userId: context.userId,
-//     });
+    try {
+      const unprocessedApiLogs = await this.apiLogRepository.find({
+        where: {
+          user_id: context.userId,
+          last_processed: IsNull(),
+        },
+        order: {
+          created_at: 'ASC',
+        },
+        take: 100,
+      });
 
-//     /* @TODO
+      this.logger.log('Found unprocessed API logs', {
+        userId: context.userId,
+        count: unprocessedApiLogs.length,
+      });
 
-//     // get the collection of unprocessed api log events
-//     let artifacts = []   //this.apiLogRepository.get()
+      if (unprocessedApiLogs.length === 0) {
+        this.logger.log('No unprocessed API logs found', {
+          userId: context.userId,
+        });
 
-//     // visit each one
-//     artifacts.forEach(artifact => {
+        return;
+      }
 
-//         switch the event type on the artifact from the api log {
-//             // is a google calendar event api log object?
-//             await this.calendarEventPromotionService.promoteCalendarEvents()
+      // Process each API log
+      for (const apiLog of unprocessedApiLogs) {
+        await this.processApiLog(apiLog, context);
+      }
 
-//             // is a google email api log object?
-//             await this.calendarEventPromotionService.fixEmail()
-//         }
+      this.logger.log('Completed processing API logs', {
+        userId: context.userId,
+        processedCount: unprocessedApiLogs.length,
+      });
+    } catch (error) {
+      this.logger.error('Error in promoteApiLogs', {
+        userId: context.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+  }
 
-//         // @todo mark each one as done
-//     })
+  /**
+   * Process a single API log entry
+   */
+  private async processApiLog(apiLog: ApiLogEntity, context: RequestContext): Promise<void> {
+    this.logger.log('Processing API log', {
+      apiLogId: apiLog.id,
+      scope: apiLog.scope,
+      userId: context.userId,
+    });
 
-//     */
+    try {
+      if (!context.userId) {
+        this.logger.error('User ID is required', {
+          apiLogId: apiLog.id,
+        });
 
-//   }
+        return;
+      }
 
-// }
+      if (!apiLog.connection_id) {
+        this.logger.error('Connection ID is required', {
+          apiLogId: apiLog.id,
+        });
+
+        return;
+      }
+
+      if (apiLog.scope === 'Gmail') {
+        await this.gmailPromotionService.promoteGmailMessages(
+          apiLog.content,
+          context.userId,
+          apiLog.connection_id,
+        );
+      } else if (apiLog.scope === 'Google Calendar') {
+        await this.calendarEventPromotionService.promoteCalendarEvents(
+          apiLog.content,
+          context.userId,
+          apiLog.connection_id,
+        );
+      }
+
+      // Mark the API log as processed
+      await this.markApiLogAsProcessed(apiLog.id);
+
+      this.logger.log('Successfully processed API log', {
+        apiLogId: apiLog.id,
+        scope: apiLog.scope,
+      });
+    } catch (error) {
+      this.logger.error('Error processing API log', {
+        apiLogId: apiLog.id,
+        scope: apiLog.scope,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Mark an API log as processed
+   */
+  private async markApiLogAsProcessed(apiLogId: string): Promise<void> {
+    await this.apiLogRepository.update(apiLogId, {
+      last_processed: new Date(),
+    });
+  }
+}
