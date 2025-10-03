@@ -10,4 +10,5 @@ export interface ApiLog {
   readonly user?: User;
   readonly connection?: Connection;
   readonly created_at: Date;
+  readonly last_processed?: Date;
 }
