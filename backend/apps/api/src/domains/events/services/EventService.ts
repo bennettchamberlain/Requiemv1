@@ -37,28 +37,12 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   constructor(private eventEmitter: EventEmitter2) {}
 
   async onModuleInit() {
-    let retries = 10;
-    let lastError: unknown;
-
-    while (retries > 0) {
-      try {
-        await this.boss.start();
-        this.logger.log('Initialized PgBoss client');
-        break;
-      } catch (error: unknown) {
-        lastError = error;
-        this.logger.warn(`Failed to initialize PgBoss client, retrying in 3s... (${retries} attempts left)`);
-        retries--;
-        if (retries > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-        }
-      }
-    }
-
-    if (retries === 0) {
-      this.logger.error('Failed to initialize PgBoss client after all retries', lastError as Error);
-      // Don't throw error, just log it and continue without PgBoss
-      this.logger.warn('Continuing without PgBoss - some features may not work');
+    try {
+      await this.boss.start();
+      this.logger.log('Initialized PgBoss client');
+    } catch (error: unknown) {
+      this.logger.error('Failed to initialize PgBoss client', error as Error);
+      throw error;
     }
 
     this.boss.on('error', (err) => {

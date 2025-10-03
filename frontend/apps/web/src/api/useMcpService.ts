@@ -74,35 +74,35 @@ class McpApiService {
   }
 
   async getServers(): Promise<McpServer[]> {
-    return this.request<McpServer[]>('/mcp/servers');
+    return this.request<McpServer[]>('/api/mcp/servers');
   }
 
   async getSessions(): Promise<McpSession[]> {
-    return this.request<McpSession[]>('/mcp/sessions');
+    return this.request<McpSession[]>('/api/mcp/sessions');
   }
 
   async getTools(): Promise<McpTool[]> {
-    return this.request<McpTool[]>('/mcp/tools');
+    return this.request<McpTool[]>('/api/mcp/tools');
   }
 
   async getHealth(): Promise<McpHealthStatus[]> {
-    return this.request<McpHealthStatus[]>('/mcp/health');
+    return this.request<McpHealthStatus[]>('/api/mcp/health');
   }
 
   async startServer(serverName: string): Promise<{ success: boolean; message: string }> {
-    return this.request(`/mcp/servers/${serverName}/start`, {
+    return this.request(`/api/mcp/servers/${serverName}/start`, {
       method: 'POST',
     });
   }
 
   async stopServer(serverName: string): Promise<{ success: boolean; message: string }> {
-    return this.request(`/mcp/servers/${serverName}/stop`, {
+    return this.request(`/api/mcp/servers/${serverName}/stop`, {
       method: 'POST',
     });
   }
 
   async executeTool(toolName: string, args: unknown): Promise<unknown> {
-    return this.request('/mcp/execute', {
+    return this.request('/api/mcp/execute', {
       method: 'POST',
       body: JSON.stringify({
         toolName,

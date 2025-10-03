@@ -1,11 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, Not, IsNull, MoreThan } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services/LoggerService';
 import type { RequestContext } from '@ci/common/types';
-import config from '@ci/configuration';
 
 import { ClientFactory } from '../clients';
 import { ConnectionEntity } from '../entities/ConnectionEntity';
@@ -161,6 +160,13 @@ export class ConnectionService {
     return groupedByUserId;
   }
 
+  async getAuthorizationUrl(connection: Connection, providerId?: string) {
+    const resolvedProviderId = providerId ?? connection.provider?.id;
+    const client = this.clientFactory.getClientByProviderId(resolvedProviderId);
+
+    return client.getAuthorizationUrl(connection);
+  }
+
   async connect(context: RequestContext, connectionId: string): Promise<{ url: string }> {
     const connection = await this.findOne(context, connectionId);
     const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
@@ -173,7 +179,7 @@ export class ConnectionService {
   async callback(context: RequestContext, connectionId: string, code: string): Promise<Connection> {
     const connection = await this.findOne(context, connectionId);
     const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-    const tokenExchange = await client.exchangeAuthorizationCode(connection, code);
+    const tokenExchange = await client.exchangeAuthorizationCode(code);
 
     return this.update(context, connectionId, {
       ...tokenExchange,
@@ -189,16 +195,30 @@ export class ConnectionService {
     try {
       const connection = await this.findOne(context, connectionId);
       const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-      const syncResponse = await client.sync(connection);
+      const syncResponses = await client.sync(connection);
+
+      // Aggregate results from all endpoint syncs
+      const allSuccessful = syncResponses.every((response) => response.success);
+      const totalResults = syncResponses.reduce(
+        (sum, response) => sum + (response.data?.results?.length || 0),
+        0,
+      );
+      const totalErrors = syncResponses.reduce(
+        (sum, response) => sum + (response.data?.errors?.length || 0),
+        0,
+      );
 
       this.logger.log('Sync completed', {
         connectionId,
         userId: context.userId,
-        success: syncResponse.success,
-        message: syncResponse.message,
+        success: allSuccessful,
+        totalEndpoints: syncResponses.length,
+        totalResults,
+        totalErrors,
       });
 
-      return syncResponse;
+      // Return the array of responses as requested
+      return syncResponses;
     } catch (error) {
       this.logger.error('Sync failed', {
         connectionId,
@@ -217,62 +237,5 @@ export class ConnectionService {
     });
 
     return entity?.toConnection() ?? null;
-  }
-
-  async findActiveGoogleConnections(): Promise<Array<Connection & { userId: string }>> {
-    const entities = await this.connectionRepository.find({
-      where: {
-        active: true,
-        provider: {
-          id: config.auth.providers.google.id, // Use the actual Google provider ID from config
-        },
-        accessToken: Not(IsNull()), // Must have an access token
-        tokenExpiry: MoreThan(new Date()), // Token must not be expired
-      },
-      relations: ['user', 'provider'],
-    });
-
-    this.logger.log('Found authenticated Google connections', {
-      count: entities.length,
-      connections: entities.map((entity) => ({
-        id: entity.id,
-        userId: entity.user?.id,
-        hasAccessToken: !!entity.accessToken,
-        tokenExpiry: entity.tokenExpiry,
-        isExpired: entity.tokenExpiry ? entity.tokenExpiry < new Date() : true,
-      })),
-    });
-
-    return entities.map((entity) => ({
-      ...entity.toConnection(),
-      userId: entity.user?.id || '',
-    }));
-  }
-
-  async makePaginatedRequest(connectionId: string, endpoint: string): Promise<unknown> {
-    const connection = await this.findById(connectionId);
-    if (!connection) {
-      throw new Error('Connection not found');
-    }
-
-    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-
-    // Use the client's request method to make the API call
-    return await client.request(connection, endpoint);
-  }
-
-  async updateSyncState(connectionId: string, syncState: Record<string, unknown>): Promise<void> {
-    const entity = await this.connectionRepository.findOne({ where: { id: connectionId } });
-    if (!entity) {
-      throw new Error('Connection not found');
-    }
-
-    entity.syncState = syncState;
-    await this.connectionRepository.save(entity);
-
-    this.logger.log('Updated connection sync state', {
-      connectionId,
-      syncStateKeys: Object.keys(syncState),
-    });
   }
 }

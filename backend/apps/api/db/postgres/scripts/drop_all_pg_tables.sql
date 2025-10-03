@@ -2,7 +2,12 @@ DO $$
 DECLARE
     r RECORD;
 BEGIN
-    FOR r IN (SELECT schemaname, tablename FROM pg_tables WHERE schemaname IN ('public', 'pgboss')) LOOP
+    FOR r IN (
+        SELECT schemaname, tablename
+        FROM pg_tables
+        WHERE schemaname IN ('public', 'pgboss')
+            AND NOT (schemaname = 'public' AND tablename = 'spatial_ref_sys')
+    ) LOOP
         EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.schemaname) || '.' || quote_ident(r.tablename) || ' CASCADE;';
     END LOOP;
 

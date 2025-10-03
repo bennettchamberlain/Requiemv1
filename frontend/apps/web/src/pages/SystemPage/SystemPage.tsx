@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 import { useDeviceLayout, usePageTitle } from '@ci/common';
 import { Avatar, Button } from '@ci/shadcn';
-import { Cable, ChartPie, ListTodo, LogOut, Settings2, User, Zap } from '@ci/shadcn/icons';
+import { Cable, ChartPie, ListTodo, LogOut, Settings2, User, Wrench } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -85,9 +85,9 @@ function Navigation() {
         </Button>
 
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/actions">
-            <Zap className="h-4 w-4" />
-            Actions
+          <Link to="/settings">
+            <Settings2 className="h-4 w-4" />
+            Settings
           </Link>
         </Button>
 
@@ -113,9 +113,9 @@ function Navigation() {
         </Button>
 
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/settings">
-            <Settings2 className="h-4 w-4" />
-            Settings
+          <Link to="/tools">
+            <Wrench className="h-4 w-4" />
+            Tools
           </Link>
         </Button>
       </div>

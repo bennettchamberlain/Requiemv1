@@ -2,27 +2,18 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ConnectionsModule } from '@ci/domains/connections';
+import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
 import { EventsModule } from '@ci/domains/events';
-import { MemoryModule } from '@ci/domains/memory';
-import { PersonEntity, ContactEntity } from '@ci/domains/memory';
 
-import { GoogleController } from './controllers/google_controller';
+import { EtlController } from './controllers/EtlController';
 import { ApiLogEntity } from './entities/ApiLogEntity';
-import { ApiLogService } from './services/ApiLogService';
-import { CalendarEventPromotionService } from './services/CalendarEventPromotionService';
-import { GmailPromotionService } from './services/GmailPromotionService';
-import { PeoplePromotionService } from './services/PeoplePromotionService';
+import { EtlService } from './services/EtlService';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([ApiLogEntity, PersonEntity, ContactEntity]),
-    ConnectionsModule,
-    EventsModule,
-    MemoryModule,
-  ],
-  providers: [ApiLogService, CalendarEventPromotionService, GmailPromotionService, PeoplePromotionService],
-  controllers: [GoogleController],
-  exports: [ApiLogService, CalendarEventPromotionService, GmailPromotionService, PeoplePromotionService],
+  imports: [TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity]), ConnectionsModule, EventsModule],
+  providers: [EtlService],
+  controllers: [EtlController],
+  exports: [EtlService],
 })
 export class EtlModule {}
 
@@ -30,10 +21,10 @@ export class EtlModule {}
 export { ApiLogEntity };
 
 // Services
-export { ApiLogService, CalendarEventPromotionService, GmailPromotionService, PeoplePromotionService };
+export { EtlService };
 
 // Controllers
-export { GoogleController };
+export { EtlController };
 
 // Types
 export type { ApiLog } from './types';

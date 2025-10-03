@@ -1,9 +1,9 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, CreateDateColumn, JoinColumn } from 'typeorm';
 
+import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
 import { UserEntity } from '@ci/domains/user';
 
-import { ConnectionEntity } from '../../connections/entities/ConnectionEntity';
-import { ApiLog } from '../../etl/types';
+import type { ApiLog } from '../types';
 
 @Entity('api_logs')
 export class ApiLogEntity {
@@ -21,14 +21,6 @@ export class ApiLogEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   content?: unknown;
-
-  // Vector embedding for semantic search
-  @Column({ type: 'text', nullable: true })
-  embedding?: string; // Store as JSON string, parse when needed
-
-  // Geospatial location (latitude, longitude) - store as JSON
-  @Column({ type: 'jsonb', nullable: true })
-  location?: { type: 'Point'; coordinates: [number, number] };
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
@@ -48,8 +40,6 @@ export class ApiLogEntity {
       connection_id: this.connection_id,
       scope: this.scope,
       content: this.content,
-      embedding: this.embedding ? JSON.parse(this.embedding) : undefined,
-      location: this.location,
       user: this.user?.toUser(),
       connection: this.connection?.toConnection(),
       created_at: this.created_at,
