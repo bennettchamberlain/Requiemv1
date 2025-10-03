@@ -13,6 +13,7 @@ export function NavUser() {
     () => ({
       name: user?.name || user?.email || 'User',
       email: user?.email || '',
+      onboarded: user?.onboarded || false,
       avatar: '/avatars/shadcn.jpg',
     }),
     [user],
