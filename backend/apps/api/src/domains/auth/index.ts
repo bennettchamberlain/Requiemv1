@@ -4,7 +4,8 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from '@ci/configuration';
-import { UserModule } from '@ci/domains/user';
+import { UserModule, SignupCodeEntity } from '@ci/domains/user';
+import { SignupCodeService } from '@ci/domains/user/services/SignupCodeService';
 
 import { SessionController } from './controllers/SessionController';
 import { SessionEntity } from './entities/SessionEntity';
@@ -14,7 +15,7 @@ import { SessionService } from './services/SessionService';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SessionEntity]),
+    TypeOrmModule.forFeature([SessionEntity, SignupCodeEntity]),
     UserModule,
     PassportModule,
     JwtModule.register({
@@ -24,7 +25,7 @@ import { SessionService } from './services/SessionService';
       },
     }),
   ],
-  providers: [AuthService, JwtStrategy, SessionService],
+  providers: [AuthService, JwtStrategy, SessionService, SignupCodeService],
   controllers: [SessionController],
 })
 export class AuthModule {}
