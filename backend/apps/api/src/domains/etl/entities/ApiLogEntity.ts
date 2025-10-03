@@ -25,6 +25,9 @@ export class ApiLogEntity {
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  last_processed?: Date;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity | null;
@@ -43,6 +46,7 @@ export class ApiLogEntity {
       user: this.user?.toUser(),
       connection: this.connection?.toConnection(),
       created_at: this.created_at,
+      last_processed: this.last_processed,
     };
   }
 }
