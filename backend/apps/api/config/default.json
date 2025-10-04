@@ -63,7 +63,8 @@
   },
   "features": {
     "scheduled.answer.inferencing": true,
-    "scheduled.connection.sync": true
+    "scheduled.connection.sync": true,
+    "scheduled.entity.promotion": true
   },
   "environment": {
     "database.query.logging": false

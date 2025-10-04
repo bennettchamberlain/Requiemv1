@@ -34,7 +34,8 @@
   },
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
-    "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC"
+    "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",
+    "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"
