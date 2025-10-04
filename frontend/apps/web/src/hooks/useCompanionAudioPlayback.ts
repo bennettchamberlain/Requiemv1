@@ -6,16 +6,19 @@ interface UseCompanionAudioPlaybackProps {
   onAudioStart?: () => void;
   onAudioEnd?: () => void;
   onError?: (error: string) => void;
+  voice?: string; // Default voice to use for TTS
 }
 
 export function useCompanionAudioPlayback({
   onAudioStart,
   onAudioEnd,
   onError,
+  voice,
 }: UseCompanionAudioPlaybackProps = {}) {
-  const [synthesisState, { synthesizeSpeech }] = useSynthesizeService();
+  const [synthesisState, { synthesizeSpeech, switchVoice, cancelSynthesis }] = useSynthesizeService();
   const audioBlobRef = useRef<Blob | null>(null);
   const isPlayingRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Keep ref in sync with synthesis state - only update if different
   useEffect(() => {
@@ -23,6 +26,16 @@ export function useCompanionAudioPlayback({
       audioBlobRef.current = synthesisState.audioBlob;
     }
   }, [synthesisState.audioBlob]);
+
+  // Switch voice when it changes
+  useEffect(() => {
+    if (voice) {
+      switchVoice(voice).catch((error) => {
+        console.error('Failed to switch voice:', error);
+        onError?.('Failed to switch voice');
+      });
+    }
+  }, [voice, switchVoice, onError]);
 
   const playCompanionResponse = useCallback(
     async (text: string) => {
@@ -33,7 +46,7 @@ export function useCompanionAudioPlayback({
       try {
         isPlayingRef.current = true;
         onAudioStart?.();
-        await synthesizeSpeech(text);
+        await synthesizeSpeech(text, voice);
 
         // Wait for the audio blob to be available
         let attempts = 0;
@@ -47,9 +60,11 @@ export function useCompanionAudioPlayback({
         if (audioBlobRef.current) {
           const audioUrl = URL.createObjectURL(audioBlobRef.current);
           const audioElement = new Audio(audioUrl);
+          currentAudioRef.current = audioElement;
 
           audioElement.onended = () => {
             isPlayingRef.current = false;
+            currentAudioRef.current = null;
             onAudioEnd?.();
             URL.revokeObjectURL(audioUrl);
           };
@@ -57,6 +72,7 @@ export function useCompanionAudioPlayback({
           audioElement.onerror = (error) => {
             console.error('🎤 useCompanionAudioPlayback: Audio playback error:', error);
             isPlayingRef.current = false;
+            currentAudioRef.current = null;
             onAudioEnd?.();
             URL.revokeObjectURL(audioUrl);
             onError?.('Failed to play audio response');
@@ -73,11 +89,30 @@ export function useCompanionAudioPlayback({
         onError?.('Failed to play audio response');
       }
     },
-    [synthesizeSpeech, onAudioStart, onAudioEnd, onError],
+    [synthesizeSpeech, onAudioStart, onAudioEnd, onError, voice],
   );
+
+  const stopAudioPlayback = useCallback(() => {
+    // Stop any currently playing audio
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
+
+    // Cancel any pending synthesis
+    cancelSynthesis();
+
+    // Reset playing state
+    isPlayingRef.current = false;
+    onAudioEnd?.();
+
+    console.log('🎤 Audio playback stopped');
+  }, [cancelSynthesis, onAudioEnd]);
 
   return {
     playCompanionResponse,
+    stopAudioPlayback,
     isPlaying: synthesisState.loading,
     error: synthesisState.error,
   };

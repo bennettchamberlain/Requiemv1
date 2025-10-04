@@ -5,9 +5,10 @@ import { useTranscriptionService } from '@/api/useTranscriptionService';
 interface UseVoiceModeProps {
   isActive: boolean;
   onSubmitMessage?: (message: string) => void;
+  onStopAudio?: () => void;
 }
 
-export function useVoiceMode({ isActive, onSubmitMessage }: UseVoiceModeProps) {
+export function useVoiceMode({ isActive, onSubmitMessage, onStopAudio }: UseVoiceModeProps) {
   // State
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -94,6 +95,9 @@ export function useVoiceMode({ isActive, onSubmitMessage }: UseVoiceModeProps) {
       return;
     }
 
+    // Stop any playing audio when starting to record
+    onStopAudio?.();
+
     try {
       const mediaRecorder = new MediaRecorder(userStreamRef.current, {
         mimeType: 'audio/webm;codecs=opus',
@@ -128,7 +132,7 @@ export function useVoiceMode({ isActive, onSubmitMessage }: UseVoiceModeProps) {
       console.error('Error starting recording:', err);
       setError('Failed to start recording');
     }
-  }, [transcribeAudio]);
+  }, [transcribeAudio, onStopAudio]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -152,13 +156,17 @@ export function useVoiceMode({ isActive, onSubmitMessage }: UseVoiceModeProps) {
     if (isActive) {
       initializeMicrophone();
     } else {
+      // Stop audio when voice mode is closed
+      onStopAudio?.();
       cleanupStreams();
     }
 
     return () => {
+      // Stop audio when component unmounts
+      onStopAudio?.();
       cleanupStreams();
     };
-  }, [isActive, initializeMicrophone, cleanupStreams]);
+  }, [isActive, initializeMicrophone, cleanupStreams, onStopAudio]);
 
   // Handle transcription results
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { Button, cn } from '@ci/shadcn';
+import { Button, cn, Select } from '@ci/shadcn';
 import { Mic, MicOff, Volume2, X } from '@ci/shadcn/icons';
 
 import { useVoiceMode } from '@/hooks/useVoiceMode';
@@ -10,13 +10,36 @@ interface Props {
   onToggle: () => void;
   onSubmitMessage?: (message: string) => void;
   className?: string;
+  selectedVoice?: string;
+  onVoiceChange?: (voice: string) => void;
+  onStopAudio?: () => void;
 }
 
-export function VoiceMode({ isActive, onToggle, onSubmitMessage, className }: Props) {
+// Available voices
+const VOICE_OPTIONS = [
+  { value: 'ryan', label: 'Ryan' },
+  { value: 'amy', label: 'Amy' },
+  { value: 'sam', label: 'Sam' },
+  { value: 'sarah', label: 'Sarah' },
+  { value: 'david', label: 'David' },
+  { value: 'norman', label: 'Norman' },
+  { value: 'robot', label: 'Robot' },
+];
+
+export function VoiceMode({
+  isActive,
+  onToggle,
+  onSubmitMessage,
+  className,
+  selectedVoice = 'ryan',
+  onVoiceChange,
+  onStopAudio,
+}: Props) {
   const { isRecording, isPlaying, userStream, companionStream, error, loading, toggleRecording } =
     useVoiceMode({
       isActive,
       onSubmitMessage,
+      onStopAudio,
     });
 
   if (!isActive) {
@@ -69,7 +92,7 @@ export function VoiceMode({ isActive, onToggle, onSubmitMessage, className }: Pr
       <div className="flex items-center gap-3">
         {/* User Audio Waveform */}
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 h-4">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
             <span className="text-xs text-muted-foreground">You</span>
           </div>
@@ -83,9 +106,27 @@ export function VoiceMode({ isActive, onToggle, onSubmitMessage, className }: Pr
 
         {/* Companion Audio Waveform */}
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 h-4">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             <span className="text-xs text-muted-foreground">Companion</span>
+            {onVoiceChange && (
+              <Select value={selectedVoice} onValueChange={onVoiceChange} disabled={isPlaying}>
+                <Select.Trigger className="h-4 px-1 text-xs border-0 bg-transparent focus:ring-0 shadow-none min-w-0">
+                  <Select.Value />
+                </Select.Trigger>
+                <Select.Content className="p-0 shadow-none border-0 bg-background/95 backdrop-blur-sm">
+                  {VOICE_OPTIONS.map((voice) => (
+                    <Select.Item
+                      key={voice.value}
+                      value={voice.value}
+                      className="text-xs px-1 py-0.5 hover:bg-muted/50"
+                    >
+                      {voice.label}
+                    </Select.Item>
+                  ))}
+                </Select.Content>
+              </Select>
+            )}
           </div>
           <AudioWaveform
             audioStream={companionStream || undefined}

@@ -20,4 +20,4 @@ export {};
 export {};
 
 // Types
-export type {} from './types';
+export type { TTSConvertRequest, TTSConvertResponse } from './types';

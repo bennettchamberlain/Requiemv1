@@ -30,8 +30,13 @@ function ChatPageContent() {
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [{ selectedModel }] = useModel();
 
+  // Voice state management
+  const [selectedVoice, setSelectedVoice] = useState('ryan');
+
   // Audio playback for voice mode
-  const { playCompanionResponse } = useCompanionAudioPlayback();
+  const { playCompanionResponse, stopAudioPlayback } = useCompanionAudioPlayback({
+    voice: selectedVoice,
+  });
 
   const [
     { threads, loading: threadsLoading, error: threadsError },
@@ -234,6 +239,9 @@ function ChatPageContent() {
           onStop={stopChatRequest}
           autoFocus={true}
           onResponseFinished={handleResponseFinished}
+          selectedVoice={selectedVoice}
+          onVoiceChange={setSelectedVoice}
+          onStopAudio={stopAudioPlayback}
         />
       </div>
     </>

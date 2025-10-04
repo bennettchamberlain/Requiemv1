@@ -43,6 +43,9 @@ interface Props extends ChatInputProps {
   emptyState?: ReactNode;
   children?: ReactNode;
   onResponseFinished?: (text: string) => void;
+  selectedVoice?: string;
+  onVoiceChange?: (voice: string) => void;
+  onStopAudio?: () => void;
 }
 
 const textDecoder = new TextDecoder();
@@ -58,8 +61,15 @@ export function Chat({
   onSubmit,
   children,
   onResponseFinished,
+  selectedVoice: propSelectedVoice,
+  onVoiceChange: propOnVoiceChange,
+  onStopAudio,
   ...chatInputProps
 }: Props) {
+  // Voice state management
+  const [internalSelectedVoice, setInternalSelectedVoice] = useState('ryan');
+  const selectedVoice = propSelectedVoice ?? internalSelectedVoice;
+  const onVoiceChange = propOnVoiceChange ?? setInternalSelectedVoice;
   const { isVoiceModeActive, toggleVoiceMode } = useVoiceModeContext();
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
   const lastProcessedResponseRef = useRef<string>('');
@@ -389,6 +399,9 @@ export function Chat({
           isActive={isVoiceModeActive}
           onToggle={toggleVoiceMode}
           onSubmitMessage={submitVoiceMessage}
+          selectedVoice={selectedVoice}
+          onVoiceChange={onVoiceChange}
+          onStopAudio={onStopAudio}
         />
 
         <ChatInput
