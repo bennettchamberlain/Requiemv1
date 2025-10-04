@@ -16,6 +16,7 @@ import {
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
+import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
 const ActionsPage = lazy(() => import('@/pages/ActionsPage'));
@@ -61,6 +62,14 @@ function AppRoutes() {
           element={
             <RedirectKnownUser>
               <LoginPage />
+            </RedirectKnownUser>
+          }
+        />
+        <Route
+          path="/signup"
+          element={
+            <RedirectKnownUser>
+              <SignupPage />
             </RedirectKnownUser>
           }
         />
