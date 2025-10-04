@@ -5,11 +5,13 @@ export interface SyncResponse {
     results: SyncResult[];
     errors: string[];
   };
+  cursor?: unknown;
 }
 
 export interface SyncResult {
   api: string;
   data: unknown;
+  syncState?: Record<string, unknown>;
   error?: string;
 }
 

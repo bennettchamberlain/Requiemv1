@@ -19,5 +19,7 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;          -- Better indexing for exclu
 -- Drop all extensions in reverse order of creation
 DROP EXTENSION IF EXISTS btree_gist;
 DROP EXTENSION IF EXISTS pg_stat_statements;
+DROP EXTENSION IF EXISTS vector;
 DROP EXTENSION IF EXISTS postgis;
 DROP EXTENSION IF EXISTS timescaledb;
+DROP EXTENSION IF EXISTS pg_uuidv7;

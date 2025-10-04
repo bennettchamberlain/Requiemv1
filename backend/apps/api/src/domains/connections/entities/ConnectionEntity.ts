@@ -26,18 +26,6 @@ export class ConnectionEntity {
   active!: boolean;
 
   @Column({ type: 'text', nullable: true })
-  clientid!: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  clientkey!: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  clientsecret!: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  clienttoken!: string | null;
-
-  @Column({ type: 'text', nullable: true })
   schedule!: string | null;
 
   @Column({ type: 'text', nullable: true, name: 'access_token' })
@@ -48,6 +36,9 @@ export class ConnectionEntity {
 
   @Column({ type: 'timestamptz', nullable: true, name: 'token_expiry' })
   tokenExpiry!: Date | null;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'sync_state' })
+  syncState!: Record<string, unknown> | null;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
@@ -68,13 +59,11 @@ export class ConnectionEntity {
       id: this.id,
       name: this.name ?? null,
       active: this.active,
-      clientid: this.clientid ?? null,
-      clientkey: this.clientkey ?? null,
-      clientsecret: this.clientsecret ?? null,
       schedule: this.schedule ?? null,
       accessToken: this.accessToken ?? null,
       refreshToken: this.refreshToken ?? null,
       tokenExpiry: this.tokenExpiry ?? null,
+      syncState: this.syncState ?? null,
       provider: this.provider?.toProvider(),
     } satisfies Connection;
   }

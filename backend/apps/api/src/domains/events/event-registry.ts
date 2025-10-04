@@ -34,6 +34,7 @@ interface SyncConnectionPayload extends EventPayload {
   connectionId: string;
   userId: string;
 }
+
 interface McpToolCallPayload extends EventPayload {
   userId: string;
   toolName: string;

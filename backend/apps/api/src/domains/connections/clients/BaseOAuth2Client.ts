@@ -6,22 +6,24 @@ import { BaseClient } from './BaseClient';
 import type { TokenExchange, TokenResponse } from './types';
 
 export abstract class BaseOAuth2Client extends BaseClient {
+  protected abstract baseUrl: string;
+
+  protected abstract authorizationEndpoint: string;
+
+  protected abstract tokenEndpoint: string;
+
+  protected abstract scopes: string[];
+
+  protected abstract clientId: string;
+
+  protected abstract clientSecret: string;
+
   async request<T>(connection: Connection, endpoint: string, options?: RequestInit): Promise<T> {
     if (connection.accessToken == null) {
       throw new Error('Connection not authenticated');
     }
 
-    const provider = connection.provider;
-
-    if (provider == null) {
-      throw new Error('Connection not associated with a provider');
-    }
-
-    if (provider.apiBaseUrl == null) {
-      throw new Error('Provider missing base URL configuration');
-    }
-
-    const response = await fetch(`${provider.apiBaseUrl}${endpoint}`, {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
       headers: {
         ...options?.headers,
@@ -39,58 +41,27 @@ export abstract class BaseOAuth2Client extends BaseClient {
   }
 
   async getAuthorizationUrl(connection: Connection): Promise<string> {
-    if (connection.clientid == null) {
-      throw new Error('OAuth credentials not configured');
-    }
-
-    const provider = connection.provider;
-
-    if (provider == null) {
-      throw new Error('Connection not associated with a provider');
-    }
-
-    if (provider.tokenHost == null) {
-      throw new Error('Provider has no tokenHost specified');
-    }
-
-    const authEndpoint = this.mergeUrls([provider.tokenHost, provider.authorizePath]);
-
-    const providerScope = provider.scopes ?? [];
-    const resolvedScope = Array.isArray(providerScope) ? providerScope.join(' ') : providerScope;
-
     const params = new URLSearchParams({
-      client_id: connection.clientid,
+      client_id: this.clientId,
       redirect_uri: config.auth.oauth.callbackUrl,
       response_type: 'code',
-      scope: resolvedScope,
+      scope: this.scopes.join(' '),
       state: connection.id,
     });
 
-    return `${authEndpoint}?${params.toString()}`;
+    return `${this.authorizationEndpoint}?${params.toString()}`;
   }
 
-  async exchangeAuthorizationCode(connection: Connection, code: string): Promise<TokenExchange> {
-    if (connection.clientid == null || connection.clientsecret == null) {
-      throw new Error('OAuth credentials not configured');
-    }
-
-    const provider = connection.provider;
-
-    if (provider == null) {
-      throw new Error('Connection not associated with a provider');
-    }
-
-    const tokenEndpoint = this.mergeUrls([provider.tokenHost, provider.tokenPath]);
-
+  async exchangeAuthorizationCode(code: string): Promise<TokenExchange> {
     const tokenParams = new URLSearchParams({
       code,
-      client_id: connection.clientid,
-      client_secret: connection.clientsecret,
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
       redirect_uri: config.auth.oauth.callbackUrl,
       grant_type: 'authorization_code',
     });
 
-    const tokenResponse = await fetch(tokenEndpoint, {
+    const tokenResponse = await fetch(this.tokenEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -111,7 +82,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
       this.logger.error('Token exchange failed', {
         status: tokenResponse.status,
         error: errorDetails,
-        endpoint: tokenEndpoint,
+        endpoint: this.tokenEndpoint,
       });
 
       throw new Error('Token exchange failed');
@@ -132,45 +103,5 @@ export abstract class BaseOAuth2Client extends BaseClient {
       refreshToken: tokenData.refresh_token || null,
       tokenExpiry,
     } satisfies TokenExchange;
-  }
-
-  private mergeUrls(urls: (string | null)[]) {
-    const result = new URL('http://placeholder');
-    let validResult = false;
-
-    result.hostname = '';
-
-    for (const url of urls) {
-      if (url == null) {
-        continue;
-      }
-
-      let parsedUrl;
-      let overrideHost = false;
-
-      try {
-        parsedUrl = new URL(url);
-        overrideHost = true;
-      } catch {
-        parsedUrl = new URL(url, 'http://placeholder.com');
-      }
-
-      if (overrideHost) {
-        result.protocol = parsedUrl.protocol;
-        result.hostname = parsedUrl.hostname;
-        result.username = parsedUrl.username;
-        result.port = parsedUrl.port;
-
-        validResult = true;
-      }
-
-      result.pathname = parsedUrl.pathname;
-    }
-
-    if (!validResult) {
-      throw new Error('No URL contains a valid hostname');
-    }
-
-    return result.toString();
   }
 }
