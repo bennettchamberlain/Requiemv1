@@ -6,10 +6,10 @@ import { Button, cn } from '@ci/shadcn';
 import logo from '@/assets/logo.png';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-import focusAreasImage from './focus-areas.png';
+import focusAreasImage from './assets/focus-areas.jpg';
+import peopleImage from './assets/people.jpg';
 import { FocusAreas } from './FocusAreas';
 import { Intro } from './Intro';
-import peopleImage from './people.png';
 import { SocialConnections } from './SocialConnections';
 
 export function OnboardingPage() {
