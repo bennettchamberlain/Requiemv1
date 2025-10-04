@@ -6,10 +6,13 @@ import { Button, cn } from '@ci/shadcn';
 import logo from '@/assets/logo.png';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
+import { ActivityPreferences } from './ActivityPreferences';
 import focusAreasImage from './assets/focus-areas.jpg';
 import peopleImage from './assets/people.jpg';
 import { FocusAreas } from './FocusAreas';
+import { FoodPreferences } from './FoodPreferences';
 import { Intro } from './Intro';
+import { MoviePreferences } from './MoviePreferences';
 import { SocialConnections } from './SocialConnections';
 
 export function OnboardingPage() {
@@ -17,7 +20,14 @@ export function OnboardingPage() {
 
   const [step, setStep] = useState(0);
 
-  const steps = [<Intro />, <FocusAreas />, <SocialConnections />];
+  const steps = [
+    <Intro />,
+    <FocusAreas />,
+    <SocialConnections />,
+    <FoodPreferences />,
+    <MoviePreferences />,
+    <ActivityPreferences />,
+  ];
 
   const images = [
     null,
@@ -33,6 +43,9 @@ export function OnboardingPage() {
         backgroundImage: `url(${peopleImage})`,
       }}
     />,
+    null,
+    null,
+    null,
   ];
 
   return (
@@ -49,7 +62,7 @@ export function OnboardingPage() {
         </div>
 
         <div className="space-y-12 md:max-w-xl mx-4 md:mx-8">
-          <div>{steps[step % steps.length]}</div>
+          <div className="min-h-0 flex-shrink">{steps[step % steps.length]}</div>
 
           <div className="text-center">
             <Button className="w-64" onClick={() => setStep((current) => current + 1)}>
