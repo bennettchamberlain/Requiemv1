@@ -56,33 +56,29 @@ export function OnboardingPage() {
         </div>
       </div>
 
-      <div className="flex flex-col items-center justify-between flex-1/4 gap-4">
-        <div className="flex self-start flex-1 p-4 pt-[max(1rem,env(safe-area-inset-top))]">
+      <div className="flex flex-col items-center flex-1/4 gap-4">
+        <div className="self-start p-4 pt-[max(1rem,env(safe-area-inset-top))]">
           <img src={logo} className="w-8 h-8" />
         </div>
 
-        <div className="space-y-12 md:max-w-xl mx-4 md:mx-8">
-          <div className="min-h-0 flex-shrink">{steps[step % steps.length]}</div>
-
-          <div className="text-center">
-            <Button className="w-64" onClick={() => setStep((current) => current + 1)}>
-              Next
-            </Button>
-          </div>
+        <div className="flex-1 overflow-y-auto min-h-0 md:max-w-xl mx-4 md:mx-8">
+          {steps[step % steps.length]}
         </div>
 
-        <div className="flex items-end justify-center flex-1 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <div className="flex items-center justify-center">
-            {Array.from({ length: steps.length }).map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'h-2 w-2 m-2 rounded-full transition-all duration-500',
-                  i === step % steps.length ? 'bg-slate-800 scale-115' : 'bg-slate-300',
-                )}
-              />
-            ))}
-          </div>
+        <Button className="px-24" onClick={() => setStep((current) => current + 1)}>
+          Next
+        </Button>
+
+        <div className="flex justify-center items-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {Array.from({ length: steps.length }).map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                'h-2 w-2 m-2 rounded-full transition-all duration-500',
+                i === step % steps.length ? 'bg-slate-800 scale-115' : 'bg-slate-300',
+              )}
+            />
+          ))}
         </div>
       </div>
 
