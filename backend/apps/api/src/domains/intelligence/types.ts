@@ -35,6 +35,13 @@ export interface Question {
   user?: User;
 }
 
+export interface CreateActionDto {
+  title: string;
+  text: string;
+  imageUrl?: string;
+  threadId: string;
+}
+
 export interface CreateAnswerDto {
   id?: string;
   text: string;

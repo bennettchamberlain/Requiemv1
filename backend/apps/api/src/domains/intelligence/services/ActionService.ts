@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import type { RequestContext } from '@ci/common/types';
 
 import { ActionEntity } from '../entities/ActionEntity';
-import type { Action } from '../types';
+import type { CreateActionDto, Action } from '../types';
 
 @Injectable()
 export class ActionService {
@@ -13,6 +14,25 @@ export class ActionService {
     @InjectRepository(ActionEntity)
     private readonly actionRepository: Repository<ActionEntity>,
   ) {}
+
+  async create(context: RequestContext, data: CreateActionDto): Promise<Action> {
+    const instance = await this.actionRepository.create({
+      id: uuidv7(),
+      title: data.title,
+      text: data.text,
+      imageUrl: data.imageUrl,
+      thread: {
+        id: data.threadId,
+      },
+      user: {
+        id: context.userId,
+      },
+    });
+
+    const entity = await this.actionRepository.save(instance);
+
+    return entity.toAction();
+  }
 
   async findAll(context: RequestContext): Promise<Action[]> {
     const result = await this.actionRepository.find({

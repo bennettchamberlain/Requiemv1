@@ -3,9 +3,9 @@ import { Controller, UseGuards, NotFoundException, Post } from '@nestjs/common';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
-import { UserService } from '@ci/domains/user';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
+import { UserService } from '@ci/domains/user';
 
 @Controller('onboarding')
 export class OnboardingController {
@@ -25,6 +25,68 @@ export class OnboardingController {
 
     if (userId == null) {
       throw new NotFoundException();
+    }
+
+    const user = await this.userService.findOne(context.userId!);
+
+    if (!user) {
+      throw new NotFoundException();
+    }
+
+    if (!user.onboarded) {
+      const mealPlanThread = await this.threadService.create(context, {
+        name: 'Plan a meal',
+      });
+
+      await this.messageService.create(context, {
+        role: 'assistant',
+        model: 'qwen3:8b',
+        content: 'Would you like me to help you plan a meal that you will enjoy?',
+        threadId: mealPlanThread.id,
+      });
+
+      await this.actionService.create(context, {
+        title: 'Make dinner tonight',
+        text: "Because you haven't cooked meal yet this week, I am recommending you plan something.",
+        imageUrl: '/actions/dinner.jpg',
+        threadId: mealPlanThread.id,
+      });
+
+      const moviePlanThread = await this.threadService.create(context, {
+        name: 'Plan a movie',
+      });
+
+      await this.messageService.create(context, {
+        role: 'assistant',
+        model: 'qwen3:8b',
+        content: 'Would you like me to help you find a movie that you will enjoy?',
+        threadId: moviePlanThread.id,
+      });
+
+      await this.actionService.create(context, {
+        title: 'Watch a movie',
+        text: "Why don't you watch a movie tonight? It's a simple way for you to relax and unwind.",
+        imageUrl: '/actions/movie_night.jpg',
+        threadId: moviePlanThread.id,
+      });
+
+      const activityPlanThread = await this.threadService.create(context, {
+        name: 'Plan an activity',
+      });
+
+      await this.messageService.create(context, {
+        role: 'assistant',
+        model: 'qwen3:8b',
+        content: 'Would you like me to help you find an activity that you will enjoy?',
+        threadId: activityPlanThread.id,
+      });
+
+      await this.actionService.create(context, {
+        title: 'Take a break this weekend',
+        text: 'The weekend is a perfect opportunity to step away from routine and recharge in a different environment. Taking time outside the usual surroundings can bring a refreshing change of pace and perspective.',
+        imageUrl: '/actions/woods.jpg',
+        threadId: activityPlanThread.id,
+      });
     }
 
     const favoriteFoodQuestion = await this.questionService.create(context, {
@@ -63,7 +125,9 @@ export class OnboardingController {
       question: favoriteActivityQuestion,
     });
 
-    await this.userService.onboard(userId);
+    if (!user.onboarded) {
+      await this.userService.onboard(userId);
+    }
 
     return {
       onboarded: true,
