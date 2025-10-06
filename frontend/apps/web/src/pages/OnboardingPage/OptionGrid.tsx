@@ -27,14 +27,14 @@ export function OptionGrid({ options }: Props) {
           htmlFor={option.id}
           key={option.id}
           className={cn(
-            'flex flex-col cursor-pointer rounded-xl border-2 gap-0',
+            'flex flex-col cursor-pointer rounded-xl border-2 gap-0 overflow-hidden',
             selectedOption === option.id ? 'border-teal-700' : '',
           )}
         >
           <RadioGroup.Item value={option.id} id={option.id} className="sr-only" />
 
           <div
-            className="aspect-square bg-cover bg-center w-50 h-50 rounded-t-xl"
+            className="aspect-square bg-cover bg-center w-full md:w-64"
             style={{
               backgroundImage: `
               url(${option.imageUrl})
