@@ -21,12 +21,17 @@ const options = [
     imageUrl: skating,
   },
   {
-    id: 'arcade',
-    title: 'Arcade',
+    id: 'arcading',
+    title: 'Arcading',
     imageUrl: arcade,
   },
 ];
 
 export function ActivityPreferences() {
-  return <OptionGrid options={options} />;
+  return (
+    <>
+      <div className="text-center text-2xl mb-10">Would you rather go?</div>
+      <OptionGrid options={options} />
+    </>
+  );
 }

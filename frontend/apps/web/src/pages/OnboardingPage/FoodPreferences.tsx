@@ -28,5 +28,10 @@ const options = [
 ];
 
 export function FoodPreferences() {
-  return <OptionGrid options={options} />;
+  return (
+    <>
+      <div className="text-center text-2xl mb-10">Would you rather eat?</div>
+      <OptionGrid options={options} />
+    </>
+  );
 }

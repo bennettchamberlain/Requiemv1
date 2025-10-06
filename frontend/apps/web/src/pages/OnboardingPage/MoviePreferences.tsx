@@ -28,5 +28,10 @@ const options = [
 ];
 
 export function MoviePreferences() {
-  return <OptionGrid options={options} />;
+  return (
+    <>
+      <div className="text-center text-2xl mb-10">Would you rather watch?</div>
+      <OptionGrid options={options} />
+    </>
+  );
 }
