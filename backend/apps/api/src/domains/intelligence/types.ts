@@ -35,6 +35,14 @@ export interface Question {
   user?: User;
 }
 
+export interface CreateAnswerDto {
+  id?: string;
+  text: string;
+  question: {
+    id: string;
+  };
+}
+
 export interface CreateQuestionDto {
   id?: string;
   text: string;

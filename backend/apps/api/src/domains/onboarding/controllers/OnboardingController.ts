@@ -45,6 +45,24 @@ export class OnboardingController {
       subcategory: 'Entertainment',
     });
 
+    await this.answerService.create(context, {
+      id: '06f1b7cd-7e97-4b8a-b485-673d1e6e35d5',
+      text: 'Pasta',
+      question: favoriteFoodQuestion,
+    });
+
+    await this.answerService.create(context, {
+      id: '4a61080b-f82d-4b00-949f-0d4f3ba9a17b',
+      text: 'Comedies',
+      question: favoriteMovieGenreQuestion,
+    });
+
+    await this.answerService.create(context, {
+      id: 'c53b1be2-0c82-41e7-b61d-5aa537275d06',
+      text: 'Hiking',
+      question: favoriteActivityQuestion,
+    });
+
     await this.userService.onboard(userId);
 
     return {
