@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { usePageTitle } from '@ci/common';
 import { Button, cn } from '@ci/shadcn';
@@ -14,6 +14,7 @@ import { FoodPreferences } from './FoodPreferences';
 import { Intro } from './Intro';
 import { MoviePreferences } from './MoviePreferences';
 import { SocialConnections } from './SocialConnections';
+import { Submit } from './Submit';
 
 export function OnboardingPage() {
   usePageTitle('Onboarding - Companion Intelligence');
@@ -21,6 +22,20 @@ export function OnboardingPage() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const [step, setStep] = useState(0);
+
+  const steps = useMemo(
+    () => [
+      <Intro />,
+      <FocusAreas />,
+      <SocialConnections />,
+      <FoodPreferences />,
+      <MoviePreferences />,
+      <ActivityPreferences />,
+      <Submit />,
+    ],
+    [],
+  );
+
   const handleNextStep = useCallback(() => {
     setStep((current) => current + 1);
 
@@ -33,15 +48,6 @@ export function OnboardingPage() {
       }
     });
   }, []);
-
-  const steps = [
-    <Intro />,
-    <FocusAreas />,
-    <SocialConnections />,
-    <FoodPreferences />,
-    <MoviePreferences />,
-    <ActivityPreferences />,
-  ];
 
   const images = [
     null,
@@ -57,6 +63,7 @@ export function OnboardingPage() {
         backgroundImage: `url(${peopleImage})`,
       }}
     />,
+    null,
     null,
     null,
     null,
@@ -79,9 +86,11 @@ export function OnboardingPage() {
           <div className="flex flex-col justify-center min-h-full">{steps[step % steps.length]}</div>
         </div>
 
-        <Button className="px-24" onClick={handleNextStep}>
-          Next
-        </Button>
+        {step < steps.length - 1 && (
+          <Button className="px-24" onClick={handleNextStep}>
+            Next
+          </Button>
+        )}
 
         <div className="flex justify-center items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {Array.from({ length: steps.length }).map((_, i) => (
