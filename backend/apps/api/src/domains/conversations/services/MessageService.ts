@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
+import { FileEntity } from '@ci/domains/files';
 
 import { MessageEntity } from '../entities/MessageEntity';
 import type { CreateMessageDto, Message, UpdateMessageDto } from '../types';
@@ -13,15 +14,17 @@ export class MessageService {
   constructor(
     @InjectRepository(MessageEntity)
     private readonly messsageRepository: Repository<MessageEntity>,
+    @InjectRepository(FileEntity)
+    private readonly fileRepository: Repository<FileEntity>,
   ) {}
 
   async create(context: RequestContext, data: CreateMessageDto): Promise<Message> {
-    const { threadId, content, toolCalls, promptMessageId, ...rest } = data;
+    const { threadId, content, toolCalls, promptMessageId, fileIds, ...rest } = data;
 
     const instance = this.messsageRepository.create({
       ...rest,
       id: uuid7(),
-      text: content,
+      content,
       tool_calls: toolCalls,
       user: {
         id: context.userId,
@@ -35,6 +38,23 @@ export class MessageService {
     });
 
     const entity = await this.messsageRepository.save(instance);
+
+    // Link files to this message if provided
+    if (fileIds && fileIds.length > 0) {
+      await this.fileRepository.update(
+        {
+          id: In(fileIds),
+          user: {
+            id: context.userId,
+          },
+        },
+        {
+          message: {
+            id: entity.id,
+          },
+        },
+      );
+    }
 
     return entity.toMessage();
   }
@@ -59,6 +79,7 @@ export class MessageService {
         },
         canceled: false,
       },
+      relations: ['files'],
     });
 
     return entities.map((entity) => entity.toMessage());
@@ -75,6 +96,7 @@ export class MessageService {
         },
         canceled: false,
       },
+      relations: ['files'],
       order: {
         id: 'asc',
       },
@@ -92,6 +114,7 @@ export class MessageService {
         },
         canceled: false,
       },
+      relations: ['files'],
     });
 
     if (entity == null) {

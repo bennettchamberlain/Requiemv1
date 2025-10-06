@@ -40,9 +40,8 @@ export class ThreadEntity {
     return {
       id: this.id,
       name: this.name ?? null,
-      model: null, // TODO: Implement model_config handling when needed
+      model: null, // Model is now per-message, not per-thread
       description: this.description ?? null,
-      files: [], // Note: Files are now linked via message_id in files table, not thread-level
 
       user: this.user?.toUser(),
     } satisfies Thread;

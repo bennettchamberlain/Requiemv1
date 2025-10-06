@@ -106,9 +106,11 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     async (data: FormData, e?: FormEvent) => {
       e?.preventDefault();
 
-      return submitChatRequest(data);
+      const fileIds = files.map((file) => file.id);
+
+      return submitChatRequest(data, { fileIds });
     },
-    [submitChatRequest],
+    [files, submitChatRequest],
   );
 
   if (isMobile) {
@@ -166,7 +168,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
           placeholder="Ask about this content..."
           streaming={streaming}
           readable={stream ?? undefined}
-          onSubmit={submitChatRequest}
+          onSubmit={handleSubmit}
           onStop={stopChatRequest}
         >
           <Files files={files} />
