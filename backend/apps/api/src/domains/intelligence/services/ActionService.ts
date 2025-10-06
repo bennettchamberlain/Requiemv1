@@ -21,6 +21,7 @@ export class ActionService {
       title: data.title,
       text: data.text,
       imageUrl: data.imageUrl,
+      priority: data.priority,
       thread: {
         id: data.threadId,
       },
@@ -40,6 +41,9 @@ export class ActionService {
         user: {
           id: context.userId,
         },
+      },
+      order: {
+        priority: 'asc',
       },
       relations: ['tags'],
     });

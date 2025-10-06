@@ -39,6 +39,7 @@ export interface CreateActionDto {
   title: string;
   text: string;
   imageUrl?: string;
+  priority?: number;
   threadId: string;
 }
 

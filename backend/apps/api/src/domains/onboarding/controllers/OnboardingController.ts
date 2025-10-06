@@ -49,6 +49,7 @@ export class OnboardingController {
         title: 'Make dinner tonight',
         text: "Because you haven't cooked meal yet this week, I am recommending you plan something.",
         imageUrl: '/actions/dinner.jpg',
+        priority: 0,
         threadId: mealPlanThread.id,
       });
 
@@ -67,6 +68,7 @@ export class OnboardingController {
         title: 'Watch a movie',
         text: "Why don't you watch a movie tonight? It's a simple way for you to relax and unwind.",
         imageUrl: '/actions/movie_night.jpg',
+        priority: 1,
         threadId: moviePlanThread.id,
       });
 
@@ -85,6 +87,7 @@ export class OnboardingController {
         title: 'Take a break this weekend',
         text: 'The weekend is a perfect opportunity to step away from routine and recharge in a different environment. Taking time outside the usual surroundings can bring a refreshing change of pace and perspective.',
         imageUrl: '/actions/woods.jpg',
+        priority: 2,
         threadId: activityPlanThread.id,
       });
     }

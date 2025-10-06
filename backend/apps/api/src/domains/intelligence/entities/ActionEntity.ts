@@ -31,6 +31,9 @@ export class ActionEntity {
   @Column({ type: 'text', name: 'image_url', nullable: true })
   imageUrl!: string | null;
 
+  @Column({ type: 'int', name: 'priority', nullable: true })
+  priority!: number | null;
+
   @Column({ type: 'text', name: 'thread_id', nullable: true })
   threadId!: string;
 
