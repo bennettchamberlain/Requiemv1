@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { usePageTitle } from '@ci/common';
 import { Button, cn } from '@ci/shadcn';
@@ -18,7 +18,21 @@ import { SocialConnections } from './SocialConnections';
 export function OnboardingPage() {
   usePageTitle('Onboarding - Companion Intelligence');
 
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
   const [step, setStep] = useState(0);
+  const handleNextStep = useCallback(() => {
+    setStep((current) => current + 1);
+
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({
+          top: 0,
+          behavior: 'instant',
+        });
+      }
+    });
+  }, []);
 
   const steps = [
     <Intro />,
@@ -61,11 +75,11 @@ export function OnboardingPage() {
           <img src={logo} className="w-8 h-8" />
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 md:max-w-xl mx-4 md:mx-8">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 md:max-w-xl mx-4 md:mx-8">
           {steps[step % steps.length]}
         </div>
 
-        <Button className="px-24" onClick={() => setStep((current) => current + 1)}>
+        <Button className="px-24" onClick={handleNextStep}>
           Next
         </Button>
 
