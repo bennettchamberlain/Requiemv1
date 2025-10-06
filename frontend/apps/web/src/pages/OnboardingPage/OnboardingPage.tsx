@@ -76,7 +76,7 @@ export function OnboardingPage() {
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 md:max-w-xl mx-4 md:mx-8">
-          {steps[step % steps.length]}
+          <div className="flex flex-col justify-center min-h-full">{steps[step % steps.length]}</div>
         </div>
 
         <Button className="px-24" onClick={handleNextStep}>
