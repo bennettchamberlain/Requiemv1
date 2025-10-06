@@ -110,22 +110,40 @@ export class FileService implements OnModuleInit {
   }
 
   async findByThread(context: RequestContext, threadId: string): Promise<File[]> {
-    const result = await this.fileRepository
-      .createQueryBuilder('files')
-      .innerJoin('messages', 'messages', 'messages.message_id = files.message_id')
-      .where('messages.thread_id = :threadId', { threadId })
-      .andWhere('files.user_id = :userId', { userId: context.userId })
-      .andWhere('messages.is_deleted = false') // Only get files from non-deleted messages
-      .getMany();
+    const result = await this.fileRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+        message: {
+          thread: {
+            id: threadId,
+          },
+          canceled: false,
+        },
+      },
+      relations: ['message', 'message.thread'],
+    });
 
     return this.signFiles(result);
   }
 
   async upload(context: RequestContext, file: Express.Multer.File): Promise<File> {
+    const fileId = uuidv7();
+    const fileKey = uuidv4();
+    const bucket = config.staticfiles.bucket;
+
+    // Construct S3 path for file_path (required field)
+    const filePath = `s3://${bucket}/${fileKey}`;
+
     const entity = this.fileRepository.create({
-      id: uuidv7(),
-      bucket: config.staticfiles.bucket,
-      key: uuidv4(),
+      id: fileId,
+      file_path: filePath,
+      filename: file.originalname,
+      storage_type: 'cloud', // S3/Minio is cloud storage
+      modified_at_source: new Date(), // Upload time as modification time
+      bucket,
+      key: fileKey,
       original_name: file.originalname,
       content_type: file.mimetype,
       size: file.size,

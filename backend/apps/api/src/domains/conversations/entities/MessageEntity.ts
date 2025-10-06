@@ -5,9 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 
+import type { FileEntity } from '@ci/domains/files';
 import { UserEntity } from '@ci/domains/user';
 
 import type { Message } from '../types';
@@ -26,7 +28,7 @@ export class MessageEntity {
   role!: string;
 
   @Column({ type: 'text', nullable: false, name: 'content' })
-  text!: string;
+  content!: string;
 
   @Column({ type: 'text', nullable: true, name: 'content_type' })
   mimetype!: string | null;
@@ -50,6 +52,9 @@ export class MessageEntity {
   @JoinColumn({ name: 'parent_message_id' })
   promptMessage?: MessageEntity;
 
+  @OneToMany('FileEntity', 'message')
+  files?: FileEntity[];
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
@@ -61,7 +66,7 @@ export class MessageEntity {
       id: this.id,
       model: this.model ?? null,
       role: this.role,
-      content: this.text ?? '',
+      content: this.content ?? '',
       mimetype: this.mimetype ?? null,
       toolCalls: this.tool_calls ?? null,
       canceled: this.canceled ?? null,
@@ -69,6 +74,7 @@ export class MessageEntity {
       user: this.user?.toUser(),
       thread: this.thread?.toThread(),
       promptMessage: this.promptMessage?.toMessage() ?? null,
+      files: this.files?.map((file) => file.toFile()),
     } satisfies Message;
   }
 }

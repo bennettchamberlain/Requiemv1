@@ -75,7 +75,7 @@ CREATE TABLE messages (
     
     -- Message content and type
     role message_role NOT NULL,
-    content TEXT NOT NULL,
+    content TEXT,--  NOT NULL,
     content_type TEXT DEFAULT 'text/plain', -- text/plain, text/markdown, application/json, etc.
     
     -- AI model information (for assistant messages)
