@@ -5,11 +5,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  OneToMany,
   JoinColumn,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 
-import type { FileEntity } from '@ci/domains/files';
+import { FileEntity } from '@ci/domains/files/entities/FileEntity';
 import { UserEntity } from '@ci/domains/user';
 
 import type { Message } from '../types';
@@ -52,7 +53,20 @@ export class MessageEntity {
   @JoinColumn({ name: 'parent_message_id' })
   promptMessage?: MessageEntity;
 
-  @OneToMany('FileEntity', 'message')
+  @ManyToMany(() => FileEntity, (file) => file.messages, {
+    eager: false,
+  })
+  @JoinTable({
+    name: 'message_files',
+    joinColumn: {
+      name: 'message_id',
+      referencedColumnName: 'id',
+    },
+    inverseJoinColumn: {
+      name: 'file_id',
+      referencedColumnName: 'id',
+    },
+  })
   files?: FileEntity[];
 
   @CreateDateColumn({ type: 'timestamptz' })

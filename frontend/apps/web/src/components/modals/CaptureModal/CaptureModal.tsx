@@ -52,28 +52,20 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     [upload],
   );
 
-  const createFileThread = useCallback(
-    async (fileId: string) => {
-      const thread = await fetchJson<Thread>('/api/threads', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          files: [
-            {
-              id: fileId,
-            },
-          ],
-          model: selectedModel,
-        }),
-      });
+  const createFileThread = useCallback(async () => {
+    const thread = await fetchJson<Thread>('/api/threads', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+      }),
+    });
 
-      setThreadId(thread.id);
-    },
-    [authToken, selectedModel],
-  );
+    setThreadId(thread.id);
+  }, [authToken, selectedModel]);
 
   useEffect(() => {
     (async () => {
@@ -86,18 +78,18 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
         return;
       }
 
-      await createFileThread(fileData.id);
+      await createFileThread();
 
       setFiles((current) => [...current, fileData]);
     })();
-  }, [fileData]);
+  }, [fileData, isMobile, createFileThread]);
 
   const handleSelectLastCapture = useCallback(async () => {
     if (fileData == null) {
       return;
     }
 
-    await createFileThread(fileData.id);
+    await createFileThread();
 
     setFiles((current) => [...current, fileData]);
   }, [fileData, createFileThread]);

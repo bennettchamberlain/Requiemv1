@@ -110,20 +110,14 @@ export class FileService implements OnModuleInit {
   }
 
   async findByThread(context: RequestContext, threadId: string): Promise<File[]> {
-    const result = await this.fileRepository.find({
-      where: {
-        user: {
-          id: context.userId,
-        },
-        message: {
-          thread: {
-            id: threadId,
-          },
-          canceled: false,
-        },
-      },
-      relations: ['message', 'message.thread'],
-    });
+    const result = await this.fileRepository
+      .createQueryBuilder('file')
+      .innerJoin('file.messages', 'message')
+      .innerJoin('message.thread', 'thread')
+      .where('file.user_id = :userId', { userId: context.userId })
+      .andWhere('thread.thread_id = :threadId', { threadId })
+      .andWhere('message.is_deleted = false')
+      .getMany();
 
     return this.signFiles(result);
   }
