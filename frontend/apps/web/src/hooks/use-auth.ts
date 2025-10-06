@@ -19,6 +19,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  onboarded: boolean;
 }
 
 interface AuthResponse {
@@ -38,6 +39,7 @@ type ReturnValue = [
   {
     login: (username: string, password: string) => Promise<void>;
     logout: () => void;
+    signup: (name: string, email: string, password: string, signup_code: string) => Promise<void>;
   },
 ];
 
@@ -132,6 +134,38 @@ function useAuth(): ReturnValue {
     navigate('/');
   }, [navigate, updateAccessToken, updateSessionToken]);
 
+  const signup = useCallback(
+    async (name: string, email: string, password: string, signup_code: string) => {
+      setLoginLoading(true);
+      setLoginError(null);
+
+      try {
+        const data: AuthResponse = await fetchJson('/api/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+            signup_code,
+          }),
+        });
+
+        updateAccessToken(data.accessToken);
+        updateSessionToken(data.sessionToken);
+        setUser(data.user);
+
+        navigate('/feed');
+      } catch (error: unknown) {
+        setUser(null);
+        setLoginError(error);
+      } finally {
+        setLoginLoading(false);
+      }
+    },
+    [setUser, updateAccessToken, updateSessionToken],
+  );
+
   const refresh = useCallback(async () => {
     setRefreshError(null);
 
@@ -197,6 +231,7 @@ function useAuth(): ReturnValue {
     {
       login,
       logout,
+      signup,
     },
   ];
 }

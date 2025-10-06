@@ -4,22 +4,24 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GraphNodeEntity } from '@ci/domains/memory/entities/GraphNodeEntity';
 
 import { UserController } from './controllers/UserController';
+import { SignupCodeEntity } from './entities/SignupCodeEntity';
 import { UserEntity } from './entities/UserEntity';
+import { SignupCodeService } from './services/SignupCodeService';
 import { UserService } from './services/UserService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, GraphNodeEntity])],
-  providers: [UserService],
+  imports: [TypeOrmModule.forFeature([UserEntity, SignupCodeEntity])],
+  providers: [UserService, SignupCodeService],
   controllers: [UserController],
-  exports: [UserService],
+  exports: [UserService, SignupCodeService],
 })
 export class UserModule {}
 
 // Entities
-export { UserEntity };
+export { UserEntity, SignupCodeEntity };
 
 // Services
 export { UserService };
 
 // Types
-export type { CreateUserDto, UpdateUserDto, User } from './types';
+export type { CreateUserDto, UpdateUserDto, User, SignupCode, UpdateSignupCodeDto } from './types';

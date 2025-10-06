@@ -106,6 +106,11 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       STT_HOST: ${STT_HOST}
       TTS_HOST: ${TTS_HOST}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
     networks:
       - web
     extra_hosts:
@@ -127,6 +132,20 @@ services:
       - ci-api
     restart: unless-stopped
     profiles: [ "all", "staging" ]
+
+  iframely:
+    image: jolt/iframely:latest
+    container_name: iframely
+    ports:
+      - 8061:8061
+    networks:
+      - web
+    restart: unless-stopped
+    profiles: [ "all", "infra" ]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
 
 volumes:
   postgres-data:

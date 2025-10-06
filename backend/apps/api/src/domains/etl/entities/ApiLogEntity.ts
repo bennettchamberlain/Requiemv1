@@ -1,18 +1,32 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, CreateDateColumn, JoinColumn } from 'typeorm';
 
+import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
 import { UserEntity } from '@ci/domains/user';
 
-import { ApiLog } from '../types';
-
-import { ConnectionEntity } from './ConnectionEntity';
+import type { ApiLog } from '../types';
 
 @Entity('api_logs')
 export class ApiLogEntity {
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  user_id?: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  connection_id?: string;
+
   @Column({ type: 'text', nullable: true })
-  content!: string;
+  scope?: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  content?: unknown;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  created_at!: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  last_processed?: Date;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
@@ -22,16 +36,17 @@ export class ApiLogEntity {
   @JoinColumn({ name: 'connection_id' })
   connection?: ConnectionEntity | null;
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
-
   toApiLog(): ApiLog {
     return {
       id: this.id,
+      user_id: this.user_id,
+      connection_id: this.connection_id,
+      scope: this.scope,
       content: this.content,
       user: this.user?.toUser(),
       connection: this.connection?.toConnection(),
       created_at: this.created_at,
+      last_processed: this.last_processed,
     };
   }
 }

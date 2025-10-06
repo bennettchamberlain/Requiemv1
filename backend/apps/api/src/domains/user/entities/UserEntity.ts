@@ -18,6 +18,8 @@ export class UserEntity {
 
   @Column({ type: 'uuid', name: 'entity_id', nullable: true })
   entityId?: string | null;
+  @Column()
+  onboarded!: boolean;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
@@ -30,6 +32,7 @@ export class UserEntity {
       id: this.id,
       name: this.name,
       email: this.email,
+      onboarded: this.onboarded,
     } satisfies User;
   }
 }

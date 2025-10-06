@@ -16,20 +16,24 @@ import {
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
+import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
 const ActionsPage = lazy(() => import('@/pages/ActionsPage'));
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'));
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const FilesGalleryPage = lazy(() => import('@/pages/FilesGalleryPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
+const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
+const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
@@ -50,8 +54,16 @@ function Providers({ children }: { children: ReactNode }) {
 function AppRoutes() {
   return (
     <Routes>
-      {/* No navigation for these pages */}
       <Route path="/" element={<SplashPage />} />
+
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute>
+            <OnboardingPage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route element={<CenteredLayout />}>
         <Route
@@ -62,8 +74,14 @@ function AppRoutes() {
             </RedirectKnownUser>
           }
         />
-
-        <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+        <Route
+          path="/signup"
+          element={
+            <RedirectKnownUser>
+              <SignupPage />
+            </RedirectKnownUser>
+          }
+        />
       </Route>
 
       <Route element={<MainLayout />}>
@@ -151,6 +169,15 @@ function AppRoutes() {
         />
 
         <Route
+          path="/connect"
+          element={
+            <ProtectedRoute>
+              <ConnectPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/connections"
           element={
             <ProtectedRoute>
@@ -173,6 +200,24 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <SystemPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tools"
+          element={
+            <ProtectedRoute>
+              <ToolsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/oauth/callback"
+          element={
+            <ProtectedRoute>
+              <OAuthCallbackPage />
             </ProtectedRoute>
           }
         />

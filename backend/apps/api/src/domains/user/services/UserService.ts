@@ -117,4 +117,14 @@ export class UserService {
 
     return result.toUser();
   }
+
+  async checkEmailAvailability(email: string): Promise<boolean> {
+    const result = await this.userRepository.findOne({
+      where: {
+        email,
+      },
+    });
+
+    return !!result;
+  }
 }

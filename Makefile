@@ -221,6 +221,25 @@ local: ## Run the local dependencies from Docker images
 
 migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
+	@printf "⏳ Waiting for PostgreSQL to be ready (timeout: 20s)...\n"
+	@POSTGRES_PORT=$$(grep -E '^POSTGRES_PORT=' .env | cut -d= -f2- | tr -d '"'); \
+	POSTGRES_HOST=$$(grep -E '^POSTGRES_HOST=' .env | cut -d= -f2- | tr -d '"'); \
+	TIMEOUT=20; \
+	ELAPSED=0; \
+	until nc -z $$POSTGRES_HOST $$POSTGRES_PORT > /dev/null 2>&1; do \
+		if [ $$ELAPSED -ge $$TIMEOUT ]; then \
+			printf "\n$(RED)✗$(RESET) PostgreSQL failed to start within $$TIMEOUT seconds\n"; \
+			printf "$(RED)✗$(RESET) Migration failed - PostgreSQL is not ready\n"; \
+			exit 1; \
+		fi; \
+		printf "."; \
+		sleep 1; \
+		ELAPSED=$$((ELAPSED + 1)); \
+	done; \
+	printf "\n$(GREEN)✓$(RESET) PostgreSQL port is open!\n"
+	@printf "⏳ Waiting for PostgreSQL to fully initialize...\n"
+	@sleep 5
+	@printf "$(GREEN)✓$(RESET) PostgreSQL is ready!\n\n"
 	@cd backend/apps/api && yarn migrate
 	@printf "\nMigrations successfully run.\n"
 

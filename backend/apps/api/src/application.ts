@@ -18,12 +18,14 @@ import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { AuthModule } from '@ci/domains/auth';
 import { ConnectionsModule } from '@ci/domains/connections';
+import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { JobsModule } from '@ci/domains/jobs';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
+import { PromoteModule } from '@ci/domains/promote';
 import { EmbeddingModule } from '@ci/domains/search';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
@@ -47,6 +49,7 @@ import { SpeechModule } from './domains/speech';
     AuthModule,
     ConnectionsModule,
     EmbeddingModule,
+    EtlModule,
     EventsModule,
     FilesModule,
     IntelligenceModule,
@@ -54,6 +57,7 @@ import { SpeechModule } from './domains/speech';
     LLMModule,
     ToolsModule,
     MemoryModule,
+    PromoteModule,
     SpeechModule,
     UserModule,
   ],

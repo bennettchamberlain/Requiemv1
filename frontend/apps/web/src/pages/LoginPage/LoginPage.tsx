@@ -1,6 +1,7 @@
 import type { BaseSyntheticEvent } from 'react';
 
-import { Card } from '@ci/shadcn';
+import { Button, Card } from '@ci/shadcn';
+import { Link } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
 
@@ -27,6 +28,13 @@ export function LoginPage() {
           <LoginForm onSubmit={handleSubmit} />
         </Card.Content>
       </Card>
+
+      <div className="mt-2 text-center text-sm">
+        Don't have an account?{' '}
+        <Button variant="link" className="p-0" asChild>
+          <Link to="/signup">Sign up</Link>
+        </Button>
+      </div>
     </div>
   );
 }
