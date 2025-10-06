@@ -6,24 +6,24 @@ import { OptionGrid } from './OptionGrid';
 
 const options = [
   {
-    id: 'horror',
-    title: 'Horror',
-    imageUrl: zombie,
-  },
-  {
     id: 'drama',
-    title: 'Drama',
+    title: 'Dramas',
     imageUrl: drama,
   },
   {
+    id: 'documentary',
+    title: 'Documentaries',
+    imageUrl: nature,
+  },
+  {
     id: 'comedy',
-    title: 'Comedy',
+    title: 'Comedies',
     imageUrl: clown,
   },
   {
-    id: 'documentary',
-    title: 'Documentary',
-    imageUrl: nature,
+    id: 'horror',
+    title: 'Horror',
+    imageUrl: zombie,
   },
 ];
 
