@@ -56,8 +56,8 @@ export function OnboardingPage() {
         </div>
       </div>
 
-      <div className="flex flex-col items-center flex-1/4 gap-4">
-        <div className="self-start p-4 pt-[max(1rem,env(safe-area-inset-top))]">
+      <div className="flex flex-col items-center flex-1/4 gap-4 h-full">
+        <div className="self-start px-4 pt-[max(1rem,env(safe-area-inset-top))]">
           <img src={logo} className="w-8 h-8" />
         </div>
 
@@ -69,7 +69,7 @@ export function OnboardingPage() {
           Next
         </Button>
 
-        <div className="flex justify-center items-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="flex justify-center items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {Array.from({ length: steps.length }).map((_, i) => (
             <div
               key={i}

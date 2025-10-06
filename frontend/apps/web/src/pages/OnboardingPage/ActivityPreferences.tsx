@@ -30,7 +30,7 @@ const options = [
 export function ActivityPreferences() {
   return (
     <>
-      <div className="text-center text-2xl mb-10">Would you rather go?</div>
+      <div className="text-center text-2xl mb-6 md:mb-10">Would you rather go?</div>
       <OptionGrid options={options} />
     </>
   );
