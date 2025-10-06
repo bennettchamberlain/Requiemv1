@@ -35,6 +35,12 @@ export interface Question {
   user?: User;
 }
 
+export interface CreateQuestionDto {
+  id?: string;
+  text: string;
+  subcategory?: string;
+}
+
 export interface UpdateAnswerDto {
   rag_answer_1?: string;
 }

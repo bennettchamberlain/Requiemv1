@@ -5,7 +5,9 @@ import { DataSource, Repository } from 'typeorm';
 import type { RequestContext } from '@ci/common/types';
 
 import { QuestionEntity } from '../entities/QuestionEntity';
-import type { Question } from '../types';
+import type { CreateQuestionDto, Question } from '../types';
+
+import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
 export class QuestionService {
@@ -14,6 +16,20 @@ export class QuestionService {
     @InjectRepository(QuestionEntity)
     private readonly questionRepository: Repository<QuestionEntity>,
   ) {}
+
+  async create(context: RequestContext, data: CreateQuestionDto): Promise<Question> {
+    const instance = await this.questionRepository.create({
+      id: uuidv7(),
+      ...data,
+      user: {
+        id: context.userId,
+      },
+    });
+
+    const entity = await this.questionRepository.save(instance);
+
+    return entity.toQuestion();
+  }
 
   async findAll(context: RequestContext): Promise<Question[]> {
     const result = await this.questionRepository.find({
