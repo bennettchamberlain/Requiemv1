@@ -41,19 +41,24 @@ export class MessageService {
 
     // Link files to this message if provided
     if (fileIds && fileIds.length > 0) {
-      await this.fileRepository.update(
-        {
+      const files = await this.fileRepository.find({
+        where: {
           id: In(fileIds),
           user: {
             id: context.userId,
           },
         },
-        {
-          message: {
-            id: entity.id,
-          },
-        },
-      );
+      });
+
+      if (files.length > 0) {
+        await this.messsageRepository
+          .createQueryBuilder()
+          .relation(MessageEntity, 'files')
+          .of(entity.id)
+          .add(files.map((file) => file.id));
+
+        entity.files = files;
+      }
     }
 
     return entity.toMessage();
