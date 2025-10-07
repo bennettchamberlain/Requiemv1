@@ -99,11 +99,12 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     // For demo: skip user ID constraints - just get all people
     const peopleQuery = `
       SELECT id, type, first_name as "firstName", last_name as "lastName", user_id as "userId"
-      FROM people 
+      FROM people
+      WHERE user_id = $1
       ORDER BY first_name, last_name
     `;
 
-    const peopleResult = await this.dataSource.query(peopleQuery);
+    const peopleResult = await this.dataSource.query(peopleQuery, [context.userId]);
 
     const familyMembers: FamilyMember[] = [];
 
@@ -119,10 +120,11 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
           FROM tags t
           JOIN person_tag pt ON t.id = pt.tag_id
           WHERE pt.person_id = $1
+            AND t.user_id = $2
           ORDER BY t.label
         `;
 
-        const prefResult = await this.dataSource.query(preferencesQuery, [person.id]);
+        const prefResult = await this.dataSource.query(preferencesQuery, [person.id, context.userId]);
         preferences = prefResult.map((row: any) => row.label);
       }
 

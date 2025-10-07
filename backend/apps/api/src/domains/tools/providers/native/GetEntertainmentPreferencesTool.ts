@@ -107,8 +107,7 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
   }
 
   protected async executeInternal(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _context: ToolExecutionContext,
+    context: ToolExecutionContext,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _input: GetEntertainmentPreferencesInput,
   ): Promise<GetEntertainmentPreferencesOutput> {
@@ -125,10 +124,11 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
       JOIN answers a ON q.id = a.question_id
       WHERE q.subcategory = 'Entertainment'
         AND a.give_answer_1 IS NOT NULL
+        AND a.user_id = $1
       ORDER BY q.created_at
     `;
 
-    const result = await this.dataSource.query(query);
+    const result = await this.dataSource.query(query, [context.userId]);
 
     const preferences: EntertainmentPreference[] = result.map((row: any) => ({
       id: `${row.userId}-${row.createdAt.getTime()}`, // Generate a unique ID

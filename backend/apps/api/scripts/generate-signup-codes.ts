@@ -35,14 +35,16 @@ import { SignupCodeEntity } from '@ci/domains/user';
     for (let i = 0; i < parseInt(numCodes); i++) {
       await db.transaction(async (manager) => {
         const code = crypto.randomBytes(6).toString('hex');
+
         await manager.save(SignupCodeEntity, {
           signup_code: code,
         });
+
         codes.push(code);
       });
     }
 
-    console.log(`\nSuccessfully created codes: ${codes}`);
+    console.log(`\nSuccessfully created codes:\n${codes.join('\n')}\n`);
   } catch (err) {
     console.error('\nFailed to create some codes:', (err as Error).message);
     if (codes.length > 0) {

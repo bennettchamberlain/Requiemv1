@@ -21,7 +21,7 @@ type ReturnType = [
 export function useOnboardService(): ReturnType {
   const [{ authToken }] = useAuth();
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown | null>(null);
 
   const onboard = useCallback(async () => {
