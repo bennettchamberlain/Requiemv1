@@ -96,14 +96,13 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
   }
 
   protected async executeInternal(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _context: ToolExecutionContext,
+    context: ToolExecutionContext,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _input: GetUserPreferencesInput,
   ): Promise<GetUserPreferencesOutput> {
     // Query for questions with subcategory = 'Food' (much more focused than all Personal Preferences)
     const query = `
-      SELECT 
+      SELECT
         q.text as question,
         a.give_answer_1 as answer,
         q.category,
@@ -111,13 +110,14 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
         a.user_id as "userId",
         q.created_at as "createdAt"
       FROM questions q
-      JOIN answers a ON q.id = a.question_id  
+      JOIN answers a ON q.id = a.question_id
       WHERE q.subcategory = 'Food'
         AND a.give_answer_1 IS NOT NULL
+        AND a.user_id = $1
       ORDER BY q.created_at
     `;
 
-    const result = await this.dataSource.query(query);
+    const result = await this.dataSource.query(query, [context.userId]);
 
     const preferences: UserPreference[] = result.map((row: any) => ({
       id: `${row.userId}-${row.createdAt.getTime()}`, // Generate a unique ID

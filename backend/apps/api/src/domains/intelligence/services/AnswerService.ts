@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import type { RequestContext } from '@ci/common/types';
 
 import { AnswerEntity } from '../entities/AnswerEntity';
-import type { Answer, UpdateAnswerDto } from '../types';
+import type { Answer, CreateAnswerDto, UpdateAnswerDto } from '../types';
 
 @Injectable()
 export class AnswerService {
@@ -13,6 +14,23 @@ export class AnswerService {
     @InjectRepository(AnswerEntity)
     private readonly answerRepository: Repository<AnswerEntity>,
   ) {}
+
+  async create(context: RequestContext, data: CreateAnswerDto): Promise<Answer> {
+    const instance = await this.answerRepository.create({
+      id: data.id ?? uuidv7(),
+      give_answer_1: data.text,
+      question: {
+        id: data.question.id,
+      },
+      user: {
+        id: context.userId,
+      },
+    });
+
+    const entity = await this.answerRepository.save(instance);
+
+    return entity.toAnswer();
+  }
 
   async findAll(context: RequestContext): Promise<Answer[]> {
     const result = await this.answerRepository.find({

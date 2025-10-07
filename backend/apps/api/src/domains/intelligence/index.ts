@@ -24,7 +24,7 @@ import { QuestionService } from './services/QuestionService';
   ],
   providers: [ActionService, AnswerService, QuestionService],
   controllers: [ActionsController, AnswersController, QuestionsController],
-  exports: [AnswerService, QuestionService],
+  exports: [ActionService, AnswerService, QuestionService],
 })
 export class IntelligenceModule {}
 
@@ -32,7 +32,7 @@ export class IntelligenceModule {}
 export { ActionEntity, AnswerEntity, QuestionEntity };
 
 // Services
-export { AnswerService, QuestionService };
+export { ActionService, AnswerService, QuestionService };
 
 // Types
 export type { Answer, Question } from './types';
