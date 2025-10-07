@@ -16,11 +16,11 @@ export class AnswerService {
   ) {}
 
   async create(context: RequestContext, data: CreateAnswerDto): Promise<Answer> {
-    const instance = await this.answerRepository.create({
-      id: data.id ?? uuidv7(),
-      give_answer_1: data.text,
+    const instance = this.answerRepository.create({
+      answer_id: data.id ?? uuidv7(),
+      answer_text: data.text,
       question: {
-        id: data.question.id,
+        question_id: data.question.id,
       },
       user: {
         id: context.userId,

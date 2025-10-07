@@ -1,10 +1,7 @@
 import { Entity, Column, CreateDateColumn, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
-import { Indexable } from '@ci/common/decorators';
-
 import type { Question } from '../types';
 
-@Indexable('question', ['question_text'])
 @Entity('questions')
 export class QuestionEntity {
   @PrimaryColumn('uuid')

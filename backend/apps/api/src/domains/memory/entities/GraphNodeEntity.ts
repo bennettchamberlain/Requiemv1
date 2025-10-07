@@ -1,8 +1,6 @@
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity({ name: 'entities' })
-@Index(['entity_type', 'is_active'])
-@Index(['linked_table', 'linked_id'])
 export class GraphNodeEntity {
   @PrimaryColumn('uuid')
   entity_id!: string;

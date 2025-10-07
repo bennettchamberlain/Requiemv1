@@ -3,6 +3,8 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
+import type { RequestContext } from '@ci/common/types';
+
 import { QuestionEntity } from '../entities/QuestionEntity';
 import type { CreateQuestionDto, Question } from '../types';
 
@@ -13,6 +15,18 @@ export class QuestionService {
     @InjectRepository(QuestionEntity)
     private readonly questionRepository: Repository<QuestionEntity>,
   ) {}
+
+  async create(context: RequestContext, data: CreateQuestionDto): Promise<Question> {
+    const instance = this.questionRepository.create({
+      question_id: data.id ?? uuidv7(),
+      question_text: data.text,
+      question_category: data.subcategory,
+    });
+
+    const entity = await this.questionRepository.save(instance);
+
+    return entity.toQuestion();
+  }
 
   async findAll(): Promise<Question[]> {
     const result = await this.questionRepository.find({

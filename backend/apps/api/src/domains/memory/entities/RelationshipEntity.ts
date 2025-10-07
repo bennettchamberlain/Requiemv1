@@ -6,16 +6,11 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  Index,
 } from 'typeorm';
 
 import { GraphNodeEntity } from './GraphNodeEntity';
 
 @Entity({ name: 'relationships' })
-@Index(['from_entity_id'])
-@Index(['to_entity_id'])
-@Index(['relationship_type'])
-@Index(['from_entity_id', 'to_entity_id', 'is_bidirectional'])
 export class RelationshipEntity {
   @PrimaryColumn('uuid')
   relationship_id!: string;
