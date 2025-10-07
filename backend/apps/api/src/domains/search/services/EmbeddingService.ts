@@ -79,119 +79,209 @@ export class EmbeddingService {
   /**
    * Generate and store embedding for a question
    */
-  async embedQuestion(questionId: string, questionText: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(questionText);
-    await this.dataSource.query(`UPDATE questions SET question_embedding = $1 WHERE question_id = $2`, [
-      embeddingString,
-      questionId,
-    ]);
+  async embedQuestion(questionId: string, questionText: string): Promise<boolean> {
+    try {
+      const embeddingString = await this.generateEmbeddingString(questionText);
+      await this.dataSource.query(`UPDATE questions SET question_embedding = $1 WHERE question_id = $2`, [
+        embeddingString,
+        questionId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed question ${questionId}: ${message}`);
+
+      return false;
+    }
   }
 
   /**
    * Generate and store embedding for an answer
    */
-  async embedAnswer(answerId: string, answerText: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(answerText);
-    await this.dataSource.query(`UPDATE answers SET answer_embedding = $1 WHERE answer_id = $2`, [
-      embeddingString,
-      answerId,
-    ]);
+  async embedAnswer(answerId: string, answerText: string): Promise<boolean> {
+    try {
+      const embeddingString = await this.generateEmbeddingString(answerText);
+      await this.dataSource.query(`UPDATE answers SET answer_embedding = $1 WHERE answer_id = $2`, [
+        embeddingString,
+        answerId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed answer ${answerId}: ${message}`);
+
+      return false;
+    }
   }
 
   /**
    * Generate and store embedding for content
    */
-  async embedContent(contentId: string, text: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(text);
-    await this.dataSource.query(`UPDATE content SET embedding = $1 WHERE id = $2`, [
-      embeddingString,
-      contentId,
-    ]);
+  async embedContent(contentId: string, text: string): Promise<boolean> {
+    try {
+      const embeddingString = await this.generateEmbeddingString(text);
+      await this.dataSource.query(`UPDATE content SET embedding = $1 WHERE id = $2`, [
+        embeddingString,
+        contentId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed content ${contentId}: ${message}`);
+
+      return false;
+    }
   }
 
   /**
    * Generate and store embedding for an entity
    */
-  async embedEntity(entityId: string, searchContent: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(searchContent);
-    await this.dataSource.query(`UPDATE entities SET embedding = $1 WHERE entity_id = $2`, [
-      embeddingString,
-      entityId,
-    ]);
+  async embedEntity(entityId: string, searchContent: string): Promise<boolean> {
+    try {
+      const embeddingString = await this.generateEmbeddingString(searchContent);
+      await this.dataSource.query(`UPDATE entities SET embedding = $1 WHERE entity_id = $2`, [
+        embeddingString,
+        entityId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed entity ${entityId}: ${message}`);
+
+      return false;
+    }
   }
 
   /**
    * Generate and store embedding for an inventory item
    */
-  async embedInventoryItem(objectId: string, objectName: string, objectDescription?: string): Promise<void> {
-    const text = [objectName, objectDescription].filter(Boolean).join(' ');
-    const embeddingString = await this.generateEmbeddingString(text);
-    await this.dataSource.query(`UPDATE inventory SET object_embedding = $1 WHERE object_id = $2`, [
-      embeddingString,
-      objectId,
-    ]);
+  async embedInventoryItem(
+    objectId: string,
+    objectName: string,
+    objectDescription?: string,
+  ): Promise<boolean> {
+    try {
+      const text = [objectName, objectDescription].filter(Boolean).join(' ');
+      const embeddingString = await this.generateEmbeddingString(text);
+      await this.dataSource.query(`UPDATE inventory SET object_embedding = $1 WHERE object_id = $2`, [
+        embeddingString,
+        objectId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed inventory item ${objectId}: ${message}`);
+
+      return false;
+    }
   }
 
   /**
    * Generate and store embedding for a fact
    */
-  async embedFact(factId: string, factText: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(factText);
-    await this.dataSource.query(`UPDATE facts SET fact_embedding = $1 WHERE fact_id = $2`, [
-      embeddingString,
-      factId,
-    ]);
+  async embedFact(factId: string, factText: string): Promise<boolean> {
+    try {
+      const embeddingString = await this.generateEmbeddingString(factText);
+      await this.dataSource.query(`UPDATE facts SET fact_embedding = $1 WHERE fact_id = $2`, [
+        embeddingString,
+        factId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed fact ${factId}: ${message}`);
+
+      return false;
+    }
   }
 
   /**
    * Generate and store embeddings for a document (title, content, summary)
    */
-  async embedDocument(documentId: string, title?: string, content?: string, summary?: string): Promise<void> {
-    if (title) {
-      const titleEmbedding = await this.generateEmbeddingString(title);
-      await this.dataSource.query(`UPDATE documents SET title_embedding = $1 WHERE document_id = $2`, [
-        titleEmbedding,
-        documentId,
-      ]);
-    }
+  async embedDocument(
+    documentId: string,
+    title?: string,
+    content?: string,
+    summary?: string,
+  ): Promise<boolean> {
+    try {
+      if (title) {
+        const titleEmbedding = await this.generateEmbeddingString(title);
+        await this.dataSource.query(`UPDATE documents SET title_embedding = $1 WHERE document_id = $2`, [
+          titleEmbedding,
+          documentId,
+        ]);
+      }
 
-    if (content) {
-      const contentEmbedding = await this.generateEmbeddingString(content);
-      await this.dataSource.query(`UPDATE documents SET content_embedding = $1 WHERE document_id = $2`, [
-        contentEmbedding,
-        documentId,
-      ]);
-    }
+      if (content) {
+        const contentEmbedding = await this.generateEmbeddingString(content);
+        await this.dataSource.query(`UPDATE documents SET content_embedding = $1 WHERE document_id = $2`, [
+          contentEmbedding,
+          documentId,
+        ]);
+      }
 
-    if (summary) {
-      const summaryEmbedding = await this.generateEmbeddingString(summary);
-      await this.dataSource.query(`UPDATE documents SET summary_embedding = $1 WHERE document_id = $2`, [
-        summaryEmbedding,
-        documentId,
-      ]);
+      if (summary) {
+        const summaryEmbedding = await this.generateEmbeddingString(summary);
+        await this.dataSource.query(`UPDATE documents SET summary_embedding = $1 WHERE document_id = $2`, [
+          summaryEmbedding,
+          documentId,
+        ]);
+      }
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed document ${documentId}: ${message}`);
+
+      return false;
     }
   }
 
   /**
    * Generate and store embedding for a document chunk
    */
-  async embedDocumentChunk(chunkId: string, chunkContent: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(chunkContent);
-    await this.dataSource.query(`UPDATE document_chunks SET chunk_embedding = $1 WHERE chunk_id = $2`, [
-      embeddingString,
-      chunkId,
-    ]);
+  async embedDocumentChunk(chunkId: string, chunkContent: string): Promise<boolean> {
+    try {
+      const embeddingString = await this.generateEmbeddingString(chunkContent);
+      await this.dataSource.query(`UPDATE document_chunks SET chunk_embedding = $1 WHERE chunk_id = $2`, [
+        embeddingString,
+        chunkId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed document chunk ${chunkId}: ${message}`);
+
+      return false;
+    }
   }
 
   /**
    * Generate and store embedding for a message
    */
-  async embedMessage(messageId: string, content: string): Promise<void> {
-    const embeddingString = await this.generateEmbeddingString(content);
-    await this.dataSource.query(`UPDATE messages SET message_embedding = $1 WHERE message_id = $2`, [
-      embeddingString,
-      messageId,
-    ]);
+  async embedMessage(messageId: string, content: string): Promise<boolean> {
+    try {
+      const embeddingString = await this.generateEmbeddingString(content);
+      await this.dataSource.query(`UPDATE messages SET message_embedding = $1 WHERE message_id = $2`, [
+        embeddingString,
+        messageId,
+      ]);
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to embed message ${messageId}: ${message}`);
+
+      return false;
+    }
   }
 
   // ==================== BULK EMBEDDING METHODS ====================
@@ -207,11 +297,23 @@ export class EmbeddingService {
       AND question_text IS NOT NULL
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const question of questions) {
-      await this.embedQuestion(question.question_id, question.question_text);
+      const success = await this.embedQuestion(question.question_id, question.question_text);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return questions.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} questions, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -225,11 +327,23 @@ export class EmbeddingService {
       AND answer_text IS NOT NULL
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const answer of answers) {
-      await this.embedAnswer(answer.answer_id, answer.answer_text);
+      const success = await this.embedAnswer(answer.answer_id, answer.answer_text);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return answers.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} answers, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -243,11 +357,23 @@ export class EmbeddingService {
       AND text IS NOT NULL
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const item of content) {
-      await this.embedContent(item.id, item.text);
+      const success = await this.embedContent(item.id, item.text);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return content.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} content records, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -261,11 +387,23 @@ export class EmbeddingService {
       AND search_content IS NOT NULL
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const entity of entities) {
-      await this.embedEntity(entity.entity_id, entity.search_content);
+      const success = await this.embedEntity(entity.entity_id, entity.search_content);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return entities.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} entities, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -279,11 +417,23 @@ export class EmbeddingService {
       AND (name IS NOT NULL OR description IS NOT NULL)
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const item of inventory) {
-      await this.embedInventoryItem(item.object_id, item.name, item.description);
+      const success = await this.embedInventoryItem(item.object_id, item.name, item.description);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return inventory.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} inventory items, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -297,11 +447,23 @@ export class EmbeddingService {
       AND fact_statement IS NOT NULL
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const fact of facts) {
-      await this.embedFact(fact.fact_id, fact.fact_statement);
+      const success = await this.embedFact(fact.fact_id, fact.fact_statement);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return facts.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} facts, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -315,11 +477,23 @@ export class EmbeddingService {
       AND (title IS NOT NULL OR content IS NOT NULL OR summary IS NOT NULL)
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const doc of documents) {
-      await this.embedDocument(doc.document_id, doc.title, doc.content, doc.summary);
+      const success = await this.embedDocument(doc.document_id, doc.title, doc.content, doc.summary);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return documents.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} documents, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -333,11 +507,23 @@ export class EmbeddingService {
       AND content IS NOT NULL
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const chunk of chunks) {
-      await this.embedDocumentChunk(chunk.chunk_id, chunk.content);
+      const success = await this.embedDocumentChunk(chunk.chunk_id, chunk.content);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return chunks.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} document chunks, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   /**
@@ -351,11 +537,23 @@ export class EmbeddingService {
       AND content IS NOT NULL
     `);
 
+    let successCount = 0;
+    let failCount = 0;
+
     for (const message of messages) {
-      await this.embedMessage(message.message_id, message.content);
+      const success = await this.embedMessage(message.message_id, message.content);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
     }
 
-    return messages.length;
+    if (failCount > 0) {
+      console.warn(`Embedded ${successCount} messages, failed ${failCount}`);
+    }
+
+    return successCount;
   }
 
   // ==================== LEGACY METHODS ====================
@@ -479,12 +677,21 @@ export class EmbeddingService {
   }
 
   private async calculateVector(input: string): Promise<number[]> {
-    const response = await this.ollama.embeddings({
-      model: EMBEDDING_MODEL,
-      prompt: input,
-    });
+    try {
+      const response = await this.ollama.embeddings({
+        model: EMBEDDING_MODEL,
+        prompt: input,
+      });
 
-    return response.embedding;
+      if (!response.embedding || response.embedding.length === 0) {
+        throw new Error('Received empty embedding vector from Ollama');
+      }
+
+      return response.embedding;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to generate embedding: ${message}`);
+    }
   }
 
   private async calculateVectorString(input: string): Promise<string> {
