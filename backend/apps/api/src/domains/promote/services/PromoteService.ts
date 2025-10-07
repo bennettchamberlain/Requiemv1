@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, MoreThan, Not } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 
+import { ConnectionEntity } from '../../connections/entities/ConnectionEntity';
 import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
 
 import { GoogleCalendarEventPromotionService } from './CalendarPromotionService';
@@ -17,6 +18,8 @@ export class PromoteService {
   constructor(
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
+    @InjectRepository(ConnectionEntity)
+    private readonly connectionRepository: Repository<ConnectionEntity>,
     private readonly calendarEventPromotionService: GoogleCalendarEventPromotionService,
     private readonly gmailPromotionService: GmailPromotionService,
   ) {}
@@ -30,16 +33,18 @@ export class PromoteService {
     });
 
     try {
-      const unprocessedApiLogs = await this.apiLogRepository.find({
-        where: {
-          user_id: userId,
-          last_processed: IsNull(),
-        },
-        order: {
-          created_at: 'ASC',
-        },
-        take: 1,
-      });
+      const unprocessedApiLogs = await this.apiLogRepository
+        .createQueryBuilder('apiLog')
+        .innerJoin('apiLog.connection', 'connection')
+        .where('apiLog.user_id = :userId', { userId })
+        .andWhere('apiLog.last_processed IS NULL')
+        .andWhere('apiLog.connection_id IS NOT NULL')
+        .andWhere('connection.active = true')
+        .andWhere('connection.access_token IS NOT NULL')
+        .andWhere('connection.token_expiry > :currentDate', { currentDate: new Date() })
+        .orderBy('apiLog.created_at', 'ASC')
+        .limit(1)
+        .getMany();
 
       this.logger.log('Found unprocessed API logs', {
         userId,
@@ -95,6 +100,28 @@ export class PromoteService {
         this.logger.error('Connection ID is required', {
           apiLogId: apiLog.id,
         });
+
+        return;
+      }
+
+      const connection = await this.connectionRepository.findOne({
+        where: {
+          id: apiLog.connection_id,
+          active: true,
+          accessToken: Not(IsNull()),
+          tokenExpiry: MoreThan(new Date()),
+        },
+      });
+
+      if (!connection) {
+        this.logger.warn('Connection is not active or has invalid tokens, skipping API log processing', {
+          apiLogId: apiLog.id,
+          connectionId: apiLog.connection_id,
+        });
+
+        // TODO: Should we mark as processed to avoid reprocessing or handle refreshing the connection?
+        // Currently marking as processed to avoid reprocessing connections with invalid tokens
+        await this.markApiLogAsProcessed(apiLog.id);
 
         return;
       }

@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 
+import { ConnectionEntity } from '../../connections/entities/ConnectionEntity';
 import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
 import { PromoteService } from '../services/PromoteService';
 
@@ -17,6 +18,8 @@ export class PromoteController {
     private readonly promoteService: PromoteService,
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
+    @InjectRepository(ConnectionEntity)
+    private readonly connectionRepository: Repository<ConnectionEntity>,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -30,12 +33,17 @@ export class PromoteController {
     this.logger.log('Starting scheduled API log promotion');
 
     try {
-      // Get all users who have unprocessed API logs
+      // Get all users who have unprocessed API logs with active connections and valid tokens
       const usersWithUnprocessedLogs = await this.apiLogRepository
         .createQueryBuilder('apiLog')
+        .innerJoin('apiLog.connection', 'connection')
         .select('DISTINCT apiLog.user_id', 'userId')
         .where('apiLog.last_processed IS NULL')
         .andWhere('apiLog.user_id IS NOT NULL')
+        .andWhere('apiLog.connection_id IS NOT NULL')
+        .andWhere('connection.active = true')
+        .andWhere('connection.access_token IS NOT NULL')
+        .andWhere('connection.token_expiry > :currentDate', { currentDate: new Date() })
         .getRawMany();
 
       this.logger.log('Found users with unprocessed API logs', {
