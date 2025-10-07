@@ -76,7 +76,9 @@ export class EtlService {
     );
   }
 
-  async findActiveConnections(): Promise<Array<Connection & { userId: string }>> {
+  async findActiveConnections(): Promise<
+    Array<Connection & { userId: string; lastSyncedAt?: Date; createdAt: Date }>
+  > {
     const entities = await this.connectionRepository.find({
       where: {
         active: true,
@@ -89,6 +91,10 @@ export class EtlService {
     return entities.map((entity) => ({
       ...entity.toConnection(),
       userId: entity.user?.id || '',
+      lastSyncedAt: entity.syncState?.lastSyncedAt
+        ? new Date(entity.syncState.lastSyncedAt as string)
+        : undefined,
+      createdAt: entity.created_at,
     }));
   }
 
@@ -99,9 +105,12 @@ export class EtlService {
         throw new Error(`Connection not found: ${connectionId}`);
       }
 
-      // Merge with existing sync state
       const existingSyncState = entity.syncState || {};
-      const mergedSyncState = { ...existingSyncState, ...syncState };
+      const mergedSyncState = {
+        ...existingSyncState,
+        ...syncState,
+        lastSyncedAt: new Date().toISOString(),
+      };
 
       entity.syncState = mergedSyncState;
       await this.connectionRepository.save(entity);
