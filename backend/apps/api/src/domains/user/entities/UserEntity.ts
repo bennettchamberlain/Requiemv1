@@ -16,11 +16,11 @@ export class UserEntity {
   @Column()
   password!: string;
 
-  @Column()
-  onboarded!: boolean;
-
   @Column({ type: 'uuid', name: 'entity_id', nullable: true })
   entityId?: string | null;
+
+  @Column()
+  onboarded!: boolean;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
