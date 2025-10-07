@@ -16,6 +16,9 @@ export class UserEntity {
   @Column()
   password!: string;
 
+  @Column()
+  onboarded!: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 
@@ -27,6 +30,7 @@ export class UserEntity {
       id: this.id,
       name: this.name,
       email: this.email,
+      onboarded: this.onboarded,
     } satisfies User;
   }
 }

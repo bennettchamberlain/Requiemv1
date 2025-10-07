@@ -40,7 +40,7 @@ export class MemoryModule {}
 export { ContactEntity, ContentEntity, EventEntity, LocationEntity, PersonEntity, PlaceEntity, ThingEntity };
 
 // Services
-export { MemoryService };
+export { MemoryService, ContentService, EventService };
 
 // Types
 export type { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from './types';
