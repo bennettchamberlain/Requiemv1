@@ -15,6 +15,9 @@ export class GoogleClient extends BaseOAuth2Client {
   protected readonly scopes = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/youtube',
+    'https://www.googleapis.com/auth/contacts',
   ];
 
   protected get clientId() {
