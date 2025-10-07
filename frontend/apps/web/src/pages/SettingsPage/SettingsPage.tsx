@@ -39,7 +39,6 @@ interface SettingsState {
   streamingEnabled: boolean;
 
   // Update Frequencies
-  dataSyncInterval: string;
   notificationFrequency: string;
   autoRefresh: boolean;
   backgroundTaskFreq: string;
@@ -72,7 +71,6 @@ export function SettingsPage() {
     streamingEnabled: true,
 
     // Update Frequencies defaults
-    dataSyncInterval: '15',
     notificationFrequency: 'hourly',
     autoRefresh: true,
     backgroundTaskFreq: '30',
@@ -250,24 +248,6 @@ export function SettingsPage() {
               <Card.Description>Control how often different systems sync and update</Card.Description>
             </Card.Header>
             <Card.Content className="space-y-4">
-              <div className="grid gap-2">
-                <Label htmlFor="sync">Data Sync Interval (minutes)</Label>
-                <Select
-                  value={settings.dataSyncInterval}
-                  onValueChange={(value) => updateSetting('dataSyncInterval', value)}
-                >
-                  <Select.Trigger id="sync">
-                    <Select.Value />
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Item value="5">5 minutes</Select.Item>
-                    <Select.Item value="15">15 minutes</Select.Item>
-                    <Select.Item value="30">30 minutes</Select.Item>
-                    <Select.Item value="60">1 hour</Select.Item>
-                  </Select.Content>
-                </Select>
-              </div>
-
               <div className="grid gap-2">
                 <Label htmlFor="notifications">Notification Frequency</Label>
                 <Select
