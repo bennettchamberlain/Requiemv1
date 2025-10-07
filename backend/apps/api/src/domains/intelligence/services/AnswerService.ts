@@ -1,13 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import type { RequestContext } from '@ci/common/types';
 
 import { AnswerEntity } from '../entities/AnswerEntity';
 import type { Answer, CreateAnswerDto, UpdateAnswerDto } from '../types';
-
-import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
 export class AnswerService {

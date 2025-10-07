@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import type { RequestContext } from '@ci/common/types';
 
 import { QuestionEntity } from '../entities/QuestionEntity';
 import type { CreateQuestionDto, Question } from '../types';
-
-import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
 export class QuestionService {
