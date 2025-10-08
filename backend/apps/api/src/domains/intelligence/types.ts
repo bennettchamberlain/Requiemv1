@@ -65,6 +65,7 @@ export interface CreateQuestionDto {
   id?: string;
   text: string;
   subcategory?: string;
+  isPrivateTo?: string | null;
 }
 
 export interface UpdateAnswerDto {

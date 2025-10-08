@@ -37,6 +37,9 @@ export class QuestionEntity {
   @Column({ type: 'integer', default: 0 })
   times_answered!: number;
 
+  @Column({ type: 'uuid', nullable: true, name: 'is_private_to' })
+  is_private_to?: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

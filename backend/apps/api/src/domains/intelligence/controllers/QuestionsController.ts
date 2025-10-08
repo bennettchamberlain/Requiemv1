@@ -1,6 +1,7 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
@@ -26,14 +27,14 @@ export class QuestionsController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll() {
-    return this.questionService.findAll();
+  findAll(@Context() context: RequestContext) {
+    return this.questionService.findAll(context);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.questionService.findOne(id);
+  findOne(@Context() context: RequestContext, @Param('id') id: string) {
+    return this.questionService.findOne(context, id);
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -59,7 +60,7 @@ export class QuestionsController {
   @OnEvent(Events.INFER_QUESTION_ANSWER)
   async inferQuestionAnswer(payload: EventPayloads[Events.INFER_QUESTION_ANSWER]) {
     const context: RequestContext = {
-      userId: payload.ownerId,
+      userId: payload.ownerId ?? undefined,
     };
 
     this.logger.log('Inferring answer to question', {
@@ -67,7 +68,7 @@ export class QuestionsController {
       questionId: payload.questionId,
     });
 
-    const question = await this.questionService.findOne(payload.questionId);
+    const question = await this.questionService.findOne(context, payload.questionId);
 
     if (question) {
       const associatedAnswers = await this.embeddingService.findNearest(
