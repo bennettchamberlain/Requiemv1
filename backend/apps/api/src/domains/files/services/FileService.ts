@@ -126,19 +126,6 @@ export class FileService implements OnModuleInit {
     return this.signFiles(entities);
   }
 
-  async findByThread(context: RequestContext, threadId: string): Promise<File[]> {
-    const result = await this.fileRepository
-      .createQueryBuilder('file')
-      .innerJoin('file.messages', 'message')
-      .innerJoin('message.thread', 'thread')
-      .where('file.user_id = :userId', { userId: context.userId })
-      .andWhere('thread.thread_id = :threadId', { threadId })
-      .andWhere('message.is_deleted = false')
-      .getMany();
-
-    return this.signFiles(result);
-  }
-
   async upload(context: RequestContext, file: Express.Multer.File): Promise<File> {
     const fileId = uuidv7();
     const fileKey = uuidv4();
