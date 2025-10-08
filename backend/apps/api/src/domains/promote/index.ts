@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { ConnectionsModule } from '@ci/domains/connections';
+import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EtlModule, ApiLogEntity } from '@ci/domains/etl';
 import { MemoryModule, PersonEntity, ContactEntity } from '@ci/domains/memory';
 
@@ -13,7 +13,7 @@ import { PromoteService } from './services/PromoteService';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ApiLogEntity, PersonEntity, ContactEntity]),
+    TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity, PersonEntity, ContactEntity]),
     ConnectionsModule,
     EtlModule,
     MemoryModule,
