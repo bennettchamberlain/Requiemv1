@@ -5,7 +5,7 @@ export interface Message {
   content: string;
   mimetype: string | null;
   toolCalls: object[] | null;
-  deleted: boolean;
+  canceled: boolean;
 }
 
 export interface Thread {
