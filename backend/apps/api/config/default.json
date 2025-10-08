@@ -64,7 +64,8 @@
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
-    "scheduled.entity.promotion": true
+    "scheduled.entity.promotion": true,
+    "pinned.demo.models": true
   },
   "environment": {
     "database.query.logging": false

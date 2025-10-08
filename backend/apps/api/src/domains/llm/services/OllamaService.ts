@@ -19,6 +19,8 @@ import { ToolRegistry, type ToolSchema } from '@ci/domains/tools';
 import type { OllamaModel } from '../types';
 
 const PROMPT_MODEL = 'gemma3:1b';
+const DEMO_VISION_MODEL = 'gemma3:12b';
+const DEMO_TEXT_MODEL = 'qwen3:8b';
 const INTERNAL_MODELS = new Set(['nomic-embed-text']);
 
 interface PromptOptions {
@@ -51,6 +53,69 @@ export class OllamaService {
     return models.filter((model) => !INTERNAL_MODELS.has(model.name));
   }
 
+  /**
+   * Get the appropriate model based on feature flag and content type
+   */
+  private getModelForContent(messages: OllamaMessage[], requestedModel?: string): string {
+    // If a specific model is requested, use it
+    if (requestedModel) {
+      return requestedModel;
+    }
+
+    // If pinned demo models feature is disabled, use default
+    if (!config.features['pinned.demo.models']) {
+      return PROMPT_MODEL;
+    }
+
+    // Check if any message contains image or video content
+    const hasVisualContent = messages.some(
+      (message) =>
+        message.content &&
+        typeof message.content === 'string' &&
+        this.hasImageOrVideoContent(message.content),
+    );
+
+    // Use vision model for images/videos, text model for regular chat
+    return hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
+  }
+
+  /**
+   * Check if content contains image or video MIME types
+   */
+  private hasImageOrVideoContent(content: string): boolean {
+    // Common image MIME types
+    const imageMimeTypes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/svg+xml',
+      'image/bmp',
+      'image/tiff',
+      'image/ico',
+      'image/x-icon',
+    ];
+
+    // Common video MIME types
+    const videoMimeTypes = [
+      'video/mp4',
+      'video/avi',
+      'video/mov',
+      'video/wmv',
+      'video/flv',
+      'video/webm',
+      'video/mkv',
+      'video/3gp',
+      'video/quicktime',
+    ];
+
+    const allVisualMimeTypes = [...imageMimeTypes, ...videoMimeTypes];
+
+    // Check for MIME types in content
+    return allVisualMimeTypes.some((mimeType) => content.toLowerCase().includes(mimeType.toLowerCase()));
+  }
+
   async generateStream(
     context: RequestContext,
     prompt: string,
@@ -60,10 +125,14 @@ export class OllamaService {
 
     const stream = (async function* (self) {
       const resolvedOptions = options ?? {};
-      const { model = PROMPT_MODEL, signal } = resolvedOptions;
+      const { model, signal } = resolvedOptions;
+
+      // Convert prompt to message format for model selection
+      const messages: OllamaMessage[] = [{ role: 'user', content: prompt }];
+      const selectedModel = self.getModelForContent(messages, model);
 
       const iterator = await self.ollama.generate({
-        model,
+        model: selectedModel,
         prompt,
         stream: true,
       });
@@ -95,10 +164,14 @@ export class OllamaService {
     options?: Omit<PromptOptions, 'signal'>,
   ): Promise<GenerateResponse> {
     const resolvedOptions = options ?? ({} as PromptOptions);
-    const { model = PROMPT_MODEL } = resolvedOptions;
+    const { model } = resolvedOptions;
+
+    // Convert prompt to message format for model selection
+    const messages: OllamaMessage[] = [{ role: 'user', content: prompt }];
+    const selectedModel = this.getModelForContent(messages, model);
 
     return this.ollama.generate({
-      model,
+      model: selectedModel,
       prompt,
     });
   }
@@ -109,7 +182,9 @@ export class OllamaService {
     options?: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
     const resolvedOptions = options ?? {};
-    const { model = PROMPT_MODEL, signal, enableTools = false, enableThinking = true } = resolvedOptions;
+    const { model, signal, enableTools = false, enableThinking = true } = resolvedOptions;
+
+    const selectedModel = this.getModelForContent(messages, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -153,7 +228,7 @@ export class OllamaService {
 
         try {
           const iterator = await self.ollama.chat({
-            model,
+            model: selectedModel,
             messages: inputMessages.concat(accumulatedMessages),
             stream: true,
             ...(enableThinking && { think: true }),
@@ -242,7 +317,9 @@ export class OllamaService {
     options?: Omit<PromptOptions, 'signal'>,
   ): Promise<ChatResponse> {
     const resolvedOptions = options ?? ({} as PromptOptions);
-    const { model = PROMPT_MODEL, enableTools = false } = resolvedOptions;
+    const { model, enableTools = false } = resolvedOptions;
+
+    const selectedModel = this.getModelForContent(messages, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -251,7 +328,7 @@ export class OllamaService {
     const accumulatedMessages: OllamaMessage[] = [];
 
     const response = await this.ollama.chat({
-      model,
+      model: selectedModel,
       messages: inputMessages,
       ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
     });
@@ -274,12 +351,13 @@ export class OllamaService {
     accumulatedMessages.push(...toolEvaluations);
 
     return this.ollama.chat({
-      model,
+      model: selectedModel,
       messages: inputMessages.concat(accumulatedMessages),
     });
   }
 
   async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
+    // If no model is specified, use the default behavior (will be handled by getModelForContent)
     const resolvedModel = model ?? PROMPT_MODEL;
 
     const availableModels = await this.getAvailableModels(context);
