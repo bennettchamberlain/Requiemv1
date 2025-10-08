@@ -62,6 +62,7 @@ export class ProvidersController {
       name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
       clientid: clientId,
       clientsecret: clientSecret,
+      schedule: '1 hour',
     });
 
     const authorizationUrl = await this.connectionService.getAuthorizationUrl(connection, id);

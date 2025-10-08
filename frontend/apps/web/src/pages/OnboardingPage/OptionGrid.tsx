@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Label, RadioGroup, cn } from '@ci/shadcn';
 import { Check } from '@ci/shadcn/icons';
@@ -11,15 +11,25 @@ interface Option {
 
 interface Props {
   options: Option[];
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
 }
 
-export function OptionGrid({ options }: Props) {
-  const [selectedOption, setSelectedOption] = useState('');
+export function OptionGrid({ options, defaultValue = '', onValueChange }: Props) {
+  const [selectedValue, setSelectedValue] = useState(defaultValue);
+
+  const handleValueChange = useCallback(
+    (value: string) => {
+      setSelectedValue(value);
+      onValueChange?.(value);
+    },
+    [onValueChange],
+  );
 
   return (
     <RadioGroup
-      value={selectedOption}
-      onValueChange={setSelectedOption}
+      value={selectedValue}
+      onValueChange={handleValueChange}
       className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6"
     >
       {options.map((option) => (
@@ -28,7 +38,7 @@ export function OptionGrid({ options }: Props) {
           key={option.id}
           className={cn(
             'flex flex-col cursor-pointer rounded-xl border-2 gap-0 overflow-hidden',
-            selectedOption === option.id ? 'border-teal-700' : '',
+            selectedValue === option.id ? 'border-teal-700' : '',
           )}
         >
           <RadioGroup.Item value={option.id} id={option.id} className="sr-only" />
@@ -43,7 +53,7 @@ export function OptionGrid({ options }: Props) {
           />
 
           <div className="flex flex-row items-center justify-center h-12 gap-2">
-            {selectedOption === option.id && <Check className="h-5 w-5 text-teal-700" />}
+            {selectedValue === option.id && <Check className="h-5 w-5 text-teal-700" />}
             {option.title}
           </div>
         </Label>

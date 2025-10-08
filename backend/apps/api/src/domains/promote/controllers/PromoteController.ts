@@ -30,12 +30,17 @@ export class PromoteController {
     this.logger.log('Starting scheduled API log promotion');
 
     try {
-      // Get all users who have unprocessed API logs
+      // Get all users who have unprocessed API logs with active connections and valid tokens
       const usersWithUnprocessedLogs = await this.apiLogRepository
         .createQueryBuilder('apiLog')
+        .innerJoin('apiLog.connection', 'connection')
         .select('DISTINCT apiLog.user_id', 'userId')
         .where('apiLog.last_processed IS NULL')
         .andWhere('apiLog.user_id IS NOT NULL')
+        .andWhere('apiLog.connection_id IS NOT NULL')
+        .andWhere('connection.active = true')
+        .andWhere('connection.access_token IS NOT NULL')
+        .andWhere('connection.token_expiry > :currentDate', { currentDate: new Date() })
         .getRawMany();
 
       this.logger.log('Found users with unprocessed API logs', {

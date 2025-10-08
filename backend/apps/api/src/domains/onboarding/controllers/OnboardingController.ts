@@ -1,11 +1,14 @@
-import { Controller, UseGuards, NotFoundException, Post } from '@nestjs/common';
+import { Body, Controller, UseGuards, NotFoundException, Post } from '@nestjs/common';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { UserService } from '@ci/domains/user';
+
+import { type OnboardingInput, OnboardingInputSchema } from '../types';
 
 @Controller('onboarding')
 export class OnboardingController {
@@ -20,7 +23,10 @@ export class OnboardingController {
 
   @UseGuards(JwtAuthGuard)
   @Post('onboard')
-  async onboard(@Context() context: RequestContext) {
+  async onboard(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(OnboardingInputSchema)) input: OnboardingInput,
+  ) {
     const userId = context.userId;
 
     if (userId == null) {
@@ -95,40 +101,52 @@ export class OnboardingController {
     }
 
     const [favoriteFoodQuestion, favoriteMovieGenreQuestion, favoriteActivityQuestion] = await Promise.all([
-      this.questionService.create(context, {
-        text: 'Choosing a food between pasta, burgers, salads, or tacos, which would be your favorite?',
-        subcategory: 'Food',
-        isPrivateTo: context.userId ?? null,
-      }),
+      input.food_preference
+        ? this.questionService.create(context, {
+            text: 'Choosing a food between pasta, burgers, salads, or tacos, which would be your favorite?',
+            subcategory: 'Food',
+            isPrivateTo: context.userId ?? null,
+          })
+        : Promise.resolve(),
 
-      this.questionService.create(context, {
-        text: 'Choosing a movie genre between comedies, dramas, documentaries, or horror, which would be your favorite?',
-        subcategory: 'Entertainment',
-        isPrivateTo: context.userId ?? null,
-      }),
+      input.movie_preference
+        ? this.questionService.create(context, {
+            text: 'Choosing a movie genre between comedies, dramas, documentaries, or horror, which would be your favorite?',
+            subcategory: 'Entertainment',
+            isPrivateTo: context.userId ?? null,
+          })
+        : Promise.resolve(),
 
-      this.questionService.create(context, {
-        text: 'Choosing an activity between hiking, bowling, ice skating, or going arcading, which would be your favorite?',
-        subcategory: 'Entertainment',
-        isPrivateTo: context.userId ?? null,
-      }),
+      input.activity_preference
+        ? this.questionService.create(context, {
+            text: 'Choosing an activity between hiking, bowling, ice skating, or going arcading, which would be your favorite?',
+            subcategory: 'Entertainment',
+            isPrivateTo: context.userId ?? null,
+          })
+        : Promise.resolve(),
     ]);
 
     await Promise.all([
-      this.answerService.create(context, {
-        text: 'Pasta',
-        question: favoriteFoodQuestion,
-      }),
+      input.food_preference
+        ? this.answerService.create(context, {
+            text: input.food_preference,
+            question: favoriteFoodQuestion!,
+          })
+        : Promise.resolve(),
 
-      this.answerService.create(context, {
-        text: 'Comedies',
-        question: favoriteMovieGenreQuestion,
-      }),
+      input.movie_preference
+        ? this.answerService.create(context, {
+            text: input.movie_preference,
+            question: favoriteMovieGenreQuestion!,
+          })
+        : Promise.resolve(),
 
-      this.answerService.create(context, {
-        text: 'Hiking',
-        question: favoriteActivityQuestion,
-      }),
+      input.activity_preference
+        ? this.answerService.create(context, {
+            text: input.activity_preference,
+            question: favoriteActivityQuestion!,
+          })
+        : Promise.resolve(),
     ]);
 
     if (!user.onboarded) {

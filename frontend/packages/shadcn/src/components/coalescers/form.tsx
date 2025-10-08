@@ -19,6 +19,6 @@ AugmentedForm.Message = FormMessage;
 AugmentedForm.Field = FormField;
 
 export { AugmentedForm as Form };
-export { useForm } from 'react-hook-form';
+export { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 export { zodResolver as formDataResolver } from '@hookform/resolvers/zod';
 export { z as formDataSchema } from 'zod';
