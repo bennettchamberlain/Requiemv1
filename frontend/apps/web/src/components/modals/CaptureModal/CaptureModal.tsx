@@ -78,21 +78,43 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
         return;
       }
 
-      await createFileThread();
+      // Check if this file is already in the files array to prevent duplicates
+      setFiles((current) => {
+        const alreadyExists = current.some((file) => file.id === fileData.id);
+        if (alreadyExists) {
+          return current;
+        }
 
-      setFiles((current) => [...current, fileData]);
+        return [...current, fileData];
+      });
+
+      // Only create thread if we don't have one yet
+      if (threadId == null) {
+        await createFileThread();
+      }
     })();
-  }, [fileData, isMobile, createFileThread]);
+  }, [fileData, isMobile, createFileThread, threadId]);
 
   const handleSelectLastCapture = useCallback(async () => {
     if (fileData == null) {
       return;
     }
 
-    await createFileThread();
+    // Only create thread if we don't have one yet
+    if (threadId == null) {
+      await createFileThread();
+    }
 
-    setFiles((current) => [...current, fileData]);
-  }, [fileData, createFileThread]);
+    // Check if this file is already in the files array to prevent duplicates
+    setFiles((current) => {
+      const alreadyExists = current.some((file) => file.id === fileData.id);
+      if (alreadyExists) {
+        return current;
+      }
+
+      return [...current, fileData];
+    });
+  }, [fileData, createFileThread, threadId]);
 
   const handleSubmit = useCallback(
     async (data: FormData, e?: FormEvent) => {
@@ -253,7 +275,7 @@ function Files({ files }: { files?: FileData[] | null }) {
         switch (fileType) {
           case 'video':
             return (
-              <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
+              <div key={file.id} className="aspect-video rounded-lg overflow-hidden bg-stone-100">
                 <video controls className="w-full h-full object-cover">
                   <source src={`/static${file.url}`} type={file.contentType} />
                   Your browser does not support the video tag.
@@ -262,7 +284,10 @@ function Files({ files }: { files?: FileData[] | null }) {
             );
           case 'audio':
             return (
-              <div className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center">
+              <div
+                key={file.id}
+                className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center"
+              >
                 <audio controls className="w-full">
                   <source src={`/static${file.url}`} type={file.contentType} />
                   Your browser does not support the audio element.
@@ -271,7 +296,7 @@ function Files({ files }: { files?: FileData[] | null }) {
             );
           case 'image':
             return (
-              <div className="rounded-lg bg-stone-100">
+              <div key={file.id} className="rounded-lg bg-stone-100">
                 <img src={`/static${file.url}`} className="w-full h-full object-cover" />
               </div>
             );
