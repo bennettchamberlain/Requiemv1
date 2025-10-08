@@ -22,7 +22,7 @@ node_modules
 .pnp.*
 .aider*
 .env
-
+.venv
 
 .specstory/ 
 AGENTS.md
@@ -31,4 +31,3 @@ AGENTS.md
 
 .idea/
 
-AGENTS.md
