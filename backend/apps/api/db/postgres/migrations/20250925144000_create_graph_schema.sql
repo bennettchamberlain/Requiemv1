@@ -57,6 +57,7 @@ CREATE TABLE relationships (
     from_entity_id UUID NOT NULL REFERENCES entities(entity_id) ON DELETE CASCADE,
     to_entity_id UUID NOT NULL REFERENCES entities(entity_id) ON DELETE CASCADE,
     relationship_type TEXT NOT NULL,
+    owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     
     -- Relationship strength/weight (0.0 to 1.0)
     strength DOUBLE PRECISION DEFAULT 1.0 CHECK (strength >= 0.0 AND strength <= 1.0),

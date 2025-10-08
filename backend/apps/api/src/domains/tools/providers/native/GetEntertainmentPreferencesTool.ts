@@ -140,21 +140,16 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
     input: GetEntertainmentPreferencesInput,
   ): Promise<GetEntertainmentPreferencesOutput> {
     if (!context.userId) {
-      return {
-        preferences: [],
-        dislikes: [],
-        totalPreferences: 0,
-        totalDislikes: 0,
-        personId: '',
-        personName: 'No user context',
-      };
+      throw new Error('User context is required to load entertainment preferences');
     }
 
     // Determine target person
     let targetPersonId: string | null = null;
     let targetPersonName = 'Current User';
 
-    const userProfile = await this.loadUserGraphProfile(context.userId);
+    const ownerUserId = context.userId;
+
+    const userProfile = await this.loadUserGraphProfile(ownerUserId);
 
     if (!userProfile) {
       return {
@@ -179,7 +174,7 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
     }
 
     if (input.personName) {
-      const resolved = await this.resolvePersonEntity(userProfile.entityId, input.personName);
+      const resolved = await this.resolvePersonEntity(userProfile.entityId, ownerUserId, input.personName);
       if (!resolved) {
         return {
           preferences: [],
@@ -226,6 +221,8 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
       WHERE r.from_entity_id = $1
         AND r.relationship_type = 'PREFERS'
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
         ${mediaFilter}
       ORDER BY r.strength DESC, e.name ASC
     `;
@@ -244,13 +241,15 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
       WHERE r.from_entity_id = $1
         AND r.relationship_type = 'DISLIKES'
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
         ${mediaFilter}
       ORDER BY r.strength DESC, e.name ASC
     `;
 
     const [prefersResult, dislikesResult] = await Promise.all([
-      this.dataSource.query(prefersQuery, [targetPersonId]),
-      this.dataSource.query(dislikesQuery, [targetPersonId]),
+      this.dataSource.query(prefersQuery, [targetPersonId, ownerUserId]),
+      this.dataSource.query(dislikesQuery, [targetPersonId, ownerUserId]),
     ]);
 
     const preferences: EntertainmentPreference[] = prefersResult.map((row: any) => ({
@@ -305,10 +304,11 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
         WHERE linked_table = 'users'
           AND linked_id = $1
           AND is_active = TRUE
+          AND owner_user_id = $2
         LIMIT 1
       `;
 
-      const linkedResult = await this.dataSource.query(linkedQuery, [userId]);
+      const linkedResult = await this.dataSource.query(linkedQuery, [userId, userId]);
       if (linkedResult.length > 0) {
         entityId = linkedResult[0].entity_id;
 
@@ -324,6 +324,7 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 
   private async resolvePersonEntity(
     userEntityId: string,
+    ownerUserId: string,
     personName: string,
   ): Promise<{ entityId: string; name: string | null } | null> {
     const lowerName = personName.toLowerCase().trim();
@@ -348,18 +349,23 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 
     for (const { patterns, relationshipTypes } of relationshipPatterns) {
       if (patterns.some((pattern) => lowerName.includes(pattern))) {
-        const candidate = await this.findRelatedEntityByRelationships(userEntityId, relationshipTypes);
+        const candidate = await this.findRelatedEntityByRelationships(
+          userEntityId,
+          ownerUserId,
+          relationshipTypes,
+        );
         if (candidate) {
           return candidate;
         }
       }
     }
 
-    return this.findRelatedEntityByName(userEntityId, lowerName);
+    return this.findRelatedEntityByName(userEntityId, ownerUserId, lowerName);
   }
 
   private async findRelatedEntityByRelationships(
     userEntityId: string,
+    ownerUserId: string,
     relationshipTypes: string[],
   ): Promise<{ entityId: string; name: string | null } | null> {
     if (relationshipTypes.length === 0) {
@@ -374,14 +380,16 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
       JOIN entities e ON e.entity_id = CASE WHEN r.from_entity_id = $1 THEN r.to_entity_id ELSE r.from_entity_id END
       WHERE (r.from_entity_id = $1 OR r.to_entity_id = $1)
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
         AND e.is_active = TRUE
         AND e.entity_type = 'Person'
-        AND r.relationship_type = ANY($2::text[])
+        AND e.owner_user_id = $2
+        AND r.relationship_type = ANY($3::text[])
       ORDER BY r.strength DESC NULLS LAST, e.name ASC
       LIMIT 1
     `;
 
-    const result = await this.dataSource.query(query, [userEntityId, relationshipTypes]);
+    const result = await this.dataSource.query(query, [userEntityId, ownerUserId, relationshipTypes]);
 
     if (result.length === 0) {
       return null;
@@ -395,6 +403,7 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 
   private async findRelatedEntityByName(
     userEntityId: string,
+    ownerUserId: string,
     lowerName: string,
   ): Promise<{ entityId: string; name: string | null } | null> {
     if (!lowerName) {
@@ -412,19 +421,21 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
       JOIN entities e ON e.entity_id = CASE WHEN r.from_entity_id = $1 THEN r.to_entity_id ELSE r.from_entity_id END
       WHERE (r.from_entity_id = $1 OR r.to_entity_id = $1)
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
         AND e.is_active = TRUE
         AND e.entity_type = 'Person'
+        AND e.owner_user_id = $2
         AND (
-          LOWER(e.name) = $2
-          OR LOWER(e.name) LIKE $3
-          OR LOWER(e.properties->>'first_name') = $2
-          OR LOWER(e.properties->>'last_name') = $2
+          LOWER(e.name) = $3
+          OR LOWER(e.name) LIKE $4
+          OR LOWER(e.properties->>'first_name') = $3
+          OR LOWER(e.properties->>'last_name') = $3
         )
       ORDER BY r.strength DESC NULLS LAST, e.name ASC
       LIMIT 1
     `;
 
-    const result = await this.dataSource.query(query, [userEntityId, lowerName, likeValue]);
+    const result = await this.dataSource.query(query, [userEntityId, ownerUserId, lowerName, likeValue]);
 
     if (result.length === 0) {
       return null;

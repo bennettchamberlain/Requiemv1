@@ -7,6 +7,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { readCsv } from './utils';
 
 const logger = new Logger(path.basename(__filename));
+const JOHN_SMITH_EMAIL = 'jsmith@example.com';
 
 interface PlaceCsvRecord {
   id: string;
@@ -37,6 +38,20 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
   let skippedCount = 0;
 
   await db.transaction(async (manager) => {
+    const ownerUserRows: Array<{ id: string }> = await manager.query(
+      `SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      [JOHN_SMITH_EMAIL],
+    );
+
+    if (!ownerUserRows?.[0]?.id) {
+      throw new Error(
+        `Could not find John Smith user (email: ${JOHN_SMITH_EMAIL}) while migrating places. ` +
+          'Seed the users table before running this migration.',
+      );
+    }
+
+    const defaultOwnerUserId = ownerUserRows[0].id;
+
     for (const record of records) {
       const geolocation = JSON.parse(record.geolocation);
       const locationBoundary = record.location_boundary ? JSON.parse(record.location_boundary) : null;
@@ -98,12 +113,14 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
 
       const searchContent = [record.name, record.type, ...tags].filter(Boolean).join(' ');
 
+      const ownerUserId = record.user_id && record.user_id !== 'NULL' ? record.user_id : defaultOwnerUserId;
+
       await manager.query(
         `INSERT INTO entities (
           entity_id, entity_type, name, description, properties, 
-          search_content, is_active, is_archived, 
+          search_content, is_active, is_archived, owner_user_id,
           created_at, updated_at, last_accessed
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           uuidv7(),
           'Location',
@@ -113,6 +130,7 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
           searchContent,
           true,
           false,
+          ownerUserId,
           record.created_at,
           record.updated_at,
           record.updated_at,

@@ -145,23 +145,14 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
     };
 
     if (!context.userId) {
-      return {
-        preferences: [],
-        dislikes: [],
-        totalPreferences: 0,
-        totalDislikes: 0,
-        personId: '',
-        personName: 'No user context',
-        debugInfo: {
-          ...debugInfo,
-          queryInfo: 'No userId in context',
-        },
-      };
+      throw new Error('User context is required to load preferences');
     }
+
+    const ownerUserId = context.userId;
 
     if (input.personName) {
       debugInfo.entityLookupMethod = 'personName resolution';
-      targetPersonId = await this.resolvePersonEntity(context.userId, input.personName);
+      targetPersonId = await this.resolvePersonEntity(ownerUserId, input.personName);
       if (!targetPersonId) {
         debugInfo.queryInfo = `Person '${input.personName}' not found in graph relationships`;
 
@@ -184,10 +175,10 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
         FROM users
         WHERE id = $1
       `;
-      const userResult = await this.dataSource.query(userQuery, [context.userId]);
+      const userResult = await this.dataSource.query(userQuery, [ownerUserId]);
 
       if (userResult.length === 0) {
-        debugInfo.queryInfo = `User ${context.userId} not found in users table`;
+        debugInfo.queryInfo = `User ${ownerUserId} not found in users table`;
 
         return {
           preferences: [],
@@ -201,7 +192,7 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
       }
 
       if (!userResult[0].entity_id) {
-        debugInfo.queryInfo = `User ${context.userId} has no entity_id set. User needs to be linked to a Person entity.`;
+        debugInfo.queryInfo = `User ${ownerUserId} has no entity_id set. User needs to be linked to a Person entity.`;
 
         return {
           preferences: [],
@@ -236,6 +227,8 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
       WHERE r.from_entity_id = $1
         AND r.relationship_type = 'PREFERS'
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
         ${categoryFilter}
       ORDER BY r.strength DESC, e.name ASC
     `;
@@ -254,13 +247,15 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
       WHERE r.from_entity_id = $1
         AND r.relationship_type = 'DISLIKES'
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
         ${categoryFilter}
       ORDER BY r.strength DESC, e.name ASC
     `;
 
     const [prefersResult, dislikesResult] = await Promise.all([
-      this.dataSource.query(prefersQuery, [targetPersonId]),
-      this.dataSource.query(dislikesQuery, [targetPersonId]),
+      this.dataSource.query(prefersQuery, [targetPersonId, ownerUserId]),
+      this.dataSource.query(dislikesQuery, [targetPersonId, ownerUserId]),
     ]);
 
     const preferences: PreferenceNode[] = prefersResult.map((row: any) => ({
@@ -347,11 +342,13 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
           WHERE r.from_entity_id = $1
             AND r.relationship_type IN (${relTypeList})
             AND r.is_active = TRUE
+            AND r.owner_user_id = $2
             AND e.entity_type = 'Person'
+            AND e.owner_user_id = $2
           LIMIT 1
         `;
 
-        const result = await this.dataSource.query(query, [userEntityId]);
+        const result = await this.dataSource.query(query, [userEntityId, userId]);
         if (result.length > 0) {
           return result[0].entity_id ?? null;
         }
@@ -363,13 +360,14 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
       SELECT entity_id, name
       FROM entities
       WHERE entity_type = 'Person'
+        AND owner_user_id = $3
         AND (
           LOWER(name) = $1
           OR LOWER(name) LIKE $2
         )
       LIMIT 1
     `;
-    const nameResult = await this.dataSource.query(nameQuery, [lowerName, `%${lowerName}%`]);
+    const nameResult = await this.dataSource.query(nameQuery, [lowerName, `%${lowerName}%`, userId]);
     if (nameResult.length > 0) {
       return nameResult[0].entity_id ?? null;
     }

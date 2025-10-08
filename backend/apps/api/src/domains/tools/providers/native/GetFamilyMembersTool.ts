@@ -111,14 +111,12 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     input: GetFamilyMembersInput,
   ): Promise<GetFamilyMembersOutput> {
     if (!context.userId) {
-      return {
-        familyMembers: [],
-        totalCount: 0,
-        userId: '',
-      };
+      throw new Error('User context is required to load family members');
     }
 
-    const userProfile = await this.loadUserGraphProfile(context.userId);
+    const ownerUserId = context.userId;
+
+    const userProfile = await this.loadUserGraphProfile(ownerUserId);
 
     if (!userProfile?.entityId) {
       return {
@@ -142,15 +140,17 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
       JOIN entities e ON e.entity_id = CASE WHEN r.from_entity_id = $1 THEN r.to_entity_id ELSE r.from_entity_id END
       WHERE (r.from_entity_id = $1 OR r.to_entity_id = $1)
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
         AND e.is_active = TRUE
         AND e.entity_type = 'Person'
-        ${relationshipTypes.length ? 'AND r.relationship_type = ANY($2::text[])' : ''}
+        AND e.owner_user_id = $2
+        ${relationshipTypes.length ? 'AND r.relationship_type = ANY($3::text[])' : ''}
       ORDER BY r.strength DESC NULLS LAST, e.name ASC
     `;
 
     const params: unknown[] = relationshipTypes.length
-      ? [userProfile.entityId, relationshipTypes]
-      : [userProfile.entityId];
+      ? [userProfile.entityId, ownerUserId, relationshipTypes]
+      : [userProfile.entityId, ownerUserId];
     const result = await this.dataSource.query(query, params);
 
     const memberMap = new Map<string, FamilyMember & { _strength: number }>();
@@ -210,7 +210,7 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     if (input.includePreferences) {
       await Promise.all(
         familyMembers.map(async (member) => {
-          member.preferences = await this.loadPersonPreferences(member.id);
+          member.preferences = await this.loadPersonPreferences(member.id, ownerUserId);
         }),
       );
     }
@@ -218,7 +218,7 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     return {
       familyMembers,
       totalCount: familyMembers.length,
-      userId: context.userId,
+      userId: ownerUserId,
     };
   }
 
@@ -249,10 +249,11 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
         WHERE linked_table = 'users'
           AND linked_id = $1
           AND is_active = TRUE
+          AND owner_user_id = $2
         LIMIT 1
       `;
 
-      const linkedResult = await this.dataSource.query(linkedQuery, [userId]);
+      const linkedResult = await this.dataSource.query(linkedQuery, [userId, userId]);
       if (linkedResult.length > 0) {
         entityId = linkedResult[0].entity_id;
 
@@ -324,6 +325,7 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
 
   private async loadPersonPreferences(
     personEntityId: string,
+    ownerUserId: string,
   ): Promise<{ likes: string[]; dislikes: string[] }> {
     // Query for PREFERS relationships
     const prefersQuery = `
@@ -333,6 +335,8 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
       WHERE r.from_entity_id = $1
         AND r.relationship_type = 'PREFERS'
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
         AND r.strength >= 0.5
       ORDER BY r.strength DESC
       LIMIT 10
@@ -346,14 +350,16 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
       WHERE r.from_entity_id = $1
         AND r.relationship_type = 'DISLIKES'
         AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
         AND r.strength >= 0.5
       ORDER BY r.strength DESC
       LIMIT 10
     `;
 
     const [likesResult, dislikesResult] = await Promise.all([
-      this.dataSource.query(prefersQuery, [personEntityId]),
-      this.dataSource.query(dislikesQuery, [personEntityId]),
+      this.dataSource.query(prefersQuery, [personEntityId, ownerUserId]),
+      this.dataSource.query(dislikesQuery, [personEntityId, ownerUserId]),
     ]);
 
     return {

@@ -22,6 +22,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from pathlib import Path
 
+JOHN_SMITH_EMAIL = "jsmith@example.com"
+
 # Sample data for realistic generation
 FIRST_NAMES = [
     "Alex", "Sarah", "Michael", "Emily", "David", "Jessica", "Chris", "Ashley",
@@ -177,6 +179,7 @@ class GraphDataGenerator:
         self.entities: List[Dict[str, Any]] = []
         self.relationships: List[Dict[str, Any]] = []
         self._user_entity_links: Set[Tuple[str, str]] = set()
+        self.owner_user_id: Optional[str] = None
     
     @classmethod
     def from_env_file(cls, env_file_path: str = None, user_id: str = None):
@@ -223,6 +226,25 @@ class GraphDataGenerator:
     def connect_db(self):
         """Connect to PostgreSQL database"""
         return psycopg2.connect(self.database_url, cursor_factory=RealDictCursor)
+
+    def resolve_owner_user_id(self, cur) -> str:
+        """Look up John Smith's user id so we can stamp row level ownership."""
+        if self.owner_user_id:
+            return self.owner_user_id
+
+        cur.execute(
+            "SELECT id FROM users WHERE LOWER(email) = LOWER(%s) LIMIT 1",
+            (JOHN_SMITH_EMAIL,),
+        )
+        row = cur.fetchone()
+        if not row or not row.get("id"):
+            raise ValueError(
+                f"Could not find John Smith user (email: {JOHN_SMITH_EMAIL}) "
+                "to assign as owner_user_id. Seed the users table before running this generator."
+            )
+
+        self.owner_user_id = row["id"]
+        return self.owner_user_id
     
     def generate_uuid(self) -> str:
         """Generate UUID v7 style ID"""
@@ -925,6 +947,9 @@ class GraphDataGenerator:
         
         with self.connect_db() as conn:
             with conn.cursor() as cur:
+                owner_user_id = self.resolve_owner_user_id(cur)
+                print(f"Assigning owner_user_id {owner_user_id} to all generated entities and relationships.")
+
                 # Insert entities
                 print(f"Inserting {len(self.entities)} entities...")
                 for entity in self.entities:
@@ -932,17 +957,20 @@ class GraphDataGenerator:
                         INSERT INTO entities (
                             entity_id, entity_type, name, description, properties,
                             search_content, linked_table, linked_id,
-                            is_active, is_archived, created_at, updated_at, last_accessed
+                            is_active, is_archived, owner_user_id,
+                            created_at, updated_at, last_accessed
                         ) VALUES (
                             %(entity_id)s, %(entity_type)s, %(name)s, %(description)s, %(properties)s,
                             %(search_content)s, %(linked_table)s, %(linked_id)s,
-                            %(is_active)s, %(is_archived)s, NOW(), NOW(), NOW()
+                            %(is_active)s, %(is_archived)s, %(owner_user_id)s,
+                            NOW(), NOW(), NOW()
                         ) ON CONFLICT (entity_id) DO NOTHING
                     """, {
                         **entity,
                         "properties": json.dumps(entity["properties"]),
                         "linked_table": entity.get("linked_table"),
                         "linked_id": entity.get("linked_id"),
+                        "owner_user_id": owner_user_id,
                     })
                 
                 # Insert relationships
@@ -951,14 +979,17 @@ class GraphDataGenerator:
                     cur.execute("""
                         INSERT INTO relationships (
                             relationship_id, from_entity_id, to_entity_id, relationship_type,
-                            strength, properties, is_bidirectional, is_active, created_at, updated_at
+                            strength, properties, is_bidirectional, is_active,
+                            owner_user_id, created_at, updated_at
                         ) VALUES (
                             %(relationship_id)s, %(from_entity_id)s, %(to_entity_id)s, %(relationship_type)s,
-                            %(strength)s, %(properties)s, %(is_bidirectional)s, %(is_active)s, NOW(), NOW()
+                            %(strength)s, %(properties)s, %(is_bidirectional)s, %(is_active)s,
+                            %(owner_user_id)s, NOW(), NOW()
                         ) ON CONFLICT (relationship_id) DO NOTHING
                     """, {
                         **rel,
-                        "properties": json.dumps(rel["properties"])
+                        "properties": json.dumps(rel["properties"]),
+                        "owner_user_id": owner_user_id,
                     })
 
                 if self._user_entity_links:
