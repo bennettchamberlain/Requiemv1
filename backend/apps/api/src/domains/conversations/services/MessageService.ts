@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
+import { FileService } from '@ci/domains/files';
 
 import { MessageEntity } from '../entities/MessageEntity';
 import type { CreateMessageDto, Message, UpdateMessageDto } from '../types';
@@ -13,15 +14,16 @@ export class MessageService {
   constructor(
     @InjectRepository(MessageEntity)
     private readonly messsageRepository: Repository<MessageEntity>,
+    private readonly fileService: FileService,
   ) {}
 
   async create(context: RequestContext, data: CreateMessageDto): Promise<Message> {
-    const { threadId, content, toolCalls, promptMessageId, ...rest } = data;
+    const { threadId, content, toolCalls, promptMessageId, fileIds, ...rest } = data;
 
     const instance = this.messsageRepository.create({
       ...rest,
       id: uuid7(),
-      text: content,
+      content,
       tool_calls: toolCalls,
       user: {
         id: context.userId,
@@ -36,6 +38,19 @@ export class MessageService {
 
     const entity = await this.messsageRepository.save(instance);
 
+    // Link files to this message if provided
+    if (fileIds && fileIds.length > 0) {
+      const files = await this.fileService.findByIds(context, fileIds);
+
+      if (files.length > 0) {
+        await this.messsageRepository
+          .createQueryBuilder()
+          .relation(MessageEntity, 'files')
+          .of(entity.id)
+          .add(files.map((file) => file.id));
+      }
+    }
+
     return entity.toMessage();
   }
 
@@ -46,6 +61,7 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
     });
   }
@@ -56,7 +72,9 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
+      relations: ['files'],
     });
 
     return entities.map((entity) => entity.toMessage());
@@ -71,7 +89,9 @@ export class MessageService {
         thread: {
           id: threadId,
         },
+        canceled: false,
       },
+      relations: ['files'],
       order: {
         id: 'asc',
       },
@@ -87,7 +107,9 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
+      relations: ['files'],
     });
 
     if (entity == null) {
@@ -104,6 +126,7 @@ export class MessageService {
         user: {
           id: context.userId,
         },
+        canceled: false,
       },
       data,
     );
@@ -122,12 +145,17 @@ export class MessageService {
       throw new NotFoundException();
     }
 
-    const result = await this.messsageRepository.softDelete({
-      id,
-      user: {
-        id: context.userId,
+    const result = await this.messsageRepository.update(
+      {
+        id,
+        user: {
+          id: context.userId,
+        },
       },
-    });
+      {
+        canceled: true,
+      },
+    );
 
     // The likelihood of this triggering is essentially 0%,
     // but we're still coding defensively.

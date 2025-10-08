@@ -105,6 +105,7 @@ export class OnboardingController {
         ? this.questionService.create(context, {
             text: 'Choosing a food between pasta, burgers, salads, or tacos, which would be your favorite?',
             subcategory: 'Food',
+            isPrivateTo: context.userId ?? null,
           })
         : Promise.resolve(),
 
@@ -112,6 +113,7 @@ export class OnboardingController {
         ? this.questionService.create(context, {
             text: 'Choosing a movie genre between comedies, dramas, documentaries, or horror, which would be your favorite?',
             subcategory: 'Entertainment',
+            isPrivateTo: context.userId ?? null,
           })
         : Promise.resolve(),
 
@@ -119,6 +121,7 @@ export class OnboardingController {
         ? this.questionService.create(context, {
             text: 'Choosing an activity between hiking, bowling, ice skating, or going arcading, which would be your favorite?',
             subcategory: 'Entertainment',
+            isPrivateTo: context.userId ?? null,
           })
         : Promise.resolve(),
     ]);

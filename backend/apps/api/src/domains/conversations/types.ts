@@ -1,4 +1,4 @@
-import type { FileEntity } from '@ci/domains/files';
+import type { File } from '@ci/domains/files';
 import type { User } from '@ci/domains/user';
 
 export interface CreateMessageDto {
@@ -10,6 +10,7 @@ export interface CreateMessageDto {
   toolCalls?: Record<string, unknown>[] | null;
   canceled?: boolean;
   promptMessageId?: string;
+  fileIds?: string[]; // IDs of files to link to this message
 }
 
 export interface UpdateMessageDto {
@@ -21,17 +22,11 @@ export interface CreateThreadDto {
   name?: string;
   model?: string;
   description?: string;
-  files?: {
-    id: string;
-  }[];
 }
 
 export interface UpdateThreadDto {
   name?: string;
   description?: string;
-  files?: {
-    id: string;
-  }[];
 }
 
 export interface Message {
@@ -45,6 +40,7 @@ export interface Message {
   readonly user?: User;
   readonly thread?: Thread;
   readonly promptMessage?: Message | null;
+  readonly files?: File[];
 }
 
 export interface Thread {
@@ -53,5 +49,4 @@ export interface Thread {
   readonly model: string | null;
   readonly description: string | null;
   readonly user?: User;
-  readonly files?: FileEntity[];
 }

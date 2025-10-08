@@ -1,42 +1,44 @@
-import {
-  Entity,
-  Column,
-  CreateDateColumn,
-  JoinColumn,
-  ManyToOne,
-  PrimaryColumn,
-  UpdateDateColumn,
-} from 'typeorm';
-
-import { Indexable } from '@ci/common/decorators';
-import { UserEntity } from '@ci/domains/user';
+import { Entity, Column, CreateDateColumn, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
 import type { Question } from '../types';
 
-@Indexable('question', ['text'])
 @Entity('questions')
 export class QuestionEntity {
-  @PrimaryColumn()
-  id!: string;
+  @PrimaryColumn('uuid')
+  question_id!: string;
+
+  @Column({ nullable: true })
+  question_category!: string;
 
   @Column()
-  category!: string;
+  question_text!: string;
 
-  @Column()
-  text!: string;
+  @Column({ type: 'text', array: true, nullable: true })
+  context_tags!: string[];
 
-  @Column()
-  example_answer_1!: string;
+  @Column({ nullable: true })
+  question_type!: string;
 
-  @Column()
-  example_answer_2!: string;
+  @Column({ default: false })
+  is_seed_question!: boolean;
 
-  @Column()
-  example_answer_3!: string;
+  @Column({ default: true })
+  is_active!: boolean;
 
-  @ManyToOne(() => UserEntity)
-  @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  @Column({ default: false })
+  created_by_llm!: boolean;
+
+  @Column({ nullable: true })
+  frequency_recommendation!: string;
+
+  @Column({ type: 'integer', default: 0 })
+  times_asked!: number;
+
+  @Column({ type: 'integer', default: 0 })
+  times_answered!: number;
+
+  @Column({ type: 'uuid', nullable: true, name: 'is_private_to' })
+  is_private_to?: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
@@ -44,18 +46,19 @@ export class QuestionEntity {
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
 
-  @Column()
-  subcategory!: string;
-
   toQuestion() {
     return {
-      id: this.id,
-
-      category: this.category,
-      text: this.text,
-      answer: this.example_answer_1,
-
-      user: this.user?.toUser(),
+      id: this.question_id,
+      category: this.question_category,
+      text: this.question_text,
+      contextTags: this.context_tags,
+      questionType: this.question_type,
+      isSeedQuestion: this.is_seed_question,
+      isActive: this.is_active,
+      createdByLlm: this.created_by_llm,
+      frequencyRecommendation: this.frequency_recommendation,
+      timesAsked: this.times_asked,
+      timesAnswered: this.times_answered,
     } satisfies Question;
   }
 }

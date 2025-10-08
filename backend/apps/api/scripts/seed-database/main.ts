@@ -22,18 +22,20 @@ import { UserEntity } from '@ci/domains/user';
 
 import { seedActions } from './seed-actions';
 import { seedAnswers } from './seed-answers';
+import { seedMessages } from './seed-messages';
+import { seedProviders } from './seed-providers';
+import { seedQuestions } from './seed-questions';
+import { seedThreads } from './seed-threads';
+import { seedUsers } from './seed-users';
+/*
 import { seedContacts } from './seed-contacts';
 import { seedContent } from './seed-content';
 import { seedEvents } from './seed-events';
 import { seedLocations } from './seed-locations';
-import { seedMessages } from './seed-messages';
 import { seedPeople } from './seed-people';
 import { seedPlaces } from './seed-places';
-import { seedProviders } from './seed-providers';
-import { seedQuestions } from './seed-questions';
 import { seedThings } from './seed-things';
-import { seedThreads } from './seed-threads';
-import { seedUsers } from './seed-users';
+*/
 
 const logger = new Logger(path.basename(__filename));
 
@@ -84,12 +86,15 @@ const logger = new Logger(path.basename(__filename));
 
     // Providers Data
     await seedProviders(db, path.resolve(dataDir, './providers-data/providers.csv'));
-
-    // Intelligence Data
-    await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
-
     // John Smith
     await seedUsers(db, path.resolve(dataDir, './js1-data/js1-users.csv'));
+    // Intelligence Data
+    await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
+    await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
+    await seedThreads(db, path.resolve(dataDir, './js1-data/js1-threads.csv'));
+    await seedActions(db, path.resolve(dataDir, './js1-data/js1-actions.csv'));
+    await seedMessages(db, path.resolve(dataDir, './js1-data/js1-messages.csv'));
+    /*
     await seedEvents(db, path.resolve(dataDir, './js1-data/js1-events.csv'));
     await seedPeople(db, path.resolve(dataDir, './js1-data/js1-people.csv'));
     await seedContacts(db, path.resolve(dataDir, './js1-data/js1-contacts.csv'));
@@ -97,11 +102,7 @@ const logger = new Logger(path.basename(__filename));
     await seedThings(db, path.resolve(dataDir, './js1-data/js1-things.csv'));
     await seedPlaces(db, path.resolve(dataDir, './js1-data/js1-places.csv'));
     await seedLocations(db, path.resolve(dataDir, './js1-data/js1-locations.csv'));
-    await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
-    await seedThreads(db, path.resolve(dataDir, './js1-data/js1-threads.csv'));
-    await seedActions(db, path.resolve(dataDir, './js1-data/js1-actions.csv'));
-    await seedMessages(db, path.resolve(dataDir, './js1-data/js1-messages.csv'));
-
+*/
     process.exit(0);
   } catch (err) {
     error = err as Error;

@@ -76,8 +76,8 @@ const AVAILABLE_TOOLS: ToolCard[] = [
       'Personal interaction history',
       'Family-based recommendations',
     ],
-    canToggle: false,
-    systemStatus: 'disabled',
+    canToggle: true,
+    systemStatus: 'active',
   },
 ];
 

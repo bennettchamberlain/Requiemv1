@@ -16,6 +16,9 @@ export class UserEntity {
   @Column()
   password!: string;
 
+  @Column({ type: 'uuid', name: 'entity_id', nullable: true })
+  entityId?: string | null;
+
   @Column()
   onboarded!: boolean;
 

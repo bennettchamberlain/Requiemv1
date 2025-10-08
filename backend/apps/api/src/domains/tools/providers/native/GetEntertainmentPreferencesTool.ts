@@ -9,8 +9,9 @@ import type { ToolExecutionContext } from '../../core/types';
 
 // Input schema for the tool
 const getEntertainmentPreferencesInputSchema = z.object({
-  category: z.enum(['movies', 'tv', 'streaming', 'general']).optional(),
-  userId: z.string().optional(), // Optional for demo
+  mediaType: z.enum(['movies', 'tv', 'music', 'books', 'all']).optional().default('all'),
+  personName: z.string().optional(),
+  includeContext: z.boolean().default(true),
 });
 
 type GetEntertainmentPreferencesInput = z.infer<typeof getEntertainmentPreferencesInputSchema>;
@@ -18,28 +19,30 @@ type GetEntertainmentPreferencesInput = z.infer<typeof getEntertainmentPreferenc
 // Output interface
 interface EntertainmentPreference {
   id: string;
-  label: string;
-  category?: string;
-  subcategory?: string;
-  userId: string;
-  createdAt: Date;
-  question?: string;
-  answer?: string;
+  type: string; // movie_genre, music_genre, book_genre, etc.
+  name: string;
+  strength: number;
+  relationship: 'PREFERS' | 'DISLIKES';
+  properties?: Record<string, any>;
 }
 
 interface GetEntertainmentPreferencesOutput {
   preferences: EntertainmentPreference[];
-  totalCount: number;
-  userId: string;
+  dislikes: EntertainmentPreference[];
+  totalPreferences: number;
+  totalDislikes: number;
+  personId: string;
+  personName: string;
 }
 
 /**
- * Tool to retrieve user entertainment preferences from the database
- * Focuses on movie, TV, and streaming preferences for recommendation systems
+ * Tool to retrieve entertainment preferences from the graph database
+ * Focuses on movies, TV, music, and books for recommendation systems
  *
  * FUTURE INTEGRATIONS PLANNED:
  * - Movie theater APIs (Fandango, AMC) for current showtimes
  * - TV guide APIs for current programming
+ * - Music streaming APIs (Spotify, Apple Music)
  * - Review aggregation APIs (Rotten Tomatoes, Metacritic)
  *
  * This tool serves as the foundation for understanding user preferences
@@ -54,43 +57,69 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
   readonly schema = {
     name: 'getEntertainmentPreferences',
     description:
-      'Get user entertainment preferences including movie genres, TV show types, streaming preferences, and viewing habits. Use this tool when recommending movies, TV shows, or planning entertainment.',
+      'Get entertainment preferences including movie genres, TV preferences, music tastes, and book interests. ' +
+      'Returns both likes and dislikes with detailed context. ' +
+      'Can query for current user or family members (e.g., "my wife").',
     category: 'database',
     parameters: {
       type: 'object',
       properties: {
-        category: {
+        mediaType: {
           type: 'string',
-          enum: ['movies', 'tv', 'streaming', 'general'],
-          description: 'Filter preferences by entertainment category (optional)',
+          enum: ['movies', 'tv', 'music', 'books', 'all'],
+          description: 'Filter by media type (default: all)',
+          default: 'all',
         },
-        userId: {
+        personName: {
           type: 'string',
-          description: 'User ID to get preferences for (optional, defaults to current user)',
+          description:
+            'Name of person to get preferences for (e.g., "my wife", "John"). Defaults to current user.',
+        },
+        includeContext: {
+          type: 'boolean',
+          description: 'Include detailed properties (themes, sub-genres, example works)',
+          default: true,
         },
       },
       required: [],
     },
     examples: [
       {
-        input: {},
+        input: { mediaType: 'movies' },
         output: {
           preferences: [
             {
               id: 'uuid-123',
-              label: 'What movie genres do you enjoy?: I love sci-fi and thriller movies',
-              category: 'Personal Preferences',
-              subcategory: 'Entertainment',
-              userId: 'user-uuid',
-              createdAt: new Date(),
-              question: 'What movie genres do you enjoy?',
-              answer: 'I love sci-fi and thriller movies',
+              type: 'movie_genre',
+              name: 'Science Fiction',
+              strength: 0.9,
+              relationship: 'PREFERS',
+              properties: {
+                description: 'Speculative fiction based on scientific concepts',
+                themes: ['space exploration', 'time travel', 'artificial intelligence'],
+                example_films: ['Blade Runner', 'The Matrix', 'Interstellar'],
+              },
             },
           ],
-          totalCount: 1,
-          userId: 'user-uuid',
+          dislikes: [
+            {
+              id: 'uuid-456',
+              type: 'movie_genre',
+              name: 'Horror',
+              strength: 0.8,
+              relationship: 'DISLIKES',
+              properties: {
+                description: 'Movies designed to elicit fear and suspense',
+                sub_genres: ['psychological', 'supernatural', 'slasher'],
+              },
+            },
+          ],
+          totalPreferences: 1,
+          totalDislikes: 1,
+          personId: 'user-uuid',
+          personName: 'Current User',
         },
-        description: 'Get entertainment preferences for movie and TV recommendations',
+        description: 'Get movie preferences with detailed context for recommendations',
       },
     ],
   };
@@ -108,48 +137,339 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 
   protected async executeInternal(
     context: ToolExecutionContext,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _input: GetEntertainmentPreferencesInput,
+    input: GetEntertainmentPreferencesInput,
   ): Promise<GetEntertainmentPreferencesOutput> {
-    // Query for questions with subcategory = 'Entertainment'
-    const query = `
-      SELECT
-        q.text as question,
-        a.give_answer_1 as answer,
-        q.category,
-        q.subcategory,
-        a.user_id as "userId",
-        q.created_at as "createdAt"
-      FROM questions q
-      JOIN answers a ON q.id = a.question_id
-      WHERE q.subcategory = 'Entertainment'
-        AND a.give_answer_1 IS NOT NULL
-        AND a.user_id = $1
-      ORDER BY q.created_at
+    if (!context.userId) {
+      throw new Error('User context is required to load entertainment preferences');
+    }
+
+    // Determine target person
+    let targetPersonId: string | null = null;
+    let targetPersonName = 'Current User';
+
+    const ownerUserId = context.userId;
+
+    const userProfile = await this.loadUserGraphProfile(ownerUserId);
+
+    if (!userProfile) {
+      return {
+        preferences: [],
+        dislikes: [],
+        totalPreferences: 0,
+        totalDislikes: 0,
+        personId: '',
+        personName: 'User not found',
+      };
+    }
+
+    if (!userProfile.entityId) {
+      return {
+        preferences: [],
+        dislikes: [],
+        totalPreferences: 0,
+        totalDislikes: 0,
+        personId: '',
+        personName: userProfile.username || 'Current User',
+      };
+    }
+
+    if (input.personName) {
+      const resolved = await this.resolvePersonEntity(userProfile.entityId, ownerUserId, input.personName);
+      if (!resolved) {
+        return {
+          preferences: [],
+          dislikes: [],
+          totalPreferences: 0,
+          totalDislikes: 0,
+          personId: '',
+          personName: input.personName + ' (not found)',
+        };
+      }
+
+      targetPersonId = resolved.entityId;
+      targetPersonName = resolved.name ?? input.personName;
+    } else {
+      targetPersonId = userProfile.entityId;
+      targetPersonName = userProfile.username || 'Current User';
+    }
+
+    if (!targetPersonId) {
+      return {
+        preferences: [],
+        dislikes: [],
+        totalPreferences: 0,
+        totalDislikes: 0,
+        personId: '',
+        personName: targetPersonName,
+      };
+    }
+
+    // Build media type filter
+    const mediaFilter = this.buildMediaTypeFilter(input.mediaType);
+
+    // Query preferences
+    const prefersQuery = `
+      SELECT 
+        e.entity_id,
+        e.entity_type,
+        e.name,
+        e.properties,
+        r.strength,
+        'PREFERS' as relationship
+      FROM relationships r
+      JOIN entities e ON r.to_entity_id = e.entity_id
+      WHERE r.from_entity_id = $1
+        AND r.relationship_type = 'PREFERS'
+        AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
+        ${mediaFilter}
+      ORDER BY r.strength DESC, e.name ASC
     `;
 
-    const result = await this.dataSource.query(query, [context.userId]);
+    // Query dislikes
+    const dislikesQuery = `
+      SELECT 
+        e.entity_id,
+        e.entity_type,
+        e.name,
+        e.properties,
+        r.strength,
+        'DISLIKES' as relationship
+      FROM relationships r
+      JOIN entities e ON r.to_entity_id = e.entity_id
+      WHERE r.from_entity_id = $1
+        AND r.relationship_type = 'DISLIKES'
+        AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.owner_user_id = $2
+        ${mediaFilter}
+      ORDER BY r.strength DESC, e.name ASC
+    `;
 
-    const preferences: EntertainmentPreference[] = result.map((row: any) => ({
-      id: `${row.userId}-${row.createdAt.getTime()}`, // Generate a unique ID
-      label: `${row.question}: ${row.answer}`,
-      category: row.category, // Use the actual category from the database
-      subcategory: row.subcategory,
-      userId: row.userId,
-      createdAt: row.createdAt,
-      question: row.question,
-      answer: row.answer,
+    const [prefersResult, dislikesResult] = await Promise.all([
+      this.dataSource.query(prefersQuery, [targetPersonId, ownerUserId]),
+      this.dataSource.query(dislikesQuery, [targetPersonId, ownerUserId]),
+    ]);
+
+    const preferences: EntertainmentPreference[] = prefersResult.map((row: any) => ({
+      id: row.entity_id,
+      type: row.entity_type,
+      name: row.name,
+      strength: parseFloat(row.strength),
+      relationship: 'PREFERS' as const,
+      properties: input.includeContext ? row.properties : undefined,
+    }));
+
+    const dislikes: EntertainmentPreference[] = dislikesResult.map((row: any) => ({
+      id: row.entity_id,
+      type: row.entity_type,
+      name: row.name,
+      strength: parseFloat(row.strength),
+      relationship: 'DISLIKES' as const,
+      properties: input.includeContext ? row.properties : undefined,
     }));
 
     return {
       preferences,
-      totalCount: preferences.length,
-      userId: result.length > 0 ? result[0].userId : 'demo-user',
+      dislikes,
+      totalPreferences: preferences.length,
+      totalDislikes: dislikes.length,
+      personId: targetPersonId,
+      personName: targetPersonName,
     };
   }
 
+  private async loadUserGraphProfile(
+    userId: string,
+  ): Promise<{ entityId: string | null; username: string | null } | null> {
+    const query = `
+      SELECT entity_id, COALESCE(username, name) AS display_name
+      FROM users
+      WHERE id = $1
+    `;
+
+    const result = await this.dataSource.query(query, [userId]);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    let entityId: string | null = result[0].entity_id ?? null;
+
+    if (!entityId) {
+      const linkedQuery = `
+        SELECT entity_id
+        FROM entities
+        WHERE linked_table = 'users'
+          AND linked_id = $1
+          AND is_active = TRUE
+          AND owner_user_id = $2
+        LIMIT 1
+      `;
+
+      const linkedResult = await this.dataSource.query(linkedQuery, [userId, userId]);
+      if (linkedResult.length > 0) {
+        entityId = linkedResult[0].entity_id;
+
+        await this.dataSource.query(`UPDATE users SET entity_id = $2 WHERE id = $1`, [userId, entityId]);
+      }
+    }
+
+    return {
+      entityId,
+      username: result[0].display_name ?? null,
+    };
+  }
+
+  private async resolvePersonEntity(
+    userEntityId: string,
+    ownerUserId: string,
+    personName: string,
+  ): Promise<{ entityId: string; name: string | null } | null> {
+    const lowerName = personName.toLowerCase().trim();
+
+    const relationshipPatterns: Array<{ patterns: string[]; relationshipTypes: string[] }> = [
+      {
+        patterns: ['wife', 'husband', 'spouse', 'partner', 'significant other'],
+        relationshipTypes: ['SPOUSE', 'PARTNER', 'ROMANTIC_PARTNER'],
+      },
+      {
+        patterns: ['mother', 'mom', 'father', 'dad', 'parent'],
+        relationshipTypes: ['PARENT_OF', 'CHILD_OF'],
+      },
+      { patterns: ['son', 'daughter', 'child', 'kid'], relationshipTypes: ['PARENT_OF', 'CHILD_OF'] },
+      { patterns: ['brother', 'sister', 'sibling'], relationshipTypes: ['SIBLING_OF'] },
+      { patterns: ['friend', 'best friend', 'buddy'], relationshipTypes: ['FRIEND', 'KNOWS'] },
+      {
+        patterns: ['colleague', 'coworker', 'boss', 'manager'],
+        relationshipTypes: ['WORKS_WITH', 'COLLEAGUE'],
+      },
+    ];
+
+    for (const { patterns, relationshipTypes } of relationshipPatterns) {
+      if (patterns.some((pattern) => lowerName.includes(pattern))) {
+        const candidate = await this.findRelatedEntityByRelationships(
+          userEntityId,
+          ownerUserId,
+          relationshipTypes,
+        );
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    return this.findRelatedEntityByName(userEntityId, ownerUserId, lowerName);
+  }
+
+  private async findRelatedEntityByRelationships(
+    userEntityId: string,
+    ownerUserId: string,
+    relationshipTypes: string[],
+  ): Promise<{ entityId: string; name: string | null } | null> {
+    if (relationshipTypes.length === 0) {
+      return null;
+    }
+
+    const query = `
+      SELECT
+        CASE WHEN r.from_entity_id = $1 THEN r.to_entity_id ELSE r.from_entity_id END AS entity_id,
+        e.name
+      FROM relationships r
+      JOIN entities e ON e.entity_id = CASE WHEN r.from_entity_id = $1 THEN r.to_entity_id ELSE r.from_entity_id END
+      WHERE (r.from_entity_id = $1 OR r.to_entity_id = $1)
+        AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.is_active = TRUE
+        AND e.entity_type = 'Person'
+        AND e.owner_user_id = $2
+        AND r.relationship_type = ANY($3::text[])
+      ORDER BY r.strength DESC NULLS LAST, e.name ASC
+      LIMIT 1
+    `;
+
+    const result = await this.dataSource.query(query, [userEntityId, ownerUserId, relationshipTypes]);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    return {
+      entityId: result[0].entity_id,
+      name: result[0].name,
+    };
+  }
+
+  private async findRelatedEntityByName(
+    userEntityId: string,
+    ownerUserId: string,
+    lowerName: string,
+  ): Promise<{ entityId: string; name: string | null } | null> {
+    if (!lowerName) {
+      return null;
+    }
+
+    const likeValue = `%${lowerName}%`;
+
+    const query = `
+      SELECT
+        CASE WHEN r.from_entity_id = $1 THEN r.to_entity_id ELSE r.from_entity_id END AS entity_id,
+        e.name,
+        r.strength
+      FROM relationships r
+      JOIN entities e ON e.entity_id = CASE WHEN r.from_entity_id = $1 THEN r.to_entity_id ELSE r.from_entity_id END
+      WHERE (r.from_entity_id = $1 OR r.to_entity_id = $1)
+        AND r.is_active = TRUE
+        AND r.owner_user_id = $2
+        AND e.is_active = TRUE
+        AND e.entity_type = 'Person'
+        AND e.owner_user_id = $2
+        AND (
+          LOWER(e.name) = $3
+          OR LOWER(e.name) LIKE $4
+          OR LOWER(e.properties->>'first_name') = $3
+          OR LOWER(e.properties->>'last_name') = $3
+        )
+      ORDER BY r.strength DESC NULLS LAST, e.name ASC
+      LIMIT 1
+    `;
+
+    const result = await this.dataSource.query(query, [userEntityId, ownerUserId, lowerName, likeValue]);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    return {
+      entityId: result[0].entity_id,
+      name: result[0].name,
+    };
+  }
+
+  private buildMediaTypeFilter(mediaType: string): string {
+    if (mediaType === 'all') {
+      return '';
+    }
+
+    const typeMap: Record<string, string[]> = {
+      movies: ['movie_genre', 'film_style'],
+      tv: ['tv_genre', 'tv_style'],
+      music: ['music_genre', 'music_style'],
+      books: ['book_genre', 'literary_genre'],
+    };
+
+    const types = typeMap[mediaType] || [];
+    if (types.length === 0) {
+      return '';
+    }
+
+    const typeList = types.map((t) => `'${t}'`).join(', ');
+
+    return `AND e.properties->>'type' IN (${typeList})`;
+  }
+
   protected sanitizeInputForLogging(input: unknown): any {
-    // No sensitive data in entertainment preferences input
     return input;
   }
 }

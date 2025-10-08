@@ -8,7 +8,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
@@ -109,22 +109,39 @@ export class FileService implements OnModuleInit {
     return this.signFile(result);
   }
 
-  async findByThread(context: RequestContext, threadId: string): Promise<File[]> {
-    const result = await this.fileRepository
-      .createQueryBuilder('files')
-      .innerJoin('thread_file', 'thread_file', 'thread_file.file_id = files.id')
-      .where('thread_file.thread_id = :threadId', { threadId })
-      .andWhere('files.user_id = :userId', { userId: context.userId })
-      .getMany();
+  async findByIds(context: RequestContext, ids: string[]): Promise<File[]> {
+    if (ids.length === 0) {
+      return [];
+    }
 
-    return this.signFiles(result);
+    const entities = await this.fileRepository.find({
+      where: {
+        id: In(ids),
+        user: {
+          id: context.userId,
+        },
+      },
+    });
+
+    return this.signFiles(entities);
   }
 
   async upload(context: RequestContext, file: Express.Multer.File): Promise<File> {
+    const fileId = uuidv7();
+    const fileKey = uuidv4();
+    const bucket = config.staticfiles.bucket;
+
+    // Construct S3 path for file_path (required field)
+    const filePath = `s3://${bucket}/${fileKey}`;
+
     const entity = this.fileRepository.create({
-      id: uuidv7(),
-      bucket: config.staticfiles.bucket,
-      key: uuidv4(),
+      id: fileId,
+      file_path: filePath,
+      filename: file.originalname,
+      storage_type: 'cloud', // S3/Minio is cloud storage
+      modified_at_source: new Date(), // Upload time as modification time
+      bucket,
+      key: fileKey,
       original_name: file.originalname,
       content_type: file.mimetype,
       size: file.size,

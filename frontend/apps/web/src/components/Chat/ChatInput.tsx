@@ -22,6 +22,7 @@ import { Send, Square, Speech } from '@ci/shadcn/icons';
 
 const FormSchema = s.object({
   message: s.string(),
+  fileIds: s.array(s.string()).optional(),
 });
 
 export type FormData = s.infer<typeof FormSchema>;

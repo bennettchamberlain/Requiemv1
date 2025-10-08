@@ -30,13 +30,6 @@ const createThreadSchema = z.object({
   name: z.string().optional(),
   model: z.string(),
   description: z.string().optional(),
-  files: z
-    .array(
-      z.object({
-        id: z.string(),
-      }),
-    )
-    .optional(),
   userId: z.string().optional(),
 });
 

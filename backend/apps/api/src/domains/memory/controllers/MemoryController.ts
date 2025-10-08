@@ -100,77 +100,12 @@ export class MemoryController {
     return this.memoryService.findOne(context, id);
   }
 
-  // Temporary debug endpoint without auth
-  // @Get('debug/test')
-  async debugTest() {
-    this.logger.debug('Debug test endpoint called');
-
-    // Try to get some data directly from the database
-    const testContext = { userId: 'b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b' } satisfies RequestContext; // Using the userId from your logs
+  @Get('debug/info')
+  async debugInfo(@Context() context: RequestContext) {
+    this.logger.debug('Debug info endpoint called', { userId: context.userId });
 
     try {
-      const result = await this.memoryService.findAll(testContext as RequestContext, { limit: 10 });
-
-      // Also check for locations and places
-      const debugInfo = await this.memoryService.getDebugInfo(testContext);
-
-      return {
-        success: true,
-        ...result,
-        debug: {
-          userId: testContext.userId,
-          timestamp: new Date().toISOString(),
-          ...debugInfo,
-        },
-      };
-    } catch (error) {
-      this.logger.error('Debug test error', { error });
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        debug: {
-          userId: testContext.userId,
-          timestamp: new Date().toISOString(),
-        },
-      };
-    }
-  }
-
-  // Debug endpoint to check raw events
-  // @Get('debug/events')
-  async debugEvents() {
-    this.logger.debug('Debug events endpoint called');
-
-    try {
-      // Get raw event data
-      const rawEvents = await this.memoryService.getRawEvents();
-
-      return {
-        success: true,
-        totalEvents: rawEvents.length,
-        events: rawEvents.slice(0, 5), // First 5 events
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error('Debug events error', { error });
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }
-
-  // Debug endpoint to get all memories without user filter
-  // @Get('debug/all')
-  async debugAll() {
-    this.logger.debug('Debug all memories endpoint called');
-
-    try {
-      // Get memories for all users
-      const result = await this.memoryService.findAllDebug();
+      const result = await this.memoryService.getDebugInfo(context);
 
       return {
         success: true,
@@ -178,79 +113,7 @@ export class MemoryController {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error('Debug all error', { error });
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }
-
-  // Direct database test
-  @Get('debug/direct')
-  async debugDirect() {
-    this.logger.warn('DEBUGGING: Direct database test');
-
-    try {
-      const result = await this.memoryService.directDatabaseTest();
-
-      return {
-        success: true,
-        ...result,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error('Debug direct error', { error });
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }
-
-  // Test event conversion
-  // @Get('debug/test-events')
-  async testEventConversion() {
-    this.logger.warn('Testing event conversion');
-
-    try {
-      const result = await this.memoryService.testEventConversion();
-
-      return {
-        success: true,
-        ...result,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error('Test event conversion error', { error });
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }
-
-  // Test location lookup
-  // @Get('debug/test-locations')
-  async testLocationLookup() {
-    this.logger.warn('Testing location lookup');
-
-    try {
-      const result = await this.memoryService.testLocationLookup();
-
-      return {
-        success: true,
-        ...result,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error('Test location lookup error', { error });
+      this.logger.error('Debug info error', { error, userId: context.userId });
 
       return {
         success: false,

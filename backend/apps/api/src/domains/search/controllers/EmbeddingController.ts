@@ -10,6 +10,8 @@ import { EmbeddingService } from '../services/EmbeddingService';
 
 const vectorInputSchema = z.object({
   input: z.string(),
+  types: z.array(z.string()).optional(), // Optional array of entity types to search
+  topK: z.number().int().positive().optional().default(25), // Optional limit
 });
 
 @Controller('embeddings')
@@ -27,9 +29,14 @@ export class EmbeddingController {
   @HttpCode(200)
   async searchEmbeddings(
     @Context() context: RequestContext,
-    @Body(new ValidationPipe(vectorInputSchema)) input: { input: string },
+    @Body(new ValidationPipe(vectorInputSchema))
+    body: {
+      input: string;
+      types?: string[];
+      topK?: number;
+    },
   ) {
-    return this.embeddingService.findNearest(context, input.input);
+    return this.embeddingService.findNearest(context, body.input, body.types, body.topK ?? 25);
   }
 
   @UseGuards(JwtAuthGuard)

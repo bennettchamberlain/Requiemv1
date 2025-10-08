@@ -10,7 +10,7 @@ const DEFAULT_PREFERENCES: ToolPreferences = {
   'food-preferences': true,
   'entertainment-preferences': true,
   'streaming-availability': true,
-  'family-members': false, // Disabled by default (matches backend)
+  'family-members': true,
 };
 
 export function useToolPreferences() {
