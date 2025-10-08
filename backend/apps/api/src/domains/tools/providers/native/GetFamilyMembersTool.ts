@@ -7,12 +7,19 @@ import { z } from 'zod';
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';
 
+const FAMILY_RELATIONSHIP_TYPES = [
+  'SPOUSE',
+  'PARTNER',
+  'ROMANTIC_PARTNER',
+  'PARENT_OF',
+  'CHILD_OF',
+  'SIBLING_OF',
+  'FAMILY_MEMBER',
+];
+
 // Input schema
 const getFamilyMembersInputSchema = z.object({
-  relationshipType: z
-    .enum(['family', 'romantic_partner', 'friend', 'colleague', 'all'])
-    .optional()
-    .default('all'),
+  relationshipType: z.enum(['family', 'romantic_partner', 'all']).optional().default('all'),
   includePreferences: z.boolean().default(false),
 });
 
@@ -57,8 +64,8 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
       properties: {
         relationshipType: {
           type: 'string',
-          enum: ['family', 'romantic_partner', 'friend', 'colleague', 'all'],
-          description: 'Filter by relationship type (default: all)',
+          enum: ['family', 'romantic_partner', 'all'],
+          description: 'Filter by relationship subtype (default: all family relationships)',
           default: 'all',
         },
         includePreferences: {
@@ -127,6 +134,8 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     }
 
     const relationshipTypes = this.mapRelationshipFilter(input.relationshipType);
+    const allowedRelationshipTypes =
+      relationshipTypes.length > 0 ? relationshipTypes : FAMILY_RELATIONSHIP_TYPES;
 
     const query = `
       SELECT
@@ -144,13 +153,11 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
         AND e.is_active = TRUE
         AND e.entity_type = 'Person'
         AND e.owner_user_id = $2
-        ${relationshipTypes.length ? 'AND r.relationship_type = ANY($3::text[])' : ''}
+        AND r.relationship_type = ANY($3::text[])
       ORDER BY r.strength DESC NULLS LAST, e.name ASC
     `;
 
-    const params: unknown[] = relationshipTypes.length
-      ? [userProfile.entityId, ownerUserId, relationshipTypes]
-      : [userProfile.entityId, ownerUserId];
+    const params: unknown[] = [userProfile.entityId, ownerUserId, allowedRelationshipTypes];
     const result = await this.dataSource.query(query, params);
 
     const memberMap = new Map<string, FamilyMember & { _strength: number }>();
@@ -270,9 +277,7 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
   private mapRelationshipFilter(filter: string): string[] {
     const mapping: Record<string, string[]> = {
       romantic_partner: ['SPOUSE', 'PARTNER', 'ROMANTIC_PARTNER'],
-      family: ['SPOUSE', 'PARENT_OF', 'CHILD_OF', 'SIBLING_OF', 'FAMILY_MEMBER'],
-      friend: ['FRIEND', 'KNOWS'],
-      colleague: ['WORKS_WITH', 'COLLEAGUE'],
+      family: FAMILY_RELATIONSHIP_TYPES,
     };
 
     if (!filter || filter === 'all') {
@@ -299,23 +304,9 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
         return { type: 'family', subtype: 'sibling' };
       case 'FAMILY_MEMBER':
         return { type: 'family' };
-      case 'FRIEND':
-      case 'KNOWS':
-        return { type: 'friend' };
-      case 'WORKS_WITH':
-      case 'COLLEAGUE':
-        return { type: 'colleague' };
       default: {
         if (graphRelationshipType?.startsWith('FAMILY')) {
           return { type: 'family' };
-        }
-
-        if (graphRelationshipType?.includes('FRIEND')) {
-          return { type: 'friend' };
-        }
-
-        if (graphRelationshipType?.includes('WORK')) {
-          return { type: 'colleague' };
         }
 
         return null;
