@@ -54,30 +54,6 @@ export class MessageService {
     return entity.toMessage();
   }
 
-  async getFileIdsByThread(context: RequestContext, threadId: string): Promise<string[]> {
-    const messages = await this.messsageRepository.find({
-      where: {
-        user: {
-          id: context.userId,
-        },
-        thread: {
-          id: threadId,
-        },
-        canceled: false,
-      },
-      relations: ['files'],
-    });
-
-    const fileIds = new Set<string>();
-    messages.forEach((message) => {
-      message.files?.forEach((file) => {
-        fileIds.add(file.id);
-      });
-    });
-
-    return Array.from(fileIds);
-  }
-
   exists(context: RequestContext, id: string): Promise<boolean> {
     return this.messsageRepository.exists({
       where: {
