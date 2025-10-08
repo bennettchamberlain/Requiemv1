@@ -45,10 +45,7 @@ export function ConnectionsPage() {
   const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
   const [editFormData, setEditFormData] = useState({
     name: '',
-    clientid: '',
-    clientkey: '',
-    clientsecret: '',
-    schedule: 'daily',
+    schedule: '1 hour',
   });
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -133,10 +130,7 @@ export function ConnectionsPage() {
     setSelectedConnection(connection);
     setEditFormData({
       name: connection.name || '',
-      clientid: connection.clientid || '',
-      clientkey: connection.clientkey || '',
-      clientsecret: connection.clientsecret || '',
-      schedule: connection.schedule || 'daily',
+      schedule: connection.schedule || '1 hour',
     });
     setModalError(null);
     setShowEditModal(true);
@@ -165,9 +159,6 @@ export function ConnectionsPage() {
         },
         body: JSON.stringify({
           name: editFormData.name,
-          clientid: editFormData.clientid,
-          clientkey: editFormData.clientkey,
-          clientsecret: editFormData.clientsecret,
           schedule: editFormData.schedule,
         }),
       });
@@ -438,7 +429,14 @@ export function ConnectionsPage() {
                   <Select.Value />
                 </Select.Trigger>
                 <Select.Content>
-                  <Select.Item value="hourly">Hourly</Select.Item>
+                  <Select.Item value="1 min">1 Minute</Select.Item>
+                  <Select.Item value="5 min">5 Minutes</Select.Item>
+                  <Select.Item value="10 min">10 Minutes</Select.Item>
+                  <Select.Item value="30 min">30 Minutes</Select.Item>
+                  <Select.Item value="1 hour">1 Hour</Select.Item>
+                  <Select.Item value="2 hours">2 Hours</Select.Item>
+                  <Select.Item value="6 hours">6 Hours</Select.Item>
+                  <Select.Item value="12 hours">12 Hours</Select.Item>
                   <Select.Item value="daily">Daily</Select.Item>
                   <Select.Item value="weekly">Weekly</Select.Item>
                 </Select.Content>
