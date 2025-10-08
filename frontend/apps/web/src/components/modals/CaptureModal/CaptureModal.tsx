@@ -100,7 +100,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
       const fileIds = files.map((file) => file.id);
 
-      return submitChatRequest(data, { fileIds });
+      return submitChatRequest({ ...data, fileIds });
     },
     [files, submitChatRequest],
   );

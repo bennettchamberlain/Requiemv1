@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FormData } from '@/components/Chat';
 
@@ -10,10 +10,6 @@ type Opts = {
   onNewThread?: (threadId: string) => void;
 };
 
-interface SubmitOptions {
-  fileIds?: string[];
-}
-
 type ReturnType = [
   {
     stream: ReadableStream<Uint8Array> | null;
@@ -22,7 +18,7 @@ type ReturnType = [
     streaming: boolean;
   },
   {
-    submit: (data: FormData, arg?: FormEvent<HTMLFormElement> | SubmitOptions) => Promise<boolean>;
+    submit: (data: FormData) => Promise<boolean>;
     stop: () => void;
   },
 ];
@@ -39,7 +35,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
   const [streaming, setStreaming] = useState<boolean>(false);
 
   const submit = useCallback(
-    async (data: FormData, arg?: FormEvent<HTMLFormElement> | SubmitOptions) => {
+    async (data: FormData) => {
       if (!data.message.trim()) {
         return false;
       }
@@ -57,9 +53,6 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
       let success = false;
 
-      // Determine if the second argument contains submit options.
-      const options = arg && 'fileIds' in (arg as SubmitOptions) ? (arg as SubmitOptions) : undefined;
-
       try {
         const res = await fetch('/api/llm/generate', {
           method: 'POST',
@@ -73,7 +66,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
             threadId: threadId,
             enableTools: toolsEnabled,
             enableThinking: thinkingEnabled,
-            fileIds: options?.fileIds,
+            fileIds: data.fileIds,
           }),
           signal: controller.signal,
         });
