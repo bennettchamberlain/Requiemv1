@@ -6,7 +6,6 @@ import { Repository } from 'typeorm';
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 
-import { ConnectionEntity } from '../../connections/entities/ConnectionEntity';
 import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
 import { PromoteService } from '../services/PromoteService';
 
@@ -18,8 +17,6 @@ export class PromoteController {
     private readonly promoteService: PromoteService,
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
-    @InjectRepository(ConnectionEntity)
-    private readonly connectionRepository: Repository<ConnectionEntity>,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
