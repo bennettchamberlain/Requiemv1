@@ -12,28 +12,15 @@ VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
 PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
 export PYENV_ROOT
 export PATH="$PYENV_ROOT/bin:$PATH"
-export PATH="$HOME/.local/bin:$PATH"
-
-install_pyenv() {
-    echo "⚙️  Installing pyenv..."
-    curl -fsSL https://pyenv.run | bash
-    export PATH="$PYENV_ROOT/bin:$PATH"
-    hash -r
-}
-
-install_uv() {
-    echo "⚙️  Installing uv..."
-    curl -fsSL https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-    hash -r
-}
 
 if ! command -v pyenv >/dev/null 2>&1; then
-    install_pyenv
+    echo "❌ pyenv is required but not installed"
+    exit 1
 fi
 
 if ! command -v uv >/dev/null 2>&1; then
-    install_uv
+    echo "❌ uv is required but not installed"
+    exit 1
 fi
 
 echo "🚀 Setting up Graph Test Data Generator..."
