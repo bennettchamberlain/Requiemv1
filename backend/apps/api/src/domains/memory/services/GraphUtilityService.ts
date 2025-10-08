@@ -95,6 +95,35 @@ export class GraphUtilityService {
   }
 
   /**
+   * Create a new graph node
+   */
+  async createGraphNode(data: {
+    entityId: string;
+    entityType: string;
+    name: string;
+    description?: string;
+    properties?: Record<string, unknown>;
+    searchContent?: string;
+    linkedTable?: string;
+    linkedId?: string;
+  }): Promise<GraphNodeEntity> {
+    const node = this.entityRepo.create({
+      entity_id: data.entityId,
+      entity_type: data.entityType,
+      name: data.name,
+      description: data.description ?? data.name,
+      properties: data.properties ?? {},
+      search_content: data.searchContent ?? data.name,
+      linked_table: data.linkedTable,
+      linked_id: data.linkedId,
+      is_active: true,
+      is_archived: false,
+    });
+
+    return this.entityRepo.save(node);
+  }
+
+  /**
    * Find entities by type with optional property filters
    */
   async findEntitiesByType(

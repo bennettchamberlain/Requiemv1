@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { UserModule } from '@ci/domains/user';
-
 import { ContentController } from './controllers/ContentController';
 import { EventController } from './controllers/EventController';
 import { MemoryController } from './controllers/MemoryController';
@@ -33,7 +31,6 @@ import { MemoryService } from './services/MemoryService';
       GraphNodeEntity,
       RelationshipEntity,
     ]),
-    UserModule,
   ],
   providers: [MemoryService, ContentService, EventService, GraphUtilityService],
   controllers: [MemoryController, ContentController, EventController],

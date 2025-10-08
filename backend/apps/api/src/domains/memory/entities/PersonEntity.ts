@@ -5,8 +5,6 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToMany,
-  ManyToOne,
-  JoinColumn,
   JoinTable,
   AfterLoad,
   Repository,
@@ -14,7 +12,6 @@ import {
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
-import { UserEntity } from '@ci/domains/user';
 
 @Entity({ name: 'entities' })
 export class PersonEntity {
@@ -93,9 +90,8 @@ export class PersonEntity {
       .where(`${alias}.entity_type = :entityType`, { entityType: 'Person' });
   }
 
-  @ManyToOne(() => UserEntity, { nullable: true })
-  @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  @Column({ type: 'uuid', name: 'user_id', nullable: true })
+  userId?: string | null;
 
   @ManyToMany(() => TagEntity, { nullable: true })
   @JoinTable({
