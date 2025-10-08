@@ -1,37 +1,20 @@
-export interface User {
-  readonly id: string;
-  readonly name: string;
-  readonly email: string;
-  readonly onboarded: boolean;
-}
+import { z } from 'zod';
 
-export interface CreateUserDto {
-  name: string;
-  email: string;
-  password: string;
-}
+export const OnboardingInputSchema = z.object({
+  focus_areas: z.array(z.string()).nullable().default(null),
+  people: z
+    .array(
+      z.object({
+        first: z.string(),
+        last: z.string(),
+        relationship: z.string(),
+      }),
+    )
+    .nullable()
+    .default(null),
+  food_preference: z.enum(['Pasta', 'Burgers', 'Salad', 'Tacos']).nullable().default(null),
+  movie_preference: z.enum(['Dramas', 'Documentaries', 'Comedies', 'Horror']).nullable().default(null),
+  activity_preference: z.enum(['Hiking', 'Bowling', 'Skating', 'Arcading']).nullable().default(null),
+});
 
-export interface UpdateUserDto {
-  id?: string;
-  name?: string;
-  email?: string;
-  password?: string;
-  onboarded?: boolean;
-}
-
-export interface SignupCode {
-  readonly id: string;
-  readonly signup_code: string;
-  readonly used: boolean;
-}
-
-export interface SignupDto {
-  name: string;
-  email: string;
-  password: string;
-  signup_code: string;
-}
-
-export interface UpdateSignupCodeDto {
-  used?: boolean;
-}
+export type OnboardingInput = z.infer<typeof OnboardingInputSchema>;
