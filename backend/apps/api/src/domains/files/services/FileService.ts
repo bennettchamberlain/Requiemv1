@@ -8,7 +8,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
@@ -107,6 +107,23 @@ export class FileService implements OnModuleInit {
     }
 
     return this.signFile(result);
+  }
+
+  async findByIds(context: RequestContext, ids: string[]): Promise<File[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const entities = await this.fileRepository.find({
+      where: {
+        id: In(ids),
+        user: {
+          id: context.userId,
+        },
+      },
+    });
+
+    return this.signFiles(entities);
   }
 
   async findByThread(context: RequestContext, threadId: string): Promise<File[]> {

@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
-import { FileEntity } from '@ci/domains/files';
+import { FileService } from '@ci/domains/files';
 
 import { MessageEntity } from '../entities/MessageEntity';
 import type { CreateMessageDto, Message, UpdateMessageDto } from '../types';
@@ -14,8 +14,7 @@ export class MessageService {
   constructor(
     @InjectRepository(MessageEntity)
     private readonly messsageRepository: Repository<MessageEntity>,
-    @InjectRepository(FileEntity)
-    private readonly fileRepository: Repository<FileEntity>,
+    private readonly fileService: FileService,
   ) {}
 
   async create(context: RequestContext, data: CreateMessageDto): Promise<Message> {
@@ -41,14 +40,7 @@ export class MessageService {
 
     // Link files to this message if provided
     if (fileIds && fileIds.length > 0) {
-      const files = await this.fileRepository.find({
-        where: {
-          id: In(fileIds),
-          user: {
-            id: context.userId,
-          },
-        },
-      });
+      const files = await this.fileService.findByIds(context, fileIds);
 
       if (files.length > 0) {
         await this.messsageRepository
@@ -56,8 +48,6 @@ export class MessageService {
           .relation(MessageEntity, 'files')
           .of(entity.id)
           .add(files.map((file) => file.id));
-
-        entity.files = files;
       }
     }
 

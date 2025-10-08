@@ -1,21 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
 
-import { MessageEntity } from '../entities/MessageEntity';
 import { ThreadEntity } from '../entities/ThreadEntity';
 import type { CreateThreadDto, Thread, UpdateThreadDto } from '../types';
+
+import { MessageService } from './MessageService';
 
 @Injectable()
 export class ThreadService {
   constructor(
-    @InjectRepository(MessageEntity)
-    private readonly messageRepository: Repository<MessageEntity>,
     @InjectRepository(ThreadEntity)
     private readonly threadRepository: Repository<ThreadEntity>,
+    @Inject(forwardRef(() => MessageService))
+    private readonly messageService: MessageService,
   ) {}
 
   async create(context: RequestContext, data: CreateThreadDto): Promise<Thread> {
@@ -120,20 +121,9 @@ export class ThreadService {
       throw new NotFoundException();
     }
 
-    // Also archive related messages by setting is_deleted = true
-    await this.messageRepository.update(
-      {
-        user: {
-          id: context.userId,
-        },
-        thread: {
-          id,
-        },
-      },
-      {
-        canceled: true, // This maps to is_deleted in the database
-      },
-    );
+    // Also archive related messages by using MessageService
+    const messages = await this.messageService.findByThread(context, id);
+    await Promise.all(messages.map((message) => this.messageService.softDelete(context, message.id)));
 
     return true;
   }
