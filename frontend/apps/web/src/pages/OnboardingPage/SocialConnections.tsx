@@ -1,41 +1,44 @@
-import { useState } from 'react';
+import { Button, Form, Input, Select, useFieldArray, useFormContext } from '@ci/shadcn';
+import { X } from '@ci/shadcn/icons';
 
-import { Input, Select, Button } from '@ci/shadcn';
+type Person = {
+  first: string;
+  last: string;
+  relationship: string;
+};
 
-function Person() {
-  return (
-    <>
-      <Input className="w-full" placeholder="First" />
-      <Input className="w-full" placeholder="Last" />
-      <Select>
-        <Select.Trigger className="w-24 overflow-hidden truncate min-w-0">
-          <Select.Value />
-        </Select.Trigger>
-        <Select.Content>
-          <Select.Group>
-            <Select.Label>Family</Select.Label>
-            <Select.Item value={'partner'}>Partner</Select.Item>
-            <Select.Item value={'parent'}>Parent</Select.Item>
-            <Select.Item value={'child'}>Child</Select.Item>
-          </Select.Group>
-          <Select.Group>
-            <Select.Label>Social</Select.Label>
-            <Select.Item value={'roommate'}>Roommate</Select.Item>
-            <Select.Item value={'friend'}>Friend</Select.Item>
-            <Select.Item value={'coworker'}>Co-worker</Select.Item>
-          </Select.Group>
-          <Select.Group>
-            <Select.Label>Other</Select.Label>
-            <Select.Item value={'complicated'}>It's complicated</Select.Item>
-          </Select.Group>
-        </Select.Content>
-      </Select>
-    </>
-  );
-}
+const RELATIONSHIP_GROUPS = [
+  {
+    label: 'Family',
+    options: [
+      { value: 'partner', label: 'Partner' },
+      { value: 'parent', label: 'Parent' },
+      { value: 'child', label: 'Child' },
+    ],
+  },
+  {
+    label: 'Social',
+    options: [
+      { value: 'roommate', label: 'Roommate' },
+      { value: 'friend', label: 'Friend' },
+      { value: 'coworker', label: 'Co-worker' },
+    ],
+  },
+  {
+    label: 'Other',
+    options: [{ value: 'complicated', label: "It's complicated" }],
+  },
+];
 
 export function SocialConnections() {
-  const [count, setCount] = useState(3);
+  const form = useFormContext<{ people: Person[] }>();
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'people',
+  });
+
+  const count = form.watch('people')?.length ?? 0;
+  const canAdd = count < 6;
 
   return (
     <div className="space-y-4">
@@ -44,18 +47,93 @@ export function SocialConnections() {
         Let's start with up to 6 for now
       </div>
 
-      <div className="grid grid-cols-[1fr_1fr_max-content] items-center gap-x-3 gap-y-3">
-        {Array.from({ length: count }).map((_, i) => (
-          <Person key={i} />
+      <div className="grid grid-cols-[1fr_1fr_max-content_max-content] items-center gap-3 px-1">
+        {fields.map((field, index) => (
+          <Form.Field
+            key={field.id}
+            control={form.control}
+            // We don’t bind "name" here because we render 3 sub-fields below
+            name={`people.${index}.first` as const}
+            render={() => (
+              <>
+                {/* First Name */}
+                <Form.Item>
+                  <Form.Control>
+                    <Form.Field
+                      control={form.control}
+                      name={`people.${index}.first`}
+                      render={({ field }) => <Input {...field} placeholder="First" className="w-full" />}
+                    />
+                  </Form.Control>
+                  <Form.Message />
+                </Form.Item>
+
+                {/* Last Name */}
+                <Form.Item>
+                  <Form.Control>
+                    <Form.Field
+                      control={form.control}
+                      name={`people.${index}.last`}
+                      render={({ field }) => <Input {...field} placeholder="Last" className="w-full" />}
+                    />
+                  </Form.Control>
+                  <Form.Message />
+                </Form.Item>
+
+                {/* Relationship (Select) */}
+                <Form.Item className="min-w-0">
+                  <Form.Control>
+                    <Form.Field
+                      control={form.control}
+                      name={`people.${index}.relationship`}
+                      render={({ field }) => (
+                        <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                          <Select.Trigger className="w-28 md:w-32 overflow-hidden truncate min-w-0">
+                            <Select.Value placeholder="Relation" />
+                          </Select.Trigger>
+                          <Select.Content>
+                            {RELATIONSHIP_GROUPS.map((group) => (
+                              <Select.Group key={group.label}>
+                                <Select.Label>{group.label}</Select.Label>
+                                {group.options.map((opt) => (
+                                  <Select.Item key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </Select.Item>
+                                ))}
+                              </Select.Group>
+                            ))}
+                          </Select.Content>
+                        </Select>
+                      )}
+                    />
+                  </Form.Control>
+                  <Form.Message />
+                </Form.Item>
+
+                <Button
+                  className="-ml-2 -mr-1 cursor-pointer"
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => remove(index)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+          />
         ))}
       </div>
 
       <div className="text-center">
-        {count < 6 && (
-          <Button variant="secondary" onClick={() => setCount((current) => current + 1)}>
-            Add another person
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => append({ first: '', last: '', relationship: '' })}
+          disabled={!canAdd}
+        >
+          Add another person
+        </Button>
       </div>
     </div>
   );

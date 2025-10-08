@@ -1,3 +1,5 @@
+import { Form, useFormContext } from '@ci/shadcn';
+
 import clown from './assets/clown.jpg';
 import drama from './assets/drama.jpg';
 import nature from './assets/nature.jpg';
@@ -6,32 +8,38 @@ import { OptionGrid } from './OptionGrid';
 
 const options = [
   {
-    id: 'drama',
+    id: 'Dramas',
     title: 'Dramas',
     imageUrl: drama,
   },
   {
-    id: 'documentary',
+    id: 'Documentaries',
     title: 'Documentaries',
     imageUrl: nature,
   },
   {
-    id: 'comedy',
+    id: 'Comedies',
     title: 'Comedies',
     imageUrl: clown,
   },
   {
-    id: 'horror',
+    id: 'Horror',
     title: 'Horror',
     imageUrl: zombie,
   },
 ];
 
 export function MoviePreferences() {
+  const form = useFormContext();
+
   return (
     <>
       <div className="text-center text-2xl mb-6 md:mb-10">Would you rather watch?</div>
-      <OptionGrid options={options} />
+      <Form.Field
+        control={form.control}
+        name="movie_preference"
+        render={({ field }) => <OptionGrid options={options} onValueChange={field.onChange} />}
+      />
     </>
   );
 }

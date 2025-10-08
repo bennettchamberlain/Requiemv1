@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { usePageTitle } from '@ci/common';
-import { Button, cn } from '@ci/shadcn';
+import { Button, Form, formDataResolver, cn, formDataSchema as s, useForm } from '@ci/shadcn';
 
 import logo from '@/assets/logo.png';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -16,8 +16,32 @@ import { MoviePreferences } from './MoviePreferences';
 import { SocialConnections } from './SocialConnections';
 import { Submit } from './Submit';
 
+export const OnboardingFormSchema = s.object({
+  focus_areas: s.array(s.string()).nullable().default(null),
+  people: s
+    .array(
+      s.object({
+        first: s.string(),
+        last: s.string(),
+        relationship: s.string(),
+      }),
+    )
+    .nullable()
+    .default(null),
+  food_preference: s.enum(['Pasta', 'Burgers', 'Salad', 'Tacos']).nullable().default(null),
+  movie_preference: s.enum(['Dramas', 'Documentaries', 'Comedies', 'Horror']).nullable().default(null),
+  activity_preference: s.enum(['Hiking', 'Bowling', 'Skating', 'Arcading']).nullable().default(null),
+});
+
+export type OnboardingFormData = s.input<typeof OnboardingFormSchema>;
+
 export function OnboardingPage() {
   usePageTitle('Onboarding - Companion Intelligence');
+
+  const form = useForm<OnboardingFormData>({
+    resolver: formDataResolver(OnboardingFormSchema),
+    shouldUnregister: false,
+  });
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -70,42 +94,44 @@ export function OnboardingPage() {
   ];
 
   return (
-    <div className="relative h-lvh flex md:flex-row flex-col">
-      <div className="absolute top-0 left-0 h-[max(0.5rem,env(safe-area-inset-top))] w-full">
-        <div className="absolute top-full right-2 z-10 text-white md:text-foreground">
-          <ThemeToggle />
-        </div>
-      </div>
-
-      <div className="flex flex-col items-center flex-1/4 gap-4 h-full">
-        <div className="self-start px-4 pt-[max(1rem,env(safe-area-inset-top))]">
-          <img src={logo} className="w-8 h-8" />
+    <Form {...form}>
+      <form className="relative h-lvh flex md:flex-row flex-col">
+        <div className="absolute top-0 left-0 h-[max(0.5rem,env(safe-area-inset-top))] w-full">
+          <div className="absolute top-full right-2 z-10 text-white md:text-foreground">
+            <ThemeToggle />
+          </div>
         </div>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 md:max-w-xl mx-4 md:mx-8">
-          <div className="flex flex-col justify-center min-h-full">{steps[step % steps.length]}</div>
+        <div className="flex flex-col items-center flex-1/4 gap-4 h-full">
+          <div className="self-start px-4 pt-[max(1rem,env(safe-area-inset-top))]">
+            <img src={logo} className="w-8 h-8" />
+          </div>
+
+          <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 md:max-w-xl mx-4 md:mx-8">
+            <div className="flex flex-col justify-center min-h-full">{steps[step % steps.length]}</div>
+          </div>
+
+          {step < steps.length - 1 && (
+            <Button type="button" className="px-24" onClick={handleNextStep}>
+              Next
+            </Button>
+          )}
+
+          <div className="flex justify-center items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {Array.from({ length: steps.length }).map((_, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'h-2 w-2 m-2 rounded-full transition-all duration-500',
+                  i === step % steps.length ? 'bg-slate-800 scale-115' : 'bg-slate-300',
+                )}
+              />
+            ))}
+          </div>
         </div>
 
-        {step < steps.length - 1 && (
-          <Button className="px-24" onClick={handleNextStep}>
-            Next
-          </Button>
-        )}
-
-        <div className="flex justify-center items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          {Array.from({ length: steps.length }).map((_, i) => (
-            <div
-              key={i}
-              className={cn(
-                'h-2 w-2 m-2 rounded-full transition-all duration-500',
-                i === step % steps.length ? 'bg-slate-800 scale-115' : 'bg-slate-300',
-              )}
-            />
-          ))}
-        </div>
-      </div>
-
-      {images[step % steps.length]}
-    </div>
+        {images[step % steps.length]}
+      </form>
+    </Form>
   );
 }
