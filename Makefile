@@ -247,8 +247,8 @@ seed: ## Seed backend database
 	@printf "🌱 Seeding database...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
 	@printf "\nMigrating old schema data to new schema...\n\n"
-	@cd backend/apps/api && yarn migration:run
-	@printf "\nAdding graph test data...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/seed-database/run-migration.ts
+	@printf "\nAdding graph test data...\n\n"9
 	@cd backend/apps/api/scripts/test-data-generator && ./run.sh --family
 	@printf "\nDatabase successfully seeded. 🌳\n"
 

@@ -1,29 +1,84 @@
 #!/bin/bash
-# Quick setup and run script for the graph data generator
+# Quick setup and run script for the graph data generator using pyenv + uv
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+PYTHON_VERSION="${PYTHON_VERSION:-3.11.9}"
+VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
+
+PYENV_ROOT="${PYENV_ROOT:-$HOME/.pyenv}"
+export PYENV_ROOT
+export PATH="$PYENV_ROOT/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
+
+install_pyenv() {
+    echo "⚙️  Installing pyenv..."
+    curl -fsSL https://pyenv.run | bash
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    hash -r
+}
+
+install_uv() {
+    echo "⚙️  Installing uv..."
+    curl -fsSL https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+    hash -r
+}
+
+if ! command -v pyenv >/dev/null 2>&1; then
+    install_pyenv
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+    install_uv
+fi
 
 echo "🚀 Setting up Graph Test Data Generator..."
 
-# Check if Python 3 is available
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is required but not installed"
+# Ensure pyenv is initialized for this shell session
+eval "$(pyenv init -)"
+if command -v pyenv virtualenv-init >/dev/null 2>&1; then
+    eval "$(pyenv virtualenv-init -)"
+fi
+
+echo "🐍 Ensuring Python ${PYTHON_VERSION} is available via pyenv..."
+pyenv install -s "$PYTHON_VERSION"
+
+pyenv shell "$PYTHON_VERSION"
+
+PYTHON_BIN="$(pyenv which python)"
+
+if [[ ! -d "$VENV_DIR" ]]; then
+    echo "✨ Creating virtual environment at ${VENV_DIR} via uv"
+    uv venv "$VENV_DIR" --python "$PYTHON_BIN"
+fi
+
+VENV_PYTHON="${VENV_DIR}/bin/python"
+
+if [[ ! -x "$VENV_PYTHON" ]]; then
+    echo "❌ Expected virtual environment python at ${VENV_PYTHON}"
     exit 1
 fi
 
-# Install dependencies
-echo "📦 Installing dependencies..."
-pip3 install -r requirements.txt
+echo "📦 Installing dependencies with uv..."
+uv pip install --python "$VENV_PYTHON" --requirement requirements.txt
 
 # Check if --family flag is passed
-if [[ "$1" == "--family" ]]; then
+FLAG="${1:-}"
+
+if [[ "$FLAG" == "--family" ]]; then
     echo "🎲 Generating test data with John Smith family demo..."
-    python3 generate_graph_data.py \
+    "$VENV_PYTHON" generate_graph_data.py \
         --family \
         --num-people 25 \
         --num-companies 6
 else
     echo "🎲 Generating test data..."
     echo "💡 Tip: Run './run.sh --family' to include the Smith family demo"
-    python3 generate_graph_data.py \
+    "$VENV_PYTHON" generate_graph_data.py \
         --num-people 25 \
         --num-companies 6
 fi
