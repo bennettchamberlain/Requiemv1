@@ -26,7 +26,17 @@ const updateConnectionSchema = z.object({
   clientid: z.string().optional(),
   clientkey: z.string().optional(),
   clientsecret: z.string().optional(),
-  schedule: z.string().optional(),
+  schedule: z
+    .enum(
+      ['1 min', '5 min', '10 min', '30 min', '1 hour', '2 hours', '6 hours', '12 hours', 'daily', 'weekly'],
+      {
+        errorMap: () => ({
+          message:
+            'Schedule must be one of: 1 min, 5 min, 10 min, 30 min, 1 hour, 2 hours, 6 hours, 12 hours, daily, weekly',
+        }),
+      },
+    )
+    .optional(),
 });
 
 const completeConnectionSchema = z.object({
