@@ -13,6 +13,12 @@ CREATE TABLE api_logs (
 
 -- Convert to TimescaleDB hypertable
 SELECT create_hypertable('api_logs', 'created_at', 'user_id', 4);
+ALTER TABLE api_logs
+    SET (
+        timescaledb.compress,
+        timescaledb.compress_segmentby = 'user_id',
+        timescaledb.compress_orderby = 'created_at DESC'
+    );
 SELECT add_compression_policy('api_logs', INTERVAL '7 days');
 
 -- Basic indexes
@@ -29,4 +35,3 @@ CREATE INDEX IF NOT EXISTS idx_api_logs_connection_created ON api_logs(connectio
 
 -- migrate:down
 DROP TABLE IF EXISTS api_logs;
-
