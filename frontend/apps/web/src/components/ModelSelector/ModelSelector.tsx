@@ -1,4 +1,4 @@
-import { Button, Select, cn } from '@ci/shadcn';
+import { Select, Toggle } from '@ci/shadcn';
 import { Brain, Wrench } from '@ci/shadcn/icons';
 
 import { useModel } from '@/hooks';
@@ -38,25 +38,25 @@ export function ModelSelector({ withToggles = false }: Props) {
 
   return (
     <div className="flex flex-row">
-      <div className="flex flex-row items-center mr-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-pressed={toolsEnabled}
-          className={cn(toolsEnabled ? 'text-primary' : 'text-muted-foreground')}
-          onClick={toggleTools}
+      <div className="flex flex-row items-center mr-2 gap-1">
+        <Toggle
+          pressed={toolsEnabled}
+          onPressedChange={toggleTools}
+          size="sm"
+          variant="outline"
+          aria-label="Toggle tools"
         >
           <Wrench />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-pressed={thinkingEnabled}
-          className={cn(thinkingEnabled ? 'text-primary' : 'text-muted-foreground')}
-          onClick={toggleThinking}
+        </Toggle>
+        <Toggle
+          pressed={thinkingEnabled}
+          onPressedChange={toggleThinking}
+          size="sm"
+          variant="outline"
+          aria-label="Toggle thinking"
         >
           <Brain />
-        </Button>
+        </Toggle>
       </div>
 
       {selector}
