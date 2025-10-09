@@ -11,6 +11,7 @@ import { CommunicationEntity } from './entities/CommunicationEntity';
 import { ContactEntity } from './entities/ContactEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
+import { FactEntity } from './entities/FactEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { LocationEntity } from './entities/LocationEntity';
 import { PersonEntity } from './entities/PersonEntity';
@@ -36,6 +37,7 @@ import { MemoryService } from './services/MemoryService';
       ThingEntity,
       GraphNodeEntity,
       RelationshipEntity,
+      FactEntity,
     ]),
     UserModule,
   ],
@@ -50,6 +52,7 @@ export {
   ContactEntity,
   ContentEntity,
   EventEntity,
+  FactEntity,
   LocationEntity,
   PersonEntity,
   PlaceEntity,
