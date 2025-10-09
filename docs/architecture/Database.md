@@ -94,7 +94,7 @@ The full answer ultimately comes down to the perceived human relationship with t
 
  `facts` is a special subtype of `entitiy` that does not exist in the graph. Nominally, facts are atomic units of information. Because _concepts_ are represented as entities, it is logical then to represent facts as such too, however, because facts are voluminous and can be extracted en mass from, say, a book, they should not live in the `entities` table (unless otherwise necessary).
  The `facts` table is also where old nodes go to die. As part of a future TBD process, we will prune information from the `entities` and `relationships` table and store them in "cold storage" in the facts table. When removing nodes, compress the original entitiy information (including entity id) and _outgoing edges_ into the fact. This is _intended_ to leave dangling edges on nodes that remain in the graph- if the database ever needs to traverse that graph, a simple sql `COALESCE`.
- This then means that technically `facts` reepresents a graph in and of itself, though it is not designed to be queries as such, and is expected to be highly disjoint.
+ This then means that technically `facts` represents a graph in and of itself, though it is not designed to be queried as such, and is expected to be highly disjoint.
 
  # Measurements, Position, Sensors, and Devices.
  These tables are designed to support IOT and health metrics. The hierarchy is as such: `Devices` (like a smart watch) have `Sensors`, and `Sensors` have `Measurements`. Measurements should be as fine grained as the device API will allow. If the device doesn't break out its individual sensors (it is expected that they won't) then the `sensor_name` should be some composite of the `device_name` and `measurement_type`.
