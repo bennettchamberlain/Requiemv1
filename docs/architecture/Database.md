@@ -83,7 +83,7 @@ This way we can identify things like the preferences and who shares those prefer
 The astute reader will notice that the `entities` table explicitly has "things" and there are `relationships` like "owns", yet we also have an `inventory` table.
 A fair question for this data model is "How do I know whether to make a graph entity or enter something in the relational tables?
 As a rule of thumb, if a user owns an item, it should be in the inventory table, but not necessarily in the entities table.
-The full answer ultimately comes down to the percieved human relationship with the item. For instance, if the user has a set of screws, they likely do not have a parasocial relaitonship with them. `Inventory` table. The user has a car that they got from their grandmother which they call "Schotkey" and need to pat it on the dashboard to get it to start in the cold. Both `Inventory` and `Entities`. 
+The full answer ultimately comes down to the perceived human relationship with the item. For instance, if the user has a set of screws, they likely do not have a parasocial relationship with them. `Inventory` table. The user has a car that they got from their grandmother which they call "Schotkey" and need to pat it on the dashboard to get it to start in the cold. Both `Inventory` and `Entities`. 
 
 # Documents and Files.
  As the system acquires the knowledge of files, either by being uploaded or discovered, it should log them in the `files` table. The `files` also contains `file_entity_id` if the file being represented also bears emotional significance (a zip of wedding photos, a book you've been writing). If the file is just a random pdf you downloaded, it should not have an entity. 
