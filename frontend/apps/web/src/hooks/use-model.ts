@@ -38,7 +38,7 @@ function useModel(): Value {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
   const [toolsEnabled, setToolsEnabled] = useState<boolean>(false);
-  const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(false);
+  const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(true);
 
   const initialRequestRef = useRef<boolean>(false);
 
