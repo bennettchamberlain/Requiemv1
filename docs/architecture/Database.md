@@ -47,7 +47,7 @@ Each node should have at least one relationship. Relationships express the, well
 properties
 {
 "since": "2021-01-18T13:29:31.352416",
-"tyoe": "food",
+"type": "food",
 "context": "always loved",
 "strength": 0.8
 }
