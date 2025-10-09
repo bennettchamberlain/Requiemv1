@@ -97,7 +97,7 @@ The full answer ultimately comes down to the percieved human relationship with t
  This then means that technically `facts` reepresents a graph in and of itself, though it is not designed to be queries as such, and is expected to be highly disjoint.
 
  # Measurements, Position, Sensors, and Devices.
- These tables are designed to support IOT and health metrics. The heirarchy is as such: `Devices` (like a smart watch) have `Sensors`, and `Sensors` have `Measurements`. Measurements should be as fine grained as the device API will allow. If the device doesn't break out its individual sensors (it is expected that they won't) then the `sensor_name` should be some composite of the `device_name` and `measurement_type`.
+ These tables are designed to support IOT and health metrics. The hierarchy is as such: `Devices` (like a smart watch) have `Sensors`, and `Sensors` have `Measurements`. Measurements should be as fine grained as the device API will allow. If the device doesn't break out its individual sensors (it is expected that they won't) then the `sensor_name` should be some composite of the `device_name` and `measurement_type`.
  Measurements are stored as hypertables, so please record everything.
  `Position` is a special kind of measurement for GPS (and other) coordinates. `Position` also supports relative coordinates and relative orientation, to support headpose for AR applications. Relative coordinates are relative to an `entity` (or `fact`), which should be considered to be the origin for the relative spatial system. For instance, if the user is in a minecraft world and we can get the coordinates of the player pawn, then that information should go in the `relative_coordinates` field. This is also a hyper table.
 
