@@ -81,7 +81,7 @@ This way we can identify things like the preferences and who shares those prefer
 
 # Where to put what?
 The astute reader will notice that the `entities` table explicitly has "things" and there are `relationships` like "owns", yet we also have an `inventory` table.
-A fair question for this data model is "How do I know whether to make a graph entitiy or enter something in the relationsal tables?
+A fair question for this data model is "How do I know whether to make a graph entity or enter something in the relational tables?
 As a rule of thumb, if a user owns an item, it should be in hte inventory table, but not necessarily in the entities table.
 The full answer ultimately comes down to the percieved human relationship with the item. For instance, if the user has a set of screws, they likely do not have a parasocial relaitonship with them. `Inventory` table. The user has a car that they got from their grandmother which they call "Schotkey" and need to pat it on the dashboard to get it to start in the cold. Both `Inventory` and `Entities`. 
 
