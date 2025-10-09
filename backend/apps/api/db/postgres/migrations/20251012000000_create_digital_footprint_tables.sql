@@ -19,7 +19,7 @@ CREATE TABLE browser_activity (
     title TEXT,
 
     -- Interaction data
-    action_type TEXT NOT NULL CHECK (action_type IN ('visit', 'reload', 'bookmark', 'search', 'download', 'form_submit')),
+    action_type TEXT -- NOT NULL CHECK (action_type IN ('visit', 'reload', 'bookmark', 'search', 'download', 'form_submit')),
     duration_seconds INTEGER CHECK (duration_seconds >= 0),
     scroll_depth_percent DOUBLE PRECISION CHECK (scroll_depth_percent >= 0 AND scroll_depth_percent <= 100),
 
