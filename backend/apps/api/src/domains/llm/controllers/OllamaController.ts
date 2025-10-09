@@ -32,6 +32,7 @@ const promptSchema = z.object({
   threadId: z.string().nullable().optional(),
   enableTools: z.boolean().default(true),
   enableThinking: z.boolean().default(true),
+  fileIds: z.array(z.string()).optional(), // File IDs to attach to this message
 });
 
 @Controller('llm')
@@ -95,6 +96,7 @@ export class OllamaController {
       mimetype: 'text/markdown', // TODO: Make this more flexible.
       canceled: false,
       threadId,
+      fileIds: input.fileIds, // Link files to this message
     });
 
     res.socket?.setNoDelay(true);
@@ -116,25 +118,25 @@ export class OllamaController {
     });
 
     const messages = await this.messageService.findByThread(context, threadId);
-    const files = await this.fileService.findByThread(context, threadId);
 
-    const images = await Promise.all(
-      files.map(async (file) => this.fileService.getFileContent(context, file.key)),
+    // Build input messages with files attached to their respective messages
+    const inputMessages: Message[] = await Promise.all(
+      messages.map(async (message) => {
+        // Get file content for this specific message
+        const messageImages = message.files
+          ? await Promise.all(
+              message.files.map(async (file) => this.fileService.getFileContent(context, file.key)),
+            )
+          : [];
+
+        return {
+          role: message.role,
+          content: message.content,
+          ...(messageImages.length > 0 && { images: messageImages }),
+          ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
+        };
+      }),
     );
-
-    const inputMessages: Message[] = [
-      {
-        role: 'user',
-        content: '',
-        images,
-      },
-
-      ...messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-        ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
-      })),
-    ];
 
     const stream = await this.ollamaService.chatStream(context, inputMessages, {
       model: resolvedModel.model,

@@ -60,7 +60,7 @@ export class QuestionsController {
   @OnEvent(Events.INFER_QUESTION_ANSWER)
   async inferQuestionAnswer(payload: EventPayloads[Events.INFER_QUESTION_ANSWER]) {
     const context: RequestContext = {
-      userId: payload.ownerId,
+      userId: payload.ownerId ?? undefined,
     };
 
     this.logger.log('Inferring answer to question', {
@@ -68,10 +68,15 @@ export class QuestionsController {
       questionId: payload.questionId,
     });
 
-    const question = await this.questionService.findOne({}, payload.questionId);
+    const question = await this.questionService.findOne(context, payload.questionId);
 
     if (question) {
-      const associatedAnswers = await this.embeddingService.findNearest(context, question.text, 'answer', 10);
+      const associatedAnswers = await this.embeddingService.findNearest(
+        context,
+        question.text,
+        ['answer'],
+        10,
+      );
 
       const resolvedAnswers = await this.answerService.findSome(
         context,
@@ -143,7 +148,7 @@ export class QuestionsController {
         this.logger.log('Answer exists, updating existing with RAG response');
 
         await this.answerService.update(context, userAnswer.id, {
-          rag_answer_1: llmResponse.message.content,
+          answer_text: llmResponse.message.content,
         });
       } else {
         this.logger.log('Answer does not exist, creating a new one with a RAG response');

@@ -66,6 +66,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
             threadId: threadId,
             enableTools: toolsEnabled,
             enableThinking: thinkingEnabled,
+            fileIds: data.fileIds,
           }),
           signal: controller.signal,
         });

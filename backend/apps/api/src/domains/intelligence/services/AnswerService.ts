@@ -16,11 +16,11 @@ export class AnswerService {
   ) {}
 
   async create(context: RequestContext, data: CreateAnswerDto): Promise<Answer> {
-    const instance = await this.answerRepository.create({
-      id: data.id ?? uuidv7(),
-      give_answer_1: data.text,
+    const instance = this.answerRepository.create({
+      answer_id: data.id ?? uuidv7(),
+      answer_text: data.text,
       question: {
-        id: data.question.id,
+        question_id: data.question.id,
       },
       user: {
         id: context.userId,
@@ -55,7 +55,7 @@ export class AnswerService {
         user: {
           id: context.userId,
         },
-        id: In(ids),
+        answer_id: In(ids),
       },
       relations: ['user', 'question'],
     });
@@ -69,7 +69,7 @@ export class AnswerService {
         user: {
           id: context.userId,
         },
-        id,
+        answer_id: id,
       },
       relations: ['user', 'question'],
     });
@@ -84,7 +84,7 @@ export class AnswerService {
           id: context.userId,
         },
         question: {
-          id: questionId,
+          question_id: questionId,
         },
       },
       relations: ['user', 'question'],
@@ -96,7 +96,7 @@ export class AnswerService {
   async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<boolean> {
     const result = await this.answerRepository.update(
       {
-        id,
+        answer_id: id,
         user: {
           id: context.userId,
         },

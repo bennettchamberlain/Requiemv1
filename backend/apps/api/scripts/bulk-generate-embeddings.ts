@@ -7,7 +7,7 @@ import config from '@ci/configuration';
 import { ConnectionEntity, ProviderEntity } from '@ci/domains/connections';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
 import { ContentEntity, EventEntity } from '@ci/domains/memory';
-import { EmbeddingEntity, EmbeddingService, TagEntity } from '@ci/domains/search';
+import { EmbeddingService, TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
 const logger = new Logger(path.basename(__filename));
@@ -22,73 +22,66 @@ const logger = new Logger(path.basename(__filename));
     password: config.db.password,
     entities: [
       AnswerEntity,
-      ConnectionEntity, // Unused, but relationally dependent
+      ConnectionEntity,
       ContentEntity,
-      EmbeddingEntity,
-      EventEntity, // Unused, but relationally dependent
-      ProviderEntity, // Unused, but relationally dependent
+      EventEntity,
+      ProviderEntity,
       QuestionEntity,
-      TagEntity, // Unused, but relationally dependent
-      UserEntity, // Unused, but relationally dependent
+      TagEntity,
+      UserEntity,
     ],
     synchronize: false,
     logging: ['error', 'schema'],
   });
 
-  let error: Error | null;
+  let error: Error | null = null;
 
   try {
     await db.initialize();
 
-    const embeddingRepo = db.getRepository(EmbeddingEntity);
-    const embeddingService = new EmbeddingService(embeddingRepo);
+    const embeddingService = new EmbeddingService(db);
 
-    await db.transaction(async (manager) => {
-      const questions = await manager.find(QuestionEntity, {
-        relations: ['user'],
-      });
+    logger.log('Starting bulk embedding generation...');
 
-      logger.log(`Indexing ${questions.length} question records`);
+    const questionsCount = await embeddingService.embedAllQuestions();
+    logger.log(`✅ Generated embeddings for ${questionsCount} questions`);
 
-      for (const [index, entity] of questions.entries()) {
-        logger.log(`Generating vector embeddings for question, ${index + 1} / ${questions.length}`);
+    const answersCount = await embeddingService.embedAllAnswers();
+    logger.log(`✅ Generated embeddings for ${answersCount} answers`);
 
-        await embeddingService.indexEntity(entity, 'text');
-      }
-    });
+    const contentCount = await embeddingService.embedAllContent();
+    logger.log(`✅ Generated embeddings for ${contentCount} content records`);
 
-    await db.transaction(async (manager) => {
-      const answers = await manager.find(AnswerEntity, {
-        relations: ['user'],
-      });
+    const entitiesCount = await embeddingService.embedAllEntities();
+    logger.log(`✅ Generated embeddings for ${entitiesCount} entities`);
 
-      logger.log(`Indexing ${answers.length} answer records`);
+    const inventoryCount = await embeddingService.embedAllInventoryItems();
+    logger.log(`✅ Generated embeddings for ${inventoryCount} inventory items`);
 
-      for (const [index, entity] of answers.entries()) {
-        logger.log(`Generating vector embeddings for answer, ${index + 1} / ${answers.length}`);
+    const factsCount = await embeddingService.embedAllFacts();
+    logger.log(`✅ Generated embeddings for ${factsCount} facts`);
 
-        await embeddingService.indexEntity(entity, 'give_answer_1');
-      }
-    });
+    const documentsCount = await embeddingService.embedAllDocuments();
+    logger.log(`✅ Generated embeddings for ${documentsCount} documents`);
 
-    await db.transaction(async (manager) => {
-      const content = await manager.find(ContentEntity, {
-        relations: ['user'],
-      });
+    const chunksCount = await embeddingService.embedAllDocumentChunks();
+    logger.log(`✅ Generated embeddings for ${chunksCount} document chunks`);
 
-      logger.log(`Indexing ${content.length} content records`);
+    const messagesCount = await embeddingService.embedAllMessages();
+    logger.log(`✅ Generated embeddings for ${messagesCount} messages`);
 
-      for (const [index, entity] of content.entries()) {
-        logger.log(`Generating vector embeddings for content, ${index + 1} / ${content.length}`);
+    const totalCount =
+      questionsCount +
+      answersCount +
+      contentCount +
+      entitiesCount +
+      inventoryCount +
+      factsCount +
+      documentsCount +
+      chunksCount +
+      messagesCount;
 
-        if (entity.text == null) {
-          continue;
-        }
-
-        await embeddingService.indexEntity(entity, 'text');
-      }
-    });
-
+    logger.log(`\n🎉 All embeddings generated successfully! Total: ${totalCount} items`);
     process.exit(0);
   } catch (err) {
     error = err as Error;

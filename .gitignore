@@ -22,7 +22,12 @@ node_modules
 .pnp.*
 .aider*
 .env
-
+.venv
 
 .specstory/ 
+AGENTS.md
+
 .env
+
+.idea/
+

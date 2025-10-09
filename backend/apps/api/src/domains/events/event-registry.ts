@@ -26,7 +26,7 @@ interface ChatSummarizationPayload extends EventPayload {
 }
 
 interface InferQuestionAnswerPayload extends EventPayload {
-  ownerId: string;
+  ownerId: string | null;
   questionId: string;
 }
 

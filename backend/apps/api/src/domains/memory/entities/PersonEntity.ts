@@ -5,67 +5,93 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToMany,
-  ManyToOne,
-  JoinColumn,
   JoinTable,
+  AfterLoad,
+  Repository,
+  SelectQueryBuilder,
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
-import { UserEntity } from '@ci/domains/user';
 
-@Entity({ name: 'people' })
+@Entity({ name: 'entities' })
 export class PersonEntity {
-  @PrimaryColumn('uuid')
+  @PrimaryColumn('uuid', { name: 'entity_id' })
   id!: string;
 
+  @Column({ type: 'text', name: 'entity_type', default: 'Person' })
+  entity_type!: string;
+
   @Column({ type: 'text', nullable: true })
+  name!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  description!: string | null;
+
+  @Column({ type: 'jsonb', default: '{}' })
+  properties!: Record<string, unknown>;
+
+  // Backward compatibility fields - populated from properties JSONB after load
   type!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   first_name!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   last_name!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   gender!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   address!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   street_address!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   street_address_2!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   city!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   region!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   country!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   postal_code!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   avatar_url!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   external_id!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   source_url!: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
   source_data!: Record<string, unknown> | null;
 
-  @ManyToOne(() => UserEntity, { nullable: true })
-  @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  @AfterLoad()
+  loadPropertiesFromJsonb() {
+    this.type = (this.properties?.type as string) || null;
+    this.first_name = (this.properties?.first_name as string) || null;
+    this.last_name = (this.properties?.last_name as string) || null;
+    this.gender = (this.properties?.gender as string) || null;
+    this.address = (this.properties?.address as string) || null;
+    this.street_address = (this.properties?.street_address as string) || null;
+    this.street_address_2 = (this.properties?.street_address_2 as string) || null;
+    this.city = (this.properties?.city as string) || null;
+    this.region = (this.properties?.region as string) || null;
+    this.country = (this.properties?.country as string) || null;
+    this.postal_code = (this.properties?.postal_code as string) || null;
+    this.avatar_url = (this.properties?.avatar_url as string) || null;
+    this.external_id = (this.properties?.external_id as string) || null;
+    this.source_url = (this.properties?.source_url as string) || null;
+    this.source_data = (this.properties?.source_data as Record<string, unknown>) || null;
+  }
+
+  // Helper method for creating filtered queries
+  static createPersonQuery(
+    repository: Repository<PersonEntity>,
+    alias: string = 'person',
+  ): SelectQueryBuilder<PersonEntity> {
+    return repository
+      .createQueryBuilder(alias)
+      .where(`${alias}.entity_type = :entityType`, { entityType: 'Person' });
+  }
+
+  @Column({ type: 'uuid', name: 'user_id', nullable: true })
+  userId?: string | null;
 
   @ManyToMany(() => TagEntity, { nullable: true })
   @JoinTable({
