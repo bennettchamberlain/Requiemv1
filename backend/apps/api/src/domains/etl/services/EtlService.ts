@@ -72,7 +72,7 @@ export class EtlService {
       connection.active &&
       !!connection.accessToken &&
       !!connection.tokenExpiry &&
-      connection.tokenExpiry > new Date()
+      !(connection.tokenExpiry > new Date() && !connection.refreshToken)
     );
   }
 
@@ -80,11 +80,19 @@ export class EtlService {
     Array<Connection & { userId: string; lastSyncedAt?: Date; createdAt: Date }>
   > {
     const entities = await this.connectionRepository.find({
-      where: {
-        active: true,
-        accessToken: Not(IsNull()), // Must have an access token
-        tokenExpiry: MoreThan(new Date()), // Token must not be expired
-      },
+      where: [
+        {
+          active: true,
+          accessToken: Not(IsNull()), // Must have an access token
+          refreshToken: IsNull(), // No refresh token
+          tokenExpiry: MoreThan(new Date()), // Token must not be expired
+        },
+        {
+          active: true,
+          accessToken: Not(IsNull()), // Must have an access token
+          refreshToken: Not(IsNull()), //If there's a refresh token, then an expired access token can be refreshed
+        },
+      ],
       relations: ['user', 'provider'],
     });
 

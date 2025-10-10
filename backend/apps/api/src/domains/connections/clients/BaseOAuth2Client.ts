@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+
 import config from '@ci/configuration';
 
 import type { Connection } from '../types';
@@ -59,6 +61,63 @@ export abstract class BaseOAuth2Client extends BaseClient {
       client_secret: this.clientSecret,
       redirect_uri: config.auth.oauth.callbackUrl,
       grant_type: 'authorization_code',
+    });
+
+    const tokenResponse = await fetch(this.tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: tokenParams.toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      let errorDetails;
+
+      try {
+        errorDetails = tokenResponse.json();
+      } catch {
+        errorDetails = tokenResponse.text();
+      }
+
+      this.logger.error('Token exchange failed', {
+        status: tokenResponse.status,
+        error: errorDetails,
+        endpoint: this.tokenEndpoint,
+      });
+
+      throw new Error('Token exchange failed');
+    }
+
+    let tokenData: TokenResponse;
+
+    try {
+      tokenData = (await tokenResponse.json()) as TokenResponse;
+    } catch {
+      throw new Error('Invalid token response format');
+    }
+
+    const tokenExpiry = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
+
+    return {
+      accessToken: tokenData.access_token || null,
+      refreshToken: tokenData.refresh_token || null,
+      tokenExpiry,
+    } satisfies TokenExchange;
+  }
+
+  async refreshAccessToken(connection: Connection): Promise<TokenExchange> {
+    if (!connection.refreshToken) {
+      throw new BadRequestException('No refresh token available');
+    }
+
+    const tokenParams = new URLSearchParams({
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+      scope: this.scopes.join(' '),
+      refresh_token: connection.refreshToken,
+      grant_type: 'refresh_token',
     });
 
     const tokenResponse = await fetch(this.tokenEndpoint, {
