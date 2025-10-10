@@ -21,7 +21,7 @@ export class EtlController {
 
   constructor(private readonly etlService: EtlService) {}
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async syncConnections(): Promise<void> {
     if (!config.features['scheduled.connection.sync']) {
       return;
