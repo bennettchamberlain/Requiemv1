@@ -23,6 +23,7 @@ import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { MemoryService } from './services/MemoryService';
+import { UserContextService } from './services/UserContextService';
 
 @Module({
   imports: [
@@ -41,9 +42,9 @@ import { MemoryService } from './services/MemoryService';
     ]),
     UserModule,
   ],
-  providers: [MemoryService, ContentService, EventService, CommunicationService, GraphUtilityService],
+  providers: [MemoryService, ContentService, EventService, GraphUtilityService, UserContextService],
   controllers: [MemoryController, ContentController, EventController, GraphController],
-  exports: [MemoryService, ContentService, EventService, CommunicationService, GraphUtilityService],
+  exports: [MemoryService, ContentService, EventService, GraphUtilityService, UserContextService],
 })
 export class MemoryModule {}
 
@@ -62,14 +63,8 @@ export {
 };
 
 // Services
-export { MemoryService, ContentService, EventService, CommunicationService, GraphUtilityService };
+export { MemoryService, ContentService, EventService, GraphUtilityService, UserContextService };
 
 // Types
-export type {
-  CreateEventDto,
-  CreateContentDto,
-  Memory,
-  MemoryLocation,
-  MemoryResponse,
-  MemorySearchParams,
-} from './types';
+export type { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from './types';
+export type { UserContext } from './services/UserContextService';
