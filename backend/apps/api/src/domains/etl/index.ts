@@ -28,3 +28,14 @@ export { EtlController };
 
 // Types
 export type { ApiLog } from './types';
+export type {
+  CalendarSyncState,
+  GmailSyncState,
+  DriveSyncState,
+  ContactsSyncState,
+  YouTubeSyncState,
+  GoogleSyncState,
+  SyncResult,
+  CalendarSyncResult,
+  GmailSyncResult,
+} from './types/syncTypes';

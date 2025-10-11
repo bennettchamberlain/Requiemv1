@@ -5,7 +5,8 @@ import type {
   DriveSyncState,
   ContactsSyncState,
   YouTubeSyncState,
-} from '@ci/domains/etl/types/syncTypes';
+  GoogleSyncState,
+} from '@ci/domains/etl';
 
 import type { Connection } from '../types';
 
@@ -19,13 +20,15 @@ export class GoogleClient extends BaseOAuth2Client {
 
   protected readonly tokenEndpoint = 'https://oauth2.googleapis.com/token';
 
-  protected readonly scopes = [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/youtube',
-    'https://www.googleapis.com/auth/contacts',
+  protected readonly scopeNames = [
+    'gmail.readonly',
+    'calendar.readonly',
+    'drive.readonly',
+    'youtube',
+    'contacts',
   ];
+
+  protected readonly scopes = this.scopeNames.map((scope) => `https://www.googleapis.com/auth/${scope}`);
 
   protected get clientId() {
     const clientIdVariable = 'GOOGLE_CLIENT_ID';
@@ -55,231 +58,122 @@ export class GoogleClient extends BaseOAuth2Client {
 
   // Removed People API helper per requirement; use full URLs inline
 
+  /**
+   * Generic handler for processing API sync results
+   * Handles the common pattern of: fetch sync state -> call sync method -> process results -> handle errors
+   */
+  private async processSyncAPI<TState>(
+    connection: Connection,
+    config: {
+      apiName: string;
+      stateKey: keyof GoogleSyncState & string;
+      syncMethod: (
+        connection: Connection,
+        syncState: TState | null,
+      ) => Promise<Array<{ data: unknown; syncState: TState }>>;
+      logWarningOnError?: boolean;
+    },
+  ): Promise<SyncResponse[]> {
+    const responses: SyncResponse[] = [];
+
+    try {
+      const syncState = connection.syncState?.[config.stateKey] as TState | null;
+      const results = await config.syncMethod(connection, syncState);
+
+      for (const result of results) {
+        if (result.data !== null) {
+          responses.push({
+            success: true,
+            message: `${config.apiName} sync completed successfully`,
+            data: {
+              results: [
+                {
+                  api: config.apiName,
+                  data: result.data,
+                  syncState: result.syncState as Record<string, unknown>,
+                },
+              ],
+              errors: [],
+            },
+            cursor: { [config.stateKey]: result.syncState },
+          });
+        } else {
+          responses.push({
+            success: true,
+            message: `${config.apiName} sync completed (no new data)`,
+            data: { results: [], errors: [] },
+            cursor: { [config.stateKey]: result.syncState },
+          });
+        }
+      }
+    } catch (error) {
+      const errorMsg = `${config.apiName} API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+      if (config.logWarningOnError) {
+        this.logger.warn(`${config.stateKey} sync skipped - insufficient permissions or not available`, {
+          connectionId: connection.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      } else {
+        this.logger.error(`${config.stateKey} sync failed`, {
+          connectionId: connection.id,
+          error: errorMsg,
+        });
+
+        responses.push({
+          success: false,
+          message: errorMsg,
+          data: { results: [], errors: [errorMsg] },
+        });
+      }
+    }
+
+    return responses;
+  }
+
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
-    // Google Calendar API - Incremental sync
-    try {
-      const calendarSyncState = connection.syncState?.calendar as CalendarSyncState | null;
+    responses.push(
+      ...(await this.processSyncAPI<CalendarSyncState>(connection, {
+        apiName: 'Google Calendar',
+        stateKey: 'calendar',
+        syncMethod: this.syncCalendar.bind(this),
+      })),
+    );
 
-      const calendarResults = await this.syncCalendar(connection, calendarSyncState);
+    responses.push(
+      ...(await this.processSyncAPI<GmailSyncState>(connection, {
+        apiName: 'Gmail',
+        stateKey: 'gmail',
+        syncMethod: this.syncGmail.bind(this),
+      })),
+    );
 
-      // Process Calendar results - only create API logs for results with actual data
-      for (const result of calendarResults) {
-        this.logger.log('Processing Calendar result', {
-          connectionId: connection.id,
-          hasData: result.data !== null,
-          syncState: result.syncState,
-          syncToken: result.syncState?.syncToken,
-        });
+    responses.push(
+      ...(await this.processSyncAPI<ContactsSyncState>(connection, {
+        apiName: 'Google Contacts',
+        stateKey: 'contacts',
+        syncMethod: this.syncContacts.bind(this),
+      })),
+    );
 
-        if (result.data !== null) {
-          // Only create API log if there's actual data
-          responses.push({
-            success: true,
-            message: 'Google Calendar sync completed successfully',
-            data: {
-              results: [
-                {
-                  api: 'Google Calendar',
-                  data: result.data,
-                  syncState: result.syncState as Record<string, unknown>,
-                },
-              ],
-              errors: [],
-            },
-            cursor: { calendar: result.syncState },
-          });
-        } else {
-          // Update sync state without creating API log
-          responses.push({
-            success: true,
-            message: 'Google Calendar sync completed (no new data)',
-            data: {
-              results: [],
-              errors: [],
-            },
-            cursor: { calendar: result.syncState },
-          });
-        }
-      }
-    } catch (error) {
-      const errorMsg = `Google Calendar API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      this.logger.error('Calendar sync failed', { connectionId: connection.id, error: errorMsg });
+    responses.push(
+      ...(await this.processSyncAPI<YouTubeSyncState>(connection, {
+        apiName: 'YouTube',
+        stateKey: 'youtube',
+        syncMethod: this.syncYouTube.bind(this),
+      })),
+    );
 
-      responses.push({
-        success: false,
-        message: errorMsg,
-        data: {
-          results: [],
-          errors: [errorMsg],
-        },
-      });
-    }
-
-    // Gmail API - Incremental sync
-    try {
-      const gmailSyncState = connection.syncState?.gmail as GmailSyncState | null;
-
-      const gmailResults = await this.syncGmail(connection, gmailSyncState);
-
-      // Process Gmail results - only create API logs for results with actual data
-      for (const result of gmailResults) {
-        if (result.data !== null) {
-          // Only create API log if there's actual data
-          responses.push({
-            success: true,
-            message: 'Gmail sync completed successfully',
-            data: {
-              results: [
-                {
-                  api: 'Gmail',
-                  data: result.data,
-                  syncState: result.syncState as Record<string, unknown>,
-                },
-              ],
-              errors: [],
-            },
-            cursor: { gmail: result.syncState },
-          });
-        } else {
-          // Update sync state without creating API log
-          responses.push({
-            success: true,
-            message: 'Gmail sync completed (no new data)',
-            data: {
-              results: [],
-              errors: [],
-            },
-            cursor: { gmail: result.syncState },
-          });
-        }
-      }
-    } catch (error) {
-      const errorMsg = `Gmail API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      this.logger.error('Gmail sync failed', { connectionId: connection.id, error: errorMsg });
-
-      responses.push({
-        success: false,
-        message: errorMsg,
-        data: {
-          results: [],
-          errors: [errorMsg],
-        },
-      });
-    }
-
-    // Google Contacts - Fetch all contacts (paginated)
-    try {
-      const contactsSyncState = connection.syncState?.contacts as ContactsSyncState | null;
-      const contactsResults = await this.syncContacts(connection, contactsSyncState);
-
-      for (const result of contactsResults) {
-        if (result.data !== null) {
-          responses.push({
-            success: true,
-            message: 'Google Contacts sync completed successfully',
-            data: {
-              results: [
-                {
-                  api: 'Google Contacts',
-                  data: result.data,
-                  syncState: result.syncState as Record<string, unknown>,
-                },
-              ],
-              errors: [],
-            },
-            cursor: { contacts: result.syncState },
-          });
-        } else {
-          responses.push({
-            success: true,
-            message: 'Google Contacts sync completed (no new data)',
-            data: { results: [], errors: [] },
-            cursor: { contacts: result.syncState },
-          });
-        }
-      }
-    } catch (error) {
-      const errorMsg = `Google Contacts API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      this.logger.error('Contacts sync failed', { connectionId: connection.id, error: errorMsg });
-      responses.push({ success: false, message: errorMsg, data: { results: [], errors: [errorMsg] } });
-    }
-
-    // YouTube - Fetch likes, history, and playlists (metadata only)
-    try {
-      const youtubeSyncState = connection.syncState?.youtube as YouTubeSyncState | null;
-      const youtubeResults = await this.syncYouTube(connection, youtubeSyncState);
-
-      for (const result of youtubeResults) {
-        if (result.data !== null) {
-          responses.push({
-            success: true,
-            message: 'YouTube sync completed successfully',
-            data: {
-              results: [
-                {
-                  api: 'YouTube',
-                  data: result.data,
-                  syncState: result.syncState as Record<string, unknown>,
-                },
-              ],
-              errors: [],
-            },
-            cursor: { youtube: result.syncState },
-          });
-        } else {
-          responses.push({
-            success: true,
-            message: 'YouTube sync completed (no new data)',
-            data: { results: [], errors: [] },
-            cursor: { youtube: result.syncState },
-          });
-        }
-      }
-    } catch (error) {
-      const errorMsg = `YouTube API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      this.logger.error('YouTube sync failed', { connectionId: connection.id, error: errorMsg });
-      responses.push({ success: false, message: errorMsg, data: { results: [], errors: [errorMsg] } });
-    }
-
-    // Google Drive - Fetch metadata only (paginated)
-    try {
-      const driveSyncState = connection.syncState?.drive as DriveSyncState | null;
-      const driveResults = await this.syncDriveMetadata(connection, driveSyncState);
-
-      for (const result of driveResults) {
-        if (result.data !== null) {
-          responses.push({
-            success: true,
-            message: 'Google Drive metadata sync completed successfully',
-            data: {
-              results: [
-                {
-                  api: 'Google Drive',
-                  data: result.data,
-                  syncState: result.syncState as Record<string, unknown>,
-                },
-              ],
-              errors: [],
-            },
-            cursor: { drive: result.syncState },
-          });
-        } else {
-          responses.push({
-            success: true,
-            message: 'Google Drive metadata sync completed (no new data)',
-            data: { results: [], errors: [] },
-            cursor: { drive: result.syncState },
-          });
-        }
-      }
-    } catch (error) {
-      this.logger.warn('Drive sync skipped - insufficient permissions or not available', {
-        connectionId: connection.id,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+    responses.push(
+      ...(await this.processSyncAPI<DriveSyncState>(connection, {
+        apiName: 'Google Drive',
+        stateKey: 'drive',
+        syncMethod: this.syncDriveMetadata.bind(this),
+        logWarningOnError: true,
+      })),
+    );
 
     return responses;
   }
@@ -315,10 +209,16 @@ export class GoogleClient extends BaseOAuth2Client {
 
     // Fetch all events to get sync token (no time restrictions)
     do {
-      let endpoint = `/calendar/v3/calendars/primary/events?maxResults=2500&showDeleted=true&singleEvents=true`;
+      const params = new URLSearchParams({
+        maxResults: '2500',
+        showDeleted: 'true',
+        singleEvents: 'true',
+      });
       if (nextPageToken) {
-        endpoint += `&pageToken=${nextPageToken}`;
+        params.set('pageToken', nextPageToken);
       }
+
+      const endpoint = `/calendar/v3/calendars/primary/events?${params.toString()}`;
 
       const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       const events = (response.items as unknown[]) || [];
@@ -355,10 +255,13 @@ export class GoogleClient extends BaseOAuth2Client {
     connection: Connection,
     syncState: CalendarSyncState,
   ): Promise<CalendarSyncResult[]> {
-    const response = (await this.request(
-      connection,
-      `/calendar/v3/calendars/primary/events?syncToken=${syncState.syncToken}&showDeleted=true`,
-    )) as Record<string, unknown>;
+    const params = new URLSearchParams({
+      syncToken: syncState.syncToken || '',
+      showDeleted: 'true',
+    });
+    const endpoint = `/calendar/v3/calendars/primary/events?${params.toString()}`;
+
+    const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
 
     const events = (response.items as unknown[]) || [];
     const newSyncToken = response.nextSyncToken as string;
@@ -457,10 +360,15 @@ export class GoogleClient extends BaseOAuth2Client {
 
     // Get all message IDs first
     do {
-      let endpoint = `/gmail/v1/users/me/messages?maxResults=500&labelIds=${labels.join(',')}`;
+      const params = new URLSearchParams({
+        maxResults: '500',
+        labelIds: labels.join(','),
+      });
       if (nextPageToken) {
-        endpoint += `&pageToken=${nextPageToken}`;
+        params.set('pageToken', nextPageToken);
       }
+
+      const endpoint = `/gmail/v1/users/me/messages?${params.toString()}`;
 
       const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       const messages = (response.messages as unknown[]) || [];
@@ -564,10 +472,15 @@ export class GoogleClient extends BaseOAuth2Client {
 
     // Fetch all contacts (no sync token request during pagination)
     do {
-      let endpoint = `https://people.googleapis.com/v1/people/me/connections?pageSize=1000&personFields=${personFields}`;
+      const params = new URLSearchParams({
+        pageSize: '1000',
+        personFields,
+      });
       if (nextPageToken) {
-        endpoint += `&pageToken=${nextPageToken}`;
+        params.set('pageToken', nextPageToken);
       }
+
+      const endpoint = `https://people.googleapis.com/v1/people/me/connections?${params.toString()}`;
 
       if (connection.accessToken == null) {
         throw new Error('Connection not authenticated');
@@ -598,7 +511,12 @@ export class GoogleClient extends BaseOAuth2Client {
       throw new Error('Connection not authenticated');
     }
 
-    const tokenUrl = `https://people.googleapis.com/v1/people/me/connections?pageSize=1&personFields=${personFields}&requestSyncToken=true`;
+    const tokenParams = new URLSearchParams({
+      pageSize: '1',
+      personFields,
+      requestSyncToken: 'true',
+    });
+    const tokenUrl = `https://people.googleapis.com/v1/people/me/connections?${tokenParams.toString()}`;
     const tokenResp = (await fetch(tokenUrl, {
       headers: { Authorization: `Bearer ${connection.accessToken}` },
     }).then((r) => {
@@ -665,12 +583,17 @@ export class GoogleClient extends BaseOAuth2Client {
     let lastResponse: Record<string, unknown> | null = null;
 
     do {
-      let endpoint = `https://people.googleapis.com/v1/people/me/connections?pageSize=1000&personFields=${personFields}&syncToken=${encodeURIComponent(
-        syncState.syncToken as string,
-      )}&sortOrder=LAST_MODIFIED_ASCENDING`;
+      const params = new URLSearchParams({
+        pageSize: '1000',
+        personFields,
+        syncToken: syncState.syncToken as string,
+        sortOrder: 'LAST_MODIFIED_ASCENDING',
+      });
       if (nextPageToken) {
-        endpoint += `&pageToken=${nextPageToken}`;
+        params.set('pageToken', nextPageToken);
       }
+
+      const endpoint = `https://people.googleapis.com/v1/people/me/connections?${params.toString()}`;
 
       if (connection.accessToken == null) {
         throw new Error('Connection not authenticated');
@@ -739,10 +662,16 @@ export class GoogleClient extends BaseOAuth2Client {
       let reachedKnown = false;
 
       do {
-        let endpoint = `/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${playlistId}`;
+        const params = new URLSearchParams({
+          part: 'snippet,contentDetails',
+          maxResults: '50',
+          playlistId,
+        });
         if (pageToken) {
-          endpoint += `&pageToken=${pageToken}`;
+          params.set('pageToken', pageToken);
         }
+
+        const endpoint = `/youtube/v3/playlistItems?${params.toString()}`;
 
         const resp = (await this.request(connection, endpoint)) as Record<string, unknown>;
         const pageItems = (resp.items as Array<Record<string, unknown>>) || [];
@@ -778,10 +707,16 @@ export class GoogleClient extends BaseOAuth2Client {
       let reachedKnown = false;
 
       do {
-        let endpoint = `/youtube/v3/playlists?part=snippet,contentDetails&maxResults=50&mine=true`;
+        const params = new URLSearchParams({
+          part: 'snippet,contentDetails',
+          maxResults: '50',
+          mine: 'true',
+        });
         if (pageToken) {
-          endpoint += `&pageToken=${pageToken}`;
+          params.set('pageToken', pageToken);
         }
+
+        const endpoint = `/youtube/v3/playlists?${params.toString()}`;
 
         const resp = (await this.request(connection, endpoint)) as Record<string, unknown>;
         const pageItems = (resp.items as Array<Record<string, unknown>>) || [];
@@ -882,10 +817,17 @@ export class GoogleClient extends BaseOAuth2Client {
       let totalFiles = 0;
 
       do {
-        let endpoint = `/drive/v3/files?pageSize=200&fields=${fieldsList}&q=trashed=false&orderBy=modifiedTime desc`;
+        const params = new URLSearchParams({
+          pageSize: '200',
+          fields: fieldsList,
+          q: 'trashed=false',
+          orderBy: 'modifiedTime desc',
+        });
         if (nextPageToken) {
-          endpoint += `&pageToken=${nextPageToken}`;
+          params.set('pageToken', nextPageToken);
         }
+
+        const endpoint = `/drive/v3/files?${params.toString()}`;
 
         const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
         const files = (response.files as unknown[]) || [];
@@ -928,7 +870,14 @@ export class GoogleClient extends BaseOAuth2Client {
     let totalChanges = 0;
 
     do {
-      const endpoint = `/drive/v3/changes?pageSize=200&includeRemoved=true&restrictToMyDrive=true&fields=${fieldsChanges}&pageToken=${encodeURIComponent(pageToken || '')}`;
+      const params = new URLSearchParams({
+        pageSize: '200',
+        includeRemoved: 'true',
+        restrictToMyDrive: 'true',
+        fields: fieldsChanges,
+        pageToken: pageToken || '',
+      });
+      const endpoint = `/drive/v3/changes?${params.toString()}`;
       const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       const changes = (response.changes as unknown[]) || [];
       const nextPageToken = response.nextPageToken as string | undefined;
