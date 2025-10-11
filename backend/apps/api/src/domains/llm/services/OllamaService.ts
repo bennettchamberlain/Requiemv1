@@ -197,9 +197,13 @@ export class OllamaService {
           }
         } catch (err) {
           if (!(err instanceof DOMException && err.name === 'AbortError')) {
+            const error = err as Error;
+
             self.logger.error('Ollama prompt evaluation completed', {
               model: lastChunk?.model ?? resolvedOptions.model,
               doneReason: 'error',
+              errorMessage: error?.message ?? String(err),
+              errorStack: error instanceof Error ? error.stack : undefined,
             });
 
             break;

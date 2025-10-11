@@ -52,28 +52,20 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     [upload],
   );
 
-  const createFileThread = useCallback(
-    async (fileId: string) => {
-      const thread = await fetchJson<Thread>('/api/threads', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          files: [
-            {
-              id: fileId,
-            },
-          ],
-          model: selectedModel,
-        }),
-      });
+  const createFileThread = useCallback(async () => {
+    const thread = await fetchJson<Thread>('/api/threads', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+      }),
+    });
 
-      setThreadId(thread.id);
-    },
-    [authToken, selectedModel],
-  );
+    setThreadId(thread.id);
+  }, [authToken, selectedModel]);
 
   useEffect(() => {
     (async () => {
@@ -86,29 +78,53 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
         return;
       }
 
-      await createFileThread(fileData.id);
+      // Check if this file is already in the files array to prevent duplicates
+      setFiles((current) => {
+        const alreadyExists = current.some((file) => file.id === fileData.id);
+        if (alreadyExists) {
+          return current;
+        }
 
-      setFiles((current) => [...current, fileData]);
+        return [...current, fileData];
+      });
+
+      // Only create thread if we don't have one yet
+      if (threadId == null) {
+        await createFileThread();
+      }
     })();
-  }, [fileData]);
+  }, [fileData, isMobile, createFileThread, threadId]);
 
   const handleSelectLastCapture = useCallback(async () => {
     if (fileData == null) {
       return;
     }
 
-    await createFileThread(fileData.id);
+    // Only create thread if we don't have one yet
+    if (threadId == null) {
+      await createFileThread();
+    }
 
-    setFiles((current) => [...current, fileData]);
-  }, [fileData, createFileThread]);
+    // Check if this file is already in the files array to prevent duplicates
+    setFiles((current) => {
+      const alreadyExists = current.some((file) => file.id === fileData.id);
+      if (alreadyExists) {
+        return current;
+      }
+
+      return [...current, fileData];
+    });
+  }, [fileData, createFileThread, threadId]);
 
   const handleSubmit = useCallback(
     async (data: FormData, e?: FormEvent) => {
       e?.preventDefault();
 
-      return submitChatRequest(data);
+      const fileIds = files.map((file) => file.id);
+
+      return submitChatRequest({ ...data, fileIds });
     },
-    [submitChatRequest],
+    [files, submitChatRequest],
   );
 
   if (isMobile) {
@@ -166,7 +182,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
           placeholder="Ask about this content..."
           streaming={streaming}
           readable={stream ?? undefined}
-          onSubmit={submitChatRequest}
+          onSubmit={handleSubmit}
           onStop={stopChatRequest}
         >
           <Files files={files} />
@@ -259,7 +275,7 @@ function Files({ files }: { files?: FileData[] | null }) {
         switch (fileType) {
           case 'video':
             return (
-              <div className="aspect-video rounded-lg overflow-hidden bg-stone-100">
+              <div key={file.id} className="aspect-video rounded-lg overflow-hidden bg-stone-100">
                 <video controls className="w-full h-full object-cover">
                   <source src={`/static${file.url}`} type={file.contentType} />
                   Your browser does not support the video tag.
@@ -268,7 +284,10 @@ function Files({ files }: { files?: FileData[] | null }) {
             );
           case 'audio':
             return (
-              <div className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center">
+              <div
+                key={file.id}
+                className="rounded-lg overflow-hidden bg-stone-100 p-4 flex items-center justify-center"
+              >
                 <audio controls className="w-full">
                   <source src={`/static${file.url}`} type={file.contentType} />
                   Your browser does not support the audio element.
@@ -277,7 +296,7 @@ function Files({ files }: { files?: FileData[] | null }) {
             );
           case 'image':
             return (
-              <div className="rounded-lg bg-stone-100">
+              <div key={file.id} className="rounded-lg bg-stone-100">
                 <img src={`/static${file.url}`} className="w-full h-full object-cover" />
               </div>
             );

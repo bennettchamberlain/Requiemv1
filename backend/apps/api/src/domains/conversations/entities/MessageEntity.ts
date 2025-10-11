@@ -1,14 +1,16 @@
 import {
   Entity,
-  DeleteDateColumn,
   PrimaryColumn,
   Column,
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 
+import { FileEntity } from '@ci/domains/files/entities/FileEntity';
 import { UserEntity } from '@ci/domains/user';
 
 import type { Message } from '../types';
@@ -17,28 +19,26 @@ import { ThreadEntity } from './ThreadEntity';
 
 @Entity({ name: 'messages' })
 export class MessageEntity {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid', name: 'message_id' })
   id!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'model_name' })
   model!: string | null;
 
-  @Column({ type: 'text', nullable: true })
-  role!: string | null;
+  @Column({ type: 'text', nullable: false })
+  role!: string;
 
-  @Column({ type: 'text', nullable: true })
-  text!: string | null;
+  @Column({ type: 'text', nullable: false, name: 'content' })
+  content!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, name: 'content_type' })
   mimetype!: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, default: '[]' })
   tool_calls!: Record<string, unknown>[] | null;
 
-  @Column({ type: 'boolean' })
-  prompt!: boolean;
-
-  @Column({ type: 'boolean' })
+  // Direct boolean field for canceled - maps to is_deleted in database
+  @Column({ type: 'boolean', default: false, name: 'is_deleted' })
   canceled!: boolean;
 
   @ManyToOne(() => UserEntity)
@@ -50,8 +50,24 @@ export class MessageEntity {
   thread?: ThreadEntity;
 
   @ManyToOne(() => MessageEntity, { nullable: true })
-  @JoinColumn({ name: 'prompt_message_id' })
+  @JoinColumn({ name: 'parent_message_id' })
   promptMessage?: MessageEntity;
+
+  @ManyToMany(() => FileEntity, (file) => file.messages, {
+    eager: false,
+  })
+  @JoinTable({
+    name: 'message_files',
+    joinColumn: {
+      name: 'message_id',
+      referencedColumnName: 'id',
+    },
+    inverseJoinColumn: {
+      name: 'file_id',
+      referencedColumnName: 'id',
+    },
+  })
+  files?: FileEntity[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
@@ -59,26 +75,12 @@ export class MessageEntity {
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
 
-  @DeleteDateColumn({ type: 'timestamptz' })
-  deleted_at!: Date;
-
   toMessage(): Message {
-    let role: string | undefined;
-
-    if (this.role) {
-      role = this.role;
-    } else if (this.prompt === true) {
-      role = 'user';
-    } else if (this.prompt === false) {
-      role = 'assistant';
-    }
-
     return {
       id: this.id,
       model: this.model ?? null,
-      // TODO: This is a little janky and is symptomatic of lax nullability in the DB, fix this later.
-      role: role ?? 'assistant',
-      content: this.text ?? '',
+      role: this.role,
+      content: this.content ?? '',
       mimetype: this.mimetype ?? null,
       toolCalls: this.tool_calls ?? null,
       canceled: this.canceled ?? null,
@@ -86,6 +88,7 @@ export class MessageEntity {
       user: this.user?.toUser(),
       thread: this.thread?.toThread(),
       promptMessage: this.promptMessage?.toMessage() ?? null,
+      files: this.files?.map((file) => file.toFile()),
     } satisfies Message;
   }
 }

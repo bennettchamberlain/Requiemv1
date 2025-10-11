@@ -44,28 +44,46 @@ export class PeoplePromotionService {
       let personEntity = existingContact?.person;
 
       if (!personEntity) {
-        // Create new person
-        personEntity = this.personRepository.create({
-          id: uuid7(),
-          type: 'individual',
-          user: { id: userId },
-          external_id: `${source}_${participant.email}`,
-          source_data: {
-            source,
+        // Parse name into first and last name
+        const nameParts = participant.name.split(' ').filter((part) => part.length > 0);
+        const firstName = nameParts[0] ?? null;
+        const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
+
+        const baseSourceData = {
+          source,
+          connectionId,
+          originalName: participant.name,
+          email: participant.email,
+          sources: [source],
+          [`${source}Data`]: {
             connectionId,
             originalName: participant.name,
             email: participant.email,
+            lastSeen: new Date().toISOString(),
           },
+        } as Record<string, unknown>;
+
+        const properties: Record<string, unknown> = {
+          type: 'individual',
+          first_name: firstName,
+          last_name: lastName,
+          external_id: `${source}_${participant.email}`,
+          source_data: baseSourceData,
+        };
+
+        // Create new person
+        personEntity = this.personRepository.create({
+          id: uuid7(),
+          entity_type: 'Person',
+          name: participant.name,
+          description: null,
+          properties,
+          userId,
         });
 
-        // Parse name into first and last name
-        const nameParts = participant.name.split(' ').filter((part) => part.length > 0);
-        if (nameParts.length > 0) {
-          personEntity.first_name = nameParts[0];
-          if (nameParts.length > 1) {
-            personEntity.last_name = nameParts.slice(1).join(' ');
-          }
-        }
+        personEntity.first_name = firstName;
+        personEntity.last_name = lastName;
+        personEntity.source_data = baseSourceData;
 
         await this.personRepository.save(personEntity);
 
@@ -77,12 +95,13 @@ export class PeoplePromotionService {
         });
       } else {
         // Update existing person with additional source data if needed
-        const currentSourceData = (personEntity.source_data || {}) as Record<string, unknown>;
+        const currentProperties = (personEntity.properties || {}) as Record<string, unknown>;
+        const currentSourceData = (currentProperties.source_data || {}) as Record<string, unknown>;
         const sources = (currentSourceData.sources || []) as string[];
 
         if (!sources.includes(source)) {
           sources.push(source);
-          personEntity.source_data = {
+          const updatedSourceData = {
             ...currentSourceData,
             sources,
             [`${source}Data`]: {
@@ -92,6 +111,12 @@ export class PeoplePromotionService {
               lastSeen: new Date().toISOString(),
             },
           };
+
+          personEntity.properties = {
+            ...currentProperties,
+            source_data: updatedSourceData,
+          };
+          personEntity.source_data = updatedSourceData;
 
           await this.personRepository.save(personEntity);
 

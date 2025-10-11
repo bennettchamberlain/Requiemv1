@@ -9,6 +9,7 @@ export default [
       '.pnp.*',
       'backend/apps/api/*',
       'frontend/apps/web/*',
+      'infrastructure/iframely/**',
     ],
   },
 

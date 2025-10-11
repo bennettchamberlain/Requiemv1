@@ -8,6 +8,9 @@ import {
   ManyToOne,
   JoinColumn,
   JoinTable,
+  AfterLoad,
+  Repository,
+  SelectQueryBuilder,
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
@@ -15,13 +18,13 @@ import { UserEntity } from '@ci/domains/user';
 
 import { EventEntity } from './EventEntity';
 
-@Entity({ name: 'things' })
+@Entity({ name: 'entities' })
 export class ThingEntity {
-  @PrimaryColumn('uuid')
+  @PrimaryColumn('uuid', { name: 'entity_id' })
   id!: string;
 
-  @Column({ type: 'text', nullable: true })
-  type!: string | null;
+  @Column({ type: 'text', name: 'entity_type', default: 'Object' })
+  entity_type!: string;
 
   @Column({ type: 'text', nullable: true })
   name!: string | null;
@@ -29,14 +32,35 @@ export class ThingEntity {
   @Column({ type: 'text', nullable: true })
   description!: string | null;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'jsonb', default: '{}' })
+  properties!: Record<string, unknown>;
+
+  // Backward compatibility fields - populated from properties JSONB after load
+  type!: string | null;
+
   external_id!: string | null;
 
-  @Column({ type: 'text', nullable: true })
   source_url!: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
   source_data!: Record<string, unknown> | null;
+
+  @AfterLoad()
+  loadPropertiesFromJsonb() {
+    this.type = (this.properties?.type as string) || null;
+    this.external_id = (this.properties?.external_id as string) || null;
+    this.source_url = (this.properties?.source_url as string) || null;
+    this.source_data = (this.properties?.source_data as Record<string, unknown>) || null;
+  }
+
+  // Helper method for creating filtered queries
+  static createThingQuery(
+    repository: Repository<ThingEntity>,
+    alias: string = 'thing',
+  ): SelectQueryBuilder<ThingEntity> {
+    return repository
+      .createQueryBuilder(alias)
+      .where(`${alias}.entity_type = :entityType`, { entityType: 'Object' });
+  }
 
   @ManyToOne(() => UserEntity, { nullable: true })
   @JoinColumn({ name: 'user_id' })

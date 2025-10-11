@@ -18,8 +18,13 @@ export interface Action {
 export interface Answer {
   id: string;
 
-  ragAnswer: string;
   answer: string;
+  answerConfidence?: number;
+  answerSource: string;
+  answerMethod?: string;
+  answeredAt: Date;
+  isSensitive: boolean;
+  sharingLevel: string;
 
   user?: User;
   question?: Question;
@@ -30,9 +35,14 @@ export interface Question {
 
   category: string;
   text: string;
-  answer: string;
-
-  user?: User;
+  contextTags?: string[];
+  questionType?: string;
+  isSeedQuestion: boolean;
+  isActive: boolean;
+  createdByLlm: boolean;
+  frequencyRecommendation?: string;
+  timesAsked: number;
+  timesAnswered: number;
 }
 
 export interface CreateActionDto {
@@ -55,8 +65,9 @@ export interface CreateQuestionDto {
   id?: string;
   text: string;
   subcategory?: string;
+  isPrivateTo?: string | null;
 }
 
 export interface UpdateAnswerDto {
-  rag_answer_1?: string;
+  answer_text?: string;
 }
