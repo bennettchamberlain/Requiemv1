@@ -9,6 +9,8 @@ export enum Events {
   INFER_QUESTION_ANSWER = 'infer.question.answer',
   SYNC_CONNECTION = 'sync.connection',
   MCP_TOOL_CALL = 'mcp.tool.call',
+  PROMOTE_GMAIL_MESSAGES = 'promote.gmail.messages',
+  PROMOTE_CALENDAR_EVENTS = 'promote.calendar.events',
 }
 
 interface ApiEnqueuePayload extends EventPayload {
@@ -41,6 +43,20 @@ interface McpToolCallPayload extends EventPayload {
   arguments: unknown;
 }
 
+interface PromoteGmailMessagesPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
+interface PromoteCalendarEventsPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
 export type EventPayloads = {
   [Events.API_ENQUEUE]: ApiEnqueuePayload;
   [Events.FILE_UPLOAD]: FileUploadPayload;
@@ -48,4 +64,6 @@ export type EventPayloads = {
   [Events.INFER_QUESTION_ANSWER]: InferQuestionAnswerPayload;
   [Events.SYNC_CONNECTION]: SyncConnectionPayload;
   [Events.MCP_TOOL_CALL]: McpToolCallPayload;
+  [Events.PROMOTE_GMAIL_MESSAGES]: PromoteGmailMessagesPayload;
+  [Events.PROMOTE_CALENDAR_EVENTS]: PromoteCalendarEventsPayload;
 };

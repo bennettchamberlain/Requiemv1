@@ -3,8 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/services';
 import { ConnectionService } from '@ci/domains/connections';
 import { Connection } from '@ci/domains/connections/types';
-import { EventService, ContentService } from '@ci/domains/memory';
-import type { CreateEventDto, CreateContentDto } from '@ci/domains/memory/types';
+import { CommunicationService } from '@ci/domains/memory';
 
 import { PeoplePromotionService } from './PeoplePromotionService';
 
@@ -46,8 +45,7 @@ export class GmailPromotionService {
   private logger = new LoggerService(GmailPromotionService.name);
 
   constructor(
-    private readonly eventService: EventService,
-    private readonly contentService: ContentService,
+    private readonly communicationService: CommunicationService,
     private readonly peoplePromotionService: PeoplePromotionService,
     private readonly connectionService: ConnectionService,
   ) {}
@@ -56,13 +54,16 @@ export class GmailPromotionService {
     this.logger.log('Starting Gmail message promotion', {
       userId,
       connectionId,
-      contentType: typeof apiLogContent,
-      contentKeys: apiLogContent && typeof apiLogContent === 'object' ? Object.keys(apiLogContent) : [],
     });
 
     try {
-      // Extract message ids from the API log content
       const messages = this.extractGmailMessages(apiLogContent);
+
+      if (messages.length === 0) {
+        this.logger.log('No Gmail messages found to promote', { userId, connectionId });
+
+        return;
+      }
 
       // Get the connection
       const connection = await this.connectionService.findById(connectionId);
@@ -72,21 +73,31 @@ export class GmailPromotionService {
         return;
       }
 
-      // Process each message individually
+      this.logger.log(`Processing ${messages.length} Gmail messages`, {
+        userId,
+        connectionId,
+        messageCount: messages.length,
+      });
+
       for (const message of messages) {
         if (!message.id) {
           this.logger.warn('Skipping message without ID', { message });
           continue;
         }
 
-        // Fetch the message
+        // Fetch the full message
         const fullMessage = await this.fetchGmailMessage(connection, message.id);
 
         if (fullMessage) {
-          // Process the message
           await this.processGmailMessage(fullMessage, userId, connectionId);
         }
       }
+
+      this.logger.log('Gmail message promotion completed', {
+        userId,
+        connectionId,
+        processedCount: messages.length,
+      });
     } catch (error) {
       this.logger.error('Error promoting Gmail messages', {
         userId,
@@ -99,19 +110,16 @@ export class GmailPromotionService {
   }
 
   private async fetchGmailMessage(connection: Connection, messageId: string): Promise<GmailMessage | null> {
-    const accessToken = connection.accessToken;
-
     try {
       const response = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
         {
-          method: 'GET',
           headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: 'application/json',
+            Authorization: `Bearer ${connection.accessToken}`,
           },
         },
       );
+
       if (!response.ok) {
         this.logger.error('Failed to fetch Gmail message', {
           messageId,
@@ -122,9 +130,9 @@ export class GmailPromotionService {
         return null;
       }
 
-      return await response.json();
+      return response.json() as Promise<GmailMessage>;
     } catch (error) {
-      this.logger.error('Failed to fetch message', {
+      this.logger.error('Error fetching Gmail message', {
         messageId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
@@ -137,7 +145,6 @@ export class GmailPromotionService {
     if (!content || typeof content !== 'object') {
       this.logger.warn('Invalid content type for Gmail messages', {
         contentType: typeof content,
-        contentNull: content === null,
       });
 
       return [];
@@ -145,47 +152,13 @@ export class GmailPromotionService {
 
     const contentObj = content as Record<string, unknown>;
 
-    // Handle the structure from Gmail API - messages array
+    // Handle the structure from Gmail API
     if ('messages' in contentObj && Array.isArray(contentObj.messages)) {
-      this.logger.log('Extracting messages from messages array', {
-        messageCount: contentObj.messages.length,
-      });
-
       return contentObj.messages as GmailMessage[];
-    }
-
-    // Handle history format (incremental sync)
-    if ('history' in contentObj && Array.isArray(contentObj.history)) {
-      this.logger.log('Extracting messages from history array', {
-        historyCount: contentObj.history.length,
-      });
-      const messages: GmailMessage[] = [];
-      for (const historyItem of contentObj.history) {
-        if (typeof historyItem === 'object' && historyItem !== null) {
-          const history = historyItem as Record<string, unknown>;
-          if (history.messages && Array.isArray(history.messages)) {
-            messages.push(...(history.messages as GmailMessage[]));
-          }
-
-          if (history.messagesAdded && Array.isArray(history.messagesAdded)) {
-            for (const added of history.messagesAdded) {
-              if (typeof added === 'object' && added !== null && 'message' in added) {
-                messages.push((added as Record<string, unknown>).message as GmailMessage);
-              }
-            }
-          }
-        }
-      }
-
-      return messages;
     }
 
     // Handle single message
     if ('id' in contentObj && 'payload' in contentObj) {
-      this.logger.log('Extracting single message', {
-        messageId: contentObj.id,
-      });
-
       return [contentObj as GmailMessage];
     }
 
@@ -202,7 +175,6 @@ export class GmailPromotionService {
     connectionId: string,
   ): Promise<void> {
     try {
-      // Extract message details
       const messageDetails = this.extractMessageDetails(message);
 
       this.logger.log('Processing Gmail message', {
@@ -212,30 +184,57 @@ export class GmailPromotionService {
         participantCount: messageDetails.participants.length,
       });
 
-      // Transform to memory domain format
-      const eventDto = this.transformToEventDto(messageDetails, message, userId, connectionId);
+      // Determine direction (inbound vs outbound)
+      // For now, assume all messages are inbound unless we can determine otherwise
+      const direction = 'inbound'; // TODO: Determine based on user's email
 
-      // Save event using memory domain service
-      const savedEvent = await this.eventService.create({ userId }, eventDto);
-      const eventId = Array.isArray(savedEvent) ? savedEvent[0].id : savedEvent.id;
+      // Process participants and create entities with relationships
+      const fromParticipants = messageDetails.participants.filter((p) => p.type === 'from');
+      const toParticipants = messageDetails.participants.filter((p) => p.type === 'to');
 
-      // Save email body as content if available
-      if (messageDetails.body) {
-        const contentDto = this.transformToContentDto(messageDetails, eventId, userId);
-        await this.contentService.create({ userId }, contentDto);
-      }
-
-      // Process participants to create people and contacts
-      await this.peoplePromotionService.processParticipants(
-        messageDetails.participants,
+      // Create person entities for sender (with RECEIVED_EMAIL_FROM relationship)
+      const fromEntityIds = await this.peoplePromotionService.processParticipants(
+        fromParticipants,
         userId,
         connectionId,
         'email',
+        'RECEIVED_EMAIL_FROM',
       );
 
-      this.logger.log('Gmail message processed successfully', {
+      // Create person entities for recipients (with EMAILED relationship)
+      const toEntityIds = await this.peoplePromotionService.processParticipants(
+        toParticipants,
+        userId,
+        connectionId,
+        'email',
+        'EMAILED',
+      );
+
+      // Save to communications table
+      await this.communicationService.create({
+        time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
+        user_id: userId,
+        communication_type: 'email',
+        direction,
+        thread_id: message.threadId,
+        from_entity_id: fromEntityIds[0] || undefined,
+        to_entity_ids: toEntityIds.length > 0 ? toEntityIds : undefined,
+        participants_metadata: {
+          from: fromParticipants,
+          to: toParticipants,
+          cc: messageDetails.participants.filter((p) => p.type === 'cc'),
+          bcc: messageDetails.participants.filter((p) => p.type === 'bcc'),
+        },
+        subject: messageDetails.subject,
+        content: messageDetails.body || messageDetails.snippet || '',
+        category: 'personal', // TODO: Classify emails
+        tags: messageDetails.labels,
+        connection_id: connectionId,
+      });
+
+      this.logger.log('Gmail message saved successfully', {
         messageId: messageDetails.id,
-        eventId: eventId,
+        subject: messageDetails.subject,
       });
     } catch (error) {
       this.logger.error('Error processing individual Gmail message', {
@@ -248,72 +247,7 @@ export class GmailPromotionService {
     }
   }
 
-  private transformToEventDto(
-    messageDetails: ReturnType<typeof this.extractMessageDetails>,
-    rawMessage: GmailMessage,
-    userId: string,
-    connectionId: string,
-  ): CreateEventDto {
-    // Build source data with all relevant information
-    const sourceData = {
-      ...rawMessage,
-      connectionId,
-      subject: messageDetails.subject,
-      from: messageDetails.from,
-      to: messageDetails.to,
-      cc: messageDetails.cc,
-      bcc: messageDetails.bcc,
-      participants: messageDetails.participants,
-      labels: messageDetails.labels,
-      threadId: rawMessage.threadId,
-    };
-
-    const start_time = messageDetails.date ? new Date(messageDetails.date) : undefined;
-
-    if (!start_time) {
-      this.logger.error('Cannot find start time');
-      throw 'Cannot find start time';
-    }
-
-    // Create the event DTO
-    const eventDto: CreateEventDto = {
-      id: '', // Will be generated by the service
-      name: messageDetails.subject || 'Untitled Email',
-      type: 'email',
-      description: messageDetails.snippet || '',
-      start_time,
-      external_id: messageDetails.id,
-      source_url: `https://mail.google.com/mail/u/0/#all/${messageDetails.id}`,
-      source_data: sourceData,
-      user: { id: userId },
-      connection_id: connectionId,
-    };
-
-    return eventDto;
-  }
-
-  private transformToContentDto(
-    messageDetails: ReturnType<typeof this.extractMessageDetails>,
-    eventId: string,
-    userId: string,
-  ): CreateContentDto {
-    const contentDto: CreateContentDto = {
-      id: '', // Will be generated by the service
-      type: 'email_body',
-      title: messageDetails.subject || 'Email Body',
-      text: messageDetails.body || '',
-      mimetype: 'text/plain', // Could be enhanced to detect HTML
-      external_id: `${messageDetails.id}_body`,
-      event_id: eventId,
-      event: { id: eventId },
-      user: { id: userId },
-    };
-
-    return contentDto;
-  }
-
   private extractMessageDetails(message: GmailMessage) {
-    // Extract headers
     const headers = message.payload?.headers || [];
     const getHeader = (name: string): string => {
       const header = headers.find((h) => h.name.toLowerCase() === name.toLowerCase());
@@ -328,16 +262,28 @@ export class GmailPromotionService {
     const bcc = getHeader('Bcc');
     const date = getHeader('Date');
 
+    // Extract body
+    let body = '';
+    if (message.payload?.body?.data) {
+      body = this.decodeBase64(message.payload.body.data);
+    } else if (message.payload?.parts) {
+      // Try to find text/plain or text/html part
+      const textPart = message.payload.parts.find(
+        (p) => p.mimeType === 'text/plain' || p.mimeType === 'text/html',
+      );
+      if (textPart?.body?.data) {
+        body = this.decodeBase64(textPart.body.data);
+      }
+    }
+
     // Extract participants
     const participants: EmailParticipant[] = [];
 
-    // Parse From
     if (from) {
       const parsed = this.parseEmailAddress(from);
       participants.push({ ...parsed, type: 'from' });
     }
 
-    // Parse To
     if (to) {
       const addresses = to.split(',').map((addr) => addr.trim());
       for (const addr of addresses) {
@@ -346,7 +292,6 @@ export class GmailPromotionService {
       }
     }
 
-    // Parse CC
     if (cc) {
       const addresses = cc.split(',').map((addr) => addr.trim());
       for (const addr of addresses) {
@@ -355,7 +300,6 @@ export class GmailPromotionService {
       }
     }
 
-    // Parse BCC
     if (bcc) {
       const addresses = bcc.split(',').map((addr) => addr.trim());
       for (const addr of addresses) {
@@ -364,67 +308,56 @@ export class GmailPromotionService {
       }
     }
 
-    // Extract body
-    let body: string | null = null;
-    if (message.payload?.body?.data) {
-      body = this.decodeBase64(message.payload.body.data);
-    } else if (message.payload?.parts) {
-      // Look for text/plain part first, then text/html
-      const textPart = message.payload.parts.find((p) => p.mimeType === 'text/plain');
-      const htmlPart = message.payload.parts.find((p) => p.mimeType === 'text/html');
-      const part = textPart || htmlPart;
+    return {
+      id: message.id || 'unknown',
+      subject,
+      from,
+      to,
+      cc,
+      bcc,
+      date,
+      body,
+      snippet: message.snippet || '',
+      participants,
+      labels: message.labelIds || [],
+    };
+  }
 
-      if (part?.body?.data) {
-        body = this.decodeBase64(part.body.data);
-        // If it's HTML, we might want to strip tags in the future
-        if (part.mimeType === 'text/html' && body) {
-          // For now, just note it's HTML
-          body = `[HTML Content]\n${body}`;
-        }
+  private parseEmailAddress(emailString: string): { email: string; name: string } {
+    // Handle formats like: "John Doe <john@example.com>" or "john@example.com"
+    const match = emailString.match(/^"?([^"<]+)"?\s*<([^>]+)>$|^([^<\s]+)$/);
+
+    if (match) {
+      if (match[2]) {
+        // Format: "Name <email>"
+        return {
+          name: match[1].trim(),
+          email: match[2].trim(),
+        };
+      } else if (match[3]) {
+        // Format: "email"
+        return {
+          email: match[3].trim(),
+          name: match[3].trim(), // Use email as name if no name provided
+        };
       }
     }
 
+    // Fallback
     return {
-      id: message.id || 'unknown',
-      threadId: message.threadId || null,
-      subject,
-      from,
-      to: to ? to.split(',').map((addr) => addr.trim()) : [],
-      cc: cc ? cc.split(',').map((addr) => addr.trim()) : [],
-      bcc: bcc ? bcc.split(',').map((addr) => addr.trim()) : [],
-      date,
-      snippet: message.snippet || null,
-      body,
-      labels: message.labelIds || [],
-      participants,
+      email: emailString.trim(),
+      name: emailString.trim(),
     };
   }
 
-  private parseEmailAddress(address: string): { email: string; name: string } {
-    // Handle format: "Name <email@example.com>"
-    const match = address.match(/^"?([^"<]+?)"?\s*<(.+)>$/);
-    if (match) {
-      return {
-        name: match[1].trim(),
-        email: match[2].trim(),
-      };
-    }
-
-    // Handle plain email
-    return {
-      email: address.trim(),
-      name: address.trim(),
-    };
-  }
-
-  private decodeBase64(data: string): string {
+  private decodeBase64(encodedString: string): string {
     try {
-      // Gmail API uses URL-safe base64
-      const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+      // Gmail uses URL-safe base64 encoding
+      const base64 = encodedString.replace(/-/g, '+').replace(/_/g, '/');
 
       return Buffer.from(base64, 'base64').toString('utf-8');
     } catch (error) {
-      this.logger.error('Error decoding base64 data', {
+      this.logger.warn('Failed to decode base64 string', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
 

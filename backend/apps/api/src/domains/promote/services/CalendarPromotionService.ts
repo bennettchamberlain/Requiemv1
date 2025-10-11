@@ -40,6 +40,30 @@ interface CalendarEvent {
   recurrence?: string[];
 }
 
+interface EventDetails {
+  id: string;
+  summary: string;
+  description: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  organizerEmail: string;
+  organizerName: string;
+  participants: Participant[];
+  isRecurring: boolean;
+  status: string;
+  created: string | null;
+  updated: string | null;
+}
+
+interface Participant {
+  email: string;
+  name: string;
+  responseStatus: string;
+  isOrganizer: boolean;
+  isSelf: boolean;
+}
+
 @Injectable()
 export class GoogleCalendarEventPromotionService {
   private logger = new LoggerService(GoogleCalendarEventPromotionService.name);
@@ -53,53 +77,29 @@ export class GoogleCalendarEventPromotionService {
     this.logger.log('Starting calendar event promotion', {
       userId,
       connectionId,
-      contentType: typeof apiLogContent,
-      contentKeys: apiLogContent && typeof apiLogContent === 'object' ? Object.keys(apiLogContent) : [],
     });
 
     try {
-      // Extract events from the API log content
       const events = this.extractCalendarEvents(apiLogContent);
 
       if (events.length === 0) {
-        this.logger.log('No calendar events found to promote', {
-          userId,
-          connectionId,
-          apiLogContent: JSON.stringify(apiLogContent).substring(0, 200), // Log first 200 chars for debugging
-        });
+        this.logger.log('No calendar events found to promote', { userId, connectionId });
 
         return;
       }
 
-      this.logger.log(`Found ${events.length} calendar events to process`, {
+      this.logger.log(`Processing ${events.length} calendar events`, {
         userId,
         connectionId,
-        eventIds: events.map((e) => e.id || 'no-id'),
-        eventSummaries: events.map((e) => e.summary || 'no-summary').slice(0, 5), // First 5 summaries
+        eventCount: events.length,
       });
 
-      // Process each event
-      let processedCount = 0;
-      for (const event of events) {
-        await this.processCalendarEvent(event, userId, connectionId);
-        processedCount++;
-
-        // Log progress every 10 events
-        if (processedCount % 10 === 0) {
-          this.logger.log('Calendar event promotion progress', {
-            userId,
-            connectionId,
-            processedCount,
-            totalEvents: events.length,
-          });
-        }
-      }
+      await this.processEvents(events, userId, connectionId);
 
       this.logger.log('Calendar event promotion completed', {
         userId,
         connectionId,
-        totalEvents: events.length,
-        processedCount,
+        processedCount: events.length,
       });
     } catch (error) {
       this.logger.error('Error promoting calendar events', {
@@ -116,7 +116,6 @@ export class GoogleCalendarEventPromotionService {
     if (!content || typeof content !== 'object') {
       this.logger.warn('Invalid content type for calendar events', {
         contentType: typeof content,
-        contentNull: content === null,
       });
 
       return [];
@@ -126,19 +125,11 @@ export class GoogleCalendarEventPromotionService {
 
     // Handle the structure from Google Calendar API
     if ('items' in contentObj && Array.isArray(contentObj.items)) {
-      this.logger.log('Extracting events from items array', {
-        itemCount: contentObj.items.length,
-      });
-
       return contentObj.items as CalendarEvent[];
     }
 
     // Handle single event
     if ('id' in contentObj && ('summary' in contentObj || 'start' in contentObj)) {
-      this.logger.log('Extracting single event', {
-        eventId: contentObj.id,
-      });
-
       return [contentObj as CalendarEvent];
     }
 
@@ -149,145 +140,65 @@ export class GoogleCalendarEventPromotionService {
     return [];
   }
 
+  private async processEvents(events: CalendarEvent[], userId: string, connectionId: string): Promise<void> {
+    let processedCount = 0;
+
+    for (const event of events) {
+      try {
+        await this.processCalendarEvent(event, userId, connectionId);
+        processedCount++;
+
+        // Log progress every 10 events
+        if (processedCount % 10 === 0) {
+          this.logger.log('Calendar event promotion progress', {
+            userId,
+            connectionId,
+            processedCount,
+            totalEvents: events.length,
+          });
+        }
+      } catch (error) {
+        this.logger.error('Error processing individual calendar event', {
+          userId,
+          connectionId,
+          eventId: event.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        // Don't throw - continue processing other events
+      }
+    }
+  }
+
   private async processCalendarEvent(
     event: CalendarEvent,
     userId: string,
     connectionId: string,
   ): Promise<void> {
-    try {
-      // Extract event details
-      const eventDetails = this.extractEventDetails(event);
+    const eventDetails = this.extractEventDetails(event);
 
-      // Enhanced logging with more details
-      this.logger.log('');
-      this.logger.log('##########################################################');
-      this.logger.log('📅 CALENDAR EVENT DETAILS (SAVING TO DATABASE)');
-      this.logger.log('##########################################################');
-      this.logger.log('Event ID: ' + eventDetails.id);
-      this.logger.log('Summary: ' + eventDetails.summary);
-      this.logger.log('Start Time: ' + eventDetails.startTime);
-      this.logger.log('End Time: ' + eventDetails.endTime);
-      this.logger.log('Location: ' + (eventDetails.location || 'No location'));
-      this.logger.log('Organizer: ' + eventDetails.organizerName + ' (' + eventDetails.organizerEmail + ')');
-      this.logger.log('Status: ' + eventDetails.status);
-      this.logger.log('Recurring: ' + (eventDetails.isRecurring ? 'Yes' : 'No'));
-      this.logger.log('Created: ' + eventDetails.created);
-      this.logger.log('Updated: ' + eventDetails.updated);
-      this.logger.log('');
-      this.logger.log('PARTICIPANTS (' + eventDetails.participants.length + ' total):');
-      eventDetails.participants.slice(0, 10).forEach((participant, index) => {
-        this.logger.log(`  ${index + 1}. ${participant.name} (${participant.email})`);
-        this.logger.log(`     - Response: ${participant.responseStatus}`);
-        this.logger.log(
-          `     - Role: ${participant.isOrganizer ? 'Organizer' : 'Attendee'}${participant.isSelf ? ' (You)' : ''}`,
-        );
-      });
-      if (eventDetails.participants.length > 10) {
-        this.logger.log(`  ... and ${eventDetails.participants.length - 10} more participants`);
-      }
+    this.logEventDetails(eventDetails);
 
-      this.logger.log('##########################################################');
-      this.logger.log('');
+    // Transform and save event
+    const eventDto = this.transformToEventDto(eventDetails, event, userId, connectionId);
+    await this.eventService.create({ userId }, eventDto);
 
-      // Transform to memory domain format
-      const eventDto = this.transformToEventDto(eventDetails, event, userId, connectionId);
+    // Process participants
+    await this.processParticipants(eventDetails.participants, userId, connectionId);
 
-      // Save using memory domain service
-      await this.eventService.create({ userId }, eventDto);
+    this.logger.log('Calendar event saved successfully', {
+      eventId: eventDetails.id,
+      summary: eventDetails.summary,
+    });
 
-      // Process participants to create people and contacts
-      const participantInfos = eventDetails.participants.map((p) => ({
-        email: p.email,
-        name: p.name,
-        type: p.isOrganizer ? 'organizer' : 'attendee',
-        responseStatus: p.responseStatus,
-      }));
-
-      await this.peoplePromotionService.processParticipants(
-        participantInfos,
-        userId,
-        connectionId,
-        'calendar',
-      );
-
-      this.logger.log('');
-      this.logger.log('✅ EVENT SAVED TO DATABASE SUCCESSFULLY');
-      this.logger.log('');
-
-      // Log if this is a future event
-      if (eventDetails.startTime) {
-        const startDate = new Date(eventDetails.startTime);
-        const now = new Date();
-        if (startDate > now) {
-          const daysInFuture = Math.ceil((startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-          this.logger.log('');
-          this.logger.log('🔮🔮🔮 FUTURE EVENT ALERT 🔮🔮🔮');
-          this.logger.log(`This event is ${daysInFuture} days in the future`);
-          this.logger.log('');
-        }
-      }
-    } catch (error) {
-      this.logger.error('Error processing individual calendar event', {
-        userId,
-        connectionId,
-        eventId: event.id,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      // Don't throw - continue processing other events
-    }
+    this.logFutureEventIfApplicable(eventDetails);
   }
 
-  private transformToEventDto(
-    eventDetails: ReturnType<typeof this.extractEventDetails>,
-    rawEvent: CalendarEvent,
-    userId: string,
-    connectionId: string,
-  ): CreateEventDto {
-    // Build source data with all relevant information
-    const sourceData = {
-      ...rawEvent,
-      connectionId,
-      isRecurring: eventDetails.isRecurring,
-      organizerEmail: eventDetails.organizerEmail,
-      participantCount: eventDetails.participants.length,
-      participants: eventDetails.participants,
-      location: eventDetails.location,
-    };
-
-    // @todo what do we do if there is no date???
-    const start_time = eventDetails.startTime ? new Date(eventDetails.startTime) : null;
-    const end_time = eventDetails.endTime ? new Date(eventDetails.endTime) : null;
-
-    if (!start_time || !end_time) {
-      this.logger.error('Cannot find start or end on calendar event ingestion', eventDetails);
-      throw 'Hmm, calendar event has no start or end?';
-    }
-
-    // Create the event DTO
-    const eventDto: CreateEventDto = {
-      id: '', // Will be generated by the service
-      name: eventDetails.summary,
-      type: 'calendar_event',
-      description: eventDetails.description || undefined,
-      start_time,
-      end_time,
-      external_id: eventDetails.id,
-      source_url: `https://calendar.google.com/calendar/event?eid=${eventDetails.id}`,
-      source_data: sourceData,
-      user: { id: userId },
-      connection_id: connectionId,
-    };
-
-    return eventDto;
-  }
-
-  private extractEventDetails(event: CalendarEvent) {
-    // Extract start time
+  private extractEventDetails(event: CalendarEvent): EventDetails {
     const startTime = event.start?.dateTime || event.start?.date || null;
     const endTime = event.end?.dateTime || event.end?.date || null;
 
     // Extract participants (attendees)
-    const participants = (event.attendees || []).map((attendee) => ({
+    const participants: Participant[] = (event.attendees || []).map((attendee) => ({
       email: attendee.email || 'unknown',
       name: attendee.displayName || attendee.email || 'unknown',
       responseStatus: attendee.responseStatus || 'unknown',
@@ -314,5 +225,150 @@ export class GoogleCalendarEventPromotionService {
       created: event.created || null,
       updated: event.updated || null,
     };
+  }
+
+  private transformToEventDto(
+    eventDetails: EventDetails,
+    rawEvent: CalendarEvent,
+    userId: string,
+    connectionId: string,
+  ): CreateEventDto {
+    const start_time = this.parseDateTime(eventDetails.startTime);
+    const end_time = eventDetails.endTime ? this.parseDateTime(eventDetails.endTime) : null;
+
+    if (!start_time) {
+      throw new Error(`Calendar event ${eventDetails.id} has no start time`);
+    }
+
+    // Build metadata with all relevant information
+    const metadata = {
+      rawEvent,
+      connectionId,
+      organizerEmail: eventDetails.organizerEmail,
+      organizerName: eventDetails.organizerName,
+      participantCount: eventDetails.participants.length,
+      participants: eventDetails.participants,
+      googleCalendarUrl: `https://calendar.google.com/calendar/event?eid=${eventDetails.id}`,
+      created: eventDetails.created,
+      updated: eventDetails.updated,
+    };
+
+    const isAllDay = this.isAllDayEvent(eventDetails.startTime);
+
+    return {
+      id: '', // Will be generated by the service
+      title: eventDetails.summary,
+      description: eventDetails.description || undefined,
+      event_type: 'calendar_event',
+      category: 'google_calendar',
+      start_time,
+      end_time: end_time || undefined,
+      location_name: eventDetails.location || undefined,
+      source_type: 'ETL',
+      source_system: 'google_calendar',
+      source_id: eventDetails.id,
+      is_recurring: eventDetails.isRecurring,
+      is_all_day: isAllDay,
+      status: this.normalizeStatus(eventDetails.status),
+      metadata,
+      user: { id: userId },
+    };
+  }
+
+  private async processParticipants(
+    participants: Participant[],
+    userId: string,
+    connectionId: string,
+  ): Promise<string[]> {
+    const participantInfos = participants.map((p) => ({
+      email: p.email,
+      name: p.name,
+      type: p.isOrganizer ? 'organizer' : 'attendee',
+      responseStatus: p.responseStatus,
+    }));
+
+    // Use MET_WITH for regular attendees, ORGANIZED_EVENT_WITH for organizers
+    const organizerInfos = participantInfos.filter((p) => p.type === 'organizer');
+    const attendeeInfos = participantInfos.filter((p) => p.type === 'attendee');
+
+    const organizerEntityIds = await this.peoplePromotionService.processParticipants(
+      organizerInfos,
+      userId,
+      connectionId,
+      'calendar',
+      'ORGANIZED_EVENT_WITH',
+    );
+
+    const attendeeEntityIds = await this.peoplePromotionService.processParticipants(
+      attendeeInfos,
+      userId,
+      connectionId,
+      'calendar',
+      'MET_WITH',
+    );
+
+    return [...organizerEntityIds, ...attendeeEntityIds];
+  }
+
+  private parseDateTime(dateTimeStr: string | null): Date | null {
+    if (!dateTimeStr) {
+      return null;
+    }
+
+    try {
+      return new Date(dateTimeStr);
+    } catch {
+      this.logger.warn('Failed to parse datetime', { dateTimeStr });
+
+      return null;
+    }
+  }
+
+  private isAllDayEvent(startTime: string | null): boolean {
+    // If no time component (no 'T' in ISO string), it's an all-day event
+    return !!startTime && !startTime.includes('T');
+  }
+
+  private normalizeStatus(status: string): string {
+    const statusMap: Record<string, string> = {
+      cancelled: 'cancelled',
+      confirmed: 'confirmed',
+      tentative: 'tentative',
+    };
+
+    return statusMap[status.toLowerCase()] || 'confirmed';
+  }
+
+  private logEventDetails(eventDetails: EventDetails): void {
+    this.logger.log('Processing calendar event', {
+      eventId: eventDetails.id,
+      summary: eventDetails.summary,
+      startTime: eventDetails.startTime,
+      endTime: eventDetails.endTime,
+      location: eventDetails.location,
+      organizer: `${eventDetails.organizerName} (${eventDetails.organizerEmail})`,
+      status: eventDetails.status,
+      isRecurring: eventDetails.isRecurring,
+      participantCount: eventDetails.participants.length,
+    });
+  }
+
+  private logFutureEventIfApplicable(eventDetails: EventDetails): void {
+    if (!eventDetails.startTime) {
+      return;
+    }
+
+    const startDate = new Date(eventDetails.startTime);
+    const now = new Date();
+
+    if (startDate > now) {
+      const daysInFuture = Math.ceil((startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      this.logger.log('Future event detected', {
+        eventId: eventDetails.id,
+        summary: eventDetails.summary,
+        daysInFuture,
+        startDate: startDate.toISOString(),
+      });
+    }
   }
 }

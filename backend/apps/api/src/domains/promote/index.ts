@@ -3,7 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EtlModule, ApiLogEntity } from '@ci/domains/etl';
-import { MemoryModule, PersonEntity, ContactEntity } from '@ci/domains/memory';
+import { EventsModule } from '@ci/domains/events';
+import { MemoryModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/memory';
+import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { PromoteController } from './controllers/PromoteController';
 import { GoogleCalendarEventPromotionService } from './services/CalendarPromotionService';
@@ -13,10 +15,18 @@ import { PromoteService } from './services/PromoteService';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity, PersonEntity, ContactEntity]),
+    TypeOrmModule.forFeature([
+      ApiLogEntity,
+      ConnectionEntity,
+      GraphNodeEntity,
+      RelationshipEntity,
+      UserEntity,
+    ]),
     ConnectionsModule,
     EtlModule,
+    EventsModule,
     MemoryModule,
+    UserModule,
   ],
   providers: [
     PromoteService,

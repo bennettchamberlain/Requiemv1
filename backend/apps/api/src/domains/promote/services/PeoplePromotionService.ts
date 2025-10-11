@@ -4,7 +4,8 @@ import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { PersonEntity, ContactEntity } from '@ci/domains/memory';
+import { GraphUtilityService, GraphNodeEntity } from '@ci/domains/memory';
+import { UserEntity } from '@ci/domains/user';
 
 interface ParticipantInfo {
   email: string;
@@ -18,184 +19,119 @@ export class PeoplePromotionService {
   private logger = new LoggerService(PeoplePromotionService.name);
 
   constructor(
-    @InjectRepository(PersonEntity)
-    private readonly personRepository: Repository<PersonEntity>,
-    @InjectRepository(ContactEntity)
-    private readonly contactRepository: Repository<ContactEntity>,
+    @InjectRepository(GraphNodeEntity)
+    private readonly entityRepository: Repository<GraphNodeEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
+    private readonly graphUtilityService: GraphUtilityService,
   ) {}
 
+  /**
+   * Create or update a person entity from a participant
+   * Every entity created will have at least one relationship to the user
+   */
   async createOrUpdatePersonFromParticipant(
     participant: ParticipantInfo,
     userId: string,
     connectionId: string,
     source: 'calendar' | 'email',
-  ): Promise<{ personId: string; contactId: string }> {
+    relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH',
+  ): Promise<string> {
     try {
-      // Check if person already exists by email
-      // First check if there's a contact with this email
-      const existingContact = await this.contactRepository.findOne({
-        where: {
-          user: { id: userId },
-          identifier: participant.email,
-        },
-        relations: ['person'],
-      });
+      // Get user's entity ID
+      const user = await this.userRepository.findOne({ where: { id: userId } });
+      if (!user?.entityId) {
+        throw new Error('User entity ID not found');
+      }
 
-      let personEntity = existingContact?.person;
+      // Check if person entity already exists by email in properties
+      const existingEntity = await this.entityRepository
+        .createQueryBuilder('entity')
+        .where("entity.entity_type = 'Person'")
+        .andWhere("entity.properties->>'email' = :email", { email: participant.email })
+        .andWhere("entity.properties->>'owner_user_id' = :userId", { userId })
+        .getOne();
 
-      if (!personEntity) {
-        // Parse name into first and last name
-        const nameParts = participant.name.split(' ').filter((part) => part.length > 0);
-        const firstName = nameParts[0] ?? null;
-        const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
+      let entityId: string;
 
-        const baseSourceData = {
-          source,
-          connectionId,
-          originalName: participant.name,
+      if (!existingEntity) {
+        // Create new person entity
+        entityId = uuid7();
+        const nameParts = participant.name.trim().split(/\s+/).filter(Boolean);
+        const [firstName, ...restName] = nameParts;
+        const lastName = restName.length > 0 ? restName.join(' ') : null;
+
+        const properties = {
           email: participant.email,
-          sources: [source],
-          [`${source}Data`]: {
-            connectionId,
-            originalName: participant.name,
-            email: participant.email,
-            lastSeen: new Date().toISOString(),
-          },
-        } as Record<string, unknown>;
-
-        const properties: Record<string, unknown> = {
-          type: 'individual',
-          first_name: firstName,
+          first_name: firstName || participant.name,
           last_name: lastName,
-          external_id: `${source}_${participant.email}`,
-          source_data: baseSourceData,
+          contact_type: source,
+          owner_user_id: userId,
+          connection_id: connectionId,
+          sources: [source],
+          [`${source}_data`]: {
+            participant_type: participant.type,
+            response_status: participant.responseStatus,
+            last_seen: new Date().toISOString(),
+          },
         };
 
-        // Create new person
-        personEntity = this.personRepository.create({
-          id: uuid7(),
-          entity_type: 'Person',
+        await this.graphUtilityService.createGraphNode({
+          entityId,
+          entityType: 'Person',
           name: participant.name,
-          description: null,
+          description: `Contact from ${source}`,
           properties,
-          userId,
+          searchContent: `${participant.name} ${participant.email}`,
         });
 
-        personEntity.first_name = firstName;
-        personEntity.last_name = lastName;
-        personEntity.source_data = baseSourceData;
-
-        await this.personRepository.save(personEntity);
-
-        this.logger.log('Created new person from ' + source, {
-          personId: personEntity.id,
+        this.logger.log('Created new person entity', {
+          entityId,
           name: participant.name,
           email: participant.email,
           source,
         });
       } else {
-        // Update existing person with additional source data if needed
-        const currentProperties = (personEntity.properties || {}) as Record<string, unknown>;
-        const currentSourceData = (currentProperties.source_data || {}) as Record<string, unknown>;
-        const sources = (currentSourceData.sources || []) as string[];
+        // Update existing entity with new source data
+        entityId = existingEntity.entity_id;
+        const currentProperties = existingEntity.properties as Record<string, unknown>;
+        const sources = (currentProperties.sources || []) as string[];
 
         if (!sources.includes(source)) {
           sources.push(source);
-          const updatedSourceData = {
-            ...currentSourceData,
+          const updatedProperties = {
+            ...currentProperties,
             sources,
-            [`${source}Data`]: {
-              connectionId,
-              originalName: participant.name,
-              email: participant.email,
-              lastSeen: new Date().toISOString(),
+            [`${source}_data`]: {
+              participant_type: participant.type,
+              response_status: participant.responseStatus,
+              last_seen: new Date().toISOString(),
             },
           };
 
-          personEntity.properties = {
-            ...currentProperties,
-            source_data: updatedSourceData,
-          };
-          personEntity.source_data = updatedSourceData;
+          existingEntity.properties = updatedProperties;
+          existingEntity.last_accessed = new Date();
+          await this.entityRepository.save(existingEntity);
 
-          await this.personRepository.save(personEntity);
-
-          this.logger.log('Updated existing person with ' + source + ' data', {
-            personId: personEntity.id,
+          this.logger.log('Updated existing person entity', {
+            entityId,
             sources,
           });
         }
       }
 
-      // Check if contact already exists
-      let contactEntity = await this.contactRepository.findOne({
-        where: {
-          identifier: participant.email,
-          user: { id: userId },
-          person: { id: personEntity.id },
-        },
+      // Create or update relationship between user and this person
+      // This ensures every entity has at least one relationship
+      await this.createOrUpdateRelationship(user.entityId, entityId, relationshipType, {
+        source,
+        connection_id: connectionId,
+        participant_type: participant.type,
+        last_interaction: new Date().toISOString(),
       });
 
-      if (!contactEntity) {
-        // Create contact
-        contactEntity = this.contactRepository.create({
-          id: uuid7(),
-          type: 'email',
-          identifier: participant.email,
-          handle: participant.email,
-          external_id: `${source}_${participant.email}`,
-          source_data: {
-            source,
-            connectionId,
-            participantType: participant.type,
-            responseStatus: participant.responseStatus,
-            name: participant.name, // Store name in source_data since ContactEntity doesn't have a name field
-          },
-          user: { id: userId },
-          person: { id: personEntity.id },
-        });
-
-        await this.contactRepository.save(contactEntity);
-
-        this.logger.log('Created new contact from ' + source, {
-          contactId: contactEntity.id,
-          personId: personEntity.id,
-          email: participant.email,
-          source,
-        });
-      } else {
-        // Update existing contact with additional source data
-        const currentSourceData = (contactEntity.source_data || {}) as Record<string, unknown>;
-        const sources = (currentSourceData.sources || []) as string[];
-
-        if (!sources.includes(source)) {
-          sources.push(source);
-          contactEntity.source_data = {
-            ...currentSourceData,
-            sources,
-            [`${source}Data`]: {
-              connectionId,
-              participantType: participant.type,
-              responseStatus: participant.responseStatus,
-              lastSeen: new Date().toISOString(),
-            },
-          };
-
-          await this.contactRepository.save(contactEntity);
-
-          this.logger.log('Updated existing contact with ' + source + ' data', {
-            contactId: contactEntity.id,
-            sources,
-          });
-        }
-      }
-
-      return {
-        personId: personEntity.id,
-        contactId: contactEntity.id,
-      };
+      return entityId;
     } catch (error) {
-      this.logger.error('Failed to create/update person and contact', {
+      this.logger.error('Failed to create/update person entity', {
         participant,
         source,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -204,21 +140,76 @@ export class PeoplePromotionService {
     }
   }
 
+  /**
+   * Create or update a relationship between two entities
+   */
+  private async createOrUpdateRelationship(
+    fromEntityId: string,
+    toEntityId: string,
+    relationshipType: string,
+    properties: Record<string, unknown>,
+  ): Promise<void> {
+    // Check if relationship already exists
+    const existingEntities = await this.graphUtilityService.findConnectedEntities(
+      fromEntityId,
+      [relationshipType],
+      'outbound',
+    );
+
+    const relationshipExists = existingEntities.some((entity) => entity.entity_id === toEntityId);
+
+    if (!relationshipExists) {
+      await this.graphUtilityService.createRelationship(
+        fromEntityId,
+        toEntityId,
+        relationshipType,
+        properties,
+        1.0,
+      );
+
+      this.logger.log('Created new relationship', {
+        fromEntityId,
+        toEntityId,
+        relationshipType,
+      });
+    } else {
+      // Relationship exists, could update properties here if needed
+      this.logger.log('Relationship already exists', {
+        fromEntityId,
+        toEntityId,
+        relationshipType,
+      });
+    }
+  }
+
+  /**
+   * Process multiple participants and create entities with relationships
+   */
   async processParticipants(
     participants: ParticipantInfo[],
     userId: string,
     connectionId: string,
     source: 'calendar' | 'email',
-  ): Promise<void> {
+    relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH',
+  ): Promise<string[]> {
     this.logger.log(`Processing ${participants.length} participants from ${source}`, {
       userId,
       connectionId,
       source,
     });
 
+    const entityIds: string[] = [];
+
     for (const participant of participants) {
       try {
-        await this.createOrUpdatePersonFromParticipant(participant, userId, connectionId, source);
+        const entityId = await this.createOrUpdatePersonFromParticipant(
+          participant,
+          userId,
+          connectionId,
+          source,
+          relationshipType,
+        );
+        entityIds.push(entityId);
       } catch (error) {
         // Log error but continue processing other participants
         this.logger.error('Failed to process participant', {
@@ -231,7 +222,9 @@ export class PeoplePromotionService {
     this.logger.log(`Completed processing participants from ${source}`, {
       userId,
       connectionId,
-      processedCount: participants.length,
+      processedCount: entityIds.length,
     });
+
+    return entityIds;
   }
 }
