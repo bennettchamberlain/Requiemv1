@@ -11,6 +11,9 @@ export enum Events {
   MCP_TOOL_CALL = 'mcp.tool.call',
   PROMOTE_GMAIL_MESSAGES = 'promote.gmail.messages',
   PROMOTE_CALENDAR_EVENTS = 'promote.calendar.events',
+  PROMOTE_YOUTUBE_DATA = 'promote.youtube.data',
+  PROMOTE_DRIVE_DATA = 'promote.drive.data',
+  PROMOTE_CONTACTS = 'promote.contacts',
 }
 
 interface ApiEnqueuePayload extends EventPayload {
@@ -57,6 +60,27 @@ interface PromoteCalendarEventsPayload extends EventPayload {
   content: unknown;
 }
 
+interface PromoteYouTubeDataPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
+interface PromoteDriveDataPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
+interface PromoteContactsPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
 export type EventPayloads = {
   [Events.API_ENQUEUE]: ApiEnqueuePayload;
   [Events.FILE_UPLOAD]: FileUploadPayload;
@@ -66,4 +90,7 @@ export type EventPayloads = {
   [Events.MCP_TOOL_CALL]: McpToolCallPayload;
   [Events.PROMOTE_GMAIL_MESSAGES]: PromoteGmailMessagesPayload;
   [Events.PROMOTE_CALENDAR_EVENTS]: PromoteCalendarEventsPayload;
+  [Events.PROMOTE_YOUTUBE_DATA]: PromoteYouTubeDataPayload;
+  [Events.PROMOTE_DRIVE_DATA]: PromoteDriveDataPayload;
+  [Events.PROMOTE_CONTACTS]: PromoteContactsPayload;
 };

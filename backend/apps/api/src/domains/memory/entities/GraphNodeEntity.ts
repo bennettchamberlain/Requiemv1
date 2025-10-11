@@ -8,6 +8,9 @@ export class GraphNodeEntity {
   @Column({ type: 'text' })
   entity_type!: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  owner_user_id!: string | null;
+
   @Column({ type: 'text', nullable: true })
   name!: string | null;
 

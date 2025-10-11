@@ -9,8 +9,11 @@ import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 
 import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
 import { GoogleCalendarEventPromotionService } from '../services/CalendarPromotionService';
+import { ContactsPromotionService } from '../services/ContactsPromotionService';
+import { DrivePromotionService } from '../services/DrivePromotionService';
 import { GmailPromotionService } from '../services/GmailPromotionService';
 import { PromoteService } from '../services/PromoteService';
+import { YouTubePromotionService } from '../services/YouTubePromotionService';
 
 @Controller('promote')
 export class PromoteController {
@@ -20,6 +23,9 @@ export class PromoteController {
     private readonly promoteService: PromoteService,
     private readonly gmailPromotionService: GmailPromotionService,
     private readonly calendarPromotionService: GoogleCalendarEventPromotionService,
+    private readonly youtubePromotionService: YouTubePromotionService,
+    private readonly drivePromotionService: DrivePromotionService,
+    private readonly contactsPromotionService: ContactsPromotionService,
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
   ) {}
@@ -126,6 +132,105 @@ export class PromoteController {
     } catch (error) {
       // Log as warning - job will complete anyway to avoid infinite retries
       this.logger.warn('Calendar promotion failed', {
+        apiLogId: payload.apiLogId,
+        userId: payload.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  }
+
+  /**
+   * Handle YouTube data promotion event
+   * This runs asynchronously in the job queue after the API log has been marked as processed
+   * Promotes YouTube likes, playlists, and history to content and entities tables
+   */
+  @OnEvent(Events.PROMOTE_YOUTUBE_DATA)
+  async handlePromoteYouTubeData(payload: EventPayloads[Events.PROMOTE_YOUTUBE_DATA]) {
+    this.logger.log('Processing YouTube promotion job', {
+      apiLogId: payload.apiLogId,
+      userId: payload.userId,
+    });
+
+    try {
+      await this.youtubePromotionService.promoteYouTubeData(
+        payload.content,
+        payload.userId,
+        payload.connectionId,
+      );
+
+      this.logger.log('YouTube promotion completed successfully', {
+        apiLogId: payload.apiLogId,
+      });
+    } catch (error) {
+      // Log as warning - job will complete anyway to avoid infinite retries
+      this.logger.warn('YouTube promotion failed', {
+        apiLogId: payload.apiLogId,
+        userId: payload.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  }
+
+  /**
+   * Handle Drive data promotion event
+   * This runs asynchronously in the job queue after the API log has been marked as processed
+   * Promotes Google Drive files to content, documents, and entities tables
+   */
+  @OnEvent(Events.PROMOTE_DRIVE_DATA)
+  async handlePromoteDriveData(payload: EventPayloads[Events.PROMOTE_DRIVE_DATA]) {
+    this.logger.log('Processing Drive promotion job', {
+      apiLogId: payload.apiLogId,
+      userId: payload.userId,
+    });
+
+    try {
+      await this.drivePromotionService.promoteDriveData(
+        payload.content,
+        payload.userId,
+        payload.connectionId,
+      );
+
+      this.logger.log('Drive promotion completed successfully', {
+        apiLogId: payload.apiLogId,
+      });
+    } catch (error) {
+      // Log as warning - job will complete anyway to avoid infinite retries
+      this.logger.warn('Drive promotion failed', {
+        apiLogId: payload.apiLogId,
+        userId: payload.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  }
+
+  /**
+   * Handle Contacts promotion event
+   * This runs asynchronously in the job queue after the API log has been marked as processed
+   * Promotes Google Contacts to entities table with KNOWS relationships
+   */
+  @OnEvent(Events.PROMOTE_CONTACTS)
+  async handlePromoteContacts(payload: EventPayloads[Events.PROMOTE_CONTACTS]) {
+    this.logger.log('Processing Contacts promotion job', {
+      apiLogId: payload.apiLogId,
+      userId: payload.userId,
+    });
+
+    try {
+      await this.contactsPromotionService.promoteContacts(
+        payload.content,
+        payload.userId,
+        payload.connectionId,
+      );
+
+      this.logger.log('Contacts promotion completed successfully', {
+        apiLogId: payload.apiLogId,
+      });
+    } catch (error) {
+      // Log as warning - job will complete anyway to avoid infinite retries
+      this.logger.warn('Contacts promotion failed', {
         apiLogId: payload.apiLogId,
         userId: payload.userId,
         error: error instanceof Error ? error.message : 'Unknown error',

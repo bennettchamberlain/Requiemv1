@@ -38,10 +38,26 @@ export class PeoplePromotionService {
     relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH',
   ): Promise<string> {
     try {
-      // Get user's entity ID
+      // Get user's entity ID (create if missing)
       const user = await this.userRepository.findOne({ where: { id: userId } });
-      if (!user?.entityId) {
-        throw new Error('User entity ID not found');
+      if (!user) {
+        throw new Error(`User not found: ${userId}`);
+      }
+
+      let userEntityId = user.entityId;
+      if (!userEntityId) {
+        // Create entity for user if it doesn't exist (for legacy users)
+        userEntityId = await this.ensureUserHasEntity(user);
+      }
+
+      // Skip if participant is the user themselves (avoid self-references)
+      if (participant.email.toLowerCase() === user.email.toLowerCase()) {
+        this.logger.log('Skipping self-reference participant', {
+          email: participant.email,
+          userId,
+        });
+
+        return userEntityId;
       }
 
       // Check if person entity already exists by email in properties
@@ -83,6 +99,7 @@ export class PeoplePromotionService {
           description: `Contact from ${source}`,
           properties,
           searchContent: `${participant.name} ${participant.email}`,
+          ownerUserId: userId,
         });
 
         this.logger.log('Created new person entity', {
@@ -122,12 +139,18 @@ export class PeoplePromotionService {
 
       // Create or update relationship between user and this person
       // This ensures every entity has at least one relationship
-      await this.createOrUpdateRelationship(user.entityId, entityId, relationshipType, {
-        source,
-        connection_id: connectionId,
-        participant_type: participant.type,
-        last_interaction: new Date().toISOString(),
-      });
+      await this.createOrUpdateRelationship(
+        userEntityId,
+        entityId,
+        relationshipType,
+        {
+          source,
+          connection_id: connectionId,
+          participant_type: participant.type,
+          last_interaction: new Date().toISOString(),
+        },
+        userId,
+      );
 
       return entityId;
     } catch (error) {
@@ -148,6 +171,7 @@ export class PeoplePromotionService {
     toEntityId: string,
     relationshipType: string,
     properties: Record<string, unknown>,
+    ownerUserId: string,
   ): Promise<void> {
     // Check if relationship already exists
     const existingEntities = await this.graphUtilityService.findConnectedEntities(
@@ -165,6 +189,7 @@ export class PeoplePromotionService {
         relationshipType,
         properties,
         1.0,
+        ownerUserId,
       );
 
       this.logger.log('Created new relationship', {
@@ -226,5 +251,50 @@ export class PeoplePromotionService {
     });
 
     return entityIds;
+  }
+
+  /**
+   * Ensure a user has an entity in the graph
+   * Creates one if it doesn't exist (for legacy users)
+   */
+  private async ensureUserHasEntity(user: UserEntity): Promise<string> {
+    const entityId = uuid7();
+    const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
+    const [firstName, ...restName] = nameParts;
+
+    const properties: Record<string, unknown> = {
+      email: user.email,
+      owner_user_id: user.id,
+    };
+
+    if (firstName) {
+      properties.first_name = firstName;
+    }
+
+    if (restName.length > 0) {
+      properties.last_name = restName.join(' ');
+    }
+
+    await this.graphUtilityService.createGraphNode({
+      entityId,
+      entityType: 'Person',
+      name: user.name || user.email,
+      description: `User: ${user.name || user.email}`,
+      properties,
+      searchContent: `${user.name || ''} ${user.email}`,
+      linkedTable: 'users',
+      linkedId: user.id,
+      ownerUserId: user.id,
+    });
+
+    // Update the user record with the new entity ID
+    await this.userRepository.update(user.id, { entityId });
+
+    this.logger.log('Created entity for legacy user', {
+      userId: user.id,
+      entityId,
+    });
+
+    return entityId;
   }
 }

@@ -138,6 +138,27 @@ export class PromoteService {
           connectionId: apiLog.connection_id,
           content: apiLog.content,
         });
+      } else if (apiLog.scope === 'YouTube') {
+        await this.eventService.send(Events.PROMOTE_YOUTUBE_DATA, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
+      } else if (apiLog.scope === 'Google Drive') {
+        await this.eventService.send(Events.PROMOTE_DRIVE_DATA, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
+      } else if (apiLog.scope === 'Google Contacts') {
+        await this.eventService.send(Events.PROMOTE_CONTACTS, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
       }
 
       // Mark the API log as processed after queuing
