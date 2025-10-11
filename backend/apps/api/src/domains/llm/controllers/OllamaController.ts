@@ -28,7 +28,7 @@ import type { OllamaModel, PromptInput } from '../types';
 
 const promptSchema = z.object({
   prompt: z.string(),
-  model: z.optional(z.string()),
+  model: z.string(),
   threadId: z.string().nullable().optional(),
   enableTools: z.boolean().default(true),
   enableThinking: z.boolean().default(true),
@@ -231,7 +231,7 @@ export class OllamaController {
     });
   }
 
-  private async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
+  private async validateModel(context: RequestContext, model: string): Promise<OllamaModel> {
     try {
       return this.ollamaService.validateModel(context, model);
     } catch (err) {

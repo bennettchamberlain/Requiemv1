@@ -357,13 +357,10 @@ export class OllamaService {
     });
   }
 
-  async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
-    // If no model is specified, use the default behavior (will be handled by getModelForContent)
-    const resolvedModel = model ?? PROMPT_MODEL;
-
+  async validateModel(context: RequestContext, model: string): Promise<OllamaModel> {
     const availableModels = await this.getAvailableModels(context);
 
-    const validModel = availableModels.find((availableModel) => availableModel.model === resolvedModel);
+    const validModel = availableModels.find((availableModel) => availableModel.model === model);
 
     if (!validModel) {
       throw new Error(`Invalid model specified: ${model}`);
