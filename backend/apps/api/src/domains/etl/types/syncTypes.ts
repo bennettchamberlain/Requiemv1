@@ -13,20 +13,34 @@ export interface GmailSyncState {
 }
 
 export interface DriveSyncState {
+  startPageToken?: string;
   lastSyncAt?: string;
-  lastPageToken?: string;
+}
+
+export interface ContactsSyncState {
+  syncToken?: string;
+  lastSyncAt?: string;
+}
+
+export interface YouTubeSyncState {
+  lastSyncAt?: string;
+  lastLikesItemId?: string;
+  lastHistoryItemId?: string;
+  lastPlaylistId?: string;
 }
 
 export interface GoogleSyncState {
   calendar?: CalendarSyncState;
   gmail?: GmailSyncState;
   drive?: DriveSyncState;
+  contacts?: ContactsSyncState;
+  youtube?: YouTubeSyncState;
   [key: string]: unknown;
 }
 
 export interface SyncResult {
   data: unknown;
-  syncState: CalendarSyncState | GmailSyncState | DriveSyncState;
+  syncState: CalendarSyncState | GmailSyncState | DriveSyncState | ContactsSyncState | YouTubeSyncState;
 }
 
 export interface CalendarSyncResult {
