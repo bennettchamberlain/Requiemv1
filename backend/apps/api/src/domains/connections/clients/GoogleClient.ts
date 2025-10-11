@@ -443,31 +443,29 @@ export class GoogleClient extends BaseOAuth2Client {
     connection: Connection,
   ): Promise<Array<{ data: unknown; syncState: ContactsSyncState }>> {
     const results: Array<{ data: unknown; syncState: ContactsSyncState }> = [];
-    const personFields = encodeURIComponent(
-      [
-        'names',
-        'emailAddresses',
-        'phoneNumbers',
-        'addresses',
-        'organizations',
-        'occupations',
-        'relations',
-        'nicknames',
-        'birthdays',
-        'urls',
-        'photos',
-        'imClients',
-        'locales',
-        'locations',
-        'interests',
-        'skills',
-        'sipAddresses',
-        'miscKeywords',
-        'ageRanges',
-        'genders',
-        'metadata',
-      ].join(','),
-    );
+    const personFields = [
+      'names',
+      'emailAddresses',
+      'phoneNumbers',
+      'addresses',
+      'organizations',
+      'occupations',
+      'relations',
+      'nicknames',
+      'birthdays',
+      'urls',
+      'photos',
+      'imClients',
+      'locales',
+      'locations',
+      'interests',
+      'skills',
+      'sipAddresses',
+      'miscKeywords',
+      'ageRanges',
+      'genders',
+      'metadata',
+    ].join(',');
     let nextPageToken: string | undefined;
 
     // Fetch all contacts (no sync token request during pagination)
@@ -553,31 +551,29 @@ export class GoogleClient extends BaseOAuth2Client {
     connection: Connection,
     syncState: ContactsSyncState,
   ): Promise<Array<{ data: unknown; syncState: ContactsSyncState }>> {
-    const personFields = encodeURIComponent(
-      [
-        'names',
-        'emailAddresses',
-        'phoneNumbers',
-        'addresses',
-        'organizations',
-        'occupations',
-        'relations',
-        'nicknames',
-        'birthdays',
-        'urls',
-        'photos',
-        'imClients',
-        'locales',
-        'locations',
-        'interests',
-        'skills',
-        'sipAddresses',
-        'miscKeywords',
-        'ageRanges',
-        'genders',
-        'metadata',
-      ].join(','),
-    );
+    const personFields = [
+      'names',
+      'emailAddresses',
+      'phoneNumbers',
+      'addresses',
+      'organizations',
+      'occupations',
+      'relations',
+      'nicknames',
+      'birthdays',
+      'urls',
+      'photos',
+      'imClients',
+      'locales',
+      'locations',
+      'interests',
+      'skills',
+      'sipAddresses',
+      'miscKeywords',
+      'ageRanges',
+      'genders',
+      'metadata',
+    ].join(',');
     const results: Array<{ data: unknown; syncState: ContactsSyncState }> = [];
     let nextPageToken: string | undefined;
     let lastResponse: Record<string, unknown> | null = null;
@@ -804,15 +800,13 @@ export class GoogleClient extends BaseOAuth2Client {
     syncState: DriveSyncState | null,
   ): Promise<Array<{ data: unknown; syncState: DriveSyncState }>> {
     const results: Array<{ data: unknown; syncState: DriveSyncState }> = [];
-    const fieldsChanges = encodeURIComponent(
-      'nextPageToken,newStartPageToken,changes(file(id,name,mimeType,modifiedTime,owners,iconLink,webViewLink,size),fileId,removed)',
-    );
+    const fieldsChanges =
+      'nextPageToken,newStartPageToken,changes(file(id,name,mimeType,modifiedTime,owners,iconLink,webViewLink,size),fileId,removed)';
 
     // If we don't yet have a startPageToken, perform an initial full metadata listing, then seed the token
     if (!syncState?.startPageToken) {
-      const fieldsList = encodeURIComponent(
-        'nextPageToken,files(id,name,mimeType,modifiedTime,owners,iconLink,webViewLink,size)',
-      );
+      const fieldsList =
+        'nextPageToken,files(id,name,mimeType,modifiedTime,owners,iconLink,webViewLink,size)';
       let nextPageToken: string | undefined;
       let totalFiles = 0;
 
