@@ -6,10 +6,8 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  ManyToMany,
 } from 'typeorm';
 
-import { MessageEntity } from '@ci/domains/conversations';
 import { UserEntity } from '@ci/domains/user';
 
 import type { File } from '../types';
@@ -49,9 +47,6 @@ export class FileEntity {
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
-
-  @ManyToMany(() => MessageEntity, (message) => message.files)
-  messages?: MessageEntity[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;

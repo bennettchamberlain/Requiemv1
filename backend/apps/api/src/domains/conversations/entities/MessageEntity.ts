@@ -53,19 +53,11 @@ export class MessageEntity {
   @JoinColumn({ name: 'parent_message_id' })
   promptMessage?: MessageEntity;
 
-  @ManyToMany(() => FileEntity, (file) => file.messages, {
-    eager: false,
-  })
+  @ManyToMany(() => FileEntity, { nullable: true })
   @JoinTable({
     name: 'message_files',
-    joinColumn: {
-      name: 'message_id',
-      referencedColumnName: 'id',
-    },
-    inverseJoinColumn: {
-      name: 'file_id',
-      referencedColumnName: 'id',
-    },
+    joinColumn: { name: 'message_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'file_id', referencedColumnName: 'id' },
   })
   files?: FileEntity[];
 
