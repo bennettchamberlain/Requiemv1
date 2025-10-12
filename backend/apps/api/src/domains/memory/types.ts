@@ -1,6 +1,6 @@
 export interface Memory {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'other';
+  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'place' | 'concept' | 'other';
   title: string;
   description: string | null;
   timestamp: Date;
@@ -8,6 +8,8 @@ export interface Memory {
   location?: MemoryLocation;
   tags: string[];
   userId: string;
+  connectionId?: string;
+  connectionName?: string;
   metadata?: {
     eventId?: string;
     eventType?: string;
@@ -17,6 +19,13 @@ export interface Memory {
     contentRef?: string;
     thingRef?: string;
     entityType?: string;
+    relationships?: Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>;
     [key: string]: unknown;
   };
 }

@@ -25,15 +25,16 @@ import {
   FileText,
   Package,
   Users,
-  Phone,
   Loader2,
   AlertCircle,
   Filter,
   Route,
+  MapPin,
+  Lightbulb,
+  Target,
 } from '@ci/shadcn/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
@@ -45,7 +46,7 @@ import './memory-map.css';
 // Memory data from API
 interface MemoryItem {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact';
+  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'place' | 'concept' | 'other';
   title: string;
   description: string | null;
   timestamp: string;
@@ -59,7 +60,16 @@ interface MemoryItem {
   };
   tags: string[];
   userId: string;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    relationships?: Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>;
+    [key: string]: unknown;
+  };
   connectionId?: string;
   connectionName?: string;
 }
@@ -80,16 +90,21 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
   // First check by type
   switch (memory.type) {
     case 'person':
-      return <User className={iconClass} />;
     case 'contact':
-      return <Phone className={iconClass} />;
+      return <User className={iconClass} />;
     case 'thing':
       return <Package className={iconClass} />;
     case 'content':
       return <FileText className={iconClass} />;
+    case 'place':
+      return <MapPin className={iconClass} />;
+    case 'concept':
+      return <Lightbulb className={iconClass} />;
+    case 'event':
+      return <Calendar className={iconClass} />;
   }
 
-  // Then check by category for events
+  // Then check by category for events and other specific cases
   const category = memory.category.toLowerCase();
   if (category.includes('food') || category.includes('drink') || category.includes('meal')) {
     return <Utensils className={iconClass} />;
@@ -109,8 +124,8 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
     return <Car className={iconClass} />;
   } else if (category.includes('entertainment') || category.includes('tv') || category.includes('movie')) {
     return <Tv className={iconClass} />;
-  } else if (category.includes('event')) {
-    return <Calendar className={iconClass} />;
+  } else if (category.includes('goal')) {
+    return <Target className={iconClass} />;
   }
 
   // Default icon
@@ -138,677 +153,68 @@ export default function DesktopMemoryPage() {
   const [galleryFiles, setGalleryFiles] = useState<FileMeta[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(false);
 
-  // Demo data focused on Los Angeles city only
-  const demoMemories: MemoryItem[] = [
-    // Downtown LA
-    {
-      id: 'demo-1',
-      type: 'event',
-      title: 'Client Meeting',
-      description: 'Product demo for new client',
-      timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Work',
-      location: {
-        id: 'loc-1',
-        name: 'WeWork Downtown LA',
-        lat: 34.0522,
-        lng: -118.2437,
-        address: '800 S Figueroa St, Los Angeles, CA',
-      },
-      tags: ['client', 'business'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-2',
-      type: 'person',
-      title: 'Maria Rodriguez',
-      description: 'Design Director at Disney - Close friend from college',
-      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Friend',
-      location: {
-        id: 'loc-2',
-        name: 'Walt Disney Concert Hall',
-        lat: 34.0554,
-        lng: -118.2499,
-        address: '111 S Grand Ave, Los Angeles, CA',
-      },
-      tags: ['design', 'entertainment', 'friend'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-3',
-      type: 'event',
-      title: 'Concert',
-      description: 'LA Philharmonic performance',
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Entertainment',
-      location: {
-        id: 'loc-3',
-        name: 'Walt Disney Concert Hall',
-        lat: 34.0554,
-        lng: -118.2499,
-        address: '111 S Grand Ave, Los Angeles, CA',
-      },
-      tags: ['music', 'classical'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    {
-      id: 'demo-4',
-      type: 'thing',
-      title: 'Art Book',
-      description: 'Contemporary art photography book',
-      timestamp: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Content',
-      location: {
-        id: 'loc-4',
-        name: 'The Broad Museum',
-        lat: 34.0544,
-        lng: -118.2501,
-        address: '221 S Grand Ave, Los Angeles, CA',
-      },
-      tags: ['art', 'photography'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    // Hollywood
-    {
-      id: 'demo-5',
-      type: 'event',
-      title: 'Movie Premiere',
-      description: 'Red carpet event for new film',
-      timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Entertainment',
-      location: {
-        id: 'loc-5',
-        name: 'TCL Chinese Theatre',
-        lat: 34.102,
-        lng: -118.3398,
-        address: '6925 Hollywood Blvd, Hollywood, CA',
-      },
-      tags: ['movies', 'premiere'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    {
-      id: 'demo-6',
-      type: 'person',
-      title: 'Alex Chen',
-      description: 'Film Producer at Warner Bros - Best friend since high school',
-      timestamp: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Friend',
-      location: {
-        id: 'loc-6',
-        name: 'Hollywood Bowl',
-        lat: 34.1122,
-        lng: -118.3394,
-        address: '2301 N Highland Ave, Hollywood, CA',
-      },
-      tags: ['film', 'entertainment', 'friend'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-7',
-      type: 'event',
-      title: 'Concert',
-      description: 'Coldplay concert at Hollywood Bowl',
-      timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Entertainment',
-      location: {
-        id: 'loc-7',
-        name: 'Hollywood Bowl',
-        lat: 34.1122,
-        lng: -118.3394,
-        address: '2301 N Highland Ave, Hollywood, CA',
-      },
-      tags: ['music', 'concert'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    {
-      id: 'demo-8',
-      type: 'thing',
-      title: 'Vintage Camera',
-      description: 'Leica M6 film camera',
-      timestamp: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Electronics',
-      location: {
-        id: 'loc-8',
-        name: "Samy's Camera",
-        lat: 34.1016,
-        lng: -118.3267,
-        address: '431 S Fairfax Ave, Los Angeles, CA',
-      },
-      tags: ['photography', 'vintage'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    // West Hollywood
-    {
-      id: 'demo-9',
-      type: 'event',
-      title: 'Art Gallery Opening',
-      description: 'Contemporary art exhibition opening',
-      timestamp: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Art',
-      location: {
-        id: 'loc-9',
-        name: 'Gagosian Gallery',
-        lat: 34.09,
-        lng: -118.3617,
-        address: '456 N Camden Dr, Beverly Hills, CA',
-      },
-      tags: ['art', 'gallery'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    {
-      id: 'demo-10',
-      type: 'person',
-      title: 'Sarah Johnson',
-      description: 'Art Curator at LACMA',
-      timestamp: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-10',
-        name: 'Los Angeles County Museum of Art',
-        lat: 34.0642,
-        lng: -118.3591,
-        address: '5905 Wilshire Blvd, Los Angeles, CA',
-      },
-      tags: ['art', 'curator'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-11',
-      type: 'event',
-      title: 'Fitness Class',
-      description: 'Pilates session at Equinox',
-      timestamp: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Fitness',
-      location: {
-        id: 'loc-11',
-        name: 'Equinox West Hollywood',
-        lat: 34.09,
-        lng: -118.3617,
-        address: '8590 Sunset Blvd, West Hollywood, CA',
-      },
-      tags: ['fitness', 'pilates'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    // Santa Monica
-    {
-      id: 'demo-12',
-      type: 'event',
-      title: 'Beach Volleyball',
-      description: 'Morning beach volleyball game',
-      timestamp: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Recreation',
-      location: {
-        id: 'loc-12',
-        name: 'Santa Monica Beach',
-        lat: 34.0195,
-        lng: -118.4912,
-        address: 'Santa Monica Beach, Santa Monica, CA',
-      },
-      tags: ['beach', 'volleyball'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    {
-      id: 'demo-13',
-      type: 'person',
-      title: 'David Kim',
-      description: 'Tech Entrepreneur',
-      timestamp: new Date(Date.now() - 13 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-13',
-        name: 'Santa Monica Pier',
-        lat: 34.0089,
-        lng: -118.4973,
-        address: '200 Santa Monica Pier, Santa Monica, CA',
-      },
-      tags: ['tech', 'startup'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-14',
-      type: 'thing',
-      title: 'Surfboard',
-      description: 'Custom longboard surfboard',
-      timestamp: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Sports Equipment',
-      location: {
-        id: 'loc-14',
-        name: 'Zuma Beach',
-        lat: 34.0259,
-        lng: -118.7798,
-        address: 'Zuma Beach, Malibu, CA',
-      },
-      tags: ['surfing', 'beach'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    // Venice Beach
-    {
-      id: 'demo-15',
-      type: 'event',
-      title: 'Skateboarding Session',
-      description: 'Skateboarding at Venice Skate Park',
-      timestamp: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Recreation',
-      location: {
-        id: 'loc-15',
-        name: 'Venice Skate Park',
-        lat: 33.985,
-        lng: -118.4695,
-        address: '1500 Ocean Front Walk, Venice, CA',
-      },
-      tags: ['skateboarding', 'outdoor'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    {
-      id: 'demo-16',
-      type: 'person',
-      title: 'Mike Rodriguez',
-      description: 'Professional Skateboarder',
-      timestamp: new Date(Date.now() - 16 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-16',
-        name: 'Venice Beach Boardwalk',
-        lat: 33.985,
-        lng: -118.4695,
-        address: 'Venice Beach Boardwalk, Venice, CA',
-      },
-      tags: ['skateboarding', 'sports'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    {
-      id: 'demo-17',
-      type: 'event',
-      title: 'Street Art Tour',
-      description: 'Guided tour of Venice street art',
-      timestamp: new Date(Date.now() - 17 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Tourism',
-      location: {
-        id: 'loc-17',
-        name: 'Venice Beach',
-        lat: 33.985,
-        lng: -118.4695,
-        address: 'Venice Beach, Venice, CA',
-      },
-      tags: ['art', 'street art'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    // Beverly Hills
-    {
-      id: 'demo-18',
-      type: 'event',
-      title: 'Luxury Shopping',
-      description: 'Shopping at Rodeo Drive',
-      timestamp: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Shopping',
-      location: {
-        id: 'loc-18',
-        name: 'Rodeo Drive',
-        lat: 34.0736,
-        lng: -118.4004,
-        address: 'Rodeo Drive, Beverly Hills, CA',
-      },
-      tags: ['shopping', 'luxury'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    {
-      id: 'demo-19',
-      type: 'person',
-      title: 'Jennifer Smith',
-      description: 'Fashion Designer - Wife',
-      timestamp: new Date(Date.now() - 19 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Family',
-      location: {
-        id: 'loc-19',
-        name: 'Beverly Center',
-        lat: 34.0736,
-        lng: -118.4004,
-        address: '8500 Beverly Blvd, Los Angeles, CA',
-      },
-      tags: ['fashion', 'design', 'family', 'sister'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-19b',
-      type: 'person',
-      title: 'Michael Smith',
-      description: 'Software Engineer - Brother',
-      timestamp: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Family',
-      location: {
-        id: 'loc-19b',
-        name: 'Silicon Beach',
-        lat: 34.0195,
-        lng: -118.4912,
-        address: 'Santa Monica, CA',
-      },
-      tags: ['tech', 'software', 'family', 'brother'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    {
-      id: 'demo-20',
-      type: 'thing',
-      title: 'Designer Handbag',
-      description: 'Limited edition designer handbag',
-      timestamp: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Fashion',
-      location: {
-        id: 'loc-20',
-        name: 'Rodeo Drive',
-        lat: 34.0736,
-        lng: -118.4004,
-        address: 'Rodeo Drive, Beverly Hills, CA',
-      },
-      tags: ['fashion', 'luxury'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    // Griffith Park (LA)
-    {
-      id: 'demo-21',
-      type: 'event',
-      title: 'Hiking',
-      description: 'Hiking in Griffith Park',
-      timestamp: new Date(Date.now() - 22 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Recreation',
-      location: {
-        id: 'loc-21',
-        name: 'Griffith Observatory',
-        lat: 34.1184,
-        lng: -118.3004,
-        address: '2800 E Observatory Rd, Los Angeles, CA',
-      },
-      tags: ['hiking', 'nature'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    {
-      id: 'demo-22',
-      type: 'person',
-      title: 'Dr. Sarah Martinez',
-      description: 'Astronomer at Griffith Observatory',
-      timestamp: new Date(Date.now() - 23 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-22',
-        name: 'Griffith Observatory',
-        lat: 34.1184,
-        lng: -118.3004,
-        address: '2800 E Observatory Rd, Los Angeles, CA',
-      },
-      tags: ['astronomy', 'science'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-23',
-      type: 'thing',
-      title: 'Telescope',
-      description: 'Professional astronomy telescope',
-      timestamp: new Date(Date.now() - 24 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Electronics',
-      location: {
-        id: 'loc-23',
-        name: 'Griffith Observatory',
-        lat: 34.1184,
-        lng: -118.3004,
-        address: '2800 E Observatory Rd, Los Angeles, CA',
-      },
-      tags: ['astronomy', 'equipment'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    // Koreatown
-    {
-      id: 'demo-24',
-      type: 'event',
-      title: 'Karaoke Night',
-      description: 'Karaoke with friends in Koreatown',
-      timestamp: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Entertainment',
-      location: {
-        id: 'loc-24',
-        name: 'Koreatown',
-        lat: 34.0579,
-        lng: -118.3006,
-        address: 'Koreatown, Los Angeles, CA',
-      },
-      tags: ['karaoke', 'social'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    {
-      id: 'demo-25',
-      type: 'person',
-      title: 'James Kim',
-      description: 'Restaurant Owner in Koreatown',
-      timestamp: new Date(Date.now() - 26 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-25',
-        name: 'Koreatown',
-        lat: 34.0579,
-        lng: -118.3006,
-        address: 'Koreatown, Los Angeles, CA',
-      },
-      tags: ['restaurant', 'business'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    // Echo Park
-    {
-      id: 'demo-26',
-      type: 'event',
-      title: 'Lake Walk',
-      description: 'Evening walk around Echo Park Lake',
-      timestamp: new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Recreation',
-      location: {
-        id: 'loc-26',
-        name: 'Echo Park Lake',
-        lat: 34.0781,
-        lng: -118.2606,
-        address: 'Echo Park Lake, Los Angeles, CA',
-      },
-      tags: ['walking', 'nature'],
-      userId: 'demo-user',
-      connectionId: 'apple',
-      connectionName: 'Apple',
-    },
-    {
-      id: 'demo-27',
-      type: 'person',
-      title: 'Maya Patel',
-      description: 'Artist and Community Organizer',
-      timestamp: new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-27',
-        name: 'Echo Park',
-        lat: 34.0781,
-        lng: -118.2606,
-        address: 'Echo Park, Los Angeles, CA',
-      },
-      tags: ['art', 'community'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    // Silver Lake
-    {
-      id: 'demo-28',
-      type: 'event',
-      title: 'Coffee Meeting',
-      description: 'Coffee with startup founder',
-      timestamp: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Work',
-      location: {
-        id: 'loc-28',
-        name: 'Silver Lake',
-        lat: 34.0867,
-        lng: -118.2708,
-        address: 'Silver Lake, Los Angeles, CA',
-      },
-      tags: ['coffee', 'startup'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-29',
-      type: 'person',
-      title: 'Alex Rivera',
-      description: 'Tech Startup Founder',
-      timestamp: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-29',
-        name: 'Silver Lake',
-        lat: 34.0867,
-        lng: -118.2708,
-        address: 'Silver Lake, Los Angeles, CA',
-      },
-      tags: ['startup', 'tech'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    // Arts District
-    {
-      id: 'demo-30',
-      type: 'event',
-      title: 'Art Gallery Opening',
-      description: 'Contemporary art exhibition opening',
-      timestamp: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Art',
-      location: {
-        id: 'loc-30',
-        name: 'Arts District',
-        lat: 34.0444,
-        lng: -118.2342,
-        address: 'Arts District, Los Angeles, CA',
-      },
-      tags: ['art', 'gallery'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-    {
-      id: 'demo-31',
-      type: 'person',
-      title: 'Sophie Chen',
-      description: 'Gallery Curator',
-      timestamp: new Date(Date.now() - 32 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Professional Contact',
-      location: {
-        id: 'loc-31',
-        name: 'Arts District',
-        lat: 34.0444,
-        lng: -118.2342,
-        address: 'Arts District, Los Angeles, CA',
-      },
-      tags: ['art', 'curator'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-32',
-      type: 'thing',
-      title: 'Art Installation',
-      description: 'Interactive digital art piece',
-      timestamp: new Date(Date.now() - 33 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Art',
-      location: {
-        id: 'loc-32',
-        name: 'Arts District',
-        lat: 34.0444,
-        lng: -118.2342,
-        address: 'Arts District, Los Angeles, CA',
-      },
-      tags: ['digital art', 'interactive'],
-      userId: 'demo-user',
-      connectionId: 'google',
-      connectionName: 'Google',
-    },
-  ];
+  // Pagination states for lazy loading
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const listEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch memories from API (using demo data for now)
-  const fetchMemories = async (query?: string) => {
+  // Fetch memories from API with pagination
+  const fetchMemories = async (query?: string, currentOffset = 0, append = false) => {
     try {
       setLoading(true);
       setError(null);
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Filter demo data based on query
-      let filteredData = demoMemories;
+      // Build query parameters
+      const params = new URLSearchParams();
       if (query) {
-        const searchQuery = query.toLowerCase();
-        filteredData = demoMemories.filter(
-          (memory) =>
-            memory.title.toLowerCase().includes(searchQuery) ||
-            memory.description?.toLowerCase().includes(searchQuery) ||
-            memory.category.toLowerCase().includes(searchQuery) ||
-            memory.tags.some((tag) => tag.toLowerCase().includes(searchQuery)),
-        );
+        params.append('search', query);
       }
 
-      setMemories(filteredData);
+      params.append('limit', '100'); // Fetch 100 at a time
+      params.append('offset', currentOffset.toString());
+
+      const url = `/api/memory${params.toString() ? `?${params.toString()}` : ''}`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch memories: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const data: MemoryItem[] = result.data || result; // Handle both array and {data: []} format
+      const total = result.total || data.length;
+
+      if (append) {
+        setMemories((prev) => [...prev, ...data]);
+      } else {
+        setMemories(data);
+      }
+
+      setTotalCount(total);
+      setHasMore(currentOffset + data.length < total);
+      setOffset(currentOffset + data.length);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error fetching memories:', errorMessage, err);
       setError(errorMessage);
+      if (!append) {
+        setMemories([]); // Clear memories on error only for initial load
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load more memories (for infinite scroll)
+  const loadMore = () => {
+    if (!loading && hasMore) {
+      fetchMemories(searchQuery, offset, true);
     }
   };
 
@@ -841,7 +247,9 @@ export default function DesktopMemoryPage() {
 
   // Initial load
   useEffect(() => {
-    fetchMemories();
+    setOffset(0);
+    setHasMore(true);
+    fetchMemories(searchQuery, 0, false);
   }, [authToken]);
 
   // Load gallery files when gallery tab is active
@@ -851,9 +259,34 @@ export default function DesktopMemoryPage() {
     }
   }, [activeTab, authToken]);
 
+  // Intersection observer for infinite scroll
+  useEffect(() => {
+    const currentRef = listEndRef.current;
+    if (!currentRef) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(currentRef);
+
+    return () => {
+      observer.unobserve(currentRef);
+    };
+  }, [hasMore, loading]); // Removed offset from dependencies
+
   // Handle search
   const handleSearch = () => {
-    fetchMemories(searchQuery);
+    setOffset(0);
+    setHasMore(true);
+    fetchMemories(searchQuery, 0, false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -862,10 +295,13 @@ export default function DesktopMemoryPage() {
     }
   };
 
+  // Get unique entity types from loaded memories for dynamic filter options
+  const uniqueEntityTypes = Array.from(new Set(memories.map((m) => m.category))).sort();
+
   // Apply filters to memories
   const filteredMemories = memories.filter((memory) => {
-    // Type filter
-    if (typeFilter !== 'all' && memory.type !== typeFilter) {
+    // Type filter - filter by entity_type (stored in category field)
+    if (typeFilter !== 'all' && memory.category !== typeFilter) {
       return false;
     }
 
@@ -908,8 +344,8 @@ export default function DesktopMemoryPage() {
         mapRef.current = null;
       }
 
-      // Initialize map centered on Los Angeles
-      mapRef.current = L.map(mapContainerRef.current).setView([34.0522, -118.2437], 12);
+      // Initialize map with a world view (will be adjusted to fit markers)
+      mapRef.current = L.map(mapContainerRef.current).setView([20, 0], 2);
 
       // Use satellite imagery
       L.tileLayer(
@@ -1207,15 +643,16 @@ export default function DesktopMemoryPage() {
               <div className="flex items-center gap-2 relative z-[100]">
                 <Filter className="h-6 w-6 text-muted-foreground" />
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <Select.Trigger className="w-32 h-8 text-sm">
-                    <Select.Value placeholder="Type" />
+                  <Select.Trigger className="w-40 h-8 text-sm">
+                    <Select.Value placeholder="Entity Type" />
                   </Select.Trigger>
                   <Select.Content className="z-[100]">
-                    <Select.Item value="all">All Types</Select.Item>
-                    <Select.Item value="event">Events</Select.Item>
-                    <Select.Item value="content">Content</Select.Item>
-                    <Select.Item value="person">People</Select.Item>
-                    <Select.Item value="thing">Things</Select.Item>
+                    <Select.Item value="all">All Entity Types</Select.Item>
+                    {uniqueEntityTypes.map((entityType) => (
+                      <Select.Item key={entityType} value={entityType}>
+                        {entityType}
+                      </Select.Item>
+                    ))}
                   </Select.Content>
                 </Select>
               </div>
@@ -1242,15 +679,12 @@ export default function DesktopMemoryPage() {
                 onValueChange={setActiveTab}
                 value={activeTab}
               >
-                <Tabs.List className="grid grid-cols-3 w-48">
+                <Tabs.List className="grid grid-cols-2 w-32">
                   <Tabs.Trigger value="map" className="text-sm">
                     Map
                   </Tabs.Trigger>
                   <Tabs.Trigger value="list" className="text-sm">
                     List
-                  </Tabs.Trigger>
-                  <Tabs.Trigger value="gallery" className="text-sm">
-                    Gallery
                   </Tabs.Trigger>
                 </Tabs.List>
               </Tabs>
@@ -1301,108 +735,78 @@ export default function DesktopMemoryPage() {
                         </div>
                         <div className="flex-grow min-w-0">
                           <div className="flex justify-between items-start">
-                            <h4 className="font-medium truncate">{memory.title}</h4>
-                            <div className="flex items-center text-muted-foreground text-base">
-                              <Clock className="h-5 w-5 mr-1" />
-                              {new Date(memory.timestamp).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
+                            <div className="flex-grow">
+                              <h4 className="font-medium">{memory.title}</h4>
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 mt-1">
+                                {memory.category}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end text-muted-foreground text-sm ml-4">
+                              <div className="flex items-center">
+                                <Clock className="h-4 w-4 mr-1" />
+                                {new Date(memory.timestamp).toLocaleDateString()}
+                              </div>
+                              <div className="text-xs">
+                                {new Date(memory.timestamp).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </div>
                             </div>
                           </div>
-                          <p className="text-muted-foreground text-base mt-1">
-                            {memory.description || 'No description'}
-                          </p>
-                          <div className="mt-2">
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-sm font-medium bg-primary/10">
-                              {memory.category}
-                            </span>
-                          </div>
-                          {memory.category === 'Video' && memory.metadata?.url != null && (
-                            <div
-                              style={{
-                                left: 0,
-                                width: '50%',
-                                height: 0,
-                                position: 'relative',
-                                paddingBottom: '28.125%',
-                              }}
-                              className="mt-2"
-                            >
-                              {memory.metadata.mimetype === 'text/html' ? (
-                                <iframe
-                                  src={memory.metadata.url as string}
-                                  allowFullScreen={true}
-                                  style={{
-                                    border: 0,
-                                    top: 0,
-                                    left: 0,
-                                    width: '100%',
-                                    height: '100%',
-                                    position: 'absolute',
-                                  }}
-                                />
-                              ) : (
-                                <video controls>
-                                  <source
-                                    src={memory.metadata.url as string}
-                                    type={memory.metadata.mimetype as string}
-                                  />
-                                </video>
-                              )}
+                          {memory.description && (
+                            <p className="text-muted-foreground text-sm mt-2">{memory.description}</p>
+                          )}
+                          {memory.metadata?.relationships && memory.metadata.relationships.length > 0 && (
+                            <div className="mt-3 pt-3 border-t">
+                              <p className="text-xs font-medium text-muted-foreground mb-2">Relationships:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {memory.metadata.relationships.slice(0, 5).map((rel, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center px-2 py-1 rounded-md text-xs bg-muted"
+                                  >
+                                    <span className="font-medium">{rel.type}</span>
+                                    <span className="mx-1">→</span>
+                                    <span>{rel.targetName}</span>
+                                    <span className="ml-1 text-muted-foreground">({rel.targetType})</span>
+                                  </span>
+                                ))}
+                                {memory.metadata.relationships.length > 5 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    +{memory.metadata.relationships.length - 5} more
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
-                          {memory.category === 'Image' && memory.metadata?.url != null && (
-                            <div className="mt-2">
-                              <img
-                                src={memory.metadata.url as string}
-                                alt={memory.description as string}
-                                className="max-w-1/2 object-cover"
-                              />
-                            </div>
-                          )}
-                          {memory.category === 'Web Page' && memory.metadata?.url != null && (
-                            <Link to={memory.metadata.url} target="_blank">
-                              <span>{memory.metadata.url as string}</span>
-                            </Link>
-                          )}
-                          {memory.category === 'Audio' && memory.metadata?.url != null && (
-                            <div
-                              style={{
-                                left: 0,
-                                width: '50%',
-                                height: 0,
-                                position: 'relative',
-                                paddingBottom: '28.125%',
-                              }}
-                              className="mt-2"
-                            >
-                              {memory.metadata.mimetype === 'text/html' ? (
-                                <iframe
-                                  src={memory.metadata.url as string}
-                                  allowFullScreen={true}
-                                  style={{
-                                    border: 0,
-                                    top: 0,
-                                    left: 0,
-                                    width: '100%',
-                                    height: '100%',
-                                    position: 'absolute',
-                                  }}
-                                />
-                              ) : (
-                                <audio controls>
-                                  <source
-                                    src={memory.metadata.url as string}
-                                    type={memory.metadata.mimetype as string}
-                                  />
-                                </audio>
-                              )}
+                          {memory.tags && memory.tags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {memory.tags.map((tag, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-secondary text-secondary-foreground"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
                             </div>
                           )}
                         </div>
                       </div>
                     ))}
+                    {/* Infinite scroll sentinel */}
+                    <div ref={listEndRef} className="h-4" />
+                    {loading && hasMore && (
+                      <div className="flex justify-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                    {!hasMore && filteredMemories.length > 0 && (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        No more memories to load ({totalCount} total)
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -1462,6 +866,13 @@ export default function DesktopMemoryPage() {
                             </div>
                           </div>
                         ))}
+                        {/* Infinite scroll sentinel for map view */}
+                        <div ref={listEndRef} className="h-4" />
+                        {loading && hasMore && (
+                          <div className="flex justify-center py-3">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

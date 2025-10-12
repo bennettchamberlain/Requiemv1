@@ -25,7 +25,6 @@ import {
   FileText,
   Package,
   Users,
-  Phone,
   Loader2,
   AlertCircle,
   Filter,
@@ -34,6 +33,8 @@ import {
   List,
   Images,
   X,
+  Lightbulb,
+  Target,
 } from '@ci/shadcn/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -48,7 +49,7 @@ import './memory-map.css';
 // Memory data from API
 interface MemoryItem {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact';
+  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'place' | 'concept' | 'other';
   title: string;
   description: string | null;
   timestamp: string;
@@ -62,7 +63,16 @@ interface MemoryItem {
   };
   tags: string[];
   userId: string;
-  metadata?: Record<string, unknown>;
+  metadata?: {
+    relationships?: Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>;
+    [key: string]: unknown;
+  };
   connectionId?: string;
   connectionName?: string;
 }
@@ -83,16 +93,21 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
   // First check by type
   switch (memory.type) {
     case 'person':
-      return <User className={iconClass} />;
     case 'contact':
-      return <Phone className={iconClass} />;
+      return <User className={iconClass} />;
     case 'thing':
       return <Package className={iconClass} />;
     case 'content':
       return <FileText className={iconClass} />;
+    case 'place':
+      return <MapPin className={iconClass} />;
+    case 'concept':
+      return <Lightbulb className={iconClass} />;
+    case 'event':
+      return <Calendar className={iconClass} />;
   }
 
-  // Then check by category for events
+  // Then check by category for events and other specific cases
   const category = memory.category.toLowerCase();
   if (category.includes('food') || category.includes('drink') || category.includes('meal')) {
     return <Utensils className={iconClass} />;
@@ -112,8 +127,8 @@ function getMemoryIcon(memory: MemoryItem): React.ReactNode {
     return <Car className={iconClass} />;
   } else if (category.includes('entertainment') || category.includes('tv') || category.includes('movie')) {
     return <Tv className={iconClass} />;
-  } else if (category.includes('event')) {
-    return <Calendar className={iconClass} />;
+  } else if (category.includes('goal')) {
+    return <Target className={iconClass} />;
   }
 
   // Default icon
@@ -144,79 +159,68 @@ export default function MobileMemoryPage() {
   // Mobile-specific states
   const [showFilters, setShowFilters] = useState(false);
 
-  // Demo data focused on Los Angeles city only
-  const demoMemories: MemoryItem[] = [
-    // Downtown LA
-    {
-      id: 'demo-1',
-      type: 'event',
-      title: 'Client Meeting',
-      description: 'Product demo for new client',
-      timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Work',
-      location: {
-        id: 'loc-1',
-        name: 'WeWork Downtown LA',
-        lat: 34.0522,
-        lng: -118.2437,
-        address: '800 S Figueroa St, Los Angeles, CA',
-      },
-      tags: ['client', 'business'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    {
-      id: 'demo-2',
-      type: 'person',
-      title: 'Maria Rodriguez',
-      description: 'Design Director at Disney - Close friend from college',
-      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      category: 'Friend',
-      location: {
-        id: 'loc-2',
-        name: 'Walt Disney Concert Hall',
-        lat: 34.0554,
-        lng: -118.2499,
-        address: '111 S Grand Ave, Los Angeles, CA',
-      },
-      tags: ['design', 'entertainment', 'friend'],
-      userId: 'demo-user',
-      connectionId: 'microsoft',
-      connectionName: 'Microsoft',
-    },
-    // Add more demo data as needed...
-  ];
+  // Pagination states for lazy loading
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const listEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch memories from API (using demo data for now)
-  const fetchMemories = async (query?: string) => {
+  // Fetch memories from API with pagination
+  const fetchMemories = async (query?: string, currentOffset = 0, append = false) => {
     try {
       setLoading(true);
       setError(null);
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Filter demo data based on query
-      let filteredData = demoMemories;
+      // Build query parameters
+      const params = new URLSearchParams();
       if (query) {
-        const searchQuery = query.toLowerCase();
-        filteredData = demoMemories.filter(
-          (memory) =>
-            memory.title.toLowerCase().includes(searchQuery) ||
-            memory.description?.toLowerCase().includes(searchQuery) ||
-            memory.category.toLowerCase().includes(searchQuery) ||
-            memory.tags.some((tag) => tag.toLowerCase().includes(searchQuery)),
-        );
+        params.append('search', query);
       }
 
-      setMemories(filteredData);
+      params.append('limit', '100'); // Fetch 100 at a time
+      params.append('offset', currentOffset.toString());
+
+      const url = `/api/memory${params.toString() ? `?${params.toString()}` : ''}`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch memories: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const data: MemoryItem[] = result.data || result; // Handle both array and {data: []} format
+      const total = result.total || data.length;
+
+      if (append) {
+        setMemories((prev) => [...prev, ...data]);
+      } else {
+        setMemories(data);
+      }
+
+      setTotalCount(total);
+      setHasMore(currentOffset + data.length < total);
+      setOffset(currentOffset + data.length);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       console.error('Error fetching memories:', errorMessage, err);
       setError(errorMessage);
+      if (!append) {
+        setMemories([]); // Clear memories on error only for initial load
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load more memories (for infinite scroll)
+  const loadMore = () => {
+    if (!loading && hasMore) {
+      fetchMemories(searchQuery, offset, true);
     }
   };
 
@@ -249,7 +253,9 @@ export default function MobileMemoryPage() {
 
   // Initial load
   useEffect(() => {
-    fetchMemories();
+    setOffset(0);
+    setHasMore(true);
+    fetchMemories(searchQuery, 0, false);
   }, [authToken]);
 
   // Load gallery files when gallery tab is active
@@ -259,9 +265,34 @@ export default function MobileMemoryPage() {
     }
   }, [activeTab, authToken]);
 
+  // Intersection observer for infinite scroll
+  useEffect(() => {
+    const currentRef = listEndRef.current;
+    if (!currentRef) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(currentRef);
+
+    return () => {
+      observer.unobserve(currentRef);
+    };
+  }, [hasMore, loading]); // Removed offset from dependencies
+
   // Handle search
   const handleSearch = () => {
-    fetchMemories(searchQuery);
+    setOffset(0);
+    setHasMore(true);
+    fetchMemories(searchQuery, 0, false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -270,10 +301,13 @@ export default function MobileMemoryPage() {
     }
   };
 
+  // Get unique entity types from loaded memories for dynamic filter options
+  const uniqueEntityTypes = Array.from(new Set(memories.map((m) => m.category))).sort();
+
   // Apply filters to memories
   const filteredMemories = memories.filter((memory) => {
-    // Type filter
-    if (typeFilter !== 'all' && memory.type !== typeFilter) {
+    // Type filter - filter by entity_type (stored in category field)
+    if (typeFilter !== 'all' && memory.category !== typeFilter) {
       return false;
     }
 
@@ -315,8 +349,8 @@ export default function MobileMemoryPage() {
         mapRef.current = null;
       }
 
-      // Initialize map centered on Los Angeles
-      mapRef.current = L.map(mapContainerRef.current).setView([34.0522, -118.2437], 12);
+      // Initialize map with a world view (will be adjusted to fit markers)
+      mapRef.current = L.map(mapContainerRef.current).setView([20, 0], 2);
 
       // Use satellite imagery
       L.tileLayer(
@@ -615,14 +649,15 @@ export default function MobileMemoryPage() {
                   <label className="text-sm font-medium mb-1 block">Type</label>
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <Select.Trigger className="w-full h-9 text-sm">
-                      <Select.Value placeholder="Type" />
+                      <Select.Value placeholder="Entity Type" />
                     </Select.Trigger>
                     <Select.Content>
-                      <Select.Item value="all">All Types</Select.Item>
-                      <Select.Item value="event">Events</Select.Item>
-                      <Select.Item value="content">Content</Select.Item>
-                      <Select.Item value="person">People</Select.Item>
-                      <Select.Item value="thing">Things</Select.Item>
+                      <Select.Item value="all">All Entity Types</Select.Item>
+                      {uniqueEntityTypes.map((entityType) => (
+                        <Select.Item key={entityType} value={entityType}>
+                          {entityType}
+                        </Select.Item>
+                      ))}
                     </Select.Content>
                   </Select>
                 </div>
@@ -732,6 +767,18 @@ export default function MobileMemoryPage() {
                         </div>
                       </div>
                     ))}
+                    {/* Infinite scroll sentinel */}
+                    <div ref={listEndRef} className="h-4" />
+                    {loading && hasMore && (
+                      <div className="flex justify-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                    {!hasMore && filteredMemories.length > 0 && (
+                      <div className="text-center py-4 text-muted-foreground text-xs">
+                        No more memories ({totalCount} total)
+                      </div>
+                    )}
                   </div>
                 )}
               </>

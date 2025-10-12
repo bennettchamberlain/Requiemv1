@@ -5,6 +5,9 @@ import { Repository } from 'typeorm';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 
+import { CommunicationEntity } from '../entities/CommunicationEntity';
+import { ContentEntity } from '../entities/ContentEntity';
+import { EventEntity } from '../entities/EventEntity';
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { RelationshipEntity } from '../entities/RelationshipEntity';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
@@ -18,45 +21,114 @@ export class MemoryService {
     private entityRepo: Repository<GraphNodeEntity>,
     @InjectRepository(RelationshipEntity)
     private relationshipRepo: Repository<RelationshipEntity>,
+    @InjectRepository(EventEntity)
+    private eventRepo: Repository<EventEntity>,
+    @InjectRepository(ContentEntity)
+    private contentRepo: Repository<ContentEntity>,
+    @InjectRepository(CommunicationEntity)
+    private communicationRepo: Repository<CommunicationEntity>,
   ) {}
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
-    this.logger.debug('Finding memories from graph', { userId: context.userId, params });
+    this.logger.debug('Finding memories from ALL tables', { userId: context.userId, params });
 
-    const limit = params.limit || 50;
+    const limit = params.limit || 100;
     const offset = params.offset || 0;
 
+    if (!context.userId) {
+      this.logger.warn('No userId in context');
+
+      return { data: [], total: 0, limit, offset };
+    }
+
     try {
-      // Build query for entities that represent memory objects
-      let queryBuilder = this.entityRepo
-        .createQueryBuilder('entity')
-        .where('entity.is_active = true')
-        .andWhere('entity.is_archived = false');
+      // Fetch from all data sources in parallel
+      const [entitiesData, eventsData, contentData, communicationsData] = await Promise.all([
+        this.fetchFromEntities(context.userId, params),
+        this.fetchFromEvents(context.userId, params),
+        this.fetchFromContent(context.userId, params),
+        this.fetchFromCommunications(context.userId, params),
+      ]);
 
-      // Default: Include Person, Location, Event, Contact, Content
-      // Exclude: Object, Concept
-      const defaultIncludedTypes = ['Person', 'Location', 'Event', 'Contact', 'Content', 'Place'];
+      // Combine all memories
+      const allMemories = [
+        ...entitiesData.memories,
+        ...eventsData.memories,
+        ...contentData.memories,
+        ...communicationsData.memories,
+      ];
 
-      // If categories are specified, use those; otherwise use defaults
-      if (params.categories && params.categories.length > 0) {
-        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...categories)', {
-          categories: params.categories,
-        });
-      } else {
-        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...defaultTypes)', {
-          defaultTypes: defaultIncludedTypes,
-        });
-      }
+      this.logger.debug('Memory type breakdown', {
+        entities: entitiesData.memories.map((m) => ({ type: m.type, category: m.category })),
+        events: eventsData.memories.map((m) => ({ type: m.type, category: m.category })),
+        content: contentData.memories.map((m) => ({ type: m.type, category: m.category })),
+        communications: communicationsData.memories.map((m) => ({ type: m.type, category: m.category })),
+      });
 
-      // Apply filters
+      // Sort by timestamp descending
+      allMemories.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      // Apply search filter if provided
+      let filteredMemories = allMemories;
       if (params.query) {
-        queryBuilder = queryBuilder.andWhere(
-          '(entity.name ILIKE :query OR entity.description ILIKE :query OR entity.search_content ILIKE :query)',
-          { query: `%${params.query}%` },
+        const searchQuery = params.query.toLowerCase();
+        filteredMemories = allMemories.filter(
+          (memory) =>
+            memory.title.toLowerCase().includes(searchQuery) ||
+            memory.description?.toLowerCase().includes(searchQuery) ||
+            memory.tags.some((tag) => tag.toLowerCase().includes(searchQuery)),
         );
       }
 
-      // Apply date filtering based on created_at for now
+      // Apply location filter if requested
+      if (params.hasLocation !== undefined) {
+        filteredMemories = filteredMemories.filter((memory) =>
+          params.hasLocation ? !!memory.location : !memory.location,
+        );
+      }
+
+      // Apply pagination
+      const paginatedMemories = filteredMemories.slice(offset, offset + limit);
+      const total = filteredMemories.length;
+
+      const response = {
+        data: paginatedMemories,
+        total,
+        limit,
+        offset,
+      };
+
+      this.logger.debug('Returning aggregated memory response', {
+        dataLength: response.data.length,
+        total: response.total,
+        sources: {
+          entities: entitiesData.count,
+          events: eventsData.count,
+          content: contentData.count,
+          communications: communicationsData.count,
+        },
+        memoriesWithLocation: response.data.filter((m) => m.location).length,
+      });
+
+      return response;
+    } catch (error) {
+      this.logger.error('Error in findAll', { error, userId: context.userId });
+      throw error;
+    }
+  }
+
+  // Fetch memories from entities table
+  private async fetchFromEntities(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
+    try {
+      let queryBuilder = this.entityRepo
+        .createQueryBuilder('entity')
+        .where('entity.is_active = true')
+        .andWhere('entity.is_archived = false')
+        .andWhere('entity.owner_user_id = :userId', { userId });
+
       if (params.startDate) {
         queryBuilder = queryBuilder.andWhere('entity.created_at >= :startDate', {
           startDate: params.startDate,
@@ -69,46 +141,211 @@ export class MemoryService {
         });
       }
 
-      // Order by most recent
-      queryBuilder = queryBuilder.orderBy('entity.created_at', 'DESC').limit(limit).offset(offset);
+      queryBuilder = queryBuilder.orderBy('entity.created_at', 'DESC').limit(200);
 
-      const [entities, total] = await queryBuilder.getManyAndCount();
-
-      this.logger.debug('Found entities', {
-        entitiesCount: entities.length,
-        total,
-        userId: context.userId,
+      const entities = await queryBuilder.getMany();
+      this.logger.log('Fetched entities', {
+        count: entities.length,
+        userId,
+        sampleEntities: entities
+          .slice(0, 3)
+          .map((e) => ({ id: e.entity_id, type: e.entity_type, name: e.name })),
       });
-
-      // Convert entities to Memory objects
       const memories = await Promise.all(entities.map((entity) => this.entityToMemory(entity)));
+      this.logger.log('Converted entities to memories', { count: memories.length });
 
-      // Filter by location if requested
-      let filteredMemories = memories;
-      if (params.hasLocation !== undefined) {
-        filteredMemories = memories.filter((memory) =>
-          params.hasLocation ? !!memory.location : !memory.location,
-        );
+      return { memories, count: memories.length };
+    } catch (error) {
+      this.logger.error('Error fetching from entities', { error, userId });
+
+      return { memories: [], count: 0 };
+    }
+  }
+
+  // Fetch memories from events table
+  private async fetchFromEvents(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
+    try {
+      let queryBuilder = this.eventRepo
+        .createQueryBuilder('event')
+        .leftJoinAndSelect('event.user', 'user')
+        .where('user.id = :userId', { userId });
+
+      if (params.startDate) {
+        queryBuilder = queryBuilder.andWhere('event.start_time >= :startDate', {
+          startDate: params.startDate,
+        });
       }
 
-      const response = {
-        data: filteredMemories,
-        total,
-        limit,
-        offset,
-      };
+      if (params.endDate) {
+        queryBuilder = queryBuilder.andWhere('event.start_time <= :endDate', {
+          endDate: params.endDate,
+        });
+      }
 
-      this.logger.debug('Returning memory response', {
-        dataLength: response.data.length,
-        total: response.total,
-        memoriesWithLocation: response.data.filter((m) => m.location).length,
-      });
+      queryBuilder = queryBuilder.orderBy('event.start_time', 'DESC').limit(200);
 
-      return response;
+      const events = await queryBuilder.getMany();
+      this.logger.debug('Fetched events', { count: events.length, userId });
+      const memories = events.map((event) => this.eventToMemory(event));
+
+      return { memories, count: memories.length };
     } catch (error) {
-      this.logger.error('Error in findAll', { error, userId: context.userId });
-      throw error;
+      this.logger.error('Error fetching from events', { error, userId });
+
+      return { memories: [], count: 0 };
     }
+  }
+
+  // Fetch memories from content table
+  private async fetchFromContent(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
+    try {
+      let queryBuilder = this.contentRepo
+        .createQueryBuilder('content')
+        .leftJoinAndSelect('content.user', 'user')
+        .where('user.id = :userId', { userId });
+
+      if (params.startDate) {
+        queryBuilder = queryBuilder.andWhere('content.created_at >= :startDate', {
+          startDate: params.startDate,
+        });
+      }
+
+      if (params.endDate) {
+        queryBuilder = queryBuilder.andWhere('content.created_at <= :endDate', {
+          endDate: params.endDate,
+        });
+      }
+
+      queryBuilder = queryBuilder.orderBy('content.created_at', 'DESC').limit(200);
+
+      const contentItems = await queryBuilder.getMany();
+      this.logger.debug('Fetched content', { count: contentItems.length, userId });
+      const memories = contentItems.map((content) => this.contentToMemory(content));
+
+      return { memories, count: memories.length };
+    } catch (error) {
+      this.logger.error('Error fetching from content', { error, userId });
+
+      return { memories: [], count: 0 };
+    }
+  }
+
+  // Fetch memories from communications table
+  private async fetchFromCommunications(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
+    try {
+      let queryBuilder = this.communicationRepo
+        .createQueryBuilder('comm')
+        .where('comm.user_id = :userId', { userId });
+
+      if (params.startDate) {
+        queryBuilder = queryBuilder.andWhere('comm.time >= :startDate', {
+          startDate: params.startDate,
+        });
+      }
+
+      if (params.endDate) {
+        queryBuilder = queryBuilder.andWhere('comm.time <= :endDate', {
+          endDate: params.endDate,
+        });
+      }
+
+      queryBuilder = queryBuilder.orderBy('comm.time', 'DESC').limit(200);
+
+      const communications = await queryBuilder.getMany();
+      this.logger.log('Fetched communications', {
+        count: communications.length,
+        userId,
+        sampleComms: communications
+          .slice(0, 3)
+          .map((c) => ({ type: c.communication_type, subject: c.subject, time: c.time })),
+      });
+      const memories = communications.map((comm) => this.communicationToMemory(comm));
+      this.logger.log('Converted communications to memories', { count: memories.length });
+
+      return { memories, count: memories.length };
+    } catch (error) {
+      this.logger.error('Error fetching from communications', { error, userId });
+
+      return { memories: [], count: 0 };
+    }
+  }
+
+  // Convert EventEntity to Memory
+  private eventToMemory(event: EventEntity): Memory {
+    return {
+      id: event.id,
+      type: 'event',
+      title: event.title || 'Untitled Event',
+      description: event.description,
+      timestamp: event.start_time,
+      category: event.category || 'Event',
+      location: event.location_name
+        ? {
+            id: event.location_entity_id || `loc-${event.id}`,
+            name: event.location_name,
+            lat: 0, // TODO: Extract from location_coordinates if available
+            lng: 0,
+          }
+        : undefined,
+      tags: event.tags || [],
+      userId: event.user?.id || '',
+      metadata: {
+        eventType: event.event_type ?? undefined,
+        category: event.category ?? undefined,
+        source: event.source_system ?? undefined,
+        ...event.metadata,
+      },
+    };
+  }
+
+  // Convert ContentEntity to Memory
+  private contentToMemory(content: ContentEntity): Memory {
+    return {
+      id: content.id,
+      type: 'content',
+      title: content.title || 'Untitled File',
+      description: content.text,
+      timestamp: content.created_at,
+      category: 'File',
+      tags: [],
+      userId: content.user?.id || '',
+      metadata: {
+        contentType: content.type,
+        mimetype: content.mimetype ?? undefined,
+        url: content.url ?? undefined,
+        externalId: content.external_id ?? undefined,
+      },
+    };
+  }
+
+  // Convert CommunicationEntity to Memory
+  private communicationToMemory(comm: CommunicationEntity): Memory {
+    return {
+      id: `${comm.user_id}-${comm.time.getTime()}-${comm.communication_type}`,
+      type: 'other',
+      title: comm.subject || `${comm.communication_type} Communication`,
+      description: comm.summary || comm.content.substring(0, 200) || null,
+      timestamp: comm.time,
+      category: comm.category || 'Communication',
+      tags: comm.tags || [],
+      userId: comm.user_id,
+      metadata: {
+        communicationType: comm.communication_type,
+        direction: comm.direction,
+        participantsMetadata: comm.participants_metadata,
+        connectionId: comm.connection_id ?? undefined,
+        threadId: comm.thread_id ?? undefined,
+      },
+    };
   }
 
   async findOne(context: RequestContext, id: string): Promise<Memory> {
@@ -141,6 +378,12 @@ export class MemoryService {
     // Extract user ID from properties or linked data
     const userId = this.getEntityUserId(entity);
 
+    // Extract connection info from properties
+    const { connectionId, connectionName } = this.getEntityConnectionInfo(entity);
+
+    // Get relationships for this entity
+    const relationships = await this.getEntityRelationships(entity);
+
     const memory: Memory = {
       id: entity.entity_id,
       type: memoryType,
@@ -151,11 +394,14 @@ export class MemoryService {
       location,
       tags,
       userId,
+      connectionId,
+      connectionName,
       metadata: {
         entityType: entity.entity_type,
         linkedTable: entity.linked_table,
         linkedId: entity.linked_id,
         properties: entity.properties,
+        relationships, // Include relationship information
       },
     };
 
@@ -168,14 +414,68 @@ export class MemoryService {
       Event: 'event',
       Content: 'content',
       Thing: 'thing',
-      Contact: 'contact',
-      Place: 'other',
-      Location: 'other',
-      Concept: 'other',
       Object: 'thing',
+      Contact: 'contact',
+      Place: 'place',
+      Location: 'place',
+      Concept: 'concept',
+      Goal: 'other',
     };
 
     return typeMap[entityType] || 'other';
+  }
+
+  private async getEntityRelationships(entity: GraphNodeEntity): Promise<
+    Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>
+  > {
+    try {
+      // Get outgoing relationships
+      const outgoing = await this.relationshipRepo
+        .createQueryBuilder('rel')
+        .leftJoinAndSelect('rel.to_entity', 'target')
+        .where('rel.from_entity_id = :entityId', { entityId: entity.entity_id })
+        .andWhere('rel.is_active = true')
+        .limit(20) // Limit to avoid too much data
+        .getMany();
+
+      // Get incoming relationships
+      const incoming = await this.relationshipRepo
+        .createQueryBuilder('rel')
+        .leftJoinAndSelect('rel.from_entity', 'source')
+        .where('rel.to_entity_id = :entityId', { entityId: entity.entity_id })
+        .andWhere('rel.is_active = true')
+        .limit(20) // Limit to avoid too much data
+        .getMany();
+
+      const relationships = [
+        ...outgoing.map((rel) => ({
+          type: rel.relationship_type,
+          targetId: rel.to_entity?.entity_id || '',
+          targetName: rel.to_entity?.name || 'Unknown',
+          targetType: rel.to_entity?.entity_type || 'Unknown',
+          direction: 'outgoing' as const,
+        })),
+        ...incoming.map((rel) => ({
+          type: rel.relationship_type,
+          targetId: rel.from_entity?.entity_id || '',
+          targetName: rel.from_entity?.name || 'Unknown',
+          targetType: rel.from_entity?.entity_type || 'Unknown',
+          direction: 'incoming' as const,
+        })),
+      ];
+
+      return relationships;
+    } catch (error) {
+      this.logger.error('Error getting entity relationships', { error, entityId: entity.entity_id });
+
+      return [];
+    }
   }
 
   private async getEntityLocation(entity: GraphNodeEntity): Promise<MemoryLocation | undefined> {
@@ -295,7 +595,12 @@ export class MemoryService {
   }
 
   private getEntityUserId(entity: GraphNodeEntity): string {
-    // Try to get user ID from properties
+    // First, try the owner_user_id column
+    if (entity.owner_user_id) {
+      return entity.owner_user_id;
+    }
+
+    // Fallback: Try to get user ID from properties
     if (entity.properties && typeof entity.properties === 'object') {
       const props = entity.properties as Record<string, unknown>;
       const userId = props.user_id || props.userId;
@@ -304,9 +609,32 @@ export class MemoryService {
       }
     }
 
-    // For now, return empty string if no user ID found
-    // In a real implementation, you might want to link entities to users via relationships
+    // Return empty string if no user ID found
     return '';
+  }
+
+  private getEntityConnectionInfo(entity: GraphNodeEntity): {
+    connectionId?: string;
+    connectionName?: string;
+  } {
+    if (entity.properties && typeof entity.properties === 'object') {
+      const props = entity.properties as Record<string, unknown>;
+
+      return {
+        connectionId: props.connection_id
+          ? String(props.connection_id)
+          : props.connectionId
+            ? String(props.connectionId)
+            : undefined,
+        connectionName: props.connection_name
+          ? String(props.connection_name)
+          : props.connectionName
+            ? String(props.connectionName)
+            : undefined,
+      };
+    }
+
+    return {};
   }
 
   // Debug and utility methods (maintaining compatibility)
