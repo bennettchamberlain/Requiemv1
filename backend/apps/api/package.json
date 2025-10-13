@@ -88,7 +88,6 @@
     "globals": "^16.1.0",
     "jest": "^30.0.4",
     "jest-util": "^30.0.2",
-    "madge": "^8.0.0",
     "nodemon": "^3.1.10",
     "pino-pretty": "^13.0.0",
     "rimraf": "^6.0.1",
