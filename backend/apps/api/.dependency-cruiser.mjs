@@ -14,6 +14,18 @@ export default {
 
   forbidden: [
     {
+      name: 'no-circular',
+      severity: 'error',
+      comment: 'Circular dependencies are not allowed',
+      from: {
+        path: '^src',
+      },
+      to: {
+        circular: true,
+      },
+    },
+
+    {
       name: 'no-production-dev-deps',
       severity: 'error',
       comment: 'Application code must not import non-production dependencies',
