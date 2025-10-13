@@ -132,7 +132,7 @@ export function ConnectPage() {
             background="bg-blue-500"
             border="border-blue-400"
             text="Sync with Meta to stay connected with your community, manage Marketplace items, and track your Quest activity."
-            disabled
+            onClick={() => connect('dbb8002f-12da-4cd9-b02b-37db7791a900')}
           />
         </div>
       </PageContent>

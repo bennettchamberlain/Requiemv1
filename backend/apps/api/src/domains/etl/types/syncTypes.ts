@@ -38,6 +38,28 @@ export interface GoogleSyncState {
   [key: string]: unknown;
 }
 
+export interface FacebookSyncState {
+  posts?: {
+    nextUrl?: string;
+    since?: string;
+  };
+  photos?: {
+    nextUrl?: string;
+    since?: string;
+  };
+  videos?: {
+    nextUrl?: string;
+    since?: string;
+  };
+  friends?: {
+    nextUrl?: string;
+  };
+  likes?: {
+    nextUrl?: string;
+  };
+  [key: string]: unknown;
+}
+
 export interface SyncResult {
   data: unknown;
   syncState: CalendarSyncState | GmailSyncState | DriveSyncState | ContactsSyncState | YouTubeSyncState;
