@@ -54,4 +54,11 @@ export {
 export { MemoryService, ContentService, EventService, GraphUtilityService };
 
 // Types
-export type { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from './types';
+export type {
+  CreateEventDto,
+  CreateContentDto,
+  Memory,
+  MemoryLocation,
+  MemoryResponse,
+  MemorySearchParams,
+} from './types';

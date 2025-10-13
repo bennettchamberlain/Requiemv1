@@ -9,7 +9,7 @@ import {
   ManyToMany,
 } from 'typeorm';
 
-import { MessageEntity } from '@ci/domains/conversations/entities/MessageEntity';
+import { MessageEntity } from '@ci/domains/conversations';
 import { UserEntity } from '@ci/domains/user';
 
 import type { File } from '../types';

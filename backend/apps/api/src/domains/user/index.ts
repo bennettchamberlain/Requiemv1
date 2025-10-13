@@ -21,7 +21,7 @@ export class UserModule {}
 export { UserEntity, SignupCodeEntity };
 
 // Services
-export { UserService };
+export { SignupCodeService, UserService };
 
 // Types
-export type { CreateUserDto, UpdateUserDto, User, SignupCode, UpdateSignupCodeDto } from './types';
+export type { CreateUserDto, UpdateUserDto, User, SignupCode, SignupDto, UpdateSignupCodeDto } from './types';

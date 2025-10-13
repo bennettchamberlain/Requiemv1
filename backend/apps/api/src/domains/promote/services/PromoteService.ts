@@ -4,9 +4,8 @@ import { Repository, IsNull, MoreThan, Not } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-
-import { ConnectionEntity } from '../../connections/entities/ConnectionEntity';
-import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
+import { ConnectionEntity } from '@ci/domains/connections';
+import { ApiLogEntity } from '@ci/domains/etl';
 
 import { GoogleCalendarEventPromotionService } from './CalendarPromotionService';
 import { GmailPromotionService } from './GmailPromotionService';

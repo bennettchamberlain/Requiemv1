@@ -10,7 +10,7 @@ import {
   JoinTable,
 } from 'typeorm';
 
-import { FileEntity } from '@ci/domains/files/entities/FileEntity';
+import { FileEntity } from '@ci/domains/files';
 import { UserEntity } from '@ci/domains/user';
 
 import type { Message } from '../types';

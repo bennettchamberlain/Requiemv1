@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
-import { EventService } from '@ci/domains/memory';
-import type { CreateEventDto } from '@ci/domains/memory/types';
+import { EventService, type CreateEventDto } from '@ci/domains/memory';
 
 import { PeoplePromotionService } from './PeoplePromotionService';
 

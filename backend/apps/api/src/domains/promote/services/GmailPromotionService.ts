@@ -1,10 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
-import { ConnectionService } from '@ci/domains/connections';
-import { Connection } from '@ci/domains/connections/types';
-import { EventService, ContentService } from '@ci/domains/memory';
-import type { CreateEventDto, CreateContentDto } from '@ci/domains/memory/types';
+import { ConnectionService, type Connection } from '@ci/domains/connections';
+import { EventService, ContentService, type CreateEventDto, type CreateContentDto } from '@ci/domains/memory';
 
 import { PeoplePromotionService } from './PeoplePromotionService';
 
