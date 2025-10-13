@@ -14,6 +14,19 @@ export default {
 
   forbidden: [
     {
+      name: 'no-production-dev-deps',
+      severity: 'error',
+      comment: 'Application code must not import non-production dependencies',
+      from: {
+        path: '^src',
+        pathNot: ['\\.test\\.ts$'],
+      },
+      to: {
+        dependencyTypes: ['npm-dev', 'npm-optional', 'npm-peer'],
+      },
+    },
+
+    {
       name: 'no-cross-domain-internals',
       severity: 'error',
       comment: 'Only import another domain via its public barrel; do not reach into its internals.',
