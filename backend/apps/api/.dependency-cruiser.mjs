@@ -25,5 +25,18 @@ export default {
         pathNot: ['^src/domains/$1/', '^src/domains/[^/]+/index\\.ts$'],
       },
     },
+
+    {
+      name: 'no-intra-domain-via-barrel',
+      severity: 'error',
+      comment: "Within a domain, import modules directly; do not go through that domain's public barrel.",
+      from: {
+        path: '^src/domains/([^/]+)/',
+        pathNot: '\\.test\\.ts$',
+      },
+      to: {
+        path: '^src/domains/$1/index\\.ts$',
+      },
+    },
   ],
 };
