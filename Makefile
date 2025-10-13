@@ -206,6 +206,7 @@ init: ## Initialize repository after checkout
 	@printf "\n"
 	@yarn prepare
 	@printf "\n"
+	@if [ ! -f .env ]; then cp .env.default .env; fi
 	@printf "\nRepository initialized.\n"
 
 install: ## Install project dependencies
