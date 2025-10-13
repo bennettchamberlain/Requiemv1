@@ -10,7 +10,7 @@
     "exec": "DOTENV_CONFIG_PATH=../../../.env ts-node -r tsconfig-paths/register -r @swc/register",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
-    "depcheck": "yarn depcruise \"src/**/*.ts\" --ignore-known",
+    "depcheck": "yarn depcruise --ignore-known",
     "typecheck": "tsc --noEmit",
     "dbmate": "DOTENV_CONFIG_PATH=../../../.env node bin/dbmate.js",
     "migrate": "yarn dbmate up",
