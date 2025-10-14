@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { ConnectionsModule } from '@ci/domains/connections';
-import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
+import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EventsModule } from '@ci/domains/events';
 
 import { EtlController } from './controllers/EtlController';
@@ -28,3 +27,14 @@ export { EtlController };
 
 // Types
 export type { ApiLog } from './types';
+export type {
+  CalendarSyncState,
+  GmailSyncState,
+  DriveSyncState,
+  ContactsSyncState,
+  YouTubeSyncState,
+  GoogleSyncState,
+  SyncResult,
+  CalendarSyncResult,
+  GmailSyncResult,
+} from './types/syncTypes';

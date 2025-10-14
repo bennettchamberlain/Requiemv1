@@ -5,8 +5,8 @@ import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
+import { ApiLogEntity } from '@ci/domains/etl';
 
-import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
 import { PromoteService } from '../services/PromoteService';
 
 @Controller('promote')
