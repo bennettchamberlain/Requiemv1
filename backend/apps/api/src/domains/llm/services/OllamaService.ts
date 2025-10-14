@@ -398,15 +398,10 @@ export class OllamaService {
   private getModelForContent(messages: OllamaMessage[], requestedModel: string): string {
     // If pinned demo models feature is enabled, always use demo models
     if (config.features['pinned.demo.models']) {
-      // Check if any message contains image or video content
-      const hasVisualContent = messages.some(
-        (message) =>
-          message.content &&
-          typeof message.content === 'string' &&
-          this.hasImageOrVideoContent(message.content),
-      );
+      // Check if any message contains image content
+      const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
 
-      // Use vision model for images/videos, text model for regular chat
+      // Use vision model for images, text model for regular chat
       return hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
     }
 
@@ -417,42 +412,5 @@ export class OllamaService {
 
     // Default fallback
     return PROMPT_MODEL;
-  }
-
-  /**
-   * Check if content contains image or video MIME types
-   */
-  private hasImageOrVideoContent(content: string): boolean {
-    // Common image MIME types
-    const imageMimeTypes = [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'image/svg+xml',
-      'image/bmp',
-      'image/tiff',
-      'image/ico',
-      'image/x-icon',
-    ];
-
-    // Common video MIME types
-    const videoMimeTypes = [
-      'video/mp4',
-      'video/avi',
-      'video/mov',
-      'video/wmv',
-      'video/flv',
-      'video/webm',
-      'video/mkv',
-      'video/3gp',
-      'video/quicktime',
-    ];
-
-    const allVisualMimeTypes = [...imageMimeTypes, ...videoMimeTypes];
-
-    // Check for MIME types in content
-    return allVisualMimeTypes.some((mimeType) => content.toLowerCase().includes(mimeType.toLowerCase()));
   }
 }
