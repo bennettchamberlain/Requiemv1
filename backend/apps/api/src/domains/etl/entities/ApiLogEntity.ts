@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, CreateDateColumn, JoinColumn } from 'typeorm';
 
-import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
+import { ConnectionEntity } from '@ci/domains/connections';
 import { UserEntity } from '@ci/domains/user';
 
 import type { ApiLog } from '../types';

@@ -4,8 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from '@ci/configuration';
-import { UserModule, SignupCodeEntity } from '@ci/domains/user';
-import { SignupCodeService } from '@ci/domains/user/services/SignupCodeService';
+import { UserModule, SignupCodeEntity, SignupCodeService } from '@ci/domains/user';
 
 import { SessionController } from './controllers/SessionController';
 import { SessionEntity } from './entities/SessionEntity';

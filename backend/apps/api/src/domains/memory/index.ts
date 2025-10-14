@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { UserModule } from '@ci/domains/user';
+
 import { ContentController } from './controllers/ContentController';
 import { EventController } from './controllers/EventController';
+import { GraphController } from './controllers/GraphController';
 import { MemoryController } from './controllers/MemoryController';
 import { ContactEntity } from './entities/ContactEntity';
 import { ContentEntity } from './entities/ContentEntity';
@@ -31,9 +34,10 @@ import { MemoryService } from './services/MemoryService';
       GraphNodeEntity,
       RelationshipEntity,
     ]),
+    UserModule,
   ],
   providers: [MemoryService, ContentService, EventService, GraphUtilityService],
-  controllers: [MemoryController, ContentController, EventController],
+  controllers: [MemoryController, ContentController, EventController, GraphController],
   exports: [MemoryService, ContentService, EventService, GraphUtilityService],
 })
 export class MemoryModule {}
@@ -54,4 +58,11 @@ export {
 export { MemoryService, ContentService, EventService, GraphUtilityService };
 
 // Types
-export type { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from './types';
+export type {
+  CreateEventDto,
+  CreateContentDto,
+  Memory,
+  MemoryLocation,
+  MemoryResponse,
+  MemorySearchParams,
+} from './types';

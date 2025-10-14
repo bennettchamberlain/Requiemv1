@@ -11,9 +11,7 @@ import { Request } from 'express';
 import { z } from 'zod';
 
 import { ValidationPipe } from '@ci/common/pipes';
-import { UserService } from '@ci/domains/user';
-import { SignupCodeService } from '@ci/domains/user/services/SignupCodeService';
-import { SignupDto } from '@ci/domains/user/types';
+import { SignupCodeService, type SignupDto, UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { JwtPayload, LoginDto } from '../types';
