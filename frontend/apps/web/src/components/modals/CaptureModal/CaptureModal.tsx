@@ -8,6 +8,7 @@ import { Send, Settings, X } from '@ci/shadcn/icons';
 import { useUploadFile } from '@/api';
 import type { File as FileData, Thread } from '@/api/types';
 import { Chat, type FormData } from '@/components/Chat';
+import { VoiceModeProvider } from '@/components/Chat/VoiceModeProvider';
 import { InlineModal } from '@/components/InlineModal';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useChatRequester, useModel } from '@/hooks';
@@ -178,15 +179,17 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
           </div>
         </div>
 
-        <Chat
-          placeholder="Ask about this content..."
-          streaming={streaming}
-          readable={stream ?? undefined}
-          onSubmit={handleSubmit}
-          onStop={stopChatRequest}
-        >
-          <Files files={files} />
-        </Chat>
+        <VoiceModeProvider>
+          <Chat
+            placeholder="Ask about this content..."
+            streaming={streaming}
+            readable={stream ?? undefined}
+            onSubmit={handleSubmit}
+            onStop={stopChatRequest}
+          >
+            <Files files={files} />
+          </Chat>
+        </VoiceModeProvider>
       </InlineModal>
     );
   }
@@ -235,25 +238,27 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
             </div>
 
             <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
-              <Chat
-                loading={loading}
-                streaming={streaming}
-                readable={stream ?? undefined}
-                onSubmit={handleSubmit}
-                onStop={stopChatRequest}
-                placeholder="Ask about this content..."
-                emptyState={
-                  <div className="text-center text-gray-500 mt-8">
-                    <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
-                      <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
+              <VoiceModeProvider>
+                <Chat
+                  loading={loading}
+                  streaming={streaming}
+                  readable={stream ?? undefined}
+                  onSubmit={handleSubmit}
+                  onStop={stopChatRequest}
+                  placeholder="Ask about this content..."
+                  emptyState={
+                    <div className="text-center text-gray-500 mt-8">
+                      <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
+                        <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
+                      </div>
+                      <p className="text-sm">Start a conversation about this content</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Ask questions, get recommendations, or explore ideas
+                      </p>
                     </div>
-                    <p className="text-sm">Start a conversation about this content</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Ask questions, get recommendations, or explore ideas
-                    </p>
-                  </div>
-                }
-              />
+                  }
+                />
+              </VoiceModeProvider>
             </div>
           </div>
         )}
