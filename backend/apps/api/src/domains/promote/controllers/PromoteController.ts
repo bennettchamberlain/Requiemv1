@@ -5,15 +5,15 @@ import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
-import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
+import { ApiLogEntity } from '@ci/domains/etl';
+import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
 
-import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
-import { GoogleCalendarEventPromotionService } from '../services/CalendarPromotionService';
-import { ContactsPromotionService } from '../services/ContactsPromotionService';
-import { DrivePromotionService } from '../services/DrivePromotionService';
-import { GmailPromotionService } from '../services/GmailPromotionService';
+import { GoogleCalendarEventPromotionService } from '../services/google/CalendarPromotionService';
+import { ContactsPromotionService } from '../services/google/ContactsPromotionService';
+import { DrivePromotionService } from '../services/google/DrivePromotionService';
+import { GmailPromotionService } from '../services/google/GmailPromotionService';
+import { YouTubePromotionService } from '../services/google/YouTubePromotionService';
 import { PromoteService } from '../services/PromoteService';
-import { YouTubePromotionService } from '../services/YouTubePromotionService';
 
 @Controller('promote')
 export class PromoteController {
@@ -30,7 +30,7 @@ export class PromoteController {
     private readonly apiLogRepository: Repository<ApiLogEntity>,
   ) {}
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_MINUTE)
   async promoteApiLogs(): Promise<void> {
     if (!config.features['scheduled.entity.promotion']) {
       this.logger.log('Scheduled entity promotion is disabled');
@@ -143,7 +143,7 @@ export class PromoteController {
   /**
    * Handle YouTube data promotion event
    * This runs asynchronously in the job queue after the API log has been marked as processed
-   * Promotes YouTube likes, playlists, and history to content and entities tables
+   * Promotes YouTube likes, playlists, subscriptions, and activities to content and entities tables
    */
   @OnEvent(Events.PROMOTE_YOUTUBE_DATA)
   async handlePromoteYouTubeData(payload: EventPayloads[Events.PROMOTE_YOUTUBE_DATA]) {

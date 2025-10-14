@@ -1,12 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { ContentService, GraphUtilityService } from '@ci/domains/memory';
-import { CreateContentDto } from '@ci/domains/memory/types';
-import { UserEntity } from '@ci/domains/user';
+import { ContentService, GraphUtilityService, type CreateContentDto } from '@ci/domains/memory';
+
+import { PersonPromotionService } from '../PersonPromotionService';
 
 interface YouTubePlaylistItem {
   id?: string;
@@ -54,10 +52,9 @@ export class YouTubePromotionService {
   private logger = new LoggerService(YouTubePromotionService.name);
 
   constructor(
-    @InjectRepository(UserEntity)
-    private readonly userRepository: Repository<UserEntity>,
     private readonly contentService: ContentService,
     private readonly graphUtilityService: GraphUtilityService,
+    private readonly personPromotionService: PersonPromotionService,
   ) {}
 
   async promoteYouTubeData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -86,8 +83,10 @@ export class YouTubePromotionService {
         await this.processLikes(data.items, userId, connectionId);
       } else if (data.type === 'playlists') {
         await this.processPlaylists(data.items, userId, connectionId);
-      } else if (data.type === 'history') {
-        await this.processHistory(data.items, userId, connectionId);
+      } else if (data.type === 'subscriptions') {
+        await this.processSubscriptions(data.items, userId, connectionId);
+      } else if (data.type === 'activities') {
+        await this.processActivities(data.items, userId, connectionId);
       }
 
       this.logger.log('YouTube data promotion completed', {
@@ -108,7 +107,7 @@ export class YouTubePromotionService {
   }
 
   private extractYouTubeData(content: unknown): {
-    type: 'likes' | 'playlists' | 'history';
+    type: 'likes' | 'playlists' | 'subscriptions' | 'activities';
     items: unknown[];
   } | null {
     if (!content || typeof content !== 'object') {
@@ -119,7 +118,7 @@ export class YouTubePromotionService {
 
     if ('type' in contentObj && 'items' in contentObj && Array.isArray(contentObj.items)) {
       const type = String(contentObj.type);
-      if (type === 'likes' || type === 'playlists' || type === 'history') {
+      if (type === 'likes' || type === 'playlists' || type === 'subscriptions' || type === 'activities') {
         return { type, items: contentObj.items };
       }
     }
@@ -151,17 +150,7 @@ export class YouTubePromotionService {
     const channelId = item.snippet?.channelId || '';
 
     // Get user's entity ID (create if missing)
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      this.logger.warn('User not found, skipping video', { userId, videoId });
-
-      return;
-    }
-
-    let userEntityId = user.entityId;
-    if (!userEntityId) {
-      userEntityId = await this.ensureUserHasEntity(user);
-    }
+    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
 
     // Create video entity
     const videoEntityId = uuid7();
@@ -235,17 +224,7 @@ export class YouTubePromotionService {
     const description = item.snippet?.description || '';
 
     // Get user's entity ID (create if missing)
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      this.logger.warn('User not found, skipping playlist', { userId, playlistId });
-
-      return;
-    }
-
-    let userEntityId = user.entityId;
-    if (!userEntityId) {
-      userEntityId = await this.ensureUserHasEntity(user);
-    }
+    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
 
     // Create playlist entity
     const playlistEntityId = uuid7();
@@ -286,120 +265,146 @@ export class YouTubePromotionService {
     });
   }
 
-  private async processHistory(items: unknown[], userId: string, connectionId: string): Promise<void> {
+  private async processSubscriptions(items: unknown[], userId: string, connectionId: string): Promise<void> {
     for (const item of items) {
       try {
-        await this.processHistoryVideo(item as YouTubePlaylistItem, userId, connectionId);
+        await this.processSubscription(item as Record<string, unknown>, userId, connectionId);
       } catch (error) {
-        this.logger.error('Error processing history video', {
+        this.logger.error('Error processing subscription', {
           error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
     }
   }
 
-  private async processHistoryVideo(
-    item: YouTubePlaylistItem,
+  private async processSubscription(
+    item: Record<string, unknown>,
     userId: string,
     connectionId: string,
   ): Promise<void> {
-    const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
-    const title = item.snippet?.title || 'Untitled Video';
-    const channelTitle = item.snippet?.channelTitle || '';
+    const snippet = item.snippet as Record<string, unknown>;
+    const channelId = snippet.resourceId
+      ? ((snippet.resourceId as Record<string, unknown>).channelId as string)
+      : '';
+    const channelTitle = (snippet.title as string) || 'Untitled Channel';
+    const description = (snippet.description as string) || '';
+    const thumbnail = snippet.thumbnails as Record<string, unknown>;
 
     // Get user's entity ID (create if missing)
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      this.logger.warn('User not found, skipping history video', { userId, videoId });
+    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
 
-      return;
-    }
-
-    let userEntityId = user.entityId;
-    if (!userEntityId) {
-      userEntityId = await this.ensureUserHasEntity(user);
-    }
-
-    // Create video entity (or find existing)
-    const videoEntityId = uuid7();
+    // Create channel entity
+    const channelEntityId = uuid7();
     await this.graphUtilityService.createGraphNode({
-      entityId: videoEntityId,
-      entityType: 'Video',
-      name: title,
-      description: `YouTube video by ${channelTitle}`,
+      entityId: channelEntityId,
+      entityType: 'Channel',
+      name: channelTitle,
+      description: `YouTube channel: ${channelTitle}`,
       properties: {
-        video_id: videoId,
-        channel_title: channelTitle,
-        url: `https://www.youtube.com/watch?v=${videoId}`,
+        channel_id: channelId,
+        url: `https://www.youtube.com/channel/${channelId}`,
         platform: 'youtube',
+        thumbnail: thumbnail?.high
+          ? (thumbnail.high as Record<string, unknown>).url
+          : thumbnail?.default
+            ? (thumbnail.default as Record<string, unknown>).url
+            : null,
         owner_user_id: userId,
       },
-      searchContent: `${title} ${channelTitle}`,
+      searchContent: `${channelTitle} ${description}`,
       ownerUserId: userId,
     });
 
-    // Create WATCHED relationship
+    // Create SUBSCRIBED_TO relationship
     await this.graphUtilityService.createRelationship(
       userEntityId,
-      videoEntityId,
-      'WATCHED',
+      channelEntityId,
+      'SUBSCRIBED_TO',
       {
         platform: 'youtube',
         connection_id: connectionId,
-        watched_at: new Date().toISOString(),
+        subscribed_at: (snippet.publishedAt as string) || new Date().toISOString(),
       },
       1.0,
       userId,
     );
 
-    this.logger.log('Processed YouTube history video', {
-      videoId,
-      title,
+    this.logger.log('Processed YouTube subscription', {
+      channelId,
+      channelTitle,
     });
   }
 
-  /**
-   * Ensure a user has an entity in the graph
-   * Creates one if it doesn't exist (for legacy users)
-   */
-  private async ensureUserHasEntity(user: UserEntity): Promise<string> {
-    const entityId = uuid7();
-    const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
-    const [firstName, ...restName] = nameParts;
-
-    const properties: Record<string, unknown> = {
-      email: user.email,
-      owner_user_id: user.id,
-    };
-
-    if (firstName) {
-      properties.first_name = firstName;
+  private async processActivities(items: unknown[], userId: string, connectionId: string): Promise<void> {
+    for (const item of items) {
+      try {
+        await this.processActivity(item as Record<string, unknown>, userId, connectionId);
+      } catch (error) {
+        this.logger.error('Error processing activity', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
     }
+  }
 
-    if (restName.length > 0) {
-      properties.last_name = restName.join(' ');
+  private async processActivity(
+    item: Record<string, unknown>,
+    userId: string,
+    connectionId: string,
+  ): Promise<void> {
+    const snippet = item.snippet as Record<string, unknown>;
+    const contentDetails = item.contentDetails as Record<string, unknown>;
+    const type = snippet.type as string;
+
+    // Get user's entity ID (create if missing)
+    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
+
+    // Process based on activity type
+    if (type === 'upload' && contentDetails.upload) {
+      const upload = contentDetails.upload as Record<string, unknown>;
+      const videoId = upload.videoId as string;
+      const title = (snippet.title as string) || 'Untitled Video';
+
+      // Create video entity for uploaded video
+      const videoEntityId = uuid7();
+      await this.graphUtilityService.createGraphNode({
+        entityId: videoEntityId,
+        entityType: 'Video',
+        name: title,
+        description: `YouTube video uploaded by user`,
+        properties: {
+          video_id: videoId,
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          platform: 'youtube',
+          owner_user_id: userId,
+          uploaded_at: snippet.publishedAt as string,
+        },
+        searchContent: title,
+        ownerUserId: userId,
+      });
+
+      // Create UPLOADED relationship
+      await this.graphUtilityService.createRelationship(
+        userEntityId,
+        videoEntityId,
+        'UPLOADED',
+        {
+          platform: 'youtube',
+          connection_id: connectionId,
+          uploaded_at: (snippet.publishedAt as string) || new Date().toISOString(),
+        },
+        1.0,
+        userId,
+      );
+
+      this.logger.log('Processed YouTube upload activity', { videoId, title });
+    } else if (type === 'comment' && contentDetails.comment) {
+      const comment = contentDetails.comment as Record<string, unknown>;
+      const resourceId = comment.resourceId as Record<string, unknown>;
+      const videoId = resourceId.videoId as string;
+
+      // Log comment activity (we can expand this later to store comments)
+      this.logger.log('Processed YouTube comment activity', { videoId, type: 'comment' });
     }
-
-    await this.graphUtilityService.createGraphNode({
-      entityId,
-      entityType: 'Person',
-      name: user.name || user.email,
-      description: `User: ${user.name || user.email}`,
-      properties,
-      searchContent: `${user.name || ''} ${user.email}`,
-      linkedTable: 'users',
-      linkedId: user.id,
-      ownerUserId: user.id,
-    });
-
-    // Update the user record with the new entity ID
-    await this.userRepository.update(user.id, { entityId });
-
-    this.logger.log('Created entity for legacy user', {
-      userId: user.id,
-      entityId,
-    });
-
-    return entityId;
   }
 }

@@ -15,8 +15,8 @@ interface ParticipantInfo {
 }
 
 @Injectable()
-export class PeoplePromotionService {
-  private logger = new LoggerService(PeoplePromotionService.name);
+export class PersonPromotionService {
+  private logger = new LoggerService(PersonPromotionService.name);
 
   constructor(
     @InjectRepository(GraphNodeEntity)
@@ -38,20 +38,15 @@ export class PeoplePromotionService {
     relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH',
   ): Promise<string> {
     try {
-      // Get user's entity ID (create if missing)
+      // Get user entity and user entity ID
       const user = await this.userRepository.findOne({ where: { id: userId } });
       if (!user) {
         throw new Error(`User not found: ${userId}`);
       }
 
-      let userEntityId = user.entityId;
-      if (!userEntityId) {
-        // Create entity for user if it doesn't exist (for legacy users)
-        userEntityId = await this.ensureUserHasEntity(user);
-      }
-
       // Skip if participant is the user themselves (avoid self-references)
       if (participant.email.toLowerCase() === user.email.toLowerCase()) {
+        const userEntityId = await this.getUserEntityId(userId);
         this.logger.log('Skipping self-reference participant', {
           email: participant.email,
           userId,
@@ -59,6 +54,8 @@ export class PeoplePromotionService {
 
         return userEntityId;
       }
+
+      const userEntityId = await this.getUserEntityId(userId);
 
       // Check if person entity already exists by email in properties
       const existingEntity = await this.entityRepository
@@ -254,10 +251,27 @@ export class PeoplePromotionService {
   }
 
   /**
+   * Get or create a user's entity ID
+   * Handles user lookup and entity creation in one call
+   */
+  async getUserEntityId(userId: string): Promise<string> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new Error(`User not found: ${userId}`);
+    }
+
+    if (user.entityId) {
+      return user.entityId;
+    }
+
+    return this.ensureUserHasEntity(user);
+  }
+
+  /**
    * Ensure a user has an entity in the graph
    * Creates one if it doesn't exist (for legacy users)
    */
-  private async ensureUserHasEntity(user: UserEntity): Promise<string> {
+  async ensureUserHasEntity(user: UserEntity): Promise<string> {
     const entityId = uuid7();
     const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
     const [firstName, ...restName] = nameParts;

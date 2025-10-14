@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
-import { EventService } from '@ci/domains/memory';
-import type { CreateEventDto } from '@ci/domains/memory/types';
+import { EventService, type CreateEventDto } from '@ci/domains/memory';
 
-import { PeoplePromotionService } from './PeoplePromotionService';
+import { PersonPromotionService } from '../PersonPromotionService';
 
 interface CalendarEvent {
   id?: string;
@@ -70,7 +69,7 @@ export class GoogleCalendarEventPromotionService {
 
   constructor(
     private readonly eventService: EventService,
-    private readonly peoplePromotionService: PeoplePromotionService,
+    private readonly personPromotionService: PersonPromotionService,
   ) {}
 
   async promoteCalendarEvents(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -291,7 +290,7 @@ export class GoogleCalendarEventPromotionService {
     const organizerInfos = participantInfos.filter((p) => p.type === 'organizer');
     const attendeeInfos = participantInfos.filter((p) => p.type === 'attendee');
 
-    const organizerEntityIds = await this.peoplePromotionService.processParticipants(
+    const organizerEntityIds = await this.personPromotionService.processParticipants(
       organizerInfos,
       userId,
       connectionId,
@@ -299,7 +298,7 @@ export class GoogleCalendarEventPromotionService {
       'ORGANIZED_EVENT_WITH',
     );
 
-    const attendeeEntityIds = await this.peoplePromotionService.processParticipants(
+    const attendeeEntityIds = await this.personPromotionService.processParticipants(
       attendeeInfos,
       userId,
       connectionId,

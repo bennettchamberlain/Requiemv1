@@ -5,7 +5,8 @@ import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { GraphUtilityService, GraphNodeEntity } from '@ci/domains/memory';
-import { UserEntity } from '@ci/domains/user';
+
+import { PersonPromotionService } from '../PersonPromotionService';
 
 interface GoogleContact {
   resourceName?: string;
@@ -56,9 +57,8 @@ export class ContactsPromotionService {
   constructor(
     @InjectRepository(GraphNodeEntity)
     private readonly entityRepository: Repository<GraphNodeEntity>,
-    @InjectRepository(UserEntity)
-    private readonly userRepository: Repository<UserEntity>,
     private readonly graphUtilityService: GraphUtilityService,
+    private readonly personPromotionService: PersonPromotionService,
   ) {}
 
   async promoteContacts(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -83,15 +83,7 @@ export class ContactsPromotionService {
       });
 
       // Get user's entity ID (create if missing)
-      const user = await this.userRepository.findOne({ where: { id: userId } });
-      if (!user) {
-        throw new Error(`User not found: ${userId}`);
-      }
-
-      let userEntityId = user.entityId;
-      if (!userEntityId) {
-        userEntityId = await this.ensureUserHasEntity(user);
-      }
+      const userEntityId = await this.personPromotionService.getUserEntityId(userId);
 
       for (const contact of contacts) {
         try {
@@ -156,16 +148,12 @@ export class ContactsPromotionService {
     let existingEntity: GraphNodeEntity | null = null;
 
     if (primaryEmail) {
-      const entities = await this.entityRepository
+      existingEntity = await this.entityRepository
         .createQueryBuilder('entity')
         .where("entity.entity_type = 'Person'")
         .andWhere("entity.properties->>'email' = :email", { email: primaryEmail })
         .andWhere("entity.properties->>'owner_user_id' = :userId", { userId })
-        .getMany();
-
-      if (entities.length > 0) {
-        existingEntity = entities[0];
-      }
+        .getOne();
     }
 
     let contactEntityId: string;
@@ -338,50 +326,5 @@ export class ContactsPromotionService {
     };
 
     return relationshipMap[type.toLowerCase()] || null;
-  }
-
-  /**
-   * Ensure a user has an entity in the graph
-   * Creates one if it doesn't exist (for legacy users)
-   */
-  private async ensureUserHasEntity(user: UserEntity): Promise<string> {
-    const entityId = uuid7();
-    const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
-    const [firstName, ...restName] = nameParts;
-
-    const properties: Record<string, unknown> = {
-      email: user.email,
-      owner_user_id: user.id,
-    };
-
-    if (firstName) {
-      properties.first_name = firstName;
-    }
-
-    if (restName.length > 0) {
-      properties.last_name = restName.join(' ');
-    }
-
-    await this.graphUtilityService.createGraphNode({
-      entityId,
-      entityType: 'Person',
-      name: user.name || user.email,
-      description: `User: ${user.name || user.email}`,
-      properties,
-      searchContent: `${user.name || ''} ${user.email}`,
-      linkedTable: 'users',
-      linkedId: user.id,
-      ownerUserId: user.id,
-    });
-
-    // Update the user record with the new entity ID
-    await this.userRepository.update(user.id, { entityId });
-
-    this.logger.log('Created entity for legacy user', {
-      userId: user.id,
-      entityId,
-    });
-
-    return entityId;
   }
 }

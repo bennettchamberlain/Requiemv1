@@ -1,11 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
-import { ConnectionService } from '@ci/domains/connections';
-import { Connection } from '@ci/domains/connections/types';
+import { ConnectionService, type Connection } from '@ci/domains/connections';
 import { CommunicationService } from '@ci/domains/memory';
 
-import { PeoplePromotionService } from './PeoplePromotionService';
+import { PersonPromotionService } from '../PersonPromotionService';
 
 interface GmailMessage {
   id?: string;
@@ -46,7 +45,7 @@ export class GmailPromotionService {
 
   constructor(
     private readonly communicationService: CommunicationService,
-    private readonly peoplePromotionService: PeoplePromotionService,
+    private readonly personPromotionService: PersonPromotionService,
     private readonly connectionService: ConnectionService,
   ) {}
 
@@ -193,7 +192,7 @@ export class GmailPromotionService {
       const toParticipants = messageDetails.participants.filter((p) => p.type === 'to');
 
       // Create person entities for sender (with RECEIVED_EMAIL_FROM relationship)
-      const fromEntityIds = await this.peoplePromotionService.processParticipants(
+      const fromEntityIds = await this.personPromotionService.processParticipants(
         fromParticipants,
         userId,
         connectionId,
@@ -202,7 +201,7 @@ export class GmailPromotionService {
       );
 
       // Create person entities for recipients (with EMAILED relationship)
-      const toEntityIds = await this.peoplePromotionService.processParticipants(
+      const toEntityIds = await this.personPromotionService.processParticipants(
         toParticipants,
         userId,
         connectionId,

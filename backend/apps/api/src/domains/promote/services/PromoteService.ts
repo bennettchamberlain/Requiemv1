@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, MoreThan, Not } from 'typeorm';
+import { IsNull, MoreThan, Not, Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import { ConnectionEntity } from '@ci/domains/connections';
+import { ApiLogEntity } from '@ci/domains/etl';
 import { Events, EventService } from '@ci/domains/events';
 
-import { ConnectionEntity } from '../../connections/entities/ConnectionEntity';
-import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
+import { ApiLogScopes } from '../constants';
 
 @Injectable()
 export class PromoteService {
@@ -124,35 +125,35 @@ export class PromoteService {
       }
 
       // Queue the promotion job based on scope
-      if (apiLog.scope === 'Gmail') {
+      if (apiLog.scope === ApiLogScopes.GMAIL) {
         await this.eventService.send(Events.PROMOTE_GMAIL_MESSAGES, {
           apiLogId: apiLog.id,
           userId: context.userId,
           connectionId: apiLog.connection_id,
           content: apiLog.content,
         });
-      } else if (apiLog.scope === 'Google Calendar') {
+      } else if (apiLog.scope === ApiLogScopes.GOOGLE_CALENDAR) {
         await this.eventService.send(Events.PROMOTE_CALENDAR_EVENTS, {
           apiLogId: apiLog.id,
           userId: context.userId,
           connectionId: apiLog.connection_id,
           content: apiLog.content,
         });
-      } else if (apiLog.scope === 'YouTube') {
+      } else if (apiLog.scope === ApiLogScopes.YOUTUBE) {
         await this.eventService.send(Events.PROMOTE_YOUTUBE_DATA, {
           apiLogId: apiLog.id,
           userId: context.userId,
           connectionId: apiLog.connection_id,
           content: apiLog.content,
         });
-      } else if (apiLog.scope === 'Google Drive') {
+      } else if (apiLog.scope === ApiLogScopes.GOOGLE_DRIVE) {
         await this.eventService.send(Events.PROMOTE_DRIVE_DATA, {
           apiLogId: apiLog.id,
           userId: context.userId,
           connectionId: apiLog.connection_id,
           content: apiLog.content,
         });
-      } else if (apiLog.scope === 'Google Contacts') {
+      } else if (apiLog.scope === ApiLogScopes.GOOGLE_CONTACTS) {
         await this.eventService.send(Events.PROMOTE_CONTACTS, {
           apiLogId: apiLog.id,
           userId: context.userId,
