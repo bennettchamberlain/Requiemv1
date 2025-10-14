@@ -11,6 +11,9 @@ export class GraphNodeEntity {
   @Column({ type: 'uuid', nullable: true })
   owner_user_id!: string | null;
 
+  @Column({ type: 'uuid', array: true, default: '{}' })
+  outgoing_relationships!: string[];
+
   @Column({ type: 'text', nullable: true })
   name!: string | null;
 
