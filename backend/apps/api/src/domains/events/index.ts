@@ -17,7 +17,7 @@ export {};
 export { EventService };
 
 // Types
-export type {} from './types';
+export type { EventPayload, Acknowledgement } from './types';
 export { Events, type EventPayloads } from './event-registry';
 export { Queues };
 
