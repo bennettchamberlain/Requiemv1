@@ -7,6 +7,7 @@ import { useParams } from 'react-router-dom';
 
 import { useActionService, useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
+import { VoiceModeProvider } from '@/components/Chat/VoiceModeProvider';
 import { InlineModal } from '@/components/InlineModal';
 import { Markdown } from '@/components/Markdown';
 import { ModelSelector } from '@/components/ModelSelector';
@@ -89,16 +90,18 @@ export function FeedModal({ onClose }: Props) {
           </div>
         </div>
 
-        <Chat
-          placeholder={renderTitle ? 'Continue the conversation...' : ''}
-          disabled={!renderTitle}
-          streaming={chatRequestStreaming}
-          messages={messages}
-          readable={stream ?? undefined}
-          onSubmit={submitChatRequest}
-          onStop={stopChatRequest}
-          emptyState={emptyState}
-        />
+        <VoiceModeProvider>
+          <Chat
+            placeholder={renderTitle ? 'Continue the conversation...' : ''}
+            disabled={!renderTitle}
+            streaming={chatRequestStreaming}
+            messages={messages}
+            readable={stream ?? undefined}
+            onSubmit={submitChatRequest}
+            onStop={stopChatRequest}
+            emptyState={emptyState}
+          />
+        </VoiceModeProvider>
       </InlineModal>
     );
   }
@@ -149,16 +152,18 @@ export function FeedModal({ onClose }: Props) {
             </div>
           </div>
 
-          <Chat
-            placeholder={renderTitle ? 'Continue the conversation...' : ''}
-            disabled={!renderTitle}
-            streaming={chatRequestStreaming}
-            messages={messages}
-            readable={stream ?? undefined}
-            onSubmit={submitChatRequest}
-            onStop={stopChatRequest}
-            emptyState={emptyState}
-          />
+          <VoiceModeProvider>
+            <Chat
+              placeholder={renderTitle ? 'Continue the conversation...' : ''}
+              disabled={!renderTitle}
+              streaming={chatRequestStreaming}
+              messages={messages}
+              readable={stream ?? undefined}
+              onSubmit={submitChatRequest}
+              onStop={stopChatRequest}
+              emptyState={emptyState}
+            />
+          </VoiceModeProvider>
         </div>
       </Dialog.Content>
     </Dialog>
