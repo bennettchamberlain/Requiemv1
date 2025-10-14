@@ -1,6 +1,6 @@
 export interface PromptInput {
   prompt: string;
-  model: string;
+  model?: string;
   threadId?: string;
   enableTools?: boolean;
   enableThinking?: boolean;

@@ -27,6 +27,19 @@ interface PromptOptions {
   enableThinking?: boolean;
 }
 
+interface ValidateModelOptions {
+  messages?: OllamaMessage[];
+  requestedModel?: string | null;
+  enableThinking?: boolean;
+  enableTools?: boolean;
+}
+
+interface ValidateModelResult {
+  model: string;
+  enableThinking: boolean;
+  enableTools: boolean;
+}
+
 @Injectable()
 export class OllamaService {
   private readonly logger = new LoggerService(OllamaService.name);
@@ -48,18 +61,13 @@ export class OllamaService {
   async generateStream(
     context: RequestContext,
     prompt: string,
-    options?: PromptOptions,
+    { model, signal }: PromptOptions,
   ): Promise<AsyncGenerator<GenerateResponse> & { buffer: string }> {
     const chunks: string[] = [];
 
     const stream = (async function* (self) {
-      const resolvedOptions = options ?? { model: PROMPT_MODEL };
-      const { model, signal } = resolvedOptions;
-
-      const selectedModel = self.getModelForPrompt([], model);
-
       const iterator = await self.ollama.generate({
-        model: selectedModel,
+        model,
         prompt,
         stream: true,
       });
@@ -88,15 +96,12 @@ export class OllamaService {
   async generate(
     context: RequestContext,
     prompt: string,
-    options?: Omit<PromptOptions, 'signal'>,
+    { model }: Omit<PromptOptions, 'signal'>,
   ): Promise<GenerateResponse> {
-    const resolvedOptions = options ?? { model: PROMPT_MODEL };
-    const { model } = resolvedOptions;
-
-    const selectedModel = this.getModelForPrompt([], model);
+    await this.validateModel(context, model);
 
     return this.ollama.generate({
-      model: selectedModel,
+      model,
       prompt,
     });
   }
@@ -104,12 +109,9 @@ export class OllamaService {
   async chatStream(
     context: RequestContext,
     messages: OllamaMessage[],
-    options?: PromptOptions,
+    { model, signal, enableTools = false, enableThinking = true }: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
-    const resolvedOptions = options ?? { model: PROMPT_MODEL };
-    const { model, signal, enableTools = false, enableThinking = true } = resolvedOptions;
-
-    const selectedModel = this.getModelForPrompt(messages, model);
+    await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -153,7 +155,7 @@ export class OllamaService {
 
         try {
           const iterator = await self.ollama.chat({
-            model: selectedModel,
+            model,
             messages: inputMessages.concat(accumulatedMessages),
             stream: true,
             ...(enableThinking && { think: true }),
@@ -200,7 +202,7 @@ export class OllamaService {
             const error = err as Error;
 
             self.logger.error('Ollama prompt evaluation completed', {
-              model: lastChunk?.model ?? selectedModel,
+              model: lastChunk?.model ?? model,
               doneReason: 'error',
               errorMessage: error?.message ?? String(err),
               errorStack: error instanceof Error ? error.stack : undefined,
@@ -224,7 +226,7 @@ export class OllamaService {
 
           if (signal?.aborted) {
             self.logger.log('Ollama prompt evaluation completed', {
-              model: lastChunk?.model ?? selectedModel,
+              model: lastChunk?.model ?? model,
               doneReason: 'canceled',
             });
           }
@@ -243,12 +245,9 @@ export class OllamaService {
   async chat(
     context: RequestContext,
     messages: OllamaMessage[],
-    options?: Omit<PromptOptions, 'signal'>,
+    { model, enableTools = false }: Omit<PromptOptions, 'signal'>,
   ): Promise<ChatResponse> {
-    const resolvedOptions = options ?? { model: PROMPT_MODEL };
-    const { model, enableTools = false } = resolvedOptions;
-
-    const selectedModel = this.getModelForPrompt(messages, model);
+    await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -257,7 +256,7 @@ export class OllamaService {
     const accumulatedMessages: OllamaMessage[] = [];
 
     const response = await this.ollama.chat({
-      model: selectedModel,
+      model: model,
       messages: inputMessages,
       ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
     });
@@ -280,21 +279,36 @@ export class OllamaService {
     accumulatedMessages.push(...toolEvaluations);
 
     return this.ollama.chat({
-      model: selectedModel,
+      model,
       messages: inputMessages.concat(accumulatedMessages),
     });
   }
 
-  async validateModel(context: RequestContext, model: string): Promise<OllamaModel> {
-    const availableModels = await this.getAvailableModels(context);
+  async resolveModel(context: RequestContext, opts?: ValidateModelOptions): Promise<ValidateModelResult> {
+    const { messages = [], requestedModel, enableThinking = false, enableTools = false } = opts ?? {};
 
-    const validModel = availableModels.find((availableModel) => availableModel.model === model);
+    let resolvedModel = requestedModel ?? PROMPT_MODEL;
+    let resolvedThinking = enableThinking;
+    let resolvedTools = enableTools;
 
-    if (!validModel) {
-      throw new Error(`Invalid model specified: ${model}`);
+    // If pinned demo models feature is enabled, always use demo models
+    if (config.features['pinned.demo.models']) {
+      // Check if any message contains image content
+      const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
+
+      // Use vision model for images, text model for regular chat
+      resolvedModel = hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
+      resolvedThinking = hasVisualContent ? false : true;
+      resolvedTools = hasVisualContent ? false : true;
     }
 
-    return validModel;
+    await this.validateModel(context, resolvedModel);
+
+    return {
+      model: resolvedModel,
+      enableThinking: resolvedThinking,
+      enableTools: resolvedTools,
+    };
   }
 
   private parseOllamaModel(model: string): OllamaModel {
@@ -392,25 +406,13 @@ export class OllamaService {
     };
   }
 
-  /**
-   * Get the appropriate model based on feature flag and content type
-   */
-  private getModelForPrompt(messages: OllamaMessage[], requestedModel: string): string {
-    // If pinned demo models feature is enabled, always use demo models
-    if (config.features['pinned.demo.models']) {
-      // Check if any message contains image content
-      const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
+  private async validateModel(context: RequestContext, requestedModel: string) {
+    const availableModels = await this.getAvailableModels(context);
 
-      // Use vision model for images, text model for regular chat
-      return hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
+    const validModel = availableModels.find((availableModel) => availableModel.model === requestedModel);
+
+    if (!validModel) {
+      throw new Error(`Invalid model specified: ${requestedModel}`);
     }
-
-    // If feature flag is disabled and a specific model is requested, use it
-    if (requestedModel) {
-      return requestedModel;
-    }
-
-    // Default fallback
-    return PROMPT_MODEL;
   }
 }
