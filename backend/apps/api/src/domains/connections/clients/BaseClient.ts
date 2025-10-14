@@ -15,6 +15,8 @@ export abstract class BaseClient {
 
   abstract exchangeAuthorizationCode(code: string): Promise<TokenExchange>;
 
+  abstract refreshAccessToken(connection: Connection): Promise<TokenExchange>;
+
   abstract request<T>(connection: Connection, endpoint: string, options?: RequestInit): Promise<T>;
 
   abstract sync(connection: Connection): Promise<SyncResponse[]>;
