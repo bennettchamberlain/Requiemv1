@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
 import {
   type ChatResponse,
   type GenerateResponse,
@@ -8,12 +7,10 @@ import {
   type ToolCall,
   Ollama,
 } from 'ollama';
-import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
-import { MessageService } from '@ci/domains/conversations';
 import { ToolRegistry, type ToolSchema } from '@ci/domains/tools';
 
 import type { OllamaModel } from '../types';
@@ -38,12 +35,7 @@ export class OllamaService {
     host: config.services.ollama.host,
   });
 
-  constructor(
-    private readonly messageService: MessageService,
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
-    private readonly toolRegistry: ToolRegistry,
-  ) {}
+  constructor(private readonly toolRegistry: ToolRegistry) {}
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getAvailableModels(context: RequestContext): Promise<OllamaModel[]> {
