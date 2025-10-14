@@ -25,8 +25,9 @@ export interface ContactsSyncState {
 export interface YouTubeSyncState {
   lastSyncAt?: string;
   lastLikesItemId?: string;
-  lastHistoryItemId?: string;
   lastPlaylistId?: string;
+  lastSubscriptionId?: string;
+  lastActivityId?: string;
 }
 
 export interface GoogleSyncState {

@@ -143,7 +143,7 @@ export class PromoteController {
   /**
    * Handle YouTube data promotion event
    * This runs asynchronously in the job queue after the API log has been marked as processed
-   * Promotes YouTube likes, playlists, and history to content and entities tables
+   * Promotes YouTube likes, playlists, subscriptions, and activities to content and entities tables
    */
   @OnEvent(Events.PROMOTE_YOUTUBE_DATA)
   async handlePromoteYouTubeData(payload: EventPayloads[Events.PROMOTE_YOUTUBE_DATA]) {
