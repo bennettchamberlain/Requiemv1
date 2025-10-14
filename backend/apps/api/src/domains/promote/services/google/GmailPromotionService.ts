@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
-import { ConnectionService } from '@ci/domains/connections';
-import { Connection } from '@ci/domains/connections/types';
+import { ConnectionService, type Connection } from '@ci/domains/connections';
 import { CommunicationService } from '@ci/domains/memory';
 
 import { PersonPromotionService } from '../PersonPromotionService';

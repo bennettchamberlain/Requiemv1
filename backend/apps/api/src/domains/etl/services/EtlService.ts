@@ -5,10 +5,12 @@ import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import type { SyncResponse } from '@ci/domains/connections/clients/types';
-import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
-import { ConnectionService } from '@ci/domains/connections/services/ConnectionService';
-import type { Connection } from '@ci/domains/connections/types';
+import {
+  ConnectionEntity,
+  ConnectionService,
+  type Connection,
+  type SyncResponse,
+} from '@ci/domains/connections';
 
 import { ApiLogEntity } from '../entities/ApiLogEntity';
 

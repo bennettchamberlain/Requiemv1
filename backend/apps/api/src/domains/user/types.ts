@@ -17,6 +17,7 @@ export interface UpdateUserDto {
   email?: string;
   password?: string;
   onboarded?: boolean;
+  entityId?: string;
 }
 
 export interface SignupCode {

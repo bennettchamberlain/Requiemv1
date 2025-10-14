@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { ContentService, GraphUtilityService } from '@ci/domains/memory';
-import { CreateContentDto } from '@ci/domains/memory/types';
-import { UserEntity } from '@ci/domains/user';
+import type { CreateContentDto } from '@ci/domains/memory/types';
+
+import { PersonPromotionService } from '../PersonPromotionService';
 
 interface YouTubePlaylistItem {
   id?: string;
@@ -54,10 +53,9 @@ export class YouTubePromotionService {
   private logger = new LoggerService(YouTubePromotionService.name);
 
   constructor(
-    @InjectRepository(UserEntity)
-    private readonly userRepository: Repository<UserEntity>,
     private readonly contentService: ContentService,
     private readonly graphUtilityService: GraphUtilityService,
+    private readonly personPromotionService: PersonPromotionService,
   ) {}
 
   async promoteYouTubeData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -151,17 +149,7 @@ export class YouTubePromotionService {
     const channelId = item.snippet?.channelId || '';
 
     // Get user's entity ID (create if missing)
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      this.logger.warn('User not found, skipping video', { userId, videoId });
-
-      return;
-    }
-
-    let userEntityId = user.entityId;
-    if (!userEntityId) {
-      userEntityId = await this.ensureUserHasEntity(user);
-    }
+    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
 
     // Create video entity
     const videoEntityId = uuid7();
@@ -235,17 +223,7 @@ export class YouTubePromotionService {
     const description = item.snippet?.description || '';
 
     // Get user's entity ID (create if missing)
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      this.logger.warn('User not found, skipping playlist', { userId, playlistId });
-
-      return;
-    }
-
-    let userEntityId = user.entityId;
-    if (!userEntityId) {
-      userEntityId = await this.ensureUserHasEntity(user);
-    }
+    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
 
     // Create playlist entity
     const playlistEntityId = uuid7();
@@ -308,17 +286,7 @@ export class YouTubePromotionService {
     const channelTitle = item.snippet?.channelTitle || '';
 
     // Get user's entity ID (create if missing)
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      this.logger.warn('User not found, skipping history video', { userId, videoId });
-
-      return;
-    }
-
-    let userEntityId = user.entityId;
-    if (!userEntityId) {
-      userEntityId = await this.ensureUserHasEntity(user);
-    }
+    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
 
     // Create video entity (or find existing)
     const videoEntityId = uuid7();
@@ -356,50 +324,5 @@ export class YouTubePromotionService {
       videoId,
       title,
     });
-  }
-
-  /**
-   * Ensure a user has an entity in the graph
-   * Creates one if it doesn't exist (for legacy users)
-   */
-  private async ensureUserHasEntity(user: UserEntity): Promise<string> {
-    const entityId = uuid7();
-    const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
-    const [firstName, ...restName] = nameParts;
-
-    const properties: Record<string, unknown> = {
-      email: user.email,
-      owner_user_id: user.id,
-    };
-
-    if (firstName) {
-      properties.first_name = firstName;
-    }
-
-    if (restName.length > 0) {
-      properties.last_name = restName.join(' ');
-    }
-
-    await this.graphUtilityService.createGraphNode({
-      entityId,
-      entityType: 'Person',
-      name: user.name || user.email,
-      description: `User: ${user.name || user.email}`,
-      properties,
-      searchContent: `${user.name || ''} ${user.email}`,
-      linkedTable: 'users',
-      linkedId: user.id,
-      ownerUserId: user.id,
-    });
-
-    // Update the user record with the new entity ID
-    await this.userRepository.update(user.id, { entityId });
-
-    this.logger.log('Created entity for legacy user', {
-      userId: user.id,
-      entityId,
-    });
-
-    return entityId;
   }
 }

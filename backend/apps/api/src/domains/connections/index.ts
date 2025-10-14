@@ -29,4 +29,5 @@ export { ConnectionService, ProviderService };
 export { GoogleClient };
 
 // Types
-export type {} from './types';
+export type { Connection } from './types';
+export type { SyncResponse } from './clients/types';
