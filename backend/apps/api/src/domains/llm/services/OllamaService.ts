@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
 import {
   type ChatResponse,
   type GenerateResponse,
@@ -8,24 +7,37 @@ import {
   type ToolCall,
   Ollama,
 } from 'ollama';
-import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
-import { MessageService } from '@ci/domains/conversations';
 import { ToolRegistry, type ToolSchema } from '@ci/domains/tools';
 
 import type { OllamaModel } from '../types';
 
 const PROMPT_MODEL = 'gemma3:1b';
+const DEMO_VISION_MODEL = 'gemma3:27b';
+const DEMO_TEXT_MODEL = 'qwen3:14b';
 const INTERNAL_MODELS = new Set(['nomic-embed-text']);
 
 interface PromptOptions {
-  model?: string;
+  model: string;
   signal?: AbortSignal;
   enableTools?: boolean;
   enableThinking?: boolean;
+}
+
+interface ValidateModelOptions {
+  messages?: OllamaMessage[];
+  requestedModel?: string | null;
+  enableThinking?: boolean;
+  enableTools?: boolean;
+}
+
+interface ValidateModelResult {
+  model: string;
+  enableThinking: boolean;
+  enableTools: boolean;
 }
 
 @Injectable()
@@ -36,12 +48,7 @@ export class OllamaService {
     host: config.services.ollama.host,
   });
 
-  constructor(
-    private readonly messageService: MessageService,
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
-    private readonly toolRegistry: ToolRegistry,
-  ) {}
+  constructor(private readonly toolRegistry: ToolRegistry) {}
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getAvailableModels(context: RequestContext): Promise<OllamaModel[]> {
@@ -54,14 +61,11 @@ export class OllamaService {
   async generateStream(
     context: RequestContext,
     prompt: string,
-    options?: PromptOptions,
+    { model, signal }: PromptOptions,
   ): Promise<AsyncGenerator<GenerateResponse> & { buffer: string }> {
     const chunks: string[] = [];
 
     const stream = (async function* (self) {
-      const resolvedOptions = options ?? {};
-      const { model = PROMPT_MODEL, signal } = resolvedOptions;
-
       const iterator = await self.ollama.generate({
         model,
         prompt,
@@ -92,10 +96,9 @@ export class OllamaService {
   async generate(
     context: RequestContext,
     prompt: string,
-    options?: Omit<PromptOptions, 'signal'>,
+    { model }: Omit<PromptOptions, 'signal'>,
   ): Promise<GenerateResponse> {
-    const resolvedOptions = options ?? ({} as PromptOptions);
-    const { model = PROMPT_MODEL } = resolvedOptions;
+    await this.validateModel(context, model);
 
     return this.ollama.generate({
       model,
@@ -106,10 +109,9 @@ export class OllamaService {
   async chatStream(
     context: RequestContext,
     messages: OllamaMessage[],
-    options?: PromptOptions,
+    { model, signal, enableTools = false, enableThinking = true }: PromptOptions,
   ): Promise<AsyncGenerator<ChatResponse> & { messages: OllamaMessage[] }> {
-    const resolvedOptions = options ?? {};
-    const { model = PROMPT_MODEL, signal, enableTools = false, enableThinking = true } = resolvedOptions;
+    await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -200,7 +202,7 @@ export class OllamaService {
             const error = err as Error;
 
             self.logger.error('Ollama prompt evaluation completed', {
-              model: lastChunk?.model ?? resolvedOptions.model,
+              model: lastChunk?.model ?? model,
               doneReason: 'error',
               errorMessage: error?.message ?? String(err),
               errorStack: error instanceof Error ? error.stack : undefined,
@@ -224,7 +226,7 @@ export class OllamaService {
 
           if (signal?.aborted) {
             self.logger.log('Ollama prompt evaluation completed', {
-              model: lastChunk?.model ?? resolvedOptions.model,
+              model: lastChunk?.model ?? model,
               doneReason: 'canceled',
             });
           }
@@ -243,10 +245,9 @@ export class OllamaService {
   async chat(
     context: RequestContext,
     messages: OllamaMessage[],
-    options?: Omit<PromptOptions, 'signal'>,
+    { model, enableTools = false }: Omit<PromptOptions, 'signal'>,
   ): Promise<ChatResponse> {
-    const resolvedOptions = options ?? ({} as PromptOptions);
-    const { model = PROMPT_MODEL, enableTools = false } = resolvedOptions;
+    await this.validateModel(context, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -255,7 +256,7 @@ export class OllamaService {
     const accumulatedMessages: OllamaMessage[] = [];
 
     const response = await this.ollama.chat({
-      model,
+      model: model,
       messages: inputMessages,
       ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
     });
@@ -283,18 +284,31 @@ export class OllamaService {
     });
   }
 
-  async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
-    const resolvedModel = model ?? PROMPT_MODEL;
+  async resolveModel(context: RequestContext, opts?: ValidateModelOptions): Promise<ValidateModelResult> {
+    const { messages = [], requestedModel, enableThinking = false, enableTools = false } = opts ?? {};
 
-    const availableModels = await this.getAvailableModels(context);
+    let resolvedModel = requestedModel ?? PROMPT_MODEL;
+    let resolvedThinking = enableThinking;
+    let resolvedTools = enableTools;
 
-    const validModel = availableModels.find((availableModel) => availableModel.model === resolvedModel);
+    // If pinned demo models feature is enabled, always use demo models
+    if (config.features['pinned.demo.models']) {
+      // Check if any message contains image content
+      const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
 
-    if (!validModel) {
-      throw new Error(`Invalid model specified: ${model}`);
+      // Use vision model for images, text model for regular chat
+      resolvedModel = hasVisualContent ? DEMO_VISION_MODEL : DEMO_TEXT_MODEL;
+      resolvedThinking = hasVisualContent ? false : true;
+      resolvedTools = hasVisualContent ? false : true;
     }
 
-    return validModel;
+    await this.validateModel(context, resolvedModel);
+
+    return {
+      model: resolvedModel,
+      enableThinking: resolvedThinking,
+      enableTools: resolvedTools,
+    };
   }
 
   private parseOllamaModel(model: string): OllamaModel {
@@ -390,5 +404,15 @@ export class OllamaService {
         parameters: toolSchema.parameters,
       },
     };
+  }
+
+  private async validateModel(context: RequestContext, requestedModel: string) {
+    const availableModels = await this.getAvailableModels(context);
+
+    const validModel = availableModels.find((availableModel) => availableModel.model === requestedModel);
+
+    if (!validModel) {
+      throw new Error(`Invalid model specified: ${requestedModel}`);
+    }
   }
 }

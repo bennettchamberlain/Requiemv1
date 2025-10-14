@@ -146,8 +146,8 @@ export class ConnectionService {
         connections.user_id as user_id
       FROM
         connections
-      WHERE active = true 
-        AND access_token IS NOT NULL 
+      WHERE active = true
+        AND access_token IS NOT NULL
         AND token_expiry > NOW();
     `)) satisfies Array<Row>;
 
@@ -199,8 +199,16 @@ export class ConnectionService {
     });
 
     try {
-      const connection = await this.findOne(context, connectionId);
+      let connection = await this.findOne(context, connectionId);
+      const { refreshToken, tokenExpiry } = connection;
       const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
+      if (refreshToken && tokenExpiry && new Date(tokenExpiry) < new Date()) {
+        const newCredentials = await client.refreshAccessToken(connection);
+        connection = await this.update(context, connectionId, {
+          ...newCredentials,
+        });
+      }
+
       const syncResponses = await client.sync(connection);
 
       // Aggregate results from all endpoint syncs
