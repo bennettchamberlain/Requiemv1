@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, MoreThan, Not } from 'typeorm';
+import { IsNull, MoreThan, Not, Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import { ConnectionEntity } from '@ci/domains/connections';
 import { ApiLogEntity } from '@ci/domains/etl';
+import { Events, EventService } from '@ci/domains/events';
 
-import { GoogleCalendarEventPromotionService } from './CalendarPromotionService';
-import { GmailPromotionService } from './GmailPromotionService';
+import { ApiLogScopes } from '../constants';
 
 @Injectable()
 export class PromoteService {
@@ -19,8 +19,7 @@ export class PromoteService {
     private readonly apiLogRepository: Repository<ApiLogEntity>,
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
-    private readonly calendarEventPromotionService: GoogleCalendarEventPromotionService,
-    private readonly gmailPromotionService: GmailPromotionService,
+    private readonly eventService: EventService,
   ) {}
 
   /**
@@ -125,21 +124,45 @@ export class PromoteService {
         return;
       }
 
-      if (apiLog.scope === 'Gmail') {
-        await this.gmailPromotionService.promoteGmailMessages(
-          apiLog.content,
-          context.userId,
-          apiLog.connection_id,
-        );
-      } else if (apiLog.scope === 'Google Calendar') {
-        await this.calendarEventPromotionService.promoteCalendarEvents(
-          apiLog.content,
-          context.userId,
-          apiLog.connection_id,
-        );
+      // Queue the promotion job based on scope
+      if (apiLog.scope === ApiLogScopes.GMAIL) {
+        await this.eventService.send(Events.PROMOTE_GMAIL_MESSAGES, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
+      } else if (apiLog.scope === ApiLogScopes.GOOGLE_CALENDAR) {
+        await this.eventService.send(Events.PROMOTE_CALENDAR_EVENTS, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
+      } else if (apiLog.scope === ApiLogScopes.YOUTUBE) {
+        await this.eventService.send(Events.PROMOTE_YOUTUBE_DATA, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
+      } else if (apiLog.scope === ApiLogScopes.GOOGLE_DRIVE) {
+        await this.eventService.send(Events.PROMOTE_DRIVE_DATA, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
+      } else if (apiLog.scope === ApiLogScopes.GOOGLE_CONTACTS) {
+        await this.eventService.send(Events.PROMOTE_CONTACTS, {
+          apiLogId: apiLog.id,
+          userId: context.userId,
+          connectionId: apiLog.connection_id,
+          content: apiLog.content,
+        });
       }
 
-      // Mark the API log as processed
+      // Mark the API log as processed after queuing
       await this.markApiLogAsProcessed(apiLog.id);
 
       this.logger.log('Successfully processed API log', {

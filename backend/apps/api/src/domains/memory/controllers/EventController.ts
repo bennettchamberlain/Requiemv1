@@ -27,39 +27,87 @@ import { CreateEventDto, UpdateEventDto, Content, Event } from '../types';
 import { createContentSchema } from './ContentController';
 
 const createEventSchemaRoot = z.object({
-  name: z.string().optional(),
-  type: z.string().optional(),
+  title: z.string(),
   description: z.string().optional(),
-  external_id: z.string().optional(),
-  source_url: z.string().optional(),
-  start_time: z.string().datetime().optional(),
+  event_type: z.string().optional(),
+  category: z.string().optional(),
+  start_time: z.string().datetime(),
   end_time: z.string().datetime().optional(),
-  source_data: z
-    .object({
-      related_objects: z.array(z.string()),
-    })
-    .optional(),
+  location_name: z.string().optional(),
+  event_entity_id: z.string().optional(),
+  location_entity_id: z.string().optional(),
+  participant_entity_ids: z.array(z.string()).optional(),
+  organizer_entity_id: z.string().optional(),
+  source_type: z.string().optional(),
+  source_system: z.string().optional(),
+  source_id: z.string().optional(),
+  confidence_score: z.number().optional(),
+  is_recurring: z.boolean().optional(),
+  recurrence_pattern: z.record(z.unknown()).optional(),
+  is_all_day: z.boolean().optional(),
+  is_private: z.boolean().optional(),
+  priority: z.number().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  is_predicted: z.boolean().optional(),
+  is_inferred: z.boolean().optional(),
+  prediction_model: z.string().optional(),
+  inference_sources: z.record(z.unknown()).optional(),
+  tags: z.array(z.string()).optional(),
+  sentiment_score: z.number().optional(),
+  energy_level: z.number().optional(),
+  productivity_impact: z.number().optional(),
+  status: z.string().optional(),
+  is_deleted: z.boolean().optional(),
+  external_sync_status: z.string().optional(),
+  last_synced_at: z.string().datetime().optional(),
+  parent_event_id: z.string().optional(),
+  related_event_ids: z.array(z.string()).optional(),
+  supersedes_event_id: z.string().optional(),
+  created_by: z.string().optional(),
   content: z.array(createContentSchema).optional(),
-  connection_id: z.string().optional(),
 });
 
 const createEventSchema = z.union([createEventSchemaRoot, z.array(createEventSchemaRoot)]);
 
 const updateEventSchema = z.object({
-  name: z.string().optional(),
-  type: z.string().optional(),
+  title: z.string().optional(),
   description: z.string().optional(),
-  external_id: z.string().optional(),
+  event_type: z.string().optional(),
+  category: z.string().optional(),
   start_time: z.string().datetime().optional(),
   end_time: z.string().datetime().optional(),
-  source_url: z.string().optional(),
-  source_data: z
-    .object({
-      related_objects: z.array(z.string()),
-    })
-    .optional(),
+  location_name: z.string().optional(),
+  event_entity_id: z.string().optional(),
+  location_entity_id: z.string().optional(),
+  participant_entity_ids: z.array(z.string()).optional(),
+  organizer_entity_id: z.string().optional(),
+  source_type: z.string().optional(),
+  source_system: z.string().optional(),
+  source_id: z.string().optional(),
+  confidence_score: z.number().optional(),
+  is_recurring: z.boolean().optional(),
+  recurrence_pattern: z.record(z.unknown()).optional(),
+  is_all_day: z.boolean().optional(),
+  is_private: z.boolean().optional(),
+  priority: z.number().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  is_predicted: z.boolean().optional(),
+  is_inferred: z.boolean().optional(),
+  prediction_model: z.string().optional(),
+  inference_sources: z.record(z.unknown()).optional(),
+  tags: z.array(z.string()).optional(),
+  sentiment_score: z.number().optional(),
+  energy_level: z.number().optional(),
+  productivity_impact: z.number().optional(),
+  status: z.string().optional(),
+  is_deleted: z.boolean().optional(),
+  external_sync_status: z.string().optional(),
+  last_synced_at: z.string().datetime().optional(),
+  parent_event_id: z.string().optional(),
+  related_event_ids: z.array(z.string()).optional(),
+  supersedes_event_id: z.string().optional(),
+  created_by: z.string().optional(),
   content: z.array(createContentSchema).optional(),
-  connection_id: z.string().optional(),
 });
 
 @Controller('events')
@@ -106,7 +154,8 @@ export class EventController {
             )) as Content[];
 
             return this.eventService.update(context, newEvent.id, {
-              source_data: {
+              metadata: {
+                ...newEvent.metadata,
                 related_objects: contentArray.map((content) => `content_${content.id}`),
               },
             });

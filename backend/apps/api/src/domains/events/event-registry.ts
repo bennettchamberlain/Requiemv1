@@ -10,6 +10,11 @@ export enum Events {
   SYNC_CONNECTION = 'sync.connection',
   MCP_TOOL_CALL = 'mcp.tool.call',
   USER_CREATED = 'user.created',
+  PROMOTE_CONTACTS = 'PROMOTE_CONTACTS',
+  PROMOTE_DRIVE_DATA = 'PROMOTE_DRIVE_DATA',
+  PROMOTE_YOUTUBE_DATA = 'PROMOTE_YOUTUBE_DATA',
+  PROMOTE_CALENDAR_EVENTS = 'PROMOTE_CALENDAR_EVENTS',
+  PROMOTE_GMAIL_MESSAGES = 'PROMOTE_GMAIL_MESSAGES',
 }
 
 interface ApiEnqueuePayload extends EventPayload {
@@ -46,6 +51,41 @@ interface UserCreatedPayload extends EventPayload {
   userId: string;
 }
 
+interface PromoteGmailMessagesPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
+interface PromoteCalendarEventsPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
+interface PromoteYouTubeDataPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
+interface PromoteDriveDataPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
+interface PromoteContactsPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
 export type EventPayloads = {
   [Events.API_ENQUEUE]: ApiEnqueuePayload;
   [Events.FILE_UPLOAD]: FileUploadPayload;
@@ -54,4 +94,9 @@ export type EventPayloads = {
   [Events.SYNC_CONNECTION]: SyncConnectionPayload;
   [Events.MCP_TOOL_CALL]: McpToolCallPayload;
   [Events.USER_CREATED]: UserCreatedPayload;
+  [Events.PROMOTE_GMAIL_MESSAGES]: PromoteGmailMessagesPayload;
+  [Events.PROMOTE_CALENDAR_EVENTS]: PromoteCalendarEventsPayload;
+  [Events.PROMOTE_YOUTUBE_DATA]: PromoteYouTubeDataPayload;
+  [Events.PROMOTE_DRIVE_DATA]: PromoteDriveDataPayload;
+  [Events.PROMOTE_CONTACTS]: PromoteContactsPayload;
 };

@@ -67,13 +67,19 @@ export async function seedEvents(db: DataSource, filePath: string) {
         (sourceData as Record<string, unknown>).data_source = record.data_source;
       }
 
+      // Skip events without start_time (required field)
+      if (!startTime) {
+        logger.warn(`Skipping event ${record.id} - missing start_time`);
+        continue;
+      }
+
       await manager.save(EventEntity, {
         id: record.id,
         type: record.type || null,
         name: record.name || null,
         description: record.description || null,
         start_time: startTime,
-        end_time: endTime,
+        end_time: endTime || undefined,
         source_data: sourceData,
         external_id: record.provider_id || null,
         source_url: record.data_source || null,

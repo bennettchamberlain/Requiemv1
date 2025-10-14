@@ -80,12 +80,14 @@ export class GraphUtilityService {
     relationshipType: string,
     properties: Record<string, unknown> = {},
     strength = 1.0,
+    ownerUserId?: string,
   ): Promise<RelationshipEntity> {
     const relationship = this.relationshipRepo.create({
       relationship_id: crypto.randomUUID(),
       from_entity_id: fromEntityId,
       to_entity_id: toEntityId,
       relationship_type: relationshipType,
+      owner_user_id: ownerUserId,
       strength,
       properties,
       is_active: true,
@@ -106,10 +108,12 @@ export class GraphUtilityService {
     searchContent?: string;
     linkedTable?: string;
     linkedId?: string;
+    ownerUserId?: string;
   }): Promise<GraphNodeEntity> {
     const node = this.entityRepo.create({
       entity_id: data.entityId,
       entity_type: data.entityType,
+      owner_user_id: data.ownerUserId,
       name: data.name,
       description: data.description ?? data.name,
       properties: data.properties ?? {},
