@@ -56,7 +56,7 @@ export class OllamaService {
       const resolvedOptions = options ?? { model: PROMPT_MODEL };
       const { model, signal } = resolvedOptions;
 
-      const selectedModel = self.getModelForContent([], model);
+      const selectedModel = self.getModelForPrompt([], model);
 
       const iterator = await self.ollama.generate({
         model: selectedModel,
@@ -93,7 +93,7 @@ export class OllamaService {
     const resolvedOptions = options ?? { model: PROMPT_MODEL };
     const { model } = resolvedOptions;
 
-    const selectedModel = this.getModelForContent([], model);
+    const selectedModel = this.getModelForPrompt([], model);
 
     return this.ollama.generate({
       model: selectedModel,
@@ -109,7 +109,7 @@ export class OllamaService {
     const resolvedOptions = options ?? { model: PROMPT_MODEL };
     const { model, signal, enableTools = false, enableThinking = true } = resolvedOptions;
 
-    const selectedModel = this.getModelForContent(messages, model);
+    const selectedModel = this.getModelForPrompt(messages, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -248,7 +248,7 @@ export class OllamaService {
     const resolvedOptions = options ?? { model: PROMPT_MODEL };
     const { model, enableTools = false } = resolvedOptions;
 
-    const selectedModel = this.getModelForContent(messages, model);
+    const selectedModel = this.getModelForPrompt(messages, model);
 
     const inputMessages = messages.slice();
     const availableTools = enableTools ? this.toolRegistry.getAvailableTools(context) : [];
@@ -395,7 +395,7 @@ export class OllamaService {
   /**
    * Get the appropriate model based on feature flag and content type
    */
-  private getModelForContent(messages: OllamaMessage[], requestedModel: string): string {
+  private getModelForPrompt(messages: OllamaMessage[], requestedModel: string): string {
     // If pinned demo models feature is enabled, always use demo models
     if (config.features['pinned.demo.models']) {
       // Check if any message contains image content
