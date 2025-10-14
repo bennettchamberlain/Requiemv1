@@ -1,16 +1,6 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  NotFoundException,
-  Post,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import { ToolCall, Message } from 'ollama';
+import { ToolCall, Message as OllamaMessage } from 'ollama';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -19,16 +9,16 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import { MessageService, ThreadService } from '@ci/domains/conversations';
+import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 
 import { OllamaService } from '../services/OllamaService';
-import type { OllamaModel, PromptInput } from '../types';
+import type { PromptInput } from '../types';
 
 const promptSchema = z.object({
   prompt: z.string(),
-  model: z.optional(z.string()),
+  model: z.string().optional(),
   threadId: z.string().nullable().optional(),
   enableTools: z.boolean().default(true),
   enableThinking: z.boolean().default(true),
@@ -63,40 +53,48 @@ export class OllamaController {
     @Body(new ValidationPipe(promptSchema)) input: PromptInput,
     @Res() res: Response,
   ) {
-    const resolvedModel = await this.validateModel(context, input.model);
+    const { model: initialModel } = await this.ollamaService.resolveModel(context, {
+      requestedModel: input.model,
+    });
 
-    let threadId: string;
+    let thread: Thread;
 
     if (input.threadId != null) {
-      const threadExists = await this.threadService.exists(context, input.threadId);
-
-      if (!threadExists) {
-        throw new NotFoundException('Thread not found');
-      }
-
-      threadId = input.threadId;
+      thread = await this.threadService.findOne(context, input.threadId);
     } else {
-      const thread = await this.threadService.create(context, {
-        model: resolvedModel.model,
+      thread = await this.threadService.create(context, {
+        model: initialModel,
       });
-
-      threadId = thread.id;
 
       await this.eventService.send(Events.CHAT_SUMMARIZATION, {
         ownerId: context.userId as string,
-        threadId,
+        threadId: thread.id,
       });
     }
 
     // Create a message for the user prompt
     const promptMessage = await this.messageService.create(context, {
-      model: resolvedModel.model,
+      model: initialModel,
       role: 'user',
       content: input.prompt,
       mimetype: 'text/markdown', // TODO: Make this more flexible.
       canceled: false,
-      threadId,
+      threadId: thread.id,
       fileIds: input.fileIds, // Link files to this message
+    });
+
+    const messages = await this.messageService.findByThread(context, thread.id);
+
+    // Build input messages with files attached to their respective messages
+    const inputMessages: OllamaMessage[] = await Promise.all(
+      messages.map((message) => this.resolveMessage(context, message)),
+    );
+
+    const { model, enableThinking, enableTools } = await this.ollamaService.resolveModel(context, {
+      messages: inputMessages,
+      requestedModel: input.model ?? thread.model,
+      enableThinking: input.enableThinking,
+      enableTools: input.enableTools,
     });
 
     res.socket?.setNoDelay(true);
@@ -104,7 +102,7 @@ export class OllamaController {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      'X-Thread-Id': threadId,
+      'X-Thread-Id': thread.id,
     });
     res.flushHeaders?.();
 
@@ -117,32 +115,11 @@ export class OllamaController {
       }
     });
 
-    const messages = await this.messageService.findByThread(context, threadId);
-
-    // Build input messages with files attached to their respective messages
-    const inputMessages: Message[] = await Promise.all(
-      messages.map(async (message) => {
-        // Get file content for this specific message
-        const messageImages = message.files
-          ? await Promise.all(
-              message.files.map(async (file) => this.fileService.getFileContent(context, file.key)),
-            )
-          : [];
-
-        return {
-          role: message.role,
-          content: message.content,
-          ...(messageImages.length > 0 && { images: messageImages }),
-          ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
-        };
-      }),
-    );
-
     const stream = await this.ollamaService.chatStream(context, inputMessages, {
-      model: resolvedModel.model,
+      model,
       signal,
-      enableTools: input.enableTools,
-      enableThinking: input.enableThinking,
+      enableTools,
+      enableThinking,
     });
 
     try {
@@ -179,11 +156,11 @@ export class OllamaController {
         const message = stream.messages[i];
 
         await this.messageService.create(context, {
-          model: resolvedModel.model,
+          model,
           role: message.role,
           content: message.content,
           canceled: i === stream.messages.length - 1 && signal.aborted,
-          threadId,
+          threadId: thread.id,
           ...(message.tool_calls && {
             toolCalls: message.tool_calls as unknown[] as Record<string, unknown>[],
           }),
@@ -193,6 +170,25 @@ export class OllamaController {
 
       res.end();
     }
+  }
+
+  private async resolveMessage(context: RequestContext, message: Message): Promise<OllamaMessage> {
+    const images = message.files
+      ? await Promise.all(
+          message.files.map(async (file) => this.fileService.getFileContent(context, file.key)),
+        )
+      : [];
+
+    return {
+      role: message.role,
+      content: message.content,
+      ...(images.length > 0 && {
+        images,
+      }),
+      ...(message.toolCalls && {
+        tool_calls: message.toolCalls as unknown as ToolCall[],
+      }),
+    };
   }
 
   @OnEvent(Events.CHAT_SUMMARIZATION)
@@ -218,7 +214,10 @@ export class OllamaController {
         })),
     ];
 
-    const result = await this.ollamaService.chat(context, messagesInput);
+    const result = await this.ollamaService.chat(context, messagesInput, {
+      model: 'gemma3:1b',
+    });
+
     const summary = result.message.content;
 
     await this.threadService.update(context, thread.id, {
@@ -229,13 +228,5 @@ export class OllamaController {
       payload,
       summary: result.message.content,
     });
-  }
-
-  private async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
-    try {
-      return this.ollamaService.validateModel(context, model);
-    } catch (err) {
-      throw new BadRequestException((err as Error).message);
-    }
   }
 }
