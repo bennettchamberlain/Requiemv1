@@ -5,7 +5,7 @@ import { DeleteResult, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import config from '@ci/configuration';
-import { GraphUtilityService } from '@ci/domains/memory';
+import { EventService, Events } from '@ci/domains/events';
 
 import { UserEntity } from '../entities/UserEntity';
 import { CreateUserDto, UpdateUserDto, User } from '../types';
@@ -15,51 +15,25 @@ export class UserService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
-    private readonly graphUtilityService: GraphUtilityService,
+    private readonly eventService: EventService,
   ) {}
 
   async create(data: CreateUserDto): Promise<User> {
     const hashedPassword = await bcrypt.hash(data.password, config.auth.local.saltRounds);
-    const nameForEntity = data.name ?? data.email;
 
-    const user = this.userRepository.create({
+    const instance = this.userRepository.create({
       ...data,
       id: uuidv7(),
       password: hashedPassword,
     });
 
-    const savedUser = await this.userRepository.save(user);
+    const entity = await this.userRepository.save(instance);
 
-    const entityId = uuidv7();
-    const nameParts = (data.name ?? '').trim().split(/\s+/).filter(Boolean);
-    const [firstName, ...restName] = nameParts;
-
-    const properties: Record<string, unknown> = {
-      email: data.email,
-    };
-    if (firstName) {
-      properties.first_name = firstName;
-    }
-
-    if (restName.length > 0) {
-      properties.last_name = restName.join(' ');
-    }
-
-    await this.graphUtilityService.createGraphNode({
-      entityId,
-      entityType: 'Person',
-      name: nameForEntity,
-      description: nameForEntity,
-      properties,
-      searchContent: nameForEntity,
-      linkedTable: 'users',
-      linkedId: savedUser.id,
+    await this.eventService.send(Events.USER_CREATED, {
+      userId: entity.id,
     });
 
-    await this.userRepository.update(savedUser.id, { entityId });
-    savedUser.entityId = entityId;
-
-    return savedUser.toUser();
+    return entity.toUser();
   }
 
   async findAll(): Promise<User[]> {

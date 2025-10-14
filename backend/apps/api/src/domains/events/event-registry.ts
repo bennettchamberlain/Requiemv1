@@ -9,6 +9,7 @@ export enum Events {
   INFER_QUESTION_ANSWER = 'infer.question.answer',
   SYNC_CONNECTION = 'sync.connection',
   MCP_TOOL_CALL = 'mcp.tool.call',
+  USER_CREATED = 'user.created',
 }
 
 interface ApiEnqueuePayload extends EventPayload {
@@ -41,6 +42,10 @@ interface McpToolCallPayload extends EventPayload {
   arguments: unknown;
 }
 
+interface UserCreatedPayload extends EventPayload {
+  userId: string;
+}
+
 export type EventPayloads = {
   [Events.API_ENQUEUE]: ApiEnqueuePayload;
   [Events.FILE_UPLOAD]: FileUploadPayload;
@@ -48,4 +53,5 @@ export type EventPayloads = {
   [Events.INFER_QUESTION_ANSWER]: InferQuestionAnswerPayload;
   [Events.SYNC_CONNECTION]: SyncConnectionPayload;
   [Events.MCP_TOOL_CALL]: McpToolCallPayload;
+  [Events.USER_CREATED]: UserCreatedPayload;
 };
