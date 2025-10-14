@@ -129,7 +129,16 @@ export class DrivePromotionService {
       ownerUserId: userId,
     });
 
-    // Create relationship to user
+    // Prepare owner information for relationship metadata
+    const ownerInfo =
+      file.owners && file.owners.length > 0
+        ? file.owners.map((owner) => ({
+            email: owner.emailAddress,
+            display_name: owner.displayName,
+          }))
+        : [];
+
+    // Create relationship to user with owner information in metadata
     await this.graphUtilityService.createRelationship(
       userEntityId,
       fileEntityId,
@@ -138,6 +147,7 @@ export class DrivePromotionService {
         platform: 'google_drive',
         connection_id: connectionId,
         file_type: entityType.toLowerCase(),
+        owners: ownerInfo, // Store owner info in relationship metadata
       },
       1.0,
       userId,
@@ -157,63 +167,6 @@ export class DrivePromotionService {
       };
 
       await this.contentService.create({ userId }, contentDto as CreateContentDto);
-    }
-
-    // If file has owners different from user, create Person entities for them
-    if (file.owners && file.owners.length > 0) {
-      for (const owner of file.owners) {
-        if (owner.emailAddress) {
-          try {
-            // Create owner as person entity
-            const ownerEntityId = uuid7();
-            await this.graphUtilityService.createGraphNode({
-              entityId: ownerEntityId,
-              entityType: 'Person',
-              name: owner.displayName || owner.emailAddress,
-              description: `Google Drive file owner`,
-              properties: {
-                email: owner.emailAddress,
-                display_name: owner.displayName,
-                source: 'google_drive',
-                owner_user_id: userId,
-              },
-              searchContent: `${owner.displayName || ''} ${owner.emailAddress}`,
-              ownerUserId: userId,
-            });
-
-            // Create relationship: owner CREATED file
-            await this.graphUtilityService.createRelationship(
-              ownerEntityId,
-              fileEntityId,
-              'CREATED',
-              {
-                platform: 'google_drive',
-                connection_id: connectionId,
-              },
-              1.0,
-              userId,
-            );
-
-            // Create relationship: user KNOWS owner
-            await this.graphUtilityService.createRelationship(
-              userEntityId,
-              ownerEntityId,
-              'KNOWS',
-              {
-                platform: 'google_drive',
-                context: 'file_sharing',
-              },
-              1.0,
-              userId,
-            );
-          } catch (error) {
-            this.logger.warn('Failed to create owner entity', {
-              ownerEmail: owner.emailAddress,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            });
-          }
-        }
-      }
     }
 
     this.logger.log('Processed Drive file', {
