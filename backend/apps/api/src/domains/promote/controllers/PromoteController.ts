@@ -8,12 +8,12 @@ import config from '@ci/configuration';
 import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 
 import { ApiLogEntity } from '../../etl/entities/ApiLogEntity';
-import { GoogleCalendarEventPromotionService } from '../services/CalendarPromotionService';
-import { ContactsPromotionService } from '../services/ContactsPromotionService';
-import { DrivePromotionService } from '../services/DrivePromotionService';
-import { GmailPromotionService } from '../services/GmailPromotionService';
+import { GoogleCalendarEventPromotionService } from '../services/google/CalendarPromotionService';
+import { ContactsPromotionService } from '../services/google/ContactsPromotionService';
+import { DrivePromotionService } from '../services/google/DrivePromotionService';
+import { GmailPromotionService } from '../services/google/GmailPromotionService';
+import { YouTubePromotionService } from '../services/google/YouTubePromotionService';
 import { PromoteService } from '../services/PromoteService';
-import { YouTubePromotionService } from '../services/YouTubePromotionService';
 
 @Controller('promote')
 export class PromoteController {

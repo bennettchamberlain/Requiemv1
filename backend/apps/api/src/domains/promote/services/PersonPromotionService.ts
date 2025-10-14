@@ -15,8 +15,8 @@ interface ParticipantInfo {
 }
 
 @Injectable()
-export class PeoplePromotionService {
-  private logger = new LoggerService(PeoplePromotionService.name);
+export class PersonPromotionService {
+  private logger = new LoggerService(PersonPromotionService.name);
 
   constructor(
     @InjectRepository(GraphNodeEntity)
