@@ -45,31 +45,6 @@ export class MicrosoftClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
-    // Microsoft Graph - User Profile
-    // try {
-    //   const userData = await this.request(connection, '/v1.0/me');
-    //
-    //   responses.push({
-    //     success: true,
-    //     message: 'Microsoft Graph - User sync completed successfully',
-    //     data: {
-    //       results: [{ api: 'Microsoft Graph - User', data: userData }],
-    //       errors: [],
-    //     },
-    //   });
-    // } catch (error) {
-    //   const errorMsg = `Microsoft User API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-    //
-    //   responses.push({
-    //     success: false,
-    //     message: errorMsg,
-    //     data: {
-    //       results: [],
-    //       errors: [errorMsg],
-    //     },
-    //   });
-    // }
-
     // Microsoft Graph - Calendar
     // try {
     //   const calendarData = await this.request(connection, '/v1.0/me/calendar/events?$top=10');
