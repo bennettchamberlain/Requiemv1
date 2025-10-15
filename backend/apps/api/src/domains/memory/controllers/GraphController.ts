@@ -105,7 +105,7 @@ export class GraphController {
       properties?: Record<string, unknown>;
       relationships?: Array<{
         toPersonEntityId: string;
-        type: 'SPOUSE' | 'PARENT_OF' | 'CHILD_OF' | 'SIBLING_OF' | 'FRIEND' | 'COLLEAGUE' | 'KNOWS';
+        type: string;
         strength?: number;
         bidirectional?: boolean;
       }>;
@@ -139,7 +139,7 @@ export class GraphController {
       userEntityId: string;
       familyMembers: Array<{
         name: string;
-        relationship: 'SPOUSE' | 'PARENT_OF' | 'CHILD_OF' | 'SIBLING_OF';
+        relationship: string;
         age?: number;
         firstName?: string;
         lastName?: string;
@@ -172,17 +172,7 @@ export class GraphController {
     body: {
       personEntityId: string;
       name: string;
-      type:
-        | 'food'
-        | 'cuisine'
-        | 'activity'
-        | 'movie_genre'
-        | 'tv_genre'
-        | 'music_genre'
-        | 'book_genre'
-        | 'beverage'
-        | 'sport'
-        | 'hobby';
+      type: string;
       isDislike?: boolean;
       strength?: number;
       properties?: Record<string, unknown>;
@@ -255,7 +245,7 @@ export class GraphController {
     @Body()
     body: {
       name: string;
-      type: 'city' | 'country' | 'venue' | 'address' | 'region';
+      type: string;
       coordinates?: { lat: number; lng: number };
       address?: string;
       properties?: Record<string, unknown>;
@@ -327,14 +317,7 @@ export class GraphController {
     body: {
       fromPersonId: string;
       toPersonId: string;
-      connectionType:
-        | 'KNOWS'
-        | 'FRIEND'
-        | 'WORKS_WITH'
-        | 'COLLEAGUE'
-        | 'MENTORED'
-        | 'TAUGHT'
-        | 'LEARNED_FROM';
+      connectionType: string;
       since?: Date;
       context?: string;
       strength?: number;
