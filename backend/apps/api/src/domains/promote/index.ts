@@ -54,7 +54,6 @@ import { PromoteService } from './services/PromoteService';
     DrivePromotionService,
     ContactsPromotionService,
     PersonPromotionService,
-    OutlookMailPromotionService,
   ],
 })
 export class PromoteModule {}
