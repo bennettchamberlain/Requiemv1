@@ -53,6 +53,7 @@ import { UserContextService } from './services/UserContextService';
   ],
   providers: [
     MemoryService,
+    CommunicationService,
     ContentService,
     EventService,
     GraphUtilityService,
@@ -68,6 +69,7 @@ import { UserContextService } from './services/UserContextService';
   controllers: [MemoryController, ContentController, EventController, GraphController],
   exports: [
     MemoryService,
+    CommunicationService,
     ContentService,
     EventService,
     GraphUtilityService,
@@ -104,6 +106,7 @@ export {
   EventService,
   GraphUtilityService,
   UserContextService,
+  CommunicationService,
   PersonGraphService,
   ConceptGraphService,
   ThingGraphService,
@@ -114,5 +117,14 @@ export {
 };
 
 // Types
-export type { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from './types';
+export type {
+  Memory,
+  MemoryLocation,
+  MemoryResponse,
+  MemorySearchParams,
+  CreateEventDto,
+  UpdateEventDto,
+  CreateContentDto,
+  UpdateContentDto,
+} from './types';
 export type { UserContext } from './services/UserContextService';

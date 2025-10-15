@@ -704,10 +704,13 @@ export class GraphUtilityService {
   async createGraphNode(data: {
     entityId: string;
     entityType: string;
-    name?: string;
-    description?: string;
-    properties?: Record<string, unknown>;
     ownerUserId: string;
+    name?: string | null;
+    description?: string | null;
+    properties?: Record<string, unknown>;
+    searchContent?: string | null;
+    linkedTable?: string | null;
+    linkedId?: string | null;
   }): Promise<GraphNodeEntity> {
     const { node } = await this.createOrUpdateNode(data.ownerUserId, {
       entityId: data.entityId,
@@ -715,8 +718,34 @@ export class GraphUtilityService {
       name: data.name,
       description: data.description,
       properties: data.properties,
+      searchContent: data.searchContent,
+      linkedTable: data.linkedTable,
+      linkedId: data.linkedId,
     });
 
     return node;
+  }
+
+  async createRelationship(
+    fromEntityId: string,
+    toEntityId: string,
+    relationshipType: string,
+    properties: Record<string, unknown> = {},
+    strength = 1,
+    ownerUserId: string,
+    options: { isBidirectional?: boolean; startDate?: Date; endDate?: Date } = {},
+  ): Promise<RelationshipEntity> {
+    const { relationship } = await this.createOrUpdateRelationship(ownerUserId, {
+      fromEntityId,
+      toEntityId,
+      relationshipType,
+      properties,
+      strength,
+      isBidirectional: options.isBidirectional,
+      startDate: options.startDate,
+      endDate: options.endDate,
+    });
+
+    return relationship;
   }
 }

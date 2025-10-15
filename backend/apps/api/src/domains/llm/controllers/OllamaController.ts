@@ -117,30 +117,8 @@ export class OllamaController {
       }
     });
 
-    const messages = await this.messageService.findByThread(context, threadId);
-
-    // Build input messages with files attached to their respective messages
-    const inputMessages: Message[] = await Promise.all(
-      messages.map(async (message) => {
-        // Get file content for this specific message
-        const messageImages = message.files
-          ? await Promise.all(
-              message.files.map(async (file) => this.fileService.getFileContent(context, file.key)),
-            )
-          : [];
-
-        return {
-          role: message.role,
-          content: message.content,
-          ...(messageImages.length > 0 && { images: messageImages }),
-          ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
-        };
-      }),
-    );
-
-    // Prepend system prompt with user context
     const systemPrompt = await this.buildSystemPrompt(context);
-    const messagesWithSystem: Message[] = [
+    const messagesWithSystem: OllamaMessage[] = [
       {
         role: 'system',
         content: systemPrompt,
@@ -149,7 +127,7 @@ export class OllamaController {
     ];
 
     const stream = await this.ollamaService.chatStream(context, messagesWithSystem, {
-      model: resolvedModel.model,
+      model,
       signal,
       enableTools,
       enableThinking,
@@ -261,14 +239,6 @@ export class OllamaController {
       payload,
       summary: result.message.content,
     });
-  }
-
-  private async validateModel(context: RequestContext, model: string | undefined): Promise<OllamaModel> {
-    try {
-      return this.ollamaService.validateModel(context, model);
-    } catch (err) {
-      throw new BadRequestException((err as Error).message);
-    }
   }
 
   /**

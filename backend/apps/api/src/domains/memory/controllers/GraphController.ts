@@ -2,18 +2,19 @@ import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@ne
 import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 
-import { LoggerService } from '@ci/common/services';
-import { OnEvent, Events, type EventPayloads } from '@ci/domains/events';
-import { UserService } from '@ci/domains/user';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
+import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { OnEvent, Events, type EventPayloads } from '@ci/domains/events';
+import { UserService } from '@ci/domains/user';
 
 import { LocationGraphService } from '../services/graph/LocationGraphService';
 import { PersonGraphService } from '../services/graph/PersonGraphService';
 import { PreferenceService } from '../services/graph/PreferenceService';
 import { RelationshipService } from '../services/graph/RelationshipService';
+import { GraphUtilityService } from '../services/GraphUtilityService';
 import { UserContextService } from '../services/UserContextService';
 
 const propertiesSchema = z.record(z.unknown());
@@ -191,7 +192,7 @@ export class GraphController {
       properties.last_name = restName.join(' ');
     }
 
-    await this.graphUtility.createGraphNode({
+    await this.graphUtility.createOrUpdateNode(user.id, {
       entityId,
       entityType: 'Person',
       name: nameForEntity,
@@ -220,6 +221,7 @@ export class GraphController {
 
     return date;
   }
+
   /**
    * Add a person to the graph with optional relationships
    * POST /graph/person
