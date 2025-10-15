@@ -24,9 +24,6 @@ export class RelationshipEntity {
   @Column({ type: 'text' })
   relationship_type!: string;
 
-  @Column({ type: 'uuid', nullable: true })
-  owner_user_id!: string | null;
-
   @Column({ type: 'double precision', default: 1.0 })
   strength!: number;
 
