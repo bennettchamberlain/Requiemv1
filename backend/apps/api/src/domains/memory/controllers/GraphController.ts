@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
+import { z } from 'zod';
 
 import { LoggerService } from '@ci/common/services';
 import { OnEvent, Events, type EventPayloads } from '@ci/domains/events';
 import { UserService } from '@ci/domains/user';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
 
 import { LocationGraphService } from '../services/graph/LocationGraphService';
@@ -13,6 +15,127 @@ import { PersonGraphService } from '../services/graph/PersonGraphService';
 import { PreferenceService } from '../services/graph/PreferenceService';
 import { RelationshipService } from '../services/graph/RelationshipService';
 import { UserContextService } from '../services/UserContextService';
+
+const propertiesSchema = z.record(z.unknown());
+const optionalPropertiesSchema = propertiesSchema.optional();
+
+const addPersonSchema = z.object({
+  name: z.string(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  age: z.number().optional(),
+  bio: z.string().optional(),
+  occupation: z.string().optional(),
+  familyRole: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  properties: optionalPropertiesSchema,
+  relationships: z
+    .array(
+      z.object({
+        toPersonEntityId: z.string(),
+        type: z.string(),
+        strength: z.number().optional(),
+        bidirectional: z.boolean().optional(),
+        properties: optionalPropertiesSchema,
+      }),
+    )
+    .optional(),
+});
+
+const addFamilyMembersSchema = z.object({
+  userEntityId: z.string(),
+  familyMembers: z
+    .array(
+      z.object({
+        name: z.string(),
+        relationship: z.string(),
+        age: z.number().optional(),
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        properties: optionalPropertiesSchema,
+      }),
+    )
+    .min(1),
+});
+
+const addPreferenceSchema = z.object({
+  personEntityId: z.string(),
+  name: z.string(),
+  type: z.string(),
+  isDislike: z.boolean().optional(),
+  strength: z.number().optional(),
+  properties: optionalPropertiesSchema,
+});
+
+const addPreferencesSchema = z.object({
+  personEntityId: z.string(),
+  preferences: z
+    .array(
+      addPreferenceSchema.pick({
+        name: true,
+        type: true,
+        isDislike: true,
+        strength: true,
+        properties: true,
+      }),
+    )
+    .min(1),
+});
+
+const addLocationSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  coordinates: z
+    .object({
+      lat: z.number(),
+      lng: z.number(),
+    })
+    .optional(),
+  address: z.string().optional(),
+  properties: optionalPropertiesSchema,
+});
+
+const addVisitSchema = z.object({
+  personEntityId: z.string(),
+  locationEntityId: z.string(),
+  date: z.string().optional(),
+  duration: z.string().optional(),
+  notes: z.string().optional(),
+  properties: optionalPropertiesSchema,
+});
+
+const addConnectionSchema = z.object({
+  fromPersonId: z.string(),
+  toPersonId: z.string(),
+  connectionType: z.string(),
+  since: z.string().optional(),
+  context: z.string().optional(),
+  strength: z.number().optional(),
+  properties: optionalPropertiesSchema,
+});
+
+const deleteNodeSchema = z.object({ entityId: z.string() });
+
+const updateNodeSchema = z.object({
+  entityId: z.string(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  properties: optionalPropertiesSchema,
+});
+
+const deleteRelationshipSchema = z.object({ relationshipId: z.string() });
+
+type AddPersonDto = z.infer<typeof addPersonSchema>;
+type AddFamilyMembersDto = z.infer<typeof addFamilyMembersSchema>;
+type AddPreferenceDto = z.infer<typeof addPreferenceSchema>;
+type AddPreferencesDto = z.infer<typeof addPreferencesSchema>;
+type AddLocationDto = z.infer<typeof addLocationSchema>;
+type AddVisitDto = z.infer<typeof addVisitSchema>;
+type AddConnectionDto = z.infer<typeof addConnectionSchema>;
+type DeleteNodeDto = z.infer<typeof deleteNodeSchema>;
+type UpdateNodeDto = z.infer<typeof updateNodeSchema>;
+type DeleteRelationshipDto = z.infer<typeof deleteRelationshipSchema>;
 
 /**
  * Controller for high-level graph operations
@@ -84,6 +207,19 @@ export class GraphController {
     });
   }
 
+  private parseOptionalDate(value?: string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Invalid date format. Expected ISO string.');
+    }
+
+    return date;
+  }
   /**
    * Add a person to the graph with optional relationships
    * POST /graph/person
@@ -91,26 +227,7 @@ export class GraphController {
   @Post('person')
   async addPerson(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      name: string;
-      firstName?: string;
-      lastName?: string;
-      age?: number;
-      bio?: string;
-      occupation?: string;
-      familyRole?: string;
-      email?: string;
-      phone?: string;
-      properties?: Record<string, unknown>;
-      relationships?: Array<{
-        toPersonEntityId: string;
-        type: string;
-        strength?: number;
-        bidirectional?: boolean;
-        properties?: Record<string, unknown>;
-      }>;
-    },
+    @Body(new ValidationPipe(addPersonSchema)) body: AddPersonDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const { relationships, ...personData } = body;
@@ -135,18 +252,7 @@ export class GraphController {
   @Post('family')
   async addFamilyMembers(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      userEntityId: string;
-      familyMembers: Array<{
-        name: string;
-        relationship: string;
-        age?: number;
-        firstName?: string;
-        lastName?: string;
-        properties?: Record<string, unknown>;
-      }>;
-    },
+    @Body(new ValidationPipe(addFamilyMembersSchema)) body: AddFamilyMembersDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const result = await this.personService.addFamilyMembers(userId, body.userEntityId, body.familyMembers);
@@ -169,15 +275,7 @@ export class GraphController {
   @Post('preference')
   async addPreference(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      personEntityId: string;
-      name: string;
-      type: string;
-      isDislike?: boolean;
-      strength?: number;
-      properties?: Record<string, unknown>;
-    },
+    @Body(new ValidationPipe(addPreferenceSchema)) body: AddPreferenceDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const result = await this.preferenceService.addPreference(userId, body.personEntityId, {
@@ -210,17 +308,7 @@ export class GraphController {
   @Post('preferences')
   async addPreferences(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      personEntityId: string;
-      preferences: Array<{
-        name: string;
-        type: string;
-        isDislike?: boolean;
-        strength?: number;
-        properties?: Record<string, unknown>;
-      }>;
-    },
+    @Body(new ValidationPipe(addPreferencesSchema)) body: AddPreferencesDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const result = await this.preferenceService.addPreferences(userId, body.personEntityId, body.preferences);
@@ -243,14 +331,7 @@ export class GraphController {
   @Post('location')
   async addLocation(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      name: string;
-      type: string;
-      coordinates?: { lat: number; lng: number };
-      address?: string;
-      properties?: Record<string, unknown>;
-    },
+    @Body(new ValidationPipe(addLocationSchema)) body: AddLocationDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const location = await this.locationService.addLocation(userId, body);
@@ -273,15 +354,7 @@ export class GraphController {
   @Post('visit')
   async addVisit(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      personEntityId: string;
-      locationEntityId: string;
-      date?: Date;
-      duration?: string;
-      notes?: string;
-      properties?: Record<string, unknown>;
-    },
+    @Body(new ValidationPipe(addVisitSchema)) body: AddVisitDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const relationship = await this.relationshipService.addVisit(
@@ -289,7 +362,7 @@ export class GraphController {
       body.personEntityId,
       body.locationEntityId,
       {
-        date: body.date,
+        date: this.parseOptionalDate(body.date),
         duration: body.duration,
         notes: body.notes,
         properties: body.properties,
@@ -314,16 +387,7 @@ export class GraphController {
   @Post('connection')
   async addSocialConnection(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      fromPersonId: string;
-      toPersonId: string;
-      connectionType: string;
-      since?: Date;
-      context?: string;
-      strength?: number;
-      properties?: Record<string, unknown>;
-    },
+    @Body(new ValidationPipe(addConnectionSchema)) body: AddConnectionDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const relationship = await this.relationshipService.addSocialConnection(
@@ -332,7 +396,7 @@ export class GraphController {
       body.toPersonId,
       body.connectionType,
       {
-        since: body.since,
+        since: this.parseOptionalDate(body.since),
         context: body.context,
         strength: body.strength,
         properties: body.properties,
@@ -433,7 +497,10 @@ export class GraphController {
    * POST /graph/node/delete
    */
   @Post('node/delete')
-  async deleteNode(@Context() ctx: RequestContext, @Body() body: { entityId: string }) {
+  async deleteNode(
+    @Context() ctx: RequestContext,
+    @Body(new ValidationPipe(deleteNodeSchema)) body: DeleteNodeDto,
+  ) {
     const userId = this.ensureUserId(ctx);
     await this.personService.deleteNode(userId, body.entityId);
 
@@ -450,13 +517,7 @@ export class GraphController {
   @Post('node/update')
   async updateNode(
     @Context() ctx: RequestContext,
-    @Body()
-    body: {
-      entityId: string;
-      name?: string;
-      description?: string;
-      properties?: Record<string, unknown>;
-    },
+    @Body(new ValidationPipe(updateNodeSchema)) body: UpdateNodeDto,
   ) {
     const userId = this.ensureUserId(ctx);
     const node = await this.personService.updateNode(userId, body.entityId, {
@@ -481,7 +542,10 @@ export class GraphController {
    * POST /graph/relationship/delete
    */
   @Post('relationship/delete')
-  async deleteRelationship(@Context() ctx: RequestContext, @Body() body: { relationshipId: string }) {
+  async deleteRelationship(
+    @Context() ctx: RequestContext,
+    @Body(new ValidationPipe(deleteRelationshipSchema)) body: DeleteRelationshipDto,
+  ) {
     const userId = this.ensureUserId(ctx);
     await this.relationshipService.deleteRelationship(userId, body.relationshipId);
 
