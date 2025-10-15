@@ -21,12 +21,12 @@ export class PromoteController {
   ) {}
 
   /**
-   * Handle Gmail message promotion event
+   * Handle Outlook Mail message promotion event
    * This runs asynchronously in the job queue after the API log has been marked as processed
-   * Promotes Gmail messages to the communications table and creates person entities
+   * Promotes Outlook Mail messages to the communications table and creates person entities
    */
-  @OnEvent(Events.PROMOTE_OUTLOOK_MESSAGES)
-  async handlePromoteOutlook(payload: EventPayloads[Events.PROMOTE_OUTLOOK_MESSAGES]) {
+  @OnEvent(Events.PROMOTE_OUTLOOK_MAIL_MESSAGES)
+  async handlePromoteOutlook(payload: EventPayloads[Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]) {
     this.logger.log('Processing Outlook Mail promotion job', {
       apiLogId: payload.apiLogId,
       userId: payload.userId,

@@ -15,7 +15,7 @@ export enum Events {
   PROMOTE_YOUTUBE_DATA = 'PROMOTE_YOUTUBE_DATA',
   PROMOTE_CALENDAR_EVENTS = 'PROMOTE_CALENDAR_EVENTS',
   PROMOTE_GMAIL_MESSAGES = 'PROMOTE_GMAIL_MESSAGES',
-  PROMOTE_OUTLOOK_MESSAGES = 'PROMOTE_OUTLOOK_MESSAGES',
+  PROMOTE_OUTLOOK_MAIL_MESSAGES = 'PROMOTE_OUTLOOK_MAIL_MESSAGES',
 }
 
 interface ApiEnqueuePayload extends EventPayload {
@@ -107,5 +107,5 @@ export type EventPayloads = {
   [Events.PROMOTE_YOUTUBE_DATA]: PromoteYouTubeDataPayload;
   [Events.PROMOTE_DRIVE_DATA]: PromoteDriveDataPayload;
   [Events.PROMOTE_CONTACTS]: PromoteContactsPayload;
-  [Events.PROMOTE_OUTLOOK_MESSAGES]: PromoteOutlookMessagesPayload;
+  [Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]: PromoteOutlookMessagesPayload;
 };

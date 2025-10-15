@@ -164,7 +164,7 @@ export class PromoteService {
           });
           break;
         case ApiLogScopes.OUTLOOK_MAIL:
-          await this.eventService.send(Events.PROMOTE_OUTLOOK_MESSAGES, {
+          await this.eventService.send(Events.PROMOTE_OUTLOOK_MAIL_MESSAGES, {
             apiLogId: apiLog.id,
             userId: context.userId,
             connectionId: apiLog.connection_id,
