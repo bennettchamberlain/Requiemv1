@@ -6,7 +6,7 @@ import { LoggerService } from '@ci/common/services';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 
-import { GraphUtilityService } from './GraphUtilityService';
+import { GraphQueryService } from './GraphQueryService';
 
 /**
  * User context data structure for LLM system prompts
@@ -40,6 +40,14 @@ export interface UserContext {
   };
 }
 
+type PreferenceRelationshipResult = {
+  entityId: string;
+  name: string;
+  type: string;
+  strength: number;
+  relationship: 'PREFERS' | 'DISLIKES';
+};
+
 /**
  * Service to generate rich context about a user for LLM pre-hydration
  *
@@ -57,7 +65,7 @@ export class UserContextService {
   private logger = new LoggerService(UserContextService.name);
 
   constructor(
-    private readonly graphUtility: GraphUtilityService,
+    private readonly graphQuery: GraphQueryService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
@@ -197,16 +205,28 @@ export class UserContextService {
     const userResult = await this.dataSource.query(userQuery, [userId]);
 
     if (userResult.length > 0 && userResult[0].entity_id) {
-      const entity = await this.graphUtility.getNodeById(userResult[0].entity_id, userId);
+      const entity = await this.graphQuery.getNode(userId, userResult[0].entity_id);
       if (entity) {
         return entity;
       }
     }
 
     // Fall back to linked entities
-    const nodes = await this.graphUtility.queryNodes(userId, { entityType: 'Person' }, { limit: 1 });
+    const nodes = await this.graphQuery.getNodes(userId, { entityType: 'Person', limit: 1 });
 
-    return nodes.length > 0 ? nodes[0] : null;
+    if (nodes.length > 0) {
+      const [node] = nodes;
+      if (userResult.length > 0 && !userResult[0].entity_id) {
+        await this.dataSource.query(`UPDATE users SET entity_id = $2 WHERE id = $1`, [
+          userId,
+          node.entity_id,
+        ]);
+      }
+
+      return node;
+    }
+
+    return null;
   }
 
   /**
@@ -238,7 +258,7 @@ export class UserContextService {
       properties?: Record<string, unknown>;
     }>
   > {
-    const { nodes, edges } = await this.graphUtility.traverseGraph(userId, [userEntityId], {
+    const { nodes, edges } = await this.graphQuery.traverseGraph(userId, [userEntityId], {
       relationshipTypes: ['SPOUSE', 'PARENT_OF', 'CHILD_OF', 'SIBLING_OF'],
       direction: 'both',
       maxDepth: 1,
@@ -288,44 +308,14 @@ export class UserContextService {
       relationship: 'PREFERS';
     }>
   > {
-    const query = `
-      SELECT 
-        e.entity_id,
-        e.name,
-        e.properties->>'type' as type,
-        r.strength
-      FROM relationships r
-      JOIN entities e ON r.to_entity_id = e.entity_id
-      WHERE r.from_entity_id = $1
-        AND r.relationship_type = 'PREFERS'
-        AND r.is_active = TRUE
-        AND r.owner_user_id = $2
-        AND e.owner_user_id = $2
-      ORDER BY r.strength DESC
-      LIMIT $3
-    `;
+    const results = await this.getTopRelationships(userId, userEntityId, 'PREFERS', limit);
 
-    interface QueryResult {
-      entity_id: string;
-      name: string;
-      type: string;
-      strength: string;
-    }
-
-    const results = (await this.dataSource.query(query, [userEntityId, userId, limit])) as QueryResult[];
-
-    return results.map((row) => ({
-      entityId: row.entity_id,
-      name: row.name,
-      type: row.type || 'unknown',
-      strength: parseFloat(row.strength),
+    return results.map((item) => ({
+      ...item,
       relationship: 'PREFERS' as const,
     }));
   }
 
-  /**
-   * Get top dislikes (DISLIKES relationships)
-   */
   private async getTopDislikes(
     userId: string,
     userEntityId: string,
@@ -339,43 +329,62 @@ export class UserContextService {
       relationship: 'DISLIKES';
     }>
   > {
-    const query = `
-      SELECT 
-        e.entity_id,
-        e.name,
-        e.properties->>'type' as type,
-        r.strength
-      FROM relationships r
-      JOIN entities e ON r.to_entity_id = e.entity_id
-      WHERE r.from_entity_id = $1
-        AND r.relationship_type = 'DISLIKES'
-        AND r.is_active = TRUE
-        AND r.owner_user_id = $2
-        AND e.owner_user_id = $2
-      ORDER BY r.strength DESC
-      LIMIT $3
-    `;
+    const results = await this.getTopRelationships(userId, userEntityId, 'DISLIKES', limit);
 
-    interface DislikeQueryResult {
-      entity_id: string;
-      name: string;
-      type: string | null;
-      strength: string;
-    }
-
-    const results = (await this.dataSource.query(query, [
-      userEntityId,
-      userId,
-      limit,
-    ])) as DislikeQueryResult[];
-
-    return results.map((row) => ({
-      entityId: row.entity_id,
-      name: row.name,
-      type: row.type || 'unknown',
-      strength: parseFloat(row.strength),
+    return results.map((item) => ({
+      ...item,
       relationship: 'DISLIKES' as const,
     }));
+  }
+
+  private async getTopRelationships(
+    userId: string,
+    userEntityId: string,
+    relationshipType: 'PREFERS' | 'DISLIKES',
+    limit: number,
+  ): Promise<PreferenceRelationshipResult[]> {
+    const relationships = await this.graphQuery.getRelationships(userId, {
+      entityIds: [userEntityId],
+      relationshipTypes: [relationshipType],
+      direction: 'outbound',
+    });
+
+    if (relationships.length === 0) {
+      return [];
+    }
+
+    const sorted = relationships
+      .filter((rel) => rel.relationship_type === relationshipType)
+      .sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0))
+      .slice(0, limit);
+
+    if (sorted.length === 0) {
+      return [];
+    }
+
+    const conceptIds = Array.from(new Set(sorted.map((rel) => rel.to_entity_id)));
+    const conceptNodes = await this.graphQuery.getNodesByIds(userId, conceptIds);
+    const conceptMap = new Map<string, GraphNodeEntity>(conceptNodes.map((node) => [node.entity_id, node]));
+
+    return sorted
+      .map((rel) => {
+        const concept = conceptMap.get(rel.to_entity_id);
+        if (!concept) {
+          return null;
+        }
+
+        const type = this.extractConceptType(concept);
+        const name = concept.name ?? type ?? 'Unknown';
+
+        return {
+          entityId: concept.entity_id,
+          name,
+          type,
+          strength: rel.strength ?? 0,
+          relationship: relationshipType,
+        };
+      })
+      .filter((value): value is PreferenceRelationshipResult => value !== null);
   }
 
   /**
@@ -396,6 +405,15 @@ export class UserContextService {
     return {
       totalEntities: parseInt(result[0]?.count || '0', 10),
     };
+  }
+
+  private extractConceptType(node: GraphNodeEntity): string {
+    const propertyType = node.properties?.['type'];
+    if (typeof propertyType === 'string' && propertyType.trim().length > 0) {
+      return propertyType;
+    }
+
+    return node.entity_type ?? 'Concept';
   }
 
   /**
