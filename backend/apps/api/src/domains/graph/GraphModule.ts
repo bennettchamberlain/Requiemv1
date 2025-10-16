@@ -9,6 +9,7 @@ import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
 import { GraphEventListener } from './listeners/GraphEventListener';
 import { GraphQueryService } from './services/GraphQueryService';
+import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { UserContextService } from './services/UserContextService';
 
@@ -18,7 +19,13 @@ import { UserContextService } from './services/UserContextService';
     EventsModule,
     UserModule,
   ],
-  providers: [GraphUtilityService, GraphQueryService, UserContextService, GraphEventListener],
-  exports: [GraphQueryService, UserContextService, GraphUtilityService],
+  providers: [
+    GraphUtilityService,
+    GraphQueryService,
+    GraphReadService,
+    UserContextService,
+    GraphEventListener,
+  ],
+  exports: [GraphQueryService, GraphReadService, UserContextService, GraphUtilityService],
 })
 export class GraphModule {}

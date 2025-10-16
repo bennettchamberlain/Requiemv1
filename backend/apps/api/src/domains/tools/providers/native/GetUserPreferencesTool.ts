@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { GraphQueryService, GraphNodeEntity } from '@ci/domains/graph';
+import { GraphQueryService, GraphReadService, GraphNodeEntity } from '@ci/domains/graph';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';
@@ -149,7 +149,10 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
     ],
   };
 
-  constructor(private readonly graphQuery: GraphQueryService) {
+  constructor(
+    private readonly graphQuery: GraphQueryService,
+    private readonly graphRead: GraphReadService,
+  ) {
     super();
   }
 
@@ -213,13 +216,11 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
       targetPersonName = resolved.name ?? input.personName;
     }
 
-    const relationships = await this.graphQuery.getRelationships(ownerUserId, {
-      entityIds: [targetPersonId],
-      relationshipTypes: ['PREFERS', 'DISLIKES'],
-      direction: 'outbound',
+    const relationshipSummaries = await this.graphRead.getPreferences(ownerUserId, {
+      personEntityId: targetPersonId,
     });
 
-    if (relationships.length === 0) {
+    if (relationshipSummaries.length === 0) {
       debugInfo.queryInfo = 'No PREFERS or DISLIKES relationships found for this entity';
 
       return {
@@ -233,36 +234,25 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
       };
     }
 
-    const conceptIds = Array.from(new Set(relationships.map((rel) => rel.to_entity_id)));
-    const conceptNodes = await this.graphQuery.getNodesByIds(ownerUserId, conceptIds);
-    const conceptMap = new Map<string, GraphNodeEntity>(conceptNodes.map((node) => [node.entity_id, node]));
-
     const allowedTypes = this.buildCategoryTypeSet(input.category);
     const includeContext = input.includeContext;
 
     const preferences: PreferenceNode[] = [];
     const dislikes: PreferenceNode[] = [];
 
-    for (const rel of relationships) {
-      const concept = conceptMap.get(rel.to_entity_id);
-      if (!concept) {
+    for (const summary of relationshipSummaries) {
+      const normalizedType = summary.type.toLowerCase();
+      if (allowedTypes && !allowedTypes.has(normalizedType)) {
         continue;
       }
 
-      const conceptType = this.extractConceptType(concept);
-      if (allowedTypes && !allowedTypes.has(conceptType)) {
-        continue;
-      }
-
-      const nodeName = this.extractConceptName(concept);
-      const strength = typeof rel.strength === 'number' ? rel.strength : 0.5;
       const payload: PreferenceNode = {
-        id: concept.entity_id,
-        type: conceptType,
-        name: nodeName,
-        strength,
-        relationship: rel.relationship_type === 'DISLIKES' ? 'DISLIKES' : 'PREFERS',
-        properties: includeContext ? (concept.properties as Record<string, any>) : undefined,
+        id: summary.entityId,
+        type: normalizedType,
+        name: summary.name ?? normalizedType,
+        strength: summary.strength,
+        relationship: summary.relationship,
+        properties: includeContext ? (summary.properties ?? undefined) : undefined,
       };
 
       if (payload.relationship === 'PREFERS') {
@@ -299,28 +289,6 @@ export class GetUserPreferencesTool extends BaseTool<GetUserPreferencesInput, Ge
     }
 
     return new Set(types.map((type) => type.toLowerCase()));
-  }
-
-  private extractConceptType(concept: GraphNodeEntity): string {
-    const propertyType = concept.properties?.type;
-    if (typeof propertyType === 'string' && propertyType.trim().length > 0) {
-      return propertyType.toLowerCase();
-    }
-
-    return concept.entity_type?.toLowerCase?.() ?? 'unknown';
-  }
-
-  private extractConceptName(concept: GraphNodeEntity): string {
-    if (concept.name && concept.name.trim().length > 0) {
-      return concept.name;
-    }
-
-    const label = concept.properties?.label;
-    if (typeof label === 'string' && label.trim().length > 0) {
-      return label;
-    }
-
-    return this.extractConceptType(concept);
   }
 
   private async resolveUserEntity(ownerUserId: string): Promise<{ entityId: string; name?: string } | null> {

@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { GraphNodeEntity, GraphQueryService } from '@ci/domains/graph';
+import { GraphNodeEntity, GraphQueryService, GraphReadService } from '@ci/domains/graph';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';
@@ -145,7 +145,10 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
     ],
   };
 
-  constructor(private readonly graphQuery: GraphQueryService) {
+  constructor(
+    private readonly graphQuery: GraphQueryService,
+    private readonly graphRead: GraphReadService,
+  ) {
     super();
   }
 
@@ -196,13 +199,11 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
       targetPersonName = resolved.name ?? input.personName;
     }
 
-    const relationships = await this.graphQuery.getRelationships(ownerUserId, {
-      entityIds: [targetPersonId],
-      relationshipTypes: ['PREFERS', 'DISLIKES'],
-      direction: 'outbound',
+    const relationshipSummaries = await this.graphRead.getPreferences(ownerUserId, {
+      personEntityId: targetPersonId,
     });
 
-    if (relationships.length === 0) {
+    if (relationshipSummaries.length === 0) {
       return {
         preferences: [],
         dislikes: [],
@@ -215,32 +216,23 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 
     const mediaFilter = this.buildMediaTypeSet(input.mediaType);
 
-    const conceptIds = Array.from(new Set(relationships.map((rel) => rel.to_entity_id)));
-    const conceptNodes = await this.graphQuery.getNodesByIds(ownerUserId, conceptIds);
-    const conceptMap = new Map<string, GraphNodeEntity>(conceptNodes.map((node) => [node.entity_id, node]));
-
     const includeContext = input.includeContext;
     const preferences: EntertainmentPreference[] = [];
     const dislikes: EntertainmentPreference[] = [];
 
-    for (const rel of relationships) {
-      const concept = conceptMap.get(rel.to_entity_id);
-      if (!concept) {
-        continue;
-      }
-
-      const conceptType = this.extractConceptType(concept);
+    for (const summary of relationshipSummaries) {
+      const conceptType = summary.type.toLowerCase();
       if (mediaFilter && !mediaFilter.has(conceptType)) {
         continue;
       }
 
       const item: EntertainmentPreference = {
-        id: concept.entity_id,
+        id: summary.entityId,
         type: conceptType,
-        name: this.extractConceptName(concept),
-        strength: typeof rel.strength === 'number' ? rel.strength : 0.5,
-        relationship: rel.relationship_type === 'DISLIKES' ? 'DISLIKES' : 'PREFERS',
-        properties: includeContext ? (concept.properties as Record<string, any>) : undefined,
+        name: summary.name ?? conceptType,
+        strength: summary.strength,
+        relationship: summary.relationship,
+        properties: includeContext ? (summary.properties ?? undefined) : undefined,
       };
 
       if (item.relationship === 'PREFERS') {
@@ -433,28 +425,6 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
     }
 
     return new Set(types.map((type) => type.toLowerCase()));
-  }
-
-  private extractConceptType(node: GraphNodeEntity): string {
-    const propertyType = node.properties?.type;
-    if (typeof propertyType === 'string') {
-      return propertyType.toLowerCase();
-    }
-
-    return node.entity_type?.toLowerCase?.() ?? 'unknown';
-  }
-
-  private extractConceptName(node: GraphNodeEntity): string {
-    if (node.name && node.name.trim().length > 0) {
-      return node.name;
-    }
-
-    const label = node.properties?.label;
-    if (typeof label === 'string' && label.trim().length > 0) {
-      return label;
-    }
-
-    return this.extractConceptType(node);
   }
 
   private extractNameFragments(node: GraphNodeEntity): string[] {
