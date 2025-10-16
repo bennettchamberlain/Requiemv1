@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { EventsModule } from '@ci/domains/events';
+import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
 import { UserModule } from '@ci/domains/user';
 
 import { ContentController } from './controllers/ContentController';
@@ -11,28 +13,15 @@ import { CommunicationEntity } from './entities/CommunicationEntity';
 import { ContactEntity } from './entities/ContactEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
-import { FactEntity } from './entities/FactEntity';
-import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { LocationEntity } from './entities/LocationEntity';
 import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
-import { RelationshipEntity } from './entities/RelationshipEntity';
 import { ThingEntity } from './entities/ThingEntity';
 import { CommunicationService } from './services/CommunicationService';
 import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
-import {
-  ConceptGraphService,
-  EventGraphService,
-  LocationGraphService,
-  PersonGraphService,
-  PreferenceService,
-  RelationshipService,
-  ThingGraphService,
-} from './services/graph';
-import { GraphUtilityService } from './services/GraphUtilityService';
+import { GraphEventService } from './services/GraphEventService';
 import { MemoryService } from './services/MemoryService';
-import { UserContextService } from './services/UserContextService';
 
 @Module({
   imports: [
@@ -47,41 +36,14 @@ import { UserContextService } from './services/UserContextService';
       ThingEntity,
       GraphNodeEntity,
       RelationshipEntity,
-      FactEntity,
     ]),
     UserModule,
+    EventsModule,
+    GraphModule,
   ],
-  providers: [
-    MemoryService,
-    CommunicationService,
-    ContentService,
-    EventService,
-    GraphUtilityService,
-    UserContextService,
-    PersonGraphService,
-    ConceptGraphService,
-    ThingGraphService,
-    LocationGraphService,
-    EventGraphService,
-    PreferenceService,
-    RelationshipService,
-  ],
+  providers: [MemoryService, CommunicationService, ContentService, EventService, GraphEventService],
   controllers: [MemoryController, ContentController, EventController, GraphController],
-  exports: [
-    MemoryService,
-    CommunicationService,
-    ContentService,
-    EventService,
-    GraphUtilityService,
-    UserContextService,
-    PersonGraphService,
-    ConceptGraphService,
-    ThingGraphService,
-    LocationGraphService,
-    EventGraphService,
-    PreferenceService,
-    RelationshipService,
-  ],
+  exports: [MemoryService, CommunicationService, ContentService, EventService, GraphEventService],
 })
 export class MemoryModule {}
 
@@ -90,31 +52,14 @@ export {
   ContactEntity,
   ContentEntity,
   EventEntity,
-  FactEntity,
   LocationEntity,
   PersonEntity,
   PlaceEntity,
   ThingEntity,
-  GraphNodeEntity,
-  RelationshipEntity,
 };
 
 // Services
-export {
-  MemoryService,
-  ContentService,
-  EventService,
-  GraphUtilityService,
-  UserContextService,
-  CommunicationService,
-  PersonGraphService,
-  ConceptGraphService,
-  ThingGraphService,
-  LocationGraphService,
-  EventGraphService,
-  PreferenceService,
-  RelationshipService,
-};
+export { MemoryService, ContentService, EventService, CommunicationService, GraphEventService };
 
 // Types
 export type {
@@ -127,4 +72,3 @@ export type {
   CreateContentDto,
   UpdateContentDto,
 } from './types';
-export type { UserContext } from './services/UserContextService';

@@ -4,9 +4,9 @@ import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { GraphNodeEntity } from '@ci/domains/graph/entities/GraphNodeEntity';
+import { RelationshipEntity } from '@ci/domains/graph/entities/RelationshipEntity';
 
-import { GraphNodeEntity } from '../entities/GraphNodeEntity';
-import { RelationshipEntity } from '../entities/RelationshipEntity';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
 
 @Injectable()

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { GraphUtilityService } from '@ci/domains/memory';
+import { GraphQueryService } from '@ci/domains/graph';
+import { GraphEventService } from '@ci/domains/memory';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';
@@ -154,7 +155,10 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
     ],
   };
 
-  constructor(private readonly graphUtility: GraphUtilityService) {
+  constructor(
+    private readonly graphEvents: GraphEventService,
+    private readonly graphQuery: GraphQueryService,
+  ) {
     super();
   }
 
@@ -194,7 +198,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               break;
             }
 
-            const { node } = await this.graphUtility.createOrUpdateNode(ownerId, {
+            const { entityId } = await this.graphEvents.upsertNode(ownerId, {
               entityId: operation.entityId,
               entityType: operation.entityType,
               name: operation.name ?? null,
@@ -207,12 +211,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
             });
 
             if (operation.relationships?.length) {
-              await this.handleRelationshipCreations(
-                ownerId,
-                node.entity_id,
-                operation.relationships,
-                dryRun,
-              );
+              await this.handleRelationshipCreations(ownerId, entityId, operation.relationships, dryRun);
               createdRelationships += operation.relationships.length;
             }
 
@@ -220,14 +219,14 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
             results.push({
               kind: operation.kind,
               status: 'created',
-              message: `Created entity ${node.entity_id}`,
-              entityId: node.entity_id,
+              message: `Created entity ${entityId}`,
+              entityId,
             });
             break;
           }
 
           case 'entity.update': {
-            const existing = await this.graphUtility.getNodeById(operation.entityId, ownerId);
+            const existing = await this.graphQuery.getNode(ownerId, operation.entityId);
             if (!existing) {
               results.push({
                 kind: operation.kind,
@@ -257,7 +256,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               operation.removeProperties ?? [],
             );
 
-            const { node } = await this.graphUtility.createOrUpdateNode(ownerId, {
+            const { entityId } = await this.graphEvents.upsertNode(ownerId, {
               entityId: operation.entityId,
               entityType: operation.entityType ?? existing.entity_type,
               name: operation.name ?? existing.name,
@@ -273,8 +272,8 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
             results.push({
               kind: operation.kind,
               status: 'updated',
-              message: `Updated entity ${node.entity_id}`,
-              entityId: node.entity_id,
+              message: `Updated entity ${entityId}`,
+              entityId,
             });
             break;
           }
@@ -290,10 +289,10 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               break;
             }
 
-            const endpoints = await this.graphUtility.getNodesByIds(
-              [operation.fromEntityId, operation.toEntityId],
-              ownerId,
-            );
+            const endpoints = await this.graphQuery.getNodesByIds(ownerId, [
+              operation.fromEntityId,
+              operation.toEntityId,
+            ]);
             if (endpoints.length !== 2) {
               results.push({
                 kind: operation.kind,
@@ -304,7 +303,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               break;
             }
 
-            const { relationship } = await this.graphUtility.createOrUpdateRelationship(ownerId, {
+            const { relationshipId } = await this.graphEvents.upsertRelationship(ownerId, {
               relationshipId: operation.relationshipId,
               fromEntityId: operation.fromEntityId,
               toEntityId: operation.toEntityId,
@@ -319,14 +318,14 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
             results.push({
               kind: operation.kind,
               status: 'created',
-              message: `Created relationship ${relationship.relationship_id}`,
-              relationshipId: relationship.relationship_id,
+              message: `Created relationship ${relationshipId}`,
+              relationshipId,
             });
             break;
           }
 
           case 'relationship.update': {
-            const relationships = await this.graphUtility.getRelationships(ownerId, {
+            const relationships = await this.graphQuery.getRelationships(ownerId, {
               relationshipIds: [operation.relationshipId],
               includeInactive: true,
             });
@@ -360,7 +359,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               operation.removeProperties ?? [],
             );
 
-            const { relationship } = await this.graphUtility.createOrUpdateRelationship(ownerId, {
+            const { relationshipId } = await this.graphEvents.upsertRelationship(ownerId, {
               relationshipId: operation.relationshipId,
               fromEntityId: existingRel.from_entity_id,
               toEntityId: existingRel.to_entity_id,
@@ -375,8 +374,8 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
             results.push({
               kind: operation.kind,
               status: 'updated',
-              message: `Updated relationship ${relationship.relationship_id}`,
-              relationshipId: relationship.relationship_id,
+              message: `Updated relationship ${relationshipId}`,
+              relationshipId,
             });
             break;
           }
@@ -435,7 +434,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
     }
 
     const targetIds = relationships.map((rel) => rel.toEntityId);
-    const targets = await this.graphUtility.getNodesByIds(targetIds, ownerId);
+    const targets = await this.graphQuery.getNodesByIds(ownerId, targetIds);
     const targetSet = new Set(targets.map((node) => node.entity_id));
 
     for (const relationship of relationships) {
@@ -445,7 +444,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
         );
       }
 
-      await this.graphUtility.createOrUpdateRelationship(ownerId, {
+      await this.graphEvents.upsertRelationship(ownerId, {
         fromEntityId,
         toEntityId: relationship.toEntityId,
         relationshipType: relationship.relationshipType,
