@@ -3,9 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
-import { GraphUtilityService } from '@ci/domains/memory';
-import { GraphNodeEntity } from '@ci/domains/memory/entities/GraphNodeEntity';
-import { RelationshipEntity } from '@ci/domains/memory/entities/RelationshipEntity';
+import { GraphQueryService, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';
@@ -361,7 +359,7 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
   };
 
   constructor(
-    private readonly graphUtility: GraphUtilityService,
+    private readonly graphQuery: GraphQueryService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {
@@ -428,15 +426,12 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
     // Handle filter-based entity lookup
     if (seedNodes.length === 0 && input.filters) {
       const filterLimit = input.filters.limit ?? traversalOptions.maxNodes;
-      const candidates = await this.graphUtility.queryNodes(
-        ownerId,
-        {
-          entityType: input.filters.entityType,
-          nameContains: input.filters.nameContains,
-          propertyEquals: input.filters.propertyEquals,
-        },
-        { limit: filterLimit },
-      );
+      const candidates = await this.graphQuery.getNodes(ownerId, {
+        entityType: input.filters.entityType,
+        nameContains: input.filters.nameContains,
+        propertyEquals: input.filters.propertyEquals,
+        limit: filterLimit,
+      });
 
       seedNodes = candidates.map((node) => node.entity_id);
       candidates.forEach((node) => seedIds.add(node.entity_id));
@@ -462,7 +457,7 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
       };
     }
 
-    const { nodes, edges } = await this.graphUtility.traverseGraph(ownerId, seedNodes, {
+    const { nodes, edges } = await this.graphQuery.traverseGraph(ownerId, seedNodes, {
       relationshipTypes: input.relationshipTypes,
       direction: traversalOptions.direction,
       maxDepth: traversalOptions.maxDepth,
@@ -474,7 +469,7 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
     const includeRelationships = input.include.relationships;
 
     // Ensure the explicit seed nodes are present in the response when possible
-    const ensuredSeedNodes = await this.graphUtility.getNodesByIds(seedNodes, ownerId);
+    const ensuredSeedNodes = await this.graphQuery.getNodesByIds(ownerId, seedNodes);
     ensuredSeedNodes.forEach((node) => nodes.set(node.entity_id, node));
 
     const nodeSummaries: KnowledgeNodeSummary[] = Array.from(nodes.values()).map((node) =>
@@ -653,14 +648,11 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
       }
 
       // Fall back to name-based search
-      const nodes = await this.graphUtility.queryNodes(
-        userId,
-        {
-          entityType: 'Person',
-          nameContains: lowerName,
-        },
-        { limit: 1 },
-      );
+      const nodes = await this.graphQuery.getNodes(userId, {
+        entityType: 'Person',
+        nameContains: lowerName,
+        limit: 1,
+      });
 
       if (nodes.length > 0) {
         return nodes[0].entity_id;
@@ -684,7 +676,7 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
   ): Promise<string | null> {
     try {
       // Query relationships to find connected entities
-      const { nodes } = await this.graphUtility.traverseGraph(userId, [fromEntityId], {
+      const { nodes } = await this.graphQuery.traverseGraph(userId, [fromEntityId], {
         relationshipTypes,
         direction: 'both',
         maxDepth: 1,

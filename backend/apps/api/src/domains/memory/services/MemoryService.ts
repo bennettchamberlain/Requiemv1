@@ -4,12 +4,9 @@ import { Repository, Point } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { GraphNodeEntity } from '@ci/domains/graph/entities/GraphNodeEntity';
+import { RelationshipEntity } from '@ci/domains/graph/entities/RelationshipEntity';
 
-import { CommunicationEntity } from '../entities/CommunicationEntity';
-import { ContentEntity } from '../entities/ContentEntity';
-import { EventEntity } from '../entities/EventEntity';
-import { GraphNodeEntity } from '../entities/GraphNodeEntity';
-import { RelationshipEntity } from '../entities/RelationshipEntity';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
 
 // Type definitions for metadata structures

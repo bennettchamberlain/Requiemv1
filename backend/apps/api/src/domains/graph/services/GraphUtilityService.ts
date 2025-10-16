@@ -65,6 +65,21 @@ export class GraphUtilityService {
     });
   }
 
+  async getNodeByLinkedRecord(
+    ownerUserId: string,
+    linkedTable: string,
+    linkedId: string,
+  ): Promise<GraphNodeEntity | null> {
+    return this.entityRepo.findOne({
+      where: {
+        owner_user_id: ownerUserId,
+        linked_table: linkedTable,
+        linked_id: linkedId,
+        is_active: true,
+      },
+    });
+  }
+
   async queryNodes(
     ownerUserId: string,
     filters: {

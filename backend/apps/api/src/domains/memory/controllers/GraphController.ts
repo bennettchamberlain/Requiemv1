@@ -1,21 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { v7 as uuidv7 } from 'uuid';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
-import { OnEvent, Events, type EventPayloads } from '@ci/domains/events';
-import { UserService } from '@ci/domains/user';
+import { GraphQueryService, UserContextService } from '@ci/domains/graph';
 
-import { LocationGraphService } from '../services/graph/LocationGraphService';
-import { PersonGraphService } from '../services/graph/PersonGraphService';
-import { PreferenceService } from '../services/graph/PreferenceService';
-import { RelationshipService } from '../services/graph/RelationshipService';
-import { GraphUtilityService } from '../services/GraphUtilityService';
-import { UserContextService } from '../services/UserContextService';
+import { GraphEventService } from '../services/GraphEventService';
 
 const propertiesSchema = z.record(z.unknown());
 const optionalPropertiesSchema = propertiesSchema.optional();
@@ -138,22 +130,12 @@ type DeleteNodeDto = z.infer<typeof deleteNodeSchema>;
 type UpdateNodeDto = z.infer<typeof updateNodeSchema>;
 type DeleteRelationshipDto = z.infer<typeof deleteRelationshipSchema>;
 
-/**
- * Controller for high-level graph operations
- * Provides simple REST endpoints for frontend to add data to the knowledge graph
- */
 @Controller('graph')
 @UseGuards(JwtAuthGuard)
 export class GraphController {
-  private logger = new LoggerService(GraphController.name);
-
   constructor(
-    private readonly personService: PersonGraphService,
-    private readonly preferenceService: PreferenceService,
-    private readonly locationService: LocationGraphService,
-    private readonly relationshipService: RelationshipService,
-    private readonly graphUtility: GraphUtilityService,
-    private readonly userService: UserService,
+    private readonly graphEvents: GraphEventService,
+    private readonly graphQuery: GraphQueryService,
     private readonly userContext: UserContextService,
   ) {}
 
@@ -165,266 +147,118 @@ export class GraphController {
     return ctx.userId;
   }
 
-  @OnEvent(Events.USER_CREATED)
-  async addUserToGraph(payload: EventPayloads[Events.USER_CREATED]) {
-    const user = await this.userService.findOne(payload.userId);
-
-    if (user == null) {
-      this.logger.error('User not found when attempting to add to graph');
-
-      return;
-    }
-
-    const entityId = uuidv7();
-    const nameForEntity = user.name ?? user.email;
-    const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
-    const [firstName, ...restName] = nameParts;
-
-    const properties: Record<string, unknown> = {
-      email: user.email,
-    };
-
-    if (firstName) {
-      properties.first_name = firstName;
-    }
-
-    if (restName.length > 0) {
-      properties.last_name = restName.join(' ');
-    }
-
-    await this.graphUtility.createOrUpdateNode(user.id, {
-      entityId,
-      entityType: 'Person',
-      name: nameForEntity,
-      description: nameForEntity,
-      properties,
-      searchContent: nameForEntity,
-      linkedTable: 'users',
-      linkedId: user.id,
-    });
-
-    await this.userService.update(payload.userId, {
-      entityId,
-    });
-  }
-
-  private parseOptionalDate(value?: string): Date | undefined {
-    if (!value) {
-      return undefined;
-    }
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException('Invalid date format. Expected ISO string.');
-    }
-
-    return date;
-  }
-
-  /**
-   * Add a person to the graph with optional relationships
-   * POST /graph/person
-   */
   @Post('person')
   async addPerson(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(addPersonSchema)) body: AddPersonDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const { relationships, ...personData } = body;
-
-    const result = await this.personService.addPerson(userId, personData, relationships);
+    const ownerId = this.ensureUserId(ctx);
+    const result = await this.graphEvents.addPerson(ownerId, body);
 
     return {
       success: true,
-      person: {
-        entityId: result.personEntity.entity_id,
-        name: result.personEntity.name,
-        properties: result.personEntity.properties,
-      },
+      person: result.person,
       relationshipsCreated: result.relationshipsCreated,
     };
   }
 
-  /**
-   * Batch add family members
-   * POST /graph/family
-   */
   @Post('family')
   async addFamilyMembers(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(addFamilyMembersSchema)) body: AddFamilyMembersDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const result = await this.personService.addFamilyMembers(userId, body.userEntityId, body.familyMembers);
+    const ownerId = this.ensureUserId(ctx);
+    const result = await this.graphEvents.addFamilyMembers(ownerId, body.userEntityId, body.familyMembers);
 
     return {
       success: true,
       created: result.created,
-      familyMembers: result.entities.map((entity) => ({
-        entityId: entity.entity_id,
-        name: entity.name,
-        properties: entity.properties,
-      })),
+      familyMembers: result.familyMembers,
     };
   }
 
-  /**
-   * Add a single preference
-   * POST /graph/preference
-   */
   @Post('preference')
   async addPreference(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(addPreferenceSchema)) body: AddPreferenceDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const result = await this.preferenceService.addPreference(userId, body.personEntityId, {
-      name: body.name,
-      type: body.type,
-      isDislike: body.isDislike,
-      strength: body.strength,
-      properties: body.properties,
-    });
+    const ownerId = this.ensureUserId(ctx);
+    const result = await this.graphEvents.addPreference(ownerId, body);
 
     return {
       success: true,
-      concept: {
-        entityId: result.conceptEntity.entity_id,
-        name: result.conceptEntity.name,
-        type: body.type,
-      },
-      relationship: {
-        id: result.relationship.relationship_id,
-        type: result.relationship.relationship_type,
-        strength: result.relationship.strength,
-      },
+      concept: result.concept,
+      relationship: result.relationship,
     };
   }
 
-  /**
-   * Batch add preferences
-   * POST /graph/preferences
-   */
   @Post('preferences')
   async addPreferences(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(addPreferencesSchema)) body: AddPreferencesDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const result = await this.preferenceService.addPreferences(userId, body.personEntityId, body.preferences);
+    const ownerId = this.ensureUserId(ctx);
+    const result = await this.graphEvents.addPreferences(ownerId, {
+      personEntityId: body.personEntityId,
+      preferences: body.preferences.map((pref) => ({
+        ...pref,
+        personEntityId: body.personEntityId,
+      })),
+    });
 
     return {
       success: true,
       created: result.created,
-      preferences: result.results.map((r) => ({
-        conceptId: r.conceptEntity.entity_id,
-        name: r.conceptEntity.name,
-        relationshipType: r.relationship.relationship_type,
-      })),
+      preferences: result.preferences,
     };
   }
 
-  /**
-   * Add a location
-   * POST /graph/location
-   */
   @Post('location')
   async addLocation(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(addLocationSchema)) body: AddLocationDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const location = await this.locationService.addLocation(userId, body);
+    const ownerId = this.ensureUserId(ctx);
+    const result = await this.graphEvents.addLocation(ownerId, body);
 
     return {
       success: true,
-      location: {
-        entityId: location.entity_id,
-        name: location.name,
-        type: body.type,
-        coordinates: body.coordinates,
-      },
+      location: result.location,
     };
   }
 
-  /**
-   * Record a visit
-   * POST /graph/visit
-   */
   @Post('visit')
   async addVisit(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(addVisitSchema)) body: AddVisitDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const relationship = await this.relationshipService.addVisit(
-      userId,
-      body.personEntityId,
-      body.locationEntityId,
-      {
-        date: this.parseOptionalDate(body.date),
-        duration: body.duration,
-        notes: body.notes,
-        properties: body.properties,
-      },
-    );
+    const ownerId = this.ensureUserId(ctx);
+    const result = await this.graphEvents.addVisit(ownerId, body);
 
     return {
       success: true,
-      visit: {
-        relationshipId: relationship.relationship_id,
-        from: relationship.from_entity_id,
-        to: relationship.to_entity_id,
-        properties: relationship.properties,
-      },
+      visit: result.visit,
     };
   }
 
-  /**
-   * Add a social connection
-   * POST /graph/connection
-   */
   @Post('connection')
   async addSocialConnection(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(addConnectionSchema)) body: AddConnectionDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const relationship = await this.relationshipService.addSocialConnection(
-      userId,
-      body.fromPersonId,
-      body.toPersonId,
-      body.connectionType,
-      {
-        since: this.parseOptionalDate(body.since),
-        context: body.context,
-        strength: body.strength,
-        properties: body.properties,
-      },
-    );
+    const ownerId = this.ensureUserId(ctx);
+    const result = await this.graphEvents.addConnection(ownerId, body);
 
     return {
       success: true,
-      connection: {
-        relationshipId: relationship.relationship_id,
-        from: relationship.from_entity_id,
-        to: relationship.to_entity_id,
-        type: relationship.relationship_type,
-        strength: relationship.strength,
-      },
+      connection: result.connection,
     };
   }
 
-  /**
-   * Get user context (for debugging/preview)
-   * GET /graph/context
-   */
   @Get('context')
   async getUserContext(@Context() ctx: RequestContext) {
-    const userId = this.ensureUserId(ctx);
-    const context = await this.userContext.getUserContextForLLM(userId);
+    const ownerId = this.ensureUserId(ctx);
+    const context = await this.userContext.getUserContextForLLM(ownerId);
 
     return {
       success: true,
@@ -432,14 +266,10 @@ export class GraphController {
     };
   }
 
-  /**
-   * Get formatted user context for LLM
-   * GET /graph/context/formatted
-   */
   @Get('context/formatted')
   async getFormattedUserContext(@Context() ctx: RequestContext) {
-    const userId = this.ensureUserId(ctx);
-    const context = await this.userContext.getUserContextForLLM(userId);
+    const ownerId = this.ensureUserId(ctx);
+    const context = await this.userContext.getUserContextForLLM(ownerId);
 
     if (!context) {
       return {
@@ -456,19 +286,12 @@ export class GraphController {
     };
   }
 
-  /**
-   * Get all nodes and relationships for the current user
-   * GET /graph/data
-   */
   @Get('data')
   async getGraphData(@Context() ctx: RequestContext) {
-    const userId = this.ensureUserId(ctx);
+    const ownerId = this.ensureUserId(ctx);
 
-    // Get all nodes for this user
-    const nodes = await this.personService.getAllNodes(userId, { limit: 200 });
-
-    // Get all relationships for this user
-    const relationships = await this.relationshipService.getRelationships(userId, {});
+    const nodes = await this.graphQuery.getNodes(ownerId, { limit: 200 });
+    const relationships = await this.graphQuery.getRelationships(ownerId, {});
 
     return {
       success: true,
@@ -494,17 +317,13 @@ export class GraphController {
     };
   }
 
-  /**
-   * Delete a node from the graph
-   * POST /graph/node/delete
-   */
   @Post('node/delete')
   async deleteNode(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(deleteNodeSchema)) body: DeleteNodeDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    await this.personService.deleteNode(userId, body.entityId);
+    const ownerId = this.ensureUserId(ctx);
+    await this.graphEvents.deleteNode(ownerId, body.entityId);
 
     return {
       success: true,
@@ -512,17 +331,13 @@ export class GraphController {
     };
   }
 
-  /**
-   * Update a node in the graph
-   * POST /graph/node/update
-   */
   @Post('node/update')
   async updateNode(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(updateNodeSchema)) body: UpdateNodeDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    const node = await this.personService.updateNode(userId, body.entityId, {
+    const ownerId = this.ensureUserId(ctx);
+    const updated = await this.graphEvents.updateNode(ownerId, body.entityId, {
       name: body.name,
       description: body.description,
       properties: body.properties,
@@ -530,26 +345,17 @@ export class GraphController {
 
     return {
       success: true,
-      node: {
-        entityId: node.entity_id,
-        name: node.name,
-        description: node.description,
-        properties: node.properties,
-      },
+      node: updated,
     };
   }
 
-  /**
-   * Delete a relationship from the graph
-   * POST /graph/relationship/delete
-   */
   @Post('relationship/delete')
   async deleteRelationship(
     @Context() ctx: RequestContext,
     @Body(new ValidationPipe(deleteRelationshipSchema)) body: DeleteRelationshipDto,
   ) {
-    const userId = this.ensureUserId(ctx);
-    await this.relationshipService.deleteRelationship(userId, body.relationshipId);
+    const ownerId = this.ensureUserId(ctx);
+    await this.graphEvents.deleteRelationship(ownerId, body.relationshipId);
 
     return {
       success: true,
