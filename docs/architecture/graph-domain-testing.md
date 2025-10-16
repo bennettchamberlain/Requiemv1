@@ -1,5 +1,15 @@
 # Graph Domain Testing Guide
 
+The graph domain captures user knowledge in a unified node/relationship store. Feature domains publish “intent” events for writes, and the graph module consumes those events to persist the actual nodes and edges. Reads go through a shared query façade so every caller sees the same view, including tooling and LLM context builders.
+
+At a glance: controllers and services emit graph mutations via `GraphEventService`; a `GraphEventListener` handles those events asynchronously and writes to the database; `GraphQueryService` and `UserContextService` provide consistent read APIs; the frontend and tooling rely on the same HTTP endpoints. Because writes are async, you verify them by polling the corresponding getter once PgBoss processes the event. This separation keeps feature domains thin, centralizes graph logic, and ensures observability through a single set of listeners and query helpers.
+
+In more detail, setters live in the feature or memory domains, where they validate input and publish `GRAPH_*` events through `GraphEventService`. Those events flow to PgBoss, and the `GraphEventListener` inside `GraphModule` consumes them, invoking the low-level `GraphUtilityService` to upsert nodes, relationships, and linked table information. The graph module exports only read/query services so that write behavior remains event-driven and auditable. Consumers that need read access—controllers, native tools, promotion jobs, or the LLM pipeline—inject `GraphQueryService` (and, when needed, `UserContextService`) to fetch data without touching repositories directly.
+
+Every exported helper has a well-scoped responsibility. `GraphQueryService` offers high-level reads such as `getRelationships`, `getNodesByIds`, `traverseGraph`, and `getUserEntity`. `GraphEventService` wraps all domain writes (adding people, preferences, visits, etc.) into strongly typed events. `GraphUtilityService` remains available for maintenance scripts that need lower-level operations (bulk deactivations, archival). Finally, `UserContextService` composes graph data into markdown so LLM controllers can hydrate the system prompt prior to answering user questions. Because all of these live under `@ci/domains/graph`, teams can wire them into other modules simply by importing `GraphModule`.
+
+With those pieces in mind, the rest of this guide shows how to exercise the graph endpoints via cURL, how to invoke the services directly from backend code, and how the frontend can call the same APIs. By walking through the setters and getters, you can validate end-to-end behavior, inspect queued events, and confirm that “reads after write” behave once the worker finishes processing.
+
 This document explains how to exercise the event-driven graph domain from both the API and internal services. It covers:
 
 - How setters ("writes") behave and how to fire them through HTTP (cURL examples)
