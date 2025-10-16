@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { GraphNodeEntity, GraphQueryService } from '@ci/domains/graph';
+import { GraphQueryService, GraphReadService } from '@ci/domains/graph';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';
@@ -97,7 +97,10 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     ],
   };
 
-  constructor(private readonly graphQuery: GraphQueryService) {
+  constructor(
+    private readonly graphQuery: GraphQueryService,
+    private readonly graphRead: GraphReadService,
+  ) {
     super();
   }
 
@@ -128,13 +131,12 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     const effectiveRelationshipTypes =
       relationshipTypes.length > 0 ? relationshipTypes : FAMILY_RELATIONSHIP_TYPES;
 
-    const relationships = await this.graphQuery.getRelationships(ownerUserId, {
-      entityIds: [userProfile.entityId],
+    const familySummaries = await this.graphRead.getFamilyMembers(ownerUserId, {
       relationshipTypes: effectiveRelationshipTypes,
-      direction: 'both',
+      personEntityId: userProfile.entityId ?? undefined,
     });
 
-    if (relationships.length === 0) {
+    if (familySummaries.length === 0) {
       return {
         familyMembers: [],
         totalCount: 0,
@@ -142,81 +144,17 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
       };
     }
 
-    const otherEntityIds = Array.from(
-      new Set(
-        relationships.map((rel) =>
-          rel.from_entity_id === userProfile.entityId ? rel.to_entity_id : rel.from_entity_id,
-        ),
-      ),
-    );
-
-    const nodes = await this.graphQuery.getNodesByIds(ownerUserId, otherEntityIds);
-    const nodeMap = new Map<string, GraphNodeEntity>(nodes.map((node) => [node.entity_id, node]));
-
-    const memberMap = new Map<
-      string,
-      FamilyMember & {
-        _strength: number;
-      }
-    >();
-
-    for (const rel of relationships) {
-      const otherId = rel.from_entity_id === userProfile.entityId ? rel.to_entity_id : rel.from_entity_id;
-      const otherNode = nodeMap.get(otherId);
-      if (!otherNode || otherNode.entity_type !== 'Person') {
-        continue;
-      }
-
-      const direction = rel.from_entity_id === userProfile.entityId ? 'outbound' : 'inbound';
-      const classification = this.classifyRelationship(rel.relationship_type, direction);
-      if (!classification) {
-        continue;
-      }
-
-      const closeness = typeof rel.strength === 'number' ? rel.strength : 0.5;
-      const interactionFrequency =
-        (rel.properties?.interaction_frequency as string | undefined) ??
-        (rel.properties?.frequency as string | undefined) ??
-        'unknown';
-
-      const relationshipSubtype =
-        classification.subtype ??
-        (rel.properties?.relationship_subtype as string | undefined) ??
-        (rel.properties?.relationship as string | undefined) ??
-        undefined;
-
-      const existing = memberMap.get(otherId);
-
-      if (!existing) {
-        memberMap.set(otherId, {
-          id: otherId,
-          name: otherNode.name ?? this.extractDisplayName(otherNode),
-          relationshipType: classification.type,
-          relationshipSubtype,
-          closenessScore: closeness,
-          interactionFrequency,
-          _strength: closeness,
-        });
-      } else {
-        if (!existing.relationshipSubtype && relationshipSubtype) {
-          existing.relationshipSubtype = relationshipSubtype;
-        }
-
-        if (classification.type !== existing.relationshipType && input.relationshipType === 'all') {
-          existing.relationshipType = classification.type;
-        }
-
-        if (closeness > existing._strength) {
-          existing.closenessScore = closeness;
-          existing._strength = closeness;
-        }
-      }
-    }
-
-    const familyMembers: FamilyMember[] = Array.from(memberMap.values()).map(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      ({ _strength, ...member }) => member,
-    );
+    const familyMembers: FamilyMember[] = familySummaries.map((summary) => ({
+      id: summary.entityId,
+      name: summary.name ?? this.extractDisplayName(summary.properties),
+      relationshipType: summary.relationshipType,
+      relationshipSubtype: undefined,
+      closenessScore: summary.strength ?? 0.5,
+      interactionFrequency:
+        (summary.properties?.interaction_frequency as string | undefined) ??
+        (summary.properties?.frequency as string | undefined) ??
+        'unknown',
+    }));
 
     if (input.includePreferences) {
       await Promise.all(
@@ -260,81 +198,44 @@ export class GetFamilyMembersTool extends BaseTool<GetFamilyMembersInput, GetFam
     return mapping[filter] ?? [];
   }
 
-  private classifyRelationship(
-    graphRelationshipType: string,
-    direction: 'outbound' | 'inbound',
-  ): { type: string; subtype?: string } | null {
-    switch (graphRelationshipType) {
-      case 'SPOUSE':
-      case 'PARTNER':
-      case 'ROMANTIC_PARTNER':
-        return { type: 'romantic_partner', subtype: 'spouse' };
-      case 'PARENT_OF':
-        return { type: 'family', subtype: direction === 'outbound' ? 'child' : 'parent' };
-      case 'CHILD_OF':
-        return { type: 'family', subtype: direction === 'outbound' ? 'parent' : 'child' };
-      case 'SIBLING_OF':
-        return { type: 'family', subtype: 'sibling' };
-      case 'FAMILY_MEMBER':
-        return { type: 'family' };
-      default: {
-        if (graphRelationshipType?.startsWith('FAMILY')) {
-          return { type: 'family' };
-        }
-
-        return null;
-      }
-    }
-  }
-
   private async loadPersonPreferences(
     personEntityId: string,
     ownerUserId: string,
   ): Promise<{ likes: string[]; dislikes: string[] }> {
-    const relationships = await this.graphQuery.getRelationships(ownerUserId, {
-      entityIds: [personEntityId],
-      relationshipTypes: ['PREFERS', 'DISLIKES'],
-      direction: 'outbound',
+    const relationshipSummaries = await this.graphRead.getPreferences(ownerUserId, {
+      personEntityId,
+      relationship: 'PREFERS',
+      limit: 10,
     });
 
-    if (relationships.length === 0) {
+    const dislikeSummaries = await this.graphRead.getPreferences(ownerUserId, {
+      personEntityId,
+      relationship: 'DISLIKES',
+      limit: 10,
+    });
+
+    if (relationshipSummaries.length === 0 && dislikeSummaries.length === 0) {
       return { likes: [], dislikes: [] };
     }
 
-    const filtered = relationships.filter((rel) => (rel.strength ?? 0) >= 0.5);
-    filtered.sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0));
-
-    const likes = filtered.filter((rel) => rel.relationship_type === 'PREFERS').slice(0, 10);
-    const dislikes = filtered.filter((rel) => rel.relationship_type === 'DISLIKES').slice(0, 10);
-
-    const conceptIds = Array.from(new Set([...likes, ...dislikes].map((rel) => rel.to_entity_id)));
-    const conceptNodes = await this.graphQuery.getNodesByIds(ownerUserId, conceptIds);
-    const conceptMap = new Map<string, GraphNodeEntity>(conceptNodes.map((node) => [node.entity_id, node]));
-
     return {
-      likes: likes
-        .map((rel) => conceptMap.get(rel.to_entity_id))
-        .filter((node): node is GraphNodeEntity => !!node)
-        .map((node) => node.name ?? this.extractDisplayName(node)),
-      dislikes: dislikes
-        .map((rel) => conceptMap.get(rel.to_entity_id))
-        .filter((node): node is GraphNodeEntity => !!node)
-        .map((node) => node.name ?? this.extractDisplayName(node)),
+      likes: relationshipSummaries.map((summary) => summary.name ?? summary.type),
+      dislikes: dislikeSummaries.map((summary) => summary.name ?? summary.type),
     };
   }
 
-  private extractDisplayName(node: GraphNodeEntity): string {
-    const first = node.properties?.first_name;
-    const last = node.properties?.last_name;
+  private extractDisplayName(properties?: Record<string, unknown>): string {
+    const first = properties?.first_name as string | undefined;
+    const last = properties?.last_name as string | undefined;
 
-    if (typeof first === 'string' || typeof last === 'string') {
+    if ((first && first.trim()) || (last && last.trim())) {
       return [first, last]
-        .filter((value) => typeof value === 'string')
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         .join(' ')
         .trim();
     }
 
-    return node.name ?? 'Unknown';
+    return 'Unknown';
   }
 
   protected sanitizeInputForLogging(input: unknown): any {

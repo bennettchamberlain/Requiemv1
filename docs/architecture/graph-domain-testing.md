@@ -37,6 +37,7 @@ The graph domain lives under `@ci/domains/graph` with write helpers in `@ci/doma
 | --- | --- | --- |
 | `GraphModule` | `backend/apps/api/src/domains/graph/GraphModule.ts` | Nest module that wires all graph services and the event listener. Add this to any module needing graph reads. |
 | `GraphQueryService` | `@ci/domains/graph` | Primary read façade. Methods: `getNode`, `getNodes`, `getNodesByIds`, `getNodeByLinkedRecord`, `getUserEntity`, `getRelationships`, `findConceptByName`, `findConnectedEntities`, `collectEntitySnapshot`, `traverseGraph`. |
+| `GraphReadService` | `@ci/domains/graph` | Convenience getters for common application flows: `getNode`, `getFamilyMembers`, `getPreferences` (with optional filters). Prefer these when you don’t need full query flexibility. |
 | `GraphUtilityService` | `@ci/domains/graph` | Low-level graph operations used by listeners/maintenance jobs (`createOrUpdateNode`, `createOrUpdateRelationship`, traversal, archiving). Prefer `GraphQueryService`/`GraphEventService` elsewhere. |
 | `UserContextService` | `@ci/domains/graph` | Builds the rich LLM context with `getUserContextForLLM` and `formatContextForSystemPrompt`. Uses the same query helpers internally. |
 | `GraphEventService` | `@ci/domains/memory` | Write façade that publishes `GRAPH_*` events. Methods include `addPerson`, `addFamilyMembers`, `addPreference(s)`, `addLocation`, `addVisit`, `addConnection`, `updateNode`, `deleteNode`, `deleteRelationship`, plus generic `upsertNode`/`upsertRelationship`. |
@@ -45,12 +46,15 @@ The graph domain lives under `@ci/domains/graph` with write helpers in `@ci/doma
 
 ```ts
 // Read flow
-constructor(private readonly graphQuery: GraphQueryService) {}
+constructor(private readonly graphQuery: GraphQueryService, private readonly graphRead: GraphReadService) {}
 
 await this.graphQuery.getRelationships(userId, {
   entityIds: [personId],
   relationshipTypes: ['PREFERS'],
 });
+
+// Or use the simple getter
+await this.graphRead.getPreferences(userId, { relationship: 'PREFERS' });
 
 // Write flow
 constructor(private readonly graphEvents: GraphEventService) {}
@@ -225,6 +229,12 @@ export class InsightsService {
 ```
 
 `GraphQueryService` also exposes `getNodes`, `getNode`, `findConceptByName`, `findConnectedEntities`, and `traverseGraph` for richer queries.
+
+`GraphReadService` provides ready-made getters when you just need graph staples without specifying filters. Today it supports:
+
+- `getNode(ownerId, entityId)` – passthrough helper.
+- `getFamilyMembers(ownerId, options?)` – returns the user’s close family/partner network (SPOUSE/PARENT_OF/CHILD_OF/SIBLING_OF by default).
+- `getPreferences(ownerId, options?)` – returns PREFERS/DISLIKES concepts for the user (or a specified entity), with optional relationship/type filters.
 
 ### Building LLM context
 
