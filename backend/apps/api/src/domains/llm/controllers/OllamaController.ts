@@ -281,11 +281,18 @@ Communication style:
 
       const contextMarkdown = this.userContextService.formatContextForSystemPrompt(userContext);
 
-      return `${basePrompt}
+      const systemPrompt = `${basePrompt}
 
 ---
 
 ${contextMarkdown}`;
+
+      this.logger.debug('Ollama system prompt generated', {
+        userId: context.userId,
+        snippet: systemPrompt.split('\n').slice(0, 20).join('\n'),
+      });
+
+      return systemPrompt;
     } catch (error) {
       // If context fetching fails, fall back to base prompt
       this.logger.warn('Failed to fetch user context for system prompt', {
