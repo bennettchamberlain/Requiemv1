@@ -1,10 +1,10 @@
 # Graph Domain Testing Guide
 
-This document explains how to exercise the new event-driven graph domain from both the API and internal services. It covers:
+This document explains how to exercise the event-driven graph domain from both the API and internal services. It covers:
 
 - How setters ("writes") behave and how to fire them through HTTP (cURL examples)
 - How getters ("reads") return data synchronously
-- How backend services should use the `GraphEventService` and `GraphQueryService`
+- Which services are exported (`GraphQueryService`, `GraphUtilityService`, `UserContextService`, `GraphEventService`) and what they expose
 - How the frontend can call the same endpoints with `fetch`
 
 > **Important:** All write operations are asynchronous. Controllers enqueue events via PgBoss and immediately return optimistic responses. Verify writes by calling the read APIs after the worker finishes processing.
@@ -16,6 +16,44 @@ This document explains how to exercise the new event-driven graph domain from bo
 - The user ID that maps to the JWT (substitute `${USER_ID}`) when testing direct service calls
 
 All examples assume the API is reachable at `http://localhost:3000`.
+
+---
+
+## Exported services summary
+
+The graph domain lives under `@ci/domains/graph` with write helpers in `@ci/domains/memory`. Import the pieces you need:
+
+| Export | Source | Notes |
+| --- | --- | --- |
+| `GraphModule` | `backend/apps/api/src/domains/graph/GraphModule.ts` | Nest module that wires all graph services and the event listener. Add this to any module needing graph reads. |
+| `GraphQueryService` | `@ci/domains/graph` | Primary read façade. Methods: `getNode`, `getNodes`, `getNodesByIds`, `getNodeByLinkedRecord`, `getUserEntity`, `getRelationships`, `findConceptByName`, `findConnectedEntities`, `collectEntitySnapshot`, `traverseGraph`. |
+| `GraphUtilityService` | `@ci/domains/graph` | Low-level graph operations used by listeners/maintenance jobs (`createOrUpdateNode`, `createOrUpdateRelationship`, traversal, archiving). Prefer `GraphQueryService`/`GraphEventService` elsewhere. |
+| `UserContextService` | `@ci/domains/graph` | Builds the rich LLM context with `getUserContextForLLM` and `formatContextForSystemPrompt`. Uses the same query helpers internally. |
+| `GraphEventService` | `@ci/domains/memory` | Write façade that publishes `GRAPH_*` events. Methods include `addPerson`, `addFamilyMembers`, `addPreference(s)`, `addLocation`, `addVisit`, `addConnection`, `updateNode`, `deleteNode`, `deleteRelationship`, plus generic `upsertNode`/`upsertRelationship`. |
+
+### Typical usage
+
+```ts
+// Read flow
+constructor(private readonly graphQuery: GraphQueryService) {}
+
+await this.graphQuery.getRelationships(userId, {
+  entityIds: [personId],
+  relationshipTypes: ['PREFERS'],
+});
+
+// Write flow
+constructor(private readonly graphEvents: GraphEventService) {}
+
+await this.graphEvents.addPerson(userId, dto);
+
+// LLM context
+constructor(private readonly userContext: UserContextService) {}
+
+const context = await this.userContext.getUserContextForLLM(userId);
+```
+
+---
 
 ---
 
@@ -178,6 +216,23 @@ export class InsightsService {
 
 `GraphQueryService` also exposes `getNodes`, `getNode`, `findConceptByName`, `findConnectedEntities`, and `traverseGraph` for richer queries.
 
+### Building LLM context
+
+The `UserContextService` (also re-exported from `@ci/domains/graph`) composes graph data into the markdown system prompt that powers Ollama and other LLM integrations:
+
+```ts
+constructor(private readonly userContext: UserContextService) {}
+
+const context = await this.userContext.getUserContextForLLM(ownerId);
+
+if (context) {
+  const prompt = this.userContext.formatContextForSystemPrompt(context);
+  // attach prompt to the LLM request
+}
+```
+
+Internally, `UserContextService` now uses the same `GraphQueryService` helpers (`getUserEntity`, `getRelationships`, `getNodesByIds`) so it always reflects the latest graph state once events are processed.
+
 ---
 
 ## Frontend Usage
@@ -231,9 +286,10 @@ async function loadGraphData(token: string) {
 
 ## Summary
 
-1. **Writes**: Publish through the `/graph/*` HTTP endpoints or `GraphEventService`.
-2. **Reads**: Use `/graph/context`, `/graph/data`, or call `GraphQueryService` internally.
-3. **Frontend**: Reuse the same REST endpoints with the user’s JWT.
-4. **Verification**: Confirm data by calling the read endpoints once the queue has processed the event.
+1. **Writes**: Publish through the `/graph/*` HTTP endpoints or `GraphEventService`; the listener (`GraphEventListener`) persists nodes/relationships asynchronously.
+2. **Reads**: Use `/graph/context`, `/graph/data`, or call `GraphQueryService`/`UserContextService` for structured results.
+3. **Utilities**: Reach for `GraphUtilityService` only when you need lower-level operations (maintenance scripts, exports) that the query/event facades do not cover.
+4. **Frontend**: Reuse the REST endpoints with the user’s JWT—responses mirror the structures shown above.
+5. **Verification**: Confirm data by calling the read endpoints once the queue has processed the event; use logs to trace `GRAPH_*` event handling.
 
-This workflow keeps the graph decoupled, enforces consistent write behavior, and provides a reliable way to spot-check changes.
+This workflow keeps the graph decoupled, enforces consistent write behavior, and provides a reliable way to spot-check changes across the API, tooling, and LLM context generation.
