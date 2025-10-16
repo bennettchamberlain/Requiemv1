@@ -5,7 +5,7 @@ import base from '../../../eslint.config.mjs';
 
 export default [
   {
-    ignores: ['.yarn', '**/dist/**', '**/node_modules/**', '.pnp.*'],
+    ignores: ['.yarn', '**/dist/**', '**/docs/**', '**/node_modules/**', '.pnp.*'],
   },
 
   ...base,
