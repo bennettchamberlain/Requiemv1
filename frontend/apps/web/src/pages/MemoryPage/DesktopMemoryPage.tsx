@@ -9,34 +9,13 @@ declare global {
   }
 }
 import { Breadcrumb, Tabs, Card, Select } from '@ci/shadcn';
-import {
-  Clock,
-  Coffee,
-  Search,
-  ShoppingCart,
-  Utensils,
-  BookOpen,
-  Dumbbell,
-  Car,
-  Laptop,
-  Tv,
-  User,
-  Calendar,
-  FileText,
-  Package,
-  Users,
-  Loader2,
-  AlertCircle,
-  Filter,
-  Route,
-  MapPin,
-  Lightbulb,
-  Target,
-} from '@ci/shadcn/icons';
+import { Search, Loader2, AlertCircle, Filter, Route } from '@ci/shadcn/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
 import { PageContent } from '@/components/layout';
+import { MemoryTimeline } from '@/components/Memory/MemoryTimeline';
+import { MemoryTimelineProvider } from '@/components/Memory/MemoryTimelineProvider';
 import { useAuth } from '@/hooks';
 import { loadGoogleMaps } from '@/pages/MemoryPage/googleMaps';
 
@@ -46,7 +25,16 @@ import './memory-map.css';
 // Memory data from API
 interface MemoryItem {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'place' | 'concept' | 'other';
+  type:
+    | 'event'
+    | 'content'
+    | 'thing'
+    | 'person'
+    | 'contact'
+    | 'place'
+    | 'concept'
+    | 'communication'
+    | 'other';
   title: string;
   description: string | null;
   timestamp: string;
@@ -61,6 +49,9 @@ interface MemoryItem {
   tags: string[];
   userId: string;
   metadata?: {
+    communicationType?: string;
+    direction?: string;
+    participantsMetadata?: unknown;
     relationships?: Array<{
       type: string;
       targetId: string;
@@ -70,8 +61,6 @@ interface MemoryItem {
     }>;
     [key: string]: unknown;
   };
-  connectionId?: string;
-  connectionName?: string;
 }
 
 // File metadata for gallery
@@ -81,55 +70,6 @@ interface FileMeta {
   contentType: string;
   size: string;
   url?: string;
-}
-
-// Helper function to get icon for memory type/category
-function getMemoryIcon(memory: MemoryItem): React.ReactNode {
-  const iconClass = 'h-6 w-6';
-
-  // First check by type
-  switch (memory.type) {
-    case 'person':
-    case 'contact':
-      return <User className={iconClass} />;
-    case 'thing':
-      return <Package className={iconClass} />;
-    case 'content':
-      return <FileText className={iconClass} />;
-    case 'place':
-      return <MapPin className={iconClass} />;
-    case 'concept':
-      return <Lightbulb className={iconClass} />;
-    case 'event':
-      return <Calendar className={iconClass} />;
-  }
-
-  // Then check by category for events and other specific cases
-  const category = memory.category.toLowerCase();
-  if (category.includes('food') || category.includes('drink') || category.includes('meal')) {
-    return <Utensils className={iconClass} />;
-  } else if (category.includes('coffee')) {
-    return <Coffee className={iconClass} />;
-  } else if (category.includes('work') || category.includes('meeting')) {
-    return <Laptop className={iconClass} />;
-  } else if (category.includes('fitness') || category.includes('gym') || category.includes('exercise')) {
-    return <Dumbbell className={iconClass} />;
-  } else if (category.includes('shopping') || category.includes('grocery')) {
-    return <ShoppingCart className={iconClass} />;
-  } else if (category.includes('learning') || category.includes('reading') || category.includes('book')) {
-    return <BookOpen className={iconClass} />;
-  } else if (category.includes('family') || category.includes('social')) {
-    return <Users className={iconClass} />;
-  } else if (category.includes('transport') || category.includes('drive') || category.includes('car')) {
-    return <Car className={iconClass} />;
-  } else if (category.includes('entertainment') || category.includes('tv') || category.includes('movie')) {
-    return <Tv className={iconClass} />;
-  } else if (category.includes('goal')) {
-    return <Target className={iconClass} />;
-  }
-
-  // Default icon
-  return <Clock className={iconClass} />;
 }
 
 export default function DesktopMemoryPage() {
@@ -144,9 +84,6 @@ export default function DesktopMemoryPage() {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filter states
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [connectionFilter, setConnectionFilter] = useState<string>('all');
   const [showTimeline, setShowTimeline] = useState<boolean>(false);
 
   // Gallery states
@@ -156,7 +93,6 @@ export default function DesktopMemoryPage() {
   // Pagination states for lazy loading
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
   const listEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch memories from API with pagination
@@ -171,7 +107,7 @@ export default function DesktopMemoryPage() {
         params.append('search', query);
       }
 
-      params.append('limit', '100'); // Fetch 100 at a time
+      params.append('limit', '500'); // Fetch 500 at a time for better lazy loading
       params.append('offset', currentOffset.toString());
 
       const url = `/api/memory${params.toString() ? `?${params.toString()}` : ''}`;
@@ -187,24 +123,27 @@ export default function DesktopMemoryPage() {
       }
 
       const result = await response.json();
-      const data: MemoryItem[] = result.data || result; // Handle both array and {data: []} format
+      const data: MemoryItem[] = result.data || result;
       const total = result.total || data.length;
 
       if (append) {
-        setMemories((prev) => [...prev, ...data]);
+        setMemories((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const newEvents = data.filter((event) => !existingIds.has(event.id));
+
+          return [...prev, ...newEvents];
+        });
       } else {
         setMemories(data);
       }
 
-      setTotalCount(total);
       setHasMore(currentOffset + data.length < total);
       setOffset(currentOffset + data.length);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('Error fetching memories:', errorMessage, err);
       setError(errorMessage);
       if (!append) {
-        setMemories([]); // Clear memories on error only for initial load
+        setMemories([]);
       }
     } finally {
       setLoading(false);
@@ -238,8 +177,8 @@ export default function DesktopMemoryPage() {
       }));
 
       setGalleryFiles(metaList);
-    } catch (err) {
-      console.error('Error fetching gallery files:', err);
+    } catch {
+      // Silently fail - gallery is optional
     } finally {
       setGalleryLoading(false);
     }
@@ -259,7 +198,6 @@ export default function DesktopMemoryPage() {
     }
   }, [activeTab, authToken]);
 
-  // Intersection observer for infinite scroll
   useEffect(() => {
     const currentRef = listEndRef.current;
     if (!currentRef) {
@@ -282,7 +220,6 @@ export default function DesktopMemoryPage() {
     };
   }, [hasMore, loading]); // Removed offset from dependencies
 
-  // Handle search
   const handleSearch = () => {
     setOffset(0);
     setHasMore(true);
@@ -295,26 +232,15 @@ export default function DesktopMemoryPage() {
     }
   };
 
-  // Get unique entity types from loaded memories for dynamic filter options
-  const uniqueEntityTypes = Array.from(new Set(memories.map((m) => m.category))).sort();
-
-  // Apply filters to memories
-  const filteredMemories = memories.filter((memory) => {
-    // Type filter - filter by entity_type (stored in category field)
-    if (typeFilter !== 'all' && memory.category !== typeFilter) {
-      return false;
-    }
-
-    // Connection filter
-    if (connectionFilter !== 'all' && memory.connectionId !== connectionFilter) {
-      return false;
-    }
-
-    return true;
-  });
-
-  // Get memories with location data for the map
-  const memoriesWithLocation = filteredMemories.filter((memory) => memory.location);
+  const memoriesWithLocation = memories.filter(
+    (memory) =>
+      memory.location &&
+      typeof memory.location.lat === 'number' &&
+      typeof memory.location.lng === 'number' &&
+      !isNaN(memory.location.lat) &&
+      !isNaN(memory.location.lng) &&
+      !(memory.location.lat === 0 && memory.location.lng === 0),
+  );
 
   // Function to wait for Google Maps to load
   const waitForGoogleMaps = (): Promise<void> => {
@@ -378,7 +304,6 @@ export default function DesktopMemoryPage() {
       const bounds = L.latLngBounds([]);
       const markers: L.Marker[] = [];
 
-      // Sort memories by timestamp for timeline
       const sortedMemories = [...memoriesWithLocation].sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       );
@@ -455,12 +380,10 @@ export default function DesktopMemoryPage() {
         });
 
         // Create actual road routes using Google Maps JavaScript API
-        const createRoadRoute = async (start: L.LatLng, end: L.LatLng, index: number) => {
+        const createRoadRoute = async (start: L.LatLng, end: L.LatLng) => {
           try {
             // Wait for Google Maps to load
             await waitForGoogleMaps();
-
-            console.log(`Creating route ${index + 1} using Google Maps JavaScript API...`);
 
             // Create Google Maps LatLng objects
             const googleStart = new window.google.maps.LatLng(start.lat, start.lng);
@@ -496,8 +419,6 @@ export default function DesktopMemoryPage() {
               const route = result.routes[0];
               const overviewPath = route.overview_path;
 
-              console.log(`Got ${overviewPath.length} waypoints for route ${index + 1} from Google Maps`);
-
               // Convert Google Maps LatLng to Leaflet LatLng
               const waypoints = overviewPath.map(
                 (point: google.maps.LatLng) => new L.LatLng(point.lat(), point.lng()),
@@ -510,21 +431,16 @@ export default function DesktopMemoryPage() {
                 opacity: 0.9,
                 dashArray: '20, 10',
               }).addTo(mapRef.current!);
-
-              console.log(`Created Google Maps route ${index + 1} with ${waypoints.length} waypoints`);
             } else {
-              console.warn('No routes returned from Google Maps');
-              createFallbackRoute(start, end, index);
+              createFallbackRoute(start, end);
             }
-          } catch (error) {
-            console.warn('Google Maps JavaScript API call failed, using fallback route:', error);
-            // Always create fallback route when Google Maps fails
-            createFallbackRoute(start, end, index);
+          } catch {
+            createFallbackRoute(start, end);
           }
         };
 
         // Fallback route creation (straight line with some curves)
-        const createFallbackRoute = (start: L.LatLng, end: L.LatLng, index: number) => {
+        const createFallbackRoute = (start: L.LatLng, end: L.LatLng) => {
           const distance = start.distanceTo(end);
           const numWaypoints = Math.max(3, Math.min(10, Math.floor(distance / 500)));
 
@@ -550,19 +466,16 @@ export default function DesktopMemoryPage() {
             opacity: 0.7,
             dashArray: '10, 5',
           }).addTo(mapRef.current!);
-
-          console.log(`Created fallback route ${index + 1} with ${waypoints.length} waypoints`);
         };
 
         // Create routes between consecutive points
         for (let i = 0; i < markers.length - 1; i++) {
           const start = markers[i].getLatLng();
           const end = markers[i + 1].getLatLng();
-          await createRoadRoute(start, end, i);
+          await createRoadRoute(start, end);
         }
       }
 
-      // Fit bounds if we have markers
       if (bounds.isValid()) {
         mapRef.current.fitBounds(bounds, { padding: [50, 50] });
       }
@@ -639,35 +552,27 @@ export default function DesktopMemoryPage() {
                 {memoriesWithLocation.length} location{memoriesWithLocation.length !== 1 ? 's' : ''}
               </div>
 
-              {/* Type Filter */}
+              {/* Type Filter - Disabled */}
               <div className="flex items-center gap-2 relative z-[100]">
                 <Filter className="h-6 w-6 text-muted-foreground" />
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <Select value="all" disabled>
                   <Select.Trigger className="w-40 h-8 text-sm">
-                    <Select.Value placeholder="Entity Type" />
+                    <Select.Value placeholder="All Entity Types" />
                   </Select.Trigger>
                   <Select.Content className="z-[100]">
                     <Select.Item value="all">All Entity Types</Select.Item>
-                    {uniqueEntityTypes.map((entityType) => (
-                      <Select.Item key={entityType} value={entityType}>
-                        {entityType}
-                      </Select.Item>
-                    ))}
                   </Select.Content>
                 </Select>
               </div>
 
-              {/* Connection Filter */}
+              {/* Connection Filter - Disabled */}
               <div className="relative z-[100]">
-                <Select value={connectionFilter} onValueChange={setConnectionFilter}>
+                <Select value="all" disabled>
                   <Select.Trigger className="w-40 h-8 text-sm">
-                    <Select.Value placeholder="Connection" />
+                    <Select.Value placeholder="All Connections" />
                   </Select.Trigger>
                   <Select.Content className="z-[100]">
                     <Select.Item value="all">All Connections</Select.Item>
-                    <Select.Item value="google">Google</Select.Item>
-                    <Select.Item value="microsoft">Microsoft</Select.Item>
-                    <Select.Item value="apple">Apple</Select.Item>
                   </Select.Content>
                 </Select>
               </div>
@@ -716,107 +621,16 @@ export default function DesktopMemoryPage() {
         {!loading && !error && (
           <>
             {activeTab === 'list' && (
-              <>
-                {filteredMemories.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground">
-                      No memories found matching your search and filters.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {filteredMemories.map((memory) => (
-                      <div
-                        key={memory.id}
-                        className="flex items-start gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
-                          {getMemoryIcon(memory)}
-                        </div>
-                        <div className="flex-grow min-w-0">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-grow">
-                              <h4 className="font-medium">{memory.title}</h4>
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 mt-1">
-                                {memory.category}
-                              </span>
-                            </div>
-                            <div className="flex flex-col items-end text-muted-foreground text-sm ml-4">
-                              <div className="flex items-center">
-                                <Clock className="h-4 w-4 mr-1" />
-                                {new Date(memory.timestamp).toLocaleDateString()}
-                              </div>
-                              <div className="text-xs">
-                                {new Date(memory.timestamp).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                          {memory.description && (
-                            <p className="text-muted-foreground text-sm mt-2">{memory.description}</p>
-                          )}
-                          {memory.metadata?.relationships && memory.metadata.relationships.length > 0 && (
-                            <div className="mt-3 pt-3 border-t">
-                              <p className="text-xs font-medium text-muted-foreground mb-2">Relationships:</p>
-                              <div className="flex flex-wrap gap-2">
-                                {memory.metadata.relationships.slice(0, 5).map((rel, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="inline-flex items-center px-2 py-1 rounded-md text-xs bg-muted"
-                                  >
-                                    <span className="font-medium">{rel.type}</span>
-                                    <span className="mx-1">→</span>
-                                    <span>{rel.targetName}</span>
-                                    <span className="ml-1 text-muted-foreground">({rel.targetType})</span>
-                                  </span>
-                                ))}
-                                {memory.metadata.relationships.length > 5 && (
-                                  <span className="text-xs text-muted-foreground">
-                                    +{memory.metadata.relationships.length - 5} more
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          {memory.tags && memory.tags.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {memory.tags.map((tag, idx) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-secondary text-secondary-foreground"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {/* Infinite scroll sentinel */}
-                    <div ref={listEndRef} className="h-4" />
-                    {loading && hasMore && (
-                      <div className="flex justify-center py-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                      </div>
-                    )}
-                    {!hasMore && filteredMemories.length > 0 && (
-                      <div className="text-center py-4 text-muted-foreground text-sm">
-                        No more memories to load ({totalCount} total)
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
+              <MemoryTimelineProvider>
+                <MemoryTimeline />
+              </MemoryTimelineProvider>
             )}
 
             {activeTab === 'map' && (
               <>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-1 h-[calc(100vh-140px)] -mx-6 -mb-6">
-                  {/* Locations List - Left Column */}
-                  <div className="lg:col-span-1 flex flex-col overflow-hidden pl-4 pr-2 ">
+                  {/* Timeline - Left Column */}
+                  <div className="lg:col-span-1 flex flex-col overflow-hidden pl-4 pr-2">
                     <div className="flex justify-between items-center mb-4 flex-shrink-0">
                       <button
                         onClick={() => setShowTimeline(!showTimeline)}
@@ -831,50 +645,11 @@ export default function DesktopMemoryPage() {
                       </button>
                     </div>
 
-                    {memoriesWithLocation.length === 0 ? (
-                      <div className="text-center py-8">
-                        <p className="text-muted-foreground">No locations found.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-                        {memoriesWithLocation.map((memory) => (
-                          <div
-                            key={memory.id}
-                            className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              if (mapRef.current && memory.location) {
-                                mapRef.current.setView([memory.location.lat, memory.location.lng], 15);
-                              }
-                            }}
-                          >
-                            <div className="flex-shrink-0 p-1.5 bg-primary/10 rounded-full">
-                              {getMemoryIcon(memory)}
-                            </div>
-                            <div className="flex-grow min-w-0">
-                              <h4 className="font-medium text-base truncate">{memory.title}</h4>
-                              <p className="text-sm text-muted-foreground truncate">
-                                {memory.location?.name || 'Unknown location'}
-                              </p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-sm font-medium bg-primary/10">
-                                  {memory.category}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {new Date(memory.timestamp).toLocaleDateString()}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                        {/* Infinite scroll sentinel for map view */}
-                        <div ref={listEndRef} className="h-4" />
-                        {loading && hasMore && (
-                          <div className="flex justify-center py-3">
-                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1">
+                      <MemoryTimelineProvider>
+                        <MemoryTimeline />
+                      </MemoryTimelineProvider>
+                    </div>
                   </div>
 
                   {/* Map - Right Column */}

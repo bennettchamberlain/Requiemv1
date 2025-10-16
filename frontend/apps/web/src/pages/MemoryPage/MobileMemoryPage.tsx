@@ -9,37 +9,13 @@ declare global {
   }
 }
 import { Breadcrumb, Tabs, Card, Select, Button } from '@ci/shadcn';
-import {
-  Clock,
-  Coffee,
-  Search,
-  ShoppingCart,
-  Utensils,
-  BookOpen,
-  Dumbbell,
-  Car,
-  Laptop,
-  Tv,
-  User,
-  Calendar,
-  FileText,
-  Package,
-  Users,
-  Loader2,
-  AlertCircle,
-  Filter,
-  Route,
-  MapPin,
-  List,
-  Images,
-  X,
-  Lightbulb,
-  Target,
-} from '@ci/shadcn/icons';
+import { Search, Loader2, AlertCircle, Filter, Route, MapPin, List, Images, X } from '@ci/shadcn/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
 import { PageContent } from '@/components/layout';
+import { MemoryTimeline } from '@/components/Memory/MemoryTimeline';
+import { MemoryTimelineProvider } from '@/components/Memory/MemoryTimelineProvider';
 import { useAuth } from '@/hooks';
 import { loadGoogleMaps } from '@/pages/MemoryPage/googleMaps';
 
@@ -49,7 +25,16 @@ import './memory-map.css';
 // Memory data from API
 interface MemoryItem {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'place' | 'concept' | 'other';
+  type:
+    | 'event'
+    | 'content'
+    | 'thing'
+    | 'person'
+    | 'contact'
+    | 'place'
+    | 'concept'
+    | 'communication'
+    | 'other';
   title: string;
   description: string | null;
   timestamp: string;
@@ -64,6 +49,9 @@ interface MemoryItem {
   tags: string[];
   userId: string;
   metadata?: {
+    communicationType?: string;
+    direction?: string;
+    participantsMetadata?: unknown;
     relationships?: Array<{
       type: string;
       targetId: string;
@@ -73,8 +61,6 @@ interface MemoryItem {
     }>;
     [key: string]: unknown;
   };
-  connectionId?: string;
-  connectionName?: string;
 }
 
 // File metadata for gallery
@@ -84,55 +70,6 @@ interface FileMeta {
   contentType: string;
   size: string;
   url?: string;
-}
-
-// Helper function to get icon for memory type/category
-function getMemoryIcon(memory: MemoryItem): React.ReactNode {
-  const iconClass = 'h-5 w-5';
-
-  // First check by type
-  switch (memory.type) {
-    case 'person':
-    case 'contact':
-      return <User className={iconClass} />;
-    case 'thing':
-      return <Package className={iconClass} />;
-    case 'content':
-      return <FileText className={iconClass} />;
-    case 'place':
-      return <MapPin className={iconClass} />;
-    case 'concept':
-      return <Lightbulb className={iconClass} />;
-    case 'event':
-      return <Calendar className={iconClass} />;
-  }
-
-  // Then check by category for events and other specific cases
-  const category = memory.category.toLowerCase();
-  if (category.includes('food') || category.includes('drink') || category.includes('meal')) {
-    return <Utensils className={iconClass} />;
-  } else if (category.includes('coffee')) {
-    return <Coffee className={iconClass} />;
-  } else if (category.includes('work') || category.includes('meeting')) {
-    return <Laptop className={iconClass} />;
-  } else if (category.includes('fitness') || category.includes('gym') || category.includes('exercise')) {
-    return <Dumbbell className={iconClass} />;
-  } else if (category.includes('shopping') || category.includes('grocery')) {
-    return <ShoppingCart className={iconClass} />;
-  } else if (category.includes('learning') || category.includes('reading') || category.includes('book')) {
-    return <BookOpen className={iconClass} />;
-  } else if (category.includes('family') || category.includes('social')) {
-    return <Users className={iconClass} />;
-  } else if (category.includes('transport') || category.includes('drive') || category.includes('car')) {
-    return <Car className={iconClass} />;
-  } else if (category.includes('entertainment') || category.includes('tv') || category.includes('movie')) {
-    return <Tv className={iconClass} />;
-  } else if (category.includes('goal')) {
-    return <Target className={iconClass} />;
-  }
-
-  // Default icon
-  return <Clock className={iconClass} />;
 }
 
 export default function MobileMemoryPage() {
@@ -147,9 +84,6 @@ export default function MobileMemoryPage() {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Filter states
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [connectionFilter, setConnectionFilter] = useState<string>('all');
   const [showTimeline, setShowTimeline] = useState<boolean>(false);
 
   // Gallery states
@@ -162,7 +96,7 @@ export default function MobileMemoryPage() {
   // Pagination states for lazy loading
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
+
   const listEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch memories from API with pagination
@@ -202,12 +136,10 @@ export default function MobileMemoryPage() {
         setMemories(data);
       }
 
-      setTotalCount(total);
       setHasMore(currentOffset + data.length < total);
       setOffset(currentOffset + data.length);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('Error fetching memories:', errorMessage, err);
       setError(errorMessage);
       if (!append) {
         setMemories([]); // Clear memories on error only for initial load
@@ -244,8 +176,8 @@ export default function MobileMemoryPage() {
       }));
 
       setGalleryFiles(metaList);
-    } catch (err) {
-      console.error('Error fetching gallery files:', err);
+    } catch {
+      // Silently fail - gallery is optional
     } finally {
       setGalleryLoading(false);
     }
@@ -301,26 +233,15 @@ export default function MobileMemoryPage() {
     }
   };
 
-  // Get unique entity types from loaded memories for dynamic filter options
-  const uniqueEntityTypes = Array.from(new Set(memories.map((m) => m.category))).sort();
-
-  // Apply filters to memories
-  const filteredMemories = memories.filter((memory) => {
-    // Type filter - filter by entity_type (stored in category field)
-    if (typeFilter !== 'all' && memory.category !== typeFilter) {
-      return false;
-    }
-
-    // Connection filter
-    if (connectionFilter !== 'all' && memory.connectionId !== connectionFilter) {
-      return false;
-    }
-
-    return true;
-  });
-
-  // Get memories with location data for the map
-  const memoriesWithLocation = filteredMemories.filter((memory) => memory.location);
+  const memoriesWithLocation = memories.filter(
+    (memory) =>
+      memory.location &&
+      typeof memory.location.lat === 'number' &&
+      typeof memory.location.lng === 'number' &&
+      !isNaN(memory.location.lat) &&
+      !isNaN(memory.location.lng) &&
+      !(memory.location.lat === 0 && memory.location.lng === 0),
+  );
 
   // Function to wait for Google Maps to load
   const waitForGoogleMaps = (): Promise<void> => {
@@ -376,7 +297,6 @@ export default function MobileMemoryPage() {
       const bounds = L.latLngBounds([]);
       const markers: L.Marker[] = [];
 
-      // Sort memories by timestamp for timeline
       const sortedMemories = [...memoriesWithLocation].sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       );
@@ -453,12 +373,10 @@ export default function MobileMemoryPage() {
         });
 
         // Create actual road routes using Google Maps JavaScript API
-        const createRoadRoute = async (start: L.LatLng, end: L.LatLng, index: number) => {
+        const createRoadRoute = async (start: L.LatLng, end: L.LatLng) => {
           try {
             // Wait for Google Maps to load
             await waitForGoogleMaps();
-
-            console.log(`Creating route ${index + 1} using Google Maps JavaScript API...`);
 
             // Create Google Maps LatLng objects
             const googleStart = new window.google.maps.LatLng(start.lat, start.lng);
@@ -494,8 +412,6 @@ export default function MobileMemoryPage() {
               const route = result.routes[0];
               const overviewPath = route.overview_path;
 
-              console.log(`Got ${overviewPath.length} waypoints for route ${index + 1} from Google Maps`);
-
               // Convert Google Maps LatLng to Leaflet LatLng
               const waypoints = overviewPath.map(
                 (point: google.maps.LatLng) => new L.LatLng(point.lat(), point.lng()),
@@ -508,20 +424,16 @@ export default function MobileMemoryPage() {
                 opacity: 0.9,
                 dashArray: '20, 10',
               }).addTo(mapRef.current!);
-
-              console.log(`Created Google Maps route ${index + 1} with ${waypoints.length} waypoints`);
             } else {
-              console.warn('No routes returned from Google Maps');
-              createFallbackRoute(start, end, index);
+              createFallbackRoute(start, end);
             }
-          } catch (error) {
-            console.warn('Google Maps JavaScript API call failed, using fallback route:', error);
-            createFallbackRoute(start, end, index);
+          } catch {
+            createFallbackRoute(start, end);
           }
         };
 
         // Fallback route creation (straight line with some curves)
-        const createFallbackRoute = (start: L.LatLng, end: L.LatLng, index: number) => {
+        const createFallbackRoute = (start: L.LatLng, end: L.LatLng) => {
           const distance = start.distanceTo(end);
           const numWaypoints = Math.max(3, Math.min(10, Math.floor(distance / 500)));
 
@@ -547,19 +459,16 @@ export default function MobileMemoryPage() {
             opacity: 0.7,
             dashArray: '10, 5',
           }).addTo(mapRef.current!);
-
-          console.log(`Created fallback route ${index + 1} with ${waypoints.length} waypoints`);
         };
 
         // Create routes between consecutive points
         for (let i = 0; i < markers.length - 1; i++) {
           const start = markers[i].getLatLng();
           const end = markers[i + 1].getLatLng();
-          await createRoadRoute(start, end, i);
+          await createRoadRoute(start, end);
         }
       }
 
-      // Fit bounds if we have markers
       if (bounds.isValid()) {
         mapRef.current.fitBounds(bounds, { padding: [20, 20] });
       }
@@ -647,32 +556,24 @@ export default function MobileMemoryPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium mb-1 block">Type</label>
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <Select value="all" disabled>
                     <Select.Trigger className="w-full h-9 text-sm">
-                      <Select.Value placeholder="Entity Type" />
+                      <Select.Value placeholder="All Entity Types" />
                     </Select.Trigger>
                     <Select.Content>
                       <Select.Item value="all">All Entity Types</Select.Item>
-                      {uniqueEntityTypes.map((entityType) => (
-                        <Select.Item key={entityType} value={entityType}>
-                          {entityType}
-                        </Select.Item>
-                      ))}
                     </Select.Content>
                   </Select>
                 </div>
 
                 <div>
                   <label className="text-sm font-medium mb-1 block">Connection</label>
-                  <Select value={connectionFilter} onValueChange={setConnectionFilter}>
+                  <Select value="all" disabled>
                     <Select.Trigger className="w-full h-9 text-sm">
-                      <Select.Value placeholder="Connection" />
+                      <Select.Value placeholder="All Connections" />
                     </Select.Trigger>
                     <Select.Content>
                       <Select.Item value="all">All Connections</Select.Item>
-                      <Select.Item value="google">Google</Select.Item>
-                      <Select.Item value="microsoft">Microsoft</Select.Item>
-                      <Select.Item value="apple">Apple</Select.Item>
                     </Select.Content>
                   </Select>
                 </div>
@@ -722,66 +623,9 @@ export default function MobileMemoryPage() {
         {!loading && !error && (
           <>
             {activeTab === 'list' && (
-              <>
-                {filteredMemories.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground text-sm">
-                      No memories found matching your search and filters.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredMemories.map((memory) => (
-                      <div
-                        key={memory.id}
-                        className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex-shrink-0 p-2 bg-primary/10 rounded-full">
-                          {getMemoryIcon(memory)}
-                        </div>
-                        <div className="flex-grow min-w-0">
-                          <div className="flex justify-between items-start">
-                            <h4 className="font-medium text-sm truncate">{memory.title}</h4>
-                            <div className="flex items-center text-muted-foreground text-xs">
-                              <Clock className="h-4 w-4 mr-1" />
-                              {new Date(memory.timestamp).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </div>
-                          </div>
-                          <p className="text-muted-foreground text-sm mt-1 line-clamp-2">
-                            {memory.description || 'No description'}
-                          </p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10">
-                              {memory.category}
-                            </span>
-                            {memory.location && (
-                              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <MapPin className="h-3 w-3" />
-                                {memory.location.name}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {/* Infinite scroll sentinel */}
-                    <div ref={listEndRef} className="h-4" />
-                    {loading && hasMore && (
-                      <div className="flex justify-center py-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                      </div>
-                    )}
-                    {!hasMore && filteredMemories.length > 0 && (
-                      <div className="text-center py-4 text-muted-foreground text-xs">
-                        No more memories ({totalCount} total)
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
+              <MemoryTimelineProvider>
+                <MemoryTimeline />
+              </MemoryTimelineProvider>
             )}
 
             {activeTab === 'map' && (
