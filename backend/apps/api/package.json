@@ -20,7 +20,11 @@
     "db:clear": "yarn dbmate --execute-file ./db/postgres/scripts/drop_all_pg_data.sql",
     "db:destroy": "yarn dbmate --execute-file ./db/postgres/scripts/drop_all_pg_tables.sql",
     "migration:run": "DOTENV_CONFIG_PATH=../../../.env ts-node -r tsconfig-paths/register --swc scripts/seed-database/run-migration.ts",
-    "test": "DOTENV_CONFIG_PATH=../../../.env jest"
+    "test": "DOTENV_CONFIG_PATH=../../../.env jest",
+    "docs": "yarn docs:html",
+    "docs:html": "typedoc",
+    "docs:json": "typedoc --json docs/typedoc.json",
+    "docs:capabilities": "yarn run exec -- scripts/build-capability-map-from-typedoc.ts"
   },
   "packageManager": "yarn@4.9.1",
   "dependencies": {
