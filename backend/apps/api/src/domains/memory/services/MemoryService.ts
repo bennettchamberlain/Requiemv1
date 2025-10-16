@@ -1,99 +1,62 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
-import { GraphNodeEntity } from '@ci/domains/graph/entities/GraphNodeEntity';
-import { RelationshipEntity } from '@ci/domains/graph/entities/RelationshipEntity';
+import { GraphQueryService } from '@ci/domains/graph';
 
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
+
+type GraphNodeLike = {
+  entity_id: string;
+  entity_type: string;
+  name: string | null;
+  description: string | null;
+  properties?: Record<string, unknown> | null;
+  linked_table?: string | null;
+  linked_id?: string | null;
+  created_at: Date;
+  updated_at: Date;
+  owner_user_id?: string | null;
+};
 
 @Injectable()
 export class MemoryService {
   private logger = new LoggerService(MemoryService.name);
 
-  constructor(
-    @InjectRepository(GraphNodeEntity)
-    private entityRepo: Repository<GraphNodeEntity>,
-    @InjectRepository(RelationshipEntity)
-    private relationshipRepo: Repository<RelationshipEntity>,
-  ) {}
+  constructor(private readonly graphQuery: GraphQueryService) {}
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
-    this.logger.debug('Finding memories from graph', { userId: context.userId, params });
+    const userId = this.requireUserId(context);
+
+    this.logger.debug('Finding memories from graph', { userId, params });
 
     const limit = params.limit || 50;
     const offset = params.offset || 0;
 
     try {
       // Build query for entities that represent memory objects
-      let queryBuilder = this.entityRepo
-        .createQueryBuilder('entity')
-        .where('entity.is_active = true')
-        .andWhere('entity.is_archived = false');
-
-      // Default: Include Person, Location, Event, Contact, Content
-      // Exclude: Object, Concept
       const defaultIncludedTypes = ['Person', 'Location', 'Event', 'Contact', 'Content', 'Place'];
+      const allowedTypes =
+        params.categories && params.categories.length > 0 ? params.categories : defaultIncludedTypes;
 
-      // If categories are specified, use those; otherwise use defaults
-      if (params.categories && params.categories.length > 0) {
-        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...categories)', {
-          categories: params.categories,
-        });
-      } else {
-        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...defaultTypes)', {
-          defaultTypes: defaultIncludedTypes,
-        });
-      }
-
-      // Apply filters
-      if (params.query) {
-        queryBuilder = queryBuilder.andWhere(
-          '(entity.name ILIKE :query OR entity.description ILIKE :query OR entity.search_content ILIKE :query)',
-          { query: `%${params.query}%` },
-        );
-      }
-
-      // Apply date filtering based on created_at for now
-      if (params.startDate) {
-        queryBuilder = queryBuilder.andWhere('entity.created_at >= :startDate', {
-          startDate: params.startDate,
-        });
-      }
-
-      if (params.endDate) {
-        queryBuilder = queryBuilder.andWhere('entity.created_at <= :endDate', {
-          endDate: params.endDate,
-        });
-      }
-
-      // Order by most recent
-      queryBuilder = queryBuilder.orderBy('entity.created_at', 'DESC').limit(limit).offset(offset);
-
-      const [entities, total] = await queryBuilder.getManyAndCount();
-
-      this.logger.debug('Found entities', {
-        entitiesCount: entities.length,
-        total,
-        userId: context.userId,
+      const nodes = await this.graphQuery.getNodes(userId, {
+        limit,
+        offset,
+        nameContains: params.query,
       });
 
-      // Convert entities to Memory objects
-      const memories = await Promise.all(entities.map((entity) => this.entityToMemory(entity)));
+      const filteredNodes = nodes.filter((node) => allowedTypes.includes(node.entity_type));
 
-      // Filter by location if requested
-      let filteredMemories = memories;
-      if (params.hasLocation !== undefined) {
-        filteredMemories = memories.filter((memory) =>
-          params.hasLocation ? !!memory.location : !memory.location,
-        );
-      }
+      const memories = await Promise.all(filteredNodes.map((entity) => this.entityToMemory(entity, userId)));
+
+      const filteredMemories =
+        params.hasLocation === undefined
+          ? memories
+          : memories.filter((memory) => (params.hasLocation ? !!memory.location : !memory.location));
 
       const response = {
         data: filteredMemories,
-        total,
+        total: filteredMemories.length,
         limit,
         offset,
       };
@@ -112,28 +75,39 @@ export class MemoryService {
   }
 
   async findOne(context: RequestContext, id: string): Promise<Memory> {
-    this.logger.debug('Finding memory by id', { id, userId: context.userId });
+    const userId = this.requireUserId(context);
 
-    const entity = await this.entityRepo.findOne({
-      where: { entity_id: id, is_active: true },
-    });
+    this.logger.debug('Finding memory by id', { id, userId });
+
+    const entity = await this.graphQuery.getNode(userId, id);
 
     if (!entity) {
       throw new NotFoundException(`Memory with id ${id} not found`);
     }
 
-    return this.entityToMemory(entity);
+    return this.entityToMemory(entity, userId);
   }
 
-  private async entityToMemory(entity: GraphNodeEntity): Promise<Memory> {
+  private requireUserId(context: RequestContext): string {
+    if (!context.userId) {
+      throw new UnauthorizedException('MemoryService requires an authenticated user context');
+    }
+
+    return context.userId;
+  }
+
+  private async entityToMemory(entity: GraphNodeLike, ownerId: string): Promise<Memory> {
     // Map entity types to memory types
     const memoryType = this.mapEntityTypeToMemoryType(entity.entity_type);
 
     // Get location if entity has location relationships
-    const location = await this.getEntityLocation(entity);
+    let location = this.extractLocationFromProperties(entity);
+    if (!location) {
+      location = await this.getEntityLocation(entity.entity_id, ownerId);
+    }
 
     // Extract tags from properties or relationships
-    const tags = await this.getEntityTags(entity);
+    const tags = await this.getEntityTags(entity.entity_id, ownerId, entity.properties ?? null);
 
     // Get timestamp - prefer event time from properties, fallback to created_at
     const timestamp = this.getEntityTimestamp(entity);
@@ -178,28 +152,20 @@ export class MemoryService {
     return typeMap[entityType] || 'other';
   }
 
-  private async getEntityLocation(entity: GraphNodeEntity): Promise<MemoryLocation | undefined> {
+  private async getEntityLocation(entityId: string, ownerId: string): Promise<MemoryLocation | undefined> {
     try {
-      // Look for location relationships
-      const locationRels = await this.relationshipRepo
-        .createQueryBuilder('rel')
-        .leftJoinAndSelect('rel.to_entity', 'location')
-        .where('rel.from_entity_id = :entityId', { entityId: entity.entity_id })
-        .andWhere('rel.relationship_type IN (:...types)', {
-          types: ['LOCATED_AT', 'HAPPENED_AT', 'AT_LOCATION'],
-        })
-        .andWhere('rel.is_active = true')
-        .andWhere('location.entity_type IN (:...locationTypes)', {
-          locationTypes: ['Location', 'Place'],
-        })
-        .getMany();
+      const relationships = await this.graphQuery.getRelationships(ownerId, {
+        entityIds: [entityId],
+        relationshipTypes: ['LOCATED_AT', 'HAPPENED_AT', 'AT_LOCATION'],
+        direction: 'outbound',
+      });
 
-      if (locationRels.length > 0) {
-        const locationEntity = locationRels[0].to_entity;
+      if (relationships.length > 0) {
+        const targetIds = relationships.map((rel) => rel.to_entity_id);
+        const [locationEntity] = await this.graphQuery.getNodesByIds(ownerId, targetIds);
+
         if (locationEntity?.properties) {
           const props = locationEntity.properties as Record<string, unknown>;
-
-          // Try different coordinate field names
           const lat = props.lat || props.latitude;
           const lng = props.lng || props.lon || props.longitude;
 
@@ -214,50 +180,38 @@ export class MemoryService {
           }
         }
       }
-
-      // Check if entity itself has location properties
-      if (entity.properties) {
-        const props = entity.properties as Record<string, unknown>;
-        const lat = props.lat || props.latitude;
-        const lng = props.lng || props.lon || props.longitude;
-
-        if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
-          return {
-            id: `loc-${entity.entity_id}`,
-            name: entity.name,
-            lat,
-            lng,
-            address: props.address as string | undefined,
-          };
-        }
-      }
     } catch (error) {
-      this.logger.error('Error getting entity location', { error, entityId: entity.entity_id });
+      this.logger.error('Error getting entity location', { error, entityId });
     }
 
     return undefined;
   }
 
-  private async getEntityTags(entity: GraphNodeEntity): Promise<string[]> {
+  private async getEntityTags(
+    entityId: string,
+    ownerId: string,
+    properties: Record<string, unknown> | null | undefined,
+  ): Promise<string[]> {
     try {
-      // Look for tag relationships
-      const tagRels = await this.relationshipRepo
-        .createQueryBuilder('rel')
-        .leftJoinAndSelect('rel.to_entity', 'tag')
-        .where('rel.from_entity_id = :entityId', { entityId: entity.entity_id })
-        .andWhere('rel.relationship_type = :type', { type: 'TAGGED_WITH' })
-        .andWhere('rel.is_active = true')
-        .andWhere('tag.entity_type = :tagType', { tagType: 'Tag' })
-        .getMany();
+      const tagRelationships = await this.graphQuery.getRelationships(ownerId, {
+        entityIds: [entityId],
+        relationshipTypes: ['TAGGED_WITH'],
+        direction: 'outbound',
+      });
 
-      const relationshipTags = tagRels
-        .map((rel) => rel.to_entity?.name)
-        .filter((name): name is string => !!name);
+      let relationshipTags: string[] = [];
+      if (tagRelationships.length > 0) {
+        const tagIds = tagRelationships.map((rel) => rel.to_entity_id);
+        const tagNodes = await this.graphQuery.getNodesByIds(ownerId, tagIds);
+        relationshipTags = tagNodes
+          .map((node) => node.name)
+          .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+      }
 
       // Also check properties for tags
       const propertyTags: string[] = [];
-      if (entity.properties && typeof entity.properties === 'object') {
-        const props = entity.properties as Record<string, unknown>;
+      if (properties && typeof properties === 'object') {
+        const props = properties;
         if (Array.isArray(props.tags)) {
           propertyTags.push(...props.tags.filter((tag): tag is string => typeof tag === 'string'));
         }
@@ -266,13 +220,13 @@ export class MemoryService {
       // Combine and deduplicate
       return [...new Set([...relationshipTags, ...propertyTags])];
     } catch (error) {
-      this.logger.error('Error getting entity tags', { error, entityId: entity.entity_id });
+      this.logger.error('Error getting entity tags', { error, entityId });
 
       return [];
     }
   }
 
-  private getEntityTimestamp(entity: GraphNodeEntity): Date {
+  private getEntityTimestamp(entity: GraphNodeLike): Date {
     // Try to get timestamp from properties first
     if (entity.properties && typeof entity.properties === 'object') {
       const props = entity.properties as Record<string, unknown>;
@@ -294,7 +248,7 @@ export class MemoryService {
     return entity.created_at;
   }
 
-  private getEntityUserId(entity: GraphNodeEntity): string {
+  private getEntityUserId(entity: GraphNodeLike): string {
     // Try to get user ID from properties
     if (entity.properties && typeof entity.properties === 'object') {
       const props = entity.properties as Record<string, unknown>;
@@ -312,34 +266,70 @@ export class MemoryService {
   // Debug and utility methods (maintaining compatibility)
   async getDebugInfo(context: RequestContext) {
     try {
-      const entityCounts = await this.entityRepo
-        .createQueryBuilder('entity')
-        .select('entity.entity_type, COUNT(*) as count')
-        .where('entity.is_active = true')
-        .groupBy('entity.entity_type')
-        .getRawMany();
+      if (!context.userId) {
+        return {
+          counts: {
+            totalEntities: 0,
+            totalRelationships: 0,
+            entitiesByType: [],
+            relationshipsByType: [],
+          },
+        };
+      }
 
-      const relationshipCounts = await this.relationshipRepo
-        .createQueryBuilder('rel')
-        .select('rel.relationship_type, COUNT(*) as count')
-        .where('rel.is_active = true')
-        .groupBy('rel.relationship_type')
-        .getRawMany();
+      const nodes = await this.graphQuery.getNodes(context.userId, { limit: 1000 });
+      const nodeCounts = nodes.reduce<Record<string, number>>((acc, node) => {
+        acc[node.entity_type] = (acc[node.entity_type] ?? 0) + 1;
 
-      const totalEntities = await this.entityRepo.count({ where: { is_active: true } });
-      const totalRelationships = await this.relationshipRepo.count({ where: { is_active: true } });
+        return acc;
+      }, {});
+
+      const relationships = await this.graphQuery.getRelationships(context.userId, {});
+      const relationshipCounts = relationships.reduce<Record<string, number>>((acc, rel) => {
+        acc[rel.relationship_type] = (acc[rel.relationship_type] ?? 0) + 1;
+
+        return acc;
+      }, {});
 
       return {
         counts: {
-          totalEntities,
-          totalRelationships,
-          entitiesByType: entityCounts,
-          relationshipsByType: relationshipCounts,
+          totalEntities: nodes.length,
+          totalRelationships: relationships.length,
+          entitiesByType: Object.entries(nodeCounts).map(([type, count]) => ({
+            entity_type: type,
+            count,
+          })),
+          relationshipsByType: Object.entries(relationshipCounts).map(([type, count]) => ({
+            relationship_type: type,
+            count,
+          })),
         },
       };
     } catch (error) {
       this.logger.error('Error getting debug info', { error, userId: context.userId });
       throw error;
     }
+  }
+
+  private extractLocationFromProperties(entity: GraphNodeLike): MemoryLocation | undefined {
+    if (!entity.properties || typeof entity.properties !== 'object') {
+      return undefined;
+    }
+
+    const props = entity.properties as Record<string, unknown>;
+    const lat = props.lat || props.latitude;
+    const lng = props.lng || props.lon || props.longitude;
+
+    if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
+      return {
+        id: `loc-${entity.entity_id}`,
+        name: entity.name,
+        lat,
+        lng,
+        address: props.address as string | undefined,
+      };
+    }
+
+    return undefined;
   }
 }
