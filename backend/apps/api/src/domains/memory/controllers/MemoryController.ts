@@ -90,9 +90,9 @@ export class MemoryController {
   }
 
   @Get('debug/info')
-  async debugInfo(@Context() context: RequestContext) {
+  async debugInfo() {
     try {
-      const result = await this.memoryService.getDebugInfo(context);
+      const result = await this.memoryService.getDebugInfo();
 
       return {
         success: true,

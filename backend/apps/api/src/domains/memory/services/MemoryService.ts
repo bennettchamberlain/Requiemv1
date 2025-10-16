@@ -12,6 +12,18 @@ import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { RelationshipEntity } from '../entities/RelationshipEntity';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
 
+// Type definitions for metadata structures
+interface RawEventMetadata {
+  htmlLink?: string;
+  googleCalendarUrl?: string;
+  [key: string]: unknown;
+}
+
+interface GeoJSONPoint {
+  type: 'Point';
+  coordinates: [number, number]; // [longitude, latitude]
+}
+
 @Injectable()
 export class MemoryService {
   private logger = new LoggerService(MemoryService.name);
@@ -30,91 +42,100 @@ export class MemoryService {
   ) {}
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
-    this.logger.debug('Finding memories from ALL tables', { userId: context.userId, params });
-
-    const limit = params.limit || 100;
+    const limit = params.limit || 500;
     const offset = params.offset || 0;
 
     if (!context.userId) {
-      this.logger.warn('No userId in context');
-
       return { data: [], total: 0, limit, offset };
     }
 
-    try {
-      // Fetch from all data sources in parallel
-      const [entitiesData, eventsData, contentData, communicationsData] = await Promise.all([
-        this.fetchFromEntities(context.userId, params),
-        this.fetchFromEvents(context.userId, params),
-        this.fetchFromContent(context.userId, params),
-        this.fetchFromCommunications(context.userId, params),
-      ]);
+    const [entitiesData, eventsData, contentData, communicationsData] = await Promise.all([
+      this.fetchFromEntities(context.userId, params),
+      this.fetchFromEvents(context.userId, params),
+      this.fetchFromContent(context.userId, params),
+      this.fetchFromCommunications(context.userId, params),
+    ]);
 
-      // Combine all memories
-      const allMemories = [
-        ...entitiesData.memories,
-        ...eventsData.memories,
-        ...contentData.memories,
-        ...communicationsData.memories,
-      ];
+    const allMemories = [
+      ...entitiesData.memories,
+      ...eventsData.memories,
+      ...contentData.memories,
+      ...communicationsData.memories,
+    ];
 
-      this.logger.debug('Memory type breakdown', {
-        entities: entitiesData.memories.map((m) => ({ type: m.type, category: m.category })),
-        events: eventsData.memories.map((m) => ({ type: m.type, category: m.category })),
-        content: contentData.memories.map((m) => ({ type: m.type, category: m.category })),
-        communications: communicationsData.memories.map((m) => ({ type: m.type, category: m.category })),
-      });
+    const now = new Date();
+    allMemories.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      const nowTime = now.getTime();
 
-      // Sort by timestamp descending
-      allMemories.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const distanceA = Math.abs(timeA - nowTime);
+      const distanceB = Math.abs(timeB - nowTime);
 
-      // Apply search filter if provided
-      let filteredMemories = allMemories;
-      if (params.query) {
-        const searchQuery = params.query.toLowerCase();
-        filteredMemories = allMemories.filter(
-          (memory) =>
-            memory.title.toLowerCase().includes(searchQuery) ||
-            memory.description?.toLowerCase().includes(searchQuery) ||
-            memory.tags.some((tag) => tag.toLowerCase().includes(searchQuery)),
-        );
-      }
+      return distanceA - distanceB;
+    });
 
-      // Apply location filter if requested
-      if (params.hasLocation !== undefined) {
-        filteredMemories = filteredMemories.filter((memory) =>
-          params.hasLocation ? !!memory.location : !memory.location,
-        );
-      }
-
-      // Apply pagination
-      const paginatedMemories = filteredMemories.slice(offset, offset + limit);
-      const total = filteredMemories.length;
-
-      const response = {
-        data: paginatedMemories,
-        total,
-        limit,
-        offset,
-      };
-
-      this.logger.debug('Returning aggregated memory response', {
-        dataLength: response.data.length,
-        total: response.total,
-        sources: {
-          entities: entitiesData.count,
-          events: eventsData.count,
-          content: contentData.count,
-          communications: communicationsData.count,
-        },
-        memoriesWithLocation: response.data.filter((m) => m.location).length,
-      });
-
-      return response;
-    } catch (error) {
-      this.logger.error('Error in findAll', { error, userId: context.userId });
-      throw error;
+    let filteredMemories = allMemories;
+    if (params.query) {
+      const searchQuery = params.query.toLowerCase();
+      filteredMemories = allMemories.filter(
+        (memory) =>
+          memory.title.toLowerCase().includes(searchQuery) ||
+          memory.description?.toLowerCase().includes(searchQuery) ||
+          memory.tags.some((tag) => tag.toLowerCase().includes(searchQuery)),
+      );
     }
+
+    if (params.excludeCategories && params.excludeCategories.length > 0) {
+      filteredMemories = filteredMemories.filter((memory) => {
+        const category = memory.category?.toLowerCase() || '';
+        const source =
+          typeof memory.metadata?.source === 'string' ? memory.metadata.source.toLowerCase() : '';
+
+        const isGoogleDrive =
+          category.includes('drive') ||
+          category.includes('google drive') ||
+          source.includes('drive') ||
+          source.includes('google drive') ||
+          memory.title?.toLowerCase().includes('drive') ||
+          memory.title?.toLowerCase().includes('google drive');
+
+        if (isGoogleDrive) {
+          return false;
+        }
+
+        const shouldExclude = params.excludeCategories!.some(
+          (excludeCat) =>
+            category.includes(excludeCat.toLowerCase()) || source.includes(excludeCat.toLowerCase()),
+        );
+
+        return !shouldExclude;
+      });
+    }
+
+    filteredMemories = filteredMemories.filter((memory) => {
+      if (memory.type !== 'event' && memory.type !== 'communication') {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (params.hasLocation !== undefined) {
+      filteredMemories = filteredMemories.filter((memory) =>
+        params.hasLocation ? !!memory.location : !memory.location,
+      );
+    }
+
+    const paginatedMemories = filteredMemories.slice(offset, offset + limit);
+    const total = filteredMemories.length;
+
+    return {
+      data: paginatedMemories,
+      total,
+      limit,
+      offset,
+    };
   }
 
   // Fetch memories from entities table
@@ -141,23 +162,13 @@ export class MemoryService {
         });
       }
 
-      queryBuilder = queryBuilder.orderBy('entity.created_at', 'DESC').limit(200);
+      queryBuilder = queryBuilder.orderBy('entity.created_at', 'DESC').limit(500);
 
       const entities = await queryBuilder.getMany();
-      this.logger.log('Fetched entities', {
-        count: entities.length,
-        userId,
-        sampleEntities: entities
-          .slice(0, 3)
-          .map((e) => ({ id: e.entity_id, type: e.entity_type, name: e.name })),
-      });
       const memories = await Promise.all(entities.map((entity) => this.entityToMemory(entity)));
-      this.logger.log('Converted entities to memories', { count: memories.length });
 
       return { memories, count: memories.length };
-    } catch (error) {
-      this.logger.error('Error fetching from entities', { error, userId });
-
+    } catch {
       return { memories: [], count: 0 };
     }
   }
@@ -185,16 +196,16 @@ export class MemoryService {
         });
       }
 
-      queryBuilder = queryBuilder.orderBy('event.start_time', 'DESC').limit(200);
+      // Order by proximity to current time, prioritizing recent events
+      queryBuilder = queryBuilder
+        .orderBy('ABS(EXTRACT(EPOCH FROM (event.start_time - NOW())))', 'ASC')
+        .limit(500);
 
       const events = await queryBuilder.getMany();
-      this.logger.debug('Fetched events', { count: events.length, userId });
-      const memories = events.map((event) => this.eventToMemory(event));
+      const memories = await Promise.all(events.map((event) => this.eventToMemoryAsync(event)));
 
       return { memories, count: memories.length };
-    } catch (error) {
-      this.logger.error('Error fetching from events', { error, userId });
-
+    } catch {
       return { memories: [], count: 0 };
     }
   }
@@ -222,16 +233,13 @@ export class MemoryService {
         });
       }
 
-      queryBuilder = queryBuilder.orderBy('content.created_at', 'DESC').limit(200);
+      queryBuilder = queryBuilder.orderBy('content.created_at', 'DESC').limit(500);
 
       const contentItems = await queryBuilder.getMany();
-      this.logger.debug('Fetched content', { count: contentItems.length, userId });
       const memories = contentItems.map((content) => this.contentToMemory(content));
 
       return { memories, count: memories.length };
-    } catch (error) {
-      this.logger.error('Error fetching from content', { error, userId });
-
+    } catch {
       return { memories: [], count: 0 };
     }
   }
@@ -258,29 +266,58 @@ export class MemoryService {
         });
       }
 
-      queryBuilder = queryBuilder.orderBy('comm.time', 'DESC').limit(200);
+      queryBuilder = queryBuilder.orderBy('comm.time', 'DESC').limit(500);
 
       const communications = await queryBuilder.getMany();
-      this.logger.log('Fetched communications', {
-        count: communications.length,
-        userId,
-        sampleComms: communications
-          .slice(0, 3)
-          .map((c) => ({ type: c.communication_type, subject: c.subject, time: c.time })),
-      });
       const memories = communications.map((comm) => this.communicationToMemory(comm));
-      this.logger.log('Converted communications to memories', { count: memories.length });
 
       return { memories, count: memories.length };
-    } catch (error) {
-      this.logger.error('Error fetching from communications', { error, userId });
-
+    } catch {
       return { memories: [], count: 0 };
     }
   }
 
   // Convert EventEntity to Memory
-  private eventToMemory(event: EventEntity): Memory {
+  private async eventToMemoryAsync(event: EventEntity): Promise<Memory> {
+    // Extract source link from metadata
+    const metadata = event.metadata || {};
+    const rawEvent = (metadata.rawEvent as RawEventMetadata | undefined) || ({} as RawEventMetadata);
+    const sourceLink = (metadata.googleCalendarUrl as string | undefined) || rawEvent.htmlLink || undefined;
+
+    // Extract location with coordinates
+    let location: Memory['location'] = undefined;
+    if (event.location_name || event.location_coordinates || event.location_entity_id) {
+      // Try to get coordinates from location_coordinates field first
+      const coords = this.parseLocationCoordinates(event.location_coordinates);
+
+      // If no coordinates but we have a location_entity_id, look up the location entity
+      let entityCoords = coords;
+      if (!entityCoords && event.location_entity_id) {
+        const locationEntity = await this.entityRepo.findOne({
+          where: { entity_id: event.location_entity_id },
+        });
+
+        if (locationEntity && locationEntity.properties) {
+          const props = locationEntity.properties as Record<string, unknown>;
+          const lat = props.lat || props.latitude;
+          const lng = props.lng || props.lon || props.longitude;
+
+          if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
+            entityCoords = { lat, lng };
+          }
+        }
+      }
+
+      if (entityCoords || event.location_name) {
+        location = {
+          id: event.location_entity_id || `loc-${event.id}`,
+          name: event.location_name,
+          lat: entityCoords?.lat ?? 0,
+          lng: entityCoords?.lng ?? 0,
+        };
+      }
+    }
+
     return {
       id: event.id,
       type: 'event',
@@ -288,16 +325,10 @@ export class MemoryService {
       description: event.description,
       timestamp: event.start_time,
       category: event.category || 'Event',
-      location: event.location_name
-        ? {
-            id: event.location_entity_id || `loc-${event.id}`,
-            name: event.location_name,
-            lat: 0, // TODO: Extract from location_coordinates if available
-            lng: 0,
-          }
-        : undefined,
+      location,
       tags: event.tags || [],
       userId: event.user?.id || '',
+      sourceLink: sourceLink,
       metadata: {
         eventType: event.event_type ?? undefined,
         category: event.category ?? undefined,
@@ -305,6 +336,75 @@ export class MemoryService {
         ...event.metadata,
       },
     };
+  }
+
+  // Synchronous wrapper for backwards compatibility (coordinates only)
+  private eventToMemory(event: EventEntity): Memory {
+    // Extract source link from metadata
+    const metadata = event.metadata || {};
+    const rawEvent = (metadata.rawEvent as RawEventMetadata | undefined) || ({} as RawEventMetadata);
+    const sourceLink = (metadata.googleCalendarUrl as string | undefined) || rawEvent.htmlLink || undefined;
+
+    // Extract location with coordinates (synchronous version - no entity lookup)
+    let location: Memory['location'] = undefined;
+    if (event.location_name || event.location_coordinates) {
+      const coords = this.parseLocationCoordinates(event.location_coordinates);
+      if (coords || event.location_name) {
+        location = {
+          id: event.location_entity_id || `loc-${event.id}`,
+          name: event.location_name,
+          lat: coords?.lat ?? 0,
+          lng: coords?.lng ?? 0,
+        };
+      }
+    }
+
+    return {
+      id: event.id,
+      type: 'event',
+      title: event.title || 'Untitled Event',
+      description: event.description,
+      timestamp: event.start_time,
+      category: event.category || 'Event',
+      location,
+      tags: event.tags || [],
+      userId: event.user?.id || '',
+      sourceLink: sourceLink,
+      metadata: {
+        eventType: event.event_type ?? undefined,
+        category: event.category ?? undefined,
+        source: event.source_system ?? undefined,
+        ...event.metadata,
+      },
+    };
+  }
+
+  // Helper method to parse PostGIS GEOGRAPHY(POINT) format
+  private parseLocationCoordinates(coordinates: string | null): { lat: number; lng: number } | null {
+    if (!coordinates) {
+      return null;
+    }
+
+    const pointMatch = coordinates.match(/POINT\s*\(\s*(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s*\)/i);
+    if (pointMatch) {
+      const lng = parseFloat(pointMatch[1]);
+      const lat = parseFloat(pointMatch[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return { lat, lng };
+      }
+    }
+
+    if (typeof coordinates === 'object') {
+      const geoJson = coordinates as GeoJSONPoint;
+      if (geoJson.type === 'Point' && Array.isArray(geoJson.coordinates)) {
+        const [lng, lat] = geoJson.coordinates;
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return { lat, lng };
+        }
+      }
+    }
+
+    return null;
   }
 
   // Convert ContentEntity to Memory
@@ -331,7 +431,7 @@ export class MemoryService {
   private communicationToMemory(comm: CommunicationEntity): Memory {
     return {
       id: `${comm.user_id}-${comm.time.getTime()}-${comm.communication_type}`,
-      type: 'other',
+      type: 'communication',
       title: comm.subject || `${comm.communication_type} Communication`,
       description: comm.summary || comm.content.substring(0, 200) || null,
       timestamp: comm.time,
@@ -342,15 +442,12 @@ export class MemoryService {
         communicationType: comm.communication_type,
         direction: comm.direction,
         participantsMetadata: comm.participants_metadata,
-        connectionId: comm.connection_id ?? undefined,
         threadId: comm.thread_id ?? undefined,
       },
     };
   }
 
   async findOne(context: RequestContext, id: string): Promise<Memory> {
-    this.logger.debug('Finding memory by id', { id, userId: context.userId });
-
     const entity = await this.entityRepo.findOne({
       where: { entity_id: id, is_active: true },
     });
@@ -378,10 +475,6 @@ export class MemoryService {
     // Extract user ID from properties or linked data
     const userId = this.getEntityUserId(entity);
 
-    // Extract connection info from properties
-    const { connectionId, connectionName } = this.getEntityConnectionInfo(entity);
-
-    // Get relationships for this entity
     const relationships = await this.getEntityRelationships(entity);
 
     const memory: Memory = {
@@ -394,8 +487,6 @@ export class MemoryService {
       location,
       tags,
       userId,
-      connectionId,
-      connectionName,
       metadata: {
         entityType: entity.entity_type,
         linkedTable: entity.linked_table,
@@ -471,68 +562,59 @@ export class MemoryService {
       ];
 
       return relationships;
-    } catch (error) {
-      this.logger.error('Error getting entity relationships', { error, entityId: entity.entity_id });
-
+    } catch {
       return [];
     }
   }
 
   private async getEntityLocation(entity: GraphNodeEntity): Promise<MemoryLocation | undefined> {
-    try {
-      // Look for location relationships
-      const locationRels = await this.relationshipRepo
-        .createQueryBuilder('rel')
-        .leftJoinAndSelect('rel.to_entity', 'location')
-        .where('rel.from_entity_id = :entityId', { entityId: entity.entity_id })
-        .andWhere('rel.relationship_type IN (:...types)', {
-          types: ['LOCATED_AT', 'HAPPENED_AT', 'AT_LOCATION'],
-        })
-        .andWhere('rel.is_active = true')
-        .andWhere('location.entity_type IN (:...locationTypes)', {
-          locationTypes: ['Location', 'Place'],
-        })
-        .getMany();
+    const locationRels = await this.relationshipRepo
+      .createQueryBuilder('rel')
+      .leftJoinAndSelect('rel.to_entity', 'location')
+      .where('rel.from_entity_id = :entityId', { entityId: entity.entity_id })
+      .andWhere('rel.relationship_type IN (:...types)', {
+        types: ['LOCATED_AT', 'HAPPENED_AT', 'AT_LOCATION'],
+      })
+      .andWhere('rel.is_active = true')
+      .andWhere('location.entity_type IN (:...locationTypes)', {
+        locationTypes: ['Location', 'Place'],
+      })
+      .getMany();
 
-      if (locationRels.length > 0) {
-        const locationEntity = locationRels[0].to_entity;
-        if (locationEntity?.properties) {
-          const props = locationEntity.properties as Record<string, unknown>;
+    if (locationRels.length > 0) {
+      const locationEntity = locationRels[0].to_entity;
+      if (locationEntity?.properties) {
+        const props = locationEntity.properties as Record<string, unknown>;
 
-          // Try different coordinate field names
-          const lat = props.lat || props.latitude;
-          const lng = props.lng || props.lon || props.longitude;
-
-          if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
-            return {
-              id: locationEntity.entity_id,
-              name: locationEntity.name,
-              lat,
-              lng,
-              address: props.address as string | undefined,
-            };
-          }
-        }
-      }
-
-      // Check if entity itself has location properties
-      if (entity.properties) {
-        const props = entity.properties as Record<string, unknown>;
         const lat = props.lat || props.latitude;
         const lng = props.lng || props.lon || props.longitude;
 
         if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
           return {
-            id: `loc-${entity.entity_id}`,
-            name: entity.name,
+            id: locationEntity.entity_id,
+            name: locationEntity.name,
             lat,
             lng,
             address: props.address as string | undefined,
           };
         }
       }
-    } catch (error) {
-      this.logger.error('Error getting entity location', { error, entityId: entity.entity_id });
+    }
+
+    if (entity.properties) {
+      const props = entity.properties as Record<string, unknown>;
+      const lat = props.lat || props.latitude;
+      const lng = props.lng || props.lon || props.longitude;
+
+      if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
+        return {
+          id: `loc-${entity.entity_id}`,
+          name: entity.name,
+          lat,
+          lng,
+          address: props.address as string | undefined,
+        };
+      }
     }
 
     return undefined;
@@ -565,9 +647,7 @@ export class MemoryService {
 
       // Combine and deduplicate
       return [...new Set([...relationshipTags, ...propertyTags])];
-    } catch (error) {
-      this.logger.error('Error getting entity tags', { error, entityId: entity.entity_id });
-
+    } catch {
       return [];
     }
   }
@@ -613,61 +693,31 @@ export class MemoryService {
     return '';
   }
 
-  private getEntityConnectionInfo(entity: GraphNodeEntity): {
-    connectionId?: string;
-    connectionName?: string;
-  } {
-    if (entity.properties && typeof entity.properties === 'object') {
-      const props = entity.properties as Record<string, unknown>;
+  async getDebugInfo() {
+    const entityCounts = await this.entityRepo
+      .createQueryBuilder('entity')
+      .select('entity.entity_type, COUNT(*) as count')
+      .where('entity.is_active = true')
+      .groupBy('entity.entity_type')
+      .getRawMany();
 
-      return {
-        connectionId: props.connection_id
-          ? String(props.connection_id)
-          : props.connectionId
-            ? String(props.connectionId)
-            : undefined,
-        connectionName: props.connection_name
-          ? String(props.connection_name)
-          : props.connectionName
-            ? String(props.connectionName)
-            : undefined,
-      };
-    }
+    const relationshipCounts = await this.relationshipRepo
+      .createQueryBuilder('rel')
+      .select('rel.relationship_type, COUNT(*) as count')
+      .where('rel.is_active = true')
+      .groupBy('rel.relationship_type')
+      .getRawMany();
 
-    return {};
-  }
+    const totalEntities = await this.entityRepo.count({ where: { is_active: true } });
+    const totalRelationships = await this.relationshipRepo.count({ where: { is_active: true } });
 
-  // Debug and utility methods (maintaining compatibility)
-  async getDebugInfo(context: RequestContext) {
-    try {
-      const entityCounts = await this.entityRepo
-        .createQueryBuilder('entity')
-        .select('entity.entity_type, COUNT(*) as count')
-        .where('entity.is_active = true')
-        .groupBy('entity.entity_type')
-        .getRawMany();
-
-      const relationshipCounts = await this.relationshipRepo
-        .createQueryBuilder('rel')
-        .select('rel.relationship_type, COUNT(*) as count')
-        .where('rel.is_active = true')
-        .groupBy('rel.relationship_type')
-        .getRawMany();
-
-      const totalEntities = await this.entityRepo.count({ where: { is_active: true } });
-      const totalRelationships = await this.relationshipRepo.count({ where: { is_active: true } });
-
-      return {
-        counts: {
-          totalEntities,
-          totalRelationships,
-          entitiesByType: entityCounts,
-          relationshipsByType: relationshipCounts,
-        },
-      };
-    } catch (error) {
-      this.logger.error('Error getting debug info', { error, userId: context.userId });
-      throw error;
-    }
+    return {
+      counts: {
+        totalEntities,
+        totalRelationships,
+        entitiesByType: entityCounts,
+        relationshipsByType: relationshipCounts,
+      },
+    };
   }
 }
