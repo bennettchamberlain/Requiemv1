@@ -17,7 +17,7 @@ export class GraphController {
   ) {}
 
   @OnEvent(Events.USER_CREATED)
-  async addUserToGraph(payload: EventPayloads[Events.SYNC_CONNECTION]) {
+  async addUserToGraph(payload: EventPayloads[Events.USER_CREATED]) {
     const user = await this.userService.findOne(payload.userId);
 
     if (user == null) {
