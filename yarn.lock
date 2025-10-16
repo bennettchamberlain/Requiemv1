@@ -2473,6 +2473,7 @@ __metadata:
     tsc-alias: "npm:^1.8.16"
     tsconfig-paths: "npm:^4.2.0"
     typedoc: "npm:^0.28.14"
+    typedoc-plugin-markdown: "npm:^4.9.0"
     typeorm: "npm:^0.3.24"
     typescript: "npm:^5.8.3"
     typescript-eslint: "npm:^8.32.1"
@@ -19390,6 +19391,15 @@ __metadata:
   version: 0.0.6
   resolution: "typedarray@npm:0.0.6"
   checksum: 10c0/6005cb31df50eef8b1f3c780eb71a17925f3038a100d82f9406ac2ad1de5eb59f8e6decbdc145b3a1f8e5836e17b0c0002fb698b9fe2516b8f9f9ff602d36412
+  languageName: node
+  linkType: hard
+
+"typedoc-plugin-markdown@npm:*, typedoc-plugin-markdown@npm:^4.9.0":
+  version: 4.9.0
+  resolution: "typedoc-plugin-markdown@npm:4.9.0"
+  peerDependencies:
+    typedoc: 0.28.x
+  checksum: 10c0/12040bbff7bc7e4f777d06710e39421f8ebaaf706f4b8075536453f35bc86726c5ce743de0cc9c39ee1bdfc8611b2878a4cf4c83a493e0678fc640dd71fe97fc
   languageName: node
   linkType: hard
 
