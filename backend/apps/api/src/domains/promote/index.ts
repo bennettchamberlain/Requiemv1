@@ -4,9 +4,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EtlModule, ApiLogEntity } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
+import { FilesModule } from '@ci/domains/files';
 import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
-import { FilesModule } from '@ci/domains/files';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { PromoteController as MicrosoftPromoteController } from './controllers/microsoft/PromoteController';
