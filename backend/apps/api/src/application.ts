@@ -23,7 +23,6 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
-import { JobsModule } from '@ci/domains/jobs';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 import { OnboardingModule } from '@ci/domains/onboarding';
@@ -54,7 +53,6 @@ import { UserModule } from '@ci/domains/user';
     EventsModule,
     FilesModule,
     IntelligenceModule,
-    JobsModule,
     LLMModule,
     OnboardingModule,
     ToolsModule,
