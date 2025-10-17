@@ -4,7 +4,7 @@
   "entryPoints": ["src/domains/*/index.ts"],
   "entryPointStrategy": "resolve",
 
-  "includeVersion": true,
+  "includeVersion": false,
   "excludePrivate": true,
   "excludeProtected": true,
   "excludeExternals": true,
@@ -12,7 +12,7 @@
 
   "categorizeByGroup": true,
   "sort": ["kind", "alphabetical"],
-  "name": "@ci/be-api",
+  "name": "CI — API Server",
   "exclude": ["**/*.test.ts", "**/__tests__/**"],
   "readme": "none",
   "gitRevision": "main"
