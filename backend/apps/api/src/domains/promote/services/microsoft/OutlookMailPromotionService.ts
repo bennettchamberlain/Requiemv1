@@ -406,19 +406,4 @@ export class OutlookMailPromotionService {
       return undefined;
     }
   }
-
-  private decodeBase64(data: string): string {
-    try {
-      // OutlookMail API uses URL-safe base64
-      const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
-
-      return Buffer.from(base64, 'base64').toString('utf-8');
-    } catch (error) {
-      this.logger.error('Error decoding base64 data', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-
-      return '';
-    }
-  }
 }
