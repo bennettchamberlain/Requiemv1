@@ -34,6 +34,12 @@ const createEventSchemaRoot = z.object({
   start_time: z.string().datetime(),
   end_time: z.string().datetime().optional(),
   location_name: z.string().optional(),
+  location_coordinates: z
+    .object({
+      type: z.string(),
+      coordinates: z.array(z.number()),
+    })
+    .optional(),
   event_entity_id: z.string().optional(),
   location_entity_id: z.string().optional(),
   participant_entity_ids: z.array(z.string()).optional(),
@@ -79,6 +85,12 @@ const updateEventSchema = z.object({
   location_name: z.string().optional(),
   event_entity_id: z.string().optional(),
   location_entity_id: z.string().optional(),
+  location_coordinates: z
+    .object({
+      type: z.string(),
+      coordinates: z.array(z.number()),
+    })
+    .optional(),
   participant_entity_ids: z.array(z.string()).optional(),
   organizer_entity_id: z.string().optional(),
   source_type: z.string().optional(),
