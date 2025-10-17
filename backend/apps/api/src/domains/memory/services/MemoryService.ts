@@ -5,9 +5,24 @@ import { Repository } from 'typeorm';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 
+import { CommunicationEntity } from '../entities/CommunicationEntity';
+import { ContentEntity } from '../entities/ContentEntity';
+import { EventEntity } from '../entities/EventEntity';
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { RelationshipEntity } from '../entities/RelationshipEntity';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
+
+// Type definitions for metadata structures
+interface RawEventMetadata {
+  htmlLink?: string;
+  googleCalendarUrl?: string;
+  [key: string]: unknown;
+}
+
+interface GeoJSONPoint {
+  type: 'Point';
+  coordinates: [number, number]; // [longitude, latitude]
+}
 
 @Injectable()
 export class MemoryService {
@@ -18,102 +33,446 @@ export class MemoryService {
     private entityRepo: Repository<GraphNodeEntity>,
     @InjectRepository(RelationshipEntity)
     private relationshipRepo: Repository<RelationshipEntity>,
+    @InjectRepository(EventEntity)
+    private eventRepo: Repository<EventEntity>,
+    @InjectRepository(ContentEntity)
+    private contentRepo: Repository<ContentEntity>,
+    @InjectRepository(CommunicationEntity)
+    private communicationRepo: Repository<CommunicationEntity>,
   ) {}
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
-    this.logger.debug('Finding memories from graph', { userId: context.userId, params });
-
-    const limit = params.limit || 50;
+    const limit = params.limit || 500;
     const offset = params.offset || 0;
 
+    if (!context.userId) {
+      return { data: [], total: 0, limit, offset };
+    }
+
+    const [entitiesData, eventsData, contentData, communicationsData] = await Promise.all([
+      this.fetchFromEntities(context.userId, params),
+      this.fetchFromEvents(context.userId, params),
+      this.fetchFromContent(context.userId, params),
+      this.fetchFromCommunications(context.userId, params),
+    ]);
+
+    const allMemories = [
+      ...entitiesData.memories,
+      ...eventsData.memories,
+      ...contentData.memories,
+      ...communicationsData.memories,
+    ];
+
+    const now = new Date();
+    allMemories.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      const nowTime = now.getTime();
+
+      const distanceA = Math.abs(timeA - nowTime);
+      const distanceB = Math.abs(timeB - nowTime);
+
+      return distanceA - distanceB;
+    });
+
+    let filteredMemories = allMemories;
+    if (params.query) {
+      const searchQuery = params.query.toLowerCase();
+      filteredMemories = allMemories.filter(
+        (memory) =>
+          memory.title.toLowerCase().includes(searchQuery) ||
+          memory.description?.toLowerCase().includes(searchQuery) ||
+          memory.tags.some((tag) => tag.toLowerCase().includes(searchQuery)),
+      );
+    }
+
+    if (params.excludeCategories && params.excludeCategories.length > 0) {
+      filteredMemories = filteredMemories.filter((memory) => {
+        const category = memory.category?.toLowerCase() || '';
+        const source =
+          typeof memory.metadata?.source === 'string' ? memory.metadata.source.toLowerCase() : '';
+
+        const isGoogleDrive =
+          category.includes('drive') ||
+          category.includes('google drive') ||
+          source.includes('drive') ||
+          source.includes('google drive') ||
+          memory.title?.toLowerCase().includes('drive') ||
+          memory.title?.toLowerCase().includes('google drive');
+
+        if (isGoogleDrive) {
+          return false;
+        }
+
+        const shouldExclude = params.excludeCategories!.some(
+          (excludeCat) =>
+            category.includes(excludeCat.toLowerCase()) || source.includes(excludeCat.toLowerCase()),
+        );
+
+        return !shouldExclude;
+      });
+    }
+
+    // Filter to include events, communications, and our target entity types
+    filteredMemories = filteredMemories.filter((memory) => {
+      // Always include events and communications
+      if (memory.type === 'event' || memory.type === 'communication') {
+        return true;
+      }
+
+      // Include our target entity types: Person, Video, File, Channel, Document
+      const entityType = memory.metadata?.entityType as string | undefined;
+      if (entityType && ['Person', 'Video', 'File', 'Channel', 'Document'].includes(entityType)) {
+        return true;
+      }
+
+      // Filter out everything else
+      return false;
+    });
+
+    if (params.hasLocation !== undefined) {
+      filteredMemories = filteredMemories.filter((memory) =>
+        params.hasLocation ? !!memory.location : !memory.location,
+      );
+    }
+
+    const paginatedMemories = filteredMemories.slice(offset, offset + limit);
+    const total = filteredMemories.length;
+
+    return {
+      data: paginatedMemories,
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  // Fetch memories from entities table
+  private async fetchFromEntities(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
     try {
-      // Build query for entities that represent memory objects
+      // Filter for specific entity types that should appear in timeline
+      // NOTE: We exclude 'Event' because events are fetched from the events table
+      const timelineEntityTypes = ['Person', 'Video', 'File', 'Channel', 'Document'];
+
       let queryBuilder = this.entityRepo
         .createQueryBuilder('entity')
         .where('entity.is_active = true')
-        .andWhere('entity.is_archived = false');
+        .andWhere('entity.is_archived = false')
+        .andWhere('entity.owner_user_id = :userId', { userId })
+        .andWhere('entity.entity_type IN (:...types)', { types: timelineEntityTypes });
 
-      // Default: Include Person, Location, Event, Contact, Content
-      // Exclude: Object, Concept
-      const defaultIncludedTypes = ['Person', 'Location', 'Event', 'Contact', 'Content', 'Place'];
-
-      // If categories are specified, use those; otherwise use defaults
-      if (params.categories && params.categories.length > 0) {
-        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...categories)', {
-          categories: params.categories,
-        });
-      } else {
-        queryBuilder = queryBuilder.andWhere('entity.entity_type IN (:...defaultTypes)', {
-          defaultTypes: defaultIncludedTypes,
-        });
-      }
-
-      // Apply filters
-      if (params.query) {
+      // Note: Date filtering uses created_at/updated_at, but actual timeline sorting
+      // uses entity-specific timestamp fields (last_seen, modified_time, etc.)
+      // This is intentional to cast a wide net in the query, then sort by specific fields
+      if (params.startDate) {
         queryBuilder = queryBuilder.andWhere(
-          '(entity.name ILIKE :query OR entity.description ILIKE :query OR entity.search_content ILIKE :query)',
-          { query: `%${params.query}%` },
+          '(entity.created_at >= :startDate OR entity.updated_at >= :startDate)',
+          { startDate: params.startDate },
         );
       }
 
-      // Apply date filtering based on created_at for now
+      if (params.endDate) {
+        queryBuilder = queryBuilder.andWhere(
+          '(entity.created_at <= :endDate OR entity.updated_at <= :endDate)',
+          { endDate: params.endDate },
+        );
+      }
+
+      queryBuilder = queryBuilder.orderBy('entity.updated_at', 'DESC').limit(500);
+
+      const entities = await queryBuilder.getMany();
+      const memories = await Promise.all(entities.map((entity) => this.entityToMemory(entity)));
+
+      return { memories, count: memories.length };
+    } catch (error) {
+      this.logger.error('Error fetching entities for timeline', {
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      return { memories: [], count: 0 };
+    }
+  }
+
+  // Fetch memories from events table
+  private async fetchFromEvents(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
+    try {
+      let queryBuilder = this.eventRepo
+        .createQueryBuilder('event')
+        .leftJoinAndSelect('event.user', 'user')
+        .where('user.id = :userId', { userId });
+
       if (params.startDate) {
-        queryBuilder = queryBuilder.andWhere('entity.created_at >= :startDate', {
+        queryBuilder = queryBuilder.andWhere('event.start_time >= :startDate', {
           startDate: params.startDate,
         });
       }
 
       if (params.endDate) {
-        queryBuilder = queryBuilder.andWhere('entity.created_at <= :endDate', {
+        queryBuilder = queryBuilder.andWhere('event.start_time <= :endDate', {
           endDate: params.endDate,
         });
       }
 
-      // Order by most recent
-      queryBuilder = queryBuilder.orderBy('entity.created_at', 'DESC').limit(limit).offset(offset);
+      // Order by proximity to current time, prioritizing recent events
+      queryBuilder = queryBuilder
+        .orderBy('ABS(EXTRACT(EPOCH FROM (event.start_time - NOW())))', 'ASC')
+        .limit(500);
 
-      const [entities, total] = await queryBuilder.getManyAndCount();
+      const events = await queryBuilder.getMany();
+      const memories = await Promise.all(events.map((event) => this.eventToMemoryAsync(event)));
 
-      this.logger.debug('Found entities', {
-        entitiesCount: entities.length,
-        total,
-        userId: context.userId,
-      });
-
-      // Convert entities to Memory objects
-      const memories = await Promise.all(entities.map((entity) => this.entityToMemory(entity)));
-
-      // Filter by location if requested
-      let filteredMemories = memories;
-      if (params.hasLocation !== undefined) {
-        filteredMemories = memories.filter((memory) =>
-          params.hasLocation ? !!memory.location : !memory.location,
-        );
-      }
-
-      const response = {
-        data: filteredMemories,
-        total,
-        limit,
-        offset,
-      };
-
-      this.logger.debug('Returning memory response', {
-        dataLength: response.data.length,
-        total: response.total,
-        memoriesWithLocation: response.data.filter((m) => m.location).length,
-      });
-
-      return response;
-    } catch (error) {
-      this.logger.error('Error in findAll', { error, userId: context.userId });
-      throw error;
+      return { memories, count: memories.length };
+    } catch {
+      return { memories: [], count: 0 };
     }
   }
 
-  async findOne(context: RequestContext, id: string): Promise<Memory> {
-    this.logger.debug('Finding memory by id', { id, userId: context.userId });
+  // Fetch memories from content table
+  private async fetchFromContent(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
+    try {
+      let queryBuilder = this.contentRepo
+        .createQueryBuilder('content')
+        .leftJoinAndSelect('content.user', 'user')
+        .where('user.id = :userId', { userId });
 
+      if (params.startDate) {
+        queryBuilder = queryBuilder.andWhere('content.created_at >= :startDate', {
+          startDate: params.startDate,
+        });
+      }
+
+      if (params.endDate) {
+        queryBuilder = queryBuilder.andWhere('content.created_at <= :endDate', {
+          endDate: params.endDate,
+        });
+      }
+
+      queryBuilder = queryBuilder.orderBy('content.created_at', 'DESC').limit(500);
+
+      const contentItems = await queryBuilder.getMany();
+      const memories = contentItems.map((content) => this.contentToMemory(content));
+
+      return { memories, count: memories.length };
+    } catch {
+      return { memories: [], count: 0 };
+    }
+  }
+
+  // Fetch memories from communications table
+  private async fetchFromCommunications(
+    userId: string,
+    params: MemorySearchParams,
+  ): Promise<{ memories: Memory[]; count: number }> {
+    try {
+      let queryBuilder = this.communicationRepo
+        .createQueryBuilder('comm')
+        .where('comm.user_id = :userId', { userId });
+
+      if (params.startDate) {
+        queryBuilder = queryBuilder.andWhere('comm.time >= :startDate', {
+          startDate: params.startDate,
+        });
+      }
+
+      if (params.endDate) {
+        queryBuilder = queryBuilder.andWhere('comm.time <= :endDate', {
+          endDate: params.endDate,
+        });
+      }
+
+      queryBuilder = queryBuilder.orderBy('comm.time', 'DESC').limit(500);
+
+      const communications = await queryBuilder.getMany();
+      const memories = communications.map((comm) => this.communicationToMemory(comm));
+
+      return { memories, count: memories.length };
+    } catch {
+      return { memories: [], count: 0 };
+    }
+  }
+
+  // Convert EventEntity to Memory
+  private async eventToMemoryAsync(event: EventEntity): Promise<Memory> {
+    // Extract source link from metadata
+    const metadata = event.metadata || {};
+    const rawEvent = (metadata.rawEvent as RawEventMetadata | undefined) || ({} as RawEventMetadata);
+    const sourceLink = (metadata.googleCalendarUrl as string | undefined) || rawEvent.htmlLink || undefined;
+
+    // Extract location with coordinates
+    let location: Memory['location'] = undefined;
+    if (event.location_name || event.location_coordinates || event.location_entity_id) {
+      // Try to get coordinates from location_coordinates field first
+      const coords = this.parseLocationCoordinates(event.location_coordinates);
+
+      // If no coordinates but we have a location_entity_id, look up the location entity
+      let entityCoords = coords;
+      if (!entityCoords && event.location_entity_id) {
+        const locationEntity = await this.entityRepo.findOne({
+          where: { entity_id: event.location_entity_id },
+        });
+
+        if (locationEntity && locationEntity.properties) {
+          const props = locationEntity.properties as Record<string, unknown>;
+          const lat = props.lat || props.latitude;
+          const lng = props.lng || props.lon || props.longitude;
+
+          if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
+            entityCoords = { lat, lng };
+          }
+        }
+      }
+
+      if (entityCoords || event.location_name) {
+        location = {
+          id: event.location_entity_id || `loc-${event.id}`,
+          name: event.location_name,
+          lat: entityCoords?.lat ?? 0,
+          lng: entityCoords?.lng ?? 0,
+        };
+      }
+    }
+
+    return {
+      id: event.id,
+      type: 'event',
+      title: event.title || 'Untitled Event',
+      description: event.description,
+      timestamp: event.start_time,
+      category: event.category || 'Event',
+      location,
+      tags: event.tags || [],
+      userId: event.user?.id || '',
+      sourceLink: sourceLink,
+      metadata: {
+        eventType: event.event_type ?? undefined,
+        category: event.category ?? undefined,
+        source: event.source_system ?? undefined,
+        ...event.metadata,
+      },
+    };
+  }
+
+  // Synchronous wrapper for backwards compatibility (coordinates only)
+  private eventToMemory(event: EventEntity): Memory {
+    // Extract source link from metadata
+    const metadata = event.metadata || {};
+    const rawEvent = (metadata.rawEvent as RawEventMetadata | undefined) || ({} as RawEventMetadata);
+    const sourceLink = (metadata.googleCalendarUrl as string | undefined) || rawEvent.htmlLink || undefined;
+
+    // Extract location with coordinates (synchronous version - no entity lookup)
+    let location: Memory['location'] = undefined;
+    if (event.location_name || event.location_coordinates) {
+      const coords = this.parseLocationCoordinates(event.location_coordinates);
+      if (coords || event.location_name) {
+        location = {
+          id: event.location_entity_id || `loc-${event.id}`,
+          name: event.location_name,
+          lat: coords?.lat ?? 0,
+          lng: coords?.lng ?? 0,
+        };
+      }
+    }
+
+    return {
+      id: event.id,
+      type: 'event',
+      title: event.title || 'Untitled Event',
+      description: event.description,
+      timestamp: event.start_time,
+      category: event.category || 'Event',
+      location,
+      tags: event.tags || [],
+      userId: event.user?.id || '',
+      sourceLink: sourceLink,
+      metadata: {
+        eventType: event.event_type ?? undefined,
+        category: event.category ?? undefined,
+        source: event.source_system ?? undefined,
+        ...event.metadata,
+      },
+    };
+  }
+
+  // Helper method to parse PostGIS GEOGRAPHY(POINT) format
+  private parseLocationCoordinates(coordinates: string | null): { lat: number; lng: number } | null {
+    if (!coordinates) {
+      return null;
+    }
+
+    const pointMatch = coordinates.match(/POINT\s*\(\s*(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s*\)/i);
+    if (pointMatch) {
+      const lng = parseFloat(pointMatch[1]);
+      const lat = parseFloat(pointMatch[2]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return { lat, lng };
+      }
+    }
+
+    if (typeof coordinates === 'object') {
+      const geoJson = coordinates as GeoJSONPoint;
+      if (geoJson.type === 'Point' && Array.isArray(geoJson.coordinates)) {
+        const [lng, lat] = geoJson.coordinates;
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return { lat, lng };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Convert ContentEntity to Memory
+  private contentToMemory(content: ContentEntity): Memory {
+    return {
+      id: content.id,
+      type: 'content',
+      title: content.title || 'Untitled File',
+      description: content.text,
+      timestamp: content.created_at,
+      category: 'File',
+      tags: [],
+      userId: content.user?.id || '',
+      metadata: {
+        contentType: content.type,
+        mimetype: content.mimetype ?? undefined,
+        url: content.url ?? undefined,
+        externalId: content.external_id ?? undefined,
+      },
+    };
+  }
+
+  // Convert CommunicationEntity to Memory
+  private communicationToMemory(comm: CommunicationEntity): Memory {
+    return {
+      id: `${comm.user_id}-${comm.time.getTime()}-${comm.communication_type}`,
+      type: 'communication',
+      title: comm.subject || `${comm.communication_type} Communication`,
+      description: comm.summary || comm.content.substring(0, 200) || null,
+      timestamp: comm.time,
+      category: comm.category || 'Communication',
+      tags: comm.tags || [],
+      userId: comm.user_id,
+      metadata: {
+        communicationType: comm.communication_type,
+        direction: comm.direction,
+        participantsMetadata: comm.participants_metadata,
+        threadId: comm.thread_id ?? undefined,
+      },
+    };
+  }
+
+  async findOne(context: RequestContext, id: string): Promise<Memory> {
     const entity = await this.entityRepo.findOne({
       where: { entity_id: id, is_active: true },
     });
@@ -141,6 +500,8 @@ export class MemoryService {
     // Extract user ID from properties or linked data
     const userId = this.getEntityUserId(entity);
 
+    const relationships = await this.getEntityRelationships(entity);
+
     const memory: Memory = {
       id: entity.entity_id,
       type: memoryType,
@@ -156,6 +517,7 @@ export class MemoryService {
         linkedTable: entity.linked_table,
         linkedId: entity.linked_id,
         properties: entity.properties,
+        relationships, // Include relationship information
       },
     };
 
@@ -168,71 +530,120 @@ export class MemoryService {
       Event: 'event',
       Content: 'content',
       Thing: 'thing',
-      Contact: 'contact',
-      Place: 'other',
-      Location: 'other',
-      Concept: 'other',
       Object: 'thing',
+      Contact: 'contact',
+      Place: 'place',
+      Location: 'place',
+      Concept: 'concept',
+      Goal: 'other',
+      Video: 'content',
+      File: 'content',
+      Document: 'content',
+      Channel: 'other',
     };
 
     return typeMap[entityType] || 'other';
   }
 
-  private async getEntityLocation(entity: GraphNodeEntity): Promise<MemoryLocation | undefined> {
+  private async getEntityRelationships(entity: GraphNodeEntity): Promise<
+    Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>
+  > {
     try {
-      // Look for location relationships
-      const locationRels = await this.relationshipRepo
+      // Get outgoing relationships
+      const outgoing = await this.relationshipRepo
         .createQueryBuilder('rel')
-        .leftJoinAndSelect('rel.to_entity', 'location')
+        .leftJoinAndSelect('rel.to_entity', 'target')
         .where('rel.from_entity_id = :entityId', { entityId: entity.entity_id })
-        .andWhere('rel.relationship_type IN (:...types)', {
-          types: ['LOCATED_AT', 'HAPPENED_AT', 'AT_LOCATION'],
-        })
         .andWhere('rel.is_active = true')
-        .andWhere('location.entity_type IN (:...locationTypes)', {
-          locationTypes: ['Location', 'Place'],
-        })
+        .limit(20) // Limit to avoid too much data
         .getMany();
 
-      if (locationRels.length > 0) {
-        const locationEntity = locationRels[0].to_entity;
-        if (locationEntity?.properties) {
-          const props = locationEntity.properties as Record<string, unknown>;
+      // Get incoming relationships
+      const incoming = await this.relationshipRepo
+        .createQueryBuilder('rel')
+        .leftJoinAndSelect('rel.from_entity', 'source')
+        .where('rel.to_entity_id = :entityId', { entityId: entity.entity_id })
+        .andWhere('rel.is_active = true')
+        .limit(20) // Limit to avoid too much data
+        .getMany();
 
-          // Try different coordinate field names
-          const lat = props.lat || props.latitude;
-          const lng = props.lng || props.lon || props.longitude;
+      const relationships = [
+        ...outgoing.map((rel) => ({
+          type: rel.relationship_type,
+          targetId: rel.to_entity?.entity_id || '',
+          targetName: rel.to_entity?.name || 'Unknown',
+          targetType: rel.to_entity?.entity_type || 'Unknown',
+          direction: 'outgoing' as const,
+        })),
+        ...incoming.map((rel) => ({
+          type: rel.relationship_type,
+          targetId: rel.from_entity?.entity_id || '',
+          targetName: rel.from_entity?.name || 'Unknown',
+          targetType: rel.from_entity?.entity_type || 'Unknown',
+          direction: 'incoming' as const,
+        })),
+      ];
 
-          if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
-            return {
-              id: locationEntity.entity_id,
-              name: locationEntity.name,
-              lat,
-              lng,
-              address: props.address as string | undefined,
-            };
-          }
-        }
-      }
+      return relationships;
+    } catch {
+      return [];
+    }
+  }
 
-      // Check if entity itself has location properties
-      if (entity.properties) {
-        const props = entity.properties as Record<string, unknown>;
+  private async getEntityLocation(entity: GraphNodeEntity): Promise<MemoryLocation | undefined> {
+    const locationRels = await this.relationshipRepo
+      .createQueryBuilder('rel')
+      .leftJoinAndSelect('rel.to_entity', 'location')
+      .where('rel.from_entity_id = :entityId', { entityId: entity.entity_id })
+      .andWhere('rel.relationship_type IN (:...types)', {
+        types: ['LOCATED_AT', 'HAPPENED_AT', 'AT_LOCATION'],
+      })
+      .andWhere('rel.is_active = true')
+      .andWhere('location.entity_type IN (:...locationTypes)', {
+        locationTypes: ['Location', 'Place'],
+      })
+      .getMany();
+
+    if (locationRels.length > 0) {
+      const locationEntity = locationRels[0].to_entity;
+      if (locationEntity?.properties) {
+        const props = locationEntity.properties as Record<string, unknown>;
+
         const lat = props.lat || props.latitude;
         const lng = props.lng || props.lon || props.longitude;
 
         if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
           return {
-            id: `loc-${entity.entity_id}`,
-            name: entity.name,
+            id: locationEntity.entity_id,
+            name: locationEntity.name,
             lat,
             lng,
             address: props.address as string | undefined,
           };
         }
       }
-    } catch (error) {
-      this.logger.error('Error getting entity location', { error, entityId: entity.entity_id });
+    }
+
+    if (entity.properties) {
+      const props = entity.properties as Record<string, unknown>;
+      const lat = props.lat || props.latitude;
+      const lng = props.lng || props.lon || props.longitude;
+
+      if (lat && lng && typeof lat === 'number' && typeof lng === 'number') {
+        return {
+          id: `loc-${entity.entity_id}`,
+          name: entity.name,
+          lat,
+          lng,
+          address: props.address as string | undefined,
+        };
+      }
     }
 
     return undefined;
@@ -265,19 +676,35 @@ export class MemoryService {
 
       // Combine and deduplicate
       return [...new Set([...relationshipTags, ...propertyTags])];
-    } catch (error) {
-      this.logger.error('Error getting entity tags', { error, entityId: entity.entity_id });
-
+    } catch {
       return [];
     }
   }
 
   private getEntityTimestamp(entity: GraphNodeEntity): Date {
-    // Try to get timestamp from properties first
+    // Use entity-type specific timestamp fields
+    const entityType = entity.entity_type;
+
     if (entity.properties && typeof entity.properties === 'object') {
       const props = entity.properties as Record<string, unknown>;
 
-      // Try different timestamp field names
+      // Person: use last_seen
+      if (entityType === 'Person' && props.last_seen) {
+        const parsed = new Date(props.last_seen as string);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+
+      // Document and File: use modified_time
+      if ((entityType === 'Document' || entityType === 'File') && props.modified_time) {
+        const parsed = new Date(props.modified_time as string);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+
+      // Try different timestamp field names for other types
       const timeFields = ['start_time', 'timestamp', 'date', 'created_date'];
       for (const field of timeFields) {
         const timeValue = props[field];
@@ -290,12 +717,24 @@ export class MemoryService {
       }
     }
 
+    // Video and Channel: use updated_at if available, otherwise created_at
+    if (entityType === 'Video' || entityType === 'Channel') {
+      if (entity.updated_at) {
+        return entity.updated_at;
+      }
+    }
+
     // Fallback to entity created_at
     return entity.created_at;
   }
 
   private getEntityUserId(entity: GraphNodeEntity): string {
-    // Try to get user ID from properties
+    // First, try the owner_user_id column
+    if (entity.owner_user_id) {
+      return entity.owner_user_id;
+    }
+
+    // Fallback: Try to get user ID from properties
     if (entity.properties && typeof entity.properties === 'object') {
       const props = entity.properties as Record<string, unknown>;
       const userId = props.user_id || props.userId;
@@ -304,42 +743,35 @@ export class MemoryService {
       }
     }
 
-    // For now, return empty string if no user ID found
-    // In a real implementation, you might want to link entities to users via relationships
+    // Return empty string if no user ID found
     return '';
   }
 
-  // Debug and utility methods (maintaining compatibility)
-  async getDebugInfo(context: RequestContext) {
-    try {
-      const entityCounts = await this.entityRepo
-        .createQueryBuilder('entity')
-        .select('entity.entity_type, COUNT(*) as count')
-        .where('entity.is_active = true')
-        .groupBy('entity.entity_type')
-        .getRawMany();
+  async getDebugInfo() {
+    const entityCounts = await this.entityRepo
+      .createQueryBuilder('entity')
+      .select('entity.entity_type, COUNT(*) as count')
+      .where('entity.is_active = true')
+      .groupBy('entity.entity_type')
+      .getRawMany();
 
-      const relationshipCounts = await this.relationshipRepo
-        .createQueryBuilder('rel')
-        .select('rel.relationship_type, COUNT(*) as count')
-        .where('rel.is_active = true')
-        .groupBy('rel.relationship_type')
-        .getRawMany();
+    const relationshipCounts = await this.relationshipRepo
+      .createQueryBuilder('rel')
+      .select('rel.relationship_type, COUNT(*) as count')
+      .where('rel.is_active = true')
+      .groupBy('rel.relationship_type')
+      .getRawMany();
 
-      const totalEntities = await this.entityRepo.count({ where: { is_active: true } });
-      const totalRelationships = await this.relationshipRepo.count({ where: { is_active: true } });
+    const totalEntities = await this.entityRepo.count({ where: { is_active: true } });
+    const totalRelationships = await this.relationshipRepo.count({ where: { is_active: true } });
 
-      return {
-        counts: {
-          totalEntities,
-          totalRelationships,
-          entitiesByType: entityCounts,
-          relationshipsByType: relationshipCounts,
-        },
-      };
-    } catch (error) {
-      this.logger.error('Error getting debug info', { error, userId: context.userId });
-      throw error;
-    }
+    return {
+      counts: {
+        totalEntities,
+        totalRelationships,
+        entitiesByType: entityCounts,
+        relationshipsByType: relationshipCounts,
+      },
+    };
   }
 }

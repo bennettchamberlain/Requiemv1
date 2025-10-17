@@ -1,6 +1,15 @@
 export interface Memory {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'other';
+  type:
+    | 'event'
+    | 'content'
+    | 'thing'
+    | 'person'
+    | 'contact'
+    | 'place'
+    | 'concept'
+    | 'communication'
+    | 'other';
   title: string;
   description: string | null;
   timestamp: Date;
@@ -8,6 +17,7 @@ export interface Memory {
   location?: MemoryLocation;
   tags: string[];
   userId: string;
+  sourceLink?: string;
   metadata?: {
     eventId?: string;
     eventType?: string;
@@ -17,6 +27,16 @@ export interface Memory {
     contentRef?: string;
     thingRef?: string;
     entityType?: string;
+    communicationType?: string;
+    direction?: string;
+    participantsMetadata?: unknown;
+    relationships?: Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>;
     [key: string]: unknown;
   };
 }
@@ -35,6 +55,7 @@ export interface MemorySearchParams {
   startDate?: Date;
   endDate?: Date;
   categories?: string[];
+  excludeCategories?: string[];
   hasLocation?: boolean;
   limit?: number;
   offset?: number;

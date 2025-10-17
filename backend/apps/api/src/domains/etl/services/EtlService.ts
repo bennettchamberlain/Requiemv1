@@ -74,7 +74,8 @@ export class EtlService {
       connection.active &&
       !!connection.accessToken &&
       !!connection.tokenExpiry &&
-      !(connection.tokenExpiry > new Date() && !connection.refreshToken)
+      connection.tokenExpiry > new Date() &&
+      !!connection.provider?.id
     );
   }
 
@@ -88,11 +89,13 @@ export class EtlService {
           accessToken: Not(IsNull()), // Must have an access token
           refreshToken: IsNull(), // No refresh token
           tokenExpiry: MoreThan(new Date()), // Token must not be expired
+          provider: { id: Not(IsNull()) }, // Must have a valid provider
         },
         {
           active: true,
           accessToken: Not(IsNull()), // Must have an access token
           refreshToken: Not(IsNull()), //If there's a refresh token, then an expired access token can be refreshed
+          provider: { id: Not(IsNull()) }, // Must have a valid provider
         },
       ],
       relations: ['user', 'provider'],
