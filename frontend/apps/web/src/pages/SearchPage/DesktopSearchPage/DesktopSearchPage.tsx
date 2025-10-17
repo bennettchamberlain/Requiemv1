@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Input, Card, Badge, Table, ToggleGroup } from '@ci/shadcn';
@@ -13,6 +13,7 @@ import {
   Grid3X3,
   List,
 } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
@@ -134,6 +135,7 @@ function SearchResultCard({ result }: { result: SearchResult }) {
 export function DesktopSearchPage() {
   usePageTitle('Search - Companion Intelligence');
   const [{ authToken }] = useAuth();
+  const [searchParams] = useSearchParams();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -141,6 +143,7 @@ export function DesktopSearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+  const [autoSearchTriggered, setAutoSearchTriggered] = useState(false);
 
   const performSearch = async () => {
     if (!searchQuery.trim()) {
@@ -150,12 +153,10 @@ export function DesktopSearchPage() {
     }
 
     try {
-      console.log('SearchPage: Starting search with query:', searchQuery);
       setLoading(true);
       setError(null);
       setHasSearched(true);
 
-      console.log('SearchPage: Making API request to search service');
       const response = await fetch(`/api/embeddings/search`, {
         method: 'POST',
         headers: {
@@ -168,9 +169,6 @@ export function DesktopSearchPage() {
       });
 
       if (!response.ok) {
-        console.error(
-          `SearchPage: API request failed with status ${response.status}: ${response.statusText}`,
-        );
         if (response.status === 401) {
           throw new Error('Unauthorized: You do not have permission to access this resource');
         } else if (response.status === 403) {
@@ -184,8 +182,6 @@ export function DesktopSearchPage() {
         }
       }
 
-      console.log('SearchPage: API request successful, parsing response');
-
       const data = await response.json();
 
       // Handle both array response and paginated response
@@ -196,25 +192,40 @@ export function DesktopSearchPage() {
       } else if (data.data && Array.isArray(data.data)) {
         resultsData = data.data;
       } else {
-        console.error('SearchPage: Invalid response format', data);
-
         throw new Error('Invalid response format: Expected an array of search results');
       }
-
-      console.log(`SearchPage: Successfully found ${resultsData.length} results`, resultsData);
 
       setSearchResults(resultsData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-
-      console.error('SearchPage: Error in performSearch():', errorMessage, err);
-
       setError(errorMessage);
     } finally {
-      console.log('SearchPage: Search operation completed');
       setLoading(false);
     }
   };
+
+  // Handle query parameter from URL - set the query and mark for auto-search
+  useEffect(() => {
+    const queryParam = searchParams.get('q');
+    if (queryParam && queryParam.trim()) {
+      setSearchQuery(queryParam);
+      setAutoSearchTriggered(false); // Reset to trigger search in next effect
+      setHasSearched(false); // Reset hasSearched
+    }
+  }, [searchParams]);
+
+  // Auto-search when query is set from URL parameter
+  useEffect(() => {
+    if (searchQuery && !autoSearchTriggered && !hasSearched) {
+      // Small delay to ensure state is fully updated
+      const timer = setTimeout(() => {
+        setAutoSearchTriggered(true);
+        performSearch();
+      }, 50);
+
+      return () => clearTimeout(timer);
+    }
+  }, [searchQuery, autoSearchTriggered, hasSearched]);
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
