@@ -1,10 +1,11 @@
 import { Card, Tooltip } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
 
-import { RelationshipsSection } from '../RelationshipsSection';
 import type { MemoryCardProps, ParticipantData } from '../types';
 
 export function CommunicationCard({ memory }: MemoryCardProps) {
+  const navigate = useNavigate();
   const communicationType = memory.metadata?.communicationType as string | undefined;
   const direction = memory.metadata?.direction as string | undefined;
   const participantsMetadata = memory.metadata?.participantsMetadata as
@@ -55,8 +56,15 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
     return <Mail className="h-6 w-6 text-indigo-600 flex-shrink-0 mt-1" />;
   };
 
+  const handleClick = () => {
+    navigate(`/search?q=${encodeURIComponent(memory.title)}`);
+  };
+
   return (
-    <Card className="!gap-2 !py-4 px-6">
+    <Card
+      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      onClick={handleClick}
+    >
       <div className="flex items-start gap-3">
         {getDirectionIcon()}
         <div className="flex-1 min-w-0">
@@ -131,8 +139,6 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
           ))}
         </div>
       )}
-
-      <RelationshipsSection relationships={memory.metadata?.relationships} />
     </Card>
   );
 }

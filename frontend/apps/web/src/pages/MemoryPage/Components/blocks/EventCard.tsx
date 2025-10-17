@@ -1,11 +1,12 @@
 import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
 
-import { RelationshipsSection } from '../RelationshipsSection';
 import type { MemoryCardProps } from '../types';
 import { formatDateTime, formatDuration } from '../utils';
 
 export function EventCard({ memory }: MemoryCardProps) {
+  const navigate = useNavigate();
   const hasStartDate = memory.startDate;
   const hasEndDate = memory.endDate;
   const hasOrganizer = memory.organizer;
@@ -16,8 +17,15 @@ export function EventCard({ memory }: MemoryCardProps) {
   const hasLocation = memory.location?.name || memory.location?.address;
   const hasDescription = memory.description;
 
+  const handleClick = () => {
+    navigate(`/search?q=${encodeURIComponent(memory.title)}`);
+  };
+
   return (
-    <Card className="!gap-2 !py-4 px-6">
+    <Card
+      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      onClick={handleClick}
+    >
       <div className="flex items-start gap-3">
         <Calendar className="h-6 w-6 text-blue-600 flex-shrink-0 mt-1" />
         <div className="flex-1 min-w-0">
@@ -113,6 +121,7 @@ export function EventCard({ memory }: MemoryCardProps) {
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-blue-600 hover:text-blue-800 underline"
+              onClick={(e) => e.stopPropagation()}
             >
               View source
             </a>
@@ -125,8 +134,6 @@ export function EventCard({ memory }: MemoryCardProps) {
           <p className="text-sm text-gray-700 leading-relaxed">{memory.description}</p>
         </div>
       )}
-
-      <RelationshipsSection relationships={memory.metadata?.relationships} />
     </Card>
   );
 }

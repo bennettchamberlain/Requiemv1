@@ -1,12 +1,21 @@
 import { Card } from '@ci/shadcn';
 import { MapPin } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
 
-import { RelationshipsSection } from '../RelationshipsSection';
 import type { MemoryCardProps } from '../types';
 
 export function PlaceCard({ memory }: MemoryCardProps) {
+  const navigate = useNavigate();
+
+  const handleClick = () => {
+    navigate(`/search?q=${encodeURIComponent(memory.title)}`);
+  };
+
   return (
-    <Card className="p-6 space-y-4">
+    <Card
+      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      onClick={handleClick}
+    >
       <div className="flex items-start gap-3">
         <MapPin className="h-6 w-6 text-red-600 flex-shrink-0 mt-1" />
         <div className="flex-1 min-w-0">
@@ -16,13 +25,13 @@ export function PlaceCard({ memory }: MemoryCardProps) {
       </div>
 
       {memory.description && (
-        <div className="pt-2">
+        <div className="pt-3 pb-3">
           <p className="text-sm text-gray-700 leading-relaxed">{memory.description}</p>
         </div>
       )}
 
       {memory.location && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-5">
           <MapPin className="h-4 w-4 text-gray-500 flex-shrink-0" />
           <div className="flex-1">
             <span className="text-sm text-gray-900">
@@ -41,8 +50,6 @@ export function PlaceCard({ memory }: MemoryCardProps) {
           ))}
         </div>
       )}
-
-      <RelationshipsSection relationships={memory.metadata?.relationships} />
     </Card>
   );
 }
