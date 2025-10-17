@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { Events, type EventPayloads } from '@ci/domains/events';
+import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 import { UserService } from '@ci/domains/user';
 
 import { GraphUtilityService } from '../services/GraphUtilityService';
