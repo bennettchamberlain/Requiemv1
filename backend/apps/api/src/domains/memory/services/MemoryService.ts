@@ -113,12 +113,21 @@ export class MemoryService {
       });
     }
 
+    // Filter to include events, communications, and our target entity types
     filteredMemories = filteredMemories.filter((memory) => {
-      if (memory.type !== 'event' && memory.type !== 'communication') {
-        return false;
+      // Always include events and communications
+      if (memory.type === 'event' || memory.type === 'communication') {
+        return true;
       }
 
-      return true;
+      // Include our target entity types: Person, Video, File, Channel, Document
+      const entityType = memory.metadata?.entityType as string | undefined;
+      if (entityType && ['Person', 'Video', 'File', 'Channel', 'Document'].includes(entityType)) {
+        return true;
+      }
+
+      // Filter out everything else
+      return false;
     });
 
     if (params.hasLocation !== undefined) {
@@ -144,31 +153,47 @@ export class MemoryService {
     params: MemorySearchParams,
   ): Promise<{ memories: Memory[]; count: number }> {
     try {
+      // Filter for specific entity types that should appear in timeline
+      // NOTE: We exclude 'Event' because events are fetched from the events table
+      const timelineEntityTypes = ['Person', 'Video', 'File', 'Channel', 'Document'];
+
       let queryBuilder = this.entityRepo
         .createQueryBuilder('entity')
         .where('entity.is_active = true')
         .andWhere('entity.is_archived = false')
-        .andWhere('entity.owner_user_id = :userId', { userId });
+        .andWhere('entity.owner_user_id = :userId', { userId })
+        .andWhere('entity.entity_type IN (:...types)', { types: timelineEntityTypes });
 
+      // Note: Date filtering uses created_at/updated_at, but actual timeline sorting
+      // uses entity-specific timestamp fields (last_seen, modified_time, etc.)
+      // This is intentional to cast a wide net in the query, then sort by specific fields
       if (params.startDate) {
-        queryBuilder = queryBuilder.andWhere('entity.created_at >= :startDate', {
-          startDate: params.startDate,
-        });
+        queryBuilder = queryBuilder.andWhere(
+          '(entity.created_at >= :startDate OR entity.updated_at >= :startDate)',
+          { startDate: params.startDate },
+        );
       }
 
       if (params.endDate) {
-        queryBuilder = queryBuilder.andWhere('entity.created_at <= :endDate', {
-          endDate: params.endDate,
-        });
+        queryBuilder = queryBuilder.andWhere(
+          '(entity.created_at <= :endDate OR entity.updated_at <= :endDate)',
+          { endDate: params.endDate },
+        );
       }
 
-      queryBuilder = queryBuilder.orderBy('entity.created_at', 'DESC').limit(500);
+      queryBuilder = queryBuilder.orderBy('entity.updated_at', 'DESC').limit(500);
 
       const entities = await queryBuilder.getMany();
       const memories = await Promise.all(entities.map((entity) => this.entityToMemory(entity)));
 
       return { memories, count: memories.length };
-    } catch {
+    } catch (error) {
+      this.logger.error('Error fetching entities for timeline', {
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
       return { memories: [], count: 0 };
     }
   }
@@ -511,6 +536,10 @@ export class MemoryService {
       Location: 'place',
       Concept: 'concept',
       Goal: 'other',
+      Video: 'content',
+      File: 'content',
+      Document: 'content',
+      Channel: 'other',
     };
 
     return typeMap[entityType] || 'other';
@@ -653,11 +682,29 @@ export class MemoryService {
   }
 
   private getEntityTimestamp(entity: GraphNodeEntity): Date {
-    // Try to get timestamp from properties first
+    // Use entity-type specific timestamp fields
+    const entityType = entity.entity_type;
+
     if (entity.properties && typeof entity.properties === 'object') {
       const props = entity.properties as Record<string, unknown>;
 
-      // Try different timestamp field names
+      // Person: use last_seen
+      if (entityType === 'Person' && props.last_seen) {
+        const parsed = new Date(props.last_seen as string);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+
+      // Document and File: use modified_time
+      if ((entityType === 'Document' || entityType === 'File') && props.modified_time) {
+        const parsed = new Date(props.modified_time as string);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+
+      // Try different timestamp field names for other types
       const timeFields = ['start_time', 'timestamp', 'date', 'created_date'];
       for (const field of timeFields) {
         const timeValue = props[field];
@@ -667,6 +714,13 @@ export class MemoryService {
             return parsed;
           }
         }
+      }
+    }
+
+    // Video and Channel: use updated_at if available, otherwise created_at
+    if (entityType === 'Video' || entityType === 'Channel') {
+      if (entity.updated_at) {
+        return entity.updated_at;
       }
     }
 
