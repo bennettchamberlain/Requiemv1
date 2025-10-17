@@ -4,15 +4,18 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EtlModule, ApiLogEntity } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
+import { FilesModule } from '@ci/domains/files';
 import { MemoryModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/memory';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
+import { PromoteController as MicrosoftPromoteController } from './controllers/microsoft/PromoteController';
 import { PromoteController } from './controllers/PromoteController';
 import { GoogleCalendarEventPromotionService } from './services/google/CalendarPromotionService';
 import { ContactsPromotionService } from './services/google/ContactsPromotionService';
 import { DrivePromotionService } from './services/google/DrivePromotionService';
 import { GmailPromotionService } from './services/google/GmailPromotionService';
 import { YouTubePromotionService } from './services/google/YouTubePromotionService';
+import { OutlookMailPromotionService } from './services/microsoft/OutlookMailPromotionService';
 import { PersonPromotionService } from './services/PersonPromotionService';
 import { PromoteService } from './services/PromoteService';
 
@@ -26,6 +29,7 @@ import { PromoteService } from './services/PromoteService';
       UserEntity,
     ]),
     ConnectionsModule,
+    FilesModule,
     EtlModule,
     EventsModule,
     MemoryModule,
@@ -39,8 +43,9 @@ import { PromoteService } from './services/PromoteService';
     DrivePromotionService,
     ContactsPromotionService,
     PersonPromotionService,
+    OutlookMailPromotionService,
   ],
-  controllers: [PromoteController],
+  controllers: [PromoteController, MicrosoftPromoteController],
   exports: [
     PromoteService,
     GmailPromotionService,

@@ -34,6 +34,7 @@ export type {
   ContactsSyncState,
   YouTubeSyncState,
   GoogleSyncState,
+  OutlookMailSyncState,
   SyncResult,
   CalendarSyncResult,
   GmailSyncResult,

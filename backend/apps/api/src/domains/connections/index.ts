@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { ClientFactory, GoogleClient } from './clients';
+import { ClientFactory, GoogleClient, MicrosoftClient } from './clients';
 import { ConnectionsController } from './controllers/ConnectionsController';
 import { ProvidersController } from './controllers/ProvidersController';
 import { ConnectionEntity } from './entities/ConnectionEntity';
@@ -13,9 +13,9 @@ import { ProviderService } from './services/ProviderService';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ConnectionEntity, ProviderEntity]), EventsModule],
-  providers: [ClientFactory, GoogleClient, ConnectionService, ProviderService],
+  providers: [ClientFactory, GoogleClient, ConnectionService, ProviderService, MicrosoftClient],
   controllers: [ConnectionsController, ProvidersController],
-  exports: [ConnectionService, ProviderService, GoogleClient],
+  exports: [ConnectionService, ProviderService, GoogleClient, MicrosoftClient],
 })
 export class ConnectionsModule {}
 
@@ -26,7 +26,7 @@ export { ConnectionEntity, ProviderEntity };
 export { ConnectionService, ProviderService };
 
 // Clients
-export { GoogleClient };
+export { GoogleClient, MicrosoftClient };
 
 // Types
 export type { Connection } from './types';
