@@ -757,12 +757,33 @@ function PropertyBlocks({
               {typeof value}
             </Badge>
           </div>
-          <p className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
-            {formatPropertyValue(value)}
-          </p>
+          {renderPropertyValue(key, value)}
         </div>
       ))}
     </div>
+  );
+}
+
+function renderPropertyValue(key: string, rawValue: unknown) {
+  if (Array.isArray(rawValue)) {
+    return (
+      <div className="mt-2 flex gap-2 overflow-x-auto">
+        {rawValue.map((item, index) => (
+          <span
+            key={`${key}-${index}`}
+            className="whitespace-nowrap rounded-md border bg-muted/70 px-2 py-1 text-[11px]"
+          >
+            {formatPropertyValue(item)}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <p className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
+      {formatPropertyValue(rawValue)}
+    </p>
   );
 }
 
