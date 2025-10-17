@@ -328,11 +328,7 @@ export function KnowledgePage() {
             <section className="border-t bg-muted/50 px-6 py-4">
               <div className="mb-2 flex items-center justify-between text-xs uppercase text-muted-foreground">
                 <span>Relationships</span>
-                <span>
-                  {nodeData?.relationships.length ?? 0}
-                  {' '}
-                  linked
-                </span>
+                <span>{nodeData?.relationships.length ?? 0} linked</span>
               </div>
               {nodeLoading ? (
                 <Skeleton className="h-20 w-full" />
@@ -342,16 +338,18 @@ export function KnowledgePage() {
                 <div className="flex gap-3 overflow-x-auto pb-2">
                   {nodeData.relationships.map((rel) => {
                     const canNavigate = !!rel.otherEntity;
+                    const handleRelationshipClick = () => {
+                      if (rel.otherEntity) {
+                        handleNodeSelect(rel.otherEntity.entityId);
+                      }
+                    };
+
                     return (
                       <button
                         key={rel.relationshipId}
                         type="button"
                         disabled={!canNavigate}
-                        onClick={() => {
-                          if (rel.otherEntity) {
-                            handleNodeSelect(rel.otherEntity.entityId);
-                          }
-                        }}
+                        onClick={handleRelationshipClick}
                         className="min-w-[220px] rounded-lg border bg-background p-4 text-left shadow-sm transition-colors hover:border-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
