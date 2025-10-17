@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
-import { Badge, Breadcrumb, Button, Card, Drawer, Input, Skeleton } from '@ci/shadcn';
+import { Portal, fetchJson, usePageTitle } from '@ci/common';
+import { Badge, Breadcrumb, Button, Card, Drawer, Input, Skeleton, Textarea } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
@@ -14,6 +14,12 @@ type GraphSummary = {
   nodeCount: number;
   linkCount: number;
   topTypes: Array<{ type: string; count: number }>;
+};
+
+type EditableProperty = {
+  id: string;
+  key: string;
+  value: string;
 };
 
 export function KnowledgePage() {
@@ -31,15 +37,52 @@ export function KnowledgePage() {
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [nodeRevision, setNodeRevision] = useState(0);
   const [nodeLimitInput, setNodeLimitInput] = useState('10');
   const [activeType, setActiveType] = useState<string>('ALL');
+  const [editableName, setEditableName] = useState('');
+  const [editableDescription, setEditableDescription] = useState('');
+  const [editableProperties, setEditableProperties] = useState<EditableProperty[]>([]);
+  const [savingNode, setSavingNode] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   const {
     loading: nodeLoading,
     error: nodeError,
     data: nodeData,
-  } = useNodeDetails(drawerOpen ? selectedNodeId : null, authToken);
+  } = useNodeDetails(drawerOpen ? selectedNodeId : null, authToken, nodeRevision);
   const [relationshipFilter, setRelationshipFilter] = useState<string>('ALL');
+
+  useEffect(() => {
+    if (!nodeData) {
+      setEditableName('');
+      setEditableDescription('');
+      setEditableProperties([]);
+      setRelationshipFilter('ALL');
+      setSaveError(null);
+      setSaveSuccess(null);
+
+      return;
+    }
+
+    setEditableName(nodeData.node.name ?? '');
+    setEditableDescription(nodeData.node.description ?? '');
+    setEditableProperties(
+      Object.entries(nodeData.node.properties ?? {}).map(([key, value]) => ({
+        id: `${key}-${Math.random().toString(36).slice(2, 8)}`,
+        key,
+        value: formatPropertyValue(value),
+      })),
+    );
+    setRelationshipFilter('ALL');
+    setSaveError(null);
+    setSaveSuccess(null);
+  }, [nodeData?.node.entityId]);
+
+  useEffect(() => {
+    setSaveSuccess(null);
+  }, [editableName, editableDescription, editableProperties]);
 
   const handleNodeSelect = (nodeId: string) => {
     setSelectedNodeId(nodeId);
@@ -102,6 +145,104 @@ export function KnowledgePage() {
 
     return { nodes, links };
   }, [subgraph, userEntityId, activeType, nodeLimit]);
+
+  const nodePropertiesPayload = useMemo(
+    () => buildPropertiesPayload(editableProperties),
+    [editableProperties],
+  );
+
+  const originalNodeName = nodeData?.node.name ?? '';
+  const originalNodeDescription = nodeData?.node.description ?? '';
+  const originalProperties = nodeData?.node.properties ?? {};
+  const propertiesDirty = useMemo(
+    () => serializeProperties(nodePropertiesPayload) !== serializeProperties(originalProperties),
+    [nodePropertiesPayload, originalProperties],
+  );
+
+  const isDirty =
+    (nodeData &&
+      (editableName !== originalNodeName ||
+        editableDescription !== originalNodeDescription ||
+        propertiesDirty)) ||
+    false;
+
+  const handleResetNode = () => {
+    if (!nodeData) {
+      return;
+    }
+
+    setEditableName(nodeData.node.name ?? '');
+    setEditableDescription(nodeData.node.description ?? '');
+    setEditableProperties(
+      Object.entries(nodeData.node.properties ?? {}).map(([key, value]) => ({
+        id: `${key}-${Math.random().toString(36).slice(2, 8)}`,
+        key,
+        value: formatPropertyValue(value),
+      })),
+    );
+    setSaveError(null);
+    setSaveSuccess(null);
+  };
+
+  const handleSaveNode = async () => {
+    if (!nodeData || !isDirty) {
+      return;
+    }
+
+    setSavingNode(true);
+    setSaveError(null);
+    try {
+      await fetchJson('/api/graph/node/update', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          entityId: nodeData.node.entityId,
+          name: editableName.trim() === '' ? null : editableName.trim(),
+          description: editableDescription.trim() === '' ? null : editableDescription.trim(),
+          properties: nodePropertiesPayload,
+        }),
+      });
+
+      setSaveSuccess('Changes saved');
+      setNodeRevision((prev) => prev + 1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save changes';
+      setSaveError(message);
+    } finally {
+      setSavingNode(false);
+    }
+  };
+
+  const handlePropertyKeyChange = (id: string, value: string) => {
+    setEditableProperties((current) =>
+      current.map((entry) => (entry.id === id ? { ...entry, key: value } : entry)),
+    );
+  };
+
+  const handlePropertyValueChange = (id: string, value: string) => {
+    setEditableProperties((current) =>
+      current.map((entry) => (entry.id === id ? { ...entry, value } : entry)),
+    );
+  };
+
+  const handleRemoveProperty = (id: string) => {
+    setEditableProperties((current) => current.filter((entry) => entry.id !== id));
+  };
+
+  const handleAddProperty = () => {
+    setEditableProperties((current) => [
+      ...current,
+      {
+        id: `property-${Math.random().toString(36).slice(2, 8)}`,
+        key: '',
+        value: '',
+      },
+    ]);
+  };
 
   const graphSummary = useMemo<GraphSummary>(() => {
     const fallback: GraphSummary = { nodeCount: 0, linkCount: 0, topTypes: [] };
@@ -284,16 +425,59 @@ export function KnowledgePage() {
 
               {!nodeLoading && nodeData && (
                 <div className="space-y-6">
-                  <section className="space-y-2 text-sm">
-                    <h3 className="text-xs uppercase text-muted-foreground">Node</h3>
-                    <div className="rounded-lg border bg-background p-4">
-                      <p className="text-base font-medium text-foreground">
-                        {nodeData.node.name ?? nodeData.node.entityType}
-                      </p>
-                      {nodeData.node.description && (
-                        <p className="mt-1 text-sm text-muted-foreground">{nodeData.node.description}</p>
-                      )}
-                      <dl className="mt-4 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <section className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs uppercase text-muted-foreground">Node</h3>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={handleResetNode}
+                          disabled={!isDirty || savingNode}
+                        >
+                          Reset
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleSaveNode}
+                          disabled={!isDirty || savingNode}
+                        >
+                          {savingNode ? 'Saving…' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                    {saveError && <p className="text-xs text-red-600">{saveError}</p>}
+                    {saveSuccess && <p className="text-xs text-emerald-600">{saveSuccess}</p>}
+
+                    <div className="space-y-4 rounded-lg border bg-background p-4">
+                      <div>
+                        <label className="text-xs uppercase text-muted-foreground" htmlFor="node-name">
+                          Name
+                        </label>
+                        <Input
+                          id="node-name"
+                          placeholder={nodeData.node.entityType}
+                          value={editableName}
+                          onChange={(event) => setEditableName(event.target.value)}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs uppercase text-muted-foreground" htmlFor="node-description">
+                          Description
+                        </label>
+                        <Textarea
+                          id="node-description"
+                          rows={4}
+                          placeholder="Add a description"
+                          value={editableDescription}
+                          onChange={(event) => setEditableDescription(event.target.value)}
+                        />
+                      </div>
+
+                      <dl className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                         <div>
                           <dt>Entity ID</dt>
                           <dd className="font-mono text-[11px] text-foreground">{nodeData.node.entityId}</dd>
@@ -314,12 +498,66 @@ export function KnowledgePage() {
                     </div>
                   </section>
 
-                  {Object.keys(nodeData.node.properties ?? {}).length > 0 && (
-                    <section className="space-y-2 text-sm">
+                  <section className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
                       <h3 className="text-xs uppercase text-muted-foreground">Properties</h3>
-                      <PropertyBlocks properties={nodeData.node.properties ?? {}} />
-                    </section>
-                  )}
+                      <Button type="button" size="sm" variant="secondary" onClick={handleAddProperty}>
+                        Add property
+                      </Button>
+                    </div>
+
+                    {editableProperties.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No custom properties defined.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {editableProperties.map((entry) => (
+                          <div key={entry.id} className="space-y-3 rounded-lg border bg-background p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1">
+                                <label
+                                  className="text-xs uppercase text-muted-foreground"
+                                  htmlFor={`prop-key-${entry.id}`}
+                                >
+                                  Key
+                                </label>
+                                <Input
+                                  id={`prop-key-${entry.id}`}
+                                  value={entry.key}
+                                  onChange={(event) => handlePropertyKeyChange(entry.id, event.target.value)}
+                                  placeholder="property_key"
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveProperty(entry.id)}
+                                title="Remove property"
+                              >
+                                ×
+                              </Button>
+                            </div>
+
+                            <div>
+                              <label
+                                className="text-xs uppercase text-muted-foreground"
+                                htmlFor={`prop-value-${entry.id}`}
+                              >
+                                Value
+                              </label>
+                              <Textarea
+                                id={`prop-value-${entry.id}`}
+                                rows={3}
+                                value={entry.value}
+                                onChange={(event) => handlePropertyValueChange(entry.id, event.target.value)}
+                                placeholder="value or JSON"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
               )}
 
@@ -444,6 +682,53 @@ function pickRandomSubset<T>(items: T[], limit: number): T[] {
   }
 
   return pool.slice(0, limit);
+}
+
+function buildPropertiesPayload(entries: EditableProperty[]): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+
+  for (const entry of entries) {
+    const key = entry.key.trim();
+    if (!key) {
+      continue;
+    }
+
+    payload[key] = parsePropertyValueForUpdate(entry.value);
+  }
+
+  return payload;
+}
+
+function parsePropertyValueForUpdate(value: string): unknown {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return '';
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function serializeProperties(properties: Record<string, unknown>): string {
+  return stableSerialize(properties);
+}
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    const body = entries.map(([key, val]) => `${JSON.stringify(key)}:${stableSerialize(val)}`).join(',');
+
+    return `{${body}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 function PropertyBlocks({

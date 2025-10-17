@@ -38,7 +38,11 @@ interface NodeDetailsState {
   data: NodeDetailsResponse | null;
 }
 
-export function useNodeDetails(entityId: string | null, authToken?: string | null): NodeDetailsState {
+export function useNodeDetails(
+  entityId: string | null,
+  authToken?: string | null,
+  revision = 0,
+): NodeDetailsState {
   const [state, setState] = useState<NodeDetailsState>({ loading: false, error: null, data: null });
 
   useEffect(() => {
@@ -82,7 +86,7 @@ export function useNodeDetails(entityId: string | null, authToken?: string | nul
     return () => {
       cancelled = true;
     };
-  }, [entityId, authToken]);
+  }, [entityId, authToken, revision]);
 
   return useMemo(() => state, [state]);
 }
