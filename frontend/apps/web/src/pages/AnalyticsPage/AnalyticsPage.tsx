@@ -39,6 +39,7 @@ export function KnowledgePage() {
     error: nodeError,
     data: nodeData,
   } = useNodeDetails(drawerOpen ? selectedNodeId : null, authToken);
+  const [relationshipFilter, setRelationshipFilter] = useState<string>('ALL');
 
   const handleNodeSelect = (nodeId: string) => {
     setSelectedNodeId(nodeId);
@@ -335,44 +336,84 @@ export function KnowledgePage() {
               ) : !nodeData || nodeData.relationships.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No relationships recorded.</p>
               ) : (
-                <div className="flex gap-3 overflow-x-auto pb-2">
-                  {nodeData.relationships.map((rel) => {
-                    const canNavigate = !!rel.otherEntity;
-                    const handleRelationshipClick = () => {
-                      if (rel.otherEntity) {
-                        handleNodeSelect(rel.otherEntity.entityId);
-                      }
-                    };
+                <>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={relationshipFilter === 'ALL' ? 'default' : 'secondary'}
+                      onClick={() => setRelationshipFilter('ALL')}
+                    >
+                      All
+                    </Button>
+                    {Array.from(
+                      new Set(
+                        nodeData.relationships
+                          .map((rel) => rel.otherEntity?.entityType)
+                          .filter((type): type is string => Boolean(type)),
+                      ),
+                    )
+                      .sort()
+                      .map((type) => (
+                        <Button
+                          key={type}
+                          type="button"
+                          size="sm"
+                          variant={relationshipFilter === type ? 'default' : 'secondary'}
+                          onClick={() => setRelationshipFilter(type)}
+                        >
+                          {type}
+                        </Button>
+                      ))}
+                  </div>
 
-                    return (
-                      <button
-                        key={rel.relationshipId}
-                        type="button"
-                        disabled={!canNavigate}
-                        onClick={handleRelationshipClick}
-                        className="min-w-[220px] rounded-lg border bg-background p-4 text-left shadow-sm transition-colors hover:border-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{rel.direction === 'outbound' ? 'Outbound' : 'Inbound'}</span>
-                          <span>{rel.relationshipType}</span>
-                        </div>
-                        {rel.otherEntity && (
-                          <div className="mt-2 text-sm text-foreground">
-                            <p className="font-medium">
-                              {rel.otherEntity.name ?? rel.otherEntity.entityType}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{rel.otherEntity.entityId}</p>
-                          </div>
-                        )}
-                        {Object.keys(rel.properties ?? {}).length > 0 && (
-                          <div className="mt-3">
-                            <PropertyBlocks properties={rel.properties ?? {}} size="sm" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                  <div className="flex gap-3 overflow-x-auto pb-2">
+                    {nodeData.relationships
+                      .filter((rel) => {
+                        if (relationshipFilter === 'ALL') {
+                          return true;
+                        }
+
+                        return rel.otherEntity?.entityType === relationshipFilter;
+                      })
+                      .map((rel) => {
+                        const canNavigate = !!rel.otherEntity;
+                        const handleRelationshipClick = () => {
+                          if (rel.otherEntity) {
+                            handleNodeSelect(rel.otherEntity.entityId);
+                          }
+                        };
+
+                        return (
+                          <button
+                            key={rel.relationshipId}
+                            type="button"
+                            disabled={!canNavigate}
+                            onClick={handleRelationshipClick}
+                            className="min-w-[220px] rounded-lg border bg-background p-4 text-left shadow-sm transition-colors hover:border-primary/60 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{rel.direction === 'outbound' ? 'Outbound' : 'Inbound'}</span>
+                              <span>{rel.relationshipType}</span>
+                            </div>
+                            {rel.otherEntity && (
+                              <div className="mt-2 text-sm text-foreground">
+                                <p className="font-medium">
+                                  {rel.otherEntity.name ?? rel.otherEntity.entityType}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{rel.otherEntity.entityId}</p>
+                              </div>
+                            )}
+                            {Object.keys(rel.properties ?? {}).length > 0 && (
+                              <div className="mt-3">
+                                <PropertyBlocks properties={rel.properties ?? {}} size="sm" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </>
               )}
             </section>
           </div>
