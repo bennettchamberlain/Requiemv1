@@ -1,6 +1,6 @@
 import { Card } from '@ci/shadcn';
+import { useNavigate } from 'react-router-dom';
 
-import { RelationshipsSection } from '../RelationshipsSection';
 import type { MemoryCardProps } from '../types';
 
 interface GenericCardProps extends MemoryCardProps {
@@ -9,8 +9,17 @@ interface GenericCardProps extends MemoryCardProps {
 }
 
 export function GenericCard({ memory, Icon, iconColor }: GenericCardProps) {
+  const navigate = useNavigate();
+
+  const handleClick = () => {
+    navigate(`/search?q=${encodeURIComponent(memory.title)}`);
+  };
+
   return (
-    <Card className="p-6 space-y-4">
+    <Card
+      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      onClick={handleClick}
+    >
       <div className="flex items-start gap-3">
         <Icon className={`h-6 w-6 ${iconColor} flex-shrink-0 mt-1`} />
         <div className="flex-1 min-w-0">
@@ -20,7 +29,7 @@ export function GenericCard({ memory, Icon, iconColor }: GenericCardProps) {
       </div>
 
       {memory.description && (
-        <div className="pt-2">
+        <div className="pt-3 pb-3">
           <p className="text-sm text-gray-700 leading-relaxed">{memory.description}</p>
         </div>
       )}
@@ -34,8 +43,6 @@ export function GenericCard({ memory, Icon, iconColor }: GenericCardProps) {
           ))}
         </div>
       )}
-
-      <RelationshipsSection relationships={memory.metadata?.relationships} />
     </Card>
   );
 }
