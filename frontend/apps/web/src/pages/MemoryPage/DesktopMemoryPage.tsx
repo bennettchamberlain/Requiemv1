@@ -14,10 +14,11 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
 import { PageContent } from '@/components/layout';
-import { MemoryTimeline } from '@/components/Memory/MemoryTimeline';
-import { MemoryTimelineProvider } from '@/components/Memory/MemoryTimelineProvider';
 import { useAuth } from '@/hooks';
 import { loadGoogleMaps } from '@/pages/MemoryPage/googleMaps';
+
+import { MemoryTimeline } from './Components/MemoryTimeline';
+import { MemoryTimelineProvider } from './Components/MemoryTimelineProvider';
 
 // Add custom styles for Leaflet
 import './memory-map.css';
