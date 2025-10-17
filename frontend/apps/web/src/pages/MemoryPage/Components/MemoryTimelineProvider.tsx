@@ -133,22 +133,39 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
         const rawData: MemoryItem[] = result.data || result;
 
         const data = rawData.filter((memory) => {
-          if (memory.type !== 'event' && memory.type !== 'communication') {
-            return false;
+          // Check if this is a specific entity type we want to include
+          const entityType = memory.metadata?.entityType as string | undefined;
+          const isTargetEntity =
+            entityType && ['Person', 'Video', 'File', 'Channel', 'Document'].includes(entityType);
+
+          // Always include our target entity types
+          if (isTargetEntity) {
+            return true;
           }
 
-          if (
-            memory.category === 'Google Drive' ||
-            memory.category === 'Drive' ||
-            memory.category?.toLowerCase().includes('drive') ||
-            memory.category?.toLowerCase().includes('google drive') ||
-            memory.metadata?.source === 'Google Drive' ||
-            memory.metadata?.source?.toLowerCase().includes('drive')
-          ) {
-            return false;
+          // For events and communications, check if they should be included
+          if (memory.type === 'event' || memory.type === 'communication') {
+            // Filter out Google Drive items for events/communications only
+            const isDriveItem =
+              memory.category === 'Google Drive' ||
+              memory.category === 'Drive' ||
+              (memory.category?.toLowerCase().includes('drive') &&
+                memory.category?.toLowerCase().includes('google')) ||
+              memory.metadata?.source === 'Google Drive' ||
+              (memory.metadata?.source &&
+                typeof memory.metadata.source === 'string' &&
+                memory.metadata.source.toLowerCase().includes('google') &&
+                memory.metadata.source.toLowerCase().includes('drive'));
+
+            if (isDriveItem) {
+              return false;
+            }
+
+            return true;
           }
 
-          return true;
+          // Filter out any other types we don't want
+          return false;
         });
 
         const total = result.total || data.length;
