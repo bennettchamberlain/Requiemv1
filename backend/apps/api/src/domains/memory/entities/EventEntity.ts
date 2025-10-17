@@ -40,9 +40,6 @@ export class EventEntity {
   @Column({ type: 'text', nullable: true })
   location_name!: string | null;
 
-  @Column({ type: 'geography', spatialFeatureType: 'Point', srid: 4326, nullable: true })
-  location_coordinates!: string | null;
-
   @Column({ type: 'uuid', nullable: true })
   event_entity_id!: string | null;
 
