@@ -53,6 +53,8 @@ interface AddPreferenceInput {
   properties?: Record<string, unknown>;
 }
 
+type BatchPreferenceInput = Omit<AddPreferenceInput, 'personEntityId'>;
+
 interface AddLocationInput {
   name: string;
   type: string;
@@ -223,7 +225,7 @@ export class GraphEventService {
 
   async addPreferences(
     ownerId: string,
-    input: { personEntityId: string; preferences: AddPreferenceInput[] },
+    input: { personEntityId: string; preferences: BatchPreferenceInput[] },
   ) {
     const preferencesPayload: Array<{
       concept: ConceptPayload;

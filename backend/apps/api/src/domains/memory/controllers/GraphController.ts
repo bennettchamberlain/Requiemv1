@@ -200,10 +200,7 @@ export class GraphController {
     const ownerId = this.ensureUserId(ctx);
     const result = await this.graphEvents.addPreferences(ownerId, {
       personEntityId: body.personEntityId,
-      preferences: body.preferences.map((pref) => ({
-        ...pref,
-        personEntityId: body.personEntityId,
-      })),
+      preferences: body.preferences,
     });
 
     return {
