@@ -552,6 +552,25 @@ export function KnowledgePage() {
                                 onChange={(event) => handlePropertyValueChange(entry.id, event.target.value)}
                                 placeholder="value or JSON"
                               />
+                              {(() => {
+                                const preview = tryParseJsonList(entry.value);
+                                if (!preview) {
+                                  return null;
+                                }
+
+                                return (
+                                  <div className="mt-2 flex gap-2 overflow-x-auto">
+                                    {preview.map((item, index) => (
+                                      <span
+                                        key={`${entry.id}-${index}`}
+                                        className="whitespace-nowrap rounded-md border bg-muted/70 px-2 py-1 text-[11px]"
+                                      >
+                                        {formatPropertyValue(item)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         ))}
@@ -780,11 +799,44 @@ function renderPropertyValue(key: string, rawValue: unknown) {
     );
   }
 
+  if (typeof rawValue === 'string') {
+    const parsedList = tryParseJsonList(rawValue);
+    if (parsedList) {
+      return (
+        <div className="mt-2 flex gap-2 overflow-x-auto">
+          {parsedList.map((item, index) => (
+            <span
+              key={`${key}-${index}`}
+              className="whitespace-nowrap rounded-md border bg-muted/70 px-2 py-1 text-[11px]"
+            >
+              {formatPropertyValue(item)}
+            </span>
+          ))}
+        </div>
+      );
+    }
+  }
+
   return (
     <p className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
       {formatPropertyValue(rawValue)}
     </p>
   );
+}
+
+function tryParseJsonList(value: string): unknown[] | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function formatPropertyValue(value: unknown): string {
