@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Point } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
@@ -405,17 +405,19 @@ export class MemoryService {
   }
 
   // Helper method to parse PostGIS GEOGRAPHY(POINT) format
-  private parseLocationCoordinates(coordinates: string | null): { lat: number; lng: number } | null {
+  private parseLocationCoordinates(coordinates: Point | string | null): { lat: number; lng: number } | null {
     if (!coordinates) {
       return null;
     }
 
-    const pointMatch = coordinates.match(/POINT\s*\(\s*(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s*\)/i);
-    if (pointMatch) {
-      const lng = parseFloat(pointMatch[1]);
-      const lat = parseFloat(pointMatch[2]);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        return { lat, lng };
+    if (typeof coordinates === 'string') {
+      const pointMatch = coordinates.match(/POINT\s*\(\s*(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s*\)/i);
+      if (pointMatch) {
+        const lng = parseFloat(pointMatch[1]);
+        const lat = parseFloat(pointMatch[2]);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return { lat, lng };
+        }
       }
     }
 
