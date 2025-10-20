@@ -56,6 +56,8 @@ export type {
   YouTubeSyncState,
   GoogleSyncState,
   OutlookMailSyncState,
+  OutlookCalendarsSyncState,
+  OutlookCalendarSyncState,
   SyncResult,
   CalendarSyncResult,
   GmailSyncResult,
