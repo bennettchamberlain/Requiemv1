@@ -7,6 +7,7 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
+import { OutlookCalendarPromotionService } from '@ci/domains/promote/services/microsoft/OutlookCalendarPromotionService';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { PromoteController as MicrosoftPromoteController } from './controllers/microsoft/PromoteController';
@@ -46,6 +47,7 @@ import { PromoteService } from './services/PromoteService';
     ContactsPromotionService,
     PersonPromotionService,
     OutlookMailPromotionService,
+    OutlookCalendarPromotionService,
   ],
   controllers: [PromoteController, MicrosoftPromoteController],
   exports: [
