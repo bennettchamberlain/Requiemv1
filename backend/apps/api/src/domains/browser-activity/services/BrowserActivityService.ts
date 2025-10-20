@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import { DeviceService } from '@ci/domains/devices';
 
 import { BrowserActivityEntity } from '../entities/BrowserActivityEntity';
 import type { CreateBrowserActivityDto, UpdateBrowserActivityDto, BrowserActivity } from '../types';
@@ -15,26 +16,24 @@ export class BrowserActivityService {
   constructor(
     @InjectRepository(BrowserActivityEntity)
     private readonly browserActivityRepository: Repository<BrowserActivityEntity>,
+    private readonly deviceService: DeviceService,
   ) {}
 
-  private async ensureDeviceExists(deviceId: string, userId: string): Promise<void> {
+  private async ensureDeviceExists(deviceId: string, context: RequestContext): Promise<void> {
     // Check if device exists
-    const deviceExists = await this.browserActivityRepository.query(
-      'SELECT 1 FROM devices WHERE device_id = $1 AND user_id = $2',
-      [deviceId, userId],
-    );
+    const device = await this.deviceService.findOne(context, deviceId);
 
-    if (deviceExists.length === 0) {
+    if (!device) {
       // Create device if it doesn't exist
-      await this.browserActivityRepository.query(
-        `INSERT INTO devices (device_id, user_id, device_name, device_type, platform, last_seen, is_active)
-         VALUES ($1, $2, $3, $4, $5, NOW(), true)`,
-        [deviceId, userId, 'Browser Extension', 'browser', 'web'],
-      );
+      await this.deviceService.create(context, {
+        device_name: 'Browser Extension',
+        device_type: 'browser',
+        platform: 'web',
+      });
 
       this.logger.log('Created new device for browser activity', {
         deviceId,
-        userId,
+        userId: context.userId,
       });
     }
   }
@@ -54,7 +53,7 @@ export class BrowserActivityService {
     const returned = await Promise.all(
       dataArray.map(async (item) => {
         // Ensure device exists before creating browser activity
-        await this.ensureDeviceExists(item.device_id, context.userId!);
+        await this.ensureDeviceExists(item.device_id, context);
 
         const browserActivity = await this.browserActivityRepository.create({
           time: new Date(item.time),

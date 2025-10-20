@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { DeviceModule } from '@ci/domains/devices';
+
 import { BrowserActivityController } from './controllers/BrowserActivityController';
 import { BrowserActivityEntity } from './entities/BrowserActivityEntity';
 import { BrowserActivityService } from './services/BrowserActivityService';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([BrowserActivityEntity])],
+  imports: [TypeOrmModule.forFeature([BrowserActivityEntity]), DeviceModule],
   providers: [BrowserActivityService],
   controllers: [BrowserActivityController],
   exports: [BrowserActivityService],
