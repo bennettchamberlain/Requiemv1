@@ -346,7 +346,7 @@ export class OnboardingService {
       }),
       this.actionService.create(context, {
         title: 'Make dinner tonight',
-        text: "Because you haven't cooked meal yet this week, I am recommending you plan something.",
+        text: "Because you haven't cooked a meal yet this week, I am recommending you plan something.",
         imageUrl: '/actions/dinner.jpg',
         priority: 0,
         threadId: mealThread.id,
