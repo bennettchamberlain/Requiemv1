@@ -51,12 +51,12 @@ export async function seedUsers(db: DataSource, filePath: string) {
           id, name, email, password, created_at, updated_at,
           username, password_hash, role, is_active, is_verified,
           timezone, language, login_count, failed_login_attempts,
-          settings, api_keys, permissions, display_preferences
+          settings, api_keys, permissions, display_preferences, onboarded	  
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
           $7, $8, $9, $10, $11,
           $12, $13, $14, $15,
-          $16, $17, $18, $19
+          $16, $17, $18, $19, $20
         )
       `,
         [
@@ -79,6 +79,7 @@ export async function seedUsers(db: DataSource, filePath: string) {
           '{}', // api_keys (empty JSON)
           '{}', // permissions (empty JSON)
           '{}', // display_preferences (empty JSON)
+          true, // Seeded users should be automatically onboarded
         ],
       );
 

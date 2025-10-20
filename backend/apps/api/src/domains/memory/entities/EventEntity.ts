@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Point,
 } from 'typeorm';
 
 import { UserEntity } from '@ci/domains/user';
@@ -41,6 +42,14 @@ export class EventEntity {
 
   @Column({ type: 'uuid', nullable: true })
   event_entity_id!: string | null;
+
+  @Column({
+    type: 'geography',
+    nullable: true,
+    srid: 4326,
+    spatialFeatureType: 'Point',
+  })
+  location_coordinates!: Point | null;
 
   @Column({ type: 'uuid', nullable: true })
   location_entity_id!: string | null;
@@ -151,6 +160,7 @@ export class EventEntity {
       duration_minutes: this.duration_minutes,
       location_name: this.location_name,
       event_entity_id: this.event_entity_id,
+      location_coordinates: this.location_coordinates,
       location_entity_id: this.location_entity_id,
       participant_entity_ids: this.participant_entity_ids,
       organizer_entity_id: this.organizer_entity_id,

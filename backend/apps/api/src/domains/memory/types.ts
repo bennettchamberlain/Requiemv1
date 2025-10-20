@@ -1,3 +1,5 @@
+import type { Point } from 'typeorm';
+
 export interface Memory {
   id: string;
   type: string;
@@ -8,6 +10,7 @@ export interface Memory {
   location?: MemoryLocation;
   tags: string[];
   userId: string;
+  sourceLink?: string;
   metadata?: {
     eventId?: string;
     eventType?: string;
@@ -17,6 +20,16 @@ export interface Memory {
     contentRef?: string;
     thingRef?: string;
     entityType?: string;
+    communicationType?: string;
+    direction?: string;
+    participantsMetadata?: unknown;
+    relationships?: Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>;
     [key: string]: unknown;
   };
 }
@@ -35,6 +48,7 @@ export interface MemorySearchParams {
   startDate?: Date;
   endDate?: Date;
   categories?: string[];
+  excludeCategories?: string[];
   hasLocation?: boolean;
   limit?: number;
   offset?: number;
@@ -46,6 +60,7 @@ export interface MemoryResponse {
   limit: number;
   offset: number;
 }
+
 export interface Event {
   readonly id: string;
   readonly title: string;
@@ -56,6 +71,7 @@ export interface Event {
   readonly end_time: Date | null;
   readonly duration_minutes: number | null;
   readonly location_name: string | null;
+  readonly location_coordinates: Point | null;
   readonly event_entity_id: string | null;
   readonly location_entity_id: string | null;
   readonly participant_entity_ids: string[] | null;
@@ -102,6 +118,7 @@ export interface CreateEventDto {
   location_name?: string;
   event_entity_id?: string;
   location_entity_id?: string;
+  location_coordinates?: Point;
   participant_entity_ids?: string[];
   organizer_entity_id?: string;
   source_type?: string;
@@ -148,6 +165,7 @@ export interface UpdateEventDto {
   location_name?: string;
   event_entity_id?: string;
   location_entity_id?: string;
+  location_coordinates?: Point;
   participant_entity_ids?: string[];
   organizer_entity_id?: string;
   source_type?: string;

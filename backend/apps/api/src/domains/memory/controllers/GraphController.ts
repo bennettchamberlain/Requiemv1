@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Post, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -118,6 +118,7 @@ const updateNodeSchema = z.object({
 });
 
 const deleteRelationshipSchema = z.object({ relationshipId: z.string() });
+const getNodeDetailsSchema = z.object({ entityId: z.string() });
 
 type AddPersonDto = z.infer<typeof addPersonSchema>;
 type AddFamilyMembersDto = z.infer<typeof addFamilyMembersSchema>;
@@ -129,6 +130,7 @@ type AddConnectionDto = z.infer<typeof addConnectionSchema>;
 type DeleteNodeDto = z.infer<typeof deleteNodeSchema>;
 type UpdateNodeDto = z.infer<typeof updateNodeSchema>;
 type DeleteRelationshipDto = z.infer<typeof deleteRelationshipSchema>;
+type GetNodeDetailsDto = z.infer<typeof getNodeDetailsSchema>;
 
 @Controller('graph')
 @UseGuards(JwtAuthGuard)
@@ -311,6 +313,72 @@ export class GraphController {
           properties: rel.properties || {},
         })),
       },
+    };
+  }
+
+  @Get('node')
+  async getNodeDetails(
+    @Context() ctx: RequestContext,
+    @Query(new ValidationPipe(getNodeDetailsSchema)) query: GetNodeDetailsDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+
+    const node = await this.graphQuery.getNode(ownerId, query.entityId);
+    if (!node) {
+      throw new NotFoundException(`Node ${query.entityId} not found`);
+    }
+
+    const relationships = await this.graphQuery.getRelationships(ownerId, {
+      entityIds: [node.entity_id],
+      direction: 'both',
+      includeInactive: true,
+    });
+
+    const neighborIds = new Set<string>();
+    for (const rel of relationships) {
+      const otherId = rel.from_entity_id === node.entity_id ? rel.to_entity_id : rel.from_entity_id;
+      neighborIds.add(otherId);
+    }
+
+    const neighborNodes = neighborIds.size
+      ? await this.graphQuery.getNodesByIds(ownerId, Array.from(neighborIds))
+      : [];
+    const neighborMap = new Map(neighborNodes.map((n) => [n.entity_id, n]));
+
+    return {
+      success: true,
+      node: {
+        entityId: node.entity_id,
+        entityType: node.entity_type,
+        name: node.name,
+        description: node.description,
+        properties: node.properties ?? {},
+        createdAt: node.created_at,
+        updatedAt: node.updated_at,
+      },
+      relationships: relationships.map((rel) => {
+        const isOutbound = rel.from_entity_id === node.entity_id;
+        const otherId = isOutbound ? rel.to_entity_id : rel.from_entity_id;
+        const otherNode = neighborMap.get(otherId) ?? null;
+
+        return {
+          relationshipId: rel.relationship_id,
+          relationshipType: rel.relationship_type,
+          direction: isOutbound ? 'outbound' : 'inbound',
+          strength: rel.strength,
+          isBidirectional: rel.is_bidirectional,
+          properties: rel.properties ?? {},
+          otherEntity: otherNode
+            ? {
+                entityId: otherNode.entity_id,
+                entityType: otherNode.entity_type,
+                name: otherNode.name,
+                description: otherNode.description,
+                properties: otherNode.properties ?? {},
+              }
+            : null,
+        };
+      }),
     };
   }
 

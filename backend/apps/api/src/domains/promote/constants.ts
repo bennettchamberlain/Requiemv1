@@ -7,6 +7,7 @@ export const ApiLogScopes = {
   YOUTUBE: 'YouTube',
   GOOGLE_DRIVE: 'Google Drive',
   GOOGLE_CONTACTS: 'Google Contacts',
+  OUTLOOK_MAIL: 'Microsoft Graph - Mail',
 } as const;
 
 export type ApiLogScope = (typeof ApiLogScopes)[keyof typeof ApiLogScopes];

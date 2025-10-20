@@ -27,6 +27,7 @@ export enum Events {
   GRAPH_RELATIONSHIP_DELETED = 'graph.relationship.deleted',
   GRAPH_NODE_UPSERTED = 'graph.node.upserted',
   GRAPH_RELATIONSHIP_UPSERTED = 'graph.relationship.upserted',
+  PROMOTE_OUTLOOK_MAIL_MESSAGES = 'PROMOTE_OUTLOOK_MAIL_MESSAGES',
 }
 
 interface ApiEnqueuePayload extends EventPayload {
@@ -211,6 +212,13 @@ interface GraphRelationshipUpsertedPayload extends EventPayload {
   };
 }
 
+interface PromoteOutlookMessagesPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
 export type EventPayloads = {
   [Events.API_ENQUEUE]: ApiEnqueuePayload;
   [Events.FILE_UPLOAD]: FileUploadPayload;
@@ -236,4 +244,5 @@ export type EventPayloads = {
   [Events.GRAPH_RELATIONSHIP_DELETED]: GraphRelationshipDeletedPayload;
   [Events.GRAPH_NODE_UPSERTED]: GraphNodeUpsertedPayload;
   [Events.GRAPH_RELATIONSHIP_UPSERTED]: GraphRelationshipUpsertedPayload;
+  [Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]: PromoteOutlookMessagesPayload;
 };

@@ -26,9 +26,7 @@ export class PromoteService {
    * Promote API logs for a specific user
    */
   async promoteApiLogs(userId: string): Promise<void> {
-    this.logger.log('Starting promote api logs for user', {
-      userId,
-    });
+    this.logger.log('Starting promote api logs for user', userId);
 
     try {
       const unprocessedApiLogs = await this.apiLogRepository
@@ -41,7 +39,6 @@ export class PromoteService {
         .andWhere('connection.access_token IS NOT NULL')
         .andWhere('connection.token_expiry > :currentDate', { currentDate: new Date() })
         .orderBy('apiLog.created_at', 'ASC')
-        .limit(1)
         .getMany();
 
       this.logger.log('Found unprocessed API logs', {
@@ -125,41 +122,55 @@ export class PromoteService {
       }
 
       // Queue the promotion job based on scope
-      if (apiLog.scope === ApiLogScopes.GMAIL) {
-        await this.eventService.send(Events.PROMOTE_GMAIL_MESSAGES, {
-          apiLogId: apiLog.id,
-          userId: context.userId,
-          connectionId: apiLog.connection_id,
-          content: apiLog.content,
-        });
-      } else if (apiLog.scope === ApiLogScopes.GOOGLE_CALENDAR) {
-        await this.eventService.send(Events.PROMOTE_CALENDAR_EVENTS, {
-          apiLogId: apiLog.id,
-          userId: context.userId,
-          connectionId: apiLog.connection_id,
-          content: apiLog.content,
-        });
-      } else if (apiLog.scope === ApiLogScopes.YOUTUBE) {
-        await this.eventService.send(Events.PROMOTE_YOUTUBE_DATA, {
-          apiLogId: apiLog.id,
-          userId: context.userId,
-          connectionId: apiLog.connection_id,
-          content: apiLog.content,
-        });
-      } else if (apiLog.scope === ApiLogScopes.GOOGLE_DRIVE) {
-        await this.eventService.send(Events.PROMOTE_DRIVE_DATA, {
-          apiLogId: apiLog.id,
-          userId: context.userId,
-          connectionId: apiLog.connection_id,
-          content: apiLog.content,
-        });
-      } else if (apiLog.scope === ApiLogScopes.GOOGLE_CONTACTS) {
-        await this.eventService.send(Events.PROMOTE_CONTACTS, {
-          apiLogId: apiLog.id,
-          userId: context.userId,
-          connectionId: apiLog.connection_id,
-          content: apiLog.content,
-        });
+      switch (apiLog.scope) {
+        case ApiLogScopes.GMAIL:
+          await this.eventService.send(Events.PROMOTE_GMAIL_MESSAGES, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
+        case ApiLogScopes.GOOGLE_CALENDAR:
+          await this.eventService.send(Events.PROMOTE_CALENDAR_EVENTS, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
+        case ApiLogScopes.YOUTUBE:
+          await this.eventService.send(Events.PROMOTE_YOUTUBE_DATA, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
+        case ApiLogScopes.GOOGLE_DRIVE:
+          await this.eventService.send(Events.PROMOTE_DRIVE_DATA, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
+        case ApiLogScopes.GOOGLE_CONTACTS:
+          await this.eventService.send(Events.PROMOTE_CONTACTS, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
+        case ApiLogScopes.OUTLOOK_MAIL:
+          await this.eventService.send(Events.PROMOTE_OUTLOOK_MAIL_MESSAGES, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
       }
 
       // Mark the API log as processed after queuing
