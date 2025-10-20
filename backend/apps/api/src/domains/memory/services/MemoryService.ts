@@ -23,7 +23,6 @@ type GraphNodeLike = {
 export class MemoryService {
   private readonly logger = new LoggerService(MemoryService.name);
 
-  // default entity types that should appear in the memory timeline
   private static readonly DEFAULT_ENTITY_TYPES = [
     'Person',
     'Event',
@@ -43,6 +42,7 @@ export class MemoryService {
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
     const userId = this.requireUserId(context);
+    this.logger.debug('Finding memories from graph', { userId, params });
 
     const limit = params.limit ?? 50;
     const offset = params.offset ?? 0;
@@ -53,7 +53,6 @@ export class MemoryService {
           ? params.categories
           : MemoryService.DEFAULT_ENTITY_TYPES;
 
-      // fetch a generous slice from the graph; we will filter/paginate in-process
       const graphNodes = await this.graphQuery.getNodes(userId, {
         limit: Math.max(limit * 4, 200),
         offset: 0,
@@ -61,11 +60,9 @@ export class MemoryService {
       });
 
       const filteredNodes = graphNodes.filter((node) => allowedTypes.includes(node.entity_type));
-
       const memories = await Promise.all(filteredNodes.map((node) => this.entityToMemory(node, userId)));
 
       let filteredMemories = this.applyMemoryFilters(memories, params);
-
       filteredMemories = this.applySort(filteredMemories);
 
       const paginated = filteredMemories.slice(offset, offset + limit);
@@ -88,13 +85,14 @@ export class MemoryService {
 
   async findOne(context: RequestContext, id: string): Promise<Memory> {
     const userId = this.requireUserId(context);
+    this.logger.debug('Finding memory by id', { id, userId });
 
-    const node = await this.graphQuery.getNode(userId, id);
-    if (!node) {
+    const entity = await this.graphQuery.getNode(userId, id);
+    if (!entity) {
       throw new NotFoundException(`Memory with id ${id} not found`);
     }
 
-    return this.entityToMemory(node, userId);
+    return this.entityToMemory(entity, userId);
   }
 
   async getDebugInfo(context: RequestContext) {
@@ -146,20 +144,12 @@ export class MemoryService {
 
     if (params.startDate) {
       const start = new Date(params.startDate).getTime();
-      result = result.filter((memory) => {
-        const memoryTime = new Date(memory.timestamp).getTime();
-
-        return memoryTime >= start;
-      });
+      result = result.filter((memory) => new Date(memory.timestamp).getTime() >= start);
     }
 
     if (params.endDate) {
       const end = new Date(params.endDate).getTime();
-      result = result.filter((memory) => {
-        const memoryTime = new Date(memory.timestamp).getTime();
-
-        return memoryTime <= end;
-      });
+      result = result.filter((memory) => new Date(memory.timestamp).getTime() <= end);
     }
 
     if (params.hasLocation !== undefined) {
