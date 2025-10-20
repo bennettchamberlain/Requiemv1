@@ -48,7 +48,8 @@ export interface SyncResult {
     | ContactsSyncState
     | YouTubeSyncState
     | OutlookMailSyncState
-    | OutlookCalendarsSyncState;
+    | OutlookCalendarsSyncState
+    | OneDriveSyncState;
 }
 
 export interface CalendarSyncResult {
@@ -71,4 +72,8 @@ export interface OutlookCalendarsSyncState {
 
 export interface OutlookCalendarSyncState {
   skip?: string;
+}
+
+export interface OneDriveSyncState {
+  nextLink?: string | undefined;
 }

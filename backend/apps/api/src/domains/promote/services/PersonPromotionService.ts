@@ -34,8 +34,8 @@ export class PersonPromotionService {
     participant: ParticipantInfo,
     userId: string,
     connectionId: string,
-    source: 'calendar' | 'email',
-    relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH',
+    source: 'calendar' | 'email' | 'drive',
+    relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH' | 'EDITED_WITH',
   ): Promise<string> {
     try {
       // Get user entity and user entity ID
@@ -211,8 +211,8 @@ export class PersonPromotionService {
     participants: ParticipantInfo[],
     userId: string,
     connectionId: string,
-    source: 'calendar' | 'email',
-    relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH',
+    source: 'calendar' | 'email' | 'drive',
+    relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH' | 'EDITED_WITH',
   ): Promise<string[]> {
     this.logger.log(`Processing ${participants.length} participants from ${source}`, {
       userId,

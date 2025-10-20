@@ -179,6 +179,14 @@ export class PromoteService {
             content: apiLog.content,
           });
           break;
+        case ApiLogScopes.ONEDRIVE_FILES:
+          await this.eventService.send(Events.PROMOTE_ONEDRIVE_FILES, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
       }
 
       // Mark the API log as processed after queuing

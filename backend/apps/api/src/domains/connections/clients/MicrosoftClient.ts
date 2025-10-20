@@ -1,7 +1,10 @@
+import type { Buffer } from 'node:buffer';
+
 import type {
   OutlookCalendarSyncState,
   OutlookCalendarsSyncState,
   OutlookMailSyncState,
+  OneDriveSyncState,
 } from '@ci/domains/etl';
 
 import type { Connection } from '../types';
@@ -10,9 +13,12 @@ import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResponse } from './types';
 
 const OUTLOOK_SKIP_REGEX = /skip=(\d+)(&?)/;
+const ONEDRIVE_ETAG_REGEX =
+  /^"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}),[0-9]"$/;
 
 const MAIL_PAGE_SIZE = 50;
 const CALENDAR_PAGE_SIZE = 50;
+const ONEDRIVE_PAGE_SIZE = 1;
 
 interface Calendar {
   id: string;
@@ -25,6 +31,58 @@ interface Calendar {
   };
 }
 
+export interface OneDriveUser {
+  email: string;
+  displayName: string;
+}
+
+export interface OneDrivePageEntity {
+  '@odata.etag': string;
+  createdDateTime: string;
+  eTag: string;
+  id: string;
+  lastModifiedDateTime: string;
+  webUrl: string;
+  createdBy: {
+    user: OneDriveUser;
+  };
+  lastModifiedBy: {
+    user: OneDriveUser;
+  };
+  content?: OneDriveFileEntity;
+}
+
+export interface OneDriveFileEntity {
+  '@microsoft.graph.downloadUrl': string;
+  createdDateTime: string;
+  eTag: string;
+  id: string;
+  lastModifiedDateTime: string;
+  name: string;
+  webUrl: string;
+  size: number;
+  createdBy: {
+    user: OneDriveUser;
+  };
+  lastModifiedBy: {
+    user: OneDriveUser;
+  };
+  file: {
+    mimeType: string;
+    hashes: {
+      [key: string]: string;
+    };
+  };
+  image?: {
+    height: number;
+    width: number;
+  };
+  photo?: {
+    orientation?: number;
+  };
+  raw?: Buffer;
+}
+
 export class MicrosoftClient extends BaseOAuth2Client {
   protected readonly baseUrl = 'https://graph.microsoft.com';
 
@@ -32,7 +90,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
   protected readonly tokenEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 
-  protected readonly scopes = ['user.read', 'mail.read', 'calendars.read', 'offline_access'];
+  protected readonly scopes = ['user.read', 'mail.read', 'calendars.read', 'files.read', 'offline_access'];
 
   protected get clientId() {
     const clientIdVariable = 'MICROSOFT_CLIENT_ID';
@@ -62,6 +120,35 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
+
+    // Microsoft Graph - OneDrive
+    try {
+      const oneDriveSyncState = connection.syncState?.oneDrive as OneDriveSyncState | null;
+      const oneDriveResults = await this.syncOneDrive(connection, oneDriveSyncState);
+
+      responses.push({
+        success: true,
+        message: 'Microsoft Graph - OneDrive sync completed successfully',
+        data: {
+          results: [{ api: 'Microsoft Graph - OneDrive Files', data: oneDriveResults }],
+          errors: [],
+        },
+        cursor: {
+          oneDrive: oneDriveResults[0].syncState || oneDriveSyncState,
+        },
+      });
+    } catch (error) {
+      const errorMsg = `Microsoft OneDrive API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+      responses.push({
+        success: false,
+        message: errorMsg,
+        data: {
+          results: [],
+          errors: [errorMsg],
+        },
+      });
+    }
 
     // Microsoft Graph - Calendar
     try {
@@ -126,31 +213,6 @@ export class MicrosoftClient extends BaseOAuth2Client {
         },
       });
     }
-
-    // Microsoft Graph - OneDrive
-    // try {
-    //   const onedriveData = await this.request(connection, '/v1.0/me/drive/root/children?$top=10');
-    //
-    //   responses.push({
-    //     success: true,
-    //     message: 'Microsoft Graph - OneDrive sync completed successfully',
-    //     data: {
-    //       results: [{ api: 'Microsoft Graph - OneDrive', data: onedriveData }],
-    //       errors: [],
-    //     },
-    //   });
-    // } catch (error) {
-    //   const errorMsg = `Microsoft OneDrive API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-    //
-    //   responses.push({
-    //     success: false,
-    //     message: errorMsg,
-    //     data: {
-    //       results: [],
-    //       errors: [errorMsg],
-    //     },
-    //   });
-    // }
 
     return responses;
   }
@@ -335,6 +397,81 @@ export class MicrosoftClient extends BaseOAuth2Client {
         });
       } while (nextPageLink);
     }
+
+    return results;
+  }
+
+  async syncOneDrive(
+    connection: Connection,
+    syncState: OneDriveSyncState | null,
+  ): Promise<Array<{ data: unknown; syncState: OneDriveSyncState }>> {
+    const results: Array<{ data: unknown; syncState: OneDriveSyncState }> = [];
+
+    // Full sync - get all messages and establish skip
+    this.logger.log('Performing full OneDrive sync', { connectionId: connection.id });
+
+    let nextLink: string | undefined = syncState?.nextLink;
+    const newSyncState: OneDriveSyncState = {
+      nextLink: syncState?.nextLink,
+    };
+
+    let pageCount = 0;
+
+    // Get all message IDs first
+    do {
+      const nextLinkUrl = nextLink ? new URL(nextLink) : null;
+      const endpoint = nextLinkUrl
+        ? nextLinkUrl.pathname + nextLinkUrl.search + nextLinkUrl.hash
+        : `/v1.0/drive/list/items?$filter=contentType%2fname+eq+%27Document%27&$orderby=lastModifiedDateTime&top=${ONEDRIVE_PAGE_SIZE}`;
+
+      const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
+      const files = (response.value as OneDrivePageEntity[]) || [];
+      nextLink = response['@odata.nextLink'] as string | undefined;
+
+      const filteredFiles = [];
+      for (const file of files) {
+        const fileEtag = ONEDRIVE_ETAG_REGEX.exec(file.eTag);
+        try {
+          file.content = (await this.request(
+            connection,
+            `/v1.0/drive/items/${fileEtag![1]}`,
+          )) as OneDriveFileEntity;
+          filteredFiles.push(file);
+        } catch (err) {
+          console.log('Could not fetch file, skipping', err);
+        }
+      }
+
+      if (nextLink) {
+        newSyncState.nextLink = nextLink;
+      }
+
+      pageCount++;
+
+      this.logger.log('Outlook full sync page completed', {
+        connectionId: connection.id,
+        pageFilesCount: filteredFiles.length,
+        pageNumber: pageCount,
+        hasNextPage: !!nextLink,
+      });
+
+      // Create a result for this page (but don't include syncState yet)
+      results.push({
+        data: { files: filteredFiles, nextLink: newSyncState.nextLink, pageNumber: pageCount },
+        syncState: {} as OneDriveSyncState, // Will be updated after all pages
+      });
+    } while (nextLink);
+
+    // Update all results with the final sync state
+    results.forEach((result) => {
+      result.syncState = newSyncState;
+    });
+
+    this.logger.log('OneDrive full sync completed', {
+      connectionId: connection.id,
+      totalPages: pageCount,
+      nextLink: newSyncState.nextLink,
+    });
 
     return results;
   }

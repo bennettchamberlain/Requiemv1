@@ -73,8 +73,7 @@ export class EtlService {
     return (
       connection.active &&
       !!connection.accessToken &&
-      !!connection.tokenExpiry &&
-      connection.tokenExpiry > new Date() &&
+      !(connection.tokenExpiry && connection.tokenExpiry > new Date() && !connection.refreshToken) &&
       !!connection.provider?.id
     );
   }
