@@ -1,3 +1,26 @@
+/**
+ * This module is responsible for managing the application's long-term, structured memory.
+ * It functions as a knowledge graph, storing and organizing information about various
+ * entities such as people, places, events, and content. This allows the AI to build a
+ * persistent and interconnected understanding of the user's world.
+ *
+ * ### Key Components:
+ * - **Entities**: A rich set of entities (`PersonEntity`, `EventEntity`, `ContentEntity`,
+ *   `GraphNodeEntity`, `RelationshipEntity`, etc.) that define the structure of the
+ *   knowledge graph.
+ * - **Services**:
+ *   - `MemoryService`: Provides high-level operations for interacting with the memory graph.
+ *   - `ContentService`, `EventService`, `CommunicationService`: Manage specific types of
+ *     memory entities.
+ *   - `GraphUtilityService`: Offers tools for traversing and manipulating the graph structure.
+ * - **Controllers**: Expose REST API endpoints (`MemoryController`, `ContentController`, etc.)
+ *   for creating, retrieving, and managing memory entities.
+ * - **User Integration**: Connects with the `UserModule` to ensure all memory entities are
+ *   scoped to the correct user.
+ *
+ * @module MemoryModule
+ */
+
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
@@ -23,6 +46,9 @@ import { EventService } from './services/EventService';
 import { GraphEventService } from './services/GraphEventService';
 import { MemoryService } from './services/MemoryService';
 
+/**
+ * @internal
+ */
 @Module({
   imports: [
     TypeOrmModule.forFeature([

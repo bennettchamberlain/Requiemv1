@@ -20,7 +20,11 @@
     "db:clear": "yarn dbmate --execute-file ./db/postgres/scripts/drop_all_pg_data.sql",
     "db:destroy": "yarn dbmate --execute-file ./db/postgres/scripts/drop_all_pg_tables.sql",
     "migration:run": "DOTENV_CONFIG_PATH=../../../.env ts-node -r tsconfig-paths/register --swc scripts/seed-database/run-migration.ts",
-    "test": "DOTENV_CONFIG_PATH=../../../.env jest"
+    "test": "DOTENV_CONFIG_PATH=../../../.env jest",
+    "docs": "yarn docs:html",
+    "docs:html": "typedoc",
+    "docs:json": "typedoc --json docs/typedoc.json",
+    "docs:capabilities": "yarn run exec -- scripts/build-capability-map-from-typedoc.ts"
   },
   "packageManager": "yarn@4.9.1",
   "dependencies": {
@@ -90,6 +94,7 @@
     "globals": "^16.1.0",
     "jest": "^30.0.4",
     "jest-util": "^30.0.2",
+    "knip": "^5.66.0",
     "nodemon": "^3.1.10",
     "pino-pretty": "^13.0.0",
     "rimraf": "^6.0.1",
@@ -97,6 +102,8 @@
     "ts-node": "^10.9.2",
     "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
+    "typedoc": "^0.28.14",
+    "typedoc-plugin-markdown": "^4.9.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1"
   }
