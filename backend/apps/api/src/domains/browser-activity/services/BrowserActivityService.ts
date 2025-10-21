@@ -123,58 +123,11 @@ export class BrowserActivityService {
       deviceId,
     });
 
-    const updateData: Partial<BrowserActivityEntity> = {};
-
-    if (data.time !== undefined) {
-      updateData.time = new Date(data.time);
-    }
-
-    if (data.device_id !== undefined) {
-      updateData.device_id = data.device_id;
-    }
-
-    if (data.url !== undefined) {
-      updateData.url = data.url;
-    }
-
-    if (data.title !== undefined) {
-      updateData.title = data.title;
-    }
-
-    if (data.action_type !== undefined) {
-      updateData.action_type = data.action_type;
-    }
-
-    if (data.duration_seconds !== undefined) {
-      updateData.duration_seconds = data.duration_seconds;
-    }
-
-    if (data.scroll_depth_percent !== undefined) {
-      updateData.scroll_depth_percent = data.scroll_depth_percent;
-    }
-
-    if (data.page_summary !== undefined) {
-      updateData.page_summary = data.page_summary;
-    }
-
-    if (data.page_embedding !== undefined) {
-      updateData.page_embedding = data.page_embedding;
-    }
-
-    if (data.category !== undefined) {
-      updateData.category = data.category;
-    }
-
-    if (data.productivity_score !== undefined) {
-      updateData.productivity_score = data.productivity_score;
-    }
-
-    if (data.is_incognito !== undefined) {
-      updateData.is_incognito = data.is_incognito;
-    }
-
-    if (data.contains_sensitive !== undefined) {
-      updateData.contains_sensitive = data.contains_sensitive;
+    // Handle time field conversion if present
+    const { time: timeString, ...restData } = data;
+    const updateData: Partial<BrowserActivityEntity> = { ...restData };
+    if (timeString !== undefined) {
+      updateData.time = new Date(timeString);
     }
 
     await this.browserActivityRepository.update(
