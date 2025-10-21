@@ -199,7 +199,7 @@ export class UserContextService {
     // Try to get entity_id from users table first
     const userQuery = `
       SELECT entity_id
-      FROM users
+      FROM ci_core.users
       WHERE id = $1
     `;
     const userResult = await this.dataSource.query(userQuery, [userId]);
@@ -217,7 +217,7 @@ export class UserContextService {
     if (nodes.length > 0) {
       const [node] = nodes;
       if (userResult.length > 0 && !userResult[0].entity_id) {
-        await this.dataSource.query(`UPDATE users SET entity_id = $2 WHERE id = $1`, [
+        await this.dataSource.query(`UPDATE ci_core.users SET entity_id = $2 WHERE id = $1`, [
           userId,
           node.entity_id,
         ]);
@@ -233,7 +233,7 @@ export class UserContextService {
    * Get username from users table
    */
   private async getUsernameFromUsersTable(userId: string): Promise<string | null> {
-    const query = `SELECT username, name FROM users WHERE id = $1`;
+    const query = `SELECT username, name FROM ci_core.users WHERE id = $1`;
     const result = await this.dataSource.query(query, [userId]);
 
     if (result.length > 0) {

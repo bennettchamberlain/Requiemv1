@@ -2,7 +2,7 @@ import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } fro
 
 import { User } from '../types';
 
-@Entity('users')
+@Entity({ schema: 'ci_core', name: 'users' })
 export class UserEntity {
   @PrimaryColumn()
   id!: string;
