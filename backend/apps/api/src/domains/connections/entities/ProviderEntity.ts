@@ -2,7 +2,7 @@ import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } fro
 
 import type { Provider } from '../types';
 
-@Entity({ name: 'providers' })
+@Entity({ schema: 'ci_core', name: 'providers' })
 export class ProviderEntity {
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
