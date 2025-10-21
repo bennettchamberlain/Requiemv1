@@ -26,14 +26,23 @@ export class FileEntity {
   @Column({ type: 'text', name: 'storage_type' })
   storage_type!: string;
 
+  @Column({ type: 'text', name: 'storage_provider', nullable: true })
+  storage_provider!: string | null;
+
+  @Column({ type: 'text', name: 'cloud_file_id', nullable: true })
+  cloud_file_id!: string | null;
+
+  @Column({ type: 'text', name: 'storage_account', nullable: true })
+  storage_account!: string | null;
+
   @Column({ type: 'timestamptz', name: 'modified_at_source' })
   modified_at_source!: Date;
 
-  @Column({ type: 'text' })
-  bucket!: string;
+  @Column({ type: 'text', nullable: true })
+  bucket!: string | null;
 
-  @Column({ type: 'uuid' })
-  key!: string;
+  @Column({ type: 'uuid', nullable: true })
+  key!: string | null;
 
   @Column({ type: 'text', name: 'original_filename' })
   original_name!: string;

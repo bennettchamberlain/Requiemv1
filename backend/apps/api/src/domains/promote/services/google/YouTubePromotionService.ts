@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { GraphUtilityService } from '@ci/domains/graph';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
-
-import { PersonPromotionService } from '../PersonPromotionService';
 
 interface YouTubePlaylistItem {
   id?: string;
@@ -52,11 +48,7 @@ interface YouTubePlaylist {
 export class YouTubePromotionService {
   private logger = new LoggerService(YouTubePromotionService.name);
 
-  constructor(
-    private readonly contentService: ContentService,
-    private readonly graphUtilityService: GraphUtilityService,
-    private readonly personPromotionService: PersonPromotionService,
-  ) {}
+  constructor(private readonly contentService: ContentService) {}
 
   async promoteYouTubeData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting YouTube data promotion', {
@@ -145,65 +137,35 @@ export class YouTubePromotionService {
     connectionId: string,
   ): Promise<void> {
     const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
+    if (!videoId) {
+      this.logger.debug('Skipping liked video without id');
+
+      return;
+    }
+
     const title = item.snippet?.title || 'Untitled Video';
     const description = item.snippet?.description || '';
     const channelTitle = item.snippet?.channelTitle || '';
-    const channelId = item.snippet?.channelId || '';
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
 
-    // Get user's entity ID (create if missing)
-    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
-
-    // Create video entity
-    const videoEntityId = uuid7();
-    await this.graphUtilityService.createGraphNode({
-      entityId: videoEntityId,
-      entityType: 'Video',
-      name: title,
-      description: `YouTube video by ${channelTitle}`,
-      properties: {
-        video_id: videoId,
-        channel_title: channelTitle,
-        channel_id: channelId,
-        url: `https://www.youtube.com/watch?v=${videoId}`,
-        platform: 'youtube',
-        thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url,
-        published_at: item.contentDetails?.videoPublishedAt || item.snippet?.publishedAt,
-        owner_user_id: userId,
-      },
-      searchContent: `${title} ${channelTitle} ${description}`,
-      ownerUserId: userId,
-    });
-
-    // Create LIKED relationship
-    await this.graphUtilityService.createRelationship(
-      userEntityId,
-      videoEntityId,
-      'LIKED',
-      {
-        platform: 'youtube',
-        connection_id: connectionId,
-        liked_at: new Date().toISOString(),
-      },
-      1.0,
-      userId,
-    );
-
-    // Save video metadata as content
     const contentDto = {
-      id: '',
-      type: 'youtube_video',
+      type: 'youtube_video_like',
       title,
       text: description,
-      url: `https://www.youtube.com/watch?v=${videoId}`,
+      url,
+      mimetype: 'video/youtube',
       external_id: videoId,
+      source_url: url,
+      source_data: { connectionId },
       user: { id: userId },
     };
 
-    await this.contentService.create({ userId }, contentDto as CreateContentDto);
+    await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
 
     this.logger.log('Processed liked YouTube video', {
       videoId,
       title,
+      channelTitle,
     });
   }
 
@@ -221,48 +183,34 @@ export class YouTubePromotionService {
 
   private async processPlaylist(item: YouTubePlaylist, userId: string, connectionId: string): Promise<void> {
     const playlistId = item.id;
+    if (!playlistId) {
+      this.logger.debug('Skipping playlist without id');
+
+      return;
+    }
+
     const title = item.snippet?.title || 'Untitled Playlist';
     const description = item.snippet?.description || '';
+    const url = `https://www.youtube.com/playlist?list=${playlistId}`;
+    const itemCount = item.contentDetails?.itemCount ?? 0;
 
-    // Get user's entity ID (create if missing)
-    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
+    const contentDto = {
+      type: 'youtube_playlist',
+      title,
+      text: description,
+      url,
+      external_id: playlistId,
+      source_url: url,
+      source_data: { connectionId },
+      user: { id: userId },
+    };
 
-    // Create playlist entity
-    const playlistEntityId = uuid7();
-    await this.graphUtilityService.createGraphNode({
-      entityId: playlistEntityId,
-      entityType: 'Playlist',
-      name: title,
-      description,
-      properties: {
-        playlist_id: playlistId,
-        url: `https://www.youtube.com/playlist?list=${playlistId}`,
-        platform: 'youtube',
-        item_count: item.contentDetails?.itemCount || 0,
-        thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url,
-        owner_user_id: userId,
-      },
-      searchContent: `${title} ${description}`,
-      ownerUserId: userId,
-    });
-
-    // Create CREATED relationship
-    await this.graphUtilityService.createRelationship(
-      userEntityId,
-      playlistEntityId,
-      'CREATED',
-      {
-        platform: 'youtube',
-        connection_id: connectionId,
-        created_at: item.snippet?.publishedAt || new Date().toISOString(),
-      },
-      1.0,
-      userId,
-    );
+    await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
 
     this.logger.log('Processed YouTube playlist', {
       playlistId,
       title,
+      itemCount,
     });
   }
 
@@ -283,52 +231,32 @@ export class YouTubePromotionService {
     userId: string,
     connectionId: string,
   ): Promise<void> {
-    const snippet = item.snippet as Record<string, unknown>;
+    const snippet = item.snippet as Record<string, unknown> | undefined;
+    if (!snippet) {
+      this.logger.debug('Skipping subscription without snippet');
+
+      return;
+    }
+
     const channelId = snippet.resourceId
       ? ((snippet.resourceId as Record<string, unknown>).channelId as string)
       : '';
     const channelTitle = (snippet.title as string) || 'Untitled Channel';
     const description = (snippet.description as string) || '';
-    const thumbnail = snippet.thumbnails as Record<string, unknown>;
+    const url = channelId ? `https://www.youtube.com/channel/${channelId}` : undefined;
 
-    // Get user's entity ID (create if missing)
-    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
+    const contentDto = {
+      type: 'youtube_subscription',
+      title: channelTitle,
+      text: description,
+      url,
+      external_id: channelId || undefined,
+      source_url: url,
+      source_data: { connectionId },
+      user: { id: userId },
+    };
 
-    // Create channel entity
-    const channelEntityId = uuid7();
-    await this.graphUtilityService.createGraphNode({
-      entityId: channelEntityId,
-      entityType: 'Channel',
-      name: channelTitle,
-      description: `YouTube channel: ${channelTitle}`,
-      properties: {
-        channel_id: channelId,
-        url: `https://www.youtube.com/channel/${channelId}`,
-        platform: 'youtube',
-        thumbnail: thumbnail?.high
-          ? (thumbnail.high as Record<string, unknown>).url
-          : thumbnail?.default
-            ? (thumbnail.default as Record<string, unknown>).url
-            : null,
-        owner_user_id: userId,
-      },
-      searchContent: `${channelTitle} ${description}`,
-      ownerUserId: userId,
-    });
-
-    // Create SUBSCRIBED_TO relationship
-    await this.graphUtilityService.createRelationship(
-      userEntityId,
-      channelEntityId,
-      'SUBSCRIBED_TO',
-      {
-        platform: 'youtube',
-        connection_id: connectionId,
-        subscribed_at: (snippet.publishedAt as string) || new Date().toISOString(),
-      },
-      1.0,
-      userId,
-    );
+    await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
 
     this.logger.log('Processed YouTube subscription', {
       channelId,
@@ -353,59 +281,47 @@ export class YouTubePromotionService {
     userId: string,
     connectionId: string,
   ): Promise<void> {
-    const snippet = item.snippet as Record<string, unknown>;
-    const contentDetails = item.contentDetails as Record<string, unknown>;
+    const snippet = item.snippet as Record<string, unknown> | undefined;
+    const contentDetails = item.contentDetails as Record<string, unknown> | undefined;
+
+    if (!snippet) {
+      this.logger.debug('Skipping activity without snippet');
+
+      return;
+    }
+
     const type = snippet.type as string;
 
-    // Get user's entity ID (create if missing)
-    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
-
-    // Process based on activity type
-    if (type === 'upload' && contentDetails.upload) {
+    if (type === 'upload' && contentDetails?.upload) {
       const upload = contentDetails.upload as Record<string, unknown>;
-      const videoId = upload.videoId as string;
+      const videoId = upload.videoId as string | undefined;
       const title = (snippet.title as string) || 'Untitled Video';
+      const description = (snippet.description as string) || '';
+      const url = videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined;
 
-      // Create video entity for uploaded video
-      const videoEntityId = uuid7();
-      await this.graphUtilityService.createGraphNode({
-        entityId: videoEntityId,
-        entityType: 'Video',
-        name: title,
-        description: `YouTube video uploaded by user`,
-        properties: {
-          video_id: videoId,
-          url: `https://www.youtube.com/watch?v=${videoId}`,
-          platform: 'youtube',
-          owner_user_id: userId,
-          uploaded_at: snippet.publishedAt as string,
-        },
-        searchContent: title,
-        ownerUserId: userId,
+      const contentDto = {
+        type: 'youtube_activity_upload',
+        title,
+        text: description,
+        url,
+        external_id: videoId,
+        source_url: url,
+        source_data: { connectionId },
+        user: { id: userId },
+      };
+
+      await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
+
+      this.logger.log('Processed YouTube upload activity', {
+        videoId,
+        title,
       });
 
-      // Create UPLOADED relationship
-      await this.graphUtilityService.createRelationship(
-        userEntityId,
-        videoEntityId,
-        'UPLOADED',
-        {
-          platform: 'youtube',
-          connection_id: connectionId,
-          uploaded_at: (snippet.publishedAt as string) || new Date().toISOString(),
-        },
-        1.0,
-        userId,
-      );
-
-      this.logger.log('Processed YouTube upload activity', { videoId, title });
-    } else if (type === 'comment' && contentDetails.comment) {
-      const comment = contentDetails.comment as Record<string, unknown>;
-      const resourceId = comment.resourceId as Record<string, unknown>;
-      const videoId = resourceId.videoId as string;
-
-      // Log comment activity (we can expand this later to store comments)
-      this.logger.log('Processed YouTube comment activity', { videoId, type: 'comment' });
+      return;
     }
+
+    this.logger.debug('Skipping unsupported YouTube activity', {
+      type,
+    });
   }
 }
