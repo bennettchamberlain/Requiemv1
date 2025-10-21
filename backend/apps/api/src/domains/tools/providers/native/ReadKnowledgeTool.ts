@@ -563,7 +563,7 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
       // First try to get entity_id directly from users table
       const userQuery = `
         SELECT entity_id
-        FROM users
+        FROM ci_core.users
         WHERE id = $1
       `;
       const userResult = await this.dataSource.query(userQuery, [userId]);

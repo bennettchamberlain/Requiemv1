@@ -2,8 +2,7 @@ interface EventPayload {
   name?: never;
 }
 
-export enum Events {
-  API_ENQUEUE = 'api.enqueue',
+export const enum Events {
   FILE_UPLOAD = 'file.upload',
   CHAT_SUMMARIZATION = 'chat.summarization',
   INFER_QUESTION_ANSWER = 'infer.question.answer',
@@ -29,11 +28,6 @@ export enum Events {
   GRAPH_RELATIONSHIP_UPSERTED = 'graph.relationship.upserted',
   PROMOTE_OUTLOOK_MAIL_MESSAGES = 'PROMOTE_OUTLOOK_MAIL_MESSAGES',
   PROMOTE_OUTLOOK_CALENDAR_EVENTS = 'PROMOTE_OUTLOOK_CALENDAR_EVENTS',
-}
-
-interface ApiEnqueuePayload extends EventPayload {
-  foo: string;
-  bar: string;
 }
 
 interface FileUploadPayload extends EventPayload {
@@ -228,7 +222,6 @@ interface PromoteOutlookCalendarEventsPayload extends EventPayload {
 }
 
 export type EventPayloads = {
-  [Events.API_ENQUEUE]: ApiEnqueuePayload;
   [Events.FILE_UPLOAD]: FileUploadPayload;
   [Events.CHAT_SUMMARIZATION]: ChatSummarizationPayload;
   [Events.INFER_QUESTION_ANSWER]: InferQuestionAnswerPayload;

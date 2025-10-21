@@ -1,0 +1,19 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+
+  "entryPoints": ["src/domains/*/index.ts"],
+  "entryPointStrategy": "resolve",
+
+  "includeVersion": false,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeExternals": true,
+  "excludeInternal": true,
+
+  "categorizeByGroup": true,
+  "sort": ["kind", "alphabetical"],
+  "name": "CI — API Server",
+  "exclude": ["**/*.test.ts", "**/__tests__/**"],
+  "readme": "none",
+  "gitRevision": "main"
+}

@@ -142,10 +142,10 @@ export class ConnectionService {
 
     const rows = (await this.dataSource.query(`
       SELECT
-        connections.id as id,
-        connections.user_id as user_id
+        ci_core.connections.id as id,
+        ci_core.connections.user_id as user_id
       FROM
-        connections
+        ci_core.connections
       WHERE active = true
         AND access_token IS NOT NULL
         AND token_expiry > NOW();

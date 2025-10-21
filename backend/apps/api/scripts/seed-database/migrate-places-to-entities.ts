@@ -39,7 +39,7 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
 
   await db.transaction(async (manager) => {
     const ownerUserRows: Array<{ id: string }> = await manager.query(
-      `SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      `SELECT id FROM ci_core.users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
       [JOHN_SMITH_EMAIL],
     );
 
@@ -58,8 +58,8 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
 
       // Check if entity already exists (by original_place_id)
       const existing = await manager.query(
-        `SELECT entity_id FROM entities 
-         WHERE entity_type = 'Location' 
+        `SELECT entity_id FROM entities
+         WHERE entity_type = 'Location'
            AND properties->>'original_place_id' = $1`,
         [record.id],
       );
@@ -117,7 +117,7 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
 
       await manager.query(
         `INSERT INTO entities (
-          entity_id, entity_type, name, description, properties, 
+          entity_id, entity_type, name, description, properties,
           search_content, is_active, is_archived, owner_user_id,
           created_at, updated_at, last_accessed
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
