@@ -328,25 +328,6 @@ export function McpToolsTab() {
           />
         ))}
       </div>
-
-      {/* Help Text */}
-      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <h3 className="text-sm font-medium text-blue-900 mb-2">About MCP Server Tools</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>
-            • <strong>MCP Servers</strong> provide external capabilities to the AI assistant
-          </li>
-          <li>
-            • <strong>Start/Stop</strong> servers to control which tools are available
-          </li>
-          <li>
-            • <strong>Health indicators</strong> show the current status of each server
-          </li>
-          <li>
-            • <strong>Tool execution</strong> allows you to test individual tools (demo mode)
-          </li>
-        </ul>
-      </div>
     </div>
   );
 }
