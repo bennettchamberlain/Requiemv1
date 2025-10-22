@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
   UnauthorizedException,
   ConflictException,
@@ -61,6 +62,20 @@ export class BrowserActivityController {
     }
 
     return this.browserActivityService.findAll(context);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('range')
+  async findByTimeRange(
+    @Context() context: RequestContext,
+    @Query('startTime') startTime: string,
+    @Query('endTime') endTime: string,
+  ): Promise<BrowserActivity[]> {
+    if (!context.userId) {
+      throw new UnauthorizedException('User must be authenticated to view browser activity');
+    }
+
+    return this.browserActivityService.findByTimeRange(context, startTime, endTime);
   }
 
   @UseGuards(JwtAuthGuard)

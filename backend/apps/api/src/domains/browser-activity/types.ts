@@ -9,6 +9,7 @@ export const createBrowserActivitySchema = z.object({
   url: z.string().url(),
   title: z.string().optional(),
   action_type: z.enum(['visit', 'reload', 'bookmark', 'search', 'download', 'form_submit']).optional(),
+  properties: z.record(z.unknown()).optional(),
   duration_seconds: z.number().int().min(0).optional(),
   scroll_depth_percent: z.number().min(0).max(100).optional(),
   page_summary: z.string().optional(),
@@ -28,6 +29,7 @@ export interface CreateBrowserActivityDto {
   url: string;
   title?: string;
   action_type?: 'visit' | 'reload' | 'bookmark' | 'search' | 'download' | 'form_submit';
+  properties?: Record<string, unknown>;
   duration_seconds?: number;
   scroll_depth_percent?: number;
   page_summary?: string;
@@ -44,6 +46,7 @@ export interface UpdateBrowserActivityDto {
   url?: string;
   title?: string;
   action_type?: 'visit' | 'reload' | 'bookmark' | 'search' | 'download' | 'form_submit';
+  properties?: Record<string, unknown>;
   duration_seconds?: number;
   scroll_depth_percent?: number;
   page_summary?: string;

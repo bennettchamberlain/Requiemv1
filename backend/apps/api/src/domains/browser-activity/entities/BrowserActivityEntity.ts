@@ -28,6 +28,9 @@ export class BrowserActivityEntity {
   @Column({ type: 'text', nullable: true })
   action_type?: string;
 
+  @Column({ type: 'jsonb', default: {} })
+  properties!: Record<string, unknown>;
+
   @Column({ type: 'integer', nullable: true })
   duration_seconds?: number;
 
@@ -73,6 +76,7 @@ export class BrowserActivityEntity {
       url: this.url,
       title: this.title,
       action_type: this.action_type,
+      properties: this.properties,
       duration_seconds: this.duration_seconds,
       scroll_depth_percent: this.scroll_depth_percent,
       page_summary: this.page_summary,
@@ -93,6 +97,7 @@ export interface BrowserActivity {
   readonly url: string;
   readonly title?: string;
   readonly action_type?: string;
+  readonly properties: Record<string, unknown>;
   readonly duration_seconds?: number;
   readonly scroll_depth_percent?: number;
   readonly page_summary?: string;

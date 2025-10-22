@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Between } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
@@ -26,7 +26,6 @@ export class BrowserActivityService {
     if (!device) {
       // Create device if it doesn't exist
       await this.deviceService.create(context, {
-        device_name: 'Browser Extension',
         device_type: 'browser',
         platform: 'web',
       });
@@ -62,6 +61,7 @@ export class BrowserActivityService {
           url: item.url,
           title: item.title,
           action_type: item.action_type,
+          properties: item.properties ?? {},
           duration_seconds: item.duration_seconds,
           scroll_depth_percent: item.scroll_depth_percent,
           page_summary: item.page_summary,
@@ -99,6 +99,28 @@ export class BrowserActivityService {
     return results.map((entity) => entity.toBrowserActivity());
   }
 
+  async findByTimeRange(
+    context: RequestContext,
+    startTime: string,
+    endTime: string,
+  ): Promise<BrowserActivity[]> {
+    this.logger.log('Fetching browser activity for time range', {
+      userId: context.userId,
+      startTime,
+      endTime,
+    });
+
+    const results = await this.browserActivityRepository.find({
+      where: {
+        user_id: context.userId!,
+        time: Between(new Date(startTime), new Date(endTime)),
+      },
+      order: { time: 'DESC' },
+    });
+
+    return results.map((entity) => entity.toBrowserActivity());
+  }
+
   async findOne(context: RequestContext, time: string, deviceId: string): Promise<BrowserActivity | null> {
     const result = await this.browserActivityRepository.findOne({
       where: {
@@ -125,7 +147,7 @@ export class BrowserActivityService {
 
     // Handle time field conversion if present
     const { time: timeString, ...restData } = data;
-    const updateData: Partial<BrowserActivityEntity> = { ...restData };
+    const updateData: Record<string, unknown> = { ...restData };
     if (timeString !== undefined) {
       updateData.time = new Date(timeString);
     }
