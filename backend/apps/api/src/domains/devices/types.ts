@@ -5,7 +5,7 @@ import type { Device } from './entities/DeviceEntity';
 // Validation schema for creating devices
 export const createDeviceSchema = z.object({
   device_entity_id: z.string().uuid().optional(),
-  device_name: z.string().min(1),
+  device_name: z.string().min(1).optional(),
   device_type: z.enum([
     'smartphone',
     'laptop',
@@ -33,7 +33,7 @@ export const updateDeviceSchema = createDeviceSchema.partial();
 // DTOs
 export interface CreateDeviceDto {
   device_entity_id?: string;
-  device_name: string;
+  device_name?: string;
   device_type:
     | 'smartphone'
     | 'laptop'

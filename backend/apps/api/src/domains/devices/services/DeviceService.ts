@@ -36,7 +36,7 @@ export class DeviceService {
           device_id: uuid7(),
           user_id: context.userId!,
           device_entity_id: item.device_entity_id,
-          device_name: item.device_name,
+          device_name: item.device_name ?? `${item.device_type} Device`,
           device_type: item.device_type,
           platform: item.platform,
           model: item.model,
