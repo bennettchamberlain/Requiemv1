@@ -18,7 +18,7 @@ const ONEDRIVE_ETAG_REGEX =
 
 const MAIL_PAGE_SIZE = 50;
 const CALENDAR_PAGE_SIZE = 50;
-const ONEDRIVE_PAGE_SIZE = 1;
+const ONEDRIVE_PAGE_SIZE = 50;
 
 interface Calendar {
   id: string;
