@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
+import { useAuth } from '@/hooks';
+
 // Types for MCP API responses
 export interface McpServer {
   name: string;
@@ -56,10 +58,11 @@ const getApiBase = () => {
 const API_BASE = getApiBase();
 
 class McpApiService {
-  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  private async request<T>(endpoint: string, authToken: string | null, options?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       headers: {
         'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         // Add auth headers if needed
         ...options?.headers,
       },
@@ -73,38 +76,50 @@ class McpApiService {
     return response.json();
   }
 
-  async getServers(): Promise<McpServer[]> {
-    return this.request<McpServer[]>('/api/mcp/servers');
+  async getServers(authToken: string | null): Promise<McpServer[]> {
+    return this.request<McpServer[]>('/api/mcp/servers', authToken);
   }
 
-  async getSessions(): Promise<McpSession[]> {
-    return this.request<McpSession[]>('/api/mcp/sessions');
+  async getSessions(authToken: string | null): Promise<McpSession[]> {
+    return this.request<McpSession[]>('/api/mcp/sessions', authToken);
   }
 
-  async getTools(): Promise<McpTool[]> {
-    return this.request<McpTool[]>('/api/mcp/tools');
+  async getTools(authToken: string | null): Promise<McpTool[]> {
+    return this.request<McpTool[]>('/api/mcp/tools', authToken);
   }
 
-  async getHealth(): Promise<McpHealthStatus[]> {
-    return this.request<McpHealthStatus[]>('/api/mcp/health');
+  async getHealth(authToken: string | null): Promise<McpHealthStatus[]> {
+    return this.request<McpHealthStatus[]>('/api/mcp/health', authToken);
   }
 
-  async startServer(serverName: string): Promise<{ success: boolean; message: string }> {
-    return this.request(`/api/mcp/servers/${serverName}/start`, {
+  async startServer(
+    authToken: string | null,
+    serverName: string,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request(`/api/mcp/servers/${serverName}/start`, authToken, {
       method: 'POST',
     });
   }
 
-  async stopServer(serverName: string): Promise<{ success: boolean; message: string }> {
-    return this.request(`/api/mcp/servers/${serverName}/stop`, {
+  async stopServer(
+    authToken: string | null,
+    serverName: string,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request(`/api/mcp/servers/${serverName}/stop`, authToken, {
       method: 'POST',
     });
   }
 
-  async executeTool(toolName: string, args: unknown): Promise<unknown> {
-    return this.request('/api/mcp/execute', {
+  async executeTool(
+    authToken: string | null,
+    serverName: string,
+    toolName: string,
+    args: unknown,
+  ): Promise<unknown> {
+    return this.request('/api/mcp/execute', authToken, {
       method: 'POST',
       body: JSON.stringify({
+        serverName,
         toolName,
         arguments: args,
       }),
@@ -115,6 +130,7 @@ class McpApiService {
 const mcpApi = new McpApiService();
 
 export function useMcpService() {
+  const [{ authToken }] = useAuth();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [sessions, setSessions] = useState<McpSession[]>([]);
   const [tools, setTools] = useState<McpTool[]>([]);
@@ -123,15 +139,16 @@ export function useMcpService() {
   const [error, setError] = useState<string | null>(null);
 
   const refreshData = useCallback(async () => {
+    const token = authToken ?? null;
     setIsLoading(true);
     setError(null);
 
     try {
       const [serversData, sessionsData, toolsData, healthData] = await Promise.allSettled([
-        mcpApi.getServers(),
-        mcpApi.getSessions(),
-        mcpApi.getTools(),
-        mcpApi.getHealth(),
+        mcpApi.getServers(token),
+        mcpApi.getSessions(token),
+        mcpApi.getTools(token),
+        mcpApi.getHealth(token),
       ]);
 
       if (serversData.status === 'fulfilled') {
@@ -163,12 +180,13 @@ export function useMcpService() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [authToken]);
 
   const startServer = useCallback(
     async (serverName: string) => {
+      const token = authToken ?? null;
       try {
-        await mcpApi.startServer(serverName);
+        await mcpApi.startServer(token, serverName);
         // Refresh data after starting server
         await refreshData();
 
@@ -180,13 +198,14 @@ export function useMcpService() {
         };
       }
     },
-    [refreshData],
+    [authToken, refreshData],
   );
 
   const stopServer = useCallback(
     async (serverName: string) => {
+      const token = authToken ?? null;
       try {
-        await mcpApi.stopServer(serverName);
+        await mcpApi.stopServer(token, serverName);
         // Refresh data after stopping server
         await refreshData();
 
@@ -198,21 +217,25 @@ export function useMcpService() {
         };
       }
     },
-    [refreshData],
+    [authToken, refreshData],
   );
 
-  const executeTool = useCallback(async (toolName: string, args: unknown = {}) => {
-    try {
-      const result = await mcpApi.executeTool(toolName, args);
+  const executeTool = useCallback(
+    async (serverName: string, toolName: string, args: unknown = {}) => {
+      const token = authToken ?? null;
+      try {
+        const result = await mcpApi.executeTool(token, serverName, toolName, args);
 
-      return { success: true, result };
-    } catch (err) {
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : 'Failed to execute tool',
-      };
-    }
-  }, []);
+        return { success: true, result };
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : 'Failed to execute tool',
+        };
+      }
+    },
+    [authToken],
+  );
 
   // Load data on mount
   useEffect(() => {
