@@ -94,11 +94,11 @@ export function MemoryTimeline() {
   if (memories.length === 0 && !loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
           <span className="text-2xl">🧠</span>
         </div>
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No memories yet</h3>
-        <p className="text-gray-500">Your memories will appear here as they're created.</p>
+        <h3 className="text-lg font-medium text-foreground mb-2">No memories yet</h3>
+        <p className="text-muted-foreground">Your memories will appear here as they're created.</p>
       </div>
     );
   }
@@ -117,21 +117,21 @@ export function MemoryTimeline() {
 
         return (
           <div key={date} className="relative">
-            <div className="sticky top-0 z-10 bg-white border-b border-gray-200 py-3 mb-4">
+            <div className="sticky top-0 z-10 bg-background border-b border-border py-3 mb-4">
               <div className="flex items-center gap-3">
                 <div
                   className={`w-3 h-3 rounded-full ml-2 ${
-                    isCurrentDay ? 'bg-blue-500' : isPastDay ? 'bg-gray-400' : 'bg-green-500'
+                    isCurrentDay ? 'bg-primary' : isPastDay ? 'bg-muted' : 'bg-accent'
                   }`}
                 />
-                <h2 className="text-lg font-semibold text-gray-900">{formatDateForDisplay(date)}</h2>
+                <h2 className="text-lg font-semibold text-foreground">{formatDateForDisplay(date)}</h2>
                 {isCurrentDay && (
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">Today</span>
+                  <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">Today</span>
                 )}
               </div>
             </div>
 
-            <div className="absolute left-[14px] top-0 bottom-0 w-0.5 bg-gray-200" />
+            <div className="absolute left-[14px] top-0 bottom-0 w-0.5 bg-border" />
 
             <div className="space-y-4 pl-8">
               {dayMemories.map((memory) => {
@@ -144,8 +144,8 @@ export function MemoryTimeline() {
                 return (
                   <div key={memory.id} data-current-time={isCurrentTime} className="relative">
                     <div
-                      className={`absolute -left-[23px] top-6 w-3 h-3 rounded-full border-2 border-white ${
-                        isCurrentTime ? 'bg-blue-500' : isPastDay ? 'bg-gray-400' : 'bg-green-500'
+                      className={`absolute -left-[23px] top-6 w-3 h-3 rounded-full border-2 border-background ${
+                        isCurrentTime ? 'bg-primary' : isPastDay ? 'bg-muted' : 'bg-accent'
                       }`}
                     />
 
@@ -162,8 +162,8 @@ export function MemoryTimeline() {
 
       {loading && (
         <div className="flex justify-center py-8">
-          <div className="flex items-center gap-3 text-gray-500">
-            <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />
             <span>Loading memories...</span>
           </div>
         </div>

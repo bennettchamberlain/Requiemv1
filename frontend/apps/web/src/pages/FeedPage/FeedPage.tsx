@@ -133,7 +133,7 @@ export function FeedPage() {
       </Portal.Slot>
 
       <PageContent>
-        <h2 className="text-2xl font-bold text-gray-900">Actions</h2>
+        <h2 className="text-2xl font-bold text-foreground">Actions</h2>
 
         <Carousel {...carouselProps} initialIndex={selectedActionIndex}>
           {!loading &&
@@ -155,7 +155,7 @@ export function FeedPage() {
             ))}
         </Carousel>
 
-        <h2 className="text-2xl font-bold text-gray-900">Insights</h2>
+        <h2 className="text-2xl font-bold text-foreground">Insights</h2>
 
         <Carousel {...carouselProps}>
           {actionInsightData.map((item) => (

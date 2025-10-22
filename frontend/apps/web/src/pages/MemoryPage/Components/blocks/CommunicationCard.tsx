@@ -1,4 +1,4 @@
-import { Card, Tooltip } from '@ci/shadcn';
+import { Card, Tooltip, cn } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
@@ -48,12 +48,12 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
 
   const getDirectionIcon = () => {
     if (direction === 'sent' || direction === 'outbound') {
-      return <Send className="h-6 w-6 text-blue-600 flex-shrink-0 mt-1" />;
+      return <Send className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--primary)]" />;
     } else if (direction === 'received' || direction === 'inbound') {
-      return <Inbox className="h-6 w-6 text-green-600 flex-shrink-0 mt-1" />;
+      return <Inbox className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--accent)]" />;
     }
 
-    return <Mail className="h-6 w-6 text-indigo-600 flex-shrink-0 mt-1" />;
+    return <Mail className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--accent-foreground)]" />;
   };
 
   const handleClick = () => {
@@ -70,27 +70,32 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
         <div className="flex-1 min-w-0">
           <Tooltip>
             <Tooltip.Trigger asChild>
-              <h3 className="text-lg font-semibold text-gray-900 truncate cursor-default">{memory.title}</h3>
+              <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
+                {memory.title}
+              </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
               <p>{memory.title}</p>
             </Tooltip.Content>
           </Tooltip>
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm text-gray-600">{memory.category}</p>
+            <p className="text-sm text-muted-foreground">{memory.category}</p>
             {communicationType && (
               <>
-                <span className="text-gray-400">•</span>
-                <span className="text-sm text-gray-600 capitalize">{communicationType}</span>
+                <span className="text-muted-foreground">•</span>
+                <span className="text-sm text-muted-foreground capitalize">{communicationType}</span>
               </>
             )}
             {direction && (
               <>
-                <span className="text-gray-400">•</span>
+                <span className="text-muted-foreground">•</span>
                 <span
-                  className={`text-sm font-medium ${
-                    direction === 'sent' || direction === 'outbound' ? 'text-blue-600' : 'text-green-600'
-                  }`}
+                  className={cn(
+                    'text-sm font-medium',
+                    direction === 'sent' || direction === 'outbound'
+                      ? 'text-[var(--primary)]'
+                      : 'text-[var(--accent)]',
+                  )}
                 >
                   {direction === 'sent' || direction === 'outbound' ? 'Sent' : 'Received'}
                 </span>
@@ -102,17 +107,17 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
 
       {participantInfo && (
         <div className="flex items-center gap-5">
-          <User className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-700">{participantInfo.label}:</span>
-            <span className="ml-2 text-sm text-gray-900">{participantInfo.value}</span>
+            <span className="text-sm font-medium text-muted-foreground">{participantInfo.label}:</span>
+            <span className="ml-2 text-sm text-card-foreground">{participantInfo.value}</span>
           </div>
         </div>
       )}
 
       <div className="flex items-center gap-5">
-        <Clock className="h-4 w-4 text-gray-500 flex-shrink-0" />
-        <span className="text-sm text-gray-900">
+        <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+        <span className="text-sm text-card-foreground">
           {new Date(memory.timestamp).toLocaleString('en-US', {
             month: 'short',
             day: 'numeric',
@@ -126,14 +131,14 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
 
       {memory.description && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-gray-700 leading-relaxed">{memory.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
         </div>
       )}
 
       {memory.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {memory.tags.map((tag, index) => (
-            <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+            <span key={index} className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
               {tag}
             </span>
           ))}

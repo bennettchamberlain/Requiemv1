@@ -17,24 +17,24 @@ export function PlaceCard({ memory }: MemoryCardProps) {
       onClick={handleClick}
     >
       <div className="flex items-start gap-3">
-        <MapPin className="h-6 w-6 text-red-600 flex-shrink-0 mt-1" />
+        <MapPin className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--destructive)]" />
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-gray-900 truncate">{memory.title}</h3>
-          <p className="text-sm text-gray-600">{memory.category}</p>
+          <h3 className="text-lg font-semibold text-card-foreground truncate">{memory.title}</h3>
+          <p className="text-sm text-muted-foreground">{memory.category}</p>
         </div>
       </div>
 
       {memory.description && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-gray-700 leading-relaxed">{memory.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
         </div>
       )}
 
       {memory.location && (
         <div className="flex items-center gap-5">
-          <MapPin className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="flex-1">
-            <span className="text-sm text-gray-900">
+            <span className="text-sm text-card-foreground">
               {memory.location.address || `${memory.location.lat}, ${memory.location.lng}`}
             </span>
           </div>
@@ -44,7 +44,7 @@ export function PlaceCard({ memory }: MemoryCardProps) {
       {memory.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {memory.tags.map((tag, index) => (
-            <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+            <span key={index} className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
               {tag}
             </span>
           ))}

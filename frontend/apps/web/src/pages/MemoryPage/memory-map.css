@@ -3,17 +3,20 @@
 /* Custom popup styling */
 .custom-popup .leaflet-popup-content-wrapper {
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  border: 1px solid rgba(0,0,0,0.05);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  color: var(--card-foreground);
 }
 
 .custom-popup .leaflet-popup-content {
   margin: 0;
   padding: 0;
+  color: inherit;
 }
 
 .custom-popup .leaflet-popup-tip {
-  background-color: white;
+  background-color: var(--card);
 }
 
 /* Marker animation */
@@ -50,6 +53,7 @@
 .leaflet-container {
   font-family: inherit;
   z-index: 1 !important;
+  background-color: var(--background);
 }
 
 /* Ensure all Leaflet elements have lower z-index */

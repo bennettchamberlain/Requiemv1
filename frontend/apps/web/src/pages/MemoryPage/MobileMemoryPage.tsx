@@ -271,6 +271,9 @@ export default function MobileMemoryPage() {
         mapRef.current = null;
       }
 
+      const primaryColor = 'var(--primary)';
+      const destructiveColor = 'var(--destructive)';
+
       // Initialize map with a world view (will be adjusted to fit markers)
       mapRef.current = L.map(mapContainerRef.current).setView([20, 0], 2);
 
@@ -317,21 +320,21 @@ export default function MobileMemoryPage() {
                   : ''
               }
               <div class="font-bold text-lg mb-1">${memory.title}</div>
-              <div class="text-sm mb-2 text-gray-600">${memory.description || 'No description'}</div>
-              <div class="text-xs text-gray-500">${new Date(memory.timestamp).toLocaleString()}</div>
+              <div class="text-sm mb-2 text-muted-foreground">${memory.description || 'No description'}</div>
+              <div class="text-xs text-muted-foreground">${new Date(memory.timestamp).toLocaleString()}</div>
               <div class="mt-2 flex items-center gap-2">
-                <span class="text-xs inline-block px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                <span class="text-xs inline-block px-2 py-1 rounded-full bg-primary/10 text-primary">
                   ${memory.category}
                 </span>
-                ${showTimeline ? `<span class="text-xs text-gray-500">#${index + 1}</span>` : ''}
+                ${showTimeline ? `<span class="text-xs text-muted-foreground">#${index + 1}</span>` : ''}
                 ${
                   memory.category === 'Video' && memory.metadata?.url
-                    ? '<span class="text-xs text-gray-500">📹 Video</span>'
+                    ? '<span class="text-xs text-muted-foreground">📹 Video</span>'
                     : ''
                 }
                 ${
                   memory.category === 'Audio' && memory.metadata?.url
-                    ? '<span class="text-xs text-gray-500">🎵 Audio</span>'
+                    ? '<span class="text-xs text-muted-foreground">🎵 Audio</span>'
                     : ''
                 }
               </div>
@@ -420,7 +423,7 @@ export default function MobileMemoryPage() {
 
               // Create the route path
               L.polyline(waypoints, {
-                color: '#3b82f6',
+                color: primaryColor,
                 weight: 5,
                 opacity: 0.9,
                 dashArray: '20, 10',
@@ -455,7 +458,7 @@ export default function MobileMemoryPage() {
           }
 
           L.polyline(waypoints, {
-            color: '#ef4444',
+            color: destructiveColor,
             weight: 3,
             opacity: 0.7,
             dashArray: '10, 5',
@@ -509,7 +512,7 @@ export default function MobileMemoryPage() {
             </div>
             <input
               type="search"
-              className="block w-full p-3 pl-10 text-base border rounded-lg bg-background border-input"
+              className="block w-full p-3 pl-10 text-base border rounded-lg bg-background border-input text-foreground placeholder:text-muted-foreground"
               placeholder="Search memories..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -650,7 +653,7 @@ export default function MobileMemoryPage() {
                           return (
                             <div
                               key={file.id}
-                              className="flex flex-col items-center border rounded-lg p-2 bg-gray-50 shadow hover:shadow-md transition-shadow"
+                              className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
                             >
                               <img
                                 src={file.url}
@@ -658,10 +661,10 @@ export default function MobileMemoryPage() {
                                 className="w-full h-32 object-cover rounded mb-2"
                                 loading="lazy"
                               />
-                              <div className="text-xs font-medium text-center truncate w-full">
+                              <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
                                 {file.name}
                               </div>
-                              <div className="text-xs text-gray-400">
+                              <div className="text-xs text-muted-foreground">
                                 {(Number(file.size) / 1024).toFixed(1)} KB
                               </div>
                             </div>
@@ -672,7 +675,7 @@ export default function MobileMemoryPage() {
                           return (
                             <div
                               key={file.id}
-                              className="flex flex-col items-center border rounded-lg p-2 bg-gray-50 shadow hover:shadow-md transition-shadow"
+                              className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
                             >
                               <video
                                 src={file.url}
@@ -680,10 +683,10 @@ export default function MobileMemoryPage() {
                                 className="w-full h-32 object-cover rounded mb-2 bg-black"
                                 preload="metadata"
                               />
-                              <div className="text-xs font-medium text-center truncate w-full">
+                              <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
                                 {file.name}
                               </div>
-                              <div className="text-xs text-gray-400">
+                              <div className="text-xs text-muted-foreground">
                                 {(Number(file.size) / 1024 / 1024).toFixed(1)} MB
                               </div>
                             </div>

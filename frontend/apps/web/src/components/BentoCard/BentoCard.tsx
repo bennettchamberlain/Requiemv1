@@ -66,7 +66,7 @@ export function BentoCard({
     return (
       <div
         className={cn(
-          'h-full w-full flex flex-col border rounded-lg cursor-pointer select-none p-4 gap-4',
+          'h-full w-full flex flex-col border border-border bg-card text-card-foreground rounded-lg cursor-pointer select-none p-4 gap-4',
           className,
           'relative',
         )}
@@ -127,7 +127,7 @@ export function BentoCard({
     return (
       <div
         className={cn(
-          'w-[550px] h-[400px] flex flex-col border shadow-md rounded-lg cursor-pointer select-none gap-4 p-4',
+          'w-[550px] h-[400px] flex flex-col border border-border bg-card text-card-foreground shadow-md rounded-lg cursor-pointer select-none gap-4 p-4',
           className,
         )}
         onClick={handleClick}
@@ -177,7 +177,7 @@ export function BentoCard({
   return (
     <div
       className={cn(
-        'w-[550px] h-[400px] flex flex-row border shadow-md rounded-lg cursor-pointer select-none',
+        'w-[550px] h-[400px] flex flex-row border border-border bg-card text-card-foreground shadow-md rounded-lg cursor-pointer select-none',
         className,
       )}
       onClick={handleClick}
