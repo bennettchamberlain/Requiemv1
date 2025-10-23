@@ -17,7 +17,9 @@ import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/mi
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { AuthModule } from '@ci/domains/auth';
+import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
+import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
@@ -47,7 +49,9 @@ import { UserModule } from '@ci/domains/user';
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     AuthModule,
+    BrowserActivityModule,
     ConnectionsModule,
+    DeviceModule,
     EmbeddingModule,
     EtlModule,
     EventsModule,
