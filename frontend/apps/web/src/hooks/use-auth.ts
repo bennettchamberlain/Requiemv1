@@ -124,8 +124,20 @@ function useAuth(): ReturnValue {
     [navigate, updateAccessToken, updateSessionToken],
   );
 
-  const logout = useCallback(() => {
-    // TODO: This isn't good enough, we need to POST to the API to destroy the session.
+  const logout = useCallback(async () => {
+    if (sessionToken) {
+      try {
+        await fetchJson('/api/authenticate/logout', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${sessionToken}`,
+          },
+        });
+      } catch (error) {
+        console.error('Logout failed on server:', error);
+      }
+    }
+
     updateAccessToken(null);
     updateSessionToken(null);
     setUser(null);
@@ -136,7 +148,7 @@ function useAuth(): ReturnValue {
     authChannel.postMessage('logout');
 
     navigate('/');
-  }, [navigate, updateAccessToken, updateSessionToken]);
+  }, [navigate, sessionToken, updateAccessToken, updateSessionToken]);
 
   const signup = useCallback(
     async (name: string, email: string, password: string, signup_code: string) => {
