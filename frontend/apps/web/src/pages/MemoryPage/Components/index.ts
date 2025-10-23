@@ -1,4 +1,7 @@
 export { MemoryCard } from './MemoryCard';
 export { MemoryTimeline } from './MemoryTimeline';
-export { MemoryTimelineProvider, useMemoryTimeline } from './MemoryTimelineProvider';
+export { MapView, DesktopMapView, MobileMapView } from './MapView';
+export { MemoryProvider, useMemoryTimeline } from '../MemoryProvider';
+export { useMemoryQuery } from '../utils/queryParser';
 export type { MemoryItem, MemoryCardProps, Relationship, ParticipantData } from './types';
+export type { MemoryQuery } from '../MemoryProvider';

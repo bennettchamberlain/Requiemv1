@@ -1,10 +1,22 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+
+import { createHookContext } from '@ci/common';
 
 import { useAuth } from '@/hooks';
 
-import type { MemoryItem } from './types';
+import type { MemoryItem } from './Components/types';
 
-interface MemoryTimelineContextValue {
+export interface MemoryQuery {
+  search?: string;
+  category?: string;
+  dateRange?: {
+    start?: string;
+    end?: string;
+  };
+  entityTypes?: string[];
+}
+
+interface MemoryContextValue {
   memories: MemoryItem[];
   loading: boolean;
   error: string | null;
@@ -19,32 +31,32 @@ interface MemoryTimelineContextValue {
   loadingFuture: boolean;
 }
 
-const MemoryTimelineContext = createContext<MemoryTimelineContextValue | null>(null);
-
-export function useMemoryTimeline() {
-  const context = useContext(MemoryTimelineContext);
-  if (!context) {
-    throw new Error('useMemoryTimeline must be used within a MemoryTimelineProvider');
-  }
-
-  return context;
-}
-
-interface MemoryTimelineProviderProps {
-  children: React.ReactNode;
-}
-
-export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps) {
+// Create the hook that will be used by the context
+function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMorePast, setHasMorePast] = useState(true);
   const [hasMoreFuture, setHasMoreFuture] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(query.search || '');
+
+  // Use query.search as the source of truth for search
+  const currentSearchQuery = query.search || searchQuery;
 
   // Track loading states separately for past and future
   const [loadingPast, setLoadingPast] = useState(false);
   const [loadingFuture, setLoadingFuture] = useState(false);
+
+  // Debounced search effect to prevent API calls on every keystroke
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(currentSearchQuery);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearchQuery(currentSearchQuery);
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [currentSearchQuery]);
 
   // Track offsets for past and future loading
   const pastOffsetRef = useRef(0);
@@ -62,19 +74,33 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
   // Fetch memories from API
   const fetchMemories = useCallback(
     async (
-      query: string = '',
+      searchQuery: string = '',
       offset: number = 0,
       limit: number = 500,
       direction: 'past' | 'future' | 'initial' = 'initial',
     ) => {
+      console.log('MemoryProvider: fetchMemories called with', { searchQuery, offset, limit, direction });
       try {
         if (!authToken) {
           throw new Error('No authentication token available');
         }
 
         const params = new URLSearchParams();
-        if (query) {
-          params.append('search', query);
+        if (searchQuery) {
+          params.append('search', searchQuery);
+        }
+
+        // Add query parameters from the hook argument
+        if (query.search) {
+          params.append('search', query.search);
+        }
+
+        if (query.category) {
+          params.append('category', query.category);
+        }
+
+        if (query.entityTypes && query.entityTypes.length > 0) {
+          params.append('entityTypes', query.entityTypes.join(','));
         }
 
         params.append('limit', limit.toString());
@@ -110,11 +136,20 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
             params.append('startDate', newestMemory.timestamp);
           }
         } else {
-          // For initial load, get events around current time
-          const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-          params.append('startDate', oneMonthAgo.toISOString());
-          params.append('endDate', oneMonthFromNow.toISOString());
+          // For initial load, use query date range or default to around current time
+          if (query.dateRange?.start) {
+            params.append('startDate', query.dateRange.start);
+          } else {
+            const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            params.append('startDate', oneMonthAgo.toISOString());
+          }
+
+          if (query.dateRange?.end) {
+            params.append('endDate', query.dateRange.end);
+          } else {
+            const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            params.append('endDate', oneMonthFromNow.toISOString());
+          }
         }
 
         const url = `/api/memory${params.toString() ? `?${params.toString()}` : ''}`;
@@ -176,16 +211,17 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
         throw new Error(errorMessage);
       }
     },
-    [authToken],
+    [authToken, query],
   );
 
   // Load initial memories around current date
   const loadInitialMemories = useCallback(async () => {
+    console.log('MemoryProvider: loadInitialMemories callback created/recreated');
     setLoading(true);
     setError(null);
 
     try {
-      const { data, total } = await fetchMemories(searchQuery, 0, MAX_MEMORIES, 'initial');
+      const { data, total } = await fetchMemories(debouncedSearchQuery, 0, MAX_MEMORIES, 'initial');
 
       setMemories(data);
       totalCountRef.current = total;
@@ -202,7 +238,7 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, fetchMemories]);
+  }, [debouncedSearchQuery, fetchMemories]);
 
   // Load past events (for scrolling up)
   const loadPastEvents = useCallback(async () => {
@@ -212,7 +248,7 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
 
     setLoadingPast(true);
     try {
-      const { data } = await fetchMemories(searchQuery, 0, LOAD_BATCH_SIZE, 'past');
+      const { data } = await fetchMemories(debouncedSearchQuery, 0, LOAD_BATCH_SIZE, 'past');
 
       if (data.length > 0) {
         setMemories((prev) => {
@@ -239,7 +275,7 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
     } finally {
       setLoadingPast(false);
     }
-  }, [searchQuery, fetchMemories, loadingPast, hasMorePast, memories]);
+  }, [debouncedSearchQuery, fetchMemories, loadingPast, hasMorePast]);
 
   const loadFutureEvents = useCallback(async () => {
     if (loadingFuture || !hasMoreFuture) {
@@ -248,7 +284,7 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
 
     setLoadingFuture(true);
     try {
-      const { data } = await fetchMemories(searchQuery, 0, LOAD_BATCH_SIZE, 'future');
+      const { data } = await fetchMemories(debouncedSearchQuery, 0, LOAD_BATCH_SIZE, 'future');
 
       if (data.length > 0) {
         setMemories((prev) => {
@@ -275,7 +311,7 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
     } finally {
       setLoadingFuture(false);
     }
-  }, [searchQuery, fetchMemories, loadingFuture, hasMoreFuture, memories]);
+  }, [debouncedSearchQuery, fetchMemories, loadingFuture, hasMoreFuture]);
 
   // Refresh timeline
   const refreshTimeline = useCallback(async () => {
@@ -287,12 +323,13 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
     await loadInitialMemories();
   }, [loadInitialMemories]);
 
-  // Load initial memories when component mounts or search query changes
+  // Load initial memories when component mounts or debounced search query changes
   useEffect(() => {
+    console.log('MemoryProvider: useEffect triggered for loadInitialMemories');
     loadInitialMemories();
   }, [loadInitialMemories]);
 
-  const value: MemoryTimelineContextValue = {
+  return {
     memories,
     loading,
     error,
@@ -306,6 +343,13 @@ export function MemoryTimelineProvider({ children }: MemoryTimelineProviderProps
     loadingPast,
     loadingFuture,
   };
-
-  return <MemoryTimelineContext.Provider value={value}>{children}</MemoryTimelineContext.Provider>;
 }
+
+// Create the context using createHookContext
+export const { Provider: MemoryProvider, useHookContext: useMemory } = createHookContext(
+  useMemoryHook,
+  'MemoryProvider',
+);
+
+// Export the hook with the original name for backward compatibility
+export const useMemoryTimeline = useMemory;
