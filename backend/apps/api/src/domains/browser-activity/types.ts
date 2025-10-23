@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { BrowserActivity } from './entities/BrowserActivityEntity';
 
 // Validation schema for creating browser activity
-export const createBrowserActivitySchema = z.object({
+export const createBrowserActivitySchemaRoot = z.object({
   time: z.string().datetime(),
   device_id: z.string().uuid(),
   url: z.string().url(),
@@ -20,7 +20,9 @@ export const createBrowserActivitySchema = z.object({
   contains_sensitive: z.boolean().optional(),
 });
 
-export const updateBrowserActivitySchema = createBrowserActivitySchema.partial();
+export const createBrowserActivitySchema = z.union([createBrowserActivitySchemaRoot.partial(), z.array(createBrowserActivitySchemaRoot.partial())]);
+
+export const updateBrowserActivitySchema = createBrowserActivitySchemaRoot.partial();
 
 // DTOs
 export interface CreateBrowserActivityDto {
