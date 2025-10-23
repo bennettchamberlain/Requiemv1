@@ -7,19 +7,11 @@ export interface JwtPayload {
   sub: string;
 }
 
-export interface CreateSessionDto {
-  token: string;
-  ip?: string;
-  userAgent?: string;
-}
-
-export interface RotateSessionDto {
-  token: string;
-  newToken: string;
-  ip?: string;
-  userAgent?: string;
-}
-
 export interface SignedRequest extends Request {
   userId: string;
+}
+
+export interface SessionMetadata {
+  ip?: string;
+  userAgent?: string;
 }

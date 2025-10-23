@@ -29,7 +29,6 @@ import { SessionController } from './controllers/SessionController';
 import { SessionEntity } from './entities/SessionEntity';
 import { AuthService } from './services/AuthService';
 import { JwtStrategy } from './services/JwtStrategy';
-import { SessionService } from './services/SessionService';
 
 /**
  * @internal
@@ -46,7 +45,7 @@ import { SessionService } from './services/SessionService';
       },
     }),
   ],
-  providers: [AuthService, JwtStrategy, SessionService, SignupCodeService],
+  providers: [AuthService, JwtStrategy, SignupCodeService],
   controllers: [SessionController],
 })
 export class AuthModule {}
