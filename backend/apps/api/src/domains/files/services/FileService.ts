@@ -321,7 +321,10 @@ export class FileService implements OnModuleInit {
   }
 
   private async signFile(file: FileEntity): Promise<File> {
-    if (!file.bucket || !file.key) {
+    const bucket = file.bucket;
+    const key = file.key;
+
+    if (!bucket || !key) {
       return {
         ...file.toFile(),
         url: file.file_path,
@@ -329,8 +332,8 @@ export class FileService implements OnModuleInit {
     }
 
     const command = new GetObjectCommand({
-      Bucket: file.bucket ?? config.staticfiles.bucket,
-      Key: file.key!,
+      Bucket: bucket,
+      Key: key,
       ResponseContentType: file.content_type,
     });
 
