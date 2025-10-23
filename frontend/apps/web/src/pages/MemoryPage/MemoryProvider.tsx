@@ -165,44 +165,7 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
         }
 
         const result = await response.json();
-        const rawData: MemoryItem[] = result.data || result;
-
-        const data = rawData.filter((memory) => {
-          // Check if this is a specific entity type we want to include
-          const entityType = memory.metadata?.entityType as string | undefined;
-          const isTargetEntity =
-            entityType && ['Person', 'Video', 'File', 'Channel', 'Document'].includes(entityType);
-
-          // Always include our target entity types
-          if (isTargetEntity) {
-            return true;
-          }
-
-          // For events and communications, check if they should be included
-          if (memory.type === 'event' || memory.type === 'communication') {
-            // Filter out Google Drive items for events/communications only
-            const isDriveItem =
-              memory.category === 'Google Drive' ||
-              memory.category === 'Drive' ||
-              (memory.category?.toLowerCase().includes('drive') &&
-                memory.category?.toLowerCase().includes('google')) ||
-              memory.metadata?.source === 'Google Drive' ||
-              (memory.metadata?.source &&
-                typeof memory.metadata.source === 'string' &&
-                memory.metadata.source.toLowerCase().includes('google') &&
-                memory.metadata.source.toLowerCase().includes('drive'));
-
-            if (isDriveItem) {
-              return false;
-            }
-
-            return true;
-          }
-
-          // Filter out any other types we don't want
-          return false;
-        });
-
+        const data: MemoryItem[] = result.data || result;
         const total = result.total || data.length;
 
         return { data, total };
