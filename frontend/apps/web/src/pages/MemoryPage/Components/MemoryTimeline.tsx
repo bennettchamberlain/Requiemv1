@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 
+import { useMemoryTimeline } from '../MemoryProvider';
+
 import { MemoryCard } from './MemoryCard';
-import { useMemoryTimeline } from './MemoryTimelineProvider';
 import { sortMemoriesByTime, groupMemoriesByDate, formatDateForDisplay } from './utils';
 
 export function MemoryTimeline() {

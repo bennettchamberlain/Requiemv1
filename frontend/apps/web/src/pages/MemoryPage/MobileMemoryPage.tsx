@@ -1,68 +1,14 @@
-/// <reference types="google.maps" />
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-// Google Maps API types
-declare global {
-  interface Window {
-    google: typeof google;
-  }
-}
-import { Breadcrumb, Tabs, Card, Select, Button } from '@ci/shadcn';
-import { Search, Loader2, AlertCircle, Filter, Route, MapPin, List, Images, X } from '@ci/shadcn/icons';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { Breadcrumb, Tabs, Select, Button } from '@ci/shadcn';
+import { Search, Filter, MapPin, List, Images, X, Loader2 } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
-import { loadGoogleMaps } from '@/pages/MemoryPage/googleMaps';
 
-import { MemoryTimeline } from './Components/MemoryTimeline';
-import { MemoryTimelineProvider } from './Components/MemoryTimelineProvider';
-
-// Add custom styles for Leaflet
-import './memory-map.css';
-
-// Memory data from API
-interface MemoryItem {
-  id: string;
-  type:
-    | 'event'
-    | 'content'
-    | 'thing'
-    | 'person'
-    | 'contact'
-    | 'place'
-    | 'concept'
-    | 'communication'
-    | 'other';
-  title: string;
-  description: string | null;
-  timestamp: string;
-  category: string;
-  location?: {
-    id: string;
-    name: string | null;
-    lat: number;
-    lng: number;
-    address?: string;
-  };
-  tags: string[];
-  userId: string;
-  metadata?: {
-    communicationType?: string;
-    direction?: string;
-    participantsMetadata?: unknown;
-    relationships?: Array<{
-      type: string;
-      targetId: string;
-      targetName: string;
-      targetType: string;
-      direction: 'outgoing' | 'incoming';
-    }>;
-    [key: string]: unknown;
-  };
-}
+import { MemoryTimeline, MobileMapView, useMemoryTimeline } from './Components';
 
 // File metadata for gallery
 interface FileMeta {
@@ -73,19 +19,13 @@ interface FileMeta {
   url?: string;
 }
 
-export default function MobileMemoryPage() {
+function MobileMemoryPageContent() {
   usePageTitle('Memory - Companion Intelligence');
   const [{ authToken }] = useAuth();
+  const { searchQuery, setSearchQuery } = useMemoryTimeline();
+  const [, setSearchParams] = useSearchParams();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [memories, setMemories] = useState<MemoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('list');
-  const mapRef = useRef<L.Map | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-
-  const [showTimeline, setShowTimeline] = useState<boolean>(false);
 
   // Gallery states
   const [galleryFiles, setGalleryFiles] = useState<FileMeta[]>([]);
@@ -93,69 +33,6 @@ export default function MobileMemoryPage() {
 
   // Mobile-specific states
   const [showFilters, setShowFilters] = useState(false);
-
-  // Pagination states for lazy loading
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-
-  const listEndRef = useRef<HTMLDivElement>(null);
-
-  // Fetch memories from API with pagination
-  const fetchMemories = async (query?: string, currentOffset = 0, append = false) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Build query parameters
-      const params = new URLSearchParams();
-      if (query) {
-        params.append('search', query);
-      }
-
-      params.append('limit', '100'); // Fetch 100 at a time
-      params.append('offset', currentOffset.toString());
-
-      const url = `/api/memory${params.toString() ? `?${params.toString()}` : ''}`;
-
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch memories: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      const data: MemoryItem[] = result.data || result; // Handle both array and {data: []} format
-      const total = result.total || data.length;
-
-      if (append) {
-        setMemories((prev) => [...prev, ...data]);
-      } else {
-        setMemories(data);
-      }
-
-      setHasMore(currentOffset + data.length < total);
-      setOffset(currentOffset + data.length);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-      if (!append) {
-        setMemories([]); // Clear memories on error only for initial load
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load more memories (for infinite scroll)
-  const loadMore = () => {
-    if (!loading && hasMore) {
-      fetchMemories(searchQuery, offset, true);
-    }
-  };
 
   // Fetch files for gallery
   const fetchGalleryFiles = async () => {
@@ -184,13 +61,6 @@ export default function MobileMemoryPage() {
     }
   };
 
-  // Initial load
-  useEffect(() => {
-    setOffset(0);
-    setHasMore(true);
-    fetchMemories(searchQuery, 0, false);
-  }, [authToken]);
-
   // Load gallery files when gallery tab is active
   useEffect(() => {
     if (activeTab === 'gallery') {
@@ -198,34 +68,25 @@ export default function MobileMemoryPage() {
     }
   }, [activeTab, authToken]);
 
-  // Intersection observer for infinite scroll
-  useEffect(() => {
-    const currentRef = listEndRef.current;
-    if (!currentRef) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loading) {
-          loadMore();
-        }
-      },
-      { threshold: 0.1 },
-    );
-
-    observer.observe(currentRef);
-
-    return () => {
-      observer.unobserve(currentRef);
-    };
-  }, [hasMore, loading]); // Removed offset from dependencies
-
   // Handle search
   const handleSearch = () => {
-    setOffset(0);
-    setHasMore(true);
-    fetchMemories(searchQuery, 0, false);
+    // Update URL with search query
+    if (searchQuery.trim()) {
+      setSearchParams({ search: searchQuery.trim() });
+    } else {
+      setSearchParams({});
+    }
+    // Search is automatically triggered when searchQuery changes in MemoryProvider
+  };
+
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+
+    // If the input is cleared, also clear the URL
+    if (!value.trim()) {
+      setSearchParams({});
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -233,258 +94,6 @@ export default function MobileMemoryPage() {
       handleSearch();
     }
   };
-
-  const memoriesWithLocation = memories.filter(
-    (memory) =>
-      memory.location &&
-      typeof memory.location.lat === 'number' &&
-      typeof memory.location.lng === 'number' &&
-      !isNaN(memory.location.lat) &&
-      !isNaN(memory.location.lng) &&
-      !(memory.location.lat === 0 && memory.location.lng === 0),
-  );
-
-  // Function to wait for Google Maps to load
-  const waitForGoogleMaps = (): Promise<void> => {
-    return loadGoogleMaps();
-  };
-
-  // Initialize map for mobile
-  useEffect(() => {
-    const initializeMap = async () => {
-      if (activeTab !== 'map' || !mapContainerRef.current) {
-        return;
-      }
-
-      // Fix for Leaflet's icon paths
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-        iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-      });
-
-      // When switching tabs, we need to destroy and recreate the map
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-
-      const primaryColor = 'var(--primary)';
-      const destructiveColor = 'var(--destructive)';
-
-      // Initialize map with a world view (will be adjusted to fit markers)
-      mapRef.current = L.map(mapContainerRef.current).setView([20, 0], 2);
-
-      // Use satellite imagery
-      L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        {
-          attribution: '',
-          maxZoom: 20,
-        },
-      ).addTo(mapRef.current);
-
-      // Create custom icon for markers
-      const customIcon = L.divIcon({
-        className: 'custom-map-marker',
-        html: `<div class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-md">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-map-pin"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-            </div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 24],
-        popupAnchor: [0, -24],
-      });
-
-      // Add markers for memories with location
-      const bounds = L.latLngBounds([]);
-      const markers: L.Marker[] = [];
-
-      const sortedMemories = [...memoriesWithLocation].sort(
-        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      );
-
-      sortedMemories.forEach((memory, index) => {
-        if (memory.location) {
-          const marker = L.marker([memory.location.lat, memory.location.lng], { icon: customIcon })
-            .addTo(mapRef.current!)
-            .bindPopup(
-              `
-            <div class="p-3">
-              ${
-                memory.category === 'Image' && memory.metadata?.url
-                  ? `<div class="mb-3 -mx-3 -mt-3">
-                  <img src="${memory.metadata.url}" alt="${memory.title}" class="w-full h-32 object-cover rounded-t-lg" />
-                </div>`
-                  : ''
-              }
-              <div class="font-bold text-lg mb-1">${memory.title}</div>
-              <div class="text-sm mb-2 text-muted-foreground">${memory.description || 'No description'}</div>
-              <div class="text-xs text-muted-foreground">${new Date(memory.timestamp).toLocaleString()}</div>
-              <div class="mt-2 flex items-center gap-2">
-                <span class="text-xs inline-block px-2 py-1 rounded-full bg-primary/10 text-primary">
-                  ${memory.category}
-                </span>
-                ${showTimeline ? `<span class="text-xs text-muted-foreground">#${index + 1}</span>` : ''}
-                ${
-                  memory.category === 'Video' && memory.metadata?.url
-                    ? '<span class="text-xs text-muted-foreground">📹 Video</span>'
-                    : ''
-                }
-                ${
-                  memory.category === 'Audio' && memory.metadata?.url
-                    ? '<span class="text-xs text-muted-foreground">🎵 Audio</span>'
-                    : ''
-                }
-              </div>
-            </div>
-          `,
-              {
-                className: 'custom-popup',
-                maxWidth: 300,
-                minWidth: 200,
-                closeButton: true,
-                autoClose: false,
-              },
-            );
-
-          markers.push(marker);
-          bounds.extend([memory.location.lat, memory.location.lng]);
-        }
-      });
-
-      // Add timeline path if enabled
-      if (showTimeline && markers.length > 1) {
-        // Add numbered markers for timeline
-        markers.forEach((marker, index) => {
-          const numberIcon = L.divIcon({
-            className: 'timeline-number-marker',
-            html: `<div class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold shadow-md">
-                  ${index + 1}
-                </div>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-          });
-
-          L.marker(marker.getLatLng(), { icon: numberIcon })
-            .addTo(mapRef.current!)
-            .bindTooltip(`Step ${index + 1}: ${sortedMemories[index].title}`, {
-              permanent: false,
-              direction: 'top',
-              offset: [0, -10],
-            });
-        });
-
-        // Create actual road routes using Google Maps JavaScript API
-        const createRoadRoute = async (start: L.LatLng, end: L.LatLng) => {
-          try {
-            // Wait for Google Maps to load
-            await waitForGoogleMaps();
-
-            // Create Google Maps LatLng objects
-            const googleStart = new window.google.maps.LatLng(start.lat, start.lng);
-            const googleEnd = new window.google.maps.LatLng(end.lat, end.lng);
-
-            // Create DirectionsService
-            const directionsService = new window.google.maps.DirectionsService();
-
-            // Request directions
-            const request = {
-              origin: googleStart,
-              destination: googleEnd,
-              travelMode: window.google.maps.TravelMode.DRIVING,
-              avoidHighways: false,
-              avoidTolls: false,
-            };
-
-            // Get directions
-            const result = await new Promise<google.maps.DirectionsResult>((resolve, reject) => {
-              directionsService.route(
-                request,
-                (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
-                  if (status === window.google.maps.DirectionsStatus.OK && result) {
-                    resolve(result);
-                  } else {
-                    reject(new Error(`Directions request failed: ${status}`));
-                  }
-                },
-              );
-            });
-
-            if (result.routes && result.routes.length > 0) {
-              const route = result.routes[0];
-              const overviewPath = route.overview_path;
-
-              // Convert Google Maps LatLng to Leaflet LatLng
-              const waypoints = overviewPath.map(
-                (point: google.maps.LatLng) => new L.LatLng(point.lat(), point.lng()),
-              );
-
-              // Create the route path
-              L.polyline(waypoints, {
-                color: primaryColor,
-                weight: 5,
-                opacity: 0.9,
-                dashArray: '20, 10',
-              }).addTo(mapRef.current!);
-            } else {
-              createFallbackRoute(start, end);
-            }
-          } catch {
-            createFallbackRoute(start, end);
-          }
-        };
-
-        // Fallback route creation (straight line with some curves)
-        const createFallbackRoute = (start: L.LatLng, end: L.LatLng) => {
-          const distance = start.distanceTo(end);
-          const numWaypoints = Math.max(3, Math.min(10, Math.floor(distance / 500)));
-
-          const waypoints: L.LatLng[] = [];
-
-          for (let i = 0; i <= numWaypoints; i++) {
-            const ratio = i / numWaypoints;
-            const curveIntensity = 0.002;
-            const latOffset = Math.sin(ratio * Math.PI) * curveIntensity * (i % 2 === 0 ? 1 : -1);
-            const lngOffset = Math.cos(ratio * Math.PI) * curveIntensity * (i % 2 === 0 ? 1 : -1);
-
-            const waypoint = new L.LatLng(
-              start.lat + (end.lat - start.lat) * ratio + latOffset,
-              start.lng + (end.lng - start.lng) * ratio + lngOffset,
-            );
-
-            waypoints.push(waypoint);
-          }
-
-          L.polyline(waypoints, {
-            color: destructiveColor,
-            weight: 3,
-            opacity: 0.7,
-            dashArray: '10, 5',
-          }).addTo(mapRef.current!);
-        };
-
-        // Create routes between consecutive points
-        for (let i = 0; i < markers.length - 1; i++) {
-          const start = markers[i].getLatLng();
-          const end = markers[i + 1].getLatLng();
-          await createRoadRoute(start, end);
-        }
-      }
-
-      if (bounds.isValid()) {
-        mapRef.current.fitBounds(bounds, { padding: [20, 20] });
-      }
-
-      // Add map controls
-      if (!mapRef.current.zoomControl) {
-        L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
-      }
-    };
-
-    initializeMap();
-  }, [activeTab, memoriesWithLocation, showTimeline]);
 
   return (
     <>
@@ -515,9 +124,8 @@ export default function MobileMemoryPage() {
               className="block w-full p-3 pl-10 text-base border rounded-lg bg-background border-input text-foreground placeholder:text-muted-foreground"
               placeholder="Search memories..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchInputChange}
               onKeyDown={handleKeyPress}
-              disabled={loading}
             />
             {searchQuery && (
               <button
@@ -585,18 +193,7 @@ export default function MobileMemoryPage() {
 
               {activeTab === 'map' && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {memoriesWithLocation.length} location{memoriesWithLocation.length !== 1 ? 's' : ''}
-                  </span>
-                  <Button
-                    variant={showTimeline ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setShowTimeline(!showTimeline)}
-                    className="flex items-center gap-1"
-                  >
-                    <Route className="h-4 w-4" />
-                    Timeline
-                  </Button>
+                  <span className="text-sm text-muted-foreground">Memories with locations</span>
                 </div>
               )}
             </div>
@@ -604,114 +201,87 @@ export default function MobileMemoryPage() {
         </div>
 
         {/* Error Display */}
-        {error && (
-          <Card className="bg-destructive/10 text-destructive">
-            <Card.Content className="flex items-start gap-3 p-3">
-              <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-              <div>
-                <h3 className="font-medium text-sm">Error loading memories</h3>
-                <p className="text-sm">{error}</p>
-              </div>
-            </Card.Content>
-          </Card>
-        )}
-
-        {/* Loading State */}
-        {loading && (
-          <div className="flex justify-center items-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        )}
-
         {/* Content */}
-        {!loading && !error && (
-          <>
-            {activeTab === 'list' && (
-              <MemoryTimelineProvider>
-                <MemoryTimeline />
-              </MemoryTimelineProvider>
-            )}
+        <>
+          {activeTab === 'list' && <MemoryTimeline />}
 
-            {activeTab === 'map' && (
-              <div className="h-[calc(100vh-140px)] -mx-2 -mb-2">
-                <div ref={mapContainerRef} className="h-full w-full" style={{ touchAction: 'none' }} />
+          {activeTab === 'map' && <MobileMapView />}
+
+          {activeTab === 'gallery' && (
+            <>
+              <div className="space-y-4">
+                {/* Gallery Content */}
+                {galleryLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {galleryFiles.map((file) => {
+                      if (file.contentType.startsWith('image/')) {
+                        return (
+                          <div
+                            key={file.id}
+                            className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
+                          >
+                            <img
+                              src={file.url}
+                              alt={file.name}
+                              className="w-full h-32 object-cover rounded mb-2"
+                              loading="lazy"
+                            />
+                            <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
+                              {file.name}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {(Number(file.size) / 1024).toFixed(1)} KB
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (file.contentType.startsWith('video/')) {
+                        return (
+                          <div
+                            key={file.id}
+                            className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
+                          >
+                            <video
+                              src={file.url}
+                              controls
+                              className="w-full h-32 object-cover rounded mb-2 bg-black"
+                              preload="metadata"
+                            />
+                            <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
+                              {file.name}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {(Number(file.size) / 1024 / 1024).toFixed(1)} MB
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return null;
+                    })}
+                  </div>
+                )}
+
+                {!galleryLoading && galleryFiles.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground text-sm">No content uploaded yet.</p>
+                    <p className="text-sm text-muted-foreground mt-1">Use the + button to add new content.</p>
+                  </div>
+                )}
               </div>
-            )}
-
-            {activeTab === 'gallery' && (
-              <>
-                <div className="space-y-4">
-                  {/* Gallery Content */}
-                  {galleryLoading ? (
-                    <div className="flex justify-center items-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                      {galleryFiles.map((file) => {
-                        if (file.contentType.startsWith('image/')) {
-                          return (
-                            <div
-                              key={file.id}
-                              className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
-                            >
-                              <img
-                                src={file.url}
-                                alt={file.name}
-                                className="w-full h-32 object-cover rounded mb-2"
-                                loading="lazy"
-                              />
-                              <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
-                                {file.name}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {(Number(file.size) / 1024).toFixed(1)} KB
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        if (file.contentType.startsWith('video/')) {
-                          return (
-                            <div
-                              key={file.id}
-                              className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
-                            >
-                              <video
-                                src={file.url}
-                                controls
-                                className="w-full h-32 object-cover rounded mb-2 bg-black"
-                                preload="metadata"
-                              />
-                              <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
-                                {file.name}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {(Number(file.size) / 1024 / 1024).toFixed(1)} MB
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        return null;
-                      })}
-                    </div>
-                  )}
-
-                  {!galleryLoading && galleryFiles.length === 0 && (
-                    <div className="text-center py-8">
-                      <p className="text-muted-foreground text-sm">No content uploaded yet.</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Use the + button to add new content.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </>
       </PageContent>
     </>
   );
+}
+
+export default function MobileMemoryPage() {
+  return <MobileMemoryPageContent />;
 }
