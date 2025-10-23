@@ -14,7 +14,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { SignupCodeService, type SignupDto, UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
-import { JwtPayload, LoginDto } from '../types';
+import { JwtPayload, LoginDto, SessionMetadata } from '../types';
 
 const localStrategySchema = z.object({
   username: z.string(),
@@ -39,7 +39,7 @@ export class SessionController {
   @Post('authenticate')
   @HttpCode(200)
   async login(@Req() req: Request, @Body(new ValidationPipe(localStrategySchema)) input: LoginDto) {
-    const user = await this.authService.validateUser(input.username, input.password);
+    const user = await this.userService.validatePassword(input.username, input.password);
 
     if (user == null) {
       throw new UnauthorizedException('Invalid credentials');
@@ -64,6 +64,7 @@ export class SessionController {
     }
 
     const signupCodeLookup = await this.signupCodeService.findOne(signup_code);
+
     if (!signupCodeLookup) {
       throw new BadRequestException('Must provide a valid signup code');
     }
@@ -97,31 +98,21 @@ export class SessionController {
   @Post('authenticate/refresh')
   @HttpCode(200)
   async refresh(@Req() req: Request) {
-    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
-
-    if (!authHeader) {
-      throw new UnauthorizedException('No refresh token provided');
-    } else if (Array.isArray(authHeader)) {
-      throw new BadRequestException('Multiple authorization headers');
-    }
-
-    const sessionToken = authHeader.replace(/^Bearer /, '').trim();
-    let payload: JwtPayload;
-
-    try {
-      payload = this.authService.validateSessionToken(sessionToken);
-    } catch {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-
+    const token = this.getSessionToken(req);
+    const payload = this.validateSessionToken(token);
     const userId = payload.sub;
-
     const user = await this.userService.findOne(userId);
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
     const newSessionToken = await this.authService.rotateSessionToken(
       userId,
-      sessionToken,
+      token,
       this.getSessionMeta(req),
     );
+
     const accessToken = await this.authService.issueAccessToken(userId);
 
     return {
@@ -131,7 +122,42 @@ export class SessionController {
     };
   }
 
-  getSessionMeta(request: Request) {
+  @Post('authenticate/logout')
+  @HttpCode(204)
+  async logout(@Req() req: Request) {
+    const token = this.getSessionToken(req);
+    const payload = this.validateSessionToken(token);
+    const userId = payload.sub;
+    const user = await this.userService.findOne(userId);
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    await this.authService.invalidateSession(userId, token, this.getSessionMeta(req));
+  }
+
+  private getSessionToken(req: Request) {
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+
+    if (!authHeader) {
+      throw new UnauthorizedException('No token provided');
+    } else if (Array.isArray(authHeader)) {
+      throw new BadRequestException('Multiple authorization headers');
+    }
+
+    return authHeader.replace(/^Bearer /, '').trim();
+  }
+
+  private validateSessionToken(token: string): JwtPayload {
+    try {
+      return this.authService.validateSessionToken(token);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+  }
+
+  private getSessionMeta(request: Request): SessionMetadata {
     return {
       ip: request.ip,
       userAgent: request.headers['user-agent'],

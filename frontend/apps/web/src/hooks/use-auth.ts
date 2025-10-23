@@ -9,6 +9,8 @@ const SESSION_TOKEN_KEY = 'sessionToken';
 const ACCESS_TOKEN_COOKIE = 'CI_accessToken';
 const SESSION_TOKEN_COOKIE = 'CI_sessionToken';
 
+const authChannel = new BroadcastChannel('auth');
+
 interface JwtPayload {
   sub: string;
   iat: number;
@@ -122,8 +124,20 @@ function useAuth(): ReturnValue {
     [navigate, updateAccessToken, updateSessionToken],
   );
 
-  const logout = useCallback(() => {
-    // TODO: This isn't good enough, we need to POST to the API to destroy the session.
+  const logout = useCallback(async () => {
+    if (sessionToken) {
+      try {
+        await fetchJson('/api/authenticate/logout', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${sessionToken}`,
+          },
+        });
+      } catch (error) {
+        console.error('Logout failed on server:', error);
+      }
+    }
+
     updateAccessToken(null);
     updateSessionToken(null);
     setUser(null);
@@ -131,8 +145,10 @@ function useAuth(): ReturnValue {
     setLoginError(null);
     setInitialLoading(false);
 
+    authChannel.postMessage('logout');
+
     navigate('/');
-  }, [navigate, updateAccessToken, updateSessionToken]);
+  }, [navigate, sessionToken, updateAccessToken, updateSessionToken]);
 
   const signup = useCallback(
     async (name: string, email: string, password: string, signup_code: string) => {
@@ -154,16 +170,17 @@ function useAuth(): ReturnValue {
         updateAccessToken(data.accessToken);
         updateSessionToken(data.sessionToken);
         setUser(data.user);
+        setInitialLoading(false);
 
-        navigate('/feed');
-      } catch (error: unknown) {
+        navigate('/');
+      } catch (err: unknown) {
         setUser(null);
-        setLoginError(error);
+        setLoginError(err);
       } finally {
         setLoginLoading(false);
       }
     },
-    [setUser, updateAccessToken, updateSessionToken],
+    [setUser, updateAccessToken, updateSessionToken, navigate],
   );
 
   const refresh = useCallback(async () => {
@@ -207,6 +224,22 @@ function useAuth(): ReturnValue {
   }, [accessToken, sessionToken, refresh]);
 
   useAutoRefreshToken(accessToken, sessionToken, refresh);
+
+  useEffect(() => {
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (event.data === 'logout') {
+        updateAccessToken(null);
+        updateSessionToken(null);
+        setUser(null);
+      }
+    };
+
+    authChannel.addEventListener('message', handleAuthMessage);
+
+    return () => {
+      authChannel.removeEventListener('message', handleAuthMessage);
+    };
+  }, [updateAccessToken, updateSessionToken]);
 
   useEffect(() => {
     (async () => {
