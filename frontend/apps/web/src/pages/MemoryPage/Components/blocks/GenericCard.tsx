@@ -1,14 +1,14 @@
-import { Card } from '@ci/shadcn';
+import { Card, cn } from '@ci/shadcn';
 import { useNavigate } from 'react-router-dom';
 
 import type { MemoryCardProps } from '../types';
 
 interface GenericCardProps extends MemoryCardProps {
   Icon: React.ComponentType<{ className?: string }>;
-  iconColor: string;
+  iconColorClass: string;
 }
 
-export function GenericCard({ memory, Icon, iconColor }: GenericCardProps) {
+export function GenericCard({ memory, Icon, iconColorClass }: GenericCardProps) {
   const navigate = useNavigate();
 
   const handleClick = () => {
@@ -21,23 +21,23 @@ export function GenericCard({ memory, Icon, iconColor }: GenericCardProps) {
       onClick={handleClick}
     >
       <div className="flex items-start gap-3">
-        <Icon className={`h-6 w-6 ${iconColor} flex-shrink-0 mt-1`} />
+        <Icon className={cn('h-6 w-6 flex-shrink-0 mt-1', iconColorClass)} />
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-gray-900 truncate">{memory.title}</h3>
-          <p className="text-sm text-gray-600">{memory.category}</p>
+          <h3 className="text-lg font-semibold text-card-foreground truncate">{memory.title}</h3>
+          <p className="text-sm text-muted-foreground">{memory.category}</p>
         </div>
       </div>
 
       {memory.description && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-gray-700 leading-relaxed">{memory.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
         </div>
       )}
 
       {memory.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {memory.tags.map((tag, index) => (
-            <span key={index} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+            <span key={index} className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
               {tag}
             </span>
           ))}

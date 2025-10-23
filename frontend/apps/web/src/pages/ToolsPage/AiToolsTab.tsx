@@ -210,24 +210,6 @@ export function AiToolsTab() {
           ))}
         </div>
       </div>
-
-      {/* Help Text */}
-      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <h3 className="text-sm font-medium text-blue-900 mb-2">How Tool Toggles Work</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>
-            • <strong>Enabled tools</strong> are available for AI conversations and will provide personalized
-            responses
-          </li>
-          <li>
-            • <strong>Disabled tools</strong> won't be used by the AI, giving you control over data access
-          </li>
-          <li>
-            • <strong>System tools</strong> are controlled by administrators and cannot be toggled by users
-          </li>
-          <li>• Your preferences are saved locally and will persist between sessions</li>
-        </ul>
-      </div>
     </div>
   );
 }

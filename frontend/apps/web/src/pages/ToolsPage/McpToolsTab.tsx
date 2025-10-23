@@ -20,6 +20,7 @@ interface McpServerCardProps {
   onStartServer: (serverName: string) => Promise<{ success: boolean; error?: string }>;
   onStopServer: (serverName: string) => Promise<{ success: boolean; error?: string }>;
   onExecuteTool: (
+    serverName: string,
     toolName: string,
     args?: unknown,
   ) => Promise<{ success: boolean; result?: unknown; error?: string }>;
@@ -41,7 +42,7 @@ const McpServerCard = ({
   getServerStatus,
 }: McpServerCardProps) => {
   const serverStatus = getServerStatus(serverName);
-  const isRunning = serverStatus.status === 'connected';
+  const isRunning = serverStatus.status === 'connected' || serverStatus.status === 'connecting';
   const isHealthy = serverStatus.health === 'healthy';
 
   const getStatusIcon = () => {
@@ -57,6 +58,10 @@ const McpServerCard = ({
   };
 
   const getStatusText = () => {
+    if (serverStatus.status === 'connecting') {
+      return 'Connecting...';
+    }
+
     if (isRunning && isHealthy) {
       return 'Running';
     }
@@ -69,6 +74,10 @@ const McpServerCard = ({
   };
 
   const getStatusColor = () => {
+    if (serverStatus.status === 'connecting') {
+      return 'bg-blue-100 text-blue-700';
+    }
+
     if (isRunning && isHealthy) {
       return 'bg-green-100 text-green-700';
     }
@@ -90,7 +99,7 @@ const McpServerCard = ({
 
   const handleToolExecution = async (toolName: string) => {
     // For demo purposes, just show it works
-    await onExecuteTool(toolName, {});
+    await onExecuteTool(serverName, toolName, {});
   };
 
   return (
@@ -202,6 +211,7 @@ const McpServerCard = ({
 
 export function McpToolsTab() {
   const {
+    servers,
     toolsByServer,
     isLoading,
     error,
@@ -239,9 +249,7 @@ export function McpToolsTab() {
     );
   }
 
-  const serverNames = Object.keys(toolsByServer);
-
-  if (serverNames.length === 0) {
+  if (servers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 space-y-4">
         <Server className="h-8 w-8 text-muted-foreground" />
@@ -257,6 +265,10 @@ export function McpToolsTab() {
       </div>
     );
   }
+
+  const toolsMap = toolsByServer;
+  const totalTools = Object.values(toolsMap).reduce((total, toolList) => total + toolList.length, 0);
+  const activeServers = servers.filter((server) => server.status === 'running');
 
   return (
     <div className="space-y-6">
@@ -294,48 +306,27 @@ export function McpToolsTab() {
       <div className="flex gap-4 text-sm">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-          <span>
-            {Object.values(toolsByServer).reduce((total, tools) => total + tools.length, 0)} Total Tools
-          </span>
+          <span>{totalTools} Total Tools</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-          <span>{serverNames.length} Active Servers</span>
+          <span>{activeServers.length} Active Servers</span>
         </div>
       </div>
 
       {/* Servers Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {serverNames.map((serverName) => (
+        {servers.map((server) => (
           <McpServerCard
-            key={serverName}
-            serverName={serverName}
-            tools={toolsByServer[serverName]}
+            key={server.name}
+            serverName={server.name}
+            tools={toolsMap[server.name] ?? []}
             onStartServer={startServer}
             onStopServer={stopServer}
             onExecuteTool={executeTool}
             getServerStatus={getServerStatus}
           />
         ))}
-      </div>
-
-      {/* Help Text */}
-      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <h3 className="text-sm font-medium text-blue-900 mb-2">About MCP Server Tools</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>
-            • <strong>MCP Servers</strong> provide external capabilities to the AI assistant
-          </li>
-          <li>
-            • <strong>Start/Stop</strong> servers to control which tools are available
-          </li>
-          <li>
-            • <strong>Health indicators</strong> show the current status of each server
-          </li>
-          <li>
-            • <strong>Tool execution</strong> allows you to test individual tools (demo mode)
-          </li>
-        </ul>
       </div>
     </div>
   );

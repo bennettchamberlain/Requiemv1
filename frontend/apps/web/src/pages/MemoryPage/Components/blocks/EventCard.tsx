@@ -27,26 +27,28 @@ export function EventCard({ memory }: MemoryCardProps) {
       onClick={handleClick}
     >
       <div className="flex items-start gap-3">
-        <Calendar className="h-6 w-6 text-blue-600 flex-shrink-0 mt-1" />
+        <Calendar className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--primary)]" />
         <div className="flex-1 min-w-0">
           <Tooltip>
             <Tooltip.Trigger asChild>
-              <h3 className="text-lg font-semibold text-gray-900 truncate cursor-default">{memory.title}</h3>
+              <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
+                {memory.title}
+              </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
               <p>{memory.title}</p>
             </Tooltip.Content>
           </Tooltip>
-          <p className="text-sm text-gray-600">{memory.category}</p>
+          <p className="text-sm text-muted-foreground">{memory.category}</p>
         </div>
       </div>
 
       {hasStartDate && (
         <div className="flex items-center gap-5">
-          <Clock className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-700">Start:</span>
-            <span className="ml-2 text-sm text-gray-900">
+            <span className="text-sm font-medium text-muted-foreground">Start:</span>
+            <span className="ml-2 text-sm text-card-foreground">
               {formatDateTime(memory.startDate || '', memory.startTime || undefined)}
             </span>
           </div>
@@ -55,10 +57,10 @@ export function EventCard({ memory }: MemoryCardProps) {
 
       {hasEndDate && (
         <div className="flex items-center gap-5">
-          <Clock className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-700">End:</span>
-            <span className="ml-2 text-sm text-gray-900">
+            <span className="text-sm font-medium text-muted-foreground">End:</span>
+            <span className="ml-2 text-sm text-card-foreground">
               {formatDateTime(memory.endDate || '', memory.endTime || undefined)}
             </span>
           </div>
@@ -67,60 +69,60 @@ export function EventCard({ memory }: MemoryCardProps) {
 
       {hasOrganizer && (
         <div className="flex items-center gap-5">
-          <User className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-700">Organizer:</span>
-            <span className="ml-2 text-sm text-gray-900">{memory.organizer}</span>
+            <span className="text-sm font-medium text-muted-foreground">Organizer:</span>
+            <span className="ml-2 text-sm text-card-foreground">{memory.organizer}</span>
           </div>
         </div>
       )}
 
       {hasRepeating && (
         <div className="flex items-center gap-5">
-          <Repeat className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <Repeat className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-700">Repeats:</span>
-            <span className="ml-2 text-sm text-gray-900">{memory.repeatingFrequency}</span>
+            <span className="text-sm font-medium text-muted-foreground">Repeats:</span>
+            <span className="ml-2 text-sm text-card-foreground">{memory.repeatingFrequency}</span>
           </div>
         </div>
       )}
 
       {hasDuration && (
         <div className="flex items-center gap-5">
-          <Timer className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <Timer className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-700">Duration:</span>
-            <span className="ml-2 text-sm text-gray-900">{formatDuration(memory.duration || 0)}</span>
+            <span className="text-sm font-medium text-muted-foreground">Duration:</span>
+            <span className="ml-2 text-sm text-card-foreground">{formatDuration(memory.duration || 0)}</span>
           </div>
         </div>
       )}
 
       {hasLocation && (
         <div className="flex items-center gap-5">
-          <MapPin className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
-            <span className="text-sm font-medium text-gray-700">Location:</span>
-            <span className="ml-2 text-sm text-gray-900">{hasLocation}</span>
+            <span className="text-sm font-medium text-muted-foreground">Location:</span>
+            <span className="ml-2 text-sm text-card-foreground">{hasLocation}</span>
           </div>
         </div>
       )}
 
       {hasSource && (
         <div className="flex items-center gap-5">
-          <span className="text-sm font-medium text-gray-700">Source:</span>
-          <span className="text-sm text-gray-900">{memory.source}</span>
+          <span className="text-sm font-medium text-muted-foreground">Source:</span>
+          <span className="text-sm text-card-foreground">{memory.source}</span>
         </div>
       )}
 
       {hasSourceLink && (
         <div className="flex items-center gap-5">
-          <Link className="h-4 w-4 text-gray-500 flex-shrink-0" />
+          <Link className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
             <a
               href={memory.sourceLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-blue-600 hover:text-blue-800 underline"
+              className="text-sm text-primary hover:text-primary/80 underline"
               onClick={(e) => e.stopPropagation()}
             >
               View source
@@ -131,7 +133,7 @@ export function EventCard({ memory }: MemoryCardProps) {
 
       {hasDescription && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-gray-700 leading-relaxed">{memory.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
         </div>
       )}
     </Card>

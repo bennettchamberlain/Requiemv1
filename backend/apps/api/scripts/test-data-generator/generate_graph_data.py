@@ -536,7 +536,7 @@ class GraphDataGenerator:
             "properties": {
                 "type": "Residence",
                 "latitude": 33.5427,
-                "longitude": 117.7854,
+                "longitude": -117.7854,
                 "address": "123 Maple Street, Laguna Beach, CA",
                 "bedrooms": 4,
                 "neighborhood": "Generic area"
