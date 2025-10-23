@@ -126,13 +126,9 @@ export class SessionController {
   @HttpCode(204)
   async logout(@Req() req: Request) {
     const token = this.getSessionToken(req);
-    console.log(token);
     const payload = this.validateSessionToken(token);
-    console.log(payload);
     const userId = payload.sub;
-    console.log(userId);
     const user = await this.userService.findOne(userId);
-    console.log(user);
 
     if (!user) {
       throw new UnauthorizedException('Invalid or expired token');
