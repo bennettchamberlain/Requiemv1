@@ -139,6 +139,7 @@ export class FileService implements OnModuleInit {
       file_path: filePath,
       filename: file.originalname,
       storage_type: 'cloud', // S3/Minio is cloud storage
+      storage_provider: 's3',
       modified_at_source: new Date(), // Upload time as modification time
       bucket,
       key: fileKey,
@@ -154,8 +155,8 @@ export class FileService implements OnModuleInit {
 
     await this.s3.send(
       new PutObjectCommand({
-        Bucket: result.bucket,
-        Key: result.key,
+        Bucket: result.bucket ?? config.staticfiles.bucket,
+        Key: result.key!,
         Body: file.buffer,
         ContentType: result.content_type,
       }),
@@ -197,9 +198,13 @@ export class FileService implements OnModuleInit {
       throw new NotFoundException();
     }
 
+    if (!result.bucket || !result.key) {
+      return result.file_path;
+    }
+
     const command = new GetObjectCommand({
-      Bucket: result.bucket,
-      Key: result.key,
+      Bucket: result.bucket ?? config.staticfiles.bucket,
+      Key: result.key!,
       ResponseContentType: result.content_type,
     });
 
@@ -210,14 +215,125 @@ export class FileService implements OnModuleInit {
     return this.getKeyAndQuery(url);
   }
 
+  async upsertExternal(
+    context: RequestContext,
+    input: {
+      externalId: string;
+      provider: string;
+      filename: string;
+      mimeType: string;
+      url?: string | null;
+      size?: number | string | null;
+      modifiedAt?: string | Date | null;
+      storageAccount?: string | null;
+    },
+  ): Promise<File> {
+    const userId = context.userId;
+
+    if (!userId) {
+      throw new Error('User ID is required to store external files');
+    }
+
+    const provider = input.provider || 'external';
+    const filePath = input.url ?? `external://${provider}/${input.externalId}`;
+    const modifiedAt =
+      input.modifiedAt instanceof Date
+        ? input.modifiedAt
+        : input.modifiedAt
+          ? new Date(input.modifiedAt)
+          : new Date();
+    const rawSize =
+      typeof input.size === 'string'
+        ? Number.parseInt(input.size, 10)
+        : typeof input.size === 'number'
+          ? input.size
+          : 0;
+    const normalizedSize = Number.isFinite(rawSize) ? rawSize : 0;
+
+    let entity = await this.fileRepository.findOne({
+      where: {
+        cloud_file_id: input.externalId,
+        user: { id: userId },
+      },
+    });
+
+    if (!entity) {
+      entity = await this.fileRepository.findOne({
+        where: {
+          file_path: filePath,
+          user: { id: userId },
+        },
+      });
+    }
+
+    if (entity) {
+      this.logger.debug('Updating external file metadata', {
+        userId,
+        provider,
+        externalId: input.externalId,
+        filePath,
+      });
+      entity.filename = input.filename;
+      entity.original_name = input.filename;
+      entity.content_type = input.mimeType;
+      entity.size = normalizedSize;
+      entity.modified_at_source = modifiedAt;
+      entity.storage_type = 'cloud';
+      entity.storage_provider = provider;
+      entity.cloud_file_id = input.externalId;
+      entity.storage_account = input.storageAccount ?? entity.storage_account ?? null;
+      entity.bucket = null;
+      entity.key = entity.key ?? uuidv7();
+      entity.file_path = filePath;
+    } else {
+      this.logger.debug('Creating external file record', {
+        userId,
+        provider,
+        externalId: input.externalId,
+        filePath,
+      });
+      entity = this.fileRepository.create({
+        id: uuidv7(),
+        file_path: filePath,
+        filename: input.filename,
+        storage_type: 'cloud',
+        storage_provider: provider,
+        cloud_file_id: input.externalId,
+        storage_account: input.storageAccount ?? null,
+        modified_at_source: modifiedAt,
+        bucket: null,
+        key: uuidv7(),
+        original_name: input.filename,
+        content_type: input.mimeType,
+        size: normalizedSize,
+        user: { id: userId },
+      });
+    }
+
+    const saved = await this.fileRepository.save(entity);
+    this.logger.debug('Upserted external file', { id: saved.id, userId, externalId: input.externalId });
+
+    return this.signFile(saved);
+  }
+
   private async signFiles(files: FileEntity[]): Promise<File[]> {
     return Promise.all(files.map(this.signFile.bind(this)));
   }
 
   private async signFile(file: FileEntity): Promise<File> {
+    const bucket = file.bucket;
+    const key = file.key;
+
+    if (!bucket || !key) {
+      return {
+        ...file.toFile(),
+        url: file.file_path,
+      };
+    }
+
     const command = new GetObjectCommand({
-      Bucket: file.bucket,
-      Key: file.key,
+      Bucket: bucket,
+      Key: key,
       ResponseContentType: file.content_type,
     });
 

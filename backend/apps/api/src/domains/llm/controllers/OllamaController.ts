@@ -186,7 +186,9 @@ export class OllamaController {
   private async resolveMessage(context: RequestContext, message: Message): Promise<OllamaMessage> {
     const images = message.files
       ? await Promise.all(
-          message.files.map(async (file) => this.fileService.getFileContent(context, file.key)),
+          message.files
+            .map((file) => (file.key ? this.fileService.getFileContent(context, file.key) : null))
+            .filter((value): value is Promise<Uint8Array> => value !== null),
         )
       : [];
 

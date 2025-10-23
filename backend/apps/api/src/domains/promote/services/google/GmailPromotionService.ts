@@ -4,8 +4,6 @@ import { LoggerService } from '@ci/common/services';
 import { ConnectionService, type Connection } from '@ci/domains/connections';
 import { CommunicationService } from '@ci/domains/memory';
 
-import { PersonPromotionService } from '../PersonPromotionService';
-
 interface GmailMessage {
   id?: string;
   threadId?: string;
@@ -45,7 +43,6 @@ export class GmailPromotionService {
 
   constructor(
     private readonly communicationService: CommunicationService,
-    private readonly personPromotionService: PersonPromotionService,
     private readonly connectionService: ConnectionService,
   ) {}
 
@@ -191,33 +188,12 @@ export class GmailPromotionService {
       const fromParticipants = messageDetails.participants.filter((p) => p.type === 'from');
       const toParticipants = messageDetails.participants.filter((p) => p.type === 'to');
 
-      // Create person entities for sender (with RECEIVED_EMAIL_FROM relationship)
-      const fromEntityIds = await this.personPromotionService.processParticipants(
-        fromParticipants,
-        userId,
-        connectionId,
-        'email',
-        'RECEIVED_EMAIL_FROM',
-      );
-
-      // Create person entities for recipients (with EMAILED relationship)
-      const toEntityIds = await this.personPromotionService.processParticipants(
-        toParticipants,
-        userId,
-        connectionId,
-        'email',
-        'EMAILED',
-      );
-
-      // Save to communications table
       await this.communicationService.create({
         time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
         user_id: userId,
         communication_type: 'email',
         direction,
         thread_id: message.threadId,
-        from_entity_id: fromEntityIds[0] || undefined,
-        to_entity_ids: toEntityIds.length > 0 ? toEntityIds : undefined,
         participants_metadata: {
           from: fromParticipants,
           to: toParticipants,

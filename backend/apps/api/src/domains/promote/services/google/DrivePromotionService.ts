@@ -1,11 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { GraphUtilityService } from '@ci/domains/graph';
+import { FileService } from '@ci/domains/files';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
-
-import { PersonPromotionService } from '../PersonPromotionService';
 
 interface DriveFile {
   id?: string;
@@ -27,8 +24,7 @@ export class DrivePromotionService {
 
   constructor(
     private readonly contentService: ContentService,
-    private readonly graphUtilityService: GraphUtilityService,
-    private readonly personPromotionService: PersonPromotionService,
+    private readonly fileService: FileService,
   ) {}
 
   async promoteDriveData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -98,70 +94,40 @@ export class DrivePromotionService {
     const fileId = file.id || 'unknown';
     const fileName = file.name || 'Untitled File';
     const mimeType = file.mimeType || 'application/octet-stream';
-    const webViewLink = file.webViewLink || '';
+    const webViewLink = file.webViewLink || null;
 
-    // Get user's entity ID (create if missing)
-    const userEntityId = await this.personPromotionService.getUserEntityId(userId);
+    if (mimeType === 'application/vnd.google-apps.folder') {
+      this.logger.debug('Skipping Google Drive folder', {
+        userId,
+        connectionId,
+        fileId,
+        fileName,
+      });
 
-    // Determine if this is a document, folder, or other file type
-    const isDocument = this.isDocumentType(mimeType);
-    const isFolder = mimeType === 'application/vnd.google-apps.folder';
+      return;
+    }
 
-    // Create file entity
-    const fileEntityId = uuid7();
-    const entityType = isFolder ? 'Folder' : isDocument ? 'Document' : 'File';
-
-    await this.graphUtilityService.createGraphNode({
-      entityId: fileEntityId,
-      entityType,
-      name: fileName,
-      description: `Google Drive ${entityType.toLowerCase()}: ${fileName}`,
-      properties: {
-        file_id: fileId,
-        mime_type: mimeType,
-        url: webViewLink,
-        platform: 'google_drive',
-        size: file.size ? parseInt(file.size, 10) : null,
-        modified_time: file.modifiedTime,
-        icon_link: file.iconLink,
-        owner_user_id: userId,
-      },
-      searchContent: fileName,
-      ownerUserId: userId,
-    });
-
-    // Prepare owner information for relationship metadata
-    const ownerInfo =
-      file.owners && file.owners.length > 0
-        ? file.owners.map((owner) => ({
-            email: owner.emailAddress,
-            display_name: owner.displayName,
-          }))
-        : [];
-
-    // Create relationship to user with owner information in metadata
-    await this.graphUtilityService.createRelationship(
-      userEntityId,
-      fileEntityId,
-      'OWNS',
+    await this.fileService.upsertExternal(
+      { userId },
       {
-        platform: 'google_drive',
-        connection_id: connectionId,
-        file_type: entityType.toLowerCase(),
-        owners: ownerInfo, // Store owner info in relationship metadata
+        externalId: fileId,
+        provider: 'google_drive',
+        filename: fileName,
+        mimeType,
+        url: webViewLink,
+        size: file.size ?? null,
+        modifiedAt: file.modifiedTime ?? null,
+        storageAccount: file.owners?.[0]?.emailAddress ?? null,
       },
-      1.0,
-      userId,
     );
 
-    // If it's a document type, also save as content for searchability
-    if (isDocument) {
+    if (this.isDocumentType(mimeType)) {
       const contentDto = {
         id: '',
         type: 'google_drive_document',
         title: fileName,
         text: `Google Drive document: ${fileName}`,
-        url: webViewLink,
+        url: webViewLink ?? undefined,
         mimetype: mimeType,
         external_id: fileId,
         user: { id: userId },
@@ -171,9 +137,11 @@ export class DrivePromotionService {
     }
 
     this.logger.log('Processed Drive file', {
+      userId,
+      connectionId,
       fileId,
       fileName,
-      entityType,
+      mimeType,
     });
   }
 
