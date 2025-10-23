@@ -20,7 +20,10 @@ export const createBrowserActivitySchemaRoot = z.object({
   contains_sensitive: z.boolean().optional(),
 });
 
-export const createBrowserActivitySchema = z.union([createBrowserActivitySchemaRoot.partial(), z.array(createBrowserActivitySchemaRoot.partial())]);
+export const createBrowserActivitySchema = z.union([
+  createBrowserActivitySchemaRoot.partial(),
+  z.array(createBrowserActivitySchemaRoot.partial()),
+]);
 
 export const updateBrowserActivitySchema = createBrowserActivitySchemaRoot.partial();
 
