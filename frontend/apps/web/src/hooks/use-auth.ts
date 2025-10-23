@@ -9,6 +9,8 @@ const SESSION_TOKEN_KEY = 'sessionToken';
 const ACCESS_TOKEN_COOKIE = 'CI_accessToken';
 const SESSION_TOKEN_COOKIE = 'CI_sessionToken';
 
+const authChannel = new BroadcastChannel('auth');
+
 interface JwtPayload {
   sub: string;
   iat: number;
@@ -131,6 +133,8 @@ function useAuth(): ReturnValue {
     setLoginError(null);
     setInitialLoading(false);
 
+    authChannel.postMessage('logout');
+
     navigate('/');
   }, [navigate, updateAccessToken, updateSessionToken]);
 
@@ -154,16 +158,17 @@ function useAuth(): ReturnValue {
         updateAccessToken(data.accessToken);
         updateSessionToken(data.sessionToken);
         setUser(data.user);
+        setInitialLoading(false);
 
-        navigate('/feed');
-      } catch (error: unknown) {
+        navigate('/');
+      } catch (err: unknown) {
         setUser(null);
-        setLoginError(error);
+        setLoginError(err);
       } finally {
         setLoginLoading(false);
       }
     },
-    [setUser, updateAccessToken, updateSessionToken],
+    [setUser, updateAccessToken, updateSessionToken, navigate],
   );
 
   const refresh = useCallback(async () => {
@@ -207,6 +212,22 @@ function useAuth(): ReturnValue {
   }, [accessToken, sessionToken, refresh]);
 
   useAutoRefreshToken(accessToken, sessionToken, refresh);
+
+  useEffect(() => {
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (event.data === 'logout') {
+        updateAccessToken(null);
+        updateSessionToken(null);
+        setUser(null);
+      }
+    };
+
+    authChannel.addEventListener('message', handleAuthMessage);
+
+    return () => {
+      authChannel.removeEventListener('message', handleAuthMessage);
+    };
+  }, [updateAccessToken, updateSessionToken]);
 
   useEffect(() => {
     (async () => {
