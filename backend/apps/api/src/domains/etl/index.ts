@@ -58,6 +58,7 @@ export type {
   OutlookMailSyncState,
   OutlookCalendarsSyncState,
   OutlookCalendarSyncState,
+  OneDriveSyncState,
   SyncResult,
   CalendarSyncResult,
   GmailSyncResult,

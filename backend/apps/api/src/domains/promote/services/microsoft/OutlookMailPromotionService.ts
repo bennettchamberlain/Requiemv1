@@ -221,7 +221,7 @@ export class OutlookMailPromotionService {
     const attachmentUploads = await Promise.all(
       (messageDetails.attachments || []).map(async (attachment) => {
         const file = {
-          fieldname: 'attachment',
+          fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
           originalname: attachment.name,
           mimetype: attachment.contentType,
           size: attachment.size,

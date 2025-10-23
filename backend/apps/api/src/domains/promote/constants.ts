@@ -9,6 +9,7 @@ export const ApiLogScopes = {
   GOOGLE_CONTACTS: 'Google Contacts',
   OUTLOOK_MAIL: 'Microsoft Graph - Mail',
   OUTLOOK_CALENDAR: 'Microsoft Graph - Calendar',
+  ONEDRIVE_FILES: 'Microsoft Graph - OneDrive Files',
 } as const;
 
 export type ApiLogScope = (typeof ApiLogScopes)[keyof typeof ApiLogScopes];

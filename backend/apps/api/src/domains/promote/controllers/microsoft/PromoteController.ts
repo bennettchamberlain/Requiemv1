@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { LoggerService } from '@ci/common/services';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
+import { OneDrivePromotionService } from '@ci/domains/promote/services/microsoft/OneDrivePromotionService';
 import { OutlookCalendarPromotionService } from '@ci/domains/promote/services/microsoft/OutlookCalendarPromotionService';
 import { OutlookMailPromotionService } from '@ci/domains/promote/services/microsoft/OutlookMailPromotionService';
 
@@ -18,6 +19,7 @@ export class PromoteController {
     private readonly promoteService: PromoteService,
     private readonly outlookMailPromotionService: OutlookMailPromotionService,
     private readonly outlookCalendarPromotionService: OutlookCalendarPromotionService,
+    private readonly oneDrivePromotionService: OneDrivePromotionService,
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
   ) {}
@@ -80,6 +82,39 @@ export class PromoteController {
     } catch (error) {
       // Log as warning - job will complete anyway to avoid infinite retries
       this.logger.warn('Outlook Calendar promotion failed', {
+        apiLogId: payload.apiLogId,
+        userId: payload.userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  }
+
+  /**
+   * Handle OneDrive file promotion event
+   * This runs asynchronously in the job queue after the API log has been marked as processed
+   * Promotes OneDrive files to the event table and creates person entities
+   */
+  @OnEvent(Events.PROMOTE_ONEDRIVE_FILES)
+  async handlePromoteOneDrive(payload: EventPayloads[Events.PROMOTE_ONEDRIVE_FILES]) {
+    this.logger.log('Processing OneDrive promotion job', {
+      apiLogId: payload.apiLogId,
+      userId: payload.userId,
+    });
+
+    try {
+      await this.oneDrivePromotionService.promoteOneDriveFiles(
+        payload.content,
+        payload.userId,
+        payload.connectionId,
+      );
+
+      this.logger.log('OneDrive file promotion completed successfully', {
+        apiLogId: payload.apiLogId,
+      });
+    } catch (error) {
+      // Log as warning - job will complete anyway to avoid infinite retries
+      this.logger.warn('OneDrive file promotion failed', {
         apiLogId: payload.apiLogId,
         userId: payload.userId,
         error: error instanceof Error ? error.message : 'Unknown error',
