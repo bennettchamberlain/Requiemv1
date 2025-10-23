@@ -14,7 +14,7 @@ interface FileMeta {
   url?: string;
 }
 
-export function FilesGalleryPage() {
+export function GalleryView() {
   usePageTitle('Content - Companion Intelligence');
 
   const [{ authToken }] = useAuth();
