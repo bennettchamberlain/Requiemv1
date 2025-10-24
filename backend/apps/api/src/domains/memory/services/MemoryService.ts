@@ -7,8 +7,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
-import { FileService } from '@ci/domains/files';
-import { File } from '@ci/domains/files/types';
+import { FileService, type File } from '@ci/domains/files';
 import { GraphQueryService } from '@ci/domains/graph';
 
 import { FileEntity } from '../entities/FileEntity';
