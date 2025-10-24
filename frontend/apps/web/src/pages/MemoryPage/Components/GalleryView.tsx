@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
+
+import { useMemoryTimeline } from '../MemoryProvider';
 
 interface FileMeta {
   id: string;
@@ -19,42 +21,38 @@ export function GalleryView() {
 
   const [{ authToken }] = useAuth();
 
-  const [files, setFiles] = useState<FileMeta[]>([]);
-  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [files, setFiles] = useState<FileMeta[]>([]);
 
-  // Fetch files and get presigned links
-  useEffect(() => {
-    const fetchFiles = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch('/api/files', {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        });
+  const { memories } = useMemoryTimeline();
 
-        if (!res.ok) {
-          throw new Error('Failed to fetch file list');
+  const hydrateFiles = useCallback(async () => {
+    const tempFiles: FileMeta[] = [];
+    const filtered = memories.filter((memory) => memory.metadata?.entityType === 'File');
+    for (const memory of filtered) {
+      if (memory.metadata) {
+        const tempFile = await (
+          await fetch(`/api/files/${memory.metadata.linkedId}`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          })
+        ).json();
+        if (tempFile) {
+          tempFiles.push(tempFile);
         }
-
-        const metaList: FileMeta[] = (await res.json()).map((file: FileMeta) => ({
-          ...file,
-          url: `/static${file.url}`,
-        }));
-
-        setFiles(metaList);
-      } catch (err) {
-        setError((err as Error).message || 'Unknown error');
-      } finally {
-        setLoading(false);
       }
-    };
+    }
 
-    fetchFiles();
-  }, []);
+    setFiles(tempFiles);
+  }, [memories]);
+
+  useEffect(() => {
+    hydrateFiles();
+  }, [memories]);
+
+  console.log('Gallery files', files);
 
   // File upload handler
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -130,55 +128,49 @@ export function GalleryView() {
         </form>
 
         {error && <div className="mb-4 text-red-500">{error}</div>}
-        {loading ? (
-          <div className="text-gray-500">Loading…</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-            {files.map((file) => {
-              if (file.contentType?.startsWith('image/')) {
-                return (
-                  <div
-                    key={file.id}
-                    className="flex flex-col items-center border rounded-lg p-2 bg-gray-50 shadow"
-                  >
-                    <img
-                      src={file.url}
-                      alt={file.name}
-                      className="w-full h-48 object-cover rounded mb-2"
-                      loading="lazy"
-                    />
-                    <div className="text-xs font-medium">{file.name}</div>
-                    <div className="text-[10px] text-gray-400">
-                      {(Number(file.size) / 1024).toFixed(1)} KB
-                    </div>
-                  </div>
-                );
-              }
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+          {files.map((file) => {
+            if (file.contentType?.startsWith('image/')) {
+              return (
+                <div
+                  key={file.id}
+                  className="flex flex-col items-center border rounded-lg p-2 bg-gray-50 shadow"
+                >
+                  <img
+                    src={`/static/${file.url}`}
+                    alt={file.name}
+                    className="w-full h-48 object-cover rounded mb-2"
+                    loading="lazy"
+                  />
+                  <div className="text-xs font-medium">{file.name}</div>
+                  <div className="text-[10px] text-gray-400">{(Number(file.size) / 1024).toFixed(1)} KB</div>
+                </div>
+              );
+            }
 
-              if (file.contentType?.startsWith('video/')) {
-                return (
-                  <div
-                    key={file.id}
-                    className="flex flex-col items-center border rounded-lg p-2 bg-gray-50 shadow"
-                  >
-                    <video
-                      src={file.url}
-                      controls
-                      className="w-full h-48 object-cover rounded mb-2 bg-black"
-                      preload="metadata"
-                    />
-                    <div className="text-xs font-medium">{file.name}</div>
-                    <div className="text-[10px] text-gray-400">
-                      {(Number(file.size) / 1024 / 1024).toFixed(1)} MB
-                    </div>
+            if (file.contentType?.startsWith('video/')) {
+              return (
+                <div
+                  key={file.id}
+                  className="flex flex-col items-center border rounded-lg p-2 bg-gray-50 shadow"
+                >
+                  <video
+                    src={file.url}
+                    controls
+                    className="w-full h-48 object-cover rounded mb-2 bg-black"
+                    preload="metadata"
+                  />
+                  <div className="text-xs font-medium">{file.name}</div>
+                  <div className="text-[10px] text-gray-400">
+                    {(Number(file.size) / 1024 / 1024).toFixed(1)} MB
                   </div>
-                );
-              }
+                </div>
+              );
+            }
 
-              return null;
-            })}
-          </div>
-        )}
+            return null;
+          })}
+        </div>
       </PageContent>
     </>
   );
