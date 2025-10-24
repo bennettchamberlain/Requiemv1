@@ -20,7 +20,7 @@ function AssistantMessage({ content, renderEmptyContent = false, streamingRef }:
   return (
     <div
       className={cn(
-        'relative rounded-xl rounded-tl-none px-4 py-3 shadow-sm bg-gradient-to-br from-muted to-muted/80 text-foreground border border-border/50 backdrop-blur-sm',
+        'relative rounded-lg rounded-tl-none px-4 py-3 shadow-xs bg-slate-200 dark:bg-secondary text-foreground',
         'has-[>.streaming-content:empty]:hidden',
       )}
     >

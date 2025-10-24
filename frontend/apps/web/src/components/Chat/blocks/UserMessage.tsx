@@ -17,7 +17,7 @@ export function UserMessage({ content }: Props) {
   return (
     <div
       className={cn(
-        'relative self-end rounded-xl rounded-br-none px-4 py-3 shadow-sm bg-gradient-to-br from-primary to-primary/90 text-primary-foreground prose-invert dark:prose max-w-none',
+        'relative self-end rounded-lg rounded-br-none px-4 py-3 shadow-xs bg-primary text-primary-foreground prose-invert dark:prose max-w-none',
         maxWidth,
       )}
     >
