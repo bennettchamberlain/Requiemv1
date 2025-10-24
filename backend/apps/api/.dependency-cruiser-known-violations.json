@@ -1203,6 +1203,15 @@
   },
   {
     "type": "dependency",
+    "from": "src/domains/memory/services/MemoryService.ts",
+    "to": "src/domains/files/types.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/domains/promote/services/microsoft/OneDrivePromotionService.ts",
     "to": "src/domains/connections/clients/MicrosoftClient.ts",
     "rule": {

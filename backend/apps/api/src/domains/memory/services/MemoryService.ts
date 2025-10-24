@@ -1,9 +1,17 @@
+import { Readable } from 'node:stream';
+
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { FileService } from '@ci/domains/files';
+import { File } from '@ci/domains/files/types';
 import { GraphQueryService } from '@ci/domains/graph';
 
+import { FileEntity } from '../entities/FileEntity';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
 
 type GraphNodeLike = {
@@ -17,6 +25,16 @@ type GraphNodeLike = {
   created_at: Date;
   updated_at: Date;
   owner_user_id?: string | null;
+};
+
+type FileUploadFields = {
+  userId: string;
+  fileId?: string;
+  externalId?: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  buffer?: Buffer;
 };
 
 @Injectable()
@@ -38,7 +56,12 @@ export class MemoryService {
     'Communication',
   ];
 
-  constructor(private readonly graphQuery: GraphQueryService) {}
+  constructor(
+    private readonly graphQuery: GraphQueryService,
+    private readonly fileService: FileService,
+    @InjectRepository(FileEntity)
+    private readonly fileRepository: Repository<FileEntity>,
+  ) {}
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
     const userId = this.requireUserId(context);
@@ -372,5 +395,46 @@ export class MemoryService {
     }
 
     return context.userId;
+  }
+
+  async createFile(details: FileUploadFields): Promise<{ file: File; entity: FileEntity }> {
+    const { userId, fileName, mimeType, size, buffer } = details;
+    const file = {
+      fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
+      originalname: fileName, //Multer requires this, but it's not actually used in our logic
+      mimetype: mimeType,
+      size: size,
+      encoding: 'base64',
+      destination: '',
+      stream: '' as unknown as Readable,
+      filename: fileName,
+      path: '',
+      buffer: buffer || Buffer.from(''),
+    };
+
+    const newFile = await this.fileService.upload({ userId }, file);
+
+    const existingEntity = await this.fileRepository
+      .createQueryBuilder('entity')
+      .andWhere("entity.properties->>'fileId' = :fileId", { fileId: newFile.id })
+      .getOne();
+
+    let entity = !existingEntity
+      ? await this.fileRepository.create({
+          id: uuidv7(),
+          name: fileName,
+          entity_type: 'File',
+          description: 'File',
+          linked_table: 'files',
+          linked_id: newFile.id,
+          user: {
+            id: userId,
+          },
+        })
+      : existingEntity;
+
+    entity = await this.fileRepository.save(entity);
+
+    return { file: newFile, entity };
   }
 }

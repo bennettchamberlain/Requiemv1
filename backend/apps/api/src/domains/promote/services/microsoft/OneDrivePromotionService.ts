@@ -1,4 +1,3 @@
-import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
 
 import { Injectable } from '@nestjs/common';
@@ -7,8 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { LoggerService } from '@ci/common/services';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
-import { FileService } from '@ci/domains/files';
-import { EventService, type CreateEventDto } from '@ci/domains/memory';
+import { EventService, type CreateEventDto, MemoryService } from '@ci/domains/memory';
 
 import { PersonPromotionService } from '../PersonPromotionService';
 
@@ -34,7 +32,7 @@ export class OneDrivePromotionService {
   private logger = new LoggerService(OneDrivePromotionService.name);
 
   constructor(
-    private readonly fileService: FileService,
+    private readonly memoryService: MemoryService,
     private readonly eventService: EventService,
     private readonly personPromotionService: PersonPromotionService,
     private readonly connectionService: ConnectionService,
@@ -142,19 +140,14 @@ export class OneDrivePromotionService {
       }
 
       const file = {
-        fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
-        originalname: fileDetails.content.name, //Multer requires this, but it's not actually used in our logic
-        mimetype: fileDetails.content.file?.mimeType,
+        userId,
+        mimeType: fileDetails.content.file?.mimeType,
         size: fileDetails.content.size,
-        encoding: 'base64',
-        destination: '',
-        stream: '' as unknown as Readable,
-        filename: fileDetails.content.name,
-        path: '',
+        fileName: fileDetails.content.name,
         buffer: fileDetails.content.raw ? fileDetails.content.raw : Buffer.from(''),
       };
 
-      await this.fileService.upload({ userId }, file);
+      await this.memoryService.createFile(file);
     }
 
     const newEvent = {
