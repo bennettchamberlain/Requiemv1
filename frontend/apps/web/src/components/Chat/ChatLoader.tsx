@@ -5,7 +5,7 @@ import { cn } from '@ci/shadcn';
 
 export function ChatLoader() {
   const { isMobile } = useDeviceLayout();
-  const topOffset = useMemo(() => (isMobile ? '-top-1' : 'top-0.5'), [isMobile]);
+  const topOffset = useMemo(() => (isMobile ? '-top-0.5' : 'top-1'), [isMobile]);
 
   const className =
     'w-1.5 h-1.5 bg-muted-foreground/30 rounded-full animate-bounce transform-gpu will-change-transform';
