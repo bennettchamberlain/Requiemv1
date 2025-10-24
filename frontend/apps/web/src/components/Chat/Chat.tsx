@@ -152,6 +152,7 @@ export function Chat({
   ]);
 
   const { isMobile } = useDeviceLayout();
+  const loaderMargin = useMemo(() => (isMobile ? 'mt-2' : 'mt-4'), [isMobile]);
   const contentPadding = useMemo(() => (isMobile ? 'p-2' : 'p-4'), [isMobile]);
   const threadPadding = useMemo(() => (isMobile ? 'pb-0 gap-2' : 'pb-0 gap-4'), [isMobile]);
 
@@ -405,7 +406,7 @@ export function Chat({
         </div>
       )}
 
-      {showLoader && <ChatLoader />}
+      {showLoader && <ChatLoader className={loaderMargin} />}
 
       <div className={cn('w-full', contentPadding)}>
         <VoiceMode
