@@ -146,7 +146,7 @@ export function Chat({
 
   const { isMobile } = useDeviceLayout();
   const contentPadding = useMemo(() => (isMobile ? 'p-2' : 'p-4'), [isMobile]);
-  const threadPadding = useMemo(() => (isMobile ? 'pb-4 gap-2' : 'pb-4 gap-4'), [isMobile]);
+  const threadPadding = useMemo(() => (isMobile ? 'pb-0 gap-2' : 'pb-0 gap-4'), [isMobile]);
 
   const flushStream = useCallback((node?: ReactNode) => {
     // We need to cut off the flow of streaming text to the current stream blocks.
@@ -380,10 +380,6 @@ export function Chat({
             'flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll',
             contentPadding,
             threadPadding,
-            '[mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_1rem)]',
-            '[mask-repeat:no-repeat] [mask-size:100%_100%]',
-            '[-webkit-mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_1rem)]',
-            '[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]',
           )}
         >
           {children}
