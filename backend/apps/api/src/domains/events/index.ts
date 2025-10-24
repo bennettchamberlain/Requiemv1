@@ -39,7 +39,7 @@ import { JobMonitorService } from './services/JobMonitorService';
   ],
   providers: [EventService, JobMonitorService],
   controllers: [JobsController],
-  exports: [EventService, JobMonitorService],
+  exports: [EventService],
 })
 export class EventsModule {}
 
@@ -47,7 +47,7 @@ export class EventsModule {}
 export {};
 
 // Services
-export { EventService, JobMonitorService };
+export { EventService };
 
 // Types
 export type { EventPayload, Acknowledgement } from './types';
