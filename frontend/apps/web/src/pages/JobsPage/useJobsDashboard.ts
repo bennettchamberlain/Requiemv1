@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
 
@@ -82,13 +82,16 @@ export function useJobsDashboard(refreshIntervalMs = 15000) {
     error: null,
   });
   const [{ authToken }] = useAuth();
+  const isInitialLoad = useRef(true);
 
   const load = useCallback(async () => {
     if (!authToken) {
       return;
     }
 
-    setState((prev) => ({ ...prev, loading: true, error: null }));
+    if (isInitialLoad.current) {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+    }
 
     try {
       const response = await fetchJson<JobsDashboardResponse>('/api/events/jobs/dashboard', {
@@ -98,9 +101,13 @@ export function useJobsDashboard(refreshIntervalMs = 15000) {
       });
 
       setState({ data: response, loading: false, error: null });
+      isInitialLoad.current = false;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setState((prev) => ({ ...prev, loading: false, error: message }));
+      if (isInitialLoad.current) {
+        const message = err instanceof Error ? err.message : String(err);
+        setState((prev) => ({ ...prev, loading: false, error: message }));
+      }
+      // On subsequent loads, we fail silently.
     }
   }, [authToken]);
 
