@@ -25,6 +25,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
+import { FilesModule } from '@ci/domains/files';
 import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
 import { UserModule } from '@ci/domains/user';
 
@@ -36,6 +37,7 @@ import { CommunicationEntity } from './entities/CommunicationEntity';
 import { ContactEntity } from './entities/ContactEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
+import { FileEntity } from './entities/FileEntity';
 import { LocationEntity } from './entities/LocationEntity';
 import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
@@ -62,10 +64,12 @@ import { MemoryService } from './services/MemoryService';
       ThingEntity,
       GraphNodeEntity,
       RelationshipEntity,
+      FileEntity,
     ]),
     UserModule,
     EventsModule,
     GraphModule,
+    FilesModule,
   ],
   providers: [MemoryService, CommunicationService, ContentService, EventService, GraphEventService],
   controllers: [MemoryController, ContentController, EventController, GraphController],
