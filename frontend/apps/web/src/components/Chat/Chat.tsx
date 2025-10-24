@@ -74,6 +74,13 @@ export function Chat({
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
   const lastProcessedResponseRef = useRef<string>('');
 
+  // We want to track when to display the loader. We have `loading` for
+  // when the LLM response is latent, `streaming` for when it's sending
+  // data, but that alone won't account for whether the first chunk has
+  // been received.
+  const [isReceiving, setIsReceiving] = useState(false);
+  const hasStartedReceivingRef = useRef(false);
+
   // We want to maintain reference to the scroll container so that we can auto-scroll
   // when we deem it appropriate. According to the contract stipulated here, that's when
   // the user is within 10 pixels of the bottom.
@@ -139,14 +146,15 @@ export function Chat({
 
   const [accumulatedMessages, setAccumulatedMessages] = useState<ReactNode[]>([
     <Fragment key={uuid7()}>
-      <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={setThinkStreamingRef} />
+      <ThinkBlock renderEmptyContent={true} defaultExpanded={false} streamingRef={setThinkStreamingRef} />
       <AssistantMessage renderEmptyContent={true} streamingRef={setTextStreamingRef} />
     </Fragment>,
   ]);
 
   const { isMobile } = useDeviceLayout();
+  const loaderMargin = useMemo(() => (isMobile ? 'mt-2' : 'mt-4'), [isMobile]);
   const contentPadding = useMemo(() => (isMobile ? 'p-2' : 'p-4'), [isMobile]);
-  const threadPadding = useMemo(() => (isMobile ? 'pb-4 gap-2' : 'pb-4 gap-4'), [isMobile]);
+  const threadPadding = useMemo(() => (isMobile ? 'pb-0 gap-2' : 'pb-0 gap-4'), [isMobile]);
 
   const flushStream = useCallback((node?: ReactNode) => {
     // We need to cut off the flow of streaming text to the current stream blocks.
@@ -168,7 +176,7 @@ export function Chat({
     // When we hit the next render cycle, the refs will be set and the stream can resume.
     const newStreamNodes = (
       <Fragment key={uuid7()}>
-        <ThinkBlock renderEmptyContent={true} defaultExpanded={true} streamingRef={setThinkStreamingRef} />
+        <ThinkBlock renderEmptyContent={true} defaultExpanded={false} streamingRef={setThinkStreamingRef} />
         <AssistantMessage renderEmptyContent={true} streamingRef={setTextStreamingRef} />
       </Fragment>
     );
@@ -178,6 +186,11 @@ export function Chat({
 
   const handleFrameChunk = useCallback(
     (chunk: Decoded) => {
+      if (!hasStartedReceivingRef.current) {
+        hasStartedReceivingRef.current = true;
+        setIsReceiving(true);
+      }
+
       if (!supportedChannels.has(chunk.channel)) {
         console.warn('Ignored unsupported chunk channel:', chunk.channel);
 
@@ -287,6 +300,9 @@ export function Chat({
   );
 
   const handleFinished = useCallback(() => {
+    hasStartedReceivingRef.current = false;
+    setIsReceiving(false);
+
     const lastChannel = lastChannelRef.current;
 
     // Prevent multiple processing of the same response
@@ -361,6 +377,8 @@ export function Chat({
     maybeAutoScroll();
   }, [accumulatedMessages]);
 
+  const showLoader = useMemo(() => loading || (streaming && !isReceiving), [loading, streaming, isReceiving]);
+
   const renderedMessages = useMemo(
     () => messages?.map((message, i) => <ChatMessage key={i} {...message} />),
     [messages],
@@ -380,10 +398,6 @@ export function Chat({
             'flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll',
             contentPadding,
             threadPadding,
-            '[mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_1rem)]',
-            '[mask-repeat:no-repeat] [mask-size:100%_100%]',
-            '[-webkit-mask-image:linear-gradient(to_top,transparent,hsl(0_0%_100%)_1rem)]',
-            '[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]',
           )}
         >
           {children}
@@ -392,9 +406,9 @@ export function Chat({
         </div>
       )}
 
-      <div className={cn('w-full relative', contentPadding)}>
-        {(loading || streaming) && <ChatLoader />}
+      {showLoader && <ChatLoader className={loaderMargin} />}
 
+      <div className={cn('w-full', contentPadding)}>
         <VoiceMode
           isActive={isVoiceModeActive}
           onToggle={toggleVoiceMode}
