@@ -30,43 +30,14 @@ import { PgBossScheduleEntity } from './entities/PgBossScheduleEntity';
 import { EventService, Queues } from './services/EventService';
 import { JobMonitorService } from './services/JobMonitorService';
 
-const isTestEnv = process.env.NODE_ENV === 'test';
-
-const monitoringImports = isTestEnv
-  ? []
-  : [
-      TypeOrmModule.forFeature([
-        PgBossJobEntity,
-        PgBossArchiveEntity,
-        PgBossScheduleEntity,
-        PgBossQueueEntity,
-      ]),
-    ];
-
-const jobMonitorProvider = isTestEnv
-  ? {
-      provide: JobMonitorService,
-      useValue: {
-        async getDashboard() {
-          return {
-            summary: { active: 0, completed: 0, failed: 0, scheduled: 0 },
-            distribution: [],
-            jobs: [],
-            archive: [],
-            schedules: [],
-            queues: [],
-          };
-        },
-      },
-    }
-  : JobMonitorService;
-
 /**
  * @internal
  */
 @Module({
-  imports: monitoringImports,
-  providers: [EventService, jobMonitorProvider],
+  imports: [
+    TypeOrmModule.forFeature([PgBossJobEntity, PgBossArchiveEntity, PgBossScheduleEntity, PgBossQueueEntity]),
+  ],
+  providers: [EventService, JobMonitorService],
   controllers: [JobsController],
   exports: [EventService, JobMonitorService],
 })
