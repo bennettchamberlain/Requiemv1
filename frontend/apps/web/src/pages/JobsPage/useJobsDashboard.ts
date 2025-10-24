@@ -69,18 +69,11 @@ export interface JobsDashboardResponse {
   readonly queues: readonly JobQueue[];
 }
 
-interface HookState {
-  data: JobsDashboardResponse | null;
-  loading: boolean;
-  error: string | null;
-}
-
 export function useJobsDashboard(refreshIntervalMs = 15000) {
-  const [{ data, loading, error }, setState] = useState<HookState>({
-    data: null,
-    loading: true,
-    error: null,
-  });
+  const [data, setData] = useState<JobsDashboardResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [{ authToken }] = useAuth();
   const isInitialLoad = useRef(true);
 
@@ -90,7 +83,8 @@ export function useJobsDashboard(refreshIntervalMs = 15000) {
     }
 
     if (isInitialLoad.current) {
-      setState((prev) => ({ ...prev, loading: true, error: null }));
+      setLoading(true);
+      setError(null);
     }
 
     try {
@@ -100,12 +94,15 @@ export function useJobsDashboard(refreshIntervalMs = 15000) {
         },
       });
 
-      setState({ data: response, loading: false, error: null });
+      setData(response);
+      setLoading(false);
+      setError(null);
       isInitialLoad.current = false;
     } catch (err: unknown) {
       if (isInitialLoad.current) {
         const message = err instanceof Error ? err.message : String(err);
-        setState((prev) => ({ ...prev, loading: false, error: message }));
+        setError(message);
+        setLoading(false);
       }
       // On subsequent loads, we fail silently.
     }
