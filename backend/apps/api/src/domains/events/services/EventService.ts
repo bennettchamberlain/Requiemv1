@@ -7,6 +7,7 @@ import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 
 import { type EventPayloads } from '../event-registry';
+import { EventListenerRegistry } from '../EventListenerRegistry';
 
 export enum Queues {
   DEFAULT = 'default',
@@ -49,6 +50,16 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   constructor(private eventEmitter: EventEmitter2) {}
 
   async onModuleInit() {
+    const listeners = EventListenerRegistry.getListeners();
+
+    this.logger.log(`Validated ${listeners.length} event listeners`);
+
+    listeners.forEach(([key, registration]) => {
+      this.logger.debug(
+        `Event listener registered: ${key} -> ${registration.className}.${registration.methodName}`,
+      );
+    });
+
     try {
       this.logger.log('Initializing PgBoss client...');
 

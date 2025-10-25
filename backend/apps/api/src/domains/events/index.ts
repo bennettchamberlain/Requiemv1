@@ -55,4 +55,4 @@ export { Events, type EventPayloads } from './event-registry';
 export { Queues };
 
 // Misc
-export { OnEvent } from './decorators/on-event';
+export { OnEvent } from './decorators/OnEvent';
