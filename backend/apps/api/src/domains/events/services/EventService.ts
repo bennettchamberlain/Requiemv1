@@ -6,12 +6,9 @@ import PgBoss, { JobWithMetadata } from 'pg-boss';
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 
+import { DEFAULT_QUEUE } from '../constants';
 import { type EventPayloads } from '../event-registry';
 import { EventListenerRegistry } from '../EventListenerRegistry';
-
-export enum Queues {
-  DEFAULT = 'default',
-}
 
 interface EventData {
   name: string;
@@ -25,7 +22,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
 
   private running = false;
 
-  private stopTask: Promise<void> | null = null;
+  private stopTasks: Promise<void>[] = [];
 
   private readonly backoffWhenFull = 150;
 
@@ -38,13 +35,12 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     user: config.db.username,
     password: config.db.password,
     schema: 'pgboss',
-    // Optional PgBoss settings
     retryLimit: 3,
     retryDelay: 10,
     retryBackoff: true,
-    expireInHours: 12, // Must be less than 24 hours for PgBoss v10+
-    deleteAfterHours: 24, // Also reduced to be reasonable
-    max: 10, // maxPoolSize equivalent
+    expireInHours: 12,
+    deleteAfterHours: 24,
+    max: 10,
   });
 
   constructor(private eventEmitter: EventEmitter2) {}
@@ -79,17 +75,26 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       this.logger.error('PgBoss error', err);
     });
 
-    // For now we're only interested in one queue. We might want to add more if
-    // we need certain tasks to run in parallel, with a larger number of workers,
-    // or with different characteristics. Measure and improve as needed.
-    await this.boss.createQueue(Queues.DEFAULT);
+    // Discover all queues from registered listeners
+    const discoveredQueues = this.getRegisteredQueues();
+
+    this.logger.log(`Discovered queues: ${Array.from(discoveredQueues).join(', ')}`);
+
+    // Create all discovered queues
+    for (const queue of discoveredQueues) {
+      await this.boss.createQueue(queue);
+      this.logger.debug(`Created queue: ${queue}`);
+    }
 
     try {
-      this.logger.log('Initializing work queue...');
+      this.logger.log('Initializing work queues...');
 
-      this.stopTask = this.work();
+      // Start workers for all discovered queues
+      for (const queue of discoveredQueues) {
+        this.stopTasks.push(this.work(queue));
+      }
 
-      this.logger.log('Initialized work queue');
+      this.logger.log(`Initialized ${discoveredQueues.size} work queues`);
     } catch (err: unknown) {
       this.logger.error(
         'Failed to initialize work queue client',
@@ -102,13 +107,13 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     try {
-      this.logger.log('Flushing work queue...');
+      this.logger.log('Flushing work queues...');
 
       await this.flush();
 
-      this.logger.log('Flushed work queue');
+      this.logger.log('Flushed work queues');
     } catch (err: unknown) {
-      this.logger.error('Failed to flush work queue', err instanceof Error ? err : new Error(String(err)));
+      this.logger.error('Failed to flush work queues', err instanceof Error ? err : new Error(String(err)));
     }
 
     try {
@@ -125,14 +130,14 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
-    options?: { queue?: Queues },
+    options?: { queue?: string },
   ): Promise<string | null> {
     const resolvedOptions = options ?? {
-      queue: Queues.DEFAULT,
+      queue: DEFAULT_QUEUE,
     };
 
     const { queue } = resolvedOptions;
-    const resolvedQueue = queue ?? Queues.DEFAULT;
+    const resolvedQueue = queue ?? DEFAULT_QUEUE;
 
     const resolvedData = {
       ...event,
@@ -142,7 +147,22 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     return this.boss.send(resolvedQueue, resolvedData);
   }
 
-  private async work(): Promise<void> {
+  private getRegisteredQueues(): Set<string> {
+    const listeners = EventListenerRegistry.getListeners();
+    const queues = new Set<string>();
+
+    // Always include default queue
+    queues.add(DEFAULT_QUEUE);
+
+    // Add all queues from registered listeners
+    listeners.forEach(([, registration]) => {
+      queues.add(registration.queue);
+    });
+
+    return queues;
+  }
+
+  private async work(queueName: string): Promise<void> {
     this.running = true;
 
     while (this.running) {
@@ -154,7 +174,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
-      const jobs = await this.boss.fetch<EventData>(Queues.DEFAULT, {
+      const jobs = await this.boss.fetch<EventData>(queueName, {
         includeMetadata: true,
         batchSize: available,
       });
@@ -169,10 +189,13 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
         this.semaphore(async () => {
           try {
             await this.executeJob(job);
-            await this.boss.complete(Queues.DEFAULT, job.id);
+            await this.boss.complete(queueName, job.id);
           } catch (err) {
-            this.logger.error('Failed to complete job', err instanceof Error ? err : new Error(String(err)));
-            await this.boss.fail(Queues.DEFAULT, job.id);
+            this.logger.error(
+              `Failed to complete job in queue ${queueName}`,
+              err instanceof Error ? err : new Error(String(err)),
+            );
+            await this.boss.fail(queueName, job.id);
           }
         });
       }
@@ -183,7 +206,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     this.running = false;
 
     try {
-      await this.stopTask;
+      await Promise.all(this.stopTasks);
     } catch (err: unknown) {
       this.logger.error(err instanceof Error ? err : new Error(String(err)));
     }
@@ -208,7 +231,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       if (this.eventEmitter.hasListeners(name)) {
         this.eventEmitter.emit(name, resolvedData, { done, fail });
       } else {
-        fail(new Error('No active listeners for job'));
+        fail(new Error(`No active listeners for job: ${name}`));
       }
     });
   }

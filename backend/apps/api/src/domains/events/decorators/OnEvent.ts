@@ -1,6 +1,7 @@
 import { applyDecorators } from '@nestjs/common';
 import { OnEvent as BaseOnEvent } from '@nestjs/event-emitter';
 
+import { DEFAULT_QUEUE } from '../constants';
 import type { EventPayloads } from '../event-registry';
 import { EventListenerRegistry } from '../EventListenerRegistry';
 import type { EventPayload, Acknowledgement } from '../types';
@@ -11,7 +12,7 @@ interface Opts {
 }
 
 export function OnEvent<E extends keyof EventPayloads>(event: E, opts?: Opts) {
-  const { autoAcknowledge = true, queue = 'default' } = opts ?? {};
+  const { autoAcknowledge = true, queue = DEFAULT_QUEUE } = opts ?? {};
 
   const decorator = (target: unknown, key: string | symbol, descriptor: PropertyDescriptor) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
