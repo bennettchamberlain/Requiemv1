@@ -38,5 +38,7 @@ export function OnEvent<E extends keyof EventPayloads>(event: E, opts?: Opts) {
     }
   };
 
-  return applyDecorators(decorator, BaseOnEvent(event));
+  const queueSpecificEventName = `${event}:${queue}`;
+
+  return applyDecorators(decorator, BaseOnEvent(queueSpecificEventName));
 }

@@ -216,7 +216,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       for (const job of jobs) {
         this.semaphore(async () => {
           try {
-            await this.executeJob(job);
+            await this.executeJob(queueName, job);
             await this.boss.complete(queueName, job.id);
           } catch (err) {
             this.logger.error(
@@ -244,7 +244,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async executeJob(job: JobWithMetadata<EventData>): Promise<void> {
+  private async executeJob(queue: string, job: JobWithMetadata<EventData>): Promise<void> {
     return new Promise((resolve, reject) => {
       const { name, ...data } = job.data;
 
@@ -256,10 +256,14 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       const done = () => resolve(undefined);
       const fail = (reason: unknown) => reject(reason instanceof Error ? reason : new Error(String(reason)));
 
-      if (this.eventEmitter.hasListeners(name)) {
-        this.eventEmitter.emit(name, resolvedData, { done, fail });
+      const queueSpecificEventName = `${name}:${queue}`;
+
+      if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
+        this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail });
       } else {
-        fail(new Error(`No active listeners for job: ${name}`));
+        this.logger.log(`No listeners for event ${name} in queue ${queue}`);
+
+        resolve(undefined);
       }
     });
   }
