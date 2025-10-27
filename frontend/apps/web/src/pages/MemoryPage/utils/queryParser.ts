@@ -23,11 +23,15 @@ export function useMemoryQuery(): MemoryQuery {
           }
         : undefined;
 
-    return {
+    const query = {
       search,
       category,
       dateRange,
       entityTypes,
     };
+
+    console.log('useMemoryQuery: Parsed query from URL:', query);
+
+    return query;
   }, [searchParams]);
 }
