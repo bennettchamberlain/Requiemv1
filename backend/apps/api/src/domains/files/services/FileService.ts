@@ -164,6 +164,7 @@ export class FileService implements OnModuleInit {
 
     await this.eventService.send(Events.FILE_UPLOAD, {
       fileId: result.id,
+      userId: context.userId,
     });
 
     return this.signFile(entity);

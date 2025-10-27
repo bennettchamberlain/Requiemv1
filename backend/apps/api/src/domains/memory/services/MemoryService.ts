@@ -7,6 +7,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
 import { FileService, type File } from '@ci/domains/files';
 import { GraphQueryService } from '@ci/domains/graph';
 
@@ -680,6 +681,32 @@ export class MemoryService {
     entity = await this.fileRepository.save(entity);
 
     return { file: newFile, entity };
+  }
+
+  @OnEvent(Events.FILE_UPLOAD, { async: true })
+  async handleFileUploaded(payload: EventPayloads[Events.FILE_UPLOAD]) {
+    const file = await this.fileService.findOne({ userId: payload.userId }, payload.fileId);
+
+    const existingEntity = await this.fileRepository
+      .createQueryBuilder('entity')
+      .andWhere("entity.properties->>'fileId' = :fileId", { fileId: file.id })
+      .getOne();
+
+    const entity = !existingEntity
+      ? await this.fileRepository.create({
+          id: uuidv7(),
+          name: file.name,
+          entity_type: 'File',
+          description: 'File',
+          linked_table: 'files',
+          linked_id: file.id,
+          user: {
+            id: payload.userId,
+          },
+        })
+      : existingEntity;
+
+    await this.fileRepository.save(entity);
   }
 
   /**
