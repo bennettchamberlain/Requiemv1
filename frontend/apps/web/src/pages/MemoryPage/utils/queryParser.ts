@@ -23,14 +23,16 @@ export function useMemoryQuery(): MemoryQuery {
           }
         : undefined;
 
+    const excludedEntityTypes =
+      searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || undefined;
+
     const query = {
       search,
       category,
       dateRange,
       entityTypes,
+      excludedEntityTypes,
     };
-
-    console.log('useMemoryQuery: Parsed query from URL:', query);
 
     return query;
   }, [searchParams]);

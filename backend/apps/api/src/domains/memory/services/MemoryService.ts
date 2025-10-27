@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Point } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
@@ -10,6 +10,9 @@ import { RequestContext } from '@ci/common/types';
 import { FileService, type File } from '@ci/domains/files';
 import { GraphQueryService } from '@ci/domains/graph';
 
+import { CommunicationEntity } from '../entities/CommunicationEntity';
+import { ContentEntity } from '../entities/ContentEntity';
+import { EventEntity } from '../entities/EventEntity';
 import { FileEntity } from '../entities/FileEntity';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
 
@@ -60,11 +63,211 @@ export class MemoryService {
     private readonly fileService: FileService,
     @InjectRepository(FileEntity)
     private readonly fileRepository: Repository<FileEntity>,
+    @InjectRepository(EventEntity)
+    private readonly eventRepository: Repository<EventEntity>,
+    @InjectRepository(CommunicationEntity)
+    private readonly communicationRepository: Repository<CommunicationEntity>,
+    @InjectRepository(ContentEntity)
+    private readonly contentRepository: Repository<ContentEntity>,
   ) {}
+
+  /**
+   * Get memories from specific entity tables based on entity type
+   */
+  private async getMemoriesFromSpecificTables(
+    userId: string,
+    entityTypes: string[],
+    params: MemorySearchParams,
+  ): Promise<Memory[]> {
+    this.logger.debug('getMemoriesFromSpecificTables called', { userId, entityTypes, params });
+    const memories: Memory[] = [];
+
+    // Handle Event entities
+    if (entityTypes.includes('Event')) {
+      this.logger.debug('Querying events table');
+      const eventMemories = await this.getEventMemories(userId, params);
+      memories.push(...eventMemories);
+      this.logger.debug('Events found', { count: eventMemories.length });
+    }
+
+    // Handle Communication entities
+    if (entityTypes.includes('Communication')) {
+      this.logger.debug('Querying communications table');
+      const communicationMemories = await this.getCommunicationMemories(userId, params);
+      memories.push(...communicationMemories);
+      this.logger.debug('Communications found', { count: communicationMemories.length });
+    }
+
+    // Handle Content entities
+    if (entityTypes.includes('Content')) {
+      this.logger.debug('Querying content table');
+      const contentMemories = await this.getContentMemories(userId, params);
+      memories.push(...contentMemories);
+      this.logger.debug('Content found', { count: contentMemories.length });
+    }
+
+    this.logger.debug('getMemoriesFromSpecificTables returning', { totalCount: memories.length });
+
+    return memories;
+  }
+
+  /**
+   * Get memories from events table
+   */
+  private async getEventMemories(userId: string, params: MemorySearchParams): Promise<Memory[]> {
+    this.logger.debug('getEventMemories called', { userId, params });
+
+    // Now try the full query with user relationship
+    let query = this.eventRepository
+      .createQueryBuilder('event')
+      .leftJoin('event.user', 'user')
+      .where('user.id = :userId', { userId })
+      .andWhere('event.is_deleted = false');
+
+    // Apply search query
+    if (params.query) {
+      query = query.andWhere('(event.title ILIKE :query OR event.description ILIKE :query)', {
+        query: `%${params.query}%`,
+      });
+    }
+
+    // Apply date filters
+    if (params.startDate) {
+      query = query.andWhere('event.start_time >= :startDate', { startDate: params.startDate });
+    }
+
+    if (params.endDate) {
+      query = query.andWhere('event.start_time <= :endDate', { endDate: params.endDate });
+    }
+
+    // Apply category filters
+    if (params.categories && params.categories.length > 0) {
+      query = query.andWhere('event.category IN (:...categories)', { categories: params.categories });
+    }
+
+    if (params.excludeCategories && params.excludeCategories.length > 0) {
+      query = query.andWhere('event.category NOT IN (:...excludeCategories)', {
+        excludeCategories: params.excludeCategories,
+      });
+    }
+
+    // Apply location filter
+    if (params.hasLocation) {
+      query = query.andWhere('event.location_coordinates IS NOT NULL');
+    }
+
+    query = query.orderBy('event.start_time', 'DESC');
+
+    const events = await query.getMany();
+    const memories = events.map((event) => this.eventToMemory(event));
+
+    return memories;
+  }
+
+  /**
+   * Get memories from communications table
+   */
+  private async getCommunicationMemories(userId: string, params: MemorySearchParams): Promise<Memory[]> {
+    this.logger.debug('getCommunicationMemories called', { userId, params });
+
+    try {
+      let query = this.communicationRepository
+        .createQueryBuilder('communication')
+        .where('communication.user_id = :userId', { userId })
+        .andWhere('communication.is_archived = false');
+
+      // Apply search query
+      if (params.query) {
+        query = query.andWhere('(communication.subject ILIKE :query OR communication.content ILIKE :query)', {
+          query: `%${params.query}%`,
+        });
+      }
+
+      // Apply date filters
+      if (params.startDate) {
+        query = query.andWhere('communication.time >= :startDate', { startDate: params.startDate });
+      }
+
+      if (params.endDate) {
+        query = query.andWhere('communication.time <= :endDate', { endDate: params.endDate });
+      }
+
+      // Apply category filters
+      if (params.categories && params.categories.length > 0) {
+        query = query.andWhere('communication.category IN (:...categories)', {
+          categories: params.categories,
+        });
+      }
+
+      if (params.excludeCategories && params.excludeCategories.length > 0) {
+        query = query.andWhere('communication.category NOT IN (:...excludeCategories)', {
+          excludeCategories: params.excludeCategories,
+        });
+      }
+
+      query = query.orderBy('communication.time', 'DESC').limit(100);
+
+      const communications = await query.getMany();
+      const memories = communications.map((comm: CommunicationEntity) => this.communicationToMemory(comm));
+
+      return memories;
+    } catch (error) {
+      this.logger.error('Error in getCommunicationMemories', {
+        error: error instanceof Error ? error.message : error,
+        userId,
+        params,
+      });
+
+      return [];
+    }
+  }
+
+  /**
+   * Get memories from content table
+   */
+  private async getContentMemories(userId: string, params: MemorySearchParams): Promise<Memory[]> {
+    let query = this.contentRepository
+      .createQueryBuilder('content')
+      .leftJoin('content.user', 'user')
+      .where('user.id = :userId', { userId });
+
+    // Apply search query
+    if (params.query) {
+      query = query.andWhere('(content.title ILIKE :query OR content.text ILIKE :query)', {
+        query: `%${params.query}%`,
+      });
+    }
+
+    // Apply date filters
+    if (params.startDate) {
+      query = query.andWhere('content.created_at >= :startDate', { startDate: params.startDate });
+    }
+
+    if (params.endDate) {
+      query = query.andWhere('content.created_at <= :endDate', { endDate: params.endDate });
+    }
+
+    // Apply category filters
+    if (params.categories && params.categories.length > 0) {
+      query = query.andWhere('content.type IN (:...categories)', { categories: params.categories });
+    }
+
+    if (params.excludeCategories && params.excludeCategories.length > 0) {
+      query = query.andWhere('content.type NOT IN (:...excludeCategories)', {
+        excludeCategories: params.excludeCategories,
+      });
+    }
+
+    query = query.orderBy('content.created_at', 'DESC');
+
+    const contents = await query.getMany();
+
+    return contents.map((content) => this.contentToMemory(content));
+  }
 
   async findAll(context: RequestContext, params: MemorySearchParams): Promise<MemoryResponse> {
     const userId = this.requireUserId(context);
-    this.logger.debug('Finding memories from graph', { userId, params });
+    this.logger.debug('Finding memories from graph and specific tables', { userId, params });
 
     const limit = params.limit ?? 50;
     const offset = params.offset ?? 0;
@@ -75,19 +278,74 @@ export class MemoryService {
           ? params.categories
           : MemoryService.DEFAULT_ENTITY_TYPES;
 
-      const graphNodes = await this.graphQuery.getNodes(userId, {
-        limit: Math.max(limit * 4, 200),
-        offset: 0,
-        nameContains: params.query,
+      // Apply exclusions if specified
+      const finalAllowedTypes =
+        params.excludeCategories && params.excludeCategories.length > 0
+          ? allowedTypes.filter((type) => !params.excludeCategories!.includes(type))
+          : allowedTypes;
+
+      this.logger.debug('MemoryService.findAll - Entity type filtering', {
+        allowedTypes,
+        excludeCategories: params.excludeCategories,
+        finalAllowedTypes,
       });
 
-      const filteredNodes = graphNodes.filter((node) => allowedTypes.includes(node.entity_type));
-      const memories = await Promise.all(filteredNodes.map((node) => this.entityToMemory(node, userId)));
+      // Separate entity types into graph-based and table-based
+      const graphBasedTypes = finalAllowedTypes.filter(
+        (type) => !['Event', 'Communication', 'Content'].includes(type),
+      );
+      const tableBasedTypes = finalAllowedTypes.filter((type) =>
+        ['Event', 'Communication', 'Content'].includes(type),
+      );
 
-      let filteredMemories = this.applyMemoryFilters(memories, params);
+      this.logger.debug('MemoryService.findAll - Type separation', {
+        graphBasedTypes,
+        tableBasedTypes,
+      });
+
+      const allMemories: Memory[] = [];
+
+      // Get memories from graph nodes (for non-table entities)
+      if (graphBasedTypes.length > 0) {
+        this.logger.debug('MemoryService.findAll - Querying graph nodes', { graphBasedTypes });
+        const graphNodes = await this.graphQuery.getNodes(userId, {
+          limit: Math.max(limit * 4, 200),
+          offset: 0,
+          nameContains: params.query,
+        });
+
+        const filteredNodes = graphNodes.filter((node) => graphBasedTypes.includes(node.entity_type));
+        const graphMemories = await Promise.all(
+          filteredNodes.map((node) => this.entityToMemory(node, userId)),
+        );
+        allMemories.push(...graphMemories);
+        this.logger.debug('MemoryService.findAll - Graph memories found', { count: graphMemories.length });
+      }
+
+      // Get memories from specific tables
+      if (tableBasedTypes.length > 0) {
+        this.logger.debug('MemoryService.findAll - Querying specific tables', { tableBasedTypes });
+        const tableMemories = await this.getMemoriesFromSpecificTables(userId, tableBasedTypes, params);
+        allMemories.push(...tableMemories);
+        this.logger.debug('MemoryService.findAll - Table memories found', { count: tableMemories.length });
+      } else {
+        this.logger.debug('MemoryService.findAll - No table-based types to query', {
+          tableBasedTypes,
+          finalAllowedTypes,
+          excludeCategories: params.excludeCategories,
+        });
+      }
+
+      let filteredMemories = this.applyMemoryFilters(allMemories, params);
       filteredMemories = this.applySort(filteredMemories);
 
       const paginated = filteredMemories.slice(offset, offset + limit);
+
+      this.logger.debug('MemoryService.findAll - Final results', {
+        totalMemories: allMemories.length,
+        filteredMemories: filteredMemories.length,
+        paginated: paginated.length,
+      });
 
       return {
         data: paginated,
@@ -178,21 +436,8 @@ export class MemoryService {
       result = result.filter((memory) => (params.hasLocation ? Boolean(memory.location) : !memory.location));
     }
 
-    if (params.excludeCategories && params.excludeCategories.length > 0) {
-      const excludes = params.excludeCategories.map((cat) => cat.toLowerCase());
-      result = result.filter((memory) => {
-        const category = memory.category?.toLowerCase() ?? '';
-        const sourceLower =
-          typeof memory.metadata?.source === 'string' ? memory.metadata.source.toLowerCase() : '';
-
-        const shouldSkip =
-          category.includes('drive') ||
-          sourceLower.includes('drive') ||
-          excludes.some((exclude) => category.includes(exclude) || sourceLower.includes(exclude));
-
-        return !shouldSkip;
-      });
-    }
+    // Note: excludeCategories filtering is handled in findAll method for entity type filtering
+    // This method only handles content-based filtering (query, dates, location)
 
     return result;
   }
@@ -435,5 +680,122 @@ export class MemoryService {
     entity = await this.fileRepository.save(entity);
 
     return { file: newFile, entity };
+  }
+
+  /**
+   * Convert EventEntity to Memory
+   */
+  private eventToMemory(event: EventEntity): Memory {
+    const location: MemoryLocation | undefined = event.location_coordinates
+      ? {
+          id: event.location_entity_id || event.id,
+          name: event.location_name,
+          lat: (event.location_coordinates as Point).coordinates[1], // PostGIS format: [lng, lat]
+          lng: (event.location_coordinates as Point).coordinates[0],
+          address: event.location_name || undefined,
+        }
+      : undefined;
+
+    return {
+      id: event.id,
+      type: 'event',
+      title: event.title,
+      description: event.description,
+      timestamp: event.start_time,
+      category: event.category || event.event_type || 'Event',
+      location,
+      tags: event.tags || [],
+      userId: event.user?.id || '',
+      sourceLink: event.source_id ? `${event.source_system}/${event.source_id}` : undefined,
+      metadata: {
+        eventId: event.id,
+        eventType: event.event_type || undefined,
+        eventName: event.title || undefined,
+        synthetic: event.is_predicted || event.is_inferred,
+        confidenceScore: event.confidence_score,
+        isRecurring: event.is_recurring,
+        isAllDay: event.is_all_day,
+        priority: event.priority,
+        status: event.status,
+        sourceType: event.source_type,
+        sourceSystem: event.source_system,
+        sourceId: event.source_id,
+        durationMinutes: event.duration_minutes,
+        endTime: event.end_time,
+        organizerEntityId: event.organizer_entity_id,
+        participantEntityIds: event.participant_entity_ids,
+        ...event.metadata,
+      },
+    };
+  }
+
+  /**
+   * Convert CommunicationEntity to Memory
+   */
+  private communicationToMemory(comm: CommunicationEntity): Memory {
+    try {
+      // Create a unique ID from the composite primary key components
+      const id = `${comm.user_id}-${comm.time.getTime()}-${comm.communication_type}`;
+
+      return {
+        id,
+        type: 'communication',
+        title: comm.subject || `${comm.communication_type} Communication`,
+        description: comm.content,
+        timestamp: comm.time,
+        category: comm.category || comm.communication_type,
+        tags: comm.tags || [],
+        userId: comm.user_id,
+        metadata: {
+          communicationType: comm.communication_type,
+          direction: comm.direction,
+          threadId: comm.thread_id,
+          fromEntityId: comm.from_entity_id,
+          toEntityIds: comm.to_entity_ids,
+          participantsMetadata: comm.participants_metadata,
+          durationSeconds: comm.duration_seconds,
+          sentimentScore: comm.sentiment_score,
+          importanceScore: comm.importance_score,
+          urgencyScore: comm.urgency_score,
+          isEncrypted: comm.is_encrypted,
+          connectionId: comm.connection_id,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error converting communication to memory', {
+        error: error instanceof Error ? error.message : error,
+        communication: {
+          userId: comm.user_id,
+          time: comm.time,
+          communicationType: comm.communication_type,
+          subject: comm.subject,
+        },
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Convert ContentEntity to Memory
+   */
+  private contentToMemory(content: ContentEntity): Memory {
+    return {
+      id: content.id,
+      type: 'content',
+      title: content.title || 'Content',
+      description: content.text,
+      timestamp: content.created_at,
+      category: content.type || 'Content',
+      tags: [],
+      userId: content.user?.id || '',
+      sourceLink: content.url || content.source_url || undefined,
+      metadata: {
+        contentType: content.type,
+        mimetype: content.mimetype,
+        externalId: content.external_id,
+        sourceData: content.source_data,
+        eventId: content.event?.id,
+      },
+    };
   }
 }

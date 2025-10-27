@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Tabs, Select } from '@ci/shadcn';
@@ -9,6 +9,7 @@ import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
 import { MemoryTimeline, DesktopMapView, useMemoryTimeline } from './Components';
+import { EntityTypeFilter } from './Components/EntityTypeFilter';
 
 // File metadata for gallery
 interface FileMeta {
@@ -19,19 +20,36 @@ interface FileMeta {
   url?: string;
 }
 
+const AVAILABLE_ENTITY_TYPES = [
+  'Person',
+  'Event',
+  'Content',
+  'Thing',
+  'Contact',
+  'Place',
+  'Location',
+  'Document',
+  'File',
+  'Channel',
+  'Video',
+  'Communication',
+];
+
 function DesktopMemoryPageContent() {
   usePageTitle('Memory - Companion Intelligence');
   const [{ authToken }] = useAuth();
   const { searchQuery, setSearchQuery } = useMemoryTimeline();
-  const [, setSearchParams] = useSearchParams();
+  const { memories } = useMemoryTimeline();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState('map');
-
-  console.log('DesktopMemoryPage: activeTab =', activeTab);
 
   // Gallery states
   const [galleryFiles, setGalleryFiles] = useState<FileMeta[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(false);
+
+  // Entity types state - by default all are selected (none excluded)
+  const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
 
   // Fetch files for gallery
   const fetchGalleryFiles = async () => {
@@ -67,25 +85,63 @@ function DesktopMemoryPageContent() {
     }
   }, [activeTab, authToken]);
 
-  const handleSearch = () => {
-    // Update URL with search query
+  // Initialize entity types from URL parameters
+  useEffect(() => {
+    const excludedEntityTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || [];
+    const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
+    setSelectedEntityTypes(selectedTypes);
+  }, [searchParams]);
+
+  const handleSearch = useCallback(() => {
+    // Update URL with search query while preserving existing parameters
+    const currentParams = new URLSearchParams(searchParams);
     if (searchQuery.trim()) {
-      setSearchParams({ search: searchQuery.trim() });
+      currentParams.set('search', searchQuery.trim());
     } else {
-      setSearchParams({});
+      currentParams.delete('search');
     }
+
+    setSearchParams(currentParams);
     // Search is automatically triggered when searchQuery changes in MemoryProvider
-  };
+  }, [searchQuery, searchParams, setSearchParams]);
 
-  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setSearchQuery(value);
+  const handleEntityTypesChange = useCallback(
+    (entityTypes: string[]) => {
+      setSelectedEntityTypes(entityTypes);
 
-    // If the input is cleared, also clear the URL
-    if (!value.trim()) {
-      setSearchParams({});
-    }
-  };
+      // Calculate excluded entity types (all available types minus selected ones)
+      const excludedEntityTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !entityTypes.includes(type));
+
+      // Update URL with excluded entity types
+      const currentParams = new URLSearchParams(searchParams);
+      if (excludedEntityTypes.length > 0) {
+        currentParams.set('excludedEntityTypes', excludedEntityTypes.join(','));
+      } else {
+        currentParams.delete('excludedEntityTypes');
+      }
+
+      setSearchParams(currentParams);
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const handleSearchInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setSearchQuery(value);
+
+      // Update URL with search query while preserving existing parameters
+      const currentParams = new URLSearchParams(searchParams);
+      if (value.trim()) {
+        currentParams.set('search', value.trim());
+      } else {
+        currentParams.delete('search');
+      }
+
+      setSearchParams(currentParams);
+    },
+    [setSearchQuery, searchParams, setSearchParams],
+  );
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -143,20 +199,18 @@ function DesktopMemoryPageContent() {
 
           {/* Filters and View Toggle - Right Aligned */}
           <div className="flex items-center gap-4 relative z-[100] -mr-2">
-            {/* Location Count */}
-            <div className="text-base text-muted-foreground">Memories with locations</div>
+            {/* Results Count */}
+            <div className="text-base text-muted-foreground">
+              {memories.length === 1 ? '1 Result' : `${memories.length} Results`}
+            </div>
 
-            {/* Type Filter - Disabled */}
+            {/* Entity Type Filter */}
             <div className="flex items-center gap-2 relative z-[100]">
               <Filter className="h-6 w-6 text-muted-foreground" />
-              <Select value="all" disabled>
-                <Select.Trigger className="w-40 h-8 text-sm">
-                  <Select.Value placeholder="All Entity Types" />
-                </Select.Trigger>
-                <Select.Content className="z-[100]">
-                  <Select.Item value="all">All Entity Types</Select.Item>
-                </Select.Content>
-              </Select>
+              <EntityTypeFilter
+                selectedEntityTypes={selectedEntityTypes}
+                onEntityTypesChange={handleEntityTypesChange}
+              />
             </div>
 
             {/* Connection Filter - Disabled */}

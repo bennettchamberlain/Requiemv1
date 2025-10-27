@@ -70,8 +70,6 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
       return;
     }
 
-    console.log('MapView: Updating markers with', memoriesWithLocation.length, 'memories');
-
     // Clear existing markers and polylines
     clearMapElements();
 
@@ -112,7 +110,13 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
                 : ''
             }
             <div class="font-bold text-lg mb-1">${memory.title}</div>
-            <div class="text-sm mb-2 text-muted-foreground">${memory.description || 'No description'}</div>
+            <div class="text-sm mb-2 text-muted-foreground">${
+              memory.description
+                ? memory.description.length > 1000
+                  ? memory.description.substring(0, 1000) + '...'
+                  : memory.description
+                : 'No description'
+            }</div>
             <div class="text-xs text-muted-foreground">${new Date(memory.timestamp).toLocaleString()}</div>
             <div class="mt-2 flex items-center gap-2">
               <span class="text-xs inline-block px-2 py-1 rounded-full bg-primary/10 text-primary">
@@ -260,12 +264,8 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
   useEffect(() => {
     const initializeMap = async () => {
       if (!mapContainerRef.current) {
-        console.log('MapView: No map container ref');
-
         return;
       }
-
-      console.log('MapView: Initializing map');
 
       // Fix for Leaflet's icon paths
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

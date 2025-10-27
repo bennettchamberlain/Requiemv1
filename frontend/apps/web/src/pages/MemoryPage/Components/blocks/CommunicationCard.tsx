@@ -1,8 +1,19 @@
+import { useCallback } from 'react';
+
 import { Card, Tooltip, cn } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
 import type { MemoryCardProps, ParticipantData } from '../types';
+
+const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+};
 
 export function CommunicationCard({ memory }: MemoryCardProps) {
   const navigate = useNavigate();
@@ -56,9 +67,9 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
     return <Mail className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--accent-foreground)]" />;
   };
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     navigate(`/search?q=${encodeURIComponent(memory.title)}`);
-  };
+  }, [navigate, memory.title]);
 
   return (
     <Card
@@ -118,20 +129,17 @@ export function CommunicationCard({ memory }: MemoryCardProps) {
       <div className="flex items-center gap-5">
         <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
         <span className="text-sm text-card-foreground">
-          {new Date(memory.timestamp).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-          })}
+          {new Date(memory.timestamp).toLocaleString('en-US', DATE_FORMAT_OPTIONS)}
         </span>
       </div>
 
       {memory.description && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {memory.description.length > 1000
+              ? `${memory.description.substring(0, 1000)}...`
+              : memory.description}
+          </p>
         </div>
       )}
 

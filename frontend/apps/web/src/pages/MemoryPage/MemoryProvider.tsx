@@ -6,6 +6,12 @@ import { useAuth } from '@/hooks';
 
 import type { MemoryItem } from './Components/types';
 
+// Constants
+const MAX_MEMORIES = 500;
+const LOAD_BATCH_SIZE = 200;
+const OFFLOAD_THRESHOLD = 1000;
+const MONTH_IN_MS = 30 * 24 * 60 * 60 * 1000;
+
 export interface MemoryQuery {
   search?: string;
   category?: string;
@@ -14,6 +20,7 @@ export interface MemoryQuery {
     end?: string;
   };
   entityTypes?: string[];
+  excludedEntityTypes?: string[];
 }
 
 interface MemoryContextValue {
@@ -33,7 +40,6 @@ interface MemoryContextValue {
 
 // Create the hook that will be used by the context
 function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
-  console.log('MemoryProvider: useMemoryHook called with query:', query);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,18 +56,12 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
   const futureOffsetRef = useRef(0);
   const totalCountRef = useRef(0);
 
-  // Maximum number of memories to keep in memory at once (sliding window)
-  const MAX_MEMORIES = 500;
-  const LOAD_BATCH_SIZE = 200;
-  const OFFLOAD_THRESHOLD = MAX_MEMORIES; // Start offloading when we hit max
-
   // Get auth token from useAuth hook
   const [{ authToken }] = useAuth();
 
   // Fetch memories from API
   const fetchMemories = useCallback(
     async (offset: number = 0, limit: number = 500, direction: 'past' | 'future' | 'initial' = 'initial') => {
-      console.log('MemoryProvider: fetchMemories called with', { offset, limit, direction, query });
       try {
         if (!authToken) {
           throw new Error('No authentication token available');
@@ -87,6 +87,11 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
 
         if (categories.length > 0) {
           params.append('categories', categories.join(','));
+        }
+
+        // Handle excluded entity types
+        if (query.excludedEntityTypes && query.excludedEntityTypes.length > 0) {
+          params.append('excludeCategories', query.excludedEntityTypes.join(','));
         }
 
         params.append('limit', limit.toString());
@@ -123,14 +128,14 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
           if (query.dateRange?.start) {
             params.append('startDate', query.dateRange.start);
           } else {
-            const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            const oneMonthAgo = new Date(now.getTime() - MONTH_IN_MS);
             params.append('startDate', oneMonthAgo.toISOString());
           }
 
           if (query.dateRange?.end) {
             params.append('endDate', query.dateRange.end);
           } else {
-            const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            const oneMonthFromNow = new Date(now.getTime() + MONTH_IN_MS);
             params.append('endDate', oneMonthFromNow.toISOString());
           }
         }
@@ -162,7 +167,6 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
 
   // Load initial memories around current date
   const loadInitialMemories = useCallback(async () => {
-    console.log('MemoryProvider: loadInitialMemories callback created/recreated with query:', query);
     setLoading(true);
     setError(null);
 
@@ -274,7 +278,6 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
 
   // Load initial memories when component mounts or query changes
   useEffect(() => {
-    console.log('MemoryProvider: useEffect triggered for loadInitialMemories with query:', query);
     loadInitialMemories();
   }, [loadInitialMemories, query]);
 
