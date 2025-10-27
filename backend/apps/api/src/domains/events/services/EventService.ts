@@ -131,20 +131,48 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     name: E,
     event: EventPayloads[E],
     options?: { queue?: string },
-  ): Promise<string | null> {
-    const resolvedOptions = options ?? {
-      queue: DEFAULT_QUEUE,
-    };
-
-    const { queue } = resolvedOptions;
-    const resolvedQueue = queue ?? DEFAULT_QUEUE;
-
+  ): Promise<string[]> {
     const resolvedData = {
       ...event,
       name,
     } satisfies EventData;
 
-    return this.boss.send(resolvedQueue, resolvedData);
+    const allQueues = this.getRegisteredQueues();
+
+    // If a specific queue is provided and that queue exists, send only to that queue.
+    if (options?.queue) {
+      if (!allQueues.has(options.queue)) {
+        this.logger.warn(`Requested queue ${options.queue} does not exist. Event ${name} will not be sent.`);
+
+        return [];
+      }
+
+      const jobId = await this.boss.send(options.queue, resolvedData);
+
+      return jobId ? [jobId] : [];
+    }
+
+    // Otherwise, send to all registered queues.
+    const jobIds: string[] = [];
+
+    for (const queue of allQueues) {
+      try {
+        const jobId = await this.boss.send(queue, resolvedData);
+
+        if (jobId) {
+          jobIds.push(jobId);
+        }
+      } catch (err: unknown) {
+        this.logger.error(
+          `Failed to send event ${name} to queue ${queue}`,
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+    }
+
+    this.logger.debug(`Sent event ${name} to ${jobIds.length} queues`);
+
+    return jobIds;
   }
 
   private getRegisteredQueues(): Set<string> {
