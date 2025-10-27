@@ -1,7 +1,9 @@
+import { DEFAULT_QUEUE } from './constants';
+
 export class EventListenerRegistry {
   private static listeners = new Map<string, { className: string; methodName: string; queue: string }>();
 
-  static register(eventName: string, className: string, methodName: string, queue: string = 'default') {
+  static register(eventName: string, className: string, methodName: string, queue: string = DEFAULT_QUEUE) {
     const key = `${eventName}:${queue}`;
     const existing = this.listeners.get(key);
 
