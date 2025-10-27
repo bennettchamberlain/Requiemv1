@@ -135,7 +135,7 @@ export function FilesGalleryPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {files.map((file) => {
-              if (file.contentType.startsWith('image/')) {
+              if (file.contentType?.startsWith('image/')) {
                 return (
                   <div
                     key={file.id}
@@ -155,7 +155,7 @@ export function FilesGalleryPage() {
                 );
               }
 
-              if (file.contentType.startsWith('video/')) {
+              if (file.contentType?.startsWith('video/')) {
                 return (
                   <div
                     key={file.id}
