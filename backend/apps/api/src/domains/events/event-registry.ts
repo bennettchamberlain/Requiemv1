@@ -33,6 +33,7 @@ export const enum Events {
 
 interface FileUploadPayload extends EventPayload {
   fileId: string;
+  userId?: string;
 }
 
 interface ChatSummarizationPayload extends EventPayload {
