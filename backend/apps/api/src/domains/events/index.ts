@@ -27,7 +27,7 @@ import { PgBossArchiveEntity } from './entities/PgBossArchiveEntity';
 import { PgBossJobEntity } from './entities/PgBossJobEntity';
 import { PgBossQueueEntity } from './entities/PgBossQueueEntity';
 import { PgBossScheduleEntity } from './entities/PgBossScheduleEntity';
-import { EventService, Queues } from './services/EventService';
+import { EventService } from './services/EventService';
 import { JobMonitorService } from './services/JobMonitorService';
 
 /**
@@ -52,7 +52,6 @@ export { EventService };
 // Types
 export type { EventPayload, Acknowledgement } from './types';
 export { Events, type EventPayloads } from './event-registry';
-export { Queues };
 
 // Misc
-export { OnEvent } from './decorators/on-event';
+export { OnEvent } from './decorators/OnEvent';
