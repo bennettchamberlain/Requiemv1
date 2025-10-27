@@ -2,6 +2,7 @@
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
 
 import 'leaflet/dist/leaflet.css';
+import { Route } from '@ci/shadcn/icons';
 import L from 'leaflet';
 
 import { loadGoogleMaps } from '../googleMaps';
@@ -80,12 +81,12 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
     // Create custom icon for markers
     const customIcon = L.divIcon({
       className: 'custom-map-marker',
-      html: `<div class="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-md">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-map-pin"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+      html: `<div class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-md">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-map-pin"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
           </div>`,
-      iconSize: [32, 32],
-      iconAnchor: [16, 32],
-      popupAnchor: [0, -32],
+      iconSize: [24, 24],
+      iconAnchor: [12, 24],
+      popupAnchor: [0, -24],
     });
 
     // Add markers for memories with location
@@ -96,7 +97,7 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
 
-    sortedMemories.forEach((memory, index) => {
+    sortedMemories.forEach((memory) => {
       if (memory.location) {
         const marker = L.marker([memory.location.lat, memory.location.lng], { icon: customIcon })
           .addTo(mapRef.current!)
@@ -117,7 +118,6 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
               <span class="text-xs inline-block px-2 py-1 rounded-full bg-primary/10 text-primary">
                 ${memory.category}
               </span>
-              ${showTimeline ? `<span class="text-xs text-muted-foreground">#${index + 1}</span>` : ''}
               ${
                 memory.category === 'Video' && memory.metadata?.url
                   ? '<span class="text-xs text-muted-foreground">📹 Video</span>'
@@ -150,26 +150,6 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
 
     // Add timeline path if enabled
     if (showTimeline && markers.length > 1) {
-      // Add numbered markers for timeline
-      markers.forEach((marker, index) => {
-        const numberIcon = L.divIcon({
-          className: 'timeline-number-marker',
-          html: `<div class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold shadow-md">
-                ${index + 1}
-              </div>`,
-          iconSize: [24, 24],
-          iconAnchor: [12, 12],
-        });
-
-        L.marker(marker.getLatLng(), { icon: numberIcon })
-          .addTo(mapRef.current!)
-          .bindTooltip(`Step ${index + 1}: ${sortedMemories[index].title}`, {
-            permanent: false,
-            direction: 'top',
-            offset: [0, -10],
-          });
-      });
-
       // Create actual road routes using Google Maps JavaScript API
       const createRoadRoute = async (start: L.LatLng, end: L.LatLng) => {
         try {
@@ -343,7 +323,14 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
       setPreviousMemoriesHash(memoriesHash);
       updateMapMarkers();
     }
-  }, [memoriesHash, previousMemoriesHash, updateMapMarkers]);
+  }, [memoriesHash, previousMemoriesHash]);
+
+  // Update markers when showTimeline prop changes
+  useEffect(() => {
+    if (mapRef.current) {
+      updateMapMarkers();
+    }
+  }, [showTimeline]);
 
   return (
     <div className={className}>
@@ -359,29 +346,25 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
 
 // Desktop MapView with Timeline
 export function DesktopMapView() {
+  const [showTimeline, setShowTimeline] = useState(true);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-1 h-[calc(100vh-140px)] -mx-6 -mb-6">
       {/* Timeline - Left Column */}
       <div className="lg:col-span-1 flex flex-col overflow-hidden pl-4 pr-2">
         <div className="flex justify-between items-center mb-4 flex-shrink-0">
-          <div className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border bg-primary text-primary-foreground border-primary">
-            <svg
-              className="h-5 w-5"
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-              <polyline points="9,22 9,12 15,12 15,22" />
-            </svg>
+          <button
+            onClick={() => setShowTimeline(!showTimeline)}
+            className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer ${
+              showTimeline
+                ? 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
+                : 'bg-background text-foreground border-input hover:bg-accent hover:text-accent-foreground'
+            }`}
+            title={showTimeline ? 'Hide Timeline Path' : 'Show Timeline Path'}
+          >
+            <Route className="h-5 w-5" />
             Timeline
-          </div>
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1">
@@ -391,7 +374,7 @@ export function DesktopMapView() {
 
       {/* Map - Right Column */}
       <div className="lg:col-span-2 relative h-full">
-        <MapView showTimeline={true} className="h-full" />
+        <MapView showTimeline={showTimeline} className="h-full" />
       </div>
     </div>
   );
