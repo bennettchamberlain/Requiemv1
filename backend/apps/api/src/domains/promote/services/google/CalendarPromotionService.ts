@@ -68,17 +68,14 @@ interface Participant {
 export class GoogleCalendarEventPromotionService {
   private logger = new LoggerService(GoogleCalendarEventPromotionService.name);
 
-  private readonly googleMapsApiKey = process.env.GOOGLE_MAPS_KEY;
+  private readonly googleMapsApiKey =
+    process.env.GOOGLE_MAPS_KEY || 'AIzaSyCPwiAuP9LNzBm9sePxdkD-kED5rZAv5WI';
 
   constructor(
     private readonly eventService: EventService,
     private readonly personPromotionService: PersonPromotionService,
   ) {}
 
-  /**
-   * Geocode a location string to get coordinates using Google Maps API
-   * Returns null if geocoding fails or location is empty
-   */
   private async geocodeLocation(location: string | null): Promise<Point | null> {
     if (!location || location.trim().length === 0) {
       return null;
@@ -90,9 +87,8 @@ export class GoogleCalendarEventPromotionService {
 
       this.logger.debug('Attempting to geocode location', { location });
 
-      // Add timeout to prevent hanging requests
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(url, {
         signal: controller.signal,
@@ -239,7 +235,6 @@ export class GoogleCalendarEventPromotionService {
       return contentObj.items as CalendarEvent[];
     }
 
-    // Handle single event
     if ('id' in contentObj && ('summary' in contentObj || 'start' in contentObj)) {
       return [contentObj as CalendarEvent];
     }
@@ -259,7 +254,6 @@ export class GoogleCalendarEventPromotionService {
         await this.processCalendarEvent(event, userId, connectionId);
         processedCount++;
 
-        // Log progress every 10 events
         if (processedCount % 10 === 0) {
           this.logger.log('Calendar event promotion progress', {
             userId,
