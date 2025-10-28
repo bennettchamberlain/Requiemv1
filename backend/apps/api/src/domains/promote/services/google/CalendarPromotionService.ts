@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Point } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import { EventService, type CreateEventDto } from '@ci/domains/memory';
@@ -67,12 +68,118 @@ interface Participant {
 export class GoogleCalendarEventPromotionService {
   private logger = new LoggerService(GoogleCalendarEventPromotionService.name);
 
+  private readonly googleMapsApiKey = process.env.GOOGLE_MAPS_KEY;
+
   constructor(
     private readonly eventService: EventService,
     private readonly personPromotionService: PersonPromotionService,
   ) {}
 
+  private async geocodeLocation(location: string | null): Promise<Point | null> {
+    if (!location || location.trim().length === 0) {
+      return null;
+    }
+
+    try {
+      const encodedLocation = encodeURIComponent(location.trim());
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedLocation}&key=${this.googleMapsApiKey}`;
+
+      this.logger.debug('Attempting to geocode location', { location });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'CI-Server/1.0',
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        this.logger.warn('Google Maps API request failed', {
+          location,
+          status: response.status,
+          statusText: response.statusText,
+        });
+
+        return null;
+      }
+
+      const data = await response.json();
+
+      // Handle API key restrictions
+      if (data.status === 'REQUEST_DENIED') {
+        this.logger.warn('Google Maps API key has restrictions (likely referer restrictions)', {
+          location,
+          status: data.status,
+          errorMessage: data.error_message,
+        });
+
+        return null;
+      }
+
+      if (data.status !== 'OK' || !data.results || data.results.length === 0) {
+        this.logger.warn('Google Maps geocoding failed', {
+          location,
+          status: data.status,
+          errorMessage: data.error_message,
+        });
+
+        return null;
+      }
+
+      const result = data.results[0];
+      const lat = result.geometry.location.lat;
+      const lng = result.geometry.location.lng;
+
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        this.logger.warn('Invalid coordinates returned from Google Maps API', {
+          location,
+          lat,
+          lng,
+        });
+
+        return null;
+      }
+
+      const point: Point = {
+        type: 'Point',
+        coordinates: [lng, lat],
+      };
+
+      this.logger.debug('Successfully geocoded location', {
+        location,
+        coordinates: { lat, lng },
+      });
+
+      return point;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        this.logger.warn('Geocoding request timed out', { location });
+      } else {
+        this.logger.error('Error during geocoding', {
+          location,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+
+      return null;
+    }
+  }
+
   async promoteCalendarEvents(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
+    // Validate input parameters
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('Invalid userId parameter');
+    }
+
+    if (!connectionId || typeof connectionId !== 'string') {
+      throw new Error('Invalid connectionId parameter');
+    }
+
     this.logger.log('Starting calendar event promotion', {
       userId,
       connectionId,
@@ -127,7 +234,6 @@ export class GoogleCalendarEventPromotionService {
       return contentObj.items as CalendarEvent[];
     }
 
-    // Handle single event
     if ('id' in contentObj && ('summary' in contentObj || 'start' in contentObj)) {
       return [contentObj as CalendarEvent];
     }
@@ -147,7 +253,6 @@ export class GoogleCalendarEventPromotionService {
         await this.processCalendarEvent(event, userId, connectionId);
         processedCount++;
 
-        // Log progress every 10 events
         if (processedCount % 10 === 0) {
           this.logger.log('Calendar event promotion progress', {
             userId,
@@ -178,7 +283,7 @@ export class GoogleCalendarEventPromotionService {
     this.logEventDetails(eventDetails);
 
     // Transform and save event
-    const eventDto = this.transformToEventDto(eventDetails, event, userId, connectionId);
+    const eventDto = await this.transformToEventDto(eventDetails, event, userId, connectionId);
     await this.eventService.create({ userId }, eventDto);
 
     // Process participants
@@ -226,12 +331,12 @@ export class GoogleCalendarEventPromotionService {
     };
   }
 
-  private transformToEventDto(
+  private async transformToEventDto(
     eventDetails: EventDetails,
     rawEvent: CalendarEvent,
     userId: string,
     connectionId: string,
-  ): CreateEventDto {
+  ): Promise<CreateEventDto> {
     const start_time = this.parseDateTime(eventDetails.startTime);
     const end_time = eventDetails.endTime ? this.parseDateTime(eventDetails.endTime) : null;
 
@@ -239,9 +344,8 @@ export class GoogleCalendarEventPromotionService {
       throw new Error(`Calendar event ${eventDetails.id} has no start time`);
     }
 
-    // Build metadata with all relevant information
+    // Build metadata with essential information only (avoid storing large rawEvent)
     const metadata = {
-      rawEvent,
       connectionId,
       organizerEmail: eventDetails.organizerEmail,
       organizerName: eventDetails.organizerName,
@@ -250,9 +354,14 @@ export class GoogleCalendarEventPromotionService {
       googleCalendarUrl: `https://calendar.google.com/calendar/event?eid=${eventDetails.id}`,
       created: eventDetails.created,
       updated: eventDetails.updated,
+      rawEventId: rawEvent.id,
+      rawEventSummary: rawEvent.summary,
+      rawEventStatus: rawEvent.status,
     };
 
     const isAllDay = this.isAllDayEvent(eventDetails.startTime);
+
+    const location_coordinates = await this.geocodeLocation(eventDetails.location);
 
     return {
       id: '', // Will be generated by the service
@@ -263,6 +372,7 @@ export class GoogleCalendarEventPromotionService {
       start_time,
       end_time: end_time || undefined,
       location_name: eventDetails.location || undefined,
+      location_coordinates: location_coordinates || undefined,
       source_type: 'ETL',
       source_system: 'google_calendar',
       source_id: eventDetails.id,

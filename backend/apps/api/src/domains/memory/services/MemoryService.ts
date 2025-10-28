@@ -438,7 +438,7 @@ export class MemoryService {
     return { file: newFile, entity };
   }
 
-  @OnEvent(Events.FILE_UPLOAD, { async: true })
+  @OnEvent(Events.FILE_UPLOAD)
   async handleFileUploaded(payload: EventPayloads[Events.FILE_UPLOAD]) {
     const file = await this.fileService.findOne({ userId: payload.userId }, payload.fileId);
 
