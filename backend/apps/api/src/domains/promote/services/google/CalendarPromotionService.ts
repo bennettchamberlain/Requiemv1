@@ -68,8 +68,7 @@ interface Participant {
 export class GoogleCalendarEventPromotionService {
   private logger = new LoggerService(GoogleCalendarEventPromotionService.name);
 
-  private readonly googleMapsApiKey =
-    process.env.GOOGLE_MAPS_KEY || 'AIzaSyCPwiAuP9LNzBm9sePxdkD-kED5rZAv5WI';
+  private readonly googleMapsApiKey = process.env.GOOGLE_MAPS_KEY;
 
   constructor(
     private readonly eventService: EventService,
