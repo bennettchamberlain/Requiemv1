@@ -2,11 +2,16 @@ import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
-import type { MemoryCardProps } from '../types';
+import type { MemoryItem } from '../types';
 import { formatDateTime, formatDuration } from '../utils';
 
-export function EventCard({ memory }: MemoryCardProps) {
+interface Props {
+  memory: MemoryItem;
+}
+
+export function EventCard({ memory }: Props) {
   const navigate = useNavigate();
+
   const hasStartDate = memory.startDate;
   const hasEndDate = memory.endDate;
   const hasOrganizer = memory.organizer;
