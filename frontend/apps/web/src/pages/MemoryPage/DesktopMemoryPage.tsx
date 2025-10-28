@@ -25,7 +25,7 @@ const AVAILABLE_ENTITY_TYPES = [
   'Communication',
 ];
 
-function DesktopMemoryPageContent() {
+export default function DesktopMemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
   const { searchQuery, setSearchQuery } = useMemoryTimeline();
   const { memories } = useMemoryTimeline();
@@ -205,8 +205,4 @@ function DesktopMemoryPageContent() {
       </PageContent>
     </>
   );
-}
-
-export default function DesktopMemoryPage() {
-  return <DesktopMemoryPageContent />;
 }
