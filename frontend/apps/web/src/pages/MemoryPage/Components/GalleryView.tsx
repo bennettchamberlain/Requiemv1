@@ -47,8 +47,6 @@ export function GalleryView() {
     hydrateFiles();
   }, [memories]);
 
-  console.log('Gallery files', files);
-
   // File upload handler
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
