@@ -19,7 +19,6 @@ import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
-const ActionsPage = lazy(() => import('@/pages/ActionsPage'));
 const KnowledgePage = lazy(() => import('@/pages/AnalyticsPage'));
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
@@ -126,15 +125,6 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <InsightsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/actions"
-          element={
-            <ProtectedRoute>
-              <ActionsPage />
             </ProtectedRoute>
           }
         />
