@@ -16,7 +16,7 @@ export class GraphEventListener {
     private readonly userService: UserService,
   ) {}
 
-  @OnEvent(Events.GRAPH_PERSON_CREATED, { async: true })
+  @OnEvent(Events.GRAPH_PERSON_CREATED)
   async handlePersonCreated(payload: EventPayloads[Events.GRAPH_PERSON_CREATED]) {
     try {
       await this.graphUtility.createOrUpdateNode(payload.ownerId, {
@@ -50,7 +50,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_FAMILY_MEMBERS_ADDED, { async: true })
+  @OnEvent(Events.GRAPH_FAMILY_MEMBERS_ADDED)
   async handleFamilyMembersAdded(payload: EventPayloads[Events.GRAPH_FAMILY_MEMBERS_ADDED]) {
     for (const member of payload.members) {
       try {
@@ -85,7 +85,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_PREFERENCE_ADDED, { async: true })
+  @OnEvent(Events.GRAPH_PREFERENCE_ADDED)
   async handlePreferenceAdded(payload: EventPayloads[Events.GRAPH_PREFERENCE_ADDED]) {
     try {
       const conceptId = await this.ensureConcept(payload.ownerId, payload.concept);
@@ -110,7 +110,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_PREFERENCES_ADDED, { async: true })
+  @OnEvent(Events.GRAPH_PREFERENCES_ADDED)
   async handlePreferencesAdded(payload: EventPayloads[Events.GRAPH_PREFERENCES_ADDED]) {
     for (const preference of payload.preferences) {
       try {
@@ -137,7 +137,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_LOCATION_CREATED, { async: true })
+  @OnEvent(Events.GRAPH_LOCATION_CREATED)
   async handleLocationCreated(payload: EventPayloads[Events.GRAPH_LOCATION_CREATED]) {
     try {
       await this.graphUtility.createOrUpdateNode(payload.ownerId, {
@@ -155,7 +155,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_VISIT_RECORDED, { async: true })
+  @OnEvent(Events.GRAPH_VISIT_RECORDED)
   async handleVisitRecorded(payload: EventPayloads[Events.GRAPH_VISIT_RECORDED]) {
     try {
       await this.graphUtility.createOrUpdateRelationship(payload.ownerId, {
@@ -177,7 +177,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_CONNECTION_CREATED, { async: true })
+  @OnEvent(Events.GRAPH_CONNECTION_CREATED)
   async handleConnectionCreated(payload: EventPayloads[Events.GRAPH_CONNECTION_CREATED]) {
     try {
       await this.graphUtility.createOrUpdateRelationship(payload.ownerId, {
@@ -199,7 +199,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_NODE_DELETED, { async: true })
+  @OnEvent(Events.GRAPH_NODE_DELETED)
   async handleNodeDeleted(payload: EventPayloads[Events.GRAPH_NODE_DELETED]) {
     try {
       await this.graphUtility.softDeleteNode(payload.entityId, payload.ownerId);
@@ -212,7 +212,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_NODE_UPDATED, { async: true })
+  @OnEvent(Events.GRAPH_NODE_UPDATED)
   async handleNodeUpdated(payload: EventPayloads[Events.GRAPH_NODE_UPDATED]) {
     try {
       await this.graphUtility.createOrUpdateNode(payload.ownerId, {
@@ -230,7 +230,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_NODE_UPSERTED, { async: true })
+  @OnEvent(Events.GRAPH_NODE_UPSERTED)
   async handleNodeUpserted(payload: EventPayloads[Events.GRAPH_NODE_UPSERTED]) {
     try {
       await this.graphUtility.createOrUpdateNode(payload.ownerId, {
@@ -253,7 +253,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_RELATIONSHIP_DELETED, { async: true })
+  @OnEvent(Events.GRAPH_RELATIONSHIP_DELETED)
   async handleRelationshipDeleted(payload: EventPayloads[Events.GRAPH_RELATIONSHIP_DELETED]) {
     try {
       await this.graphUtility.softDeleteRelationship(payload.relationshipId, payload.ownerId);
@@ -266,7 +266,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.GRAPH_RELATIONSHIP_UPSERTED, { async: true })
+  @OnEvent(Events.GRAPH_RELATIONSHIP_UPSERTED)
   async handleRelationshipUpserted(payload: EventPayloads[Events.GRAPH_RELATIONSHIP_UPSERTED]) {
     try {
       await this.graphUtility.createOrUpdateRelationship(payload.ownerId, {
@@ -290,7 +290,7 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.USER_CREATED, { async: true })
+  @OnEvent(Events.USER_CREATED)
   async handleUserCreated(payload: EventPayloads[Events.USER_CREATED]) {
     const user = await this.userService.findOne(payload.userId);
 
