@@ -35,6 +35,9 @@ export interface MemoryItem {
       targetType: string;
       direction: 'outgoing' | 'incoming';
     }>;
+    properties?: {
+      [key: string]: unknown;
+    };
     [key: string]: unknown;
   };
   startDate?: string;
@@ -59,4 +62,12 @@ export type Relationship = {
 export interface ParticipantData {
   name?: string;
   email?: string;
+}
+
+export interface FileMeta {
+  id: string;
+  name: string;
+  contentType: string;
+  size: string;
+  url?: string;
 }

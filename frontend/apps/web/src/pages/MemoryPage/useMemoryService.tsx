@@ -37,10 +37,13 @@ interface MemoryContextValue {
   setSearchQuery: (query: string) => void;
   loadingPast: boolean;
   loadingFuture: boolean;
+  activeMemory: MemoryItem | null;
+  setActiveMemory: (memory: MemoryItem | null) => void;
 }
 
 function useMemoryService(): MemoryContextValue {
   const [searchParams] = useSearchParams();
+  const [activeMemory, setActiveMemory] = useState<MemoryItem | null>(null);
 
   const query: MemoryQuery = useMemo(() => {
     const search = searchParams.get('search') || undefined;
@@ -326,6 +329,8 @@ function useMemoryService(): MemoryContextValue {
     setSearchQuery,
     loadingPast,
     loadingFuture,
+    activeMemory,
+    setActiveMemory,
   };
 }
 

@@ -1,3 +1,6 @@
+import { Input } from '@ci/shadcn/src/components/ui/input';
+import { Label } from '@ci/shadcn/src/components/ui/label';
+
 import type { MemoryItem } from '../../types';
 
 interface Props {
@@ -5,7 +8,14 @@ interface Props {
 }
 
 export function OtherDetails({ memory }: Props) {
-  console.log(memory);
-
-  return <div>Other Details Component</div>;
+  return (
+    <div className="grid flex-1 auto-rows-min gap-6 px-4">
+      {memory.metadata?.sourceSystem != null && (
+        <div className="grid gap-3">
+          <Label htmlFor="sourceSystem">Platform</Label>
+          <Input id="sourceSystem" disabled defaultValue={`${memory.metadata.sourceSystem}`} />
+        </div>
+      )}
+    </div>
+  );
 }

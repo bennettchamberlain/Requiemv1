@@ -1,6 +1,7 @@
 import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
-import { useNavigate } from 'react-router-dom';
+
+import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
 
 import type { MemoryItem } from '../../types';
 import { formatDateTime, formatDuration } from '../utils';
@@ -10,8 +11,7 @@ interface Props {
 }
 
 export function EventCard({ memory }: Props) {
-  const navigate = useNavigate();
-
+  const { setActiveMemory } = useMemoryService();
   const hasStartDate = memory.startDate;
   const hasEndDate = memory.endDate;
   const hasOrganizer = memory.organizer;
@@ -23,7 +23,7 @@ export function EventCard({ memory }: Props) {
   const hasDescription = memory.description;
 
   const handleClick = () => {
-    navigate(`/search?q=${encodeURIComponent(memory.title)}`);
+    setActiveMemory(memory);
   };
 
   return (
