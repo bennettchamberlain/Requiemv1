@@ -59,19 +59,38 @@ export class ConnectionsController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createConnectionSchema)) input: CreateConnectionDto,
   ) {
-    return this.connectionService.create(context, input);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.create(
+      context,
+      input,
+    );
+
+    return returnedConnection;
   }
 
   @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
-    return this.connectionService.findAll(context);
+    const connections = await this.connectionService.findAll(context);
+
+    return connections.map((connection) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { accessToken, refreshToken, ...returnedConnection } = connection;
+
+      return returnedConnection;
+    });
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.findOne(context, id);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.findOne(
+      context,
+      id,
+    );
+
+    return returnedConnection;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -81,7 +100,14 @@ export class ConnectionsController {
     @Param('id') id: string,
     @Body(new ValidationPipe(updateConnectionSchema)) input: UpdateConnectionDto,
   ) {
-    return this.connectionService.update(context, id, input);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.update(
+      context,
+      id,
+      input,
+    );
+
+    return returnedConnection;
   }
 
   @UseGuards(JwtAuthGuard)

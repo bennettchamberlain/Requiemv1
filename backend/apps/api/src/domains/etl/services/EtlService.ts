@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull, MoreThan } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
@@ -12,7 +11,7 @@ import {
   type Connection,
   type SyncResponse,
 } from '@ci/domains/connections';
-import { Events, EventPayloads } from '@ci/domains/events';
+import { OnEvent, Events, EventPayloads } from '@ci/domains/events';
 
 import { ApiLogEntity } from '../entities/ApiLogEntity';
 
@@ -75,7 +74,7 @@ export class EtlService {
     return (
       connection.active &&
       !!connection.accessToken &&
-      !(connection.tokenExpiry && connection.tokenExpiry > new Date() && !connection.refreshToken) &&
+      !(connection.tokenExpiry && connection.tokenExpiry < new Date() && !connection.refreshToken) &&
       !!connection.provider?.id
     );
   }
@@ -179,7 +178,7 @@ export class EtlService {
     await this.apiLogRepository.save(entities);
   }
 
-  @OnEvent(Events.SYNC_CONNECTION, { async: true })
+  @OnEvent(Events.SYNC_CONNECTION)
   async handleSyncEvent(payload: EventPayloads[Events.SYNC_CONNECTION]) {
     if (!payload.userId) {
       this.logger.warn('SYNC_CONNECTION payload missing userId', { payload });

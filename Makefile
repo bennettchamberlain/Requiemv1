@@ -271,10 +271,6 @@ signup: ## Generates a stable access token for use during development
 	@printf "👋 Generating signup codes...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/generate-signup-codes.ts
 
-useradd: ## Add a user to the PostgreSQL database
-	@printf "👤 Adding user...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/add-user.ts
-
 userpw: ## Change a user's password
 	@printf "🔑 Changing user password...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/change-password.ts
