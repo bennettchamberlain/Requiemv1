@@ -1,6 +1,6 @@
 import { usePageTitle } from '@ci/common';
 import { Button } from '@ci/shadcn';
-import { Brain, Lightbulb, MessagesSquare, Zap } from '@ci/shadcn/icons';
+import { Brain, Lightbulb, MessagesSquare } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -35,13 +35,6 @@ function Actions() {
           <Link to="/memory">
             <Brain className="h-4 w-4" />
             Memory
-          </Link>
-        </Button>
-
-        <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/actions">
-            <Zap className="h-4 w-4" />
-            Actions
           </Link>
         </Button>
 

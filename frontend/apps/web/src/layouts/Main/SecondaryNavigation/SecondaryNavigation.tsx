@@ -11,7 +11,6 @@ import {
   Search,
   Settings2,
   Wrench,
-  Zap,
 } from '@ci/shadcn/icons';
 
 import logo from '../../../assets/logo.png';
@@ -39,11 +38,6 @@ const INTELLIGENCE = [
     name: 'Insights',
     url: '/insights',
     icon: Lightbulb,
-  },
-  {
-    name: 'Actions',
-    url: '/actions',
-    icon: Zap,
   },
   {
     name: 'Chat',
