@@ -10,15 +10,6 @@ import { PageContent } from '@/components/layout';
 import { MemoryTimeline, DesktopMapView, useMemoryTimeline, GalleryView } from './Components';
 import { EntityTypeFilter } from './Components/EntityTypeFilter';
 
-// File metadata for gallery
-interface FileMeta {
-  id: string;
-  name: string;
-  contentType: string;
-  size: string;
-  url?: string;
-}
-
 const AVAILABLE_ENTITY_TYPES = [
   'Person',
   'Event',
