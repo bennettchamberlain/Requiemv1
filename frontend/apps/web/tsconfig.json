@@ -26,7 +26,8 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "resolveJsonModule": true,
     "types": ["vite/client", "google.maps"],
+    "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": [".", ".storybook/**/*", "src"],
+  "include": [".", ".storybook/**/*", "src", "src/types/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }
