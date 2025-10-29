@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Select, Button } from '@ci/shadcn';
 import { Search, Filter, MapPin, List, Images, X, Workflow, Share2 } from '@ci/shadcn/icons';
+import { Sheet } from '@ci/shadcn/src/components/ui/sheet';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { MemoryDetails } from '@/pages/MemoryPage/Components';
 
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
@@ -14,13 +16,14 @@ import { TimelineView } from './TimelineView';
 import { useMemoryService } from './useMemoryService';
 
 export default function MobileMemoryPage() {
-  const { searchQuery, setSearchQuery } = useMemoryService();
+  const { searchQuery, setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
   const [, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState('list');
 
   // Mobile-specific states
   const [showFilters, setShowFilters] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   // Handle search
   const handleSearch = () => {
@@ -48,6 +51,16 @@ export default function MobileMemoryPage() {
       handleSearch();
     }
   };
+
+  const toggleActiveMemory = (active: boolean) => {
+    if (!active) {
+      setActiveMemory(null);
+    }
+  };
+
+  useEffect(() => {
+    setDetailsOpen(activeMemory != null);
+  }, [activeMemory]);
 
   return (
     <>
@@ -174,6 +187,11 @@ export default function MobileMemoryPage() {
           {activeTab === 'graph' && <GraphView variant="mobile" />}
         </>
       </PageContent>
+      {activeMemory && (
+        <Sheet open={detailsOpen} onOpenChange={toggleActiveMemory}>
+          <MemoryDetails memory={activeMemory} />
+        </Sheet>
+      )}
     </>
   );
 }
