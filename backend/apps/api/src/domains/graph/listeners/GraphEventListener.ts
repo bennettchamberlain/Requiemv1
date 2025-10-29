@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
+import { EventService, Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 import { UserService } from '@ci/domains/user';
 
 import { GraphUtilityService } from '../services/GraphUtilityService';
@@ -14,18 +14,30 @@ export class GraphEventListener {
   constructor(
     private readonly graphUtility: GraphUtilityService,
     private readonly userService: UserService,
+    private readonly eventService: EventService,
   ) {}
 
   @OnEvent(Events.GRAPH_PERSON_CREATED)
   async handlePersonCreated(payload: EventPayloads[Events.GRAPH_PERSON_CREATED]) {
     try {
-      await this.graphUtility.createOrUpdateNode(payload.ownerId, {
+      const searchContent = this.buildPersonSearchContent(payload.person);
+      const { node, created } = await this.graphUtility.createOrUpdateNode(payload.ownerId, {
         entityId: payload.person.entityId,
         entityType: payload.person.entityType,
         name: payload.person.name ?? null,
         description: payload.person.description ?? null,
         properties: payload.person.properties ?? {},
+        searchContent,
       });
+
+      if (created && searchContent) {
+        await this.enqueueEntityEmbedding(
+          payload.ownerId,
+          node.entity_id,
+          payload.person.entityType,
+          searchContent,
+        );
+      }
 
       if (payload.relationships?.length) {
         for (const rel of payload.relationships) {
@@ -337,6 +349,60 @@ export class GraphEventListener {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private buildPersonSearchContent(
+    person: EventPayloads[Events.GRAPH_PERSON_CREATED]['person'],
+  ): string | null {
+    const parts = new Set<string>();
+
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(person.name ?? null);
+    push(person.description ?? null);
+
+    const properties = (person.properties ?? {}) as Record<string, unknown>;
+    const candidateKeys = ['first_name', 'last_name', 'email', 'occupation', 'bio'];
+
+    for (const key of candidateKeys) {
+      push(properties[key]);
+    }
+
+    const aliases = properties['aliases'];
+    if (Array.isArray(aliases)) {
+      for (const alias of aliases) {
+        push(alias);
+      }
+    }
+
+    const result = Array.from(parts).join(' ');
+
+    return result.length > 0 ? result : null;
+  }
+
+  private async enqueueEntityEmbedding(
+    ownerId: string,
+    entityId: string,
+    entityType: string,
+    searchContent: string,
+  ): Promise<void> {
+    await this.eventService.send(Events.SEARCH_EMBED_ENTITY, {
+      ownerId,
+      entityId,
+      entityType,
+      searchContent,
+    });
   }
 
   private async ensureConcept(
