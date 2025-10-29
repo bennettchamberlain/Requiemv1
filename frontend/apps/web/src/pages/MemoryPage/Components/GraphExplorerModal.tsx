@@ -6,6 +6,7 @@ import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons'
 import { useAuth } from '@/hooks';
 
 import { ForceGraph, ForceGraph3DView, useGraphOverview } from '../../AnalyticsPage';
+import type { GraphNode, GraphLink } from '../../AnalyticsPage/use-graph-overview';
 
 const TYPE_COLOR_PALETTE = [
   '#38bdf8',
@@ -45,7 +46,19 @@ function getTypeColor(entityType: string): string {
 
 interface GraphTabPanelProps {
   variant: 'desktop' | 'mobile';
+  searchQuery?: string;
 }
+
+type GraphSearchResponseNode = {
+  id?: string;
+  entity_id?: string;
+  entity_type?: string;
+  name?: string | null;
+  description?: string | null;
+  properties?: Record<string, unknown>;
+  score?: number | null;
+  distance?: number | null;
+};
 
 function hashWithSeed(value: string, seed: string): number {
   const combined = `${seed}:${value}`;
@@ -74,7 +87,7 @@ const resolveEndpointId = (endpoint: unknown): string | undefined => {
   return undefined;
 };
 
-export function GraphTabPanel({ variant }: GraphTabPanelProps) {
+export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<string[]>([]);
@@ -84,6 +97,14 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [includedEntityTypes, setIncludedEntityTypes] = useState<string[]>([]);
   const [includedRelationshipTypes, setIncludedRelationshipTypes] = useState<string[]>([]);
   const previousVisibleRef = useRef<Set<string>>(new Set());
+
+  const trimmedSearchQuery = searchQuery?.trim() ?? '';
+  const isSearchMode = trimmedSearchQuery.length > 0;
+
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchNodes, setSearchNodes] = useState<Array<GraphNode & { score?: number | null }>>([]);
+  const [searchLinks, setSearchLinks] = useState<GraphLink[]>([]);
 
   const [{ authToken }] = useAuth();
   const { loading, error, subgraph, userEntityId, quickStats } = useGraphOverview(authToken, { maxDepth: 3 });
@@ -106,8 +127,138 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     }
   }, [spawnLimitInput]);
 
-  const rawNodes = subgraph?.nodes ?? [];
-  const rawLinks = subgraph?.links ?? [];
+  const rawNodes = isSearchMode ? searchNodes : (subgraph?.nodes ?? []);
+  const rawLinks = isSearchMode ? searchLinks : (subgraph?.links ?? []);
+  const effectiveUserEntityId = isSearchMode ? null : userEntityId;
+  const dataLoading = isSearchMode ? searchLoading : loading;
+  const dataError = isSearchMode ? searchError : error;
+
+  useEffect(() => {
+    if (!isSearchMode) {
+      setSearchNodes([]);
+      setSearchError(null);
+      setSearchLinks([]);
+      setSearchLoading(false);
+
+      return;
+    }
+
+    if (!authToken) {
+      setSearchError('Authentication required for graph search.');
+      setSearchNodes([]);
+      setSearchLinks([]);
+
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function fetchSearch() {
+      try {
+        setSearchLoading(true);
+        setSearchError(null);
+
+        const params = new URLSearchParams({ query: trimmedSearchQuery, limit: '10' });
+        const response = await fetch(`/api/graph/search?${params.toString()}`, {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            response.status === 404 ? 'Graph search endpoint not available.' : response.statusText,
+          );
+        }
+
+        const payload = await response.json();
+        const nodesPayload = Array.isArray(payload?.nodes) ? payload.nodes : [];
+        const linksPayload = Array.isArray(payload?.links) ? payload.links : [];
+
+        if (cancelled) {
+          return;
+        }
+
+        const mapped: Array<GraphNode & { score?: number | null }> = nodesPayload
+          .map((node: GraphSearchResponseNode): (GraphNode & { score?: number | null }) | null => {
+            const entityId: string | undefined = node?.entity_id ?? node?.id;
+            if (!entityId) {
+              return null;
+            }
+
+            return {
+              id: entityId,
+              entity_id: entityId,
+              entity_type: String(node?.entity_type ?? ''),
+              name: node?.name ?? null,
+              description: node?.description ?? null,
+              properties: (node?.properties as Record<string, unknown>) ?? {},
+              score:
+                typeof node?.score === 'number'
+                  ? node.score
+                  : typeof node?.distance === 'number'
+                    ? node.distance
+                    : undefined,
+            };
+          })
+          .filter(
+            (
+              node: (GraphNode & { score?: number | null }) | null,
+            ): node is GraphNode & { score?: number | null } => node !== null,
+          );
+
+        setSearchNodes(mapped);
+        const mappedLinks: GraphLink[] = linksPayload
+          .map((link: Partial<GraphLink>): GraphLink | null => {
+            const id =
+              typeof link?.id === 'string'
+                ? link.id
+                : typeof link?.relationship_id === 'string'
+                  ? link.relationship_id
+                  : null;
+            const source = typeof link?.source === 'string' ? link.source : null;
+            const target = typeof link?.target === 'string' ? link.target : null;
+            if (!id || !source || !target) {
+              return null;
+            }
+
+            return {
+              id,
+              relationship_id: (link.relationship_id as string) ?? id,
+              source,
+              target,
+              relationship_type: (link.relationship_type as string) ?? 'UNKNOWN',
+              strength: typeof link?.strength === 'number' ? link.strength : 0.5,
+              properties: (link?.properties as Record<string, unknown>) ?? {},
+            };
+          })
+          .filter((link: GraphLink | null): link is GraphLink => link !== null);
+        setSearchLinks(mappedLinks);
+      } catch (err) {
+        if (cancelled || controller.signal.aborted) {
+          return;
+        }
+
+        const message = err instanceof Error ? err.message : 'Graph search failed.';
+        setSearchError(message);
+        setSearchNodes([]);
+        setSearchLinks([]);
+      } finally {
+        if (!cancelled) {
+          setSearchLoading(false);
+        }
+      }
+    }
+
+    fetchSearch();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authToken, isSearchMode, trimmedSearchQuery]);
 
   const availableEntityTypes = useMemo(() => {
     const types = new Set<string>();
@@ -261,7 +412,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
     const existingIds = new Set(rawNodes.map((node) => node.id));
     const filtered = expandedNodes.filter((id) => existingIds.has(id));
-    const initialId = userEntityId ?? rawNodes[0].id;
+    const initialId = effectiveUserEntityId ?? (rawNodes[0] ? rawNodes[0].id : undefined);
 
     if (!initialId) {
       return;
@@ -298,7 +449,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
       return changed ? next : prev;
     });
-  }, [expandedNodes, rawNodes, userEntityId]);
+  }, [effectiveUserEntityId, expandedNodes, rawNodes]);
 
   const visibility = useMemo(() => {
     const set = new Set<string>();
@@ -312,14 +463,14 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       set.add(selectedNodeId);
     }
 
-    if (userEntityId) {
-      set.add(userEntityId);
+    if (effectiveUserEntityId) {
+      set.add(effectiveUserEntityId);
     }
 
     const ids = Array.from(set);
 
     return { ids, set };
-  }, [expandedNodes, getSpawnedNeighbors, selectedNodeId, userEntityId]);
+  }, [expandedNodes, getSpawnedNeighbors, selectedNodeId, effectiveUserEntityId]);
 
   const anchoredNodeIds = useMemo(() => {
     const previous = previousVisibleRef.current;
@@ -448,10 +599,10 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     const visibleSet = new Set(visibility.ids);
 
     if (!selectedNodeId || !visibleSet.has(selectedNodeId)) {
-      const fallback = userEntityId ?? visibility.ids[0];
+      const fallback = effectiveUserEntityId ?? visibility.ids[0];
       setSelectedNodeId(fallback ?? null);
     }
-  }, [visibility.ids, selectedNodeId, userEntityId]);
+  }, [visibility.ids, selectedNodeId, effectiveUserEntityId]);
 
   const visibleNodes = useMemo(
     () => rawNodes.filter((node) => allowedNodeIds.has(node.id)),
@@ -527,7 +678,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   const detailGridClass = variant === 'desktop' ? 'grid gap-4 md:grid-cols-3' : 'grid gap-4';
 
-  if (loading) {
+  if (dataLoading) {
     return (
       <div className="flex h-[540px] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -535,24 +686,26 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     );
   }
 
-  if (error) {
+  if (dataError) {
     return (
       <div className="flex h-[540px] items-center justify-center">
         <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-5 w-5" />
-          <span>{error}</span>
+          <span>{dataError}</span>
         </div>
       </div>
     );
   }
 
   if (visibleNodes.length === 0) {
+    const message = isSearchMode
+      ? `No graph nodes found for “${trimmedSearchQuery}”. Try another search.`
+      : 'No graph data available yet. Start connecting memories to build your knowledge graph.';
+
     return (
       <div className="flex h-[540px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted px-4 py-6 text-center text-muted-foreground">
         <Sparkles className="h-6 w-6" />
-        <p className="text-sm">
-          No graph data available yet. Start connecting memories to build your knowledge graph.
-        </p>
+        <p className="text-sm">{message}</p>
       </div>
     );
   }
@@ -582,7 +735,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
             <ForceGraph
               nodes={visibleNodes}
               links={visibleLinks}
-              centerNodeId={userEntityId ?? undefined}
+              centerNodeId={effectiveUserEntityId ?? undefined}
               highlightedNodeId={selectedNodeId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
@@ -597,7 +750,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
             <ForceGraph3DView
               nodes={visibleNodes}
               links={visibleLinks}
-              centerNodeId={userEntityId ?? undefined}
+              centerNodeId={effectiveUserEntityId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
