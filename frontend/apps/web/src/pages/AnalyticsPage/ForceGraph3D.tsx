@@ -300,9 +300,9 @@ export function ForceGraph3DView({
         linkDirectionalParticleSpeed={0.004}
         linkDirectionalParticleColor={getParticleColor}
         onNodeClick={handleNodeClick}
+        enableNodeDrag
         backgroundColor="rgba(0, 0, 0, 0)"
         showNavInfo={false}
-        enableNodeDrag
         enableNavigationControls
         controlType="orbit"
         d3VelocityDecay={0.3}
