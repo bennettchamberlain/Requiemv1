@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge, Input, Separator, Tabs } from '@ci/shadcn';
 import { AlertCircle, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
@@ -80,6 +80,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [expandedNodes, setExpandedNodes] = useState<string[]>([]);
   const [spawnLimitInput, setSpawnLimitInput] = useState(String(DEFAULT_SPAWN_LIMIT));
   const [nodeClickCounts, setNodeClickCounts] = useState<Record<string, number>>({});
+  const previousVisibleRef = useRef<Set<string>>(new Set());
 
   const [{ authToken }] = useAuth();
   const { loading, error, subgraph, userEntityId, quickStats } = useGraphOverview(authToken, { maxDepth: 3 });
@@ -236,6 +237,23 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
     return { ids, set };
   }, [expandedNodes, getSpawnedNeighbors, selectedNodeId, userEntityId]);
+
+  const anchoredNodeIds = useMemo(() => {
+    const previous = previousVisibleRef.current;
+    const anchored: string[] = [];
+
+    for (const id of visibility.ids) {
+      if (previous.has(id)) {
+        anchored.push(id);
+      }
+    }
+
+    return anchored;
+  }, [visibility.ids]);
+
+  useEffect(() => {
+    previousVisibleRef.current = new Set(visibility.ids);
+  }, [visibility.ids]);
 
   useEffect(() => {
     if (visibility.ids.length === 0) {
@@ -396,6 +414,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
               highlightedNodeId={selectedNodeId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
+              anchoredNodeIds={anchoredNodeIds}
               height={520}
             />
           </div>
@@ -409,6 +428,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
               centerNodeId={userEntityId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
+              anchoredNodeIds={anchoredNodeIds}
               height={520}
             />
           </div>

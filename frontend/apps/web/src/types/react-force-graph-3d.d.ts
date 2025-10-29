@@ -35,6 +35,7 @@ declare module 'react-force-graph-3d' {
     ): this;
     scene(): Scene;
     camera(): PerspectiveCamera;
+    graphData(): { nodes: N[]; links: L[] };
   }
 
   const ForceGraph3D: ComponentType<ForceGraph3DPropTypes & { ref?: Ref<ForceGraphMethods> }>;

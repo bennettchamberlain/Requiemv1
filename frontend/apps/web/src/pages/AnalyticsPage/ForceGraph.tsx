@@ -8,6 +8,7 @@ type ForceNode = GraphNode & {
   y: number;
   vx: number;
   vy: number;
+  anchored?: boolean;
 };
 
 type SimulationLink = {
@@ -26,6 +27,7 @@ interface ForceGraphProps {
   height?: number;
   selectedNodeId?: string | null;
   onNodeSelect?: (nodeId: string) => void;
+  anchoredNodeIds?: string[];
 }
 
 function useContainerWidth(defaultWidth: number) {
@@ -99,6 +101,7 @@ function ForceGraphBase({
   centerNodeId,
   selectedNodeId,
   onNodeSelect,
+  anchoredNodeIds = [],
   height = defaultHeight,
 }: ForceGraphProps) {
   const { ref, width } = useContainerWidth(720);
@@ -135,6 +138,8 @@ function ForceGraphBase({
     const boundsWidth = width || 720;
     const boundsHeight = height;
     const previousPositions = previousPositionsRef.current;
+
+    const anchoredSet = new Set(anchoredNodeIds);
 
     const findNeighborPosition = (nodeId: string) => {
       for (const link of renderLinks) {
@@ -173,6 +178,7 @@ function ForceGraphBase({
 
     const nodeCopies: ForceNode[] = nodes.map((node) => {
       const previous = previousPositions.get(node.id);
+      const anchored = anchoredSet.has(node.id);
 
       if (previous) {
         return {
@@ -181,6 +187,7 @@ function ForceGraphBase({
           y: previous.y,
           vx: previous.vx ?? 0,
           vy: previous.vy ?? 0,
+          anchored,
         };
       }
 
@@ -193,6 +200,7 @@ function ForceGraphBase({
         y: position.y,
         vx: 0,
         vy: 0,
+        anchored,
       };
     });
 
@@ -225,10 +233,15 @@ function ForceGraphBase({
           const fx = (force * dx) / distance;
           const fy = (force * dy) / distance;
 
-          source.vx -= fx;
-          source.vy -= fy;
-          target.vx += fx;
-          target.vy += fy;
+          if (!source.anchored) {
+            source.vx -= fx;
+            source.vy -= fy;
+          }
+
+          if (!target.anchored) {
+            target.vx += fx;
+            target.vy += fy;
+          }
         }
       }
 
@@ -250,10 +263,15 @@ function ForceGraphBase({
         const fx = (springForce * dx) / distance;
         const fy = (springForce * dy) / distance;
 
-        source.vx += fx;
-        source.vy += fy;
-        target.vx -= fx;
-        target.vy -= fy;
+        if (!source.anchored) {
+          source.vx += fx;
+          source.vy += fy;
+        }
+
+        if (!target.anchored) {
+          target.vx -= fx;
+          target.vy -= fy;
+        }
       }
 
       // Integrate velocities, apply damping, and keep within bounds
@@ -265,7 +283,7 @@ function ForceGraphBase({
           node.vy = 0;
           node.x = boundsWidth / 2;
           node.y = boundsHeight / 2;
-        } else {
+        } else if (!node.anchored) {
           node.vx *= DAMPING;
           node.vy *= DAMPING;
 
@@ -275,6 +293,9 @@ function ForceGraphBase({
           const padding = 32;
           node.x = Math.min(boundsWidth - padding, Math.max(padding, node.x));
           node.y = Math.min(boundsHeight - padding, Math.max(padding, node.y));
+        } else {
+          node.vx = 0;
+          node.vy = 0;
         }
 
         centerX += node.x;
@@ -287,8 +308,10 @@ function ForceGraphBase({
       const offsetX = boundsWidth / 2 - centerX;
       const offsetY = boundsHeight / 2 - centerY;
       for (const node of nodeCopies) {
-        node.x += offsetX * 0.1;
-        node.y += offsetY * 0.1;
+        if (!node.anchored) {
+          node.x += offsetX * 0.1;
+          node.y += offsetY * 0.1;
+        }
       }
 
       if (tickCount % 2 === 0 || tickCount === 1) {
@@ -310,7 +333,7 @@ function ForceGraphBase({
       cancelAnimationFrame(animationFrame);
       previousPositionsRef.current = new Map(nodeCopies.map((node) => [node.id, { ...node }]));
     };
-  }, [nodes, renderLinks, width, height, centerNodeId]);
+  }, [nodes, renderLinks, width, height, centerNodeId, anchoredNodeIds]);
 
   const clampScale = useCallback((value: number) => Math.min(3, Math.max(0.35, value)), []);
 
