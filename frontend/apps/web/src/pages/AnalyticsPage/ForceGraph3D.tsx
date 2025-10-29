@@ -23,6 +23,7 @@ export interface ForceGraph3DProps {
   selectedNodeId?: string | null;
   onNodeSelect?: (nodeId: string) => void;
   height?: number;
+  anchoredNodeIds?: string[];
 }
 
 interface TransformedNode extends GraphNode {
@@ -31,7 +32,8 @@ interface TransformedNode extends GraphNode {
   color: string;
 }
 
-type GraphNodeObject = ForceGraphNode<TransformedNode> & TransformedNode & { id: string };
+type GraphNodeObject = ForceGraphNode<TransformedNode> &
+  TransformedNode & { id: string; fx?: number; fy?: number; fz?: number };
 
 type GraphLinkObject = ForceGraphLink<
   GraphNodeObject,
@@ -78,12 +80,16 @@ export function ForceGraph3DView({
   centerNodeId,
   selectedNodeId,
   onNodeSelect,
+  anchoredNodeIds = [],
   height = 600,
 }: ForceGraph3DProps) {
   const graphRef = useRef<ForceGraphMethods | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [activeParticleType, setActiveParticleType] = useState<string | null>(null);
+  const previousPositionsRef = useRef<Map<string, { x: number; y: number; z: number }>>(new Map());
+
+  const anchoredSet = useMemo(() => new Set(anchoredNodeIds), [anchoredNodeIds]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -106,12 +112,34 @@ export function ForceGraph3DView({
   }, []);
 
   const graphData = useMemo(() => {
-    const transformedNodes = nodes.map((node) => ({
-      ...node,
-      name: node.name ?? node.entity_type ?? 'Unknown',
-      entityType: node.entity_type,
-      color: getTypeColor(node.entity_type),
-    })) as GraphNodeObject[];
+    const transformedNodes = nodes.map((node) => {
+      const previous = previousPositionsRef.current.get(node.id);
+      const isAnchored = anchoredSet.has(node.id) && previous;
+      const baseNode = {
+        ...node,
+        name: node.name ?? node.entity_type ?? 'Unknown',
+        entityType: node.entity_type,
+        color: getTypeColor(node.entity_type),
+      } as GraphNodeObject & { fx?: number; fy?: number; fz?: number };
+
+      if (previous) {
+        baseNode.x = previous.x;
+        baseNode.y = previous.y;
+        baseNode.z = previous.z;
+      }
+
+      if (isAnchored && previous) {
+        baseNode.fx = previous.x;
+        baseNode.fy = previous.y;
+        baseNode.fz = previous.z;
+      } else {
+        baseNode.fx = undefined;
+        baseNode.fy = undefined;
+        baseNode.fz = undefined;
+      }
+
+      return baseNode;
+    }) as GraphNodeObject[];
 
     const transformedLinks = links.map((link) => ({
       ...link,
@@ -122,7 +150,7 @@ export function ForceGraph3DView({
       nodes: transformedNodes,
       links: transformedLinks,
     };
-  }, [nodes, links]);
+  }, [nodes, links, anchoredSet]);
 
   const entityTypes = useMemo(() => {
     const types = new Set<string>();
@@ -277,6 +305,29 @@ export function ForceGraph3DView({
   };
 
   const graphWidth = containerWidth > 0 ? containerWidth : 600;
+
+  useEffect(() => {
+    if (graphData.nodes.length === 0) {
+      previousPositionsRef.current = new Map();
+
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const map = new Map<string, { x: number; y: number; z: number }>();
+      for (const node of graphData.nodes as GraphNodeObject[]) {
+        if (typeof node.x === 'number' && typeof node.y === 'number' && typeof node.z === 'number') {
+          map.set(node.id, { x: node.x, y: node.y, z: node.z });
+        }
+      }
+
+      if (map.size > 0) {
+        previousPositionsRef.current = map;
+      }
+    }, 400);
+
+    return () => clearInterval(interval);
+  }, [graphData.nodes]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: `${height}px`, position: 'relative' }}>
