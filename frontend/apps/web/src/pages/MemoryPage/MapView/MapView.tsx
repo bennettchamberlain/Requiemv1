@@ -5,10 +5,10 @@ import 'leaflet/dist/leaflet.css';
 import { Route } from '@ci/shadcn/icons';
 import L from 'leaflet';
 
-import { loadGoogleMaps } from '../googleMaps';
+import { TimelineView } from '../TimelineView';
 import { useMemoryService } from '../useMemoryService';
 
-import { MemoryTimeline } from './MemoryTimeline';
+import { loadGoogleMaps } from './googleMaps';
 
 declare global {
   interface Window {
@@ -414,7 +414,7 @@ export function DesktopMapView() {
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1">
-          <MemoryTimeline />
+          <TimelineView />
         </div>
       </div>
 

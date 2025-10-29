@@ -7,8 +7,11 @@ import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
-import { MemoryTimeline, DesktopMapView, GalleryView } from './Components';
 import { EntityTypeFilter } from './Components/EntityTypeFilter';
+import { GalleryView } from './GalleryView';
+import { GraphView } from './GraphView';
+import { DesktopMapView } from './MapView';
+import { TimelineView } from './TimelineView';
 import { useMemoryService } from './useMemoryService';
 
 const AVAILABLE_ENTITY_TYPES = [
@@ -32,7 +35,7 @@ export default function DesktopMemoryPage() {
 
   const [activeTab, setActiveTab] = useState('map');
 
-  // Entity types state - by default all are selected (none excluded)
+  // types state - by default all are selected (none excluded)
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
 
   // Initialize entity types from URL parameters
@@ -177,7 +180,7 @@ export default function DesktopMemoryPage() {
 
             {/* View Toggle */}
             <Tabs defaultValue="map" className="flex-shrink-0" onValueChange={setActiveTab} value={activeTab}>
-              <Tabs.List className="grid grid-cols-3 w-48">
+              <Tabs.List className="grid grid-cols-4 w-64">
                 <Tabs.Trigger value="map" className="text-sm">
                   Map
                 </Tabs.Trigger>
@@ -187,6 +190,9 @@ export default function DesktopMemoryPage() {
                 <Tabs.Trigger value="gallery" className="text-sm">
                   Gallery
                 </Tabs.Trigger>
+                <Tabs.Trigger value="graph" className="text-sm">
+                  Graph
+                </Tabs.Trigger>
               </Tabs.List>
             </Tabs>
           </div>
@@ -195,11 +201,13 @@ export default function DesktopMemoryPage() {
         {/* Error Display */}
         {/* Content */}
         <>
-          {activeTab === 'list' && <MemoryTimeline />}
+          {activeTab === 'list' && <TimelineView />}
 
           {activeTab === 'map' && <DesktopMapView />}
 
           {activeTab === 'gallery' && <GalleryView />}
+
+          {activeTab === 'graph' && <GraphView />}
         </>
       </PageContent>
     </>
