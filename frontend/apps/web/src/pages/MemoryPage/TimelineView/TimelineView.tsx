@@ -1,11 +1,10 @@
 import { useEffect, useRef } from 'react';
 
+import { MemoryCard } from '../Components/MemoryCard';
+import { sortMemoriesByTime, groupMemoriesByDate, formatDateForDisplay } from '../Components/utils';
 import { useMemoryService } from '../useMemoryService';
 
-import { MemoryCard } from './MemoryCard';
-import { sortMemoriesByTime, groupMemoriesByDate, formatDateForDisplay } from './utils';
-
-export function MemoryTimeline() {
+export function TimelineView() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const {
     memories,
