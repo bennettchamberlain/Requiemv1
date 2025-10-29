@@ -1,14 +1,22 @@
 import { FileText, Package, User, Contact, Lightbulb, Target, Video, File, Radio } from '@ci/shadcn/icons';
 
-import { EventCard, CommunicationCard, GenericCard, PlaceCard } from './blocks';
-import type { MemoryCardProps } from './types';
+import type { MemoryItem } from '../types';
+
+import { CommunicationCard } from './CommunicationCard';
+import { EventCard } from './EventCard';
+import { GenericCard } from './GenericCard';
+import { PlaceCard } from './PlaceCard';
 
 const PRIMARY_ICON_CLASS = 'text-[var(--primary)]';
 const ACCENT_ICON_CLASS = 'text-[var(--accent-foreground)]';
 const DESTRUCTIVE_ICON_CLASS = 'text-[var(--destructive)]';
 const MUTED_ICON_CLASS = 'text-[var(--muted-foreground)]';
 
-export function MemoryCard({ memory }: MemoryCardProps) {
+export interface Props {
+  memory: MemoryItem;
+}
+
+export function MemoryCard({ memory }: Props) {
   // Check for specific entity types to use specialized icons
   const entityType = memory.metadata?.entityType as string | undefined;
 
@@ -53,5 +61,3 @@ export function MemoryCard({ memory }: MemoryCardProps) {
       return <GenericCard memory={memory} Icon={Target} iconColorClass={MUTED_ICON_CLASS} />;
   }
 }
-
-export type { MemoryItem } from './types';

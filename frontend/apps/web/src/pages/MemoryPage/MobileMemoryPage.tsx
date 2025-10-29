@@ -1,72 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Tabs, Select, Button } from '@ci/shadcn';
-import { Search, Filter, MapPin, List, Images, X, Loader2 } from '@ci/shadcn/icons';
+import { Search, Filter, MapPin, List, Images, X } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-import { useAuth } from '@/hooks';
 
-import { MemoryTimeline, MobileMapView, useMemoryTimeline } from './Components';
+import { MemoryTimeline, MobileMapView, useMemoryTimeline, GalleryView } from './Components';
 
-// File metadata for gallery
-interface FileMeta {
-  id: string;
-  name: string;
-  contentType: string;
-  size: string;
-  url?: string;
-}
-
-function MobileMemoryPageContent() {
+export default function MobileMemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
-  const [{ authToken }] = useAuth();
   const { searchQuery, setSearchQuery } = useMemoryTimeline();
   const [, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState('list');
 
-  // Gallery states
-  const [galleryFiles, setGalleryFiles] = useState<FileMeta[]>([]);
-  const [galleryLoading, setGalleryLoading] = useState(false);
-
   // Mobile-specific states
   const [showFilters, setShowFilters] = useState(false);
-
-  // Fetch files for gallery
-  const fetchGalleryFiles = async () => {
-    setGalleryLoading(true);
-    try {
-      const res = await fetch('/api/files', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to fetch file list');
-      }
-
-      const metaList: FileMeta[] = (await res.json()).map((file: FileMeta) => ({
-        ...file,
-        url: `/static${file.url}`,
-      }));
-
-      setGalleryFiles(metaList);
-    } catch {
-      // Silently fail - gallery is optional
-    } finally {
-      setGalleryLoading(false);
-    }
-  };
-
-  // Load gallery files when gallery tab is active
-  useEffect(() => {
-    if (activeTab === 'gallery') {
-      fetchGalleryFiles();
-    }
-  }, [activeTab, authToken]);
 
   // Handle search
   const handleSearch = () => {
@@ -207,81 +158,9 @@ function MobileMemoryPageContent() {
 
           {activeTab === 'map' && <MobileMapView />}
 
-          {activeTab === 'gallery' && (
-            <>
-              <div className="space-y-4">
-                {/* Gallery Content */}
-                {galleryLoading ? (
-                  <div className="flex justify-center items-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    {galleryFiles.map((file) => {
-                      if (file.contentType.startsWith('image/')) {
-                        return (
-                          <div
-                            key={file.id}
-                            className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
-                          >
-                            <img
-                              src={file.url}
-                              alt={file.name}
-                              className="w-full h-32 object-cover rounded mb-2"
-                              loading="lazy"
-                            />
-                            <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
-                              {file.name}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {(Number(file.size) / 1024).toFixed(1)} KB
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      if (file.contentType.startsWith('video/')) {
-                        return (
-                          <div
-                            key={file.id}
-                            className="flex flex-col items-center border border-border rounded-lg p-2 bg-card text-card-foreground shadow hover:shadow-md transition-shadow"
-                          >
-                            <video
-                              src={file.url}
-                              controls
-                              className="w-full h-32 object-cover rounded mb-2 bg-black"
-                              preload="metadata"
-                            />
-                            <div className="text-xs font-medium text-center truncate w-full text-card-foreground">
-                              {file.name}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {(Number(file.size) / 1024 / 1024).toFixed(1)} MB
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return null;
-                    })}
-                  </div>
-                )}
-
-                {!galleryLoading && galleryFiles.length === 0 && (
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground text-sm">No content uploaded yet.</p>
-                    <p className="text-sm text-muted-foreground mt-1">Use the + button to add new content.</p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+          {activeTab === 'gallery' && <GalleryView />}
         </>
       </PageContent>
     </>
   );
-}
-
-export default function MobileMemoryPage() {
-  return <MobileMemoryPageContent />;
 }
