@@ -120,6 +120,7 @@ export class GraphEventService {
       properties: relationship.properties ?? {},
     }));
 
+    // TODO: Move this emission to the persistence layer once hard creation owns downstream events.
     await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
       ownerId,
       person: {

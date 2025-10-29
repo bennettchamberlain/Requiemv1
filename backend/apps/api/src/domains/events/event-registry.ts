@@ -26,6 +26,7 @@ export const enum Events {
   GRAPH_RELATIONSHIP_DELETED = 'graph.relationship.deleted',
   GRAPH_NODE_UPSERTED = 'graph.node.upserted',
   GRAPH_RELATIONSHIP_UPSERTED = 'graph.relationship.upserted',
+  SEARCH_EMBED_ENTITY = 'search.embed.entity',
   PROMOTE_OUTLOOK_MAIL_MESSAGES = 'PROMOTE_OUTLOOK_MAIL_MESSAGES',
   PROMOTE_OUTLOOK_CALENDAR_EVENTS = 'PROMOTE_OUTLOOK_CALENDAR_EVENTS',
   PROMOTE_ONEDRIVE_FILES = 'PROMOTE_ONEDRIVE_FILES',
@@ -209,6 +210,13 @@ interface GraphRelationshipUpsertedPayload extends EventPayload {
   };
 }
 
+interface SearchEmbedEntityPayload extends EventPayload {
+  ownerId: string;
+  entityId: string;
+  searchContent: string;
+  entityType?: string;
+}
+
 interface PromoteOutlookMessagesPayload extends EventPayload {
   apiLogId: string;
   userId: string;
@@ -254,6 +262,7 @@ export type EventPayloads = {
   [Events.GRAPH_RELATIONSHIP_DELETED]: GraphRelationshipDeletedPayload;
   [Events.GRAPH_NODE_UPSERTED]: GraphNodeUpsertedPayload;
   [Events.GRAPH_RELATIONSHIP_UPSERTED]: GraphRelationshipUpsertedPayload;
+  [Events.SEARCH_EMBED_ENTITY]: SearchEmbedEntityPayload;
   [Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]: PromoteOutlookMessagesPayload;
   [Events.PROMOTE_OUTLOOK_CALENDAR_EVENTS]: PromoteOutlookCalendarEventsPayload;
   [Events.PROMOTE_ONEDRIVE_FILES]: PromoteOneDriveFilePayload;
