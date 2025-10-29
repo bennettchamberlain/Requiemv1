@@ -167,7 +167,7 @@ export default function MobileMemoryPage() {
 
           {activeTab === 'gallery' && <GalleryView />}
 
-          {activeTab === 'graph' && <GraphView />}
+          {activeTab === 'graph' && <GraphView variant="mobile" />}
         </>
       </PageContent>
     </>
