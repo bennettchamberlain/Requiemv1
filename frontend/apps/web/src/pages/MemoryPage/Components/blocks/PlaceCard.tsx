@@ -1,15 +1,10 @@
-import { Card, cn } from '@ci/shadcn';
+import { Card } from '@ci/shadcn';
+import { MapPin } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
-import type { MemoryItem } from '../types';
+import type { MemoryCardProps } from '../types';
 
-interface Props {
-  memory: MemoryItem;
-  Icon: React.ComponentType<{ className?: string }>;
-  iconColorClass: string;
-}
-
-export function GenericCard({ memory, Icon, iconColorClass }: Props) {
+export function PlaceCard({ memory }: MemoryCardProps) {
   const navigate = useNavigate();
 
   const handleClick = () => {
@@ -22,7 +17,7 @@ export function GenericCard({ memory, Icon, iconColorClass }: Props) {
       onClick={handleClick}
     >
       <div className="flex items-start gap-3">
-        <Icon className={cn('h-6 w-6 flex-shrink-0 mt-1', iconColorClass)} />
+        <MapPin className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--destructive)]" />
         <div className="flex-1 min-w-0">
           <h3 className="text-lg font-semibold text-card-foreground truncate">{memory.title}</h3>
           <p className="text-sm text-muted-foreground">{memory.category}</p>
@@ -32,6 +27,17 @@ export function GenericCard({ memory, Icon, iconColorClass }: Props) {
       {memory.description && (
         <div className="pt-3 pb-3">
           <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
+        </div>
+      )}
+
+      {memory.location && (
+        <div className="flex items-center gap-5">
+          <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <div className="flex-1">
+            <span className="text-sm text-card-foreground">
+              {memory.location.address || `${memory.location.lat}, ${memory.location.lng}`}
+            </span>
+          </div>
         </div>
       )}
 

@@ -48,6 +48,10 @@ export interface MemoryItem {
   sourceLink?: string;
 }
 
+export interface MemoryCardProps {
+  memory: MemoryItem;
+}
+
 export type Relationship = {
   type: string;
   targetId: string;

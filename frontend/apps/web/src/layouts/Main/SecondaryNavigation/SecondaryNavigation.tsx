@@ -1,5 +1,6 @@
 import { Sidebar, useSidebar } from '@ci/shadcn';
 import {
+  BookImage,
   Brain,
   Cable,
   ChartPie,
@@ -10,6 +11,7 @@ import {
   Search,
   Settings2,
   Wrench,
+  Zap,
 } from '@ci/shadcn/icons';
 
 import logo from '../../../assets/logo.png';
@@ -39,9 +41,22 @@ const INTELLIGENCE = [
     icon: Lightbulb,
   },
   {
+    name: 'Actions',
+    url: '/actions',
+    icon: Zap,
+  },
+  {
     name: 'Chat',
     url: '/chat',
     icon: MessagesSquare,
+  },
+];
+
+const CONTENT = [
+  {
+    name: 'Content',
+    url: '/files',
+    icon: BookImage,
   },
 ];
 
@@ -87,6 +102,7 @@ export function SecondaryNavigation() {
         </Sidebar.Header>
         <Sidebar.Content className="gap-0">
           <NavSection title="Intelligence" items={INTELLIGENCE} />
+          <NavSection title="Content" items={CONTENT} />
         </Sidebar.Content>
         <Sidebar.Footer>
           <NavSection items={SYSTEM} />

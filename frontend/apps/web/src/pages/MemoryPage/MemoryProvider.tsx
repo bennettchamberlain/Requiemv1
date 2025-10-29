@@ -6,12 +6,6 @@ import { useAuth } from '@/hooks';
 
 import type { MemoryItem } from './Components/types';
 
-// Constants
-const MAX_MEMORIES = 500;
-const LOAD_BATCH_SIZE = 200;
-const OFFLOAD_THRESHOLD = 1000;
-const MONTH_IN_MS = 30 * 24 * 60 * 60 * 1000;
-
 export interface MemoryQuery {
   search?: string;
   category?: string;
@@ -20,7 +14,6 @@ export interface MemoryQuery {
     end?: string;
   };
   entityTypes?: string[];
-  excludedEntityTypes?: string[];
 }
 
 interface MemoryContextValue {
@@ -47,55 +40,74 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
   const [hasMoreFuture, setHasMoreFuture] = useState(true);
   const [searchQuery, setSearchQuery] = useState(query.search || '');
 
+  // Use query.search as the source of truth for search
+  const currentSearchQuery = query.search || searchQuery;
+
   // Track loading states separately for past and future
   const [loadingPast, setLoadingPast] = useState(false);
   const [loadingFuture, setLoadingFuture] = useState(false);
+
+  // Debounced search effect to prevent API calls on every keystroke
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(currentSearchQuery);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearchQuery(currentSearchQuery);
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [currentSearchQuery]);
 
   // Track offsets for past and future loading
   const pastOffsetRef = useRef(0);
   const futureOffsetRef = useRef(0);
   const totalCountRef = useRef(0);
 
+  // Maximum number of memories to keep in memory at once (sliding window)
+  const MAX_MEMORIES = 500;
+  const LOAD_BATCH_SIZE = 200;
+  const OFFLOAD_THRESHOLD = MAX_MEMORIES; // Start offloading when we hit max
+
   // Get auth token from useAuth hook
   const [{ authToken }] = useAuth();
 
   // Fetch memories from API
   const fetchMemories = useCallback(
-    async (offset: number = 0, limit: number = 500, direction: 'past' | 'future' | 'initial' = 'initial') => {
+    async (
+      searchQuery: string = '',
+      offset: number = 0,
+      limit: number = 500,
+      direction: 'past' | 'future' | 'initial' = 'initial',
+    ) => {
+      console.log('MemoryProvider: fetchMemories called with', { searchQuery, offset, limit, direction });
       try {
         if (!authToken) {
           throw new Error('No authentication token available');
         }
 
         const params = new URLSearchParams();
-
-        // Add search query (prioritize the hook query over the function parameter)
-        const searchToUse = query.search || searchQuery;
-        if (searchToUse) {
-          params.append('query', searchToUse);
+        if (searchQuery) {
+          params.append('search', searchQuery);
         }
 
-        // Handle categories - combine single category and entityTypes
-        const categories = [];
+        // Add query parameters from the hook argument
+        if (query.search) {
+          params.append('search', query.search);
+        }
+
         if (query.category) {
-          categories.push(query.category);
+          params.append('category', query.category);
         }
 
         if (query.entityTypes && query.entityTypes.length > 0) {
-          categories.push(...query.entityTypes);
-        }
-
-        if (categories.length > 0) {
-          params.append('categories', categories.join(','));
-        }
-
-        // Handle excluded entity types
-        if (query.excludedEntityTypes && query.excludedEntityTypes.length > 0) {
-          params.append('excludeCategories', query.excludedEntityTypes.join(','));
+          params.append('entityTypes', query.entityTypes.join(','));
         }
 
         params.append('limit', limit.toString());
         params.append('offset', offset.toString());
+
+        // Exclude Google Drive categories
+        params.append('excludeCategories', 'Google Drive,Drive');
 
         // Add date filters based on direction
         const now = new Date();
@@ -128,14 +140,14 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
           if (query.dateRange?.start) {
             params.append('startDate', query.dateRange.start);
           } else {
-            const oneMonthAgo = new Date(now.getTime() - MONTH_IN_MS);
+            const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
             params.append('startDate', oneMonthAgo.toISOString());
           }
 
           if (query.dateRange?.end) {
             params.append('endDate', query.dateRange.end);
           } else {
-            const oneMonthFromNow = new Date(now.getTime() + MONTH_IN_MS);
+            const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
             params.append('endDate', oneMonthFromNow.toISOString());
           }
         }
@@ -167,14 +179,12 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
 
   // Load initial memories around current date
   const loadInitialMemories = useCallback(async () => {
+    console.log('MemoryProvider: loadInitialMemories callback created/recreated');
     setLoading(true);
     setError(null);
 
-    // Clear existing memories when query changes
-    setMemories([]);
-
     try {
-      const { data, total } = await fetchMemories(0, MAX_MEMORIES, 'initial');
+      const { data, total } = await fetchMemories(debouncedSearchQuery, 0, MAX_MEMORIES, 'initial');
 
       setMemories(data);
       totalCountRef.current = total;
@@ -191,7 +201,7 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
     } finally {
       setLoading(false);
     }
-  }, [fetchMemories, query]);
+  }, [debouncedSearchQuery, fetchMemories]);
 
   // Load past events (for scrolling up)
   const loadPastEvents = useCallback(async () => {
@@ -201,7 +211,7 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
 
     setLoadingPast(true);
     try {
-      const { data } = await fetchMemories(0, LOAD_BATCH_SIZE, 'past');
+      const { data } = await fetchMemories(debouncedSearchQuery, 0, LOAD_BATCH_SIZE, 'past');
 
       if (data.length > 0) {
         setMemories((prev) => {
@@ -228,7 +238,7 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
     } finally {
       setLoadingPast(false);
     }
-  }, [fetchMemories, loadingPast, hasMorePast]);
+  }, [debouncedSearchQuery, fetchMemories, loadingPast, hasMorePast]);
 
   const loadFutureEvents = useCallback(async () => {
     if (loadingFuture || !hasMoreFuture) {
@@ -237,7 +247,7 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
 
     setLoadingFuture(true);
     try {
-      const { data } = await fetchMemories(0, LOAD_BATCH_SIZE, 'future');
+      const { data } = await fetchMemories(debouncedSearchQuery, 0, LOAD_BATCH_SIZE, 'future');
 
       if (data.length > 0) {
         setMemories((prev) => {
@@ -264,7 +274,7 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
     } finally {
       setLoadingFuture(false);
     }
-  }, [fetchMemories, loadingFuture, hasMoreFuture]);
+  }, [debouncedSearchQuery, fetchMemories, loadingFuture, hasMoreFuture]);
 
   // Refresh timeline
   const refreshTimeline = useCallback(async () => {
@@ -276,10 +286,11 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
     await loadInitialMemories();
   }, [loadInitialMemories]);
 
-  // Load initial memories when component mounts or query changes
+  // Load initial memories when component mounts or debounced search query changes
   useEffect(() => {
+    console.log('MemoryProvider: useEffect triggered for loadInitialMemories');
     loadInitialMemories();
-  }, [loadInitialMemories, query]);
+  }, [loadInitialMemories]);
 
   return {
     memories,
