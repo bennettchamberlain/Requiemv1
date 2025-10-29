@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Badge, Separator, Tabs } from '@ci/shadcn';
+import { Badge, Input, Separator, Tabs } from '@ci/shadcn';
 import { AlertCircle, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
@@ -19,6 +19,8 @@ const TYPE_COLOR_PALETTE = [
   '#f87171',
   '#c084fc',
 ];
+
+const DEFAULT_SPAWN_LIMIT = 10;
 
 function getTypeColor(entityType: string): string {
   if (!entityType) {
@@ -45,6 +47,18 @@ interface GraphTabPanelProps {
   variant: 'desktop' | 'mobile';
 }
 
+function hashWithSeed(value: string, seed: string): number {
+  const combined = `${seed}:${value}`;
+  let hash = 0;
+
+  for (let i = 0; i < combined.length; i += 1) {
+    hash = (hash << 5) - hash + combined.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return hash;
+}
+
 const resolveEndpointId = (endpoint: unknown): string | undefined => {
   if (typeof endpoint === 'string' || typeof endpoint === 'number') {
     return String(endpoint);
@@ -63,50 +77,241 @@ const resolveEndpointId = (endpoint: unknown): string | undefined => {
 export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [expandedNodes, setExpandedNodes] = useState<string[]>([]);
+  const [spawnLimitInput, setSpawnLimitInput] = useState(String(DEFAULT_SPAWN_LIMIT));
+  const [nodeClickCounts, setNodeClickCounts] = useState<Record<string, number>>({});
 
   const [{ authToken }] = useAuth();
-  const { loading, error, subgraph, userEntityId, quickStats } = useGraphOverview(authToken);
+  const { loading, error, subgraph, userEntityId, quickStats } = useGraphOverview(authToken, { maxDepth: 3 });
+
+  const spawnLimit = useMemo(() => {
+    const parsed = Number.parseInt(spawnLimitInput, 10);
+
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+
+    return DEFAULT_SPAWN_LIMIT;
+  }, [spawnLimitInput]);
+
+  const handleSpawnLimitBlur = useCallback(() => {
+    const parsed = Number.parseInt(spawnLimitInput, 10);
+
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      setSpawnLimitInput(String(DEFAULT_SPAWN_LIMIT));
+    }
+  }, [spawnLimitInput]);
 
   const rawNodes = subgraph?.nodes ?? [];
   const rawLinks = subgraph?.links ?? [];
 
+  const adjacencyMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+
+    for (const link of rawLinks) {
+      const sourceId = resolveEndpointId(link.source);
+      const targetId = resolveEndpointId(link.target);
+
+      if (!sourceId || !targetId) {
+        continue;
+      }
+
+      if (!map.has(sourceId)) {
+        map.set(sourceId, new Set());
+      }
+
+      if (!map.has(targetId)) {
+        map.set(targetId, new Set());
+      }
+
+      map.get(sourceId)!.add(targetId);
+      map.get(targetId)!.add(sourceId);
+    }
+
+    return map;
+  }, [rawLinks]);
+
+  const getOrderedNeighbors = useCallback(
+    (nodeId: string) => {
+      const neighbors = adjacencyMap.get(nodeId);
+
+      if (!neighbors) {
+        return [] as string[];
+      }
+
+      return Array.from(neighbors).sort((a, b) => hashWithSeed(a, nodeId) - hashWithSeed(b, nodeId));
+    },
+    [adjacencyMap],
+  );
+
+  const getSpawnedNeighbors = useCallback(
+    (nodeId: string) => {
+      const orderedNeighbors = getOrderedNeighbors(nodeId);
+
+      if (orderedNeighbors.length === 0) {
+        return [] as string[];
+      }
+
+      const clickCount = nodeClickCounts[nodeId] ?? 0;
+
+      if (clickCount === 0) {
+        return [] as string[];
+      }
+
+      const effectiveLimit = Math.max(spawnLimit, 1);
+      const limit = Math.min(orderedNeighbors.length, clickCount * effectiveLimit);
+
+      return orderedNeighbors.slice(0, limit);
+    },
+    [getOrderedNeighbors, nodeClickCounts, spawnLimit],
+  );
+
   useEffect(() => {
-    if (!subgraph) {
-      setSelectedNodeId(null);
-
-      return;
-    }
-
     if (rawNodes.length === 0) {
+      setExpandedNodes([]);
+      setNodeClickCounts({});
       setSelectedNodeId(null);
 
       return;
     }
 
-    setSelectedNodeId((current) => current ?? userEntityId ?? rawNodes[0].id);
-  }, [subgraph, rawNodes, userEntityId]);
+    const existingIds = new Set(rawNodes.map((node) => node.id));
+    const filtered = expandedNodes.filter((id) => existingIds.has(id));
+    const initialId = userEntityId ?? rawNodes[0].id;
 
-  const relatedLinks = useMemo(() => {
-    if (!selectedNodeId) {
-      return [] as typeof rawLinks;
+    if (!initialId) {
+      return;
     }
+
+    if (filtered.length === 0) {
+      setExpandedNodes([initialId]);
+      setNodeClickCounts({ [initialId]: 1 });
+      setSelectedNodeId((current) => current ?? initialId);
+
+      return;
+    }
+
+    if (filtered.length !== expandedNodes.length) {
+      setExpandedNodes(filtered);
+    }
+
+    setNodeClickCounts((prev) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+
+      for (const id of filtered) {
+        const existingCount = prev[id] ?? 1;
+        next[id] = existingCount;
+
+        if (prev[id] !== existingCount) {
+          changed = true;
+        }
+      }
+
+      if (Object.keys(prev).length !== Object.keys(next).length) {
+        changed = true;
+      }
+
+      return changed ? next : prev;
+    });
+  }, [expandedNodes, rawNodes, userEntityId]);
+
+  const visibility = useMemo(() => {
+    const set = new Set<string>();
+
+    for (const nodeId of expandedNodes) {
+      set.add(nodeId);
+      getSpawnedNeighbors(nodeId).forEach((neighborId) => set.add(neighborId));
+    }
+
+    if (selectedNodeId) {
+      set.add(selectedNodeId);
+    }
+
+    if (userEntityId) {
+      set.add(userEntityId);
+    }
+
+    const ids = Array.from(set);
+
+    return { ids, set };
+  }, [expandedNodes, getSpawnedNeighbors, selectedNodeId, userEntityId]);
+
+  useEffect(() => {
+    if (visibility.ids.length === 0) {
+      setSelectedNodeId(null);
+
+      return;
+    }
+
+    const visibleSet = new Set(visibility.ids);
+
+    if (!selectedNodeId || !visibleSet.has(selectedNodeId)) {
+      const fallback = userEntityId ?? visibility.ids[0];
+      setSelectedNodeId(fallback ?? null);
+    }
+  }, [visibility.ids, selectedNodeId, userEntityId]);
+
+  const visibleNodes = useMemo(() => {
+    const visibleSet = new Set(visibility.ids);
+
+    return rawNodes.filter((node) => visibleSet.has(node.id));
+  }, [rawNodes, visibility.ids]);
+
+  const visibleLinks = useMemo(() => {
+    const visibleSet = new Set(visibility.ids);
 
     return rawLinks.filter((link) => {
       const sourceId = resolveEndpointId(link.source);
       const targetId = resolveEndpointId(link.target);
 
+      return sourceId && targetId && visibleSet.has(sourceId) && visibleSet.has(targetId);
+    });
+  }, [rawLinks, visibility.ids]);
+
+  const relatedLinks = useMemo(() => {
+    if (!selectedNodeId) {
+      return [] as typeof visibleLinks;
+    }
+
+    return visibleLinks.filter((link) => {
+      const sourceId = resolveEndpointId(link.source);
+      const targetId = resolveEndpointId(link.target);
+
       return sourceId === selectedNodeId || targetId === selectedNodeId;
     });
-  }, [rawLinks, selectedNodeId]);
+  }, [visibleLinks, selectedNodeId]);
 
   const selectedNode = useMemo(
-    () => rawNodes.find((node) => node.id === selectedNodeId) ?? null,
-    [rawNodes, selectedNodeId],
+    () => visibleNodes.find((node) => node.id === selectedNodeId) ?? null,
+    [visibleNodes, selectedNodeId],
   );
 
-  const handleNodeSelect = (nodeId: string) => {
-    setSelectedNodeId(nodeId);
-  };
+  const handleNodeSelect = useCallback(
+    (nodeId: string) => {
+      setSelectedNodeId(nodeId);
+      setExpandedNodes((prev) => (prev.includes(nodeId) ? prev : [...prev, nodeId]));
+
+      setNodeClickCounts((prev) => {
+        const totalNeighbors = adjacencyMap.get(nodeId)?.size ?? 0;
+        if (totalNeighbors === 0) {
+          return prev[nodeId] ? { ...prev, [nodeId]: 0 } : prev;
+        }
+
+        const effectiveLimit = Math.max(spawnLimit, 1);
+        const maxClicks = Math.max(1, Math.ceil(totalNeighbors / effectiveLimit));
+        const current = prev[nodeId] ?? 0;
+        const nextValue = Math.min(maxClicks, current + 1);
+
+        if (nextValue === current) {
+          return prev;
+        }
+
+        return { ...prev, [nodeId]: nextValue };
+      });
+    },
+    [adjacencyMap, spawnLimit],
+  );
 
   const detailGridClass = variant === 'desktop' ? 'grid gap-4 md:grid-cols-3' : 'grid gap-4';
 
@@ -129,7 +334,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     );
   }
 
-  if (rawNodes.length === 0) {
+  if (visibleNodes.length === 0) {
     return (
       <div className="flex h-[540px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted px-4 py-6 text-center text-muted-foreground">
         <Sparkles className="h-6 w-6" />
@@ -142,12 +347,34 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="space-y-2">
-        <h2 className="text-lg font-semibold">Knowledge Graph</h2>
-        <p className="text-sm text-muted-foreground">
-          Explore how memories, people, places, and events interconnect. Switch between 2D and 3D layouts and
-          select nodes to inspect their relationships.
-        </p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold">Knowledge Graph</h2>
+          <p className="text-sm text-muted-foreground">
+            Explore how memories, people, places, and events interconnect. Click nodes to reveal additional
+            neighbors, or adjust the batch size to control how many load per click.
+          </p>
+        </div>
+
+        <div className="space-y-1 md:text-right">
+          <label
+            className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            htmlFor="neighbor-limit"
+          >
+            Neighbors per click
+          </label>
+          <Input
+            id="neighbor-limit"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            className="w-32 md:ml-auto"
+            value={spawnLimitInput}
+            onChange={(event) => setSpawnLimitInput(event.target.value)}
+            onBlur={handleSpawnLimitBlur}
+          />
+        </div>
       </div>
 
       <Tabs
@@ -163,8 +390,8 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         <Tabs.Content value="2d">
           <div className="h-[520px] rounded-lg border bg-background/90 p-2">
             <ForceGraph
-              nodes={rawNodes}
-              links={rawLinks}
+              nodes={visibleNodes}
+              links={visibleLinks}
               centerNodeId={userEntityId ?? undefined}
               highlightedNodeId={selectedNodeId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
@@ -177,8 +404,8 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
         <Tabs.Content value="3d">
           <div className="h-[520px] rounded-lg border bg-background/90 p-2">
             <ForceGraph3DView
-              nodes={rawNodes}
-              links={rawLinks}
+              nodes={visibleNodes}
+              links={visibleLinks}
               centerNodeId={userEntityId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
@@ -199,11 +426,11 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
           <dl className="mt-3 space-y-2 text-sm">
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground">Nodes</dt>
-              <dd className="font-medium">{rawNodes.length}</dd>
+              <dd className="font-medium">{visibleNodes.length}</dd>
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-muted-foreground">Relationships</dt>
-              <dd className="font-medium">{rawLinks.length}</dd>
+              <dd className="font-medium">{visibleLinks.length}</dd>
             </div>
             {quickStats && (
               <>

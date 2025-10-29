@@ -110,6 +110,7 @@ function ForceGraphBase({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const panStartRef = useRef({ x: 0, y: 0 });
   const translateStartRef = useRef({ x: 0, y: 0 });
+  const previousPositionsRef = useRef<Map<string, ForceNode>>(new Map());
 
   const renderLinks = useMemo<SimulationLink[]>(
     () =>
@@ -125,6 +126,7 @@ function ForceGraphBase({
 
   useEffect(() => {
     if (nodes.length === 0) {
+      previousPositionsRef.current = new Map();
       setSimNodes([]);
 
       return;
@@ -132,14 +134,67 @@ function ForceGraphBase({
 
     const boundsWidth = width || 720;
     const boundsHeight = height;
+    const previousPositions = previousPositionsRef.current;
 
-    const nodeCopies: ForceNode[] = nodes.map((node) => ({
-      ...node,
-      x: boundsWidth / 2 + (Math.random() - 0.5) * 40,
-      y: boundsHeight / 2 + (Math.random() - 0.5) * 40,
-      vx: 0,
-      vy: 0,
-    }));
+    const findNeighborPosition = (nodeId: string) => {
+      for (const link of renderLinks) {
+        if (link.sourceId === nodeId) {
+          const neighbor = previousPositions.get(link.targetId);
+          if (neighbor) {
+            return { x: neighbor.x, y: neighbor.y };
+          }
+        } else if (link.targetId === nodeId) {
+          const neighbor = previousPositions.get(link.sourceId);
+          if (neighbor) {
+            return { x: neighbor.x, y: neighbor.y };
+          }
+        }
+      }
+
+      return undefined;
+    };
+
+    const withOffset = (base?: { x: number; y: number }) => {
+      if (!base) {
+        return {
+          x: boundsWidth / 2 + (Math.random() - 0.5) * 40,
+          y: boundsHeight / 2 + (Math.random() - 0.5) * 40,
+        };
+      }
+
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 60 + Math.random() * 30;
+
+      return {
+        x: base.x + Math.cos(angle) * distance,
+        y: base.y + Math.sin(angle) * distance,
+      };
+    };
+
+    const nodeCopies: ForceNode[] = nodes.map((node) => {
+      const previous = previousPositions.get(node.id);
+
+      if (previous) {
+        return {
+          ...node,
+          x: previous.x,
+          y: previous.y,
+          vx: previous.vx ?? 0,
+          vy: previous.vy ?? 0,
+        };
+      }
+
+      const neighborPosition = findNeighborPosition(node.id);
+      const position = withOffset(neighborPosition);
+
+      return {
+        ...node,
+        x: position.x,
+        y: position.y,
+        vx: 0,
+        vy: 0,
+      };
+    });
 
     const nodeIndex = new Map<string, number>();
     nodeCopies.forEach((node, idx) => nodeIndex.set(node.id, idx));
@@ -147,6 +202,12 @@ function ForceGraphBase({
     let tickCount = 0;
     let alpha = 1;
     let animationFrame = 0;
+
+    const publishSnapshot = () => {
+      const snapshot = nodeCopies.map((node) => ({ ...node }));
+      setSimNodes(snapshot);
+      previousPositionsRef.current = new Map(snapshot.map((node) => [node.id, node]));
+    };
 
     const tick = () => {
       tickCount += 1;
@@ -231,23 +292,25 @@ function ForceGraphBase({
       }
 
       if (tickCount % 2 === 0 || tickCount === 1) {
-        setSimNodes(nodeCopies.map((node) => ({ ...node })));
+        publishSnapshot();
       }
 
       alpha *= ALPHA_DECAY;
       if (tickCount < MAX_TICKS && alpha > MIN_ALPHA) {
         animationFrame = requestAnimationFrame(tick);
       } else {
-        setSimNodes(nodeCopies.map((node) => ({ ...node })));
+        publishSnapshot();
       }
     };
 
+    publishSnapshot();
     animationFrame = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(animationFrame);
+      previousPositionsRef.current = new Map(nodeCopies.map((node) => [node.id, { ...node }]));
     };
-  }, [nodes, renderLinks, width, height]);
+  }, [nodes, renderLinks, width, height, centerNodeId]);
 
   const clampScale = useCallback((value: number) => Math.min(3, Math.max(0.35, value)), []);
 
