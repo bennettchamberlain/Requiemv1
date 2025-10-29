@@ -10,7 +10,6 @@ import { useMemoryTimeline } from '../MemoryProvider';
 
 import { MemoryTimeline } from './MemoryTimeline';
 
-// Google Maps API types
 declare global {
   interface Window {
     google: typeof google;
@@ -27,7 +26,16 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const polylinesRef = useRef<L.Polyline[]>([]);
-  const { memories } = useMemoryTimeline();
+  const { memories, loading } = useMemoryTimeline();
+
+  // Debounce timer ref
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track if we're currently updating to prevent race conditions
+  const isUpdatingRef = useRef(false);
+
+  // Track if map is initialized and ready for markers
+  const [mapInitialized, setMapInitialized] = useState(false);
 
   // Memoize memories with valid locations to prevent unnecessary recalculations
   const memoriesWithLocation = useMemo(() => {
@@ -42,21 +50,17 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
     );
   }, [memories]);
 
-  // Function to wait for Google Maps to load
   const waitForGoogleMaps = (): Promise<void> => {
     return loadGoogleMaps();
   };
 
-  // Function to clear existing markers and polylines
   const clearMapElements = useCallback(() => {
     if (mapRef.current) {
-      // Clear existing markers
       markersRef.current.forEach((marker) => {
         mapRef.current?.removeLayer(marker);
       });
       markersRef.current = [];
 
-      // Clear existing polylines
       polylinesRef.current.forEach((polyline) => {
         mapRef.current?.removeLayer(polyline);
       });
@@ -64,43 +68,50 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
     }
   }, []);
 
-  // Function to update markers and routes
   const updateMapMarkers = useCallback(async () => {
-    if (!mapRef.current || memoriesWithLocation.length === 0) {
+    if (!mapRef.current) {
       return;
     }
 
-    // Clear existing markers and polylines
-    clearMapElements();
+    if (isUpdatingRef.current) {
+      return;
+    }
 
-    const primaryColor = 'var(--primary)';
-    const destructiveColor = 'var(--destructive)';
+    isUpdatingRef.current = true;
 
-    // Create custom icon for markers
-    const customIcon = L.divIcon({
-      className: 'custom-map-marker',
-      html: `<div class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-md">
+    try {
+      clearMapElements();
+
+      if (memoriesWithLocation.length === 0) {
+        return;
+      }
+
+      const primaryColor = 'var(--primary)';
+      const destructiveColor = 'var(--destructive)';
+
+      const customIcon = L.divIcon({
+        className: 'custom-map-marker',
+        html: `<div class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-md">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-map-pin"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
           </div>`,
-      iconSize: [24, 24],
-      iconAnchor: [12, 24],
-      popupAnchor: [0, -24],
-    });
+        iconSize: [24, 24],
+        iconAnchor: [12, 24],
+        popupAnchor: [0, -24],
+      });
 
-    // Add markers for memories with location
-    const bounds = L.latLngBounds([]);
-    const markers: L.Marker[] = [];
+      const bounds = L.latLngBounds([]);
+      const markers: L.Marker[] = [];
 
-    const sortedMemories = [...memoriesWithLocation].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-    );
+      const sortedMemories = [...memoriesWithLocation].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      );
 
-    sortedMemories.forEach((memory) => {
-      if (memory.location) {
-        const marker = L.marker([memory.location.lat, memory.location.lng], { icon: customIcon })
-          .addTo(mapRef.current!)
-          .bindPopup(
-            `
+      sortedMemories.forEach((memory) => {
+        if (memory.location) {
+          const marker = L.marker([memory.location.lat, memory.location.lng], { icon: customIcon })
+            .addTo(mapRef.current!)
+            .bindPopup(
+              `
           <div class="p-3">
             ${
               memory.category === 'Image' && memory.metadata?.url
@@ -135,132 +146,148 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
             </div>
           </div>
         `,
-            {
-              className: 'custom-popup',
-              maxWidth: 300,
-              minWidth: 200,
-              closeButton: true,
-              autoClose: false,
-            },
-          );
-
-        markers.push(marker);
-        bounds.extend([memory.location.lat, memory.location.lng]);
-      }
-    });
-
-    // Store markers reference
-    markersRef.current = markers;
-
-    // Add timeline path if enabled
-    if (showTimeline && markers.length > 1) {
-      // Create actual road routes using Google Maps JavaScript API
-      const createRoadRoute = async (start: L.LatLng, end: L.LatLng) => {
-        try {
-          // Wait for Google Maps to load
-          await waitForGoogleMaps();
-
-          // Create Google Maps LatLng objects
-          const googleStart = new window.google.maps.LatLng(start.lat, start.lng);
-          const googleEnd = new window.google.maps.LatLng(end.lat, end.lng);
-
-          // Create DirectionsService
-          const directionsService = new window.google.maps.DirectionsService();
-
-          // Request directions
-          const request = {
-            origin: googleStart,
-            destination: googleEnd,
-            travelMode: window.google.maps.TravelMode.DRIVING,
-            avoidHighways: false,
-            avoidTolls: false,
-          };
-
-          // Get directions
-          const result = await new Promise<google.maps.DirectionsResult>((resolve, reject) => {
-            directionsService.route(
-              request,
-              (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
-                if (status === window.google.maps.DirectionsStatus.OK && result) {
-                  resolve(result);
-                } else {
-                  reject(new Error(`Directions request failed: ${status}`));
-                }
+              {
+                className: 'custom-popup',
+                maxWidth: 300,
+                minWidth: 200,
+                closeButton: true,
+                autoClose: false,
               },
             );
-          });
 
-          if (result.routes && result.routes.length > 0) {
-            const route = result.routes[0];
-            const overviewPath = route.overview_path;
+          markers.push(marker);
+          bounds.extend([memory.location.lat, memory.location.lng]);
+        }
+      });
 
-            // Convert Google Maps LatLng to Leaflet LatLng
-            const waypoints = overviewPath.map(
-              (point: google.maps.LatLng) => new L.LatLng(point.lat(), point.lng()),
-            );
+      markersRef.current = markers;
 
-            // Create the route path
-            const polyline = L.polyline(waypoints, {
-              color: primaryColor,
-              weight: 5,
-              opacity: 0.9,
-              dashArray: '20, 10',
-            }).addTo(mapRef.current!);
+      if (showTimeline && markers.length > 1) {
+        const createRoadRoute = async (start: L.LatLng, end: L.LatLng) => {
+          try {
+            await waitForGoogleMaps();
 
-            polylinesRef.current.push(polyline);
-          } else {
+            const googleStart = new window.google.maps.LatLng(start.lat, start.lng);
+            const googleEnd = new window.google.maps.LatLng(end.lat, end.lng);
+
+            const directionsService = new window.google.maps.DirectionsService();
+
+            const request = {
+              origin: googleStart,
+              destination: googleEnd,
+              travelMode: window.google.maps.TravelMode.DRIVING,
+              avoidHighways: false,
+              avoidTolls: false,
+            };
+
+            const result = await new Promise<google.maps.DirectionsResult>((resolve, reject) => {
+              directionsService.route(
+                request,
+                (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
+                  if (status === window.google.maps.DirectionsStatus.OK && result) {
+                    resolve(result);
+                  } else {
+                    reject(new Error(`Directions request failed: ${status}`));
+                  }
+                },
+              );
+            });
+
+            if (result.routes && result.routes.length > 0) {
+              const route = result.routes[0];
+              const overviewPath = route.overview_path;
+
+              const waypoints = overviewPath.map(
+                (point: google.maps.LatLng) => new L.LatLng(point.lat(), point.lng()),
+              );
+
+              const polyline = L.polyline(waypoints, {
+                color: primaryColor,
+                weight: 3,
+                opacity: 0.9,
+                dashArray: '20, 10',
+              }).addTo(mapRef.current!);
+
+              polylinesRef.current.push(polyline);
+            } else {
+              createFallbackRoute(start, end);
+            }
+          } catch {
             createFallbackRoute(start, end);
           }
-        } catch {
-          createFallbackRoute(start, end);
+        };
+
+        // Fallback route creation (straight line with some curves)
+        const createFallbackRoute = (start: L.LatLng, end: L.LatLng) => {
+          const distance = start.distanceTo(end);
+          const numWaypoints = Math.max(3, Math.min(10, Math.floor(distance / 500)));
+
+          const waypoints: L.LatLng[] = [];
+
+          for (let i = 0; i <= numWaypoints; i++) {
+            const ratio = i / numWaypoints;
+            const curveIntensity = 0.002;
+            const latOffset = Math.sin(ratio * Math.PI) * curveIntensity * (i % 2 === 0 ? 1 : -1);
+            const lngOffset = Math.cos(ratio * Math.PI) * curveIntensity * (i % 2 === 0 ? 1 : -1);
+
+            const waypoint = new L.LatLng(
+              start.lat + (end.lat - start.lat) * ratio + latOffset,
+              start.lng + (end.lng - start.lng) * ratio + lngOffset,
+            );
+
+            waypoints.push(waypoint);
+          }
+
+          const polyline = L.polyline(waypoints, {
+            color: destructiveColor,
+            weight: 3,
+            opacity: 0.7,
+            dashArray: '10, 5',
+          }).addTo(mapRef.current!);
+
+          polylinesRef.current.push(polyline);
+        };
+
+        // Create routes between consecutive points
+        for (let i = 0; i < markers.length - 1; i++) {
+          const start = markers[i].getLatLng();
+          const end = markers[i + 1].getLatLng();
+          await createRoadRoute(start, end);
         }
-      };
 
-      // Fallback route creation (straight line with some curves)
-      const createFallbackRoute = (start: L.LatLng, end: L.LatLng) => {
-        const distance = start.distanceTo(end);
-        const numWaypoints = Math.max(3, Math.min(10, Math.floor(distance / 500)));
-
-        const waypoints: L.LatLng[] = [];
-
-        for (let i = 0; i <= numWaypoints; i++) {
-          const ratio = i / numWaypoints;
-          const curveIntensity = 0.002;
-          const latOffset = Math.sin(ratio * Math.PI) * curveIntensity * (i % 2 === 0 ? 1 : -1);
-          const lngOffset = Math.cos(ratio * Math.PI) * curveIntensity * (i % 2 === 0 ? 1 : -1);
-
-          const waypoint = new L.LatLng(
-            start.lat + (end.lat - start.lat) * ratio + latOffset,
-            start.lng + (end.lng - start.lng) * ratio + lngOffset,
-          );
-
-          waypoints.push(waypoint);
-        }
-
-        const polyline = L.polyline(waypoints, {
-          color: destructiveColor,
-          weight: 3,
-          opacity: 0.7,
-          dashArray: '10, 5',
-        }).addTo(mapRef.current!);
-
-        polylinesRef.current.push(polyline);
-      };
-
-      // Create routes between consecutive points
-      for (let i = 0; i < markers.length - 1; i++) {
-        const start = markers[i].getLatLng();
-        const end = markers[i + 1].getLatLng();
-        await createRoadRoute(start, end);
+        // Re-add markers to ensure they're visible after polyline creation
+        markersRef.current.forEach((marker) => {
+          if (!mapRef.current?.hasLayer(marker)) {
+            marker.addTo(mapRef.current!);
+          }
+        });
       }
-    }
 
-    if (bounds.isValid()) {
-      mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+      if (bounds.isValid()) {
+        mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+      }
+    } catch (error) {
+      console.error('Error updating map markers:', error);
+    } finally {
+      isUpdatingRef.current = false;
     }
   }, [memoriesWithLocation, showTimeline, clearMapElements]);
 
-  // Initialize map (only once)
+  // Smart marker update function - debounce only when loading, update immediately when ready
+  const smartUpdateMarkers = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    if (loading) {
+      debounceTimerRef.current = setTimeout(() => {
+        updateMapMarkers();
+      }, 300);
+    } else {
+      updateMapMarkers();
+    }
+  }, [loading, showTimeline, updateMapMarkers]);
+
   useEffect(() => {
     const initializeMap = async () => {
       if (!mapContainerRef.current) {
@@ -276,16 +303,13 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
         shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
       });
 
-      // When switching tabs, we need to destroy and recreate the map
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
 
-      // Initialize map with a world view (will be adjusted to fit markers)
       mapRef.current = L.map(mapContainerRef.current).setView([20, 0], 2);
 
-      // Use satellite imagery
       L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         {
@@ -294,43 +318,57 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
         },
       ).addTo(mapRef.current);
 
-      // Add map controls
       if (!mapRef.current.zoomControl) {
         L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
       }
 
-      // Update markers after map is initialized
-      updateMapMarkers();
+      smartUpdateMarkers();
+
+      setMapInitialized(true);
     };
 
-    // Add a small delay to ensure the container is fully rendered
     setTimeout(() => {
       initializeMap();
     }, 100);
-  }, []); // Only run once on mount
+  }, []);
 
-  // Track previous memories to prevent unnecessary updates
-  const [previousMemoriesHash, setPreviousMemoriesHash] = useState<string>('');
-
-  // Create a hash of memories to detect actual changes
-  const memoriesHash = useMemo(() => {
-    return memoriesWithLocation.map((m) => `${m.id}-${m.location?.lat}-${m.location?.lng}`).join('|');
-  }, [memoriesWithLocation]);
-
-  // Update markers when memories actually change (not just search query)
   useEffect(() => {
-    if (mapRef.current && memoriesHash !== previousMemoriesHash) {
-      setPreviousMemoriesHash(memoriesHash);
+    if (mapRef.current && !isUpdatingRef.current) {
+      smartUpdateMarkers();
+    }
+  }, [memories, memoriesWithLocation, smartUpdateMarkers]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mapRef.current && !loading) {
+      smartUpdateMarkers();
+    }
+  }, [showTimeline, loading, smartUpdateMarkers]);
+
+  useEffect(() => {
+    if (mapInitialized && memoriesWithLocation.length > 0 && !loading) {
+      smartUpdateMarkers();
+    }
+  }, [mapInitialized, memoriesWithLocation.length, loading, showTimeline, smartUpdateMarkers]);
+
+  useEffect(() => {
+    if (
+      mapInitialized &&
+      mapRef.current &&
+      memoriesWithLocation.length > 0 &&
+      !loading &&
+      markersRef.current.length === 0
+    ) {
       updateMapMarkers();
     }
-  }, [memoriesHash, previousMemoriesHash]);
-
-  // Update markers when showTimeline prop changes
-  useEffect(() => {
-    if (mapRef.current) {
-      updateMapMarkers();
-    }
-  }, [showTimeline]);
+  }, [mapInitialized, memoriesWithLocation.length, loading, updateMapMarkers]);
 
   return (
     <div className={className}>
@@ -346,7 +384,15 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
 
 // Desktop MapView with Timeline
 export function DesktopMapView() {
-  const [showTimeline, setShowTimeline] = useState(true);
+  const [showTimeline, setShowTimeline] = useState(() => {
+    const saved = sessionStorage.getItem('map-timeline-toggle');
+
+    return saved ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('map-timeline-toggle', JSON.stringify(showTimeline));
+  }, [showTimeline]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-1 h-[calc(100vh-140px)] -mx-6 -mb-6">
