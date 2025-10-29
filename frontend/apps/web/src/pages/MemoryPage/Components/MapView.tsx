@@ -6,7 +6,7 @@ import { Route } from '@ci/shadcn/icons';
 import L from 'leaflet';
 
 import { loadGoogleMaps } from '../googleMaps';
-import { useMemoryTimeline } from '../MemoryProvider';
+import { useMemoryService } from '../useMemoryService';
 
 import { MemoryTimeline } from './MemoryTimeline';
 
@@ -26,7 +26,7 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const polylinesRef = useRef<L.Polyline[]>([]);
-  const { memories, loading } = useMemoryTimeline();
+  const { memories, loading } = useMemoryService();
 
   // Debounce timer ref
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);

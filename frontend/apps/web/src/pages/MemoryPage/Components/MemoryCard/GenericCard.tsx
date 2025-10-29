@@ -1,7 +1,7 @@
 import { Card, cn } from '@ci/shadcn';
 import { useNavigate } from 'react-router-dom';
 
-import type { MemoryItem } from '../types';
+import type { MemoryItem } from '../../types';
 
 interface Props {
   memory: MemoryItem;

@@ -2,7 +2,7 @@ import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
-import type { MemoryItem } from '../types';
+import type { MemoryItem } from '../../types';
 import { formatDateTime, formatDuration } from '../utils';
 
 interface Props {

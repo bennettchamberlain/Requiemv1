@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
+import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Select } from '@ci/shadcn';
 import { Search, Filter } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
-import { MemoryTimeline, DesktopMapView, useMemoryTimeline, GalleryView } from './Components';
+import { MemoryTimeline, DesktopMapView, GalleryView } from './Components';
 import { EntityTypeFilter } from './Components/EntityTypeFilter';
+import { useMemoryService } from './useMemoryService';
 
 const AVAILABLE_ENTITY_TYPES = [
   'Person',
@@ -26,9 +27,7 @@ const AVAILABLE_ENTITY_TYPES = [
 ];
 
 export default function DesktopMemoryPage() {
-  usePageTitle('Memory - Companion Intelligence');
-  const { searchQuery, setSearchQuery } = useMemoryTimeline();
-  const { memories } = useMemoryTimeline();
+  const { memories, searchQuery, setSearchQuery } = useMemoryService();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState('map');

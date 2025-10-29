@@ -2,7 +2,7 @@ import { Card } from '@ci/shadcn';
 import { MapPin } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
-import type { MemoryItem } from '../types';
+import type { MemoryItem } from '../../types';
 
 interface Props {
   memory: MemoryItem;

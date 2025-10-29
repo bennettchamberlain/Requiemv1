@@ -1,10 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 
 import { createHookContext } from '@ci/common';
+import { useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
 
-import type { MemoryItem } from './Components/types';
+import type { MemoryItem } from './types';
 
 // Constants
 const MAX_MEMORIES = 500;
@@ -38,8 +39,39 @@ interface MemoryContextValue {
   loadingFuture: boolean;
 }
 
-// Create the hook that will be used by the context
-function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
+function useMemoryService(): MemoryContextValue {
+  const [searchParams] = useSearchParams();
+
+  const query: MemoryQuery = useMemo(() => {
+    const search = searchParams.get('search') || undefined;
+    const category = searchParams.get('category') || undefined;
+    const entityTypes = searchParams.get('entityTypes')?.split(',').filter(Boolean) || undefined;
+
+    const startDate = searchParams.get('startDate') || undefined;
+    const endDate = searchParams.get('endDate') || undefined;
+
+    const dateRange =
+      startDate || endDate
+        ? {
+            start: startDate,
+            end: endDate,
+          }
+        : undefined;
+
+    const excludedEntityTypes =
+      searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || undefined;
+
+    const query = {
+      search,
+      category,
+      dateRange,
+      entityTypes,
+      excludedEntityTypes,
+    };
+
+    return query;
+  }, [searchParams]);
+
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -297,11 +329,6 @@ function useMemoryHook(query: MemoryQuery = {}): MemoryContextValue {
   };
 }
 
-// Create the context using createHookContext
-export const { Provider: MemoryProvider, useHookContext: useMemory } = createHookContext(
-  useMemoryHook,
-  'MemoryProvider',
-);
+const { Provider, useHookContext } = createHookContext(useMemoryService);
 
-// Export the hook with the original name for backward compatibility
-export const useMemoryTimeline = useMemory;
+export { Provider as MemoryProvider, useHookContext as useMemoryService };

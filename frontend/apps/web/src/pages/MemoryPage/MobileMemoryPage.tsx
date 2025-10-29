@@ -1,17 +1,17 @@
 import { useState } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
+import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Select, Button } from '@ci/shadcn';
 import { Search, Filter, MapPin, List, Images, X } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
-import { MemoryTimeline, MobileMapView, useMemoryTimeline, GalleryView } from './Components';
+import { MemoryTimeline, MobileMapView, GalleryView } from './Components';
+import { useMemoryService } from './useMemoryService';
 
 export default function MobileMemoryPage() {
-  usePageTitle('Memory - Companion Intelligence');
-  const { searchQuery, setSearchQuery } = useMemoryTimeline();
+  const { searchQuery, setSearchQuery } = useMemoryService();
   const [, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState('list');
