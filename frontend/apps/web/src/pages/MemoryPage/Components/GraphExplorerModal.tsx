@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge, Input, Separator, Tabs } from '@ci/shadcn';
-import { AlertCircle, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
+import { Badge, Button, Input, Separator, Tabs } from '@ci/shadcn';
+import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
@@ -80,6 +80,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [expandedNodes, setExpandedNodes] = useState<string[]>([]);
   const [spawnLimitInput, setSpawnLimitInput] = useState(String(DEFAULT_SPAWN_LIMIT));
   const [nodeClickCounts, setNodeClickCounts] = useState<Record<string, number>>({});
+  const [anchoringEnabled, setAnchoringEnabled] = useState(true);
   const previousVisibleRef = useRef<Set<string>>(new Set());
 
   const [{ authToken }] = useAuth();
@@ -248,8 +249,8 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       }
     }
 
-    return anchored;
-  }, [visibility.ids]);
+    return anchoringEnabled ? anchored : [];
+  }, [anchoringEnabled, visibility.ids]);
 
   useEffect(() => {
     previousVisibleRef.current = new Set(visibility.ids);
@@ -392,6 +393,17 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
             onChange={(event) => setSpawnLimitInput(event.target.value)}
             onBlur={handleSpawnLimitBlur}
           />
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={anchoringEnabled ? 'default' : 'secondary'}
+              onClick={() => setAnchoringEnabled((prev) => !prev)}
+            >
+              <Anchor className="mr-2 h-4 w-4" />
+              {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
+            </Button>
+          </div>
         </div>
       </div>
 
