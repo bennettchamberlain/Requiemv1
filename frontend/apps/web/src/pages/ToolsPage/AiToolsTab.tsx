@@ -1,5 +1,15 @@
 import { Card, Switch } from '@ci/shadcn';
-import { Bot, Clapperboard, Play, Utensils } from '@ci/shadcn/icons';
+import {
+  Bot,
+  BookOpen,
+  Clapperboard,
+  Music,
+  Plane,
+  Play,
+  ShoppingBag,
+  Utensils,
+  Dumbbell,
+} from '@ci/shadcn/icons';
 
 import { useToolPreferences } from './useToolPreferences';
 
@@ -12,6 +22,7 @@ interface ToolCard {
   capabilities: string[];
   canToggle: boolean;
   systemStatus: 'active' | 'disabled';
+  isDemo?: boolean; // Purely aesthetic demo tool that always appears enabled
 }
 
 const AVAILABLE_TOOLS: ToolCard[] = [
@@ -79,6 +90,91 @@ const AVAILABLE_TOOLS: ToolCard[] = [
     canToggle: true,
     systemStatus: 'active',
   },
+  {
+    id: 'shopping-preferences',
+    name: 'Shopping Preferences',
+    description:
+      'Track shopping habits, preferred brands, purchase history, and price tracking for smart shopping recommendations.',
+    category: 'Lifestyle',
+    icon: <ShoppingBag className="h-6 w-6" />,
+    capabilities: [
+      'Brand and store preferences',
+      'Purchase history tracking',
+      'Price alerts and deals',
+      'Wishlist management',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'travel-assistant',
+    name: 'Travel Assistant',
+    description:
+      'Manage travel preferences, favorite destinations, trip history, and travel-related information for personalized travel planning.',
+    category: 'Travel',
+    icon: <Plane className="h-6 w-6" />,
+    capabilities: [
+      'Favorite destinations and places',
+      'Travel history and itineraries',
+      'Accommodation preferences',
+      'Destination recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'reading-habits',
+    name: 'Reading Habits',
+    description:
+      'Track reading preferences, book history, favorite genres, and reading patterns for personalized book recommendations.',
+    category: 'Entertainment',
+    icon: <BookOpen className="h-6 w-6" />,
+    capabilities: [
+      'Book genre preferences',
+      'Reading history and favorites',
+      'Reading pace and habits',
+      'Personalized recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'music-preferences',
+    name: 'Music Preferences',
+    description:
+      'Access music taste, favorite artists, genres, listening history, and streaming preferences for music discovery.',
+    category: 'Entertainment',
+    icon: <Music className="h-6 w-6" />,
+    capabilities: [
+      'Artist and genre preferences',
+      'Listening history and patterns',
+      'Streaming service preferences',
+      'Playlist and discovery support',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'fitness-tracking',
+    name: 'Fitness Tracking',
+    description:
+      'Monitor fitness goals, workout preferences, activity patterns, and health metrics for personalized fitness guidance.',
+    category: 'Health',
+    icon: <Dumbbell className="h-6 w-6" />,
+    capabilities: [
+      'Workout preferences and routines',
+      'Fitness goals and progress',
+      'Activity tracking history',
+      'Personalized fitness recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
 ];
 
 const ToolCard = ({
@@ -90,7 +186,8 @@ const ToolCard = ({
   isEnabled: boolean;
   onToggle: (toolId: string) => void;
 }) => {
-  const isEffectivelyEnabled = tool.systemStatus === 'active' && isEnabled;
+  // Demo tools always appear enabled for aesthetic purposes
+  const isEffectivelyEnabled = tool.isDemo ? true : tool.systemStatus === 'active' && isEnabled;
   const canInteract = tool.canToggle && tool.systemStatus === 'active';
 
   return (
@@ -128,8 +225,13 @@ const ToolCard = ({
 
           <div className="flex flex-col items-end gap-1">
             <Switch
-              checked={isEnabled}
-              onCheckedChange={() => canInteract && onToggle(tool.id)}
+              checked={tool.isDemo ? true : isEnabled}
+              onCheckedChange={() => {
+                if (!tool.isDemo && canInteract) {
+                  onToggle(tool.id);
+                }
+                // Demo tools: toggle does nothing, purely aesthetic
+              }}
               disabled={!canInteract}
               aria-label={`Toggle ${tool.name}`}
               className="data-[state=unchecked]:opacity-50"
@@ -179,7 +281,9 @@ export function AiToolsTab() {
     );
   }
 
-  const enabledCount = getEnabledToolsCount();
+  // Include demo tools in the enabled count for display purposes
+  const demoToolsCount = AVAILABLE_TOOLS.filter((tool) => tool.isDemo).length;
+  const enabledCount = getEnabledToolsCount() + demoToolsCount;
   const disabledCount = getDisabledToolsCount();
 
   return (
