@@ -34,7 +34,6 @@ export function MemoryDetails({ memory }: Props) {
       return <PlaceDetails memory={memory} />;
     case 'thing':
       return <ThingDetails memory={memory} />;
-
     default:
       return null;
   }
