@@ -187,7 +187,7 @@ export function useGraphOverview(
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authToken, maxDepth]);
 
   return useMemo(() => state, [state]);
 }
