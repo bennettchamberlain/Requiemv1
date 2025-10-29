@@ -150,9 +150,7 @@ export function MemoryTimeline() {
                       }`}
                     />
 
-                    <div className="transform transition-all duration-200 hover:scale-[1.005]">
-                      <MemoryCard memory={memory} />
-                    </div>
+                    <MemoryCard memory={memory} />
                   </div>
                 );
               })}
