@@ -1,6 +1,6 @@
 import { Calendar, User, MapPin, Package, FileText, Contact, Lightbulb, Target } from '@ci/shadcn/icons';
 
-import type { MemoryItem } from './types';
+import type { MemoryItem } from '../types';
 
 export function formatDuration(minutes: number): string {
   const days = Math.floor(minutes / (24 * 60));

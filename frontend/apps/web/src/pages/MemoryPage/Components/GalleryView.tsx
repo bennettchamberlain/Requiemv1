@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { useAuth } from '@/hooks';
 
-import { useMemoryTimeline } from '../MemoryProvider';
+import { useMemoryService } from '../useMemoryService';
 
 interface FileMeta {
   id: string;
@@ -19,7 +19,7 @@ export function GalleryView() {
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<FileMeta[]>([]);
 
-  const { memories } = useMemoryTimeline();
+  const { memories } = useMemoryService();
 
   const hydrateFiles = useCallback(async () => {
     const tempFiles: FileMeta[] = [];

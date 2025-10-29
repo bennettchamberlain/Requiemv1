@@ -1,18 +1,19 @@
 import { lazy } from 'react';
 
+import { usePageTitle } from '@ci/common';
+
 import { ResponsiveLoader } from '@/components/ResponsiveLoader';
 
-import { MemoryProvider } from './MemoryProvider';
-import { useMemoryQuery } from './utils/queryParser';
+import { MemoryProvider } from './useMemoryService';
 
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
 const MobilePage = lazy(() => import('./MobileMemoryPage'));
 
-export default function MemoryPage() {
-  const query = useMemoryQuery();
+export function MemoryPage() {
+  usePageTitle('Memory - Companion Intelligence');
 
   return (
-    <MemoryProvider args={[query]}>
+    <MemoryProvider args={[]}>
       <ResponsiveLoader desktop={DesktopPage} mobile={MobilePage} />
     </MemoryProvider>
   );

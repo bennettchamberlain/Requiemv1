@@ -1,6 +1,6 @@
 import { FileText, Package, User, Contact, Lightbulb, Target, Video, File, Radio } from '@ci/shadcn/icons';
 
-import type { MemoryItem } from '../types';
+import type { MemoryItem } from '../../types';
 
 import { CommunicationCard } from './CommunicationCard';
 import { EventCard } from './EventCard';

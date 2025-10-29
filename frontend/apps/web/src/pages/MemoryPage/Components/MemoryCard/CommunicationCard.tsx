@@ -4,7 +4,7 @@ import { Card, Tooltip, cn } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
-import type { MemoryItem, ParticipantData } from '../types';
+import type { MemoryItem, ParticipantData } from '../../types';
 
 const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   month: 'short',

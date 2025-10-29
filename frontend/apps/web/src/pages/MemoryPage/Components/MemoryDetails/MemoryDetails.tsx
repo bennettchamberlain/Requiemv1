@@ -1,4 +1,4 @@
-import type { MemoryItem } from '../types';
+import type { MemoryItem } from '../../types';
 
 import { CommunicationDetails } from './CommunicationDetails';
 import { ConceptDetails } from './ConceptDetails';

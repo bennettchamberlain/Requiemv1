@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { useMemoryTimeline } from '../MemoryProvider';
+import { useMemoryService } from '../useMemoryService';
 
 import { MemoryCard } from './MemoryCard';
 import { sortMemoriesByTime, groupMemoriesByDate, formatDateForDisplay } from './utils';
@@ -16,7 +16,7 @@ export function MemoryTimeline() {
     loadFutureEvents,
     loadingPast,
     loadingFuture,
-  } = useMemoryTimeline();
+  } = useMemoryService();
 
   const sortedMemories = sortMemoriesByTime(memories);
   const groupedMemories = groupMemoriesByDate(sortedMemories);
