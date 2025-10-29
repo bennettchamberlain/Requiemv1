@@ -9,7 +9,7 @@ import { PageContent } from '@/components/layout';
 
 import { MemoryTimeline, MobileMapView, useMemoryTimeline, GalleryView } from './Components';
 
-function MobileMemoryPageContent() {
+export default function MobileMemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
   const { searchQuery, setSearchQuery } = useMemoryTimeline();
   const [, setSearchParams] = useSearchParams();
@@ -163,8 +163,4 @@ function MobileMemoryPageContent() {
       </PageContent>
     </>
   );
-}
-
-export default function MobileMemoryPage() {
-  return <MobileMemoryPageContent />;
 }
