@@ -2,12 +2,12 @@ import { useState } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Tabs, Select, Button } from '@ci/shadcn';
-import { Search, Filter, MapPin, List, Images, X } from '@ci/shadcn/icons';
+import { Search, Filter, MapPin, List, Images, Share2, X } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
-import { MemoryTimeline, MobileMapView, useMemoryTimeline, GalleryView } from './Components';
+import { MemoryTimeline, MobileMapView, useMemoryTimeline, GalleryView, GraphTabPanel } from './Components';
 
 export default function MobileMemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
@@ -91,7 +91,7 @@ export default function MobileMemoryPage() {
           {/* Mobile Tab Navigation */}
           <div className="flex items-center justify-between">
             <Tabs defaultValue="list" className="flex-1" onValueChange={setActiveTab} value={activeTab}>
-              <Tabs.List className="grid grid-cols-3 w-full">
+              <Tabs.List className="grid grid-cols-4 w-full">
                 <Tabs.Trigger value="list" className="text-sm flex items-center gap-1">
                   <List className="h-4 w-4" />
                   List
@@ -103,6 +103,10 @@ export default function MobileMemoryPage() {
                 <Tabs.Trigger value="gallery" className="text-sm flex items-center gap-1">
                   <Images className="h-4 w-4" />
                   Gallery
+                </Tabs.Trigger>
+                <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
+                  <Share2 className="h-4 w-4" />
+                  Graph
                 </Tabs.Trigger>
               </Tabs.List>
             </Tabs>
@@ -159,6 +163,8 @@ export default function MobileMemoryPage() {
           {activeTab === 'map' && <MobileMapView />}
 
           {activeTab === 'gallery' && <GalleryView />}
+
+          {activeTab === 'graph' && <GraphTabPanel variant="mobile" />}
         </>
       </PageContent>
     </>

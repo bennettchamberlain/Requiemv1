@@ -7,7 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
-import { MemoryTimeline, DesktopMapView, useMemoryTimeline, GalleryView } from './Components';
+import { MemoryTimeline, DesktopMapView, useMemoryTimeline, GalleryView, GraphTabPanel } from './Components';
 import { EntityTypeFilter } from './Components/EntityTypeFilter';
 
 const AVAILABLE_ENTITY_TYPES = [
@@ -178,7 +178,7 @@ export default function DesktopMemoryPage() {
 
             {/* View Toggle */}
             <Tabs defaultValue="map" className="flex-shrink-0" onValueChange={setActiveTab} value={activeTab}>
-              <Tabs.List className="grid grid-cols-3 w-48">
+              <Tabs.List className="grid grid-cols-4 w-64">
                 <Tabs.Trigger value="map" className="text-sm">
                   Map
                 </Tabs.Trigger>
@@ -187,6 +187,9 @@ export default function DesktopMemoryPage() {
                 </Tabs.Trigger>
                 <Tabs.Trigger value="gallery" className="text-sm">
                   Gallery
+                </Tabs.Trigger>
+                <Tabs.Trigger value="graph" className="text-sm">
+                  Graph
                 </Tabs.Trigger>
               </Tabs.List>
             </Tabs>
@@ -201,6 +204,8 @@ export default function DesktopMemoryPage() {
           {activeTab === 'map' && <DesktopMapView />}
 
           {activeTab === 'gallery' && <GalleryView />}
+
+          {activeTab === 'graph' && <GraphTabPanel variant="desktop" />}
         </>
       </PageContent>
     </>
