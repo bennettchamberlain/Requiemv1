@@ -81,6 +81,8 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [spawnLimitInput, setSpawnLimitInput] = useState(String(DEFAULT_SPAWN_LIMIT));
   const [nodeClickCounts, setNodeClickCounts] = useState<Record<string, number>>({});
   const [anchoringEnabled, setAnchoringEnabled] = useState(true);
+  const [includedEntityTypes, setIncludedEntityTypes] = useState<string[]>([]);
+  const [includedRelationshipTypes, setIncludedRelationshipTypes] = useState<string[]>([]);
   const previousVisibleRef = useRef<Set<string>>(new Set());
 
   const [{ authToken }] = useAuth();
@@ -106,6 +108,86 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   const rawNodes = subgraph?.nodes ?? [];
   const rawLinks = subgraph?.links ?? [];
+
+  const availableEntityTypes = useMemo(() => {
+    const types = new Set<string>();
+
+    for (const node of rawNodes) {
+      if (node.entity_type) {
+        types.add(node.entity_type);
+      }
+    }
+
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+  }, [rawNodes]);
+
+  const availableRelationshipTypes = useMemo(() => {
+    const types = new Set<string>();
+
+    for (const link of rawLinks) {
+      if (link.relationship_type) {
+        types.add(link.relationship_type);
+      }
+    }
+
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+  }, [rawLinks]);
+
+  useEffect(() => {
+    setIncludedEntityTypes((prev) => {
+      if (availableEntityTypes.length === 0) {
+        return [];
+      }
+
+      const nextSet = new Set(prev.filter((type) => availableEntityTypes.includes(type)));
+
+      if (nextSet.size === 0) {
+        availableEntityTypes.forEach((type) => nextSet.add(type));
+      } else {
+        for (const type of availableEntityTypes) {
+          if (!nextSet.has(type)) {
+            nextSet.add(type);
+          }
+        }
+      }
+
+      const next = availableEntityTypes.filter((type) => nextSet.has(type));
+
+      if (next.length === prev.length && next.every((type, index) => prev[index] === type)) {
+        return prev;
+      }
+
+      return next;
+    });
+  }, [availableEntityTypes]);
+
+  useEffect(() => {
+    setIncludedRelationshipTypes((prev) => {
+      if (availableRelationshipTypes.length === 0) {
+        return [];
+      }
+
+      const nextSet = new Set(prev.filter((type) => availableRelationshipTypes.includes(type)));
+
+      if (nextSet.size === 0) {
+        availableRelationshipTypes.forEach((type) => nextSet.add(type));
+      } else {
+        for (const type of availableRelationshipTypes) {
+          if (!nextSet.has(type)) {
+            nextSet.add(type);
+          }
+        }
+      }
+
+      const next = availableRelationshipTypes.filter((type) => nextSet.has(type));
+
+      if (next.length === prev.length && next.every((type, index) => prev[index] === type)) {
+        return prev;
+      }
+
+      return next;
+    });
+  }, [availableRelationshipTypes]);
 
   const adjacencyMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -256,6 +338,106 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     previousVisibleRef.current = new Set(visibility.ids);
   }, [visibility.ids]);
 
+  const entityTypeFilterSet = useMemo(() => new Set(includedEntityTypes), [includedEntityTypes]);
+  const relationshipTypeFilterSet = useMemo(
+    () => new Set(includedRelationshipTypes),
+    [includedRelationshipTypes],
+  );
+
+  const isEntityFilterActive = useMemo(
+    () =>
+      availableEntityTypes.length > 0 &&
+      entityTypeFilterSet.size > 0 &&
+      entityTypeFilterSet.size < availableEntityTypes.length,
+    [availableEntityTypes.length, entityTypeFilterSet],
+  );
+
+  const isRelationshipFilterActive = useMemo(
+    () =>
+      availableRelationshipTypes.length > 0 &&
+      relationshipTypeFilterSet.size > 0 &&
+      relationshipTypeFilterSet.size < availableRelationshipTypes.length,
+    [availableRelationshipTypes.length, relationshipTypeFilterSet],
+  );
+
+  const allowedNodeIds = useMemo(() => {
+    const allowed = new Set<string>();
+    const visibilitySet = new Set(visibility.ids);
+
+    for (const node of rawNodes) {
+      if (!visibilitySet.has(node.id)) {
+        continue;
+      }
+
+      if (isEntityFilterActive) {
+        if (!node.entity_type) {
+          allowed.add(node.id);
+
+          continue;
+        }
+
+        if (!entityTypeFilterSet.has(node.entity_type)) {
+          continue;
+        }
+      }
+
+      allowed.add(node.id);
+    }
+
+    return allowed;
+  }, [entityTypeFilterSet, isEntityFilterActive, rawNodes, visibility.ids]);
+
+  const entityTypesAllSelected = includedEntityTypes.length === availableEntityTypes.length;
+  const relationshipTypesAllSelected = includedRelationshipTypes.length === availableRelationshipTypes.length;
+
+  const handleEntityTypeToggle = useCallback(
+    (type: string) => {
+      setIncludedEntityTypes((prev) => {
+        const set = new Set(prev);
+
+        if (set.has(type)) {
+          set.delete(type);
+          if (set.size === 0) {
+            availableEntityTypes.forEach((item) => set.add(item));
+          }
+        } else {
+          set.add(type);
+        }
+
+        return availableEntityTypes.filter((item) => set.has(item));
+      });
+    },
+    [availableEntityTypes],
+  );
+
+  const handleEntityTypeSelectAll = useCallback(() => {
+    setIncludedEntityTypes(availableEntityTypes);
+  }, [availableEntityTypes]);
+
+  const handleRelationshipTypeToggle = useCallback(
+    (type: string) => {
+      setIncludedRelationshipTypes((prev) => {
+        const set = new Set(prev);
+
+        if (set.has(type)) {
+          set.delete(type);
+          if (set.size === 0) {
+            availableRelationshipTypes.forEach((item) => set.add(item));
+          }
+        } else {
+          set.add(type);
+        }
+
+        return availableRelationshipTypes.filter((item) => set.has(item));
+      });
+    },
+    [availableRelationshipTypes],
+  );
+
+  const handleRelationshipTypeSelectAll = useCallback(() => {
+    setIncludedRelationshipTypes(availableRelationshipTypes);
+  }, [availableRelationshipTypes]);
+
   useEffect(() => {
     if (visibility.ids.length === 0) {
       setSelectedNodeId(null);
@@ -271,22 +453,33 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     }
   }, [visibility.ids, selectedNodeId, userEntityId]);
 
-  const visibleNodes = useMemo(() => {
-    const visibleSet = new Set(visibility.ids);
-
-    return rawNodes.filter((node) => visibleSet.has(node.id));
-  }, [rawNodes, visibility.ids]);
+  const visibleNodes = useMemo(
+    () => rawNodes.filter((node) => allowedNodeIds.has(node.id)),
+    [allowedNodeIds, rawNodes],
+  );
 
   const visibleLinks = useMemo(() => {
-    const visibleSet = new Set(visibility.ids);
-
     return rawLinks.filter((link) => {
       const sourceId = resolveEndpointId(link.source);
       const targetId = resolveEndpointId(link.target);
 
-      return sourceId && targetId && visibleSet.has(sourceId) && visibleSet.has(targetId);
+      if (!sourceId || !targetId) {
+        return false;
+      }
+
+      if (!allowedNodeIds.has(sourceId) || !allowedNodeIds.has(targetId)) {
+        return false;
+      }
+
+      if (isRelationshipFilterActive) {
+        if (!link.relationship_type || !relationshipTypeFilterSet.has(link.relationship_type)) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [rawLinks, visibility.ids]);
+  }, [allowedNodeIds, isRelationshipFilterActive, relationshipTypeFilterSet, rawLinks]);
 
   const relatedLinks = useMemo(() => {
     if (!selectedNodeId) {
@@ -366,45 +559,12 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold">Knowledge Graph</h2>
-          <p className="text-sm text-muted-foreground">
-            Explore how memories, people, places, and events interconnect. Click nodes to reveal additional
-            neighbors, or adjust the batch size to control how many load per click.
-          </p>
-        </div>
-
-        <div className="space-y-1 md:text-right">
-          <label
-            className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-            htmlFor="neighbor-limit"
-          >
-            Neighbors per click
-          </label>
-          <Input
-            id="neighbor-limit"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            step={1}
-            className="w-32 md:ml-auto"
-            value={spawnLimitInput}
-            onChange={(event) => setSpawnLimitInput(event.target.value)}
-            onBlur={handleSpawnLimitBlur}
-          />
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={anchoringEnabled ? 'default' : 'secondary'}
-              onClick={() => setAnchoringEnabled((prev) => !prev)}
-            >
-              <Anchor className="mr-2 h-4 w-4" />
-              {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
-            </Button>
-          </div>
-        </div>
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold">Knowledge Graph</h2>
+        <p className="text-sm text-muted-foreground">
+          Explore how memories, people, places, and events interconnect. Click nodes to reveal additional{' '}
+          neighbors, or adjust the batch size to control how many load per click.
+        </p>
       </div>
 
       <Tabs
@@ -450,37 +610,144 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       <Separator />
 
       <div className={detailGridClass}>
-        <div className="rounded-lg border bg-muted/30 p-4">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
-            <Users className="h-4 w-4 text-primary" />
-            Graph Summary
-          </h3>
-          <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground">Nodes</dt>
-              <dd className="font-medium">{visibleNodes.length}</dd>
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
+              <Users className="h-4 w-4 text-primary" />
+              Graph Summary
+            </h3>
+            <dl className="mt-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <dt className="text-muted-foreground">Nodes</dt>
+                <dd className="font-medium">{visibleNodes.length}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="text-muted-foreground">Relationships</dt>
+                <dd className="font-medium">{visibleLinks.length}</dd>
+              </div>
+              {quickStats && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-muted-foreground">Preferences</dt>
+                    <dd className="font-medium">{quickStats.totalPreferences}</dd>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-muted-foreground">Dislikes</dt>
+                    <dd className="font-medium">{quickStats.totalDislikes}</dd>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-muted-foreground">Family Size</dt>
+                    <dd className="font-medium">{quickStats.familySize}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+          </div>
+
+          <div className="rounded-lg border bg-muted/20 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Neighbors per click
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Control how many connected nodes load each time you click.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <Input
+                id="neighbor-limit"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                step={1}
+                className="w-24"
+                value={spawnLimitInput}
+                onChange={(event) => setSpawnLimitInput(event.target.value)}
+                onBlur={handleSpawnLimitBlur}
+              />
+              <span className="text-sm text-muted-foreground">nodes</span>
             </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground">Relationships</dt>
-              <dd className="font-medium">{visibleLinks.length}</dd>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={anchoringEnabled ? 'default' : 'secondary'}
+                onClick={() => setAnchoringEnabled((prev) => !prev)}
+              >
+                <Anchor className="mr-2 h-4 w-4" />
+                {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Toggle anchoring to keep the current layout steady or let the graph flow freely.
+              </span>
             </div>
-            {quickStats && (
-              <>
-                <div className="flex items-center justify-between">
-                  <dt className="text-muted-foreground">Preferences</dt>
-                  <dd className="font-medium">{quickStats.totalPreferences}</dd>
+            {availableEntityTypes.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Node types
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={entityTypesAllSelected ? 'default' : 'secondary'}
+                    disabled={availableEntityTypes.length === 0}
+                    onClick={handleEntityTypeSelectAll}
+                  >
+                    All
+                  </Button>
+                  {availableEntityTypes.map((type) => {
+                    const isActive = includedEntityTypes.includes(type);
+
+                    return (
+                      <Button
+                        key={type}
+                        type="button"
+                        size="sm"
+                        variant={isActive ? 'default' : 'secondary'}
+                        onClick={() => handleEntityTypeToggle(type)}
+                        aria-pressed={isActive}
+                      >
+                        {type}
+                      </Button>
+                    );
+                  })}
                 </div>
-                <div className="flex items-center justify-between">
-                  <dt className="text-muted-foreground">Dislikes</dt>
-                  <dd className="font-medium">{quickStats.totalDislikes}</dd>
-                </div>
-                <div className="flex items-center justify-between">
-                  <dt className="text-muted-foreground">Family Size</dt>
-                  <dd className="font-medium">{quickStats.familySize}</dd>
-                </div>
-              </>
+              </div>
             )}
-          </dl>
+            {availableRelationshipTypes.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Relationship types
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={relationshipTypesAllSelected ? 'default' : 'secondary'}
+                    disabled={availableRelationshipTypes.length === 0}
+                    onClick={handleRelationshipTypeSelectAll}
+                  >
+                    All
+                  </Button>
+                  {availableRelationshipTypes.map((type) => {
+                    const isActive = includedRelationshipTypes.includes(type);
+
+                    return (
+                      <Button
+                        key={type}
+                        type="button"
+                        size="sm"
+                        variant={isActive ? 'default' : 'secondary'}
+                        onClick={() => handleRelationshipTypeToggle(type)}
+                        aria-pressed={isActive}
+                      >
+                        {type}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="md:col-span-2 space-y-3 rounded-lg border bg-muted/10 p-4">
