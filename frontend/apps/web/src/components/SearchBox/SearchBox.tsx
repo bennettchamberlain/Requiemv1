@@ -297,6 +297,13 @@ function SearchBox(
           </ScrollArea>
         </div>
       );
+    } else {
+      resultsNode = (
+        <div className="flex flex-col items-center justify-center border-t p-8">
+          <p className="text-muted-foreground font-medium">No results found.</p>
+          <p className="text-sm text-muted-foreground">Try a different search.</p>
+        </div>
+      );
     }
   }
 
