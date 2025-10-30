@@ -126,8 +126,12 @@ function SearchBox(
       switch (e.key) {
         case Keys.ESCAPE:
           e.preventDefault();
-          form.reset();
-          setSelectedIndex(-1);
+
+          if (selectedIndex !== -1) {
+            setSelectedIndex(-1);
+          } else {
+            form.reset();
+          }
 
           break;
 
