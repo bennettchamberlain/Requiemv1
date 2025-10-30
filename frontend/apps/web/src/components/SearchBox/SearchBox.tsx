@@ -307,8 +307,8 @@ function SearchBox(
                         resultItemsRef.current[index] = el;
                       }}
                       className={`
-                        p-2 cursor-pointer
-                        ${index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}
+                        p-2 cursor-pointer border-l-4
+                        ${index === selectedIndex ? 'bg-accent text-accent-foreground border-blue-500' : 'hover:bg-muted/50 border-transparent'}
                       `}
                       onClick={() => onResultSelect?.(result)}
                     >
