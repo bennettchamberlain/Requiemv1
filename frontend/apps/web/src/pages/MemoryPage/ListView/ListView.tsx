@@ -158,17 +158,13 @@ export function ListView() {
                     <Table.Header>
                       <Table.Row>
                         <Table.Head>Type</Table.Head>
-                        <Table.Head>ID</Table.Head>
-                        <Table.Head>Data Path</Table.Head>
                         <Table.Head>Content</Table.Head>
                       </Table.Row>
                     </Table.Header>
                     <Table.Body>
                       {searchResults.map((result) => (
                         <Table.Row key={result.id}>
-                          <Table.Cell>{result.type}</Table.Cell>
-                          <Table.Cell>{result.id}</Table.Cell>
-                          <Table.Cell className="max-w-md">{result.path}</Table.Cell>
+                          <Table.Cell className="capitalize">{result.type.replace('_', ' ')}</Table.Cell>
                           <Table.Cell className="font-mono text-xs">{result.text}</Table.Cell>
                         </Table.Row>
                       ))}
