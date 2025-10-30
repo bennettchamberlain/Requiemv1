@@ -146,7 +146,7 @@ const sampleResults = [
 const meta: Meta<Props> = {
   component: SearchBox,
   parameters: {
-    layout: 'centered',
+    layout: 'padded',
   },
   args: {
     onSearch: fn(),
@@ -161,32 +161,72 @@ type Story = StoryObj<Props>;
 
 export const Default: Story = {};
 
+export const Compact: Story = {
+  args: {
+    variant: 'compact',
+  },
+};
+
 export const Loading: Story = {
   args: {
     loading: true,
   },
+  decorators: [
+    (Story) => (
+      <div className="w-180">
+        <Story />
+        <p className="text-xs text-muted-foreground mt-4">Type in search box to see the loading state</p>
+      </div>
+    ),
+  ],
+};
+
+export const Error: Story = {
+  args: {
+    error: 'Network error occurred',
+  },
+  decorators: [
+    (Story) => (
+      <div className="w-180">
+        <Story />
+        <p className="text-xs text-muted-foreground mt-4">Type in search box to see the error state</p>
+      </div>
+    ),
+  ],
 };
 
 export const Disabled: Story = {
   args: {
     disabled: true,
+    variant: 'compact',
   },
   decorators: [
     (Story) => (
-      <div className="flex flex-row items-center gap-4">
-        <Input placeholder="Enter text here..." disabled />
-        <Story />
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <Input placeholder="Enter text here..." disabled />
+        </div>
+        <div className="flex-1">
+          <Story />
+        </div>
       </div>
     ),
   ],
 };
 
 export const NextToShadCNInput: Story = {
+  args: {
+    variant: 'compact',
+  },
   decorators: [
     (Story) => (
-      <div className="flex flex-row items-center gap-4">
-        <Input placeholder="Enter text here..." />
-        <Story />
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <Input placeholder="Enter text here..." />
+        </div>
+        <div className="flex-1">
+          <Story />
+        </div>
       </div>
     ),
   ],
@@ -204,9 +244,6 @@ export const SingleResult: Story = {
       </div>
     ),
   ],
-  parameters: {
-    layout: 'padded',
-  },
 };
 
 export const ManyResults: Story = {
@@ -221,7 +258,4 @@ export const ManyResults: Story = {
       </div>
     ),
   ],
-  parameters: {
-    layout: 'padded',
-  },
 };
