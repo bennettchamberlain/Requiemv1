@@ -1,6 +1,7 @@
 import type { SearchResult } from '../../types';
 
 import { AnswerCard } from './AnswerCard';
+import { EntityCard } from './EntityCard';
 import { ImageCard } from './ImageCard';
 import { QuestionCard } from './QuestionCard';
 
@@ -17,6 +18,8 @@ export function SearchResultCard({ result }: Props) {
     case 'image':
     case 'photo':
       return <ImageCard result={result} />;
+    case 'entity':
+      return <EntityCard result={result} />;
     default:
       return null;
   }

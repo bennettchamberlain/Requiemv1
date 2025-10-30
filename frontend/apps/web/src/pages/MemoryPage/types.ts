@@ -37,6 +37,7 @@ export interface MemoryItem {
       direction: 'outgoing' | 'incoming';
     }>;
     properties?: {
+      type?: string;
       [key: string]: unknown;
     };
     [key: string]: unknown;

@@ -1,6 +1,9 @@
+import { useEffect, useState, useCallback } from 'react';
+
 import { Card, Badge } from '@ci/shadcn';
 import { Hash } from '@ci/shadcn/icons';
 
+import { useAuth } from '@/hooks';
 import { formatPath, truncateText } from '@/pages/MemoryPage/ListView/utils.tsx';
 import type { SearchResult } from '@/pages/MemoryPage/types.ts';
 
@@ -9,6 +12,29 @@ export interface Props {
 }
 
 export function AnswerCard({ result }: Props) {
+  const [{ authToken }] = useAuth();
+
+  const [answer, setAnswer] = useState<{
+    [key: string]: unknown;
+    question: { [key: string]: unknown };
+  } | null>(null);
+
+  const hydrateAnswer = useCallback(async () => {
+    console.log('hydrating answer');
+    const answerResult = await (
+      await fetch(`/api/answers/${result.id as string}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      })
+    ).json();
+    setAnswer(answerResult);
+  }, [result]);
+
+  useEffect(() => {
+    hydrateAnswer();
+  }, [result]);
+
   return (
     <Card className="group hover:shadow-lg transition-shadow duration-200 overflow-hidden">
       <Card.Header className="space-y-3">
@@ -31,23 +57,21 @@ export function AnswerCard({ result }: Props) {
       </Card.Header>
 
       <Card.Content>
-        <p className="text-sm text-muted-foreground line-clamp-4">{truncateText(result.text, 200)}</p>
-
-        {result.metadata && Object.keys(result.metadata).length > 0 && (
-          <div className="mt-4 pt-4 border-t">
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(result.metadata)
-                .slice(0, 3)
-                .map(([key, value]) => (
-                  <div key={key} className="text-xs">
-                    <span className="text-muted-foreground">{key}:</span>{' '}
-                    <span className="font-medium">{String(value)}</span>
-                  </div>
-                ))}
-            </div>
-          </div>
+        {answer?.answer != null && (
+          <p className="text-sm text-muted-foreground line-clamp-4">
+            {truncateText(answer?.answer as string, 200)}
+          </p>
         )}
       </Card.Content>
+
+      {answer?.question?.text != null && (
+        <Card.Content>
+          <p className="text-md line-clamp-4">Related Question</p>
+          <p className="text-sm text-muted-foreground line-clamp-4">
+            {truncateText(answer.question.text as string, 200)}
+          </p>
+        </Card.Content>
+      )}
     </Card>
   );
 }
