@@ -312,9 +312,9 @@ function SearchBox(
 
           {/* Results */}
           {queryValue.length > 0 && !disabled && results.length > 0 && (
-            <div className="flex border-t">
+            <div className="flex border-t max-h-[60vh]">
               {selectedResult && selectedResult.preview && (
-                <div className="flex-1 p-4">{selectedResult.preview}</div>
+                <div className="flex-1 p-4 overflow-hidden">{selectedResult.preview}</div>
               )}
               <ScrollArea className="flex-1/2" ref={scrollAreaRef}>
                 <div className="py-2">
