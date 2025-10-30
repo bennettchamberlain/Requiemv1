@@ -232,9 +232,25 @@ export const NextToShadCNInput: Story = {
   ],
 };
 
+export const NoResults: Story = {
+  args: {
+    results: [],
+    autoSubmit: true,
+  },
+  decorators: [
+    (Story) => (
+      <div className="w-180">
+        <Story />
+        <p className="text-xs text-muted-foreground mt-4">Type in search box to see results appear</p>
+      </div>
+    ),
+  ],
+};
+
 export const SingleResult: Story = {
   args: {
     results: [sampleResults[0]],
+    autoSubmit: true,
   },
   decorators: [
     (Story) => (
@@ -247,20 +263,6 @@ export const SingleResult: Story = {
 };
 
 export const ManyResults: Story = {
-  args: {
-    results: sampleResults,
-  },
-  decorators: [
-    (Story) => (
-      <div className="w-180">
-        <Story />
-        <p className="text-xs text-muted-foreground mt-4">Type in search box to see results appear</p>
-      </div>
-    ),
-  ],
-};
-
-export const AutoSubmit: Story = {
   args: {
     results: sampleResults,
     autoSubmit: true,
