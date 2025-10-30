@@ -1,5 +1,6 @@
 import {
   type ForwardedRef,
+  type ReactNode,
   type RefObject,
   forwardRef,
   useCallback,
@@ -14,6 +15,7 @@ import {
   ScrollBar,
   Input,
   Form,
+  Spinner,
   useForm,
   formDataResolver,
   formDataSchema as s,
@@ -49,6 +51,7 @@ interface Props {
   variant?: 'default' | 'compact';
   disabled?: boolean;
   loading?: boolean;
+  error?: unknown;
   placeholder?: string;
   results?: SearchResultItem[];
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
@@ -56,7 +59,16 @@ interface Props {
 }
 
 function SearchBox(
-  { variant = 'default', disabled = false, placeholder, results = [], onSearch, onResultSelect }: Props,
+  {
+    variant = 'default',
+    disabled = false,
+    placeholder,
+    loading = false,
+    error,
+    results = [],
+    onSearch,
+    onResultSelect,
+  }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
   const form = useForm<FormData>({
@@ -197,6 +209,53 @@ function SearchBox(
     }
   }, [selectedIndex, scrollToSelectedItem]);
 
+  let resultsNode: ReactNode | null = null;
+
+  if (queryValue.length > 0 && !disabled) {
+    if (loading) {
+      resultsNode = (
+        <div className="flex items-center justify-center border-t p-8">
+          <Spinner size={32} variant="circle" color="rgb(6,108,128)" />
+        </div>
+      );
+    } else if (error) {
+      resultsNode = (
+        <div className="flex flex-col items-center justify-center border-t p-8">
+          <p className="text-muted-foreground font-medium">Something went wrong.</p>
+          <p className="text-sm text-muted-foreground">Please try your search again.</p>
+        </div>
+      );
+    } else if (results.length > 0) {
+      resultsNode = (
+        <div className="flex border-t max-h-[60vh]">
+          {selectedResult && selectedResult.preview && (
+            <div className="flex-1 p-4 overflow-hidden">{selectedResult.preview}</div>
+          )}
+          <ScrollArea className="flex-1/2" ref={scrollAreaRef}>
+            <div className="py-2">
+              {results.map((result, index) => (
+                <div
+                  key={result.id}
+                  ref={(el) => {
+                    resultItemsRef.current[index] = el;
+                  }}
+                  className={`
+                        p-2 cursor-pointer border-l-4
+                        ${index === selectedIndex ? 'bg-accent text-accent-foreground border-blue-500' : 'hover:bg-muted/50 border-transparent'}
+                      `}
+                  onClick={() => onResultSelect?.(result)}
+                >
+                  {result.content}
+                </div>
+              ))}
+            </div>
+            <ScrollBar />
+          </ScrollArea>
+        </div>
+      );
+    }
+  }
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)}>
@@ -310,34 +369,7 @@ function SearchBox(
             )}
           </div>
 
-          {/* Results */}
-          {queryValue.length > 0 && !disabled && results.length > 0 && (
-            <div className="flex border-t max-h-[60vh]">
-              {selectedResult && selectedResult.preview && (
-                <div className="flex-1 p-4 overflow-hidden">{selectedResult.preview}</div>
-              )}
-              <ScrollArea className="flex-1/2" ref={scrollAreaRef}>
-                <div className="py-2">
-                  {results.map((result, index) => (
-                    <div
-                      key={result.id}
-                      ref={(el) => {
-                        resultItemsRef.current[index] = el;
-                      }}
-                      className={`
-                        p-2 cursor-pointer border-l-4
-                        ${index === selectedIndex ? 'bg-accent text-accent-foreground border-blue-500' : 'hover:bg-muted/50 border-transparent'}
-                      `}
-                      onClick={() => onResultSelect?.(result)}
-                    >
-                      {result.content}
-                    </div>
-                  ))}
-                </div>
-                <ScrollBar />
-              </ScrollArea>
-            </div>
-          )}
+          {resultsNode}
         </div>
       </form>
     </Form>
