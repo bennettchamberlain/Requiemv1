@@ -93,7 +93,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const [expandedNodes, setExpandedNodes] = useState<string[]>([]);
   const [spawnLimitInput, setSpawnLimitInput] = useState(String(DEFAULT_SPAWN_LIMIT));
   const [nodeClickCounts, setNodeClickCounts] = useState<Record<string, number>>({});
-  const [anchoringEnabled, setAnchoringEnabled] = useState(true);
+  const [anchoringEnabled, setAnchoringEnabled] = useState(false);
   const [includedEntityTypes, setIncludedEntityTypes] = useState<string[]>([]);
   const [includedRelationshipTypes, setIncludedRelationshipTypes] = useState<string[]>([]);
   const previousVisibleRef = useRef<Set<string>>(new Set());
@@ -127,11 +127,46 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
     }
   }, [spawnLimitInput]);
 
-  const rawNodes = isSearchMode ? searchNodes : (subgraph?.nodes ?? []);
-  const rawLinks = isSearchMode ? searchLinks : (subgraph?.links ?? []);
+  const baseNodes = subgraph?.nodes ?? [];
+  const baseLinks = subgraph?.links ?? [];
+
+  const combinedNodes = useMemo<Array<GraphNode & { score?: number | null }>>(() => {
+    const map = new Map<string, GraphNode & { score?: number | null }>();
+
+    for (const node of baseNodes) {
+      map.set(node.id, node as GraphNode & { score?: number | null });
+    }
+
+    for (const node of searchNodes) {
+      map.set(node.id, node);
+    }
+
+    return Array.from(map.values());
+  }, [baseNodes, searchNodes]);
+
+  const combinedLinks = useMemo<GraphLink[]>(() => {
+    const map = new Map<string, GraphLink>();
+
+    for (const link of baseLinks) {
+      map.set(link.id, link);
+    }
+
+    for (const link of searchLinks) {
+      map.set(link.id, link);
+    }
+
+    return Array.from(map.values());
+  }, [baseLinks, searchLinks]);
+
+  const rawNodes = combinedNodes;
+  const rawLinks = combinedLinks;
   const effectiveUserEntityId = isSearchMode ? null : userEntityId;
   const dataLoading = isSearchMode ? searchLoading : loading;
   const dataError = isSearchMode ? searchError : error;
+
+  const searchSeedIds = useMemo(() => searchNodes.map((node) => node.id), [searchNodes]);
+  const searchSeedKey = useMemo(() => searchSeedIds.join('|'), [searchNodes]);
+  const lastSearchSeedKeyRef = useRef<string>('');
 
   useEffect(() => {
     if (!isSearchMode) {
@@ -139,6 +174,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
       setSearchError(null);
       setSearchLinks([]);
       setSearchLoading(false);
+      lastSearchSeedKeyRef.current = '';
 
       return;
     }
@@ -147,6 +183,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
       setSearchError('Authentication required for graph search.');
       setSearchNodes([]);
       setSearchLinks([]);
+      lastSearchSeedKeyRef.current = '';
 
       return;
     }
@@ -174,8 +211,10 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
         }
 
         const payload = await response.json();
-        const nodesPayload = Array.isArray(payload?.nodes) ? payload.nodes : [];
-        const linksPayload = Array.isArray(payload?.links) ? payload.links : [];
+        const nodesPayload = Array.isArray(payload?.nodes)
+          ? (payload.nodes as GraphSearchResponseNode[])
+          : [];
+        const linksPayload = Array.isArray(payload?.links) ? (payload.links as Partial<GraphLink>[]) : [];
 
         if (cancelled) {
           return;
@@ -209,9 +248,13 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
             ): node is GraphNode & { score?: number | null } => node !== null,
           );
 
-        setSearchNodes(mapped);
+        const limitedNodes = mapped.slice(0, spawnLimit);
+        const allowedIds = new Set(limitedNodes.map((node) => node.id));
+
+        setSearchNodes(limitedNodes);
+
         const mappedLinks: GraphLink[] = linksPayload
-          .map((link: Partial<GraphLink>): GraphLink | null => {
+          .map((link): GraphLink | null => {
             const id =
               typeof link?.id === 'string'
                 ? link.id
@@ -234,7 +277,8 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
               properties: (link?.properties as Record<string, unknown>) ?? {},
             };
           })
-          .filter((link: GraphLink | null): link is GraphLink => link !== null);
+          .filter((link: GraphLink | null): link is GraphLink => link !== null)
+          .filter((link) => allowedIds.has(link.source) && allowedIds.has(link.target));
         setSearchLinks(mappedLinks);
       } catch (err) {
         if (cancelled || controller.signal.aborted) {
@@ -258,7 +302,44 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
       cancelled = true;
       controller.abort();
     };
-  }, [authToken, isSearchMode, trimmedSearchQuery]);
+  }, [authToken, isSearchMode, spawnLimit, trimmedSearchQuery]);
+
+  useEffect(() => {
+    if (!isSearchMode) {
+      lastSearchSeedKeyRef.current = '';
+
+      return;
+    }
+
+    if (searchSeedIds.length === 0) {
+      setExpandedNodes([]);
+      setNodeClickCounts({});
+      setSelectedNodeId(null);
+      lastSearchSeedKeyRef.current = searchSeedKey;
+
+      return;
+    }
+
+    if (lastSearchSeedKeyRef.current === searchSeedKey) {
+      return;
+    }
+
+    lastSearchSeedKeyRef.current = searchSeedKey;
+    const nextCounts: Record<string, number> = {};
+    for (const id of searchSeedIds) {
+      nextCounts[id] = 0;
+    }
+
+    setExpandedNodes(searchSeedIds);
+    setNodeClickCounts(nextCounts);
+    setSelectedNodeId((current) => {
+      if (current && searchSeedIds.includes(current)) {
+        return current;
+      }
+
+      return searchSeedIds[0] ?? null;
+    });
+  }, [isSearchMode, searchSeedKey]);
 
   const availableEntityTypes = useMemo(() => {
     const types = new Set<string>();
@@ -287,7 +368,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   useEffect(() => {
     setIncludedEntityTypes((prev) => {
       if (availableEntityTypes.length === 0) {
-        return [];
+        return prev.length === 0 ? prev : [];
       }
 
       const nextSet = new Set(prev.filter((type) => availableEntityTypes.includes(type)));
@@ -315,7 +396,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   useEffect(() => {
     setIncludedRelationshipTypes((prev) => {
       if (availableRelationshipTypes.length === 0) {
-        return [];
+        return prev.length === 0 ? prev : [];
       }
 
       const nextSet = new Set(prev.filter((type) => availableRelationshipTypes.includes(type)));
@@ -402,6 +483,12 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   );
 
   useEffect(() => {
+    if (isSearchMode) {
+      previousVisibleRef.current = new Set(rawNodes.map((node) => node.id));
+
+      return;
+    }
+
     if (rawNodes.length === 0) {
       setExpandedNodes([]);
       setNodeClickCounts({});
@@ -449,7 +536,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
       return changed ? next : prev;
     });
-  }, [effectiveUserEntityId, expandedNodes, rawNodes]);
+  }, [effectiveUserEntityId, expandedNodes, isSearchMode, rawNodes]);
 
   const visibility = useMemo(() => {
     const set = new Set<string>();

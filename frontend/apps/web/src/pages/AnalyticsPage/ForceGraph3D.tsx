@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 
-import type { LinkObject as ForceGraphLink, NodeObject as ForceGraphNode } from 'force-graph';
-import ForceGraph3D, { type ForceGraphMethods } from 'react-force-graph-3d';
+import type { LinkObject, NodeObject } from 'force-graph';
+import ForceGraph3D from 'react-force-graph-3d';
+import type { ForceGraphMethods } from 'react-force-graph-3d';
 import {
   CanvasTexture,
   Group,
@@ -32,13 +33,29 @@ interface TransformedNode extends GraphNode {
   color: string;
 }
 
-type GraphNodeObject = ForceGraphNode<TransformedNode> &
-  TransformedNode & { id: string; fx?: number; fy?: number; fz?: number };
+type GraphNodeObject = NodeObject &
+  TransformedNode & {
+    id: string;
+    entity_id: string;
+    description: string | null;
+    properties: Record<string, unknown>;
+    x?: number;
+    y?: number;
+    z?: number;
+    vx?: number;
+    vy?: number;
+    vz?: number;
+    fx?: number;
+    fy?: number;
+    fz?: number;
+  };
 
-type GraphLinkObject = ForceGraphLink<
-  GraphNodeObject,
-  { relationship_type: string; relationshipType?: string; strength?: number }
->;
+type GraphLinkObject = LinkObject & {
+  relationship_type: string;
+  relationshipType?: string;
+  strength?: number;
+  properties: Record<string, unknown>;
+};
 
 const TYPE_COLOR_PALETTE = [
   '#38bdf8',
@@ -88,8 +105,8 @@ export function ForceGraph3DView({
   const [containerWidth, setContainerWidth] = useState(0);
   const [activeParticleType, setActiveParticleType] = useState<string | null>(null);
   const previousPositionsRef = useRef<Map<string, { x: number; y: number; z: number }>>(new Map());
-
-  const anchoredSet = useMemo(() => new Set(anchoredNodeIds), [anchoredNodeIds]);
+  const anchoredKey = useMemo(() => anchoredNodeIds.join('|'), [anchoredNodeIds]);
+  const anchoredSet = useMemo(() => new Set(anchoredNodeIds), [anchoredKey]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -112,45 +129,37 @@ export function ForceGraph3DView({
   }, []);
 
   const graphData = useMemo(() => {
-    const transformedNodes = nodes.map((node) => {
+    const transformedNodes: GraphNodeObject[] = nodes.map((node) => {
       const previous = previousPositionsRef.current.get(node.id);
       const isAnchored = anchoredSet.has(node.id) && previous;
-      const baseNode = {
+
+      return {
         ...node,
         name: node.name ?? node.entity_type ?? 'Unknown',
         entityType: node.entity_type,
         color: getTypeColor(node.entity_type),
-      } as GraphNodeObject & { fx?: number; fy?: number; fz?: number };
+        description: node.description,
+        properties: node.properties ?? {},
+        x: previous?.x,
+        y: previous?.y,
+        z: previous?.z,
+        fx: isAnchored && previous ? previous.x : undefined,
+        fy: isAnchored && previous ? previous.y : undefined,
+        fz: isAnchored && previous ? previous.z : undefined,
+      };
+    });
 
-      if (previous) {
-        baseNode.x = previous.x;
-        baseNode.y = previous.y;
-        baseNode.z = previous.z;
-      }
-
-      if (isAnchored && previous) {
-        baseNode.fx = previous.x;
-        baseNode.fy = previous.y;
-        baseNode.fz = previous.z;
-      } else {
-        baseNode.fx = undefined;
-        baseNode.fy = undefined;
-        baseNode.fz = undefined;
-      }
-
-      return baseNode;
-    }) as GraphNodeObject[];
-
-    const transformedLinks = links.map((link) => ({
+    const transformedLinks: GraphLinkObject[] = links.map((link) => ({
       ...link,
       relationshipType: link.relationship_type,
-    })) as GraphLinkObject[];
+      properties: link.properties ?? {},
+    }));
 
     return {
       nodes: transformedNodes,
       links: transformedLinks,
     };
-  }, [nodes, links, anchoredSet]);
+  }, [anchoredSet, links, nodes]);
 
   const entityTypes = useMemo(() => {
     const types = new Set<string>();
@@ -200,11 +209,15 @@ export function ForceGraph3DView({
     graphRef.current.cameraPosition({ x: lookAt.x, y: lookAt.y, z: 300 }, lookAt, 1000);
   }, [centerNodeId, graphData.nodes]);
 
-  const handleNodeClick = (node: GraphNodeObject) => {
-    if (onNodeSelect && node.id) {
-      onNodeSelect(node.id);
-    }
-  };
+  const handleNodeClick = useCallback(
+    (node: NodeObject) => {
+      const typed = node as GraphNodeObject;
+      if (onNodeSelect && typed.id) {
+        onNodeSelect(typed.id);
+      }
+    },
+    [onNodeSelect],
+  );
 
   const createNodeObject = (node: GraphNodeObject) => {
     const isCenter = node.id === centerNodeId;
@@ -332,16 +345,16 @@ export function ForceGraph3DView({
   return (
     <div ref={containerRef} style={{ width: '100%', height: `${height}px`, position: 'relative' }}>
       <ForceGraph3D
-        ref={graphRef}
+        ref={graphRef as unknown as MutableRefObject<ForceGraphMethods>}
         graphData={graphData}
         width={graphWidth}
         height={height}
-        nodeLabel={(node) => {
+        nodeLabel={(node: NodeObject) => {
           const typed = node as GraphNodeObject;
 
           return `${typed.name} (${typed.entityType})`;
         }}
-        nodeThreeObject={(node) => createNodeObject(node as GraphNodeObject)}
+        nodeThreeObject={(node: NodeObject) => createNodeObject(node as GraphNodeObject)}
         nodeThreeObjectExtend
         linkColor={() => 'rgba(255, 255, 255, 0.25)'}
         linkWidth={1}

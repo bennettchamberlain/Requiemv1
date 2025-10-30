@@ -114,6 +114,7 @@ function ForceGraphBase({
   const panStartRef = useRef({ x: 0, y: 0 });
   const translateStartRef = useRef({ x: 0, y: 0 });
   const previousPositionsRef = useRef<Map<string, ForceNode>>(new Map());
+  const anchoredKey = useMemo(() => anchoredNodeIds.join('|'), [anchoredNodeIds]);
 
   const renderLinks = useMemo<SimulationLink[]>(
     () =>
@@ -333,7 +334,7 @@ function ForceGraphBase({
       cancelAnimationFrame(animationFrame);
       previousPositionsRef.current = new Map(nodeCopies.map((node) => [node.id, { ...node }]));
     };
-  }, [nodes, renderLinks, width, height, centerNodeId, anchoredNodeIds]);
+  }, [anchoredKey, centerNodeId, height, nodes, renderLinks, width]);
 
   const clampScale = useCallback((value: number) => Math.min(3, Math.max(0.35, value)), []);
 
