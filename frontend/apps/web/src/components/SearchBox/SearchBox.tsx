@@ -241,8 +241,8 @@ function SearchBox(
           {queryValue.length > 0 && !disabled && results.length > 0 && (
             <div className="flex gap-2 border-t">
               <div className="flex-1 p-2">Preview goes here?</div>
-              <ScrollArea className="flex-1/2">
-                <div className="h-20">
+              <ScrollArea className="flex-1/2 h-48">
+                <div className="py-2">
                   {results.map((result, index) => (
                     <div
                       key={result.id}
