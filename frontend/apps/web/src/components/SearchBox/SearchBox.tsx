@@ -29,7 +29,7 @@ interface Props {
 }
 
 function SearchBox(
-  { disabled = false, loading = false, placeholder, onSearch }: Props,
+  { disabled = false, placeholder, onSearch }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
   const form = useForm<FormData>({
@@ -41,7 +41,7 @@ function SearchBox(
 
   const handleSubmit = useCallback(
     async (data: FormData) => {
-      if (data.query.trim()) {
+      if (data.query.trim() && !disabled) {
         const success = await onSearch?.(data);
 
         if (success === true) {
@@ -49,18 +49,20 @@ function SearchBox(
         }
       }
     },
-    [form, onSearch],
+    [form, onSearch, disabled],
   );
 
   const handleClear = useCallback(() => {
-    form.reset();
-  }, [form]);
+    if (!disabled) {
+      form.reset();
+    }
+  }, [form, disabled]);
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)}>
         <div
-          className="
+          className={`
             w-full
             flex
             flex-col
@@ -81,13 +83,13 @@ function SearchBox(
             dark:aria-[invalid=true]:ring-destructive/40
             aria-[invalid=true]:border-destructive
 
-            disabled:cursor-not-allowed
-            disabled:opacity-50
             transition-[color,box-shadow]
-          "
+
+            ${disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}
+          `}
         >
           <div className="flex items-center justify-center">
-            <div className="p-2">
+            <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
               <Search className="h-4 w-4" />
             </div>
 
@@ -107,7 +109,7 @@ function SearchBox(
                     }
                   }}
                   placeholder={placeholder}
-                  disabled={loading || disabled}
+                  disabled={disabled}
                   className="
                     !w-full
                     !flex-1
@@ -138,7 +140,15 @@ function SearchBox(
             {queryValue.length > 0 && (
               <button
                 type="button"
-                className="p-2 bg-transparent border-0 cursor-pointer flex items-center justify-center"
+                disabled={disabled}
+                className={`
+                  p-2 bg-transparent border-0 flex items-center justify-center
+                  ${
+                    disabled
+                      ? 'cursor-not-allowed text-muted-foreground'
+                      : 'cursor-pointer hover:text-foreground'
+                  }
+                `}
                 onClick={handleClear}
                 onMouseDown={(e) => e.preventDefault()}
               >
@@ -148,7 +158,7 @@ function SearchBox(
           </div>
 
           {/* Results */}
-          {queryValue.length > 0 && (
+          {queryValue.length > 0 && !disabled && (
             <div className="flex gap-2 border-t">
               <div className="flex-1 p-2">Preview goes here?</div>
               <ScrollArea className="flex-1/2">

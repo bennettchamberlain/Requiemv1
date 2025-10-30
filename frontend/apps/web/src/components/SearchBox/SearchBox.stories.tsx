@@ -35,13 +35,21 @@ export const Disabled: Story = {
   args: {
     disabled: true,
   },
+  decorators: [
+    (Story) => (
+      <div className="flex flex-row items-center gap-4 w-full max-w-md">
+        <Input placeholder="Enter text here..." disabled />
+        <Story />
+      </div>
+    ),
+  ],
 };
 
 export const NextToShadCNInput: Story = {
   decorators: [
     (Story) => (
       <div className="flex flex-row items-center gap-4 w-full max-w-md">
-        <Input placeholder="Enter text here..." className="flex-1" />
+        <Input placeholder="Enter text here..." />
         <Story />
       </div>
     ),
