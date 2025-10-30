@@ -135,18 +135,20 @@ function SearchBox(
 
           break;
 
-        case Keys.ARROW_DOWN:
+        case Keys.ARROW_UP:
           if (results.length > 0) {
             e.preventDefault();
-            setSelectedIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
+            setSelectedIndex((prev) =>
+              prev === -1 ? results.length - 1 : (prev - 1 + results.length) % results.length,
+            );
           }
 
           break;
 
-        case Keys.ARROW_UP:
+        case Keys.ARROW_DOWN:
           if (results.length > 0) {
             e.preventDefault();
-            setSelectedIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
+            setSelectedIndex((prev) => (prev === -1 ? 0 : (prev + 1) % results.length));
           }
 
           break;
@@ -298,7 +300,7 @@ function SearchBox(
               {selectedResult && selectedResult.preview && (
                 <div className="flex-1 p-4">{selectedResult.preview}</div>
               )}
-              <ScrollArea className="flex-1/2 h-48" ref={scrollAreaRef}>
+              <ScrollArea className="flex-1/2" ref={scrollAreaRef}>
                 <div className="py-2">
                   {results.map((result, index) => (
                     <div
