@@ -3,6 +3,7 @@ export interface MemoryItem {
   type:
     | 'event'
     | 'content'
+    | 'browser'
     | 'thing'
     | 'person'
     | 'contact'
