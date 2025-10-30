@@ -1,4 +1,12 @@
-import { type ForwardedRef, type RefObject, forwardRef, useCallback, useEffect, useState } from 'react';
+import {
+  type ForwardedRef,
+  type RefObject,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+} from 'react';
 
 import {
   ScrollArea,
@@ -54,6 +62,36 @@ function SearchBox(
 
   const queryValue = form.watch('query');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
+
+  const scrollToSelectedItem = useCallback(() => {
+    if (selectedIndex === -1 || !scrollAreaRef.current) {
+      return;
+    }
+
+    const selectedElement = resultItemsRef.current[selectedIndex];
+    const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+
+    if (!selectedElement || !scrollContainer) {
+      return;
+    }
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const itemRect = selectedElement.getBoundingClientRect();
+    const isItemVisible = itemRect.top >= containerRect.top && itemRect.bottom <= containerRect.bottom;
+
+    if (!isItemVisible) {
+      const containerHeight = containerRect.height;
+      const itemHeight = itemRect.height;
+      const scrollTop = selectedElement.offsetTop - (containerHeight - itemHeight) / 2;
+
+      scrollContainer.scrollTo({
+        top: Math.max(0, scrollTop),
+        behavior: 'instant',
+      });
+    }
+  }, [selectedIndex]);
 
   const handleSubmit = useCallback(
     async (data: FormData) => {
@@ -128,6 +166,7 @@ function SearchBox(
   // Reset selection when results change
   useEffect(() => {
     setSelectedIndex(-1);
+    resultItemsRef.current = [];
   }, [results]);
 
   // Reset selection when query is cleared
@@ -136,6 +175,15 @@ function SearchBox(
       setSelectedIndex(-1);
     }
   }, [queryValue]);
+
+  // Scroll to selected item when selection changes
+  useEffect(() => {
+    if (selectedIndex !== -1) {
+      const frameId = requestAnimationFrame(scrollToSelectedItem);
+
+      return () => cancelAnimationFrame(frameId);
+    }
+  }, [selectedIndex, scrollToSelectedItem]);
 
   return (
     <Form {...form}>
@@ -241,11 +289,14 @@ function SearchBox(
           {queryValue.length > 0 && !disabled && results.length > 0 && (
             <div className="flex gap-2 border-t">
               <div className="flex-1 p-2">Preview goes here?</div>
-              <ScrollArea className="flex-1/2 h-48">
+              <ScrollArea className="flex-1/2 h-48" ref={scrollAreaRef}>
                 <div className="py-2">
                   {results.map((result, index) => (
                     <div
                       key={result.id}
+                      ref={(el) => {
+                        resultItemsRef.current[index] = el;
+                      }}
                       className={`
                         p-2 cursor-pointer
                         ${index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}
