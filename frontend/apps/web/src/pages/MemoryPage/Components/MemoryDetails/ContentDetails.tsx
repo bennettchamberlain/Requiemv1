@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { Label } from '@ci/shadcn/src/components/ui/label';
+import { Label } from '@ci/shadcn';
 
 import { useAuth } from '@/hooks';
 

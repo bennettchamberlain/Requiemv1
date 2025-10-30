@@ -1,4 +1,4 @@
-import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@ci/shadcn/src/components/ui/sheet';
+import { Sheet } from '@ci/shadcn';
 import '../styles.css';
 
 import type { MemoryItem } from '../../types';
@@ -49,12 +49,12 @@ function getCategoryComponent({ memory }: Props) {
 
 export function MemoryDetails({ memory }: Props) {
   return (
-    <SheetContent className="z-index-1000">
-      <SheetHeader>
-        <SheetTitle>{memory.title}</SheetTitle>
-        <SheetDescription>{memory.description}</SheetDescription>
-      </SheetHeader>
+    <Sheet.Content className="z-index-1000">
+      <Sheet.Header>
+        <Sheet.Title>{memory.title}</Sheet.Title>
+        <Sheet.Description>{memory.description}</Sheet.Description>
+      </Sheet.Header>
       {getCategoryComponent({ memory })}
-    </SheetContent>
+    </Sheet.Content>
   );
 }

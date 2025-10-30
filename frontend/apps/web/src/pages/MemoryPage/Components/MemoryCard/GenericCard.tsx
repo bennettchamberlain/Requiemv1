@@ -1,8 +1,7 @@
 import { Card, cn } from '@ci/shadcn';
 
-import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
-
 import type { MemoryItem } from '../../types';
+import { useMemoryService } from '../../useMemoryService';
 
 interface Props {
   memory: MemoryItem;

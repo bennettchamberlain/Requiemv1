@@ -1,9 +1,8 @@
 import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
 
-import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
-
 import type { MemoryItem } from '../../types';
+import { useMemoryService } from '../../useMemoryService';
 import { formatDateTime, formatDuration } from '../utils';
 
 interface Props {

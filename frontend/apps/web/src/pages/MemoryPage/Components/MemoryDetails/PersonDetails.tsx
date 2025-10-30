@@ -1,5 +1,4 @@
-import { Input } from '@ci/shadcn/src/components/ui/input';
-import { Label } from '@ci/shadcn/src/components/ui/label';
+import { Input, Label } from '@ci/shadcn';
 
 import type { MemoryItem } from '../../types';
 

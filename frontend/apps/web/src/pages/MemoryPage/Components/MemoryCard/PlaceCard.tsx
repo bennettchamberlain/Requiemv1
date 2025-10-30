@@ -1,9 +1,8 @@
 import { Card } from '@ci/shadcn';
 import { MapPin } from '@ci/shadcn/icons';
 
-import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
-
 import type { MemoryItem } from '../../types';
+import { useMemoryService } from '../../useMemoryService';
 
 interface Props {
   memory: MemoryItem;

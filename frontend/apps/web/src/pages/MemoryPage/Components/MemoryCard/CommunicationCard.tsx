@@ -1,9 +1,8 @@
 import { Card, Tooltip, cn } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 
-import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
-
 import type { MemoryItem, ParticipantData } from '../../types';
+import { useMemoryService } from '../../useMemoryService';
 
 const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   month: 'short',

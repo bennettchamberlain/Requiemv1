@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 
 import { Portal } from '@ci/common';
-import { Breadcrumb, Tabs, Select, Button } from '@ci/shadcn';
+import { Breadcrumb, Tabs, Select, Button, Sheet } from '@ci/shadcn';
 import { Search, Filter, MapPin, List, Images, X, Workflow, Share2 } from '@ci/shadcn/icons';
-import { Sheet } from '@ci/shadcn/src/components/ui/sheet';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-import { MemoryDetails } from '@/pages/MemoryPage/Components';
 
+import { MemoryDetails } from './Components';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { MobileMapView } from './MapView';

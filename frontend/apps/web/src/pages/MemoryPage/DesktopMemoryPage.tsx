@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 
 import { Portal } from '@ci/common';
-import { Breadcrumb, Tabs, Select } from '@ci/shadcn';
+import { Breadcrumb, Tabs, Select, Sheet } from '@ci/shadcn';
 import { Search, Filter } from '@ci/shadcn/icons';
-import { Sheet } from '@ci/shadcn/src/components/ui/sheet';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
