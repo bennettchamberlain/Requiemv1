@@ -54,6 +54,8 @@ interface Props {
   error?: unknown;
   placeholder?: string;
   results?: SearchResultItem[];
+  autoSubmit?: boolean;
+  autoSubmitDelay?: number;
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
   onResultSelect?: (result: SearchResultItem) => void;
 }
@@ -66,6 +68,8 @@ function SearchBox(
     loading = false,
     error,
     results = [],
+    autoSubmit = false,
+    autoSubmitDelay = 300,
     onSearch,
     onResultSelect,
   }: Props,
@@ -80,6 +84,7 @@ function SearchBox(
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
 
@@ -129,6 +134,11 @@ function SearchBox(
     if (!disabled) {
       form.reset();
       setSelectedIndex(-1);
+
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
     }
   }, [form, disabled]);
 
@@ -186,6 +196,28 @@ function SearchBox(
     },
     [disabled, form, results, selectedIndex, onResultSelect],
   );
+
+  // Auto-submit with debounce
+  useEffect(() => {
+    if (!autoSubmit || !queryValue.trim() || disabled) {
+      return;
+    }
+
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      handleSubmit({ query: queryValue });
+    }, autoSubmitDelay);
+
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+    };
+  }, [queryValue, autoSubmit, autoSubmitDelay, disabled, handleSubmit]);
 
   // Reset selection when results change
   useEffect(() => {

@@ -259,3 +259,18 @@ export const ManyResults: Story = {
     ),
   ],
 };
+
+export const AutoSubmit: Story = {
+  args: {
+    results: sampleResults,
+    autoSubmit: true,
+  },
+  decorators: [
+    (Story) => (
+      <div className="w-180">
+        <Story />
+        <p className="text-xs text-muted-foreground mt-4">Type in search box to see results appear</p>
+      </div>
+    ),
+  ],
+};
