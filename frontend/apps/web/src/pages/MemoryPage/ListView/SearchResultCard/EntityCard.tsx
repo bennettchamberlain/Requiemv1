@@ -11,6 +11,7 @@ import {
   House,
   Film,
   Music,
+  PersonStanding,
   School,
   TreePine,
   BadgeQuestionMark,
@@ -39,7 +40,7 @@ function getEntityTypeIcon(type: string) {
     case 'professional':
       return <BriefcaseBusiness className="h-4 w-4" />;
     case 'activity':
-      return <Soup className="h-4 w-4" />;
+      return <PersonStanding className="h-4 w-4" />;
     case 'residence':
       return <House className="h-4 w-4" />;
     case 'work site':
