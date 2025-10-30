@@ -683,13 +683,7 @@ export class EmbeddingService {
     const results = await this.dataSource.query(sql, params);
 
     return results.map(
-      (row: {
-        type: string;
-        id: string;
-        text: string;
-        distance: string;
-        user_id?: string;
-      }) => ({
+      (row: { type: string; id: string; text: string; distance: string; user_id?: string }) => ({
         type: row.type,
         id: row.id,
         text: row.text,
