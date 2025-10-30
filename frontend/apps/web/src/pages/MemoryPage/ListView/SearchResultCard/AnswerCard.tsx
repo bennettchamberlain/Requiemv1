@@ -1,6 +1,9 @@
+import { useEffect, useState, useCallback } from 'react';
+
 import { Card, Badge } from '@ci/shadcn';
 import { Hash } from '@ci/shadcn/icons';
 
+import { useAuth } from '@/hooks';
 import { formatPath, truncateText } from '@/pages/MemoryPage/ListView/utils.tsx';
 import type { SearchResult } from '@/pages/MemoryPage/types.ts';
 
@@ -9,6 +12,26 @@ export interface Props {
 }
 
 export function AnswerCard({ result }: Props) {
+  const [{ authToken }] = useAuth();
+  const [relatedQuestion, setRelatedQuestion] = useState<{ [key: string]: unknown } | null>(null);
+
+  const hydrateQuestion = useCallback(async () => {
+    const question = await (
+      await fetch(`/api/questions/${result.related_id}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      })
+    ).json();
+    setRelatedQuestion(question);
+  }, [result]);
+
+  useEffect(() => {
+    if (result.related_table === 'questions' && result.related_id != null) {
+      hydrateQuestion();
+    }
+  }, [result]);
+
   return (
     <Card className="group hover:shadow-lg transition-shadow duration-200 overflow-hidden">
       <Card.Header className="space-y-3">
@@ -48,6 +71,15 @@ export function AnswerCard({ result }: Props) {
           </div>
         )}
       </Card.Content>
+
+      {relatedQuestion != null && (
+        <Card.Content>
+          <p className="text-md line-clamp-4">Related Question</p>
+          <p className="text-sm text-muted-foreground line-clamp-4">
+            {truncateText(relatedQuestion.text as string, 200)}
+          </p>
+        </Card.Content>
+      )}
     </Card>
   );
 }

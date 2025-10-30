@@ -37,6 +37,7 @@ export interface MemoryItem {
       direction: 'outgoing' | 'incoming';
     }>;
     properties?: {
+      type?: string;
       [key: string]: unknown;
     };
     [key: string]: unknown;
@@ -80,4 +81,6 @@ export interface SearchResult {
   path: string;
   imageUrl?: string;
   metadata?: Record<string, unknown>;
+  related_id?: string;
+  related_table?: string;
 }

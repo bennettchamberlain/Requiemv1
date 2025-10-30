@@ -34,6 +34,9 @@ const ENTITY_CONFIG: Record<
     textColumn: string;
     embeddingColumn: string;
     userColumn?: string;
+    joinTable?: string;
+    leftJoinColumn?: string;
+    rightJoinColumn?: string;
   }
 > = {
   graph_node: {
@@ -56,6 +59,23 @@ const ENTITY_CONFIG: Record<
     textColumn: 'answer_text',
     embeddingColumn: 'answer_embedding',
     userColumn: 'user_id',
+    joinTable: 'questions',
+    leftJoinColumn: 'question_id',
+    rightJoinColumn: 'question_id',
+  },
+  event: {
+    table: 'events',
+    idColumn: 'event_id',
+    textColumn: 'title',
+    embeddingColumn: 'event_embedding',
+    userColumn: 'user_id',
+  },
+  entity: {
+    table: 'entities',
+    idColumn: 'entity_id',
+    textColumn: 'name',
+    embeddingColumn: 'embedding',
+    userColumn: 'owner_user_id',
   },
 };
 
@@ -298,9 +318,9 @@ export class EmbeddingService {
    */
   async embedAllQuestions(): Promise<number> {
     const questions = await this.dataSource.query(`
-      SELECT question_id, question_text 
-      FROM questions 
-      WHERE question_embedding IS NULL 
+      SELECT question_id, question_text
+      FROM questions
+      WHERE question_embedding IS NULL
       AND question_text IS NOT NULL
     `);
 
@@ -328,9 +348,9 @@ export class EmbeddingService {
    */
   async embedAllAnswers(): Promise<number> {
     const answers = await this.dataSource.query(`
-      SELECT answer_id, answer_text 
-      FROM answers 
-      WHERE answer_embedding IS NULL 
+      SELECT answer_id, answer_text
+      FROM answers
+      WHERE answer_embedding IS NULL
       AND answer_text IS NOT NULL
     `);
 
@@ -358,9 +378,9 @@ export class EmbeddingService {
    */
   async embedAllContent(): Promise<number> {
     const content = await this.dataSource.query(`
-      SELECT id, text 
-      FROM content 
-      WHERE embedding IS NULL 
+      SELECT id, text
+      FROM content
+      WHERE embedding IS NULL
       AND text IS NOT NULL
     `);
 
@@ -388,9 +408,9 @@ export class EmbeddingService {
    */
   async embedAllEntities(): Promise<number> {
     const entities = await this.dataSource.query(`
-      SELECT entity_id, search_content 
-      FROM entities 
-      WHERE embedding IS NULL 
+      SELECT entity_id, search_content
+      FROM entities
+      WHERE embedding IS NULL
       AND search_content IS NOT NULL
     `);
 
@@ -418,9 +438,9 @@ export class EmbeddingService {
    */
   async embedAllInventoryItems(): Promise<number> {
     const inventory = await this.dataSource.query(`
-      SELECT object_id, name, description 
-      FROM inventory 
-      WHERE object_embedding IS NULL 
+      SELECT object_id, name, description
+      FROM inventory
+      WHERE object_embedding IS NULL
       AND (name IS NOT NULL OR description IS NOT NULL)
     `);
 
@@ -448,9 +468,9 @@ export class EmbeddingService {
    */
   async embedAllFacts(): Promise<number> {
     const facts = await this.dataSource.query(`
-      SELECT fact_id, fact_statement 
-      FROM facts 
-      WHERE fact_embedding IS NULL 
+      SELECT fact_id, fact_statement
+      FROM facts
+      WHERE fact_embedding IS NULL
       AND fact_statement IS NOT NULL
     `);
 
@@ -478,8 +498,8 @@ export class EmbeddingService {
    */
   async embedAllDocuments(): Promise<number> {
     const documents = await this.dataSource.query(`
-      SELECT document_id, title, content, summary 
-      FROM documents 
+      SELECT document_id, title, content, summary
+      FROM documents
       WHERE (title_embedding IS NULL OR content_embedding IS NULL OR summary_embedding IS NULL)
       AND (title IS NOT NULL OR content IS NOT NULL OR summary IS NOT NULL)
     `);
@@ -508,9 +528,9 @@ export class EmbeddingService {
    */
   async embedAllDocumentChunks(): Promise<number> {
     const chunks = await this.dataSource.query(`
-      SELECT chunk_id, content 
-      FROM document_chunks 
-      WHERE chunk_embedding IS NULL 
+      SELECT chunk_id, content
+      FROM document_chunks
+      WHERE chunk_embedding IS NULL
       AND content IS NOT NULL
     `);
 
@@ -538,9 +558,9 @@ export class EmbeddingService {
    */
   async embedAllMessages(): Promise<number> {
     const messages = await this.dataSource.query(`
-      SELECT message_id, content 
-      FROM messages 
-      WHERE message_embedding IS NULL 
+      SELECT message_id, content
+      FROM messages
+      WHERE message_embedding IS NULL
       AND content IS NOT NULL
     `);
 
@@ -631,12 +651,18 @@ export class EmbeddingService {
       const config = ENTITY_CONFIG[type];
 
       let selectClause = `
-        SELECT 
+        SELECT
           '${type}' as type,
           ${config.idColumn} as id,
           ${config.textColumn} as text,
           ${config.embeddingColumn} <-> $1 as distance
       `;
+
+      if (config.joinTable && config.leftJoinColumn && config.rightJoinColumn) {
+        selectClause += `, ${config.joinTable}.${config.leftJoinColumn} as related_id, '${config.joinTable}' as related_table`;
+      } else {
+        selectClause += `, null as related_id, null as related_table`;
+      }
 
       if (config.userColumn) {
         selectClause += `, ${config.userColumn} as user_id`;
@@ -645,6 +671,10 @@ export class EmbeddingService {
       }
 
       selectClause += ` FROM ${config.table}`;
+
+      if (config.joinTable && config.leftJoinColumn && config.rightJoinColumn) {
+        selectClause += ` JOIN ${config.joinTable} on ${config.table}.${config.leftJoinColumn} = ${config.joinTable}.${config.rightJoinColumn}`;
+      }
 
       const whereClauses: string[] = [];
       whereClauses.push(`${config.embeddingColumn} IS NOT NULL`);
@@ -669,12 +699,22 @@ export class EmbeddingService {
     const results = await this.dataSource.query(sql, params);
 
     return results.map(
-      (row: { type: string; id: string; text: string; distance: string; user_id?: string }) => ({
+      (row: {
+        type: string;
+        id: string;
+        text: string;
+        distance: string;
+        user_id?: string;
+        related_table: string;
+        related_id: string;
+      }) => ({
         type: row.type,
         id: row.id,
         text: row.text,
         distance: parseFloat(row.distance),
         user_id: row.user_id,
+        related_id: row.related_id,
+        related_table: row.related_table,
       }),
     );
   }
