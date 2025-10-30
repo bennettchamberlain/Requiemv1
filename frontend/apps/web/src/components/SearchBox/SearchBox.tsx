@@ -410,7 +410,7 @@ function SearchBox(
 
             {variant === 'default' && (
               <Button
-                type="button"
+                type="submit"
                 disabled={disabled}
                 size="sm"
                 className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform m-1.5 ml-0"
