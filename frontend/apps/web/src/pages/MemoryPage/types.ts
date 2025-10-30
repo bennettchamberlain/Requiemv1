@@ -81,6 +81,4 @@ export interface SearchResult {
   path: string;
   imageUrl?: string;
   metadata?: Record<string, unknown>;
-  related_id?: string;
-  related_table?: string;
 }

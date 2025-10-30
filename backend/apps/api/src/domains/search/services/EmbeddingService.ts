@@ -34,9 +34,6 @@ const ENTITY_CONFIG: Record<
     textColumn: string;
     embeddingColumn: string;
     userColumn?: string;
-    joinTable?: string;
-    leftJoinColumn?: string;
-    rightJoinColumn?: string;
   }
 > = {
   graph_node: {
@@ -59,9 +56,6 @@ const ENTITY_CONFIG: Record<
     textColumn: 'answer_text',
     embeddingColumn: 'answer_embedding',
     userColumn: 'user_id',
-    joinTable: 'questions',
-    leftJoinColumn: 'question_id',
-    rightJoinColumn: 'question_id',
   },
   event: {
     table: 'events',
@@ -658,12 +652,6 @@ export class EmbeddingService {
           ${config.embeddingColumn} <-> $1 as distance
       `;
 
-      if (config.joinTable && config.leftJoinColumn && config.rightJoinColumn) {
-        selectClause += `, ${config.joinTable}.${config.leftJoinColumn} as related_id, '${config.joinTable}' as related_table`;
-      } else {
-        selectClause += `, null as related_id, null as related_table`;
-      }
-
       if (config.userColumn) {
         selectClause += `, ${config.userColumn} as user_id`;
       } else {
@@ -671,10 +659,6 @@ export class EmbeddingService {
       }
 
       selectClause += ` FROM ${config.table}`;
-
-      if (config.joinTable && config.leftJoinColumn && config.rightJoinColumn) {
-        selectClause += ` JOIN ${config.joinTable} on ${config.table}.${config.leftJoinColumn} = ${config.joinTable}.${config.rightJoinColumn}`;
-      }
 
       const whereClauses: string[] = [];
       whereClauses.push(`${config.embeddingColumn} IS NOT NULL`);
@@ -705,16 +689,12 @@ export class EmbeddingService {
         text: string;
         distance: string;
         user_id?: string;
-        related_table: string;
-        related_id: string;
       }) => ({
         type: row.type,
         id: row.id,
         text: row.text,
         distance: parseFloat(row.distance),
         user_id: row.user_id,
-        related_id: row.related_id,
-        related_table: row.related_table,
       }),
     );
   }

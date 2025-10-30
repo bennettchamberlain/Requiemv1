@@ -13,23 +13,26 @@ export interface Props {
 
 export function AnswerCard({ result }: Props) {
   const [{ authToken }] = useAuth();
-  const [relatedQuestion, setRelatedQuestion] = useState<{ [key: string]: unknown } | null>(null);
 
-  const hydrateQuestion = useCallback(async () => {
-    const question = await (
-      await fetch(`/api/questions/${result.related_id}`, {
+  const [answer, setAnswer] = useState<{
+    [key: string]: unknown;
+    question: { [key: string]: unknown };
+  } | null>(null);
+
+  const hydrateAnswer = useCallback(async () => {
+    console.log('hydrating answer');
+    const answerResult = await (
+      await fetch(`/api/answers/${result.id as string}`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },
       })
     ).json();
-    setRelatedQuestion(question);
+    setAnswer(answerResult);
   }, [result]);
 
   useEffect(() => {
-    if (result.related_table === 'questions' && result.related_id != null) {
-      hydrateQuestion();
-    }
+    hydrateAnswer();
   }, [result]);
 
   return (
@@ -54,29 +57,18 @@ export function AnswerCard({ result }: Props) {
       </Card.Header>
 
       <Card.Content>
-        <p className="text-sm text-muted-foreground line-clamp-4">{truncateText(result.text, 200)}</p>
-
-        {result.metadata && Object.keys(result.metadata).length > 0 && (
-          <div className="mt-4 pt-4 border-t">
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(result.metadata)
-                .slice(0, 3)
-                .map(([key, value]) => (
-                  <div key={key} className="text-xs">
-                    <span className="text-muted-foreground">{key}:</span>{' '}
-                    <span className="font-medium">{String(value)}</span>
-                  </div>
-                ))}
-            </div>
-          </div>
+        {answer?.answer != null && (
+          <p className="text-sm text-muted-foreground line-clamp-4">
+            {truncateText(answer?.answer as string, 200)}
+          </p>
         )}
       </Card.Content>
 
-      {relatedQuestion != null && (
+      {answer?.question?.text != null && (
         <Card.Content>
           <p className="text-md line-clamp-4">Related Question</p>
           <p className="text-sm text-muted-foreground line-clamp-4">
-            {truncateText(relatedQuestion.text as string, 200)}
+            {truncateText(answer.question.text as string, 200)}
           </p>
         </Card.Content>
       )}
