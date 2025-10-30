@@ -80,6 +80,7 @@ const meta: Meta<Props> = {
   },
   args: {
     onSearch: fn(),
+    onResultSelect: fn(),
   },
   decorators: [(Story) => <Story />],
 };

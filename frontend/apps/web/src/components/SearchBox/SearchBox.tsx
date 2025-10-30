@@ -1,4 +1,4 @@
-import { type ForwardedRef, type RefObject, forwardRef, useCallback } from 'react';
+import { type ForwardedRef, type RefObject, forwardRef, useCallback, useEffect, useState } from 'react';
 
 import {
   ScrollArea,
@@ -25,6 +25,8 @@ const EMPTY: FormData = {
 const Keys = {
   ESCAPE: 'Escape',
   ENTER: 'Enter',
+  ARROW_UP: 'ArrowUp',
+  ARROW_DOWN: 'ArrowDown',
 } as const;
 
 interface SearchResultItem {
@@ -38,10 +40,11 @@ interface Props {
   placeholder?: string;
   results?: SearchResultItem[];
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
+  onResultSelect?: (result: SearchResultItem) => void;
 }
 
 function SearchBox(
-  { disabled = false, placeholder, results = [], onSearch }: Props,
+  { disabled = false, placeholder, results = [], onSearch, onResultSelect }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
   const form = useForm<FormData>({
@@ -50,6 +53,7 @@ function SearchBox(
   });
 
   const queryValue = form.watch('query');
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
 
   const handleSubmit = useCallback(
     async (data: FormData) => {
@@ -58,6 +62,7 @@ function SearchBox(
 
         if (success === true) {
           form.reset();
+          setSelectedIndex(-1);
         }
       }
     },
@@ -67,8 +72,70 @@ function SearchBox(
   const handleClear = useCallback(() => {
     if (!disabled) {
       form.reset();
+      setSelectedIndex(-1);
     }
   }, [form, disabled]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (disabled) {
+        return;
+      }
+
+      switch (e.key) {
+        case Keys.ESCAPE:
+          e.preventDefault();
+          form.reset();
+          setSelectedIndex(-1);
+
+          break;
+
+        case Keys.ARROW_DOWN:
+          if (results.length > 0) {
+            e.preventDefault();
+            setSelectedIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
+          }
+
+          break;
+
+        case Keys.ARROW_UP:
+          if (results.length > 0) {
+            e.preventDefault();
+            setSelectedIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
+          }
+
+          break;
+
+        case Keys.ENTER:
+          if (selectedIndex >= 0 && selectedIndex < results.length) {
+            e.preventDefault();
+            onResultSelect?.(results[selectedIndex]);
+          }
+
+          break;
+
+        default:
+          if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
+            setSelectedIndex(-1);
+          }
+
+          break;
+      }
+    },
+    [disabled, form, results, selectedIndex, onResultSelect],
+  );
+
+  // Reset selection when results change
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [results]);
+
+  // Reset selection when query is cleared
+  useEffect(() => {
+    if (!queryValue) {
+      setSelectedIndex(-1);
+    }
+  }, [queryValue]);
 
   return (
     <Form {...form}>
@@ -122,12 +189,7 @@ function SearchBox(
                   }}
                   placeholder={placeholder}
                   disabled={disabled}
-                  onKeyDown={(e) => {
-                    if (e.key === Keys.ESCAPE && !disabled) {
-                      e.preventDefault();
-                      form.reset();
-                    }
-                  }}
+                  onKeyDown={handleKeyDown}
                   className="
                     !w-full
                     !flex-1
@@ -180,9 +242,18 @@ function SearchBox(
             <div className="flex gap-2 border-t">
               <div className="flex-1 p-2">Preview goes here?</div>
               <ScrollArea className="flex-1/2">
-                <div className="h-20 p-2 space-y-2">
-                  {results.map((result) => (
-                    <div key={result.id}>{result.content}</div>
+                <div className="h-20">
+                  {results.map((result, index) => (
+                    <div
+                      key={result.id}
+                      className={`
+                        p-2 cursor-pointer
+                        ${index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/50'}
+                      `}
+                      onClick={() => onResultSelect?.(result)}
+                    >
+                      {result.content}
+                    </div>
                   ))}
                 </div>
                 <ScrollBar />
