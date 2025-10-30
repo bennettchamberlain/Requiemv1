@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import {
+  Button,
   ScrollArea,
   ScrollBar,
   Input,
@@ -16,6 +17,7 @@ import {
   useForm,
   formDataResolver,
   formDataSchema as s,
+  cn,
 } from '@ci/shadcn';
 import { Search, X } from '@ci/shadcn/icons';
 
@@ -44,6 +46,7 @@ interface SearchResultItem {
 }
 
 interface Props {
+  variant?: 'default' | 'compact';
   disabled?: boolean;
   loading?: boolean;
   placeholder?: string;
@@ -53,7 +56,7 @@ interface Props {
 }
 
 function SearchBox(
-  { disabled = false, placeholder, results = [], onSearch, onResultSelect }: Props,
+  { variant = 'default', disabled = false, placeholder, results = [], onSearch, onResultSelect }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
   const form = useForm<FormData>({
@@ -224,10 +227,12 @@ function SearchBox(
             ${disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}
           `}
         >
-          <div className="flex items-center justify-center">
-            <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
-              <Search className="h-4 w-4" />
-            </div>
+          <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-2')}>
+            {variant === 'compact' && (
+              <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
+                <Search className="h-4 w-4" />
+              </div>
+            )}
 
             <Form.Field
               control={form.control}
@@ -291,6 +296,17 @@ function SearchBox(
               >
                 <X className="h-4 w-4" />
               </button>
+            )}
+
+            {variant === 'default' && (
+              <Button
+                type="button"
+                disabled={disabled}
+                size="sm"
+                className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform m-1.5 ml-0"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
             )}
           </div>
 
