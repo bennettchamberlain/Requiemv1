@@ -1,6 +1,5 @@
 import { Card, cn } from '@ci/shadcn';
-import { Globe, Clock, MousePointer, TrendingUp, ExternalLink } from '@ci/shadcn/icons';
-import { useNavigate } from 'react-router-dom';
+import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
 
 import type { MemoryItem } from '../../types';
 
@@ -9,16 +8,6 @@ export interface Props {
 }
 
 export function BrowserActivityCard({ memory }: Props) {
-  const navigate = useNavigate();
-
-  const handleClick = () => {
-    if (memory.sourceLink) {
-      window.open(memory.sourceLink, '_blank', 'noopener,noreferrer');
-    } else {
-      navigate(`/search?q=${encodeURIComponent(memory.title)}`);
-    }
-  };
-
   const actionType = memory.metadata?.actionType as string | undefined;
   const durationSeconds = memory.metadata?.durationSeconds as number | undefined;
   const scrollDepthPercent = memory.metadata?.scrollDepthPercent as number | undefined;
@@ -59,10 +48,7 @@ export function BrowserActivityCard({ memory }: Props) {
   };
 
   return (
-    <Card
-      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={handleClick}
-    >
+    <Card className="!gap-2 !py-4 px-6 hover:shadow-lg transition-shadow duration-200">
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
           <Globe className="h-6 w-6 text-blue-600" />
@@ -70,7 +56,6 @@ export function BrowserActivityCard({ memory }: Props) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-card-foreground truncate">{memory.title}</h3>
-            {url && <ExternalLink className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
           </div>
           <p className="text-sm text-muted-foreground">{memory.category}</p>
         </div>
