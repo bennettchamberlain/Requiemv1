@@ -21,6 +21,12 @@ const EMPTY: FormData = {
   query: '',
 };
 
+// Key constants
+const Keys = {
+  ESCAPE: 'Escape',
+  ENTER: 'Enter',
+} as const;
+
 interface Props {
   disabled?: boolean;
   loading?: boolean;
@@ -110,6 +116,12 @@ function SearchBox(
                   }}
                   placeholder={placeholder}
                   disabled={disabled}
+                  onKeyDown={(e) => {
+                    if (e.key === Keys.ESCAPE && !disabled) {
+                      e.preventDefault();
+                      form.reset();
+                    }
+                  }}
                   className="
                     !w-full
                     !flex-1
