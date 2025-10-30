@@ -85,7 +85,7 @@ function SearchBox(
   const [isAutoSubmitPending, setIsAutoSubmitPending] = useState<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
   const isLoading = loading || isAutoSubmitPending;
