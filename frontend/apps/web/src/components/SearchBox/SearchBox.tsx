@@ -56,6 +56,7 @@ interface Props {
   results?: SearchResultItem[];
   autoSubmit?: boolean;
   autoSubmitDelay?: number;
+  displayResults?: boolean;
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
   onResultSelect?: (result: SearchResultItem) => void;
 }
@@ -70,6 +71,7 @@ function SearchBox(
     results = [],
     autoSubmit = false,
     autoSubmitDelay = 300,
+    displayResults = false,
     onSearch,
     onResultSelect,
   }: Props,
@@ -255,7 +257,7 @@ function SearchBox(
 
   let resultsNode: ReactNode | null = null;
 
-  if (queryValue.length > 0 && !disabled) {
+  if (queryValue.length > 0 && !disabled && displayResults) {
     if (isLoading) {
       resultsNode = (
         <div className="flex items-center justify-center border-t p-8">
