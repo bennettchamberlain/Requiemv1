@@ -1,6 +1,6 @@
-import { GraphTabPanel } from '../Components/GraphExplorerModal';
 import { useMemoryService } from '../useMemoryService';
 
+import { GraphTabPanel } from './GraphExplorerModal';
 export interface GraphViewProps {
   variant?: 'desktop' | 'mobile';
 }

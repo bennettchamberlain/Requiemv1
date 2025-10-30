@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 
-import type { GraphLink, GraphNode } from './use-graph-overview';
+import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 
 type ForceNode = GraphNode & {
   x: number;

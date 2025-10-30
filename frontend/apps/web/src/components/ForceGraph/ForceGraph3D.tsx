@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 
 import type { LinkObject, NodeObject } from 'force-graph';
-import ForceGraph3D from 'react-force-graph-3d';
+import BaseForceGraph3D from 'react-force-graph-3d';
 import type { ForceGraphMethods } from 'react-force-graph-3d';
 import {
   CanvasTexture,
@@ -14,7 +14,7 @@ import {
   SpriteMaterial,
 } from 'three';
 
-import type { GraphLink, GraphNode } from './use-graph-overview';
+import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 
 export interface ForceGraph3DProps {
   nodes: GraphNode[];
@@ -91,7 +91,7 @@ function getTypeColor(entityType: string): string {
   return TYPE_COLOR_PALETTE[index];
 }
 
-export function ForceGraph3DView({
+export function ForceGraph3D({
   nodes,
   links,
   centerNodeId,
@@ -344,7 +344,7 @@ export function ForceGraph3DView({
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: `${height}px`, position: 'relative' }}>
-      <ForceGraph3D
+      <BaseForceGraph3D
         ref={graphRef as unknown as MutableRefObject<ForceGraphMethods>}
         graphData={graphData}
         width={graphWidth}

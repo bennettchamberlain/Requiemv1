@@ -3,10 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Input, Separator, Tabs } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 
+import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
+import { ForceGraph, ForceGraph3D } from '@/components/ForceGraph';
 import { useAuth } from '@/hooks';
-
-import { ForceGraph, ForceGraph3DView, useGraphOverview } from '../../AnalyticsPage';
-import type { GraphNode, GraphLink } from '../../AnalyticsPage/use-graph-overview';
 
 const TYPE_COLOR_PALETTE = [
   '#38bdf8',
@@ -834,7 +833,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
         <Tabs.Content value="3d">
           <div className="h-[520px] rounded-lg border bg-background/90 p-2">
-            <ForceGraph3DView
+            <ForceGraph3D
               nodes={visibleNodes}
               links={visibleLinks}
               centerNodeId={effectiveUserEntityId ?? undefined}
