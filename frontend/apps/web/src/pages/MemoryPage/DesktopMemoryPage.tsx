@@ -18,6 +18,7 @@ const AVAILABLE_ENTITY_TYPES = [
   'Person',
   'Event',
   'Content',
+  'Browser',
   'Thing',
   'Contact',
   'Place',
