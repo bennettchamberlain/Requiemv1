@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 
 import { Portal } from '@ci/common';
-import { Breadcrumb, Tabs, Select, Sheet } from '@ci/shadcn';
-import { Search, Filter } from '@ci/shadcn/icons';
+import { Breadcrumb, Tabs, Sheet } from '@ci/shadcn';
+import { Search } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -32,7 +32,7 @@ const AVAILABLE_ENTITY_TYPES = [
 ];
 
 export default function DesktopMemoryPage() {
-  const { memories, searchQuery, setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
+  const { searchQuery, setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
   const [searchParams, setSearchParams] = useSearchParams();
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -130,87 +130,56 @@ export default function DesktopMemoryPage() {
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
+
       <PageContent>
-        {/* Search Bar and Filters */}
-        <div className="flex items-center w-full -mx-2">
-          {/* Search Bar - Full Width */}
-          <div className="relative flex-grow max-w-2xl pl-0 pr-2">
-            <div className="flex">
-              <div className="relative flex-grow">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                  <Search className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <input
-                  type="search"
-                  className="block w-full p-2 pl-10 text-base border rounded-l-lg bg-background border-input text-foreground placeholder:text-muted-foreground"
-                  placeholder="Search memories..."
-                  value={searchQuery}
-                  onChange={handleSearchInputChange}
-                  onKeyDown={handleKeyPress}
-                />
+        <div className="flex items-center gap-4">
+          <div className="flex flex-1">
+            <div className="relative flex-grow">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <Search className="h-6 w-6 text-muted-foreground" />
               </div>
-              <button
-                className="inline-flex items-center justify-center px-4 py-2 mr-4 text-base font-medium bg-primary text-primary-foreground rounded-r-lg border border-primary hover:bg-primary/90 disabled:opacity-50"
-                onClick={handleSearch}
-              >
-                <Search className="h-6 w-6" />
-                <span className="ml-2">Search</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Spacer */}
-          <div className="flex-grow"></div>
-
-          {/* Filters and View Toggle - Right Aligned */}
-          <div className="flex items-center gap-4 relative z-[100] -mr-2">
-            {/* Results Count */}
-            <div className="text-base text-muted-foreground">
-              {memories.length === 1 ? '1 Result' : `${memories.length} Results`}
-            </div>
-
-            {/* Entity Type Filter */}
-            <div className="flex items-center gap-2 relative z-[100]">
-              <Filter className="h-6 w-6 text-muted-foreground" />
-              <EntityTypeFilter
-                selectedEntityTypes={selectedEntityTypes}
-                onEntityTypesChange={handleEntityTypesChange}
+              <input
+                type="search"
+                className="block w-full p-2 pl-10 text-base border rounded-l-lg bg-background border-input text-foreground placeholder:text-muted-foreground"
+                placeholder="Search memories..."
+                value={searchQuery}
+                onChange={handleSearchInputChange}
+                onKeyDown={handleKeyPress}
               />
             </div>
-
-            {/* Connection Filter - Disabled */}
-            <div className="relative z-[100]">
-              <Select value="all" disabled>
-                <Select.Trigger className="w-40 h-8 text-sm">
-                  <Select.Value placeholder="All Connections" />
-                </Select.Trigger>
-                <Select.Content className="z-[100]">
-                  <Select.Item value="all">All Connections</Select.Item>
-                </Select.Content>
-              </Select>
-            </div>
-
-            {/* View Toggle */}
-            <Tabs defaultValue="map" className="flex-shrink-0" onValueChange={setActiveTab} value={activeTab}>
-              <Tabs.List className="grid grid-cols-4 w-64">
-                <Tabs.Trigger value="map" className="text-sm">
-                  Map
-                </Tabs.Trigger>
-                <Tabs.Trigger value="list" className="text-sm">
-                  List
-                </Tabs.Trigger>
-                <Tabs.Trigger value="gallery" className="text-sm">
-                  Gallery
-                </Tabs.Trigger>
-                <Tabs.Trigger value="graph" className="text-sm">
-                  Graph
-                </Tabs.Trigger>
-              </Tabs.List>
-            </Tabs>
+            <button
+              className="inline-flex items-center justify-center px-4 py-2 text-base font-medium bg-primary text-primary-foreground rounded-r-lg border border-primary hover:bg-primary/90 disabled:opacity-50"
+              onClick={handleSearch}
+            >
+              <Search className="h-6 w-6" />
+              <span className="ml-2">Search</span>
+            </button>
           </div>
+
+          <EntityTypeFilter
+            selectedEntityTypes={selectedEntityTypes}
+            onEntityTypesChange={handleEntityTypesChange}
+          />
+
+          {/* View Toggle */}
+          <Tabs defaultValue="map" onValueChange={setActiveTab} value={activeTab}>
+            <Tabs.List className="grid grid-cols-4 w-64">
+              <Tabs.Trigger value="map" className="text-sm">
+                Map
+              </Tabs.Trigger>
+              <Tabs.Trigger value="list" className="text-sm">
+                List
+              </Tabs.Trigger>
+              <Tabs.Trigger value="gallery" className="text-sm">
+                Gallery
+              </Tabs.Trigger>
+              <Tabs.Trigger value="graph" className="text-sm">
+                Graph
+              </Tabs.Trigger>
+            </Tabs.List>
+          </Tabs>
         </div>
 
-        {/* Error Display */}
         {/* Content */}
         <>
           {activeTab === 'list' && <ListView />}
