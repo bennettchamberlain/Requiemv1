@@ -28,6 +28,7 @@ import { BrowserActivityModule, BrowserActivityEntity } from '@ci/domains/browse
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
+import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule } from '@ci/domains/user';
 
 import { ContentController } from './controllers/ContentController';
@@ -71,6 +72,7 @@ import { MemoryService } from './services/MemoryService';
     UserModule,
     EventsModule,
     GraphModule,
+    EmbeddingModule,
     FilesModule,
     BrowserActivityModule,
   ],

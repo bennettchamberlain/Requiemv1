@@ -10,8 +10,8 @@ import { PageContent } from '@/components/layout';
 import { EntityTypeFilter } from './Components/EntityTypeFilter';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
+import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
-import { TimelineView } from './TimelineView';
 import { useMemoryService } from './useMemoryService';
 
 const AVAILABLE_ENTITY_TYPES = [
@@ -202,13 +202,13 @@ export default function DesktopMemoryPage() {
         {/* Error Display */}
         {/* Content */}
         <>
-          {activeTab === 'list' && <TimelineView />}
+          {activeTab === 'list' && <ListView />}
 
           {activeTab === 'map' && <DesktopMapView />}
 
           {activeTab === 'gallery' && <GalleryView />}
 
-          {activeTab === 'graph' && <GraphView />}
+          {activeTab === 'graph' && <GraphView variant="desktop" />}
         </>
       </PageContent>
     </>

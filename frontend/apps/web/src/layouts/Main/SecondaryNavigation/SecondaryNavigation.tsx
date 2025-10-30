@@ -7,7 +7,6 @@ import {
   Lightbulb,
   ListTodo,
   MessagesSquare,
-  Search,
   Settings2,
   Wrench,
 } from '@ci/shadcn/icons';
@@ -22,11 +21,6 @@ const INTELLIGENCE = [
     name: 'Feed',
     url: '/feed',
     icon: Inbox,
-  },
-  {
-    name: 'Search',
-    url: '/search',
-    icon: Search,
   },
   {
     name: 'Memory',

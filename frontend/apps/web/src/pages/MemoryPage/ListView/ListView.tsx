@@ -1,22 +1,12 @@
 import { useState, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Input, Card, Badge, Table, ToggleGroup } from '@ci/shadcn';
-import {
-  AlertCircle,
-  Search,
-  Loader2,
-  FileText,
-  Image,
-  Database,
-  Hash,
-  Grid3X3,
-  List,
-} from '@ci/shadcn/icons';
-import { useSearchParams } from 'react-router-dom';
+import { Breadcrumb, Card, Badge, Table, ToggleGroup } from '@ci/shadcn';
+import { AlertCircle, Search, FileText, Image, Database, Hash, Grid3X3, List } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
+import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
 
 interface SearchResult {
   text: string;
@@ -132,18 +122,22 @@ function SearchResultCard({ result }: { result: SearchResult }) {
   );
 }
 
-export function DesktopSearchPage() {
+export function ListView() {
   usePageTitle('Search - Companion Intelligence');
   const [{ authToken }] = useAuth();
-  const [searchParams] = useSearchParams();
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const { searchQuery } = useMemoryService();
+
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
-  const [autoSearchTriggered, setAutoSearchTriggered] = useState(false);
+
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      performSearch();
+    }
+  }, [searchQuery]);
 
   const performSearch = async () => {
     if (!searchQuery.trim()) {
@@ -153,7 +147,6 @@ export function DesktopSearchPage() {
     }
 
     try {
-      setLoading(true);
       setError(null);
       setHasSearched(true);
 
@@ -199,37 +192,6 @@ export function DesktopSearchPage() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle query parameter from URL - set the query and mark for auto-search
-  useEffect(() => {
-    const queryParam = searchParams.get('q');
-    if (queryParam && queryParam.trim()) {
-      setSearchQuery(queryParam);
-      setAutoSearchTriggered(false); // Reset to trigger search in next effect
-      setHasSearched(false); // Reset hasSearched
-    }
-  }, [searchParams]);
-
-  // Auto-search when query is set from URL parameter
-  useEffect(() => {
-    if (searchQuery && !autoSearchTriggered && !hasSearched) {
-      // Small delay to ensure state is fully updated
-      const timer = setTimeout(() => {
-        setAutoSearchTriggered(true);
-        performSearch();
-      }, 50);
-
-      return () => clearTimeout(timer);
-    }
-  }, [searchQuery, autoSearchTriggered, hasSearched]);
-
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      performSearch();
     }
   };
 
@@ -250,37 +212,20 @@ export function DesktopSearchPage() {
       </Portal.Slot>
 
       <PageContent>
-        {/* Search Input */}
-        <div className="flex gap-2">
-          <Input
-            type="text"
-            placeholder="Enter your search query..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={handleKeyPress}
-            className="flex-1"
-            disabled={loading}
-          />
-          <Button onClick={performSearch} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            <span className="ml-2">Search</span>
-          </Button>
-
-          {/* Desktop: Toggle and refresh button */}
-          <div className="hidden lg:flex items-center gap-2">
-            <ToggleGroup
-              type="single"
-              value={viewMode}
-              onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
-            >
-              <ToggleGroup.Item value="card" aria-label="Card view">
-                <Grid3X3 className="h-4 w-4" />
-              </ToggleGroup.Item>
-              <ToggleGroup.Item value="table" aria-label="Table view">
-                <List className="h-4 w-4" />
-              </ToggleGroup.Item>
-            </ToggleGroup>
-          </div>
+        {/* Desktop: Toggle and refresh button */}
+        <div className="hidden lg:flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={viewMode}
+            onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
+          >
+            <ToggleGroup.Item value="card" aria-label="Card view">
+              <Grid3X3 className="h-4 w-4" />
+            </ToggleGroup.Item>
+            <ToggleGroup.Item value="table" aria-label="Table view">
+              <List className="h-4 w-4" />
+            </ToggleGroup.Item>
+          </ToggleGroup>
         </div>
 
         {/* Error Display */}
