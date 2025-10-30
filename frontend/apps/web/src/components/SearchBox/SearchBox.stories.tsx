@@ -19,6 +19,17 @@ const sampleResults = [
         <span className="text-muted-foreground">Contact</span>
       </div>
     ),
+    preview: (
+      <div className="space-y-2">
+        <div className="font-medium">John Smith</div>
+        <div className="text-muted-foreground">Software Engineer</div>
+        <div className="text-xs">
+          <div>📧 john.smith@example.com</div>
+          <div>📱 +1 (555) 123-4567</div>
+          <div>🏢 Tech Corp Inc.</div>
+        </div>
+      </div>
+    ),
   },
   {
     id: '2',
@@ -29,6 +40,18 @@ const sampleResults = [
         <span className="text-muted-foreground">Document</span>
       </div>
     ),
+    preview: (
+      <div className="space-y-2">
+        <div className="font-medium">Meeting Notes.pdf</div>
+        <div className="text-muted-foreground">Team Standup - January 15, 2025</div>
+        <div className="text-xs">
+          <div>📄 2.3 MB • Modified 2 hours ago</div>
+          <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
+            "Discussed project timeline, identified blockers in authentication system..."
+          </div>
+        </div>
+      </div>
+    ),
   },
   {
     id: '3',
@@ -37,6 +60,17 @@ const sampleResults = [
         <MapPin className="h-4 w-4 text-red-500" />
         <span className="font-medium">Coffee Shop on Main St</span>
         <span className="text-muted-foreground">Place</span>
+      </div>
+    ),
+    preview: (
+      <div className="space-y-2">
+        <div className="font-medium">The Daily Grind</div>
+        <div className="text-muted-foreground">📍 123 Main Street, Downtown</div>
+        <div className="text-xs">
+          <div>⭐ 4.5/5 • Coffee Shop</div>
+          <div>🕐 Open 6:00 AM - 8:00 PM</div>
+          <div className="mt-2 text-muted-foreground">Last visited: Yesterday at 9:15 AM</div>
+        </div>
       </div>
     ),
   },
@@ -50,6 +84,19 @@ const sampleResults = [
         <span className="text-muted-foreground">(Tomorrow 2:00 PM)</span>
       </div>
     ),
+    preview: (
+      <div className="space-y-2">
+        <div className="font-medium">Weekly Team Standup</div>
+        <div className="text-muted-foreground">📅 Tomorrow at 2:00 PM</div>
+        <div className="text-xs">
+          <div>⏰ 30 minutes • Conference Room A</div>
+          <div>👥 8 attendees</div>
+          <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
+            Agenda: Sprint review, blockers discussion, next week planning
+          </div>
+        </div>
+      </div>
+    ),
   },
   {
     id: '5',
@@ -60,6 +107,18 @@ const sampleResults = [
         <span className="text-muted-foreground">Document</span>
       </div>
     ),
+    preview: (
+      <div className="space-y-2">
+        <div className="font-medium">AI Integration Proposal</div>
+        <div className="text-muted-foreground">Draft document</div>
+        <div className="text-xs">
+          <div>📄 1.8 MB • Last edited 5 minutes ago</div>
+          <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
+            "Executive summary of proposed AI features for Q2 roadmap including LLM integration..."
+          </div>
+        </div>
+      </div>
+    ),
   },
   {
     id: '6',
@@ -68,6 +127,17 @@ const sampleResults = [
         <User className="h-4 w-4 text-blue-500" />
         <span className="font-medium">Sarah Johnson</span>
         <span className="text-muted-foreground">Contact</span>
+      </div>
+    ),
+    preview: (
+      <div className="space-y-2">
+        <div className="font-medium">Sarah Johnson</div>
+        <div className="text-muted-foreground">Product Manager</div>
+        <div className="text-xs">
+          <div>📧 sarah.j@company.com</div>
+          <div>📱 +1 (555) 987-6543</div>
+          <div>🏢 Design Systems Team</div>
+        </div>
       </div>
     ),
   },
@@ -128,12 +198,15 @@ export const SingleResult: Story = {
   },
   decorators: [
     (Story) => (
-      <div className="flex flex-col items-center">
+      <div className="w-180">
         <Story />
         <p className="text-xs text-muted-foreground mt-4">Type in search box to see results appear</p>
       </div>
     ),
   ],
+  parameters: {
+    layout: 'padded',
+  },
 };
 
 export const ManyResults: Story = {
@@ -142,10 +215,13 @@ export const ManyResults: Story = {
   },
   decorators: [
     (Story) => (
-      <div className="flex flex-col items-center">
+      <div className="w-180">
         <Story />
         <p className="text-xs text-muted-foreground mt-4">Type in search box to see results appear</p>
       </div>
     ),
   ],
+  parameters: {
+    layout: 'padded',
+  },
 };

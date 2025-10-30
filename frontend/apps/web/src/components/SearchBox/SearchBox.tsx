@@ -40,6 +40,7 @@ const Keys = {
 interface SearchResultItem {
   id: string;
   content: React.ReactNode;
+  preview?: React.ReactNode;
 }
 
 interface Props {
@@ -64,6 +65,8 @@ function SearchBox(
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
+
+  const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
 
   const scrollToSelectedItem = useCallback(() => {
     if (selectedIndex === -1 || !scrollAreaRef.current) {
@@ -287,8 +290,10 @@ function SearchBox(
 
           {/* Results */}
           {queryValue.length > 0 && !disabled && results.length > 0 && (
-            <div className="flex gap-2 border-t">
-              <div className="flex-1 p-2">Preview goes here?</div>
+            <div className="flex border-t">
+              {selectedResult && selectedResult.preview && (
+                <div className="flex-1 p-4">{selectedResult.preview}</div>
+              )}
               <ScrollArea className="flex-1/2 h-48" ref={scrollAreaRef}>
                 <div className="py-2">
                   {results.map((result, index) => (
