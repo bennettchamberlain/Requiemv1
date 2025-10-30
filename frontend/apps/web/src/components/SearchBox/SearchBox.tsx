@@ -27,15 +27,21 @@ const Keys = {
   ENTER: 'Enter',
 } as const;
 
+interface SearchResultItem {
+  id: string;
+  content: React.ReactNode;
+}
+
 interface Props {
   disabled?: boolean;
   loading?: boolean;
   placeholder?: string;
+  results?: SearchResultItem[];
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
 }
 
 function SearchBox(
-  { disabled = false, placeholder, onSearch }: Props,
+  { disabled = false, placeholder, results = [], onSearch }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
   const form = useForm<FormData>({
@@ -170,16 +176,14 @@ function SearchBox(
           </div>
 
           {/* Results */}
-          {queryValue.length > 0 && !disabled && (
+          {queryValue.length > 0 && !disabled && results.length > 0 && (
             <div className="flex gap-2 border-t">
               <div className="flex-1 p-2">Preview goes here?</div>
               <ScrollArea className="flex-1/2">
-                <div className="h-20 p-2">
-                  <div>Person 1</div>
-                  <div>Thing 1</div>
-                  <div>Person 2</div>
-                  <div>Content 1</div>
-                  <div>Person 3</div>
+                <div className="h-20 p-2 space-y-2">
+                  {results.map((result) => (
+                    <div key={result.id}>{result.content}</div>
+                  ))}
                 </div>
                 <ScrollBar />
               </ScrollArea>
