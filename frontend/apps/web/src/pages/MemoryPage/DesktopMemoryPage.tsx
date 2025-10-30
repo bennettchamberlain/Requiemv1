@@ -207,7 +207,7 @@ export default function DesktopMemoryPage() {
 
           {activeTab === 'gallery' && <GalleryView />}
 
-          {activeTab === 'graph' && <GraphView />}
+          {activeTab === 'graph' && <GraphView variant="desktop" />}
         </>
       </PageContent>
     </>
