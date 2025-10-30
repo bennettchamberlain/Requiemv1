@@ -82,11 +82,13 @@ function SearchBox(
 
   const queryValue = form.watch('query');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const [isAutoSubmitPending, setIsAutoSubmitPending] = useState<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
+  const isLoading = loading || isAutoSubmitPending;
 
   const scrollToSelectedItem = useCallback(() => {
     if (selectedIndex === -1 || !scrollAreaRef.current) {
@@ -139,6 +141,8 @@ function SearchBox(
         clearTimeout(debounceTimeoutRef.current);
         debounceTimeoutRef.current = null;
       }
+
+      setIsAutoSubmitPending(false);
     }
   }, [form, disabled]);
 
@@ -200,6 +204,8 @@ function SearchBox(
   // Auto-submit with debounce
   useEffect(() => {
     if (!autoSubmit || !queryValue.trim() || disabled) {
+      setIsAutoSubmitPending(false);
+
       return;
     }
 
@@ -207,8 +213,11 @@ function SearchBox(
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    debounceTimeoutRef.current = setTimeout(() => {
-      handleSubmit({ query: queryValue });
+    setIsAutoSubmitPending(true);
+
+    debounceTimeoutRef.current = setTimeout(async () => {
+      await handleSubmit({ query: queryValue });
+      setIsAutoSubmitPending(false);
     }, autoSubmitDelay);
 
     return () => {
@@ -216,6 +225,8 @@ function SearchBox(
         clearTimeout(debounceTimeoutRef.current);
         debounceTimeoutRef.current = null;
       }
+
+      setIsAutoSubmitPending(false);
     };
   }, [queryValue, autoSubmit, autoSubmitDelay, disabled, handleSubmit]);
 
@@ -223,6 +234,7 @@ function SearchBox(
   useEffect(() => {
     setSelectedIndex(-1);
     resultItemsRef.current = [];
+    setIsAutoSubmitPending(false);
   }, [results]);
 
   // Reset selection when query is cleared
@@ -244,7 +256,7 @@ function SearchBox(
   let resultsNode: ReactNode | null = null;
 
   if (queryValue.length > 0 && !disabled) {
-    if (loading) {
+    if (isLoading) {
       resultsNode = (
         <div className="flex items-center justify-center border-t p-8">
           <Spinner size={32} variant="circle" color="rgb(6,108,128)" />
