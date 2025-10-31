@@ -124,7 +124,7 @@ export default function DesktopMemoryPage() {
       <PageContent>
         <div className="flex items-center gap-4">
           <div className="flex-1">
-            <SearchBox onSearch={handleSearch} onClear={handleClear} />
+            <SearchBox onSearch={handleSearch} onClear={handleClear} autoSubmit />
           </div>
 
           <EntityTypeFilter
