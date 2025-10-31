@@ -93,6 +93,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const [spawnLimitInput, setSpawnLimitInput] = useState(String(DEFAULT_SPAWN_LIMIT));
   const [nodeClickCounts, setNodeClickCounts] = useState<Record<string, number>>({});
   const [anchoringEnabled, setAnchoringEnabled] = useState(false);
+  const [traversalEnabled, setTraversalEnabled] = useState(false);
   const [includedEntityTypes, setIncludedEntityTypes] = useState<string[]>([]);
   const [includedRelationshipTypes, setIncludedRelationshipTypes] = useState<string[]>([]);
   const previousVisibleRef = useRef<Set<string>>(new Set());
@@ -160,6 +161,9 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const rawNodes = combinedNodes;
   const rawLinks = combinedLinks;
   const effectiveUserEntityId = isSearchMode ? null : userEntityId;
+  const currentCenterNodeId = traversalEnabled
+    ? (selectedNodeId ?? effectiveUserEntityId ?? null)
+    : (effectiveUserEntityId ?? null);
   const dataLoading = isSearchMode ? searchLoading : loading;
   const dataError = isSearchMode ? searchError : error;
 
@@ -832,7 +836,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
             <ForceGraph
               nodes={visibleNodes}
               links={visibleLinks}
-              centerNodeId={effectiveUserEntityId ?? undefined}
+              centerNodeId={currentCenterNodeId ?? undefined}
               highlightedNodeId={selectedNodeId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
@@ -843,7 +847,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
             <ForceGraph3D
               nodes={visibleNodes}
               links={visibleLinks}
-              centerNodeId={effectiveUserEntityId ?? undefined}
+              centerNodeId={currentCenterNodeId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
@@ -921,8 +925,18 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
                 <Anchor className="mr-2 h-4 w-4" />
                 {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={traversalEnabled ? 'default' : 'secondary'}
+                onClick={() => setTraversalEnabled((prev) => !prev)}
+                aria-pressed={traversalEnabled}
+              >
+                Traversal
+              </Button>
               <span className="text-xs text-muted-foreground">
-                Toggle anchoring to keep the current layout steady or let the graph flow freely.
+                Toggle anchoring to keep the current layout steady or let the graph flow freely. Enable
+                traversal to recenter the graph on the node you select.
               </span>
             </div>
             {availableEntityTypes.length > 0 && (
