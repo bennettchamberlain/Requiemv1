@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
 import { ConnectionService, type Connection } from '@ci/domains/connections';
-import { CommunicationService } from '@ci/domains/memory';
+import { EventService, Events } from '@ci/domains/events';
+import { CommunicationEntity, CommunicationService } from '@ci/domains/memory';
 
 interface GmailMessage {
   id?: string;
@@ -44,6 +45,7 @@ export class GmailPromotionService {
   constructor(
     private readonly communicationService: CommunicationService,
     private readonly connectionService: ConnectionService,
+    private readonly eventService: EventService,
   ) {}
 
   async promoteGmailMessages(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -137,6 +139,69 @@ export class GmailPromotionService {
     }
   }
 
+  private async enqueueCommunicationEmbedding(
+    userId: string,
+    communication: CommunicationEntity,
+    searchContent: string | null,
+  ) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.eventService.send(Events.SEARCH_EMBED_COMMUNICATION, {
+        ownerId: userId,
+        communication: {
+          userId,
+          communicationType: communication.communication_type,
+          occurredAt: communication.time.toISOString(),
+          subject: communication.subject,
+          content: searchContent,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue Gmail communication embedding', {
+        userId,
+        occurredAt: communication.time.toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildCommunicationSearchContent(
+    details: ReturnType<GmailPromotionService['extractMessageDetails']>,
+  ): string | null {
+    const parts = new Set<string>();
+
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(details.subject);
+    push(details.snippet);
+    push(details.body);
+
+    for (const participant of details.participants) {
+      push(participant.name);
+      push(participant.email);
+    }
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
+  }
+
   private extractGmailMessages(content: unknown): GmailMessage[] {
     if (!content || typeof content !== 'object') {
       this.logger.warn('Invalid content type for Gmail messages', {
@@ -188,7 +253,8 @@ export class GmailPromotionService {
       const fromParticipants = messageDetails.participants.filter((p) => p.type === 'from');
       const toParticipants = messageDetails.participants.filter((p) => p.type === 'to');
 
-      await this.communicationService.create({
+      const searchContent = this.buildCommunicationSearchContent(messageDetails);
+      const communication = await this.communicationService.create({
         time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
         user_id: userId,
         communication_type: 'email',
@@ -206,6 +272,8 @@ export class GmailPromotionService {
         tags: messageDetails.labels,
         connection_id: connectionId,
       });
+
+      await this.enqueueCommunicationEmbedding(userId, communication, searchContent);
 
       this.logger.log('Gmail message saved successfully', {
         messageId: messageDetails.id,

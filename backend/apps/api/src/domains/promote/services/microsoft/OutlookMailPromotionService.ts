@@ -6,8 +6,9 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
+import { EventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { CommunicationService } from '@ci/domains/memory';
+import { CommunicationEntity, CommunicationService } from '@ci/domains/memory';
 
 import { PersonPromotionService } from '../PersonPromotionService';
 
@@ -84,6 +85,7 @@ export class OutlookMailPromotionService {
     private readonly communicationService: CommunicationService,
     private readonly personPromotionService: PersonPromotionService,
     private readonly connectionService: ConnectionService,
+    private readonly eventService: EventService,
   ) {}
 
   async promoteOutlookMailMessages(
@@ -266,8 +268,10 @@ export class OutlookMailPromotionService {
       toEntityIdsCombined = toEntityIdsCombined.concat(bccEntityIds);
     }
 
+    const searchContent = this.buildCommunicationSearchContent(messageDetails);
+
     // Save to communications table
-    await this.communicationService.create({
+    const communication = await this.communicationService.create({
       time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
       user_id: userId,
       communication_type: 'email',
@@ -286,6 +290,74 @@ export class OutlookMailPromotionService {
       connection_id: connectionId,
       attachments: attachmentUploadIds,
     });
+
+    await this.enqueueCommunicationEmbedding(userId, communication, searchContent);
+  }
+
+  private async enqueueCommunicationEmbedding(
+    userId: string,
+    communication: CommunicationEntity,
+    searchContent: string | null,
+  ) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.eventService.send(Events.SEARCH_EMBED_COMMUNICATION, {
+        ownerId: userId,
+        communication: {
+          userId,
+          communicationType: communication.communication_type,
+          occurredAt: communication.time.toISOString(),
+          subject: communication.subject,
+          content: searchContent,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue Outlook mail embedding', {
+        userId,
+        occurredAt: communication.time.toISOString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildCommunicationSearchContent(details: ExtractedMessage): string | null {
+    const parts = new Set<string>();
+
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(details.subject);
+    push(details.bodyPreview);
+    push(details.body);
+
+    if (details.from) {
+      push(details.from.name);
+      push(details.from.email);
+    }
+
+    for (const participant of details.participants) {
+      push(participant.name);
+      push(participant.email);
+    }
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
   }
 
   private async extractMessageDetails(

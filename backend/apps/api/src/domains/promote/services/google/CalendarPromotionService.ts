@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Point } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
-import { EventService, type CreateEventDto } from '@ci/domains/memory';
+import { EventService as DomainEventService, Events } from '@ci/domains/events';
+import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
 
 import { PersonPromotionService } from '../PersonPromotionService';
 
@@ -71,8 +72,9 @@ export class GoogleCalendarEventPromotionService {
   private readonly googleMapsApiKey = process.env.GOOGLE_MAPS_KEY;
 
   constructor(
-    private readonly eventService: EventService,
+    private readonly eventService: MemoryEventService,
     private readonly personPromotionService: PersonPromotionService,
+    private readonly domainEventService: DomainEventService,
   ) {}
 
   private async geocodeLocation(location: string | null): Promise<Point | null> {
@@ -284,7 +286,10 @@ export class GoogleCalendarEventPromotionService {
 
     // Transform and save event
     const eventDto = await this.transformToEventDto(eventDetails, event, userId, connectionId);
-    await this.eventService.create({ userId }, eventDto);
+    const created = await this.eventService.create({ userId }, eventDto);
+    const createdEvent = Array.isArray(created) ? created[0] : created;
+    const searchContent = this.buildEventSearchContent(eventDetails, eventDto);
+    await this.enqueueEventEmbedding(userId, createdEvent.id, searchContent);
 
     // Process participants
     await this.processParticipants(eventDetails.participants, userId, connectionId);
@@ -382,6 +387,60 @@ export class GoogleCalendarEventPromotionService {
       metadata,
       user: { id: userId },
     };
+  }
+
+  private async enqueueEventEmbedding(ownerId: string, eventId: string, searchContent: string | null) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.domainEventService.send(Events.SEARCH_EMBED_EVENT, {
+        ownerId,
+        eventId,
+        searchContent,
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue calendar event embedding', {
+        ownerId,
+        eventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildEventSearchContent(eventDetails: EventDetails, eventDto: CreateEventDto): string | null {
+    const parts = new Set<string>();
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(eventDetails.summary);
+    push(eventDetails.description);
+    push(eventDetails.location);
+
+    push(eventDto.category);
+    push(eventDto.event_type);
+
+    for (const participant of eventDetails.participants) {
+      push(participant.name);
+      push(participant.email);
+    }
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
   }
 
   private async processParticipants(

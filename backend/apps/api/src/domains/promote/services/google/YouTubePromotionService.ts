@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
+import { EventService, Events } from '@ci/domains/events';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
 
 interface YouTubePlaylistItem {
@@ -48,7 +49,10 @@ interface YouTubePlaylist {
 export class YouTubePromotionService {
   private logger = new LoggerService(YouTubePromotionService.name);
 
-  constructor(private readonly contentService: ContentService) {}
+  constructor(
+    private readonly contentService: ContentService,
+    private readonly eventService: EventService,
+  ) {}
 
   async promoteYouTubeData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting YouTube data promotion', {
@@ -157,10 +161,17 @@ export class YouTubePromotionService {
       external_id: videoId,
       source_url: url,
       source_data: { connectionId },
+      event_id: '',
       user: { id: userId },
     };
 
-    await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
+    const createdContent = await this.contentService.create(
+      { userId },
+      contentDto as unknown as CreateContentDto,
+    );
+    const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
+    const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
+    await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
     this.logger.log('Processed liked YouTube video', {
       videoId,
@@ -202,10 +213,17 @@ export class YouTubePromotionService {
       external_id: playlistId,
       source_url: url,
       source_data: { connectionId },
+      event_id: '',
       user: { id: userId },
     };
 
-    await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
+    const createdContent = await this.contentService.create(
+      { userId },
+      contentDto as unknown as CreateContentDto,
+    );
+    const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
+    const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
+    await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
     this.logger.log('Processed YouTube playlist', {
       playlistId,
@@ -253,10 +271,17 @@ export class YouTubePromotionService {
       external_id: channelId || undefined,
       source_url: url,
       source_data: { connectionId },
+      event_id: '',
       user: { id: userId },
     };
 
-    await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
+    const createdContent = await this.contentService.create(
+      { userId },
+      contentDto as unknown as CreateContentDto,
+    );
+    const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
+    const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
+    await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
     this.logger.log('Processed YouTube subscription', {
       channelId,
@@ -274,6 +299,53 @@ export class YouTubePromotionService {
         });
       }
     }
+  }
+
+  private async enqueueContentEmbedding(ownerId: string, contentId: string, searchContent: string | null) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.eventService.send(Events.SEARCH_EMBED_CONTENT, {
+        ownerId,
+        contentId,
+        text: searchContent,
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue YouTube content embedding', {
+        ownerId,
+        contentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildContentSearchText(contentDto: Partial<CreateContentDto>): string | null {
+    const parts = new Set<string>();
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(contentDto.title ?? null);
+    push((contentDto as { text?: string }).text ?? null);
+    push(contentDto.url ?? null);
+    push(contentDto.type ?? null);
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
   }
 
   private async processActivity(
@@ -307,10 +379,17 @@ export class YouTubePromotionService {
         external_id: videoId,
         source_url: url,
         source_data: { connectionId },
+        event_id: '',
         user: { id: userId },
       };
 
-      await this.contentService.create({ userId }, contentDto as unknown as CreateContentDto);
+      const createdContent = await this.contentService.create(
+        { userId },
+        contentDto as unknown as CreateContentDto,
+      );
+      const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
+      const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
+      await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
       this.logger.log('Processed YouTube upload activity', {
         videoId,
