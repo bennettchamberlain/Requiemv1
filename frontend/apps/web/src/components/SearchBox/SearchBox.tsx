@@ -343,7 +343,7 @@ function SearchBox(
             ${disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}
           `}
         >
-          <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-2')}>
+          <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-3')}>
             {variant === 'compact' && (
               <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
                 <Search className="h-4 w-4" />
