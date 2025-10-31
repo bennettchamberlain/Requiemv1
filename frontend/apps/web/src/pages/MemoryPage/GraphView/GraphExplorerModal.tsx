@@ -97,6 +97,8 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const [includedEntityTypes, setIncludedEntityTypes] = useState<string[]>([]);
   const [includedRelationshipTypes, setIncludedRelationshipTypes] = useState<string[]>([]);
   const previousVisibleRef = useRef<Set<string>>(new Set());
+  const entityTypesKeyRef = useRef<string | null>(null);
+  const relationshipTypesKeyRef = useRef<string | null>(null);
 
   const trimmedSearchQuery = searchQuery?.trim() ?? '';
   const isSearchMode = trimmedSearchQuery.length > 0;
@@ -355,6 +357,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [rawNodes]);
+  const availableEntityTypesKey = useMemo(() => JSON.stringify(availableEntityTypes), [availableEntityTypes]);
 
   const availableRelationshipTypes = useMemo(() => {
     const types = new Set<string>();
@@ -367,8 +370,18 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [rawLinks]);
+  const availableRelationshipTypesKey = useMemo(
+    () => JSON.stringify(availableRelationshipTypes),
+    [availableRelationshipTypes],
+  );
 
   useEffect(() => {
+    if (entityTypesKeyRef.current === availableEntityTypesKey) {
+      return;
+    }
+
+    entityTypesKeyRef.current = availableEntityTypesKey;
+
     setIncludedEntityTypes((prev) => {
       if (availableEntityTypes.length === 0) {
         return prev.length === 0 ? prev : [];
@@ -394,9 +407,15 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
       return next;
     });
-  }, [availableEntityTypes]);
+  }, [availableEntityTypes, availableEntityTypesKey]);
 
   useEffect(() => {
+    if (relationshipTypesKeyRef.current === availableRelationshipTypesKey) {
+      return;
+    }
+
+    relationshipTypesKeyRef.current = availableRelationshipTypesKey;
+
     setIncludedRelationshipTypes((prev) => {
       if (availableRelationshipTypes.length === 0) {
         return prev.length === 0 ? prev : [];
@@ -422,7 +441,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
       return next;
     });
-  }, [availableRelationshipTypes]);
+  }, [availableRelationshipTypes, availableRelationshipTypesKey]);
 
   const adjacencyMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -493,9 +512,9 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
     }
 
     if (rawNodes.length === 0) {
-      setExpandedNodes([]);
-      setNodeClickCounts({});
-      setSelectedNodeId(null);
+      setExpandedNodes((prev) => (prev.length === 0 ? prev : []));
+      setNodeClickCounts((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      setSelectedNodeId((prev) => (prev === null ? prev : null));
 
       return;
     }
@@ -516,7 +535,10 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
       return;
     }
 
-    if (filtered.length !== expandedNodes.length) {
+    if (
+      filtered.length !== expandedNodes.length ||
+      filtered.some((id, index) => id !== expandedNodes[index])
+    ) {
       setExpandedNodes(filtered);
     }
 
