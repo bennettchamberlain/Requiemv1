@@ -56,7 +56,9 @@ interface Props {
   results?: SearchResultItem[];
   autoSubmit?: boolean;
   autoSubmitDelay?: number;
+  displayResults?: boolean;
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
+  onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
 }
 
@@ -70,7 +72,9 @@ function SearchBox(
     results = [],
     autoSubmit = false,
     autoSubmitDelay = 300,
+    displayResults = false,
     onSearch,
+    onClear,
     onResultSelect,
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
@@ -120,7 +124,7 @@ function SearchBox(
 
   const handleSubmit = useCallback(
     async (data: FormData) => {
-      if (data.query.trim() && !disabled) {
+      if (!disabled) {
         const success = await onSearch?.(data);
 
         if (success === true) {
@@ -142,9 +146,11 @@ function SearchBox(
         debounceTimeoutRef.current = null;
       }
 
+      onClear?.();
+
       setIsAutoSubmitPending(false);
     }
-  }, [form, disabled]);
+  }, [form, onClear, disabled]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -159,7 +165,7 @@ function SearchBox(
           if (selectedIndex !== -1) {
             setSelectedIndex(-1);
           } else {
-            form.reset();
+            handleClear();
           }
 
           break;
@@ -198,7 +204,7 @@ function SearchBox(
           break;
       }
     },
-    [disabled, form, results, selectedIndex, onResultSelect],
+    [disabled, form, results, selectedIndex, onResultSelect, handleClear],
   );
 
   // Auto-submit with debounce
@@ -255,7 +261,7 @@ function SearchBox(
 
   let resultsNode: ReactNode | null = null;
 
-  if (queryValue.length > 0 && !disabled) {
+  if (queryValue.length > 0 && !disabled && displayResults) {
     if (isLoading) {
       resultsNode = (
         <div className="flex items-center justify-center border-t p-8">
@@ -337,7 +343,7 @@ function SearchBox(
             ${disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}
           `}
         >
-          <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-2')}>
+          <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-3')}>
             {variant === 'compact' && (
               <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
                 <Search className="h-4 w-4" />
