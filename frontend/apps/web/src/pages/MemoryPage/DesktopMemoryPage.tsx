@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 
 import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Sheet } from '@ci/shadcn';
-import { Search } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { SearchBox } from '@/components/SearchBox';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
 import { EntityTypeFilter } from './Components/EntityTypeFilter';
@@ -32,7 +32,7 @@ const AVAILABLE_ENTITY_TYPES = [
 ];
 
 export default function DesktopMemoryPage() {
-  const { searchQuery, setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
+  const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
   const [searchParams, setSearchParams] = useSearchParams();
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -58,18 +58,32 @@ export default function DesktopMemoryPage() {
     }
   };
 
-  const handleSearch = useCallback(() => {
-    // Update URL with search query while preserving existing parameters
+  const handleSearch = useCallback(
+    (data: { query: string }) => {
+      setSearchQuery(data.query);
+
+      const currentParams = new URLSearchParams(searchParams);
+
+      if (data.query.trim()) {
+        currentParams.set('search', data.query.trim());
+      } else {
+        currentParams.delete('search');
+      }
+
+      setSearchParams(currentParams);
+    },
+    [setSearchQuery, searchParams, setSearchParams],
+  );
+
+  const handleClear = useCallback(() => {
+    setSearchQuery('');
+
     const currentParams = new URLSearchParams(searchParams);
-    if (searchQuery.trim()) {
-      currentParams.set('search', searchQuery.trim());
-    } else {
-      currentParams.delete('search');
-    }
+
+    currentParams.delete('search');
 
     setSearchParams(currentParams);
-    // Search is automatically triggered when searchQuery changes in MemoryProvider
-  }, [searchQuery, searchParams, setSearchParams]);
+  }, [setSearchQuery, searchParams, setSearchParams]);
 
   const handleEntityTypesChange = useCallback(
     (entityTypes: string[]) => {
@@ -91,30 +105,6 @@ export default function DesktopMemoryPage() {
     [searchParams, setSearchParams],
   );
 
-  const handleSearchInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = e.target.value;
-      setSearchQuery(value);
-
-      // Update URL with search query while preserving existing parameters
-      const currentParams = new URLSearchParams(searchParams);
-      if (value.trim()) {
-        currentParams.set('search', value.trim());
-      } else {
-        currentParams.delete('search');
-      }
-
-      setSearchParams(currentParams);
-    },
-    [setSearchQuery, searchParams, setSearchParams],
-  );
-
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
-  };
-
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -133,27 +123,8 @@ export default function DesktopMemoryPage() {
 
       <PageContent>
         <div className="flex items-center gap-4">
-          <div className="flex flex-1">
-            <div className="relative flex-grow">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <Search className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <input
-                type="search"
-                className="block w-full p-2 pl-10 text-base border rounded-l-lg bg-background border-input text-foreground placeholder:text-muted-foreground"
-                placeholder="Search memories..."
-                value={searchQuery}
-                onChange={handleSearchInputChange}
-                onKeyDown={handleKeyPress}
-              />
-            </div>
-            <button
-              className="inline-flex items-center justify-center px-4 py-2 text-base font-medium bg-primary text-primary-foreground rounded-r-lg border border-primary hover:bg-primary/90 disabled:opacity-50"
-              onClick={handleSearch}
-            >
-              <Search className="h-6 w-6" />
-              <span className="ml-2">Search</span>
-            </button>
+          <div className="flex-1">
+            <SearchBox onSearch={handleSearch} onClear={handleClear} />
           </div>
 
           <EntityTypeFilter
@@ -191,6 +162,7 @@ export default function DesktopMemoryPage() {
           {activeTab === 'graph' && <GraphView variant="desktop" />}
         </>
       </PageContent>
+
       {activeMemory && (
         <Sheet open={detailsOpen} onOpenChange={toggleActiveMemory}>
           <MemoryDetails memory={activeMemory} />
