@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge, Button, Input, Separator, Tabs } from '@ci/shadcn';
+import { Badge, Button, Input, Separator } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
@@ -806,18 +806,29 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
         </p>
       </div>
 
-      <Tabs
-        value={viewMode}
-        onValueChange={(value) => setViewMode(value as '2d' | '3d')}
-        className="space-y-4"
-      >
-        <Tabs.List className="grid w-[220px] grid-cols-2">
-          <Tabs.Trigger value="2d">2D View</Tabs.Trigger>
-          <Tabs.Trigger value="3d">3D View</Tabs.Trigger>
-        </Tabs.List>
-
-        <Tabs.Content value="2d">
-          <div className="h-[520px] rounded-lg border bg-background/90 p-2">
+      <div className="relative">
+        <div className="absolute right-6 top-6 z-10 flex items-center gap-2 rounded-md border bg-background/95 p-1 shadow-sm">
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === '2d' ? 'default' : 'secondary'}
+            onClick={() => setViewMode('2d')}
+            aria-pressed={viewMode === '2d'}
+          >
+            2D
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === '3d' ? 'default' : 'secondary'}
+            onClick={() => setViewMode('3d')}
+            aria-pressed={viewMode === '3d'}
+          >
+            3D
+          </Button>
+        </div>
+        <div className="h-[520px] rounded-lg border bg-background/90 p-2">
+          {viewMode === '2d' ? (
             <ForceGraph
               nodes={visibleNodes}
               links={visibleLinks}
@@ -828,11 +839,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
               anchoredNodeIds={anchoredNodeIds}
               height={520}
             />
-          </div>
-        </Tabs.Content>
-
-        <Tabs.Content value="3d">
-          <div className="h-[520px] rounded-lg border bg-background/90 p-2">
+          ) : (
             <ForceGraph3D
               nodes={visibleNodes}
               links={visibleLinks}
@@ -842,9 +849,9 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
               anchoredNodeIds={anchoredNodeIds}
               height={520}
             />
-          </div>
-        </Tabs.Content>
-      </Tabs>
+          )}
+        </div>
+      </div>
 
       <Separator />
 
