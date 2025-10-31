@@ -1,14 +1,13 @@
 import { Table } from '@ci/shadcn';
 import { Search } from '@ci/shadcn/icons';
 
-import { PageContent } from '@/components/layout';
 import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
 
 export function ListView() {
   const { searchQuery, searchResults } = useMemoryService();
 
   return (
-    <PageContent>
+    <div className="pl-2 grid grid-cols-1 gap-1 h-[calc(100vh-150px)] -mx-6 -mb-6">
       {/* Results Display */}
       {searchResults.length > 0 && (
         <>
@@ -62,6 +61,6 @@ export function ListView() {
           <p className="text-sm mt-2">The search uses semantic similarity to find related information</p>
         </div>
       )}
-    </PageContent>
+    </div>
   );
 }
