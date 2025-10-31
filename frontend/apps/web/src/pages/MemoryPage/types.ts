@@ -51,6 +51,7 @@ export interface MemoryItem {
   duration?: number;
   source?: string;
   sourceLink?: string;
+  file?: FileMeta;
 }
 
 export type Relationship = {
