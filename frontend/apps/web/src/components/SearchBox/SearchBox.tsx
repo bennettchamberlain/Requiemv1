@@ -58,6 +58,7 @@ interface Props {
   autoSubmitDelay?: number;
   displayResults?: boolean;
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
+  onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
 }
 
@@ -73,6 +74,7 @@ function SearchBox(
     autoSubmitDelay = 300,
     displayResults = false,
     onSearch,
+    onClear,
     onResultSelect,
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
@@ -144,9 +146,11 @@ function SearchBox(
         debounceTimeoutRef.current = null;
       }
 
+      onClear?.();
+
       setIsAutoSubmitPending(false);
     }
-  }, [form, disabled]);
+  }, [form, onClear, disabled]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -161,7 +165,7 @@ function SearchBox(
           if (selectedIndex !== -1) {
             setSelectedIndex(-1);
           } else {
-            form.reset();
+            handleClear();
           }
 
           break;
@@ -200,7 +204,7 @@ function SearchBox(
           break;
       }
     },
-    [disabled, form, results, selectedIndex, onResultSelect],
+    [disabled, form, results, selectedIndex, onResultSelect, handleClear],
   );
 
   // Auto-submit with debounce
