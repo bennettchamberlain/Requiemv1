@@ -1,88 +1,13 @@
-import { useState, useEffect } from 'react';
-
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Table, ToggleGroup } from '@ci/shadcn';
-import { AlertCircle, Search, Grid3X3, List } from '@ci/shadcn/icons';
+import { Breadcrumb, Table } from '@ci/shadcn';
+import { Search } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
-import { useAuth } from '@/hooks';
-import type { SearchResult } from '@/pages/MemoryPage/types.ts';
 import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
-
-import { SearchResultCard } from './SearchResultCard';
 
 export function ListView() {
   usePageTitle('Search - Companion Intelligence');
-  const [{ authToken }] = useAuth();
-
-  const { searchQuery } = useMemoryService();
-
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
-
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      performSearch();
-    }
-  }, [searchQuery]);
-
-  const performSearch = async () => {
-    if (!searchQuery.trim()) {
-      setError('Please enter a search query');
-
-      return;
-    }
-
-    try {
-      setError(null);
-      setHasSearched(true);
-
-      const response = await fetch(`/api/embeddings/search`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          input: searchQuery,
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Unauthorized: You do not have permission to access this resource');
-        } else if (response.status === 403) {
-          throw new Error('Forbidden: Access denied');
-        } else if (response.status === 404) {
-          throw new Error('API endpoint not found');
-        } else if (response.status >= 500) {
-          throw new Error('Server error: Please try again later');
-        } else {
-          throw new Error(`Error performing search: ${response.statusText}`);
-        }
-      }
-
-      const data = await response.json();
-
-      // Handle both array response and paginated response
-      let resultsData: SearchResult[] = [];
-
-      if (Array.isArray(data)) {
-        resultsData = data;
-      } else if (data.data && Array.isArray(data.data)) {
-        resultsData = data.data;
-      } else {
-        throw new Error('Invalid response format: Expected an array of search results');
-      }
-
-      setSearchResults(resultsData);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError(errorMessage);
-    }
-  };
+  const { searchQuery, searchResults } = useMemoryService();
 
   return (
     <>
@@ -101,35 +26,8 @@ export function ListView() {
       </Portal.Slot>
 
       <PageContent>
-        {/* Desktop: Toggle and refresh button */}
-        <div className="hidden lg:flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            value={viewMode}
-            onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
-          >
-            <ToggleGroup.Item value="card" aria-label="Card view">
-              <Grid3X3 className="h-4 w-4" />
-            </ToggleGroup.Item>
-            <ToggleGroup.Item value="table" aria-label="Table view">
-              <List className="h-4 w-4" />
-            </ToggleGroup.Item>
-          </ToggleGroup>
-        </div>
-
-        {/* Error Display */}
-        {error && (
-          <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-            <div>
-              <h3 className="font-medium">Error performing search</h3>
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
-        )}
-
         {/* Results Display */}
-        {hasSearched && !error && (
+        {searchResults.length > 0 && (
           <>
             <div className="flex items-center justify-between">
               <div>
@@ -145,35 +43,25 @@ export function ListView() {
             </div>
 
             {searchResults.length > 0 ? (
-              <>
-                <div
-                  className={`grid gap-4 md:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
-                >
+              <Table>
+                <Table.Header>
+                  <Table.Row>
+                    <Table.Head>Type</Table.Head>
+                    <Table.Head>Content</Table.Head>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
                   {searchResults.map((result) => (
-                    <SearchResultCard key={result.id} result={result} />
+                    <Table.Row key={result.id}>
+                      <Table.Cell className="capitalize">{result.type.replace('_', ' ')}</Table.Cell>
+                      <Table.Cell className="font-mono text-xs">{result.text}</Table.Cell>
+                    </Table.Row>
                   ))}
-                </div>
-                {viewMode === 'table' && (
-                  <Table>
-                    <Table.Header>
-                      <Table.Row>
-                        <Table.Head>Type</Table.Head>
-                        <Table.Head>Content</Table.Head>
-                      </Table.Row>
-                    </Table.Header>
-                    <Table.Body>
-                      {searchResults.map((result) => (
-                        <Table.Row key={result.id}>
-                          <Table.Cell className="capitalize">{result.type.replace('_', ' ')}</Table.Cell>
-                          <Table.Cell className="font-mono text-xs">{result.text}</Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table>
-                )}
-              </>
+                </Table.Body>
+              </Table>
             ) : (
-              hasSearched && (
+              searchQuery?.length > 0 &&
+              searchResults?.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   <p>No results found for your search query.</p>
                   <p className="text-sm mt-2">Try using different keywords or a more general search term.</p>
@@ -184,7 +72,7 @@ export function ListView() {
         )}
 
         {/* Initial State */}
-        {!hasSearched && !error && (
+        {searchQuery?.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
             <p className="text-lg">Enter a search query to find relevant content</p>
