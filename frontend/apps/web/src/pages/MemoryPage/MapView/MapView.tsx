@@ -308,7 +308,9 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
         mapRef.current = null;
       }
 
-      mapRef.current = L.map(mapContainerRef.current).setView([20, 0], 2);
+      mapRef.current = L.map(mapContainerRef.current, {
+        zoomControl: false, // Disable default zoom control
+      }).setView([20, 0], 2);
 
       L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -318,9 +320,34 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
         },
       ).addTo(mapRef.current);
 
-      if (!mapRef.current.zoomControl) {
-        L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
-      }
+      // Create custom zoom control in top right
+      const zoomControl = L.control.zoom({ position: 'topright' });
+      zoomControl.addTo(mapRef.current);
+
+      // Force position the zoom controls in top right after they're rendered
+      setTimeout(() => {
+        const container = mapRef.current?.getContainer();
+        if (container) {
+          // Find all control containers and ensure top-right one is positioned correctly
+          const topRightControl = container.querySelector('.leaflet-top.leaflet-right');
+          const topLeftControl = container.querySelector('.leaflet-top.leaflet-left');
+
+          if (topRightControl) {
+            const el = topRightControl as HTMLElement;
+            el.style.cssText =
+              'top: 0.5rem !important; right: 0.5rem !important; left: auto !important; bottom: auto !important;';
+          }
+
+          // If controls somehow ended up in top-left, move them
+          if (topLeftControl) {
+            const el = topLeftControl as HTMLElement;
+            const zoomButtons = el.querySelector('.leaflet-control-zoom');
+            if (zoomButtons) {
+              el.style.cssText = 'display: none !important;';
+            }
+          }
+        }
+      }, 200);
 
       smartUpdateMarkers();
 
@@ -372,6 +399,17 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
 
   return (
     <div className={className}>
+      <style>{`
+        .leaflet-top.leaflet-right {
+          top: 0.5rem !important;
+          right: 0.5rem !important;
+          left: auto !important;
+          bottom: auto !important;
+        }
+        .leaflet-top.leaflet-left .leaflet-control-zoom {
+          display: none !important;
+        }
+      `}</style>
       <div
         ref={mapContainerRef}
         className="h-full w-full"
@@ -398,21 +436,6 @@ export function DesktopMapView() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-1 h-[calc(100vh-140px)] -mx-6 -mb-6">
       {/* Timeline - Left Column */}
       <div className="lg:col-span-1 flex flex-col overflow-hidden pl-4 pr-2">
-        <div className="flex justify-between items-center mb-4 flex-shrink-0">
-          <button
-            onClick={() => setShowTimeline(!showTimeline)}
-            className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer ${
-              showTimeline
-                ? 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
-                : 'bg-background text-foreground border-input hover:bg-accent hover:text-accent-foreground'
-            }`}
-            title={showTimeline ? 'Hide Timeline Path' : 'Show Timeline Path'}
-          >
-            <Route className="h-5 w-5" />
-            Timeline
-          </button>
-        </div>
-
         <div className="flex-1 overflow-y-auto overflow-x-hidden pr-1">
           <TimelineView />
         </div>
@@ -421,6 +444,19 @@ export function DesktopMapView() {
       {/* Map - Right Column */}
       <div className="lg:col-span-2 relative h-full">
         <MapView showTimeline={showTimeline} className="h-full" />
+        {/* Timeline button overlaid on map - top left */}
+        <button
+          onClick={() => setShowTimeline(!showTimeline)}
+          className={`absolute top-4 left-4 z-[1000] flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer shadow-lg ${
+            showTimeline
+              ? 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
+              : 'bg-background text-foreground border-input hover:bg-accent hover:text-accent-foreground'
+          }`}
+          title={showTimeline ? 'Hide Timeline Path' : 'Show Timeline Path'}
+        >
+          <Route className="h-5 w-5" />
+          Timeline
+        </button>
       </div>
     </div>
   );
