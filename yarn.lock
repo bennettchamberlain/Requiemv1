@@ -2592,6 +2592,7 @@ __metadata:
     react-dom: "npm:^19.1.0"
     react-dropzone: "npm:^14.3.8"
     react-force-graph-3d: "npm:^1.29.0"
+    react-leaflet: "npm:^5.0.0"
     react-markdown: "npm:^10.1.0"
     react-router-dom: "npm:^7.6.1"
     recharts: "npm:^2.15.3"
@@ -6063,6 +6064,17 @@ __metadata:
   version: 1.1.1
   resolution: "@radix-ui/rect@npm:1.1.1"
   checksum: 10c0/0dac4f0f15691199abe6a0e067821ddd9d0349c0c05f39834e4eafc8403caf724106884035ae91bbc826e10367e6a5672e7bec4d4243860fa7649de246b1f60b
+  languageName: node
+  linkType: hard
+
+"@react-leaflet/core@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "@react-leaflet/core@npm:3.0.0"
+  peerDependencies:
+    leaflet: ^1.9.0
+    react: ^19.0.0
+    react-dom: ^19.0.0
+  checksum: 10c0/1e20f92ea99d378121d7ba57b9571ca3a67a86247729d8cd5726ded26105fcbffbbdf727da34b2ad5976438979819a38c93b94389313abb3ff80ca81632609a6
   languageName: node
   linkType: hard
 
@@ -18078,6 +18090,19 @@ __metadata:
   peerDependencies:
     react: ">=16.13.1"
   checksum: 10c0/27ced6562f684c0776e28b81a292ac3998f4e113eef417e493ee684335a3d9a46d776a408ad388e0c450c9955304e65a1e150305d62a7492e7b06d3019ffb75b
+  languageName: node
+  linkType: hard
+
+"react-leaflet@npm:^5.0.0":
+  version: 5.0.0
+  resolution: "react-leaflet@npm:5.0.0"
+  dependencies:
+    "@react-leaflet/core": "npm:^3.0.0"
+  peerDependencies:
+    leaflet: ^1.9.0
+    react: ^19.0.0
+    react-dom: ^19.0.0
+  checksum: 10c0/f0b6fb797cc2d81bc8cbb54e0cb32aefa689d35ca5f52d203ce3c5a1d14668e51244f10844bd2c88d5cb4aca5eb05bc280794e6d1652727ff9da2358e89d1b86
   languageName: node
   linkType: hard
 

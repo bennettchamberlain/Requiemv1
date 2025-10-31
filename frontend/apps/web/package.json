@@ -30,6 +30,7 @@
     "react-dom": "^19.1.0",
     "react-dropzone": "^14.3.8",
     "react-force-graph-3d": "^1.29.0",
+    "react-leaflet": "^5.0.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.6.1",
     "recharts": "^2.15.3",
