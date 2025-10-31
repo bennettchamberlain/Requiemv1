@@ -54,7 +54,7 @@ export const actionInsightData: FeedItem[] = [
   },
   {
     id: 'smart-followups',
-    title: 'Reflect and Follow-up',
+    title: 'Dive Deeper on Interests',
     description: (
       <div className="flex flex-col gap-3 min-h-64">
         <div className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
@@ -83,7 +83,7 @@ export const actionInsightData: FeedItem[] = [
   },
   {
     id: 'kids-experiences',
-    title: 'Thoughtful for the Kids',
+    title: "Kids' Hobbies",
     description: (
       <div className="flex flex-col gap-3 min-h-64">
         <div className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
