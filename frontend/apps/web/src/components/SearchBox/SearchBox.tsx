@@ -124,7 +124,7 @@ function SearchBox(
 
   const handleSubmit = useCallback(
     async (data: FormData) => {
-      if (data.query.trim() && !disabled) {
+      if (!disabled) {
         const success = await onSearch?.(data);
 
         if (success === true) {
