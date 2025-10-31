@@ -4,6 +4,8 @@ import { type LatLngExpression } from 'leaflet';
 
 import 'leaflet/dist/leaflet.css';
 
+import { Panel } from './Panel';
+
 interface Props {
   center?: LatLngExpression;
   children?: ReactNode;
@@ -26,3 +28,5 @@ export function Map({ center, children }: Props) {
     </div>
   );
 }
+
+Map.Panel = Panel;
