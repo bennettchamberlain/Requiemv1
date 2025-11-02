@@ -164,6 +164,41 @@ export function ConnectPage() {
               text="Link your Quest VR headset to use your camera for XR tracking and more to unlock embodied agentic immersive experiences."
               disabled
             />
+            <Card
+              logo="/branding/ios/logo.svg"
+              background="bg-blue-500"
+              border="border-blue-400"
+              text="Download the iOS app to track your mobile usage, screen time, and app interactions on iPhone and iPad."
+              disabled
+            />
+            <Card
+              logo="/branding/android/logo.svg"
+              background="bg-green-500"
+              border="border-green-400"
+              text="Install the Android app to monitor your device usage, notifications, and mobile activity patterns."
+              disabled
+            />
+            <Card
+              logo="/branding/windows/logo.svg"
+              background="bg-blue-600"
+              border="border-blue-500"
+              text="Get the Windows app to track your desktop activity, application usage, and system interactions."
+              disabled
+            />
+            <Card
+              logo="/branding/mac/logo.svg"
+              background="bg-gray-600"
+              border="border-gray-500"
+              text="Download the macOS app to monitor your Mac usage, workspace activity, and application patterns."
+              disabled
+            />
+            <Card
+              logo="/branding/linux/logo.svg"
+              background="bg-yellow-600"
+              border="border-yellow-500"
+              text="Install the Linux app to track your system usage, command line activity, and development workflows."
+              disabled
+            />
           </div>
         </div>
 
