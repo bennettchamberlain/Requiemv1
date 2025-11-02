@@ -161,7 +161,7 @@ export function ConnectPage() {
               logo="/branding/quest/logo.svg"
               background="bg-gray-800"
               border="border-gray-700"
-              text="Link your Quest VR headset to use your camera XR tracking and more to unlock embodied agentic immersive experiences."
+              text="Link your Quest VR headset to use your camera for XR tracking and more to unlock embodied agentic immersive experiences."
               disabled
             />
           </div>
