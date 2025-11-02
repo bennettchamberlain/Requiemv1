@@ -112,8 +112,69 @@ export function ConnectPage() {
       </Portal.Slot>
 
       <PageContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4 max-w-[1040px] mx-auto">
-          <Card
+        {/* Browser Extensions Section */}
+        <div className="max-w-[1040px] mx-auto mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Browser Extensions</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Install our browser extensions to automatically capture your web activity and browsing patterns.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
+            <Card
+              logo="/branding/chrome/logo.svg"
+              background="bg-blue-500"
+              border="border-blue-400"
+              text="Install the Chrome extension to automatically track your browsing history, bookmarks, and web activity."
+              disabled
+            />
+            <Card
+              logo="/branding/firefox/logo.svg"
+              background="bg-orange-500"
+              border="border-orange-400"
+              text="Get the Firefox extension to capture your web browsing patterns and site interactions."
+              disabled
+            />
+            <Card
+              logo="/branding/safari/logo.svg"
+              background="bg-blue-600"
+              border="border-blue-500"
+              text="Install the Safari extension for seamless web activity tracking on macOS and iOS."
+              disabled
+            />
+          </div>
+        </div>
+
+        {/* Devices Section */}
+        <div className="max-w-[1040px] mx-auto mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Devices</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Connect your smart devices and hardware to track usage patterns and environmental data.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
+            <Card
+              logo="/branding/home-assistant/logo.svg"
+              background="bg-blue-500"
+              border="border-blue-400"
+              text="Connect Home Assistant to track your smart home interactions, automation usage, and device states."
+              disabled
+            />
+            <Card
+              logo="/branding/quest/logo.svg"
+              background="bg-gray-800"
+              border="border-gray-700"
+              text="Link your Quest VR headset to use your camera XR tracking and more to unlock embodied agentic immersive experiences."
+              disabled
+            />
+          </div>
+        </div>
+
+        {/* Service Integrations Section */}
+        <div className="max-w-[1040px] mx-auto">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Service Integrations</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Connect your favorite services to automatically sync your data and activities.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
+            <Card
             logo="/branding/microsoft/logo.svg"
             background="bg-sky-400"
             border="border-sky-300"
@@ -232,6 +293,7 @@ export function ConnectPage() {
             text="Link Dropbox to sync your files, documents, and cloud storage activity. Coming soon."
             disabled
           />
+          </div>
         </div>
       </PageContent>
     </>
