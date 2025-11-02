@@ -183,6 +183,55 @@ export function ConnectPage() {
             text="Connect Spotify to track your music listening habits, playlists, and audio memories. Coming soon."
             disabled
           />
+          <Card
+            logo="/branding/steam/logo.svg"
+            background="bg-slate-700"
+            border="border-slate-600"
+            text="Connect Steam to track your gaming activity, achievements, and game library. Coming soon."
+            disabled
+          />
+          <Card
+            logo="/branding/x/logo.svg"
+            background="bg-black"
+            border="border-gray-600"
+            text="Connect X to track your social interactions, posts, and real-time engagement streams. Coming soon."
+            disabled
+          />
+          <Card
+            logo="/branding/linkedin/logo.svg"
+            background="bg-blue-600"
+            border="border-blue-500"
+            text="Link LinkedIn to track your professional network, career updates, and industry connections. Coming soon."
+            disabled
+          />
+          <Card
+            logo="/branding/notion/logo.svg"
+            background="bg-gray-100"
+            border="border-gray-300"
+            text="Connect Notion to sync your notes, databases, and productivity workflows. Coming soon."
+            disabled
+          />
+          <Card
+            logo="/branding/twitch/logo.svg"
+            background="bg-purple-500"
+            border="border-purple-400"
+            text="Link Twitch to track your streaming activity, follows, and gaming community engagement. Coming soon."
+            disabled
+          />
+          <Card
+            logo="/branding/reddit/logo.svg"
+            background="bg-orange-500"
+            border="border-orange-400"
+            text="Connect Reddit to track your community discussions, posts, and subreddit interactions. Coming soon."
+            disabled
+          />
+          <Card
+            logo="/branding/dropbox/logo.svg"
+            background="bg-blue-500"
+            border="border-blue-400"
+            text="Link Dropbox to sync your files, documents, and cloud storage activity. Coming soon."
+            disabled
+          />
         </div>
       </PageContent>
     </>
