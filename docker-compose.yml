@@ -19,6 +19,19 @@ services:
     restart: unless-stopped
     profiles: [ "all", "infra" ]
 
+  migrations:
+    image: ci/api:latest
+    container_name: migrations
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - web
+    command: ["yarn", "migrate"]
+    restart: "no"
+    profiles: [ "all", "staging" ]
+
   minio:
     image: minio/minio
     container_name: minio
@@ -115,6 +128,9 @@ services:
       - web
     extra_hosts:
       - host.docker.internal:host-gateway
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
     restart: unless-stopped
     profiles: [ "all", "staging" ]
 
