@@ -93,7 +93,7 @@ export function TimelineView() {
 
   if (memories.length === 0 && !loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="flex flex-col items-center justify-center h-full py-12 text-center">
         <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
           <span className="text-2xl">🧠</span>
         </div>
@@ -104,11 +104,7 @@ export function TimelineView() {
   }
 
   return (
-    <div
-      ref={timelineRef}
-      className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-hidden"
-      style={{ height: 'calc(100vh - 200px)' }}
-    >
+    <div ref={timelineRef} className="space-y-6 h-full overflow-y-auto overflow-x-hidden">
       {groupedMemories.map(({ date, memories: dayMemories }) => {
         const isCurrentDay = date === new Date().toISOString().split('T')[0];
         const dateObj = new Date(date);
