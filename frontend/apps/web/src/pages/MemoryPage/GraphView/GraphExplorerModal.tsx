@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge, Button, Input, Separator, Tabs } from '@ci/shadcn';
+import { Badge, Button, Input, Separator } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
@@ -93,9 +93,12 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const [spawnLimitInput, setSpawnLimitInput] = useState(String(DEFAULT_SPAWN_LIMIT));
   const [nodeClickCounts, setNodeClickCounts] = useState<Record<string, number>>({});
   const [anchoringEnabled, setAnchoringEnabled] = useState(false);
+  const [traversalEnabled, setTraversalEnabled] = useState(false);
   const [includedEntityTypes, setIncludedEntityTypes] = useState<string[]>([]);
   const [includedRelationshipTypes, setIncludedRelationshipTypes] = useState<string[]>([]);
   const previousVisibleRef = useRef<Set<string>>(new Set());
+  const entityTypesKeyRef = useRef<string | null>(null);
+  const relationshipTypesKeyRef = useRef<string | null>(null);
 
   const trimmedSearchQuery = searchQuery?.trim() ?? '';
   const isSearchMode = trimmedSearchQuery.length > 0;
@@ -160,6 +163,9 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const rawNodes = combinedNodes;
   const rawLinks = combinedLinks;
   const effectiveUserEntityId = isSearchMode ? null : userEntityId;
+  const currentCenterNodeId = traversalEnabled
+    ? (selectedNodeId ?? effectiveUserEntityId ?? null)
+    : (effectiveUserEntityId ?? null);
   const dataLoading = isSearchMode ? searchLoading : loading;
   const dataError = isSearchMode ? searchError : error;
 
@@ -351,6 +357,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [rawNodes]);
+  const availableEntityTypesKey = useMemo(() => JSON.stringify(availableEntityTypes), [availableEntityTypes]);
 
   const availableRelationshipTypes = useMemo(() => {
     const types = new Set<string>();
@@ -363,8 +370,18 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
     return Array.from(types).sort((a, b) => a.localeCompare(b));
   }, [rawLinks]);
+  const availableRelationshipTypesKey = useMemo(
+    () => JSON.stringify(availableRelationshipTypes),
+    [availableRelationshipTypes],
+  );
 
   useEffect(() => {
+    if (entityTypesKeyRef.current === availableEntityTypesKey) {
+      return;
+    }
+
+    entityTypesKeyRef.current = availableEntityTypesKey;
+
     setIncludedEntityTypes((prev) => {
       if (availableEntityTypes.length === 0) {
         return prev.length === 0 ? prev : [];
@@ -390,9 +407,15 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
       return next;
     });
-  }, [availableEntityTypes]);
+  }, [availableEntityTypes, availableEntityTypesKey]);
 
   useEffect(() => {
+    if (relationshipTypesKeyRef.current === availableRelationshipTypesKey) {
+      return;
+    }
+
+    relationshipTypesKeyRef.current = availableRelationshipTypesKey;
+
     setIncludedRelationshipTypes((prev) => {
       if (availableRelationshipTypes.length === 0) {
         return prev.length === 0 ? prev : [];
@@ -418,7 +441,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
       return next;
     });
-  }, [availableRelationshipTypes]);
+  }, [availableRelationshipTypes, availableRelationshipTypesKey]);
 
   const adjacencyMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -489,9 +512,9 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
     }
 
     if (rawNodes.length === 0) {
-      setExpandedNodes([]);
-      setNodeClickCounts({});
-      setSelectedNodeId(null);
+      setExpandedNodes((prev) => (prev.length === 0 ? prev : []));
+      setNodeClickCounts((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      setSelectedNodeId((prev) => (prev === null ? prev : null));
 
       return;
     }
@@ -512,7 +535,10 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
       return;
     }
 
-    if (filtered.length !== expandedNodes.length) {
+    if (
+      filtered.length !== expandedNodes.length ||
+      filtered.some((id, index) => id !== expandedNodes[index])
+    ) {
       setExpandedNodes(filtered);
     }
 
@@ -806,45 +832,52 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
         </p>
       </div>
 
-      <Tabs
-        value={viewMode}
-        onValueChange={(value) => setViewMode(value as '2d' | '3d')}
-        className="space-y-4"
-      >
-        <Tabs.List className="grid w-[220px] grid-cols-2">
-          <Tabs.Trigger value="2d">2D View</Tabs.Trigger>
-          <Tabs.Trigger value="3d">3D View</Tabs.Trigger>
-        </Tabs.List>
-
-        <Tabs.Content value="2d">
-          <div className="h-[520px] rounded-lg border bg-background/90 p-2">
+      <div className="relative">
+        <div className="absolute right-6 top-6 z-10 flex items-center gap-2 rounded-md border bg-background/95 p-1 shadow-sm">
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === '2d' ? 'default' : 'secondary'}
+            onClick={() => setViewMode('2d')}
+            aria-pressed={viewMode === '2d'}
+          >
+            2D
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === '3d' ? 'default' : 'secondary'}
+            onClick={() => setViewMode('3d')}
+            aria-pressed={viewMode === '3d'}
+          >
+            3D
+          </Button>
+        </div>
+        <div className="h-[520px] rounded-lg border bg-background/90 p-2">
+          {viewMode === '2d' ? (
             <ForceGraph
               nodes={visibleNodes}
               links={visibleLinks}
-              centerNodeId={effectiveUserEntityId ?? undefined}
+              centerNodeId={currentCenterNodeId ?? undefined}
               highlightedNodeId={selectedNodeId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
               height={520}
             />
-          </div>
-        </Tabs.Content>
-
-        <Tabs.Content value="3d">
-          <div className="h-[520px] rounded-lg border bg-background/90 p-2">
+          ) : (
             <ForceGraph3D
               nodes={visibleNodes}
               links={visibleLinks}
-              centerNodeId={effectiveUserEntityId ?? undefined}
+              centerNodeId={currentCenterNodeId ?? undefined}
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
               height={520}
             />
-          </div>
-        </Tabs.Content>
-      </Tabs>
+          )}
+        </div>
+      </div>
 
       <Separator />
 
@@ -914,8 +947,18 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
                 <Anchor className="mr-2 h-4 w-4" />
                 {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={traversalEnabled ? 'default' : 'secondary'}
+                onClick={() => setTraversalEnabled((prev) => !prev)}
+                aria-pressed={traversalEnabled}
+              >
+                Traversal
+              </Button>
               <span className="text-xs text-muted-foreground">
-                Toggle anchoring to keep the current layout steady or let the graph flow freely.
+                Toggle anchoring to keep the current layout steady or let the graph flow freely. Enable
+                traversal to recenter the graph on the node you select.
               </span>
             </div>
             {availableEntityTypes.length > 0 && (

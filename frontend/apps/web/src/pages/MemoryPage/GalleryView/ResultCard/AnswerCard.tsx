@@ -20,7 +20,6 @@ export function AnswerCard({ result }: Props) {
   } | null>(null);
 
   const hydrateAnswer = useCallback(async () => {
-    console.log('hydrating answer');
     const answerResult = await (
       await fetch(`/api/answers/${result.id as string}`, {
         headers: {

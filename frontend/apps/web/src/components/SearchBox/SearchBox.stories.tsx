@@ -149,7 +149,9 @@ const meta: Meta<Props> = {
     layout: 'padded',
   },
   args: {
+    displayResults: true,
     onSearch: fn(),
+    onClear: fn(),
     onResultSelect: fn(),
   },
   decorators: [(Story) => <Story />],
