@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, MoreThan, Not, Repository } from 'typeorm';
+import { Brackets, IsNull, MoreThan, Not, Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
@@ -37,7 +37,14 @@ export class PromoteService {
         .andWhere('apiLog.connection_id IS NOT NULL')
         .andWhere('connection.active = true')
         .andWhere('connection.access_token IS NOT NULL')
-        .andWhere('connection.token_expiry > :currentDate', { currentDate: new Date() })
+        .andWhere(
+          new Brackets((qb) => {
+            qb.where('connection.token_expiry > :currentDate', { currentDate: new Date() }).orWhere(
+              'connection.refresh_token IS NOT NULL',
+              { currentDate: new Date() },
+            );
+          }),
+        )
         .orderBy('apiLog.created_at', 'ASC')
         .getMany();
 
@@ -100,12 +107,21 @@ export class PromoteService {
       }
 
       const connection = await this.connectionRepository.findOne({
-        where: {
-          id: apiLog.connection_id,
-          active: true,
-          accessToken: Not(IsNull()),
-          tokenExpiry: MoreThan(new Date()),
-        },
+        where: [
+          {
+            id: apiLog.connection_id,
+            active: true,
+            accessToken: Not(IsNull()),
+            refreshToken: IsNull(), // No refresh token
+            tokenExpiry: MoreThan(new Date()),
+          },
+          {
+            id: apiLog.connection_id,
+            active: true,
+            accessToken: Not(IsNull()),
+            refreshToken: Not(IsNull()), // No refresh token
+          },
+        ],
       });
 
       if (!connection) {
