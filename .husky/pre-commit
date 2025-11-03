@@ -1,1 +1,19 @@
-yarn lint-staged
+#!/usr/bin/env sh
+
+# Source NVM if it exists
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# Add common paths where yarn might be installed
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+# Try to find yarn in common locations
+if command -v yarn >/dev/null 2>&1; then
+    yarn lint-staged
+elif command -v npx >/dev/null 2>&1; then
+    npx yarn lint-staged
+else
+    echo "Error: yarn not found in PATH"
+    echo "Available PATH: $PATH"
+    exit 1
+fi
