@@ -216,8 +216,16 @@ install: ## Install project dependencies
 
 local: ## Run the local dependencies from Docker images
 	@printf "⌨️ Starting the local services...\n\n"
+
+	@printf "Stopping any local profile services...\n\n"
 	@docker compose --profile staging down
+
+	@printf "\nStopping any prior local profile services...\n\n"
+	@docker compose --profile local down
+
+	@printf "\nStarting a new local deployment cluster...\n\n"
 	@docker compose --profile local up -d
+
 	@printf "\nLocal services successfully started.\n"
 
 migrate: ## Run database migrations
