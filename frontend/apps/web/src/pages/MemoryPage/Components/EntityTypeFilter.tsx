@@ -123,7 +123,7 @@ export function EntityTypeFilter({ selectedEntityTypes, onEntityTypesChange }: E
       <button
         ref={buttonRef}
         onClick={handleButtonClick}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground min-w-[160px] justify-between"
+        className="flex items-center gap-2 px-3 py-3 text-sm rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground min-w-[160px] justify-between"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label="Select entity types to filter"
