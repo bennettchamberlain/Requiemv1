@@ -39,21 +39,26 @@ help: ## List make commands with their descriptions
 build: mcp ## Build the application
 	@printf "🧱 Building the application...\n\n"
 
-	@printf "Compiling API...\n\n"
+	@printf "Building PostgreSQL image...\n\n"
+	@docker compose build postgres
+
+	@printf "\nBuilding Speech-to-text service image...\n\n"
+	@docker compose build stt-service
+
+	@printf "\nBuilding Text-to-speech service image...\n\n"
+	@docker compose build tts-service
+
+	@printf "\nCompiling API...\n\n"
 	@cd backend/apps/api && yarn clean && yarn build
-	@printf "\nAPI successfully compiled.\n"
+
+	@printf "\nBuilding API image...\n\n"
+	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
 
 	@printf "\nCompiling web frontend...\n\n"
 	@cd frontend/apps/web && yarn clean && yarn build
-	@printf "\nWeb frontend successfully compiled.\n"
 
-	@printf "\nBuilding API Docker image...\n\n"
-	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
-	@printf "\nAPI Docker image successfully built.\n"
-
-	@printf "\nBuilding webserver Docker image...\n\n"
+	@printf "\nBuilding webserver image...\n\n"
 	@docker build -f docker/webserver/Dockerfile -t $(WEBSERVER_REPO):latest .
-	@printf "\nWebserver Docker image successfully built.\n"
 
 	@printf "\nApplication successfully built.\n"
 
