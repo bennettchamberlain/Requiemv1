@@ -248,8 +248,8 @@ const ToolCard = ({
           <h4 className="text-sm font-medium mb-2">Capabilities:</h4>
           <ul className="space-y-1">
             {tool.capabilities.map((capability, index) => (
-              <li key={index} className="text-xs text-muted-foreground flex items-start gap-2">
-                <span className="text-primary mt-1">•</span>
+              <li key={index} className="text-sm text-muted-foreground flex items-baseline gap-2">
+                <span className="text-primary">•</span>
                 <span>{capability}</span>
               </li>
             ))}
