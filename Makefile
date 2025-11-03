@@ -80,15 +80,9 @@ dbdestroy: ## Clear the PostgreSQL database and start from scratch
 deploy: ## Deploy the application (staging)
 	$(MAKE) init
 	@printf "\n"
-	$(MAKE) infra
-	@printf "\n"
-	$(MAKE) migrate
-	@printf "\n"
-	$(MAKE) seed
-	@printf "\n"
-	$(MAKE) index
-	@printf "\n"
 	$(MAKE) build
+	@printf "\n"
+	$(MAKE) infra
 	@printf "\n"
 	$(MAKE) staging
 
