@@ -6,7 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { RequestContext } from '@ci/common/types';
 
 import { EventEntity } from '../entities/EventEntity';
-import { CreateEventDto, UpdateEventDto, Event } from '../types';
+import { CreateEventDto, UpdateEventDto, Event, SearchEventDto } from '../types';
 
 @Injectable()
 export class EventService {
@@ -67,5 +67,16 @@ export class EventService {
 
   remove(id: string): Promise<DeleteResult> {
     return this.eventRepository.delete(id);
+  }
+
+  async search(context: RequestContext, query: SearchEventDto): Promise<EventEntity[]> {
+    return this.eventRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+        ...query,
+      },
+    });
   }
 }

@@ -222,20 +222,31 @@ export class OutlookCalendarPromotionService {
 
     await Promise.all(
       (eventDetails.attachments || []).map(async (attachment) => {
-        const file = {
-          fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
-          originalname: attachment.name,
-          mimetype: attachment.contentType,
+        const fileSearch = {
+          content_type: attachment.contentType,
           size: attachment.size,
-          encoding: 'base64',
-          destination: '',
-          stream: '' as unknown as Readable,
           filename: attachment.name,
-          path: '',
-          buffer: attachment.contentBytes ? Buffer.from(attachment.contentBytes, 'base64') : Buffer.from(''),
         };
+        const existingFile = await this.fileService.search({ userId }, fileSearch);
+        if (existingFile.length === 0) {
+          console.log('Creating file for calendar event that does not exist');
+          const file = {
+            fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
+            originalname: attachment.name,
+            mimetype: attachment.contentType,
+            size: attachment.size,
+            encoding: 'base64',
+            destination: '',
+            stream: '' as unknown as Readable,
+            filename: attachment.name,
+            path: '',
+            buffer: attachment.contentBytes
+              ? Buffer.from(attachment.contentBytes, 'base64')
+              : Buffer.from(''),
+          };
 
-        return this.fileService.upload({ userId }, file);
+          return this.fileService.upload({ userId }, file);
+        }
       }),
     );
 

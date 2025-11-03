@@ -6,6 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { LoggerService } from '@ci/common/services';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
+import { FileService } from '@ci/domains/files';
 import { EventService, type CreateEventDto, MemoryService } from '@ci/domains/memory';
 
 import { PersonPromotionService } from '../PersonPromotionService';
@@ -36,6 +37,7 @@ export class OneDrivePromotionService {
     private readonly eventService: EventService,
     private readonly personPromotionService: PersonPromotionService,
     private readonly connectionService: ConnectionService,
+    private readonly fileService: FileService,
   ) {}
 
   async promoteOneDriveFiles(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -147,28 +149,52 @@ export class OneDrivePromotionService {
         buffer: fileDetails.content.raw ? fileDetails.content.raw : Buffer.from(''),
       };
 
-      await this.memoryService.createFile(file);
+      const existingFiles = await this.fileService.search(
+        { userId },
+        {
+          content_type: fileDetails.content.file?.mimeType,
+          size: fileDetails.content.size,
+          filename: fileDetails.content.name,
+        },
+      );
+
+      if (existingFiles.length === 0) {
+        await this.memoryService.createFile(file);
+      }
     }
 
-    const newEvent = {
-      id: uuidv7(),
+    const eventSearch = {
       start_time: new Date(fileDetails.startTime),
       title: 'Edited ' + fileDetails.content?.name,
-      user: {
-        id: userId,
-      },
       category: 'document_edit',
       source_system: 'Microsoft OneDrive',
       event_type: 'work',
       source_type: 'ETL',
-      participant_entity_ids: participantEntityIds,
-      metadata: {
-        connection_id: connectionId,
-      },
-    } as CreateEventDto;
+    };
 
-    // Save to events table
-    await this.eventService.create({ userId }, newEvent);
+    const existingEvents = await this.eventService.search({ userId }, eventSearch);
+
+    if (existingEvents.length === 0) {
+      const newEvent = {
+        id: uuidv7(),
+        start_time: new Date(fileDetails.startTime),
+        title: 'Edited ' + fileDetails.content?.name,
+        user: {
+          id: userId,
+        },
+        category: 'document_edit',
+        source_system: 'Microsoft OneDrive',
+        event_type: 'work',
+        source_type: 'ETL',
+        participant_entity_ids: participantEntityIds,
+        metadata: {
+          connection_id: connectionId,
+        },
+      } as CreateEventDto;
+
+      // Save to events table
+      await this.eventService.create({ userId }, newEvent);
+    }
   }
 
   private async extractFileDetails(file: OneDrivePageEntity): Promise<ExtractedFile> {

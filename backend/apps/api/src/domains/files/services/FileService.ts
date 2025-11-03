@@ -17,7 +17,7 @@ import config from '@ci/configuration';
 import { EventService, Events } from '@ci/domains/events';
 
 import { FileEntity } from '../entities/FileEntity';
-import type { File } from '../types';
+import type { File, FileQuery } from '../types';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -315,6 +315,17 @@ export class FileService implements OnModuleInit {
     this.logger.debug('Upserted external file', { id: saved.id, userId, externalId: input.externalId });
 
     return this.signFile(saved);
+  }
+
+  async search(context: RequestContext, query: FileQuery): Promise<FileEntity[]> {
+    return this.fileRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+        ...query,
+      },
+    });
   }
 
   private async signFiles(files: FileEntity[]): Promise<File[]> {
