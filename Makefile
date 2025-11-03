@@ -39,21 +39,26 @@ help: ## List make commands with their descriptions
 build: mcp ## Build the application
 	@printf "🧱 Building the application...\n\n"
 
-	@printf "Compiling API...\n\n"
+	@printf "Building PostgreSQL image...\n\n"
+	@docker compose build postgres
+
+	@printf "\nBuilding Speech-to-text service image...\n\n"
+	@docker compose build stt-service
+
+	@printf "\nBuilding Text-to-speech service image...\n\n"
+	@docker compose build tts-service
+
+	@printf "\nCompiling API...\n\n"
 	@cd backend/apps/api && yarn clean && yarn build
-	@printf "\nAPI successfully compiled.\n"
+
+	@printf "\nBuilding API image...\n\n"
+	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
 
 	@printf "\nCompiling web frontend...\n\n"
 	@cd frontend/apps/web && yarn clean && yarn build
-	@printf "\nWeb frontend successfully compiled.\n"
 
-	@printf "\nBuilding API Docker image...\n\n"
-	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
-	@printf "\nAPI Docker image successfully built.\n"
-
-	@printf "\nBuilding webserver Docker image...\n\n"
+	@printf "\nBuilding webserver image...\n\n"
 	@docker build -f docker/webserver/Dockerfile -t $(WEBSERVER_REPO):latest .
-	@printf "\nWebserver Docker image successfully built.\n"
 
 	@printf "\nApplication successfully built.\n"
 
@@ -75,15 +80,9 @@ dbdestroy: ## Clear the PostgreSQL database and start from scratch
 deploy: ## Deploy the application (staging)
 	$(MAKE) init
 	@printf "\n"
-	$(MAKE) infra
-	@printf "\n"
-	$(MAKE) migrate
-	@printf "\n"
-	$(MAKE) seed
-	@printf "\n"
-	$(MAKE) index
-	@printf "\n"
 	$(MAKE) build
+	@printf "\n"
+	$(MAKE) infra
 	@printf "\n"
 	$(MAKE) staging
 
@@ -216,31 +215,20 @@ install: ## Install project dependencies
 
 local: ## Run the local dependencies from Docker images
 	@printf "⌨️ Starting the local services...\n\n"
+
+	@printf "Stopping any local profile services...\n\n"
 	@docker compose --profile staging down
+
+	@printf "\nStopping any prior local profile services...\n\n"
+	@docker compose --profile local down
+
+	@printf "\nStarting a new local deployment cluster...\n\n"
 	@docker compose --profile local up -d
+
 	@printf "\nLocal services successfully started.\n"
 
 migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
-	@printf "⏳ Waiting for PostgreSQL to be ready (timeout: 20s)...\n"
-	@POSTGRES_PORT=$$(grep -E '^POSTGRES_PORT=' .env | cut -d= -f2- | tr -d '"'); \
-	POSTGRES_HOST=$$(grep -E '^POSTGRES_HOST=' .env | cut -d= -f2- | tr -d '"'); \
-	TIMEOUT=20; \
-	ELAPSED=0; \
-	until nc -z $$POSTGRES_HOST $$POSTGRES_PORT > /dev/null 2>&1; do \
-		if [ $$ELAPSED -ge $$TIMEOUT ]; then \
-			printf "\n$(RED)✗$(RESET) PostgreSQL failed to start within $$TIMEOUT seconds\n"; \
-			printf "$(RED)✗$(RESET) Migration failed - PostgreSQL is not ready\n"; \
-			exit 1; \
-		fi; \
-		printf "."; \
-		sleep 1; \
-		ELAPSED=$$((ELAPSED + 1)); \
-	done; \
-	printf "\n$(GREEN)✓$(RESET) PostgreSQL port is open!\n"
-	@printf "⏳ Waiting for PostgreSQL to fully initialize...\n"
-	@sleep 5
-	@printf "$(GREEN)✓$(RESET) PostgreSQL is ready!\n\n"
 	@cd backend/apps/api && yarn migrate
 	@printf "\nMigrations successfully run.\n"
 
@@ -255,8 +243,16 @@ seed: ## Seed backend database
 
 staging: ## Run the staging server from Docker images
 	@printf "🎭 Starting the staging services...\n\n"
+
+	@printf "Stopping any local profile services...\n\n"
 	@docker compose --profile local down
+
+	@printf "\nStopping any prior staging profile services...\n\n"
+	@docker compose --profile staging down
+
+	@printf "\nStarting a new staging deployment cluster...\n\n"
 	@docker compose --profile staging up -d
+
 	@printf "\nStaging services successfully started.\n"
 
 #####################

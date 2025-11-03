@@ -4,7 +4,6 @@ services:
       context: ./docker/postgres
       dockerfile: Dockerfile
     image: ci/postgres
-    pull_policy: build
     container_name: postgres
     ports:
       - 5432:5432
@@ -18,6 +17,19 @@ services:
       - web
     restart: unless-stopped
     profiles: [ "all", "infra" ]
+
+  migrations:
+    image: ci/api:latest
+    container_name: migrations
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - web
+    command: ["yarn", "migrate"]
+    restart: "no"
+    profiles: [ "all", "staging" ]
 
   minio:
     image: minio/minio
@@ -99,6 +111,7 @@ services:
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET}
       AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET}
       AUTH_SESSION_PEPPER: ${AUTH_SESSION_PEPPER}
+      POSTGRES_HOST: postgres
       POSTGRES_USERNAME: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
@@ -115,6 +128,9 @@ services:
       - web
     extra_hosts:
       - host.docker.internal:host-gateway
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
     restart: unless-stopped
     profiles: [ "all", "staging" ]
 
