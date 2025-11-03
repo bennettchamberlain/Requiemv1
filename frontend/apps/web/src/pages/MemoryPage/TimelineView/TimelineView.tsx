@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { MemoryCard } from '../Components/MemoryCard';
+import { Empty, MemoryCard } from '../Components';
 import { sortMemoriesByTime, groupMemoriesByDate, formatDateForDisplay } from '../Components/utils';
 import { useMemoryService } from '../useMemoryService';
 
@@ -93,13 +93,11 @@ export function TimelineView() {
 
   if (memories.length === 0 && !loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full py-12 text-center">
-        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-          <span className="text-2xl">🧠</span>
-        </div>
-        <h3 className="text-lg font-medium text-foreground mb-2">No memories yet</h3>
-        <p className="text-muted-foreground">Your memories will appear here as they're created.</p>
-      </div>
+      <Empty
+        title="No memories yet"
+        description="Your memories will appear here as they're created."
+        icon="🧠"
+      />
     );
   }
 

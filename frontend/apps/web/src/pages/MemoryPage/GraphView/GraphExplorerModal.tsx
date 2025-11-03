@@ -6,6 +6,7 @@ import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons'
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
 import { ForceGraph, ForceGraph3D } from '@/components/ForceGraph';
 import { useAuth } from '@/hooks';
+import { Empty } from '@/pages/MemoryPage/Components';
 
 const TYPE_COLOR_PALETTE = [
   '#38bdf8',
@@ -810,14 +811,16 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   }
 
   if (visibleNodes.length === 0) {
-    const message = isSearchMode
-      ? `No graph nodes found for “${trimmedSearchQuery}”. Try another search.`
-      : 'No graph data available yet. Start connecting memories to build your knowledge graph.';
+    const title = isSearchMode
+      ? `No graph nodes found for "${trimmedSearchQuery}"`
+      : 'No graph data available yet';
+    const description = isSearchMode
+      ? 'Try another search'
+      : 'Start connecting memories to build your knowledge graph.';
 
     return (
-      <div className="flex h-[540px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted px-4 py-6 text-center text-muted-foreground">
-        <Sparkles className="h-6 w-6" />
-        <p className="text-sm">{message}</p>
+      <div className="flex h-[540px] flex-col items-center justify-center rounded-lg border border-dashed border-muted px-4 py-6">
+        <Empty title={title} description={description} icon={Sparkles} />
       </div>
     );
   }
