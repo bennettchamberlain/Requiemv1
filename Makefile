@@ -244,8 +244,16 @@ seed: ## Seed backend database
 
 staging: ## Run the staging server from Docker images
 	@printf "🎭 Starting the staging services...\n\n"
+
+	@printf "Stopping any local profile services...\n\n"
 	@docker compose --profile local down
+
+	@printf "\nStopping any prior staging profile services...\n\n"
+	@docker compose --profile staging down
+
+	@printf "\nStarting a new staging deployment cluster...\n\n"
 	@docker compose --profile staging up -d
+
 	@printf "\nStaging services successfully started.\n"
 
 #####################
