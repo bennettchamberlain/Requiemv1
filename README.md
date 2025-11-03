@@ -118,6 +118,7 @@ To then boot the local infrastructure.
 
 ```bash
 make local
+make infra
 ```
 
 This should start:
