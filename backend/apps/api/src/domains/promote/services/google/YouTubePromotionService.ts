@@ -378,7 +378,6 @@ export class YouTubePromotionService {
         external_id: videoId,
         source_url: url,
         source_data: { connectionId },
-        event_id: '',
         user: { id: userId },
       };
 
