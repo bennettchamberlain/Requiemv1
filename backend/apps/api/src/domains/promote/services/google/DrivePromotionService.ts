@@ -132,7 +132,7 @@ export class DrivePromotionService {
         url: webViewLink ?? undefined,
         mimetype: mimeType,
         external_id: fileId,
-        event_id: '',
+        // event_id omitted because no value is available
         user: { id: userId },
       };
 
