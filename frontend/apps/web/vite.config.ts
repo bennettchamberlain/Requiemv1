@@ -5,23 +5,21 @@ import react from '@vitejs/plugin-react-swc';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Get allowed hosts from APP_URL environment variable
-const getAllowedHosts = (): string[] => {
-  const appUrl = process.env.HOSTNAME;
-  if (!appUrl) {
-    // Fallback to defaults if APP_URL is not set
+function getAllowedHosts(): string[] {
+  const hostname = process.env.HOSTNAME;
+
+  if (!hostname) {
     return ['dev.companionintelligence.com', 'alpha.companionintel.com'];
   }
 
   try {
-    const url = new URL(appUrl);
+    const url = new URL(hostname);
 
     return [url.hostname];
   } catch {
-    // If URL parsing fails, treat as hostname directly
-    return [appUrl];
+    return [hostname];
   }
-};
+}
 
 export default defineConfig({
   plugins: [
