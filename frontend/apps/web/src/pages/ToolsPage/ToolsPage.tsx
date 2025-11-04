@@ -8,7 +8,7 @@ import { AiToolsTab } from './AiToolsTab';
 import { McpToolsTab } from './McpToolsTab';
 
 export function ToolsPage() {
-  usePageTitle('Tools - Companion Intelligence');
+  usePageTitle('Companions - Companion Intelligence');
 
   return (
     <>
@@ -29,10 +29,10 @@ export function ToolsPage() {
       <PageContent>
         {/* Header Section */}
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold">Tools</h1>
+          <h1 className="text-2xl font-bold">Companions</h1>
           <p className="text-muted-foreground">
-            Manage AI-powered tools and external capabilities that enhance your conversations with
-            personalized data and advanced functionality.
+            Manage AI-powered Companions and tools with external capabilities that enhance your conversations
+            with personalized data and advanced functionality.
           </p>
         </div>
 
@@ -41,7 +41,7 @@ export function ToolsPage() {
           <Tabs.List className="grid w-full grid-cols-2 max-w-md">
             <Tabs.Trigger value="ai-tools" className="flex items-center gap-2">
               <Bot className="h-4 w-4" />
-              AI Tools
+              AI Companions
             </Tabs.Trigger>
             <Tabs.Trigger value="mcp-tools" className="flex items-center gap-2">
               <Server className="h-4 w-4" />

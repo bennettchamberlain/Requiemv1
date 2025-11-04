@@ -8,7 +8,7 @@ import {
   ListTodo,
   MessagesSquare,
   Settings2,
-  Wrench,
+  Speech,
 } from '@ci/shadcn/icons';
 
 import logo from '../../../assets/logo.png';
@@ -51,9 +51,9 @@ const SYSTEM = [
     icon: ListTodo,
   },
   {
-    name: 'Tools',
-    url: '/tools',
-    icon: Wrench,
+    name: 'Companions',
+    url: '/companions',
+    icon: Speech,
   },
   {
     name: 'Connections',
@@ -80,7 +80,7 @@ export function SecondaryNavigation() {
           </div>
         </Sidebar.Header>
         <Sidebar.Content className="gap-0">
-          <NavSection title="Intelligence" items={INTELLIGENCE} />
+          <NavSection items={INTELLIGENCE} />
         </Sidebar.Content>
         <Sidebar.Footer>
           <NavSection items={SYSTEM} />
