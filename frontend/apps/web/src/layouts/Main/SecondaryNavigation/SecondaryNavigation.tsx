@@ -41,16 +41,6 @@ const INTELLIGENCE = [
 
 const SYSTEM = [
   {
-    name: 'Knowledge',
-    url: '/knowledge',
-    icon: ChartPie,
-  },
-  {
-    name: 'Jobs',
-    url: '/jobs',
-    icon: ListTodo,
-  },
-  {
     name: 'Companions',
     url: '/companions',
     icon: Speech,
@@ -59,6 +49,16 @@ const SYSTEM = [
     name: 'Connections',
     url: '/connections',
     icon: Cable,
+  },
+  {
+    name: 'Knowledge',
+    url: '/knowledge',
+    icon: ChartPie,
+  },
+  {
+    name: 'Jobs',
+    url: '/jobs',
+    icon: ListTodo,
   },
   {
     name: 'Settings',
