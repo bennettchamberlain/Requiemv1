@@ -5,6 +5,24 @@ import react from '@vitejs/plugin-react-swc';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Get allowed hosts from APP_URL environment variable
+const getAllowedHosts = (): string[] => {
+  const appUrl = process.env.HOSTNAME;
+  if (!appUrl) {
+    // Fallback to defaults if APP_URL is not set
+    return ['dev.companionintelligence.com', 'alpha.companionintel.com'];
+  }
+
+  try {
+    const url = new URL(appUrl);
+
+    return [url.hostname];
+  } catch {
+    // If URL parsing fails, treat as hostname directly
+    return [appUrl];
+  }
+};
+
 export default defineConfig({
   plugins: [
     react(),
@@ -90,7 +108,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: ['dev.companionintelligence.com', 'alpha.companionintel.com'],
+    allowedHosts: getAllowedHosts(),
     fs: {
       allow: ['.', path.resolve(__dirname, '../../packages')],
     },

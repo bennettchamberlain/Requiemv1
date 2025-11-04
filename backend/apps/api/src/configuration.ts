@@ -18,6 +18,7 @@ const booleanStringSchema = z.preprocess((val) => {
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
+  hostname: z.string(),
   logging: z.object({
     level: z.string(),
   }),
