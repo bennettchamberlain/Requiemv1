@@ -134,7 +134,7 @@ export default function DesktopMemoryPage() {
 
           {/* View Toggle */}
           <Tabs defaultValue="map" onValueChange={setActiveTab} value={activeTab}>
-            <Tabs.List className="grid grid-cols-4 w-64">
+            <Tabs.List className="grid grid-cols-4 w-64 h-11">
               <Tabs.Trigger value="map" className="text-sm">
                 Map
               </Tabs.Trigger>

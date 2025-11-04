@@ -1,6 +1,7 @@
 import { Table } from '@ci/shadcn';
 import { Search } from '@ci/shadcn/icons';
 
+import { Empty } from '@/pages/MemoryPage/Components';
 import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
 
 export function ListView() {
@@ -44,10 +45,10 @@ export function ListView() {
           ) : (
             searchQuery?.length > 0 &&
             searchResults?.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No results found for your search query.</p>
-                <p className="text-sm mt-2">Try using different keywords or a more general search term.</p>
-              </div>
+              <Empty
+                title="No results found for your search query"
+                description="Try using different keywords or a more general search term"
+              />
             )
           )}
         </>
@@ -55,11 +56,11 @@ export function ListView() {
 
       {/* Initial State */}
       {searchQuery?.length === 0 && (
-        <div className="text-center py-12 text-muted-foreground">
-          <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg">Enter a search query to find relevant content</p>
-          <p className="text-sm mt-2">The search uses semantic similarity to find related information</p>
-        </div>
+        <Empty
+          title="Enter a search query to find relevant content"
+          description="The search uses semantic similarity to find related information"
+          icon={Search}
+        />
       )}
     </div>
   );
