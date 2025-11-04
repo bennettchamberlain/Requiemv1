@@ -27,6 +27,7 @@ interface SettingsState {
   cacheSize: string;
 
   // API Keys
+  metaKey: string;
   openaiKey: string;
   githubToken: string;
   slackToken: string;
@@ -59,6 +60,7 @@ export function SettingsPage() {
     cacheSize: '2048',
 
     // API Keys defaults (masked)
+    metaKey: 'meta-***********************************',
     openaiKey: 'sk-***********************************',
     githubToken: 'ghp_********************************',
     slackToken: 'xoxb-***************************',
@@ -82,6 +84,7 @@ export function SettingsPage() {
   });
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({
+    metaKey: false,
     openaiKey: false,
     githubToken: false,
     slackToken: false,
@@ -366,13 +369,13 @@ export function SettingsPage() {
                   <div className="flex gap-2">
                     <Input
                       id="meta"
-                      type={showKeys.openaiKey ? 'text' : 'password'}
-                      value={settings.openaiKey}
-                      onChange={(e) => updateSetting('openaiKey', e.target.value)}
+                      type={showKeys.metaKey ? 'text' : 'password'}
+                      value={settings.metaKey}
+                      onChange={(e) => updateSetting('metaKey', e.target.value)}
                       className="flex-1"
                     />
-                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('openaiKey')}>
-                      {showKeys.openaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('metaKey')}>
+                      {showKeys.metaKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
