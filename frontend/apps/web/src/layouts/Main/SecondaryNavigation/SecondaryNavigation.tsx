@@ -8,7 +8,7 @@ import {
   ListTodo,
   MessagesSquare,
   Settings2,
-  Wrench,
+  Speech,
 } from '@ci/shadcn/icons';
 
 import logo from '../../../assets/logo.png';
@@ -51,9 +51,9 @@ const SYSTEM = [
     icon: ListTodo,
   },
   {
-    name: 'Tools',
-    url: '/tools',
-    icon: Wrench,
+    name: 'Companions',
+    url: '/companions',
+    icon: Speech,
   },
   {
     name: 'Connections',

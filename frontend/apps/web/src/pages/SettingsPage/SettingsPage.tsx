@@ -361,10 +361,94 @@ export function SettingsPage() {
             </Card.Header>
             <Card.Content className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="openai">OpenAI API Key</Label>
+                <div className="grid gap-2">
+                  <Label htmlFor="meta">Meta API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="meta"
+                      type={showKeys.openaiKey ? 'text' : 'password'}
+                      value={settings.openaiKey}
+                      onChange={(e) => updateSetting('openaiKey', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('openaiKey')}>
+                      {showKeys.openaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-muted-foreground">Connected</span>
+                    <Badge variant="secondary">Valid</Badge>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="google">Google API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="google"
+                      type={showKeys.openaiKey ? 'text' : 'password'}
+                      value={settings.openaiKey}
+                      onChange={(e) => updateSetting('openaiKey', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('openaiKey')}>
+                      {showKeys.openaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-muted-foreground">Connected</span>
+                    <Badge variant="secondary">Valid</Badge>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="github">GitHub Personal Access Token</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="github"
+                      type={showKeys.githubToken ? 'text' : 'password'}
+                      value={settings.githubToken}
+                      onChange={(e) => updateSetting('githubToken', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('githubToken')}>
+                      {showKeys.githubToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-muted-foreground">Connected</span>
+                    <Badge variant="secondary">Valid</Badge>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="slack">Slack Bot Token</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="slack"
+                      type={showKeys.slackToken ? 'text' : 'password'}
+                      value={settings.slackToken}
+                      onChange={(e) => updateSetting('slackToken', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('slackToken')}>
+                      {showKeys.slackToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-yellow-500" />
+                    <span className="text-sm text-muted-foreground">Needs refresh</span>
+                    <Badge variant="outline">Expired</Badge>
+                  </div>
+                </div>
+
+                <Label htmlFor="spotify">Spotify API Key</Label>
                 <div className="flex gap-2">
                   <Input
-                    id="openai"
+                    id="spotify"
                     type={showKeys.openaiKey ? 'text' : 'password'}
                     value={settings.openaiKey}
                     onChange={(e) => updateSetting('openaiKey', e.target.value)}
@@ -378,48 +462,6 @@ export function SettingsPage() {
                   <CheckCircle className="h-4 w-4 text-green-500" />
                   <span className="text-sm text-muted-foreground">Connected</span>
                   <Badge variant="secondary">Valid</Badge>
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="github">GitHub Personal Access Token</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="github"
-                    type={showKeys.githubToken ? 'text' : 'password'}
-                    value={settings.githubToken}
-                    onChange={(e) => updateSetting('githubToken', e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('githubToken')}>
-                    {showKeys.githubToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-muted-foreground">Connected</span>
-                  <Badge variant="secondary">Valid</Badge>
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="slack">Slack Bot Token</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="slack"
-                    type={showKeys.slackToken ? 'text' : 'password'}
-                    value={settings.slackToken}
-                    onChange={(e) => updateSetting('slackToken', e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('slackToken')}>
-                    {showKeys.slackToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-yellow-500" />
-                  <span className="text-sm text-muted-foreground">Needs refresh</span>
-                  <Badge variant="outline">Expired</Badge>
                 </div>
               </div>
             </Card.Content>

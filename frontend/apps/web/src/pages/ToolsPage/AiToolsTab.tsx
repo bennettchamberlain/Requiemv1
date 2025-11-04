@@ -28,7 +28,7 @@ interface ToolCard {
 const AVAILABLE_TOOLS: ToolCard[] = [
   {
     id: 'food-preferences',
-    name: 'Food Preferences',
+    name: 'Food & Nutrition Companion',
     description:
       'Get user food preferences, dietary restrictions, allergies, and eating habits for meal planning and cooking recommendations.',
     category: 'Lifestyle',
@@ -44,9 +44,9 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'entertainment-preferences',
-    name: 'Entertainment Preferences',
+    name: 'Entertainment Companion',
     description:
-      'Access movie genres, TV show types, streaming preferences, and viewing habits for personalized entertainment recommendations.',
+      'Monitor movie genres, TV show types, streaming preferences, and viewing habits for personalized entertainment recommendations.',
     category: 'Entertainment',
     icon: <Clapperboard className="h-6 w-6" />,
     capabilities: [
@@ -60,9 +60,9 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'streaming-availability',
-    name: 'Streaming Availability',
+    name: 'Playlist Creation Companion',
     description:
-      'Check what movies and TV shows are currently available across different streaming platforms.',
+      'Create playlists of videos, music, games, podcasts, movies and TV shows available across different  platforms.',
     category: 'Entertainment',
     icon: <Play className="h-6 w-6" />,
     capabilities: [
@@ -76,9 +76,9 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'family-members',
-    name: 'Family Members',
+    name: 'Family Companion',
     description:
-      'Access information about family members and relationships for personalized interactions and planning.',
+      'Monitor information about family members and relationships for personalized interactions and planning.',
     category: 'Personal',
     icon: <Bot className="h-6 w-6" />,
     capabilities: [
@@ -92,9 +92,9 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'shopping-preferences',
-    name: 'Shopping Preferences',
+    name: 'Shopping Companion',
     description:
-      'Track shopping habits, preferred brands, purchase history, and price tracking for smart shopping recommendations.',
+      'Track and plan shopping habits, preferred brands, purchase history, and price tracking for smart shopping recommendations.',
     category: 'Lifestyle',
     icon: <ShoppingBag className="h-6 w-6" />,
     capabilities: [
@@ -109,7 +109,7 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'travel-assistant',
-    name: 'Travel Assistant',
+    name: 'Travel Companion',
     description:
       'Manage travel preferences, favorite destinations, trip history, and travel-related information for personalized travel planning.',
     category: 'Travel',
@@ -125,42 +125,8 @@ const AVAILABLE_TOOLS: ToolCard[] = [
     isDemo: true,
   },
   {
-    id: 'reading-habits',
-    name: 'Reading Habits',
-    description:
-      'Track reading preferences, book history, favorite genres, and reading patterns for personalized book recommendations.',
-    category: 'Entertainment',
-    icon: <BookOpen className="h-6 w-6" />,
-    capabilities: [
-      'Book genre preferences',
-      'Reading history and favorites',
-      'Reading pace and habits',
-      'Personalized recommendations',
-    ],
-    canToggle: true,
-    systemStatus: 'active',
-    isDemo: true,
-  },
-  {
-    id: 'music-preferences',
-    name: 'Music Preferences',
-    description:
-      'Access music taste, favorite artists, genres, listening history, and streaming preferences for music discovery.',
-    category: 'Entertainment',
-    icon: <Music className="h-6 w-6" />,
-    capabilities: [
-      'Artist and genre preferences',
-      'Listening history and patterns',
-      'Streaming service preferences',
-      'Playlist and discovery support',
-    ],
-    canToggle: true,
-    systemStatus: 'active',
-    isDemo: true,
-  },
-  {
     id: 'fitness-tracking',
-    name: 'Fitness Tracking',
+    name: 'Fitness Companion',
     description:
       'Monitor fitness goals, workout preferences, activity patterns, and health metrics for personalized fitness guidance.',
     category: 'Health',
@@ -170,6 +136,40 @@ const AVAILABLE_TOOLS: ToolCard[] = [
       'Fitness goals and progress',
       'Activity tracking history',
       'Personalized fitness recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'reading-habits',
+    name: 'Learning Companion',
+    description:
+      'Track learning interest, classes, reading history, favorite book genres, and reading patterns for personalized educational recommendations.',
+    category: 'Entertainment',
+    icon: <BookOpen className="h-6 w-6" />,
+    capabilities: [
+      'Educational interests and subjects',
+      'Reading history and favorites',
+      'Learning pace and habits',
+      'Personalized education and career recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'music-preferences',
+    name: 'Music Teacher Companion',
+    description:
+      'Learn how to sing or play an instrument, learn to play songs from your favorite artists, tracks learning lessons from the songs you know.',
+    category: 'Entertainment',
+    icon: <Music className="h-6 w-6" />,
+    capabilities: [
+      'Education and preferences',
+      'Listening history and patterns',
+      'Understand instruments in your home',
+      'Music Lesson support',
     ],
     canToggle: true,
     systemStatus: 'active',
