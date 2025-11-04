@@ -62,7 +62,7 @@ const AVAILABLE_TOOLS: ToolCard[] = [
     id: 'streaming-availability',
     name: 'Playlist Creation Companion',
     description:
-      'Create playlists of videos, music, games, podcasts, movies and TV shows available across different  platforms.',
+      'Create playlists of videos, music, games, podcasts, movies and TV shows available across different platforms.',
     category: 'Entertainment',
     icon: <Play className="h-6 w-6" />,
     capabilities: [
