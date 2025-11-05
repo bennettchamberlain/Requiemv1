@@ -40,6 +40,7 @@ export function UploadModal({ open, onClose, onSubmit }: Props) {
       return;
     }
 
+    setFiles([]);
     onClose?.(false);
   }, [loading, onClose]);
 
