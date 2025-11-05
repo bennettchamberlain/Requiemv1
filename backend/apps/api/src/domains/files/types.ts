@@ -4,6 +4,7 @@ export interface File {
   key: string | null;
   contentType: string;
   size: number;
+  fileHash?: string;
   url?: string;
 }
 
@@ -20,6 +21,7 @@ export interface FileQuery {
   key?: string;
   original_name?: string;
   content_type?: string;
+  file_hash?: string;
   size?: number;
   user?: { id: string };
 }

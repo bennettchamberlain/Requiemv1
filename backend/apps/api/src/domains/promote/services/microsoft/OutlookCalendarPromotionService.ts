@@ -1,9 +1,11 @@
+import { createHmac } from 'crypto';
 import { Readable } from 'node:stream';
 
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
+import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { FileService } from '@ci/domains/files';
 import { EventService, type CreateEventDto } from '@ci/domains/memory';
@@ -222,14 +224,18 @@ export class OutlookCalendarPromotionService {
 
     await Promise.all(
       (eventDetails.attachments || []).map(async (attachment) => {
+        const buffer = attachment.contentBytes
+          ? Buffer.from(attachment.contentBytes, 'base64')
+          : Buffer.from('');
+        const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
         const fileSearch = {
           content_type: attachment.contentType,
           size: attachment.size,
+          file_hash: fileHash,
           filename: attachment.name,
         };
         const existingFile = await this.fileService.search({ userId }, fileSearch);
         if (existingFile.length === 0) {
-          console.log('Creating file for calendar event that does not exist');
           const file = {
             fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
             originalname: attachment.name,
@@ -240,44 +246,55 @@ export class OutlookCalendarPromotionService {
             stream: '' as unknown as Readable,
             filename: attachment.name,
             path: '',
-            buffer: attachment.contentBytes
-              ? Buffer.from(attachment.contentBytes, 'base64')
-              : Buffer.from(''),
+            buffer,
+            fileHash,
           };
 
-          return this.fileService.upload({ userId }, file);
+          await this.fileService.upload({ userId }, file);
         }
       }),
     );
 
-    const newEvent = {
-      id: uuidv7(),
+    const eventSearch = {
       start_time: new Date(eventDetails.startTime),
-      end_time: new Date(eventDetails.endTime),
       title: eventDetails.subject,
-      user: {
-        id: userId,
-      },
-      is_all_day: eventDetails.isAllDay,
-      organizer_entity_id: organizerEntityId,
+      source_system: 'Microsoft Outlook Calendar',
       source_type: 'ETL',
-      participant_entity_ids: participantEntityIds,
-      metadata: {
-        connection_id: connectionId,
-      },
-    } as CreateEventDto;
+    };
 
-    const location = eventDetails.location;
-    if (location) {
-      newEvent.location_name = location.displayName;
-      newEvent.location_coordinates = {
-        type: 'Point',
-        coordinates: [location.coordinates.longitude, location.coordinates.latitude],
-      };
+    const existingEvents = await this.eventService.search({ userId }, eventSearch);
+
+    if (existingEvents.length === 0) {
+      // Save to events table
+      const newEvent = {
+        id: uuidv7(),
+        start_time: new Date(eventDetails.startTime),
+        end_time: new Date(eventDetails.endTime),
+        title: eventDetails.subject,
+        user: {
+          id: userId,
+        },
+        is_all_day: eventDetails.isAllDay,
+        organizer_entity_id: organizerEntityId,
+        source_type: 'ETL',
+        source_system: 'Microsoft Outlook Calendar',
+        participant_entity_ids: participantEntityIds,
+        metadata: {
+          connection_id: connectionId,
+        },
+      } as CreateEventDto;
+
+      const location = eventDetails.location;
+      if (location) {
+        newEvent.location_name = location.displayName;
+        newEvent.location_coordinates = {
+          type: 'Point',
+          coordinates: [location.coordinates.longitude, location.coordinates.latitude],
+        };
+      }
+
+      await this.eventService.create({ userId }, newEvent);
     }
-
-    // Save to events table
-    await this.eventService.create({ userId }, newEvent);
   }
 
   private async extractEventDetails(

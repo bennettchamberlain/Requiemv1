@@ -1,8 +1,10 @@
+import { createHmac } from 'crypto';
 import { Readable } from 'node:stream';
 
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
+import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { FileService } from '@ci/domains/files';
 import { CommunicationService } from '@ci/domains/memory';
@@ -218,11 +220,16 @@ export class OutlookMailPromotionService {
       'EMAILED',
     );
 
-    const attachmentUploads = await Promise.all(
+    const attachmentUploadIds = await Promise.all(
       (messageDetails.attachments || []).map(async (attachment) => {
+        const buffer = attachment.contentBytes
+          ? Buffer.from(attachment.contentBytes, 'base64')
+          : Buffer.from('');
+        const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
         const fileSearch = {
           content_type: attachment.contentType,
           size: attachment.size,
+          file_hash: fileHash,
           filename: attachment.name,
         };
         const existingFiles = await this.fileService.search({ userId }, fileSearch);
@@ -236,15 +243,16 @@ export class OutlookMailPromotionService {
             destination: '',
             stream: '' as unknown as Readable,
             filename: attachment.name,
+            fileHash,
             path: '',
             buffer: attachment.contentBytes
               ? Buffer.from(attachment.contentBytes, 'base64')
               : Buffer.from(''),
           };
 
-          return this.fileService.upload({ userId }, file);
+          return (await this.fileService.upload({ userId }, file)).id;
         } else {
-          return existingFiles[0];
+          return existingFiles[0].id;
         }
       }),
     );
@@ -276,7 +284,7 @@ export class OutlookMailPromotionService {
       content: messageDetails.body || messageDetails.bodyPreview || '',
       category: 'personal', // TODO: Classify emails
       connection_id: connectionId,
-      attachments: attachmentUploads.map((file) => file.id),
+      attachments: attachmentUploadIds,
     });
   }
 

@@ -1,3 +1,5 @@
+import { createHmac } from 'crypto';
+
 import {
   S3Client,
   HeadBucketCommand,
@@ -146,6 +148,7 @@ export class FileService implements OnModuleInit {
       original_name: file.originalname,
       content_type: file.mimetype,
       size: file.size,
+      file_hash: createHmac('sha256', config.auth.session.fieldPepper).update(file.buffer).digest('hex'),
       user: {
         id: context.userId,
       },
