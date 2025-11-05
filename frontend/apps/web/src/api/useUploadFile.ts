@@ -36,6 +36,7 @@ export function useUploadFile(): ReturnType {
         formData.append('files', file);
       });
 
+      let success = false;
 
       try {
         const data = await fetchJson<FileData[]>('/api/files/upload', {
@@ -47,11 +48,17 @@ export function useUploadFile(): ReturnType {
         });
 
         setFiles(data);
+
+        success = true;
       } catch (err) {
         setError(err);
+
+        success = false;
       } finally {
         setLoading(false);
       }
+
+      return success;
     },
     [authToken],
   );
