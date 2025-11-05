@@ -119,7 +119,7 @@ export class PromoteService {
             id: apiLog.connection_id,
             active: true,
             accessToken: Not(IsNull()),
-            refreshToken: Not(IsNull()), // No refresh token
+            refreshToken: Not(IsNull()), // Has refresh token
           },
         ],
       });
