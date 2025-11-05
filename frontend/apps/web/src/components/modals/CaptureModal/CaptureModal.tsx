@@ -16,39 +16,44 @@ import { getMediaType } from '@/lib/utils';
 
 interface Props {
   open?: boolean;
-  initialFiles?: FileData[];
   onClose?: () => void;
 }
 
-export function CaptureModal({ open = false, initialFiles = [], onClose }: Props) {
+export function CaptureModal({ open = false, onClose }: Props) {
   const [{ authToken }] = useAuth();
   const [{ selectedModel }] = useModel();
 
   const { isMobile } = useDeviceLayout();
 
-  const [files, setFiles] = useState<FileData[]>(initialFiles);
+  const [files, setFiles] = useState<FileData[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
 
-  const [{ file: fileData }, { upload }] = useUploadFile();
+  const [{ files: fileData }, { upload, reset: resetUploader }] = useUploadFile();
 
   const [{ stream, loading, streaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
     useChatRequester({
       threadId,
     });
 
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) {
-        setFiles([]);
-        onClose?.();
-      }
-    },
-    [onClose],
-  );
+  const handleClose = useCallback(() => {
+    setFiles([]);
+    setThreadId(null);
+    resetUploader();
+    stopChatRequest();
+
+    onClose?.();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      setFiles([]);
+      setThreadId(null);
+    }
+  }, [open]);
 
   const handleMediaCaptured = useCallback(
     async (file: File) => {
-      upload(file);
+      upload([file]);
     },
     [upload],
   );
@@ -70,7 +75,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
   useEffect(() => {
     (async () => {
-      if (fileData == null) {
+      if (fileData.length === 0) {
         return;
       }
 
@@ -81,12 +86,13 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
       // Check if this file is already in the files array to prevent duplicates
       setFiles((current) => {
-        const alreadyExists = current.some((file) => file.id === fileData.id);
+        const alreadyExists = current.some((file) => file.id === fileData[0].id);
+
         if (alreadyExists) {
           return current;
         }
 
-        return [...current, fileData];
+        return [...current, fileData[0]];
       });
 
       // Only create thread if we don't have one yet
@@ -97,7 +103,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   }, [fileData, isMobile, createFileThread, threadId]);
 
   const handleSelectLastCapture = useCallback(async () => {
-    if (fileData == null) {
+    if (fileData.length === 0) {
       return;
     }
 
@@ -108,12 +114,13 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
     // Check if this file is already in the files array to prevent duplicates
     setFiles((current) => {
-      const alreadyExists = current.some((file) => file.id === fileData.id);
+      const alreadyExists = current.some((file) => file.id === fileData[0].id);
+
       if (alreadyExists) {
         return current;
       }
 
-      return [...current, fileData];
+      return [...current, fileData[0]];
     });
   }, [fileData, createFileThread, threadId]);
 
@@ -131,10 +138,10 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   if (isMobile) {
     if (files.length === 0) {
       return (
-        <InlineModal open={open} onClose={onClose} className="fixed">
+        <InlineModal open={open} onClose={handleClose} className="fixed">
           <div className="absolute top-[env(safe-area-inset-top)] right-0 z-10">
             <div className="flex-1 text-right text-white">
-              <Button variant="ghost" size="icon" onClick={onClose}>
+              <Button variant="ghost" size="icon" onClick={handleClose}>
                 <X />
               </Button>
             </div>
@@ -155,7 +162,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     }
 
     return (
-      <InlineModal open={open} onClose={onClose}>
+      <InlineModal open={open} onClose={handleClose}>
         <div className="flex flex-row items-center border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(1rem,env(safe-area-inset-top))]">
           <div className="flex items-center flex-1">
             <Popover>
@@ -170,10 +177,10 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
             </Popover>
           </div>
 
-          <div className="flex items-center justify-center font-bold">{fileData?.name}</div>
+          <div className="flex items-center justify-center font-bold">{fileData[0]?.name}</div>
 
           <div className="flex items-center justify-end flex-1">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={handleClose}>
               <X />
             </Button>
           </div>
@@ -195,7 +202,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <Dialog.Content
         className={cn(
           'w-[90vw] h-[90vh] sm:max-w-[90vw] sm:max-h-[80vh] p-0 flex flex-col gap-0',
@@ -210,7 +217,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
           <ModelSelector withToggles />
 
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={handleClose}>
               <X />
             </Button>
           </div>
