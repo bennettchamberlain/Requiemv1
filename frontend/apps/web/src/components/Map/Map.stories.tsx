@@ -54,3 +54,9 @@ export const WithPanel: Story = {
     ),
   },
 };
+
+export const WithControls: Story = {
+  args: {
+    children: <Map.Controls position="top-left" />,
+  },
+};

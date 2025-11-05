@@ -1,9 +1,11 @@
 import { type ReactNode } from 'react';
-import { MapContainer, TileLayer } from 'react-leaflet';
+
 import { type LatLngExpression } from 'leaflet';
+import { MapContainer, TileLayer } from 'react-leaflet';
 
 import 'leaflet/dist/leaflet.css';
 
+import { Controls } from './Controls';
 import { Panel } from './Panel';
 
 interface Props {
@@ -20,6 +22,7 @@ export function Map({ center, children }: Props) {
         style={{ height: '100%', width: '100%' }} // map must have size
         scrollWheelZoom={true}
         attributionControl={false}
+        zoomControl={false}
       >
         <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
 
@@ -29,4 +32,5 @@ export function Map({ center, children }: Props) {
   );
 }
 
+Map.Controls = Controls;
 Map.Panel = Panel;
