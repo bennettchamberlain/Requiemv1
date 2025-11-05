@@ -71,12 +71,19 @@ export function UploadModal({ open, onClose, onSubmit }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <Dialog.Content>
-        <Dialog.Header>
+      <Dialog.Content className="p-0 flex flex-col gap-0" showCloseButton={false}>
+        <Dialog.Header className="flex flex-row items-center justify-between border-b bg-stone-50 dark:bg-secondary rounded-t-lg gap-2 p-2 pl-4">
           <Dialog.Title>Upload files</Dialog.Title>
+          <Dialog.Description className="hidden">Upload files to your server.</Dialog.Description>
+
+          <div className="flex items-center justify-end">
+            <Button variant="ghost" size="icon" onClick={handleClose}>
+              <X />
+            </Button>
+          </div>
         </Dialog.Header>
 
-        <form onSubmit={handleUpload} encType="multipart/form-data" className="flex flex-col gap-4">
+        <form onSubmit={handleUpload} encType="multipart/form-data" className="flex flex-col gap-4 p-4">
           <div
             {...getRootProps()}
             className="flex flex-col items-center justify-center h-40 border-8 p-2 rounded-lg gap-2 cursor-pointer select-none"
