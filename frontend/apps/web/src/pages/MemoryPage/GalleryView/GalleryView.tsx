@@ -44,8 +44,7 @@ export function GalleryView() {
   }, [memories]);
 
   let combinedResults: (SearchResult | MemoryItem)[] = [];
-
-  combinedResults = combinedResults.concat(files).concat(searchResults);
+  combinedResults = combinedResults.concat(memories).concat(searchResults);
 
   return (
     <>
