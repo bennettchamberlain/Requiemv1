@@ -1,6 +1,9 @@
 import { Card, Tooltip, cn } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 
+import DOMPurify from 'dompurify';
+import parse from 'html-react-parser';
+
 import type { MemoryItem, ParticipantData } from '../../types';
 import { useMemoryService } from '../../useMemoryService';
 
@@ -136,13 +139,10 @@ export function CommunicationCard({ memory }: Props) {
       </div>
 
       {memory.description && (
-        <div className="pt-3 pb-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {memory.description.length > 1000
-              ? `${memory.description.substring(0, 1000)}...`
-              : memory.description}
-          </p>
-        </div>
+
+        parse(DOMPurify.sanitize(memory.description.length > 1000
+          ? `${memory.description.substring(0, 1000)}...`
+          : memory.description, {USE_PROFILES: {html: true}}))
       )}
 
       {memory.tags.length > 0 && (

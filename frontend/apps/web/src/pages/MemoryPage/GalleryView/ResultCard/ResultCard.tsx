@@ -1,6 +1,7 @@
 import type { MemoryItem, SearchResult } from '../../types.ts';
 
 import { AnswerCard } from './AnswerCard.tsx';
+import { CommunicationCard } from "./CommunicationCard.tsx";
 import { ContentCard } from './ContentCard.tsx';
 import { EntityCard } from './EntityCard.tsx';
 import { ImageCard } from './ImageCard.tsx';
@@ -11,6 +12,7 @@ export interface Props {
 }
 
 export function ResultCard({ result }: Props) {
+  console.log('result', result)
   switch (result.type) {
     case 'answer':
       return <AnswerCard result={result} />;
@@ -24,6 +26,8 @@ export function ResultCard({ result }: Props) {
       return <EntityCard result={result} />;
     case 'content':
       return <ContentCard result={result as MemoryItem} />;
+    case 'communication':
+      return <CommunicationCard result={result as MemoryItem} />;
     default:
       return null;
   }
