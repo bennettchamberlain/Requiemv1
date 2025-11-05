@@ -14,6 +14,7 @@ type ReturnType = [
   },
   {
     upload: (file: File[]) => void;
+    reset: () => void;
   },
 ];
 
@@ -63,6 +64,12 @@ export function useUploadFile(): ReturnType {
     [authToken],
   );
 
+  const reset = useCallback(() => {
+    setFiles([]);
+    setError(null);
+    setLoading(false);
+  }, []);
+
   return [
     {
       files,
@@ -71,6 +78,7 @@ export function useUploadFile(): ReturnType {
     },
     {
       upload,
+      reset,
     },
   ];
 }
