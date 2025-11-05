@@ -1,6 +1,6 @@
-import { cn } from '@ci/shadcn';
-
 import { type ReactNode, useCallback, useRef } from 'react';
+
+import { ScrollArea, ScrollBar, cn } from '@ci/shadcn';
 import L from 'leaflet';
 
 interface Props {
@@ -42,7 +42,11 @@ export function Panel({ position = 'right', className, children }: Props) {
       )}
       ref={setPanelRef}
     >
-      {children}
+      <ScrollArea className="h-full w-full">
+        {children}
+        <ScrollBar orientation="vertical" />
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
     </div>
   );
 }
