@@ -6,6 +6,7 @@ export * from './src/components/coalescers/avatar';
 export * from './src/components/coalescers/badge';
 export * from './src/components/coalescers/breadcrumb';
 export * from './src/components/coalescers/button';
+export * from './src/components/coalescers/button-group';
 export * from './src/components/coalescers/calendar';
 export * from './src/components/coalescers/card';
 export * from './src/components/coalescers/carousel';
