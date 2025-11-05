@@ -1,6 +1,5 @@
 import { Card, Badge } from '@ci/shadcn';
 import { BadgeQuestionMark, Mail, Mails } from '@ci/shadcn/icons';
-
 import DOMPurify from 'dompurify';
 import parse from 'html-react-parser';
 
@@ -18,7 +17,6 @@ function getCommunicationTypeIcon(type: string) {
       return <BadgeQuestionMark className="h-4 w-4" />;
   }
 }
-
 
 export function CommunicationCard({ result }: Props) {
   return (
@@ -46,9 +44,8 @@ export function CommunicationCard({ result }: Props) {
       </Card.Header>
 
       <Card.Content>
-        {result?.metadata?.communicationType === 'email' && (
-          parse(DOMPurify.sanitize(result.description, {USE_PROFILES: {html: true}}))
-        )}
+        {result?.metadata?.communicationType === 'email' &&
+          parse(DOMPurify.sanitize(result.description, { USE_PROFILES: { html: true } }))}
       </Card.Content>
     </Card>
   );
