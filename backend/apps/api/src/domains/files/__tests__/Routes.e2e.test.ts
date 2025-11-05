@@ -80,7 +80,7 @@ describe('File routes', () => {
 
       return request(app.getHttpServer())
         .post('/files/upload')
-        .attach('file', buffer, 'hello.txt')
+        .attach('files', buffer, 'hello.txt')
         .expect(201);
     });
 
