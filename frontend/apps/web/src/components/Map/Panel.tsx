@@ -3,14 +3,24 @@ import { cn } from '@ci/shadcn';
 import { type ReactNode, useCallback, useRef } from 'react';
 import L from 'leaflet';
 
-import 'leaflet/dist/leaflet.css';
-
 interface Props {
+  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'left' | 'right' | 'top' | 'bottom';
   className?: string;
   children?: ReactNode;
 }
 
-export function Panel({ className, children }: Props) {
+const POSITION_CLASSES = {
+  'top-left': 'top-0 left-0 h-fit w-fit',
+  'top-right': 'top-0 right-0 h-fit w-fit',
+  'bottom-left': 'bottom-0 left-0 h-fit w-fit',
+  'bottom-right': 'bottom-0 right-0 h-fit w-fit',
+  left: 'top-0 left-0 h-full w-1/4',
+  right: 'top-0 right-0 h-full w-1/4',
+  top: 'top-0 left-0 w-full h-1/4',
+  bottom: 'bottom-0 left-0 w-full h-1/4',
+};
+
+export function Panel({ position = 'right', className, children }: Props) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   const setPanelRef = useCallback((el: HTMLDivElement | null) => {
@@ -24,8 +34,12 @@ export function Panel({ className, children }: Props) {
 
   return (
     <div
-      className={cn('absolute top-0 right-0 h-full w-1/4 cursor-default text-base', className)}
-      style={{ zIndex: 1000 }}
+      className={cn(
+        'z-400 cursor-default text-base',
+        POSITION_CLASSES[position],
+        className,
+        'absolute overflow-hidden',
+      )}
       ref={setPanelRef}
     >
       {children}
