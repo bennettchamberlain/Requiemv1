@@ -1,16 +1,18 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 
-import { Badge, Button, Dialog } from '@ci/shadcn';
+import { Badge, Button, Dialog, Spinner } from '@ci/shadcn';
 import { FilePlus, Scan, X } from '@ci/shadcn/icons';
 import { useDropzone } from 'react-dropzone';
 
 interface Props {
   open?: boolean;
-  onClose?: () => void;
+  onSubmit?: (files: FileList) => Promise<boolean | void> | boolean | void;
+  onClose?: (open?: boolean) => void;
 }
 
-export function UploadModal({ open, onClose }: Props) {
+export function UploadModal({ open, onClose, onSubmit }: Props) {
   const [files, setFiles] = useState<File[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setFiles((prev) => {
@@ -33,6 +35,39 @@ export function UploadModal({ open, onClose }: Props) {
   const DropIcon = isDragActive ? Scan : FilePlus;
   const dropText = isDragActive ? 'Drop files here' : 'Drag or click to upload';
 
+  const handleClose = useCallback(() => {
+    if (loading) {
+      return;
+    }
+
+    onClose?.(false);
+  }, [loading, onClose]);
+
+  const handleUpload = useCallback(
+    async (e: FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+
+      setLoading(true);
+
+      const dataTransfer = new DataTransfer();
+
+      files.forEach((file) => {
+        dataTransfer.items.add(file);
+      });
+
+      try {
+        const result = await onSubmit?.(dataTransfer.files);
+
+        if (result === true) {
+          handleClose();
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [files, onClose, onSubmit],
+  );
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <Dialog.Content>
@@ -40,48 +75,53 @@ export function UploadModal({ open, onClose }: Props) {
           <Dialog.Title>Upload files</Dialog.Title>
         </Dialog.Header>
 
-        <div
-          {...getRootProps()}
-          className="flex flex-col items-center justify-center h-40 border-8 p-2 rounded-lg gap-2"
-        >
-          <input {...getInputProps()} />
+        <form onSubmit={handleUpload} encType="multipart/form-data" className="flex flex-col gap-4">
+          <div
+            {...getRootProps()}
+            className="flex flex-col items-center justify-center h-40 border-8 p-2 rounded-lg gap-2 cursor-pointer select-none"
+          >
+            <input {...getInputProps()} />
 
-          <DropIcon className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
+            <DropIcon className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
 
-          <div>{dropText}</div>
-        </div>
+            <div>{dropText}</div>
+          </div>
 
-        <div className="inline-flex gap-2 flex-wrap">
-          {files.map((f) => (
-            <Badge
-              key={f.name}
-              className="max-w-32 flex flex-row justify-between items-center p-1 pl-2 gap-1"
-            >
-              <div className="truncate">{f.name}</div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-4 w-4 p-1 hover:bg-primary! hover:text-primary-foreground!"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeFile(f.name);
-                }}
-                aria-label={`Remove ${f.name}`}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </Badge>
-          ))}
-        </div>
+          {files.length > 0 && (
+            <div className="inline-flex gap-2 flex-wrap">
+              {files.map((f) => (
+                <Badge
+                  key={f.name}
+                  className="max-w-32 flex flex-row justify-between items-center p-1 pl-2 gap-1"
+                >
+                  <div className="truncate">{f.name}</div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4 p-1 hover:bg-primary! hover:text-primary-foreground!"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFile(f.name);
+                    }}
+                    aria-label={`Remove ${f.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              ))}
+            </div>
+          )}
 
-        <Dialog.Footer>
-          <Button variant="secondary" onClick={onClose}>
-            Close
-          </Button>
-          <Button onClick={onClose} disabled={files.length === 0}>
-            Upload
-          </Button>
-        </Dialog.Footer>
+          <Dialog.Footer>
+            <Button type="button" variant="secondary" onClick={handleClose}>
+              Close
+            </Button>
+            <Button type="submit" disabled={files.length === 0 || loading}>
+              {loading ? <Spinner variant="circle" /> : null}
+              Upload
+            </Button>
+          </Dialog.Footer>
+        </form>
       </Dialog.Content>
     </Dialog>
   );
