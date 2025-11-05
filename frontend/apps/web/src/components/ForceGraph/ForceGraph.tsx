@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
 
@@ -339,8 +339,10 @@ function ForceGraphBase({
   const clampScale = useCallback((value: number) => Math.min(3, Math.max(0.35, value)), []);
 
   const handleWheel = useCallback(
-    (event: ReactWheelEvent<SVGSVGElement>) => {
-      event.preventDefault();
+    (event: WheelEvent) => {
+      if (event.cancelable) {
+        event.preventDefault();
+      }
 
       const svgElement = svgRef.current;
       if (!svgElement) {
@@ -365,6 +367,23 @@ function ForceGraphBase({
     },
     [clampScale],
   );
+
+  useEffect(() => {
+    const svgElement = svgRef.current;
+    if (!svgElement) {
+      return;
+    }
+
+    const listener = (event: WheelEvent) => {
+      handleWheel(event);
+    };
+
+    svgElement.addEventListener('wheel', listener, { passive: false });
+
+    return () => {
+      svgElement.removeEventListener('wheel', listener);
+    };
+  }, [handleWheel]);
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -433,7 +452,6 @@ function ForceGraphBase({
         height={height}
         role="img"
         aria-label="Knowledge graph overview"
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
