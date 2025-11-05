@@ -1,7 +1,7 @@
 import { Controller } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
@@ -51,7 +51,14 @@ export class PromoteController {
         .andWhere('apiLog.connection_id IS NOT NULL')
         .andWhere('connection.active = true')
         .andWhere('connection.access_token IS NOT NULL')
-        .andWhere('connection.token_expiry > :currentDate', { currentDate: new Date() })
+        .andWhere(
+          new Brackets((qb) => {
+            qb.where('connection.token_expiry > :currentDate', { currentDate: new Date() }).orWhere(
+              'connection.refresh_token IS NOT NULL',
+              { currentDate: new Date() },
+            );
+          }),
+        )
         .getRawMany();
 
       this.logger.log('Found users with unprocessed API logs', {
