@@ -8,36 +8,37 @@ import type { File as FileData } from './types';
 
 type ReturnType = [
   {
-    file: FileData | null;
+    files: FileData[];
     loading: boolean;
     error: unknown | null;
   },
   {
-    upload: (file: File) => void;
+    upload: (file: File[]) => void;
   },
 ];
 
 export function useUploadFile(): ReturnType {
   const [{ authToken }] = useAuth();
 
-  const [file, setFile] = useState<FileData | null>(null);
+  const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown | null>(null);
 
   const upload = useCallback(
-    async (file: File) => {
-      setFile(null);
+    async (files: File[]) => {
+      setFiles([]);
       setError(null);
       setLoading(true);
 
       const formData = new FormData();
 
-      formData.append('file', file);
+      files.forEach((file) => {
+        formData.append('files', file);
+      });
 
-      let fileData: FileData;
 
       try {
-        fileData = await fetchJson<FileData>('/api/files/upload', {
+        const data = await fetchJson<FileData[]>('/api/files/upload', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${authToken}`,
@@ -45,7 +46,7 @@ export function useUploadFile(): ReturnType {
           body: formData,
         });
 
-        setFile(fileData);
+        setFiles(data);
       } catch (err) {
         setError(err);
       } finally {
@@ -57,7 +58,7 @@ export function useUploadFile(): ReturnType {
 
   return [
     {
-      file,
+      files,
       loading,
       error,
     },
