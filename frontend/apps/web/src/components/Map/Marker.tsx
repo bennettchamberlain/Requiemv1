@@ -1,30 +1,67 @@
 import { useMemo } from 'react';
 
+import { cn } from '@ci/shadcn';
 import { Squircle } from '@ci/shadcn/icons';
 import L from 'leaflet';
 import { renderToString } from 'react-dom/server';
-import { Marker, type MarkerProps } from 'react-leaflet';
+import { Marker as LeafletMarker, type MarkerProps } from 'react-leaflet';
 
-export function makeMarkerIcon(): L.DivIcon {
+const MARKER_DIAMETER = 48; // Corresponds to h-12, w-12
+const POINTER_HEIGHT = 38; // The height of the CSS triangle
+
+type MakeMarkerOpts = {
+  bgColor?: string;
+  borderColor?: string;
+};
+
+export function makeMarkerIcon({ bgColor, borderColor }: MakeMarkerOpts): L.DivIcon {
   const html = renderToString(
-    <div className="h-8 w-8 p-1 relative flex items-center justify-center bg-blue-600 border-2 border-blue-500 rounded-full">
-      <Squircle className="text-accent" />
+    <div className="relative flex flex-col items-center">
+      <div
+        className={`h-12 w-12 p-1 relative flex items-center justify-center bg-${bgColor} border-4 border-${borderColor} rounded-full`}
+      >
+        <Squircle className="text-accent" />
+      </div>
+
+      <div
+        className={cn(
+          'w-0 h-0',
+          'border-l-transparent border-r-transparent',
+          `border-t-${borderColor}`,
+          `-mt-[${MARKER_DIAMETER / 2}px]`,
+        )}
+        style={{
+          // These are styles because Tailwind doesn't support dynamic values for border widths
+          // and does not generate the required classes since we're using calculated values.
+          borderLeftWidth: `${MARKER_DIAMETER / 2}px`,
+          borderRightWidth: `${MARKER_DIAMETER / 2}px`,
+          borderTopWidth: `${POINTER_HEIGHT}px`,
+        }}
+      />
     </div>,
   );
 
+  const totalHeight = MARKER_DIAMETER / 2 + POINTER_HEIGHT;
+
   return L.divIcon({
-    className: 'custom-marker',
+    className: 'custom-marker', // This class should have no default Leaflet background/border
     html,
-    iconSize: [32, 32], // Explicitly set the size (h-8 w-8 -> 32px)
-    iconAnchor: [16, 16], // Anchor to the center of the icon
-    popupAnchor: [0, -16], // Position popup just above the center
+    // The total dimensions of the new marker element (circle + pointer)
+    iconSize: [MARKER_DIAMETER, totalHeight],
+    // Anchor to the tip of the pointer: center horizontally, bottom vertically
+    iconAnchor: [MARKER_DIAMETER / 2, totalHeight],
+    // Position the popup to open directly above the marker's anchor point
+    popupAnchor: [0, -totalHeight],
   });
 }
 
-type Props = Omit<MarkerProps, 'icon'>;
+interface Props extends Omit<MarkerProps, 'icon'> {
+  bgColor?: string;
+  borderColor?: string;
+}
 
-export default function MyMarker({ ...markerProps }: Props) {
-  const icon = useMemo(() => makeMarkerIcon(), []);
+export function Marker({ bgColor = 'blue-600', borderColor = 'blue-500', ...markerProps }: Props) {
+  const icon = useMemo(() => makeMarkerIcon({ bgColor, borderColor }), [bgColor, borderColor]);
 
-  return <Marker zIndexOffset={400} {...markerProps} icon={icon} />;
+  return <LeafletMarker zIndexOffset={400} {...markerProps} icon={icon} />;
 }
