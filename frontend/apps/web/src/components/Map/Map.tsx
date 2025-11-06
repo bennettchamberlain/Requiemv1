@@ -6,6 +6,7 @@ import { MapContainer, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { Controls } from './Controls';
+import { Marker } from './Marker';
 import { Panel } from './Panel';
 
 interface Props {
@@ -33,4 +34,5 @@ export function Map({ center, children }: Props) {
 }
 
 Map.Controls = Controls;
+Map.Marker = Marker;
 Map.Panel = Panel;
