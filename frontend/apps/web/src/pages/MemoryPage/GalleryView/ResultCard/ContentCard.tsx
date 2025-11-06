@@ -54,7 +54,7 @@ export function ContentCard({ result }: Props) {
         {result?.file?.contentType?.startsWith('image/') && (
           <div key={result.id} className="flex flex-col items-center border rounded-lg p-2 bg-gray-50 shadow">
             <img
-              src={`/static/${result.file.url}`.replace('//', '/')}
+              src={`/static/${result.file.url}`.replace('//', '/')} //Handle if url has leading slash
               alt={result.file.name}
               className="w-full h-48 object-cover rounded mb-2"
               loading="lazy"
