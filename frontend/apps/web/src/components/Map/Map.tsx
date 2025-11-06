@@ -8,6 +8,7 @@ import 'leaflet/dist/leaflet.css';
 import { Controls } from './Controls';
 import { Marker } from './Marker';
 import { Panel } from './Panel';
+import { MapProvider } from './useMap';
 
 interface Props {
   center?: LatLngExpression;
@@ -25,9 +26,11 @@ export function Map({ center, children }: Props) {
         attributionControl={false}
         zoomControl={false}
       >
-        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+        <MapProvider args={[]}>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
 
-        {children}
+          {children}
+        </MapProvider>
       </MapContainer>
     </div>
   );
