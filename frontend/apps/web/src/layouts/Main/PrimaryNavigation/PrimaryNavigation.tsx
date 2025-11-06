@@ -1,5 +1,3 @@
-import { useState } from 'react';
-
 import { Portal } from '@ci/common';
 import { Button, DropdownMenu, Separator, Sidebar } from '@ci/shadcn';
 import { MoreHorizontal, SunMoon, Upload, Camera } from '@ci/shadcn/icons';
@@ -12,7 +10,6 @@ import { useModalControls, useTheme } from '@/hooks';
 export function PrimaryNavigation() {
   const { themeState, setTheme } = useTheme();
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
     useModalControls();
   const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
@@ -37,30 +34,19 @@ export function PrimaryNavigation() {
           <Portal id="actions" className="flex flex-row items-center" />
 
           <div className="flex flex-row items-center">
-            <Portal id="contextual-button" />
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenu modal={false}>
               <DropdownMenu.Trigger asChild>
                 <Button variant="outline" size="icon" aria-label="More Options">
                   <MoreHorizontal />
                 </Button>
               </DropdownMenu.Trigger>
-              <DropdownMenu.Content align="end" className="w-52">
+              <DropdownMenu.Content>
                 <DropdownMenu.Group>
-                  <DropdownMenu.Item
-                    onClick={() => {
-                      setMenuOpen(false);
-                      openUploadModal();
-                    }}
-                  >
+                  <DropdownMenu.Item onSelect={openUploadModal}>
                     <Upload />
                     Upload
                   </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    onClick={() => {
-                      setMenuOpen(false);
-                      openCaptureModal();
-                    }}
-                  >
+                  <DropdownMenu.Item onSelect={openCaptureModal}>
                     <Camera />
                     Capture
                   </DropdownMenu.Item>
