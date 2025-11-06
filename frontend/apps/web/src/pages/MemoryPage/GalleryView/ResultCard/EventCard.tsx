@@ -10,7 +10,6 @@ export interface Props {
 }
 
 export function EventCard({ result }: Props) {
-  console.log('event result', result);
   const hasStartDate = result.startDate;
   const hasEndDate = result.endDate;
   const hasOrganizer = result.organizer;
