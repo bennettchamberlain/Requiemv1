@@ -1,5 +1,5 @@
 import { Card, Badge } from '@ci/shadcn';
-import { Image, Calendar, MapPin } from '@ci/shadcn/icons';
+import { Image, Calendar, MapPin, Clock, User, Repeat, Timer, Link } from '@ci/shadcn/icons';
 
 import { formatDateTime, formatDuration } from '@/pages/MemoryPage/Components';
 import { truncateText } from '@/pages/MemoryPage/ListView/utils.tsx';
@@ -55,7 +55,7 @@ export function EventCard({ result }: Props) {
             <div className="min-w-0">
               <span className="text-sm font-medium text-muted-foreground">Start:</span>
               <span className="ml-2 text-sm text-card-foreground">
-                {formatDateTime(memory.startDate || '', memory.startTime || undefined)}
+                {formatDateTime(result.startDate || '', result.startTime || undefined)}
               </span>
             </div>
           </div>
@@ -67,7 +67,7 @@ export function EventCard({ result }: Props) {
             <div className="min-w-0">
               <span className="text-sm font-medium text-muted-foreground">End:</span>
               <span className="ml-2 text-sm text-card-foreground">
-                {formatDateTime(memory.endDate || '', memory.endTime || undefined)}
+                {formatDateTime(result.endDate || '', result.endTime || undefined)}
               </span>
             </div>
           </div>
@@ -78,7 +78,7 @@ export function EventCard({ result }: Props) {
             <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             <div className="min-w-0">
               <span className="text-sm font-medium text-muted-foreground">Organizer:</span>
-              <span className="ml-2 text-sm text-card-foreground">{memory.organizer}</span>
+              <span className="ml-2 text-sm text-card-foreground">{result.organizer}</span>
             </div>
           </div>
         )}
@@ -88,7 +88,7 @@ export function EventCard({ result }: Props) {
             <Repeat className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             <div className="min-w-0">
               <span className="text-sm font-medium text-muted-foreground">Repeats:</span>
-              <span className="ml-2 text-sm text-card-foreground">{memory.repeatingFrequency}</span>
+              <span className="ml-2 text-sm text-card-foreground">{result.repeatingFrequency}</span>
             </div>
           </div>
         )}
@@ -99,7 +99,7 @@ export function EventCard({ result }: Props) {
             <div className="min-w-0">
               <span className="text-sm font-medium text-muted-foreground">Duration:</span>
               <span className="ml-2 text-sm text-card-foreground">
-                {formatDuration(memory.duration || 0)}
+                {formatDuration(result.duration || 0)}
               </span>
             </div>
           </div>
@@ -118,7 +118,7 @@ export function EventCard({ result }: Props) {
         {hasSource && (
           <div className="flex items-center gap-5">
             <span className="text-sm font-medium text-muted-foreground">Source:</span>
-            <span className="text-sm text-card-foreground">{memory.source}</span>
+            <span className="text-sm text-card-foreground">{result.source}</span>
           </div>
         )}
 
@@ -127,7 +127,7 @@ export function EventCard({ result }: Props) {
             <Link className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             <div className="min-w-0">
               <a
-                href={memory.sourceLink}
+                href={result.sourceLink}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-primary hover:text-primary/80 underline"
@@ -141,7 +141,7 @@ export function EventCard({ result }: Props) {
 
         {hasDescription && (
           <div className="pt-3 pb-3">
-            <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">{result.description}</p>
           </div>
         )}
       </Card.Content>

@@ -10,7 +10,11 @@ export function GalleryView() {
   const { memories, searchResults } = useMemoryService();
 
   let combinedResults: (SearchResult | MemoryItem)[] = [];
-  combinedResults = combinedResults.concat(memories).concat(searchResults);
+  const memoryIds = memories.map((memory) => memory.id);
+  const uniqueSearchResults = searchResults.filter((searchResult) => {
+    return !memoryIds.includes(searchResult.id);
+  });
+  combinedResults = combinedResults.concat(memories).concat(uniqueSearchResults);
 
   return (
     <>

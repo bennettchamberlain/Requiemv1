@@ -45,6 +45,7 @@ export function CommunicationCard({ result }: Props) {
 
       <Card.Content>
         {result?.metadata?.communicationType === 'email' &&
+          result.description &&
           parse(DOMPurify.sanitize(result.description, { USE_PROFILES: { html: true } }))}
       </Card.Content>
     </Card>

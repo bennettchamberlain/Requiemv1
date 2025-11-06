@@ -35,7 +35,7 @@ export function PersonCard({ result }: Props) {
           <div className="mt-4 pt-4">
             <div className="flex flex-wrap gap-2">
               <div className="text-xs">
-                <span className="text-muted-foreground">{result.metadata.properties.email}</span>
+                <span className="text-muted-foreground">{result.metadata.properties.email as string}</span>
               </div>
             </div>
           </div>

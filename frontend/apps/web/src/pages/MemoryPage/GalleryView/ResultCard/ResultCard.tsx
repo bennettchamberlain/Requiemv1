@@ -8,7 +8,6 @@ import { EntityCard } from './EntityCard.tsx';
 import { EventCard } from './EventCard';
 import { ImageCard } from './ImageCard.tsx';
 import { LocationCard } from './LocationCard';
-import { OtherCard } from './OtherCard';
 import { PersonCard } from './PersonCard';
 import { QuestionCard } from './QuestionCard.tsx';
 
@@ -16,16 +15,15 @@ export interface Props {
   result: SearchResult | MemoryItem;
 }
 
-function getOtherCardType(result: MemoryItem | undefined): SearchResult {
-  return result.category === 'Location' ? (
-    <LocationCard result={result as MemoryItem} />
-  ) : (
-    <OtherCard result={result as MemoryItem} />
-  );
+function getOtherCardType(result: MemoryItem | undefined) {
+  if (!result) {
+    return null;
+  }
+
+  return result.category === 'Location' ? <LocationCard result={result} /> : null;
 }
 
 export function ResultCard({ result }: Props) {
-  console.log('result', result);
   switch (result.type) {
     case 'answer':
       return <AnswerCard result={result} />;
@@ -48,7 +46,7 @@ export function ResultCard({ result }: Props) {
     case 'person':
       return <PersonCard result={result as MemoryItem} />;
     case 'other':
-      return getOtherCardType(result);
+      return getOtherCardType(result as MemoryItem);
     default:
       return null;
   }
