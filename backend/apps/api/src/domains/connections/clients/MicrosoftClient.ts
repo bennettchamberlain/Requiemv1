@@ -254,7 +254,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
       pageCount++;
 
-      this.logger.log('Outlook full sync page completed', {
+      this.logger.log('Outlook Mail full sync page completed', {
         connectionId: connection.id,
         pageMessageCount: messages.length,
         totalMessages,
@@ -278,7 +278,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
       result.syncState = newSyncState;
     });
 
-    this.logger.log('Outlook full sync completed', {
+    this.logger.log('Outlook Mail full sync completed', {
       connectionId: connection.id,
       totalMessageCount: totalMessages,
       totalPages: pageCount,
@@ -332,7 +332,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
       pageCount++;
 
-      this.logger.log('Outlook full sync page completed', {
+      this.logger.log('Outlook Calendars full sync page completed', {
         connectionId: connection.id,
         pageNumber: pageCount,
         hasNextPage: !!nextCalendarsLink,
@@ -448,7 +448,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
       pageCount++;
 
-      this.logger.log('Outlook full sync page completed', {
+      this.logger.log('OneDrive full sync page completed', {
         connectionId: connection.id,
         pageFilesCount: filteredFiles.length,
         pageNumber: pageCount,

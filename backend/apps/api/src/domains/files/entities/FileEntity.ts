@@ -50,6 +50,9 @@ export class FileEntity {
   @Column({ type: 'text', name: 'mime_type' })
   content_type!: string;
 
+  @Column({ type: 'text', name: 'file_hash' })
+  file_hash!: string | null;
+
   @Column({ type: 'bigint', name: 'file_size_bytes' })
   size!: number;
 
@@ -67,6 +70,7 @@ export class FileEntity {
     return {
       id: this.id,
       name: this.original_name,
+      fileHash: this.file_hash || undefined,
       key: this.key,
       contentType: this.content_type,
       size: this.size,

@@ -1,8 +1,10 @@
+import { createHmac } from 'crypto';
 import { Readable } from 'node:stream';
 
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
+import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { FileService } from '@ci/domains/files';
 import { CommunicationService } from '@ci/domains/memory';
@@ -218,22 +220,40 @@ export class OutlookMailPromotionService {
       'EMAILED',
     );
 
-    const attachmentUploads = await Promise.all(
+    const attachmentUploadIds = await Promise.all(
       (messageDetails.attachments || []).map(async (attachment) => {
-        const file = {
-          fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
-          originalname: attachment.name,
-          mimetype: attachment.contentType,
+        const buffer = attachment.contentBytes
+          ? Buffer.from(attachment.contentBytes, 'base64')
+          : Buffer.from('');
+        const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
+        const fileSearch = {
+          content_type: attachment.contentType,
           size: attachment.size,
-          encoding: 'base64',
-          destination: '',
-          stream: '' as unknown as Readable,
+          file_hash: fileHash,
           filename: attachment.name,
-          path: '',
-          buffer: attachment.contentBytes ? Buffer.from(attachment.contentBytes, 'base64') : Buffer.from(''),
         };
+        const existingFiles = await this.fileService.search({ userId }, fileSearch);
+        if (existingFiles.length === 0) {
+          const file = {
+            fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
+            originalname: attachment.name,
+            mimetype: attachment.contentType,
+            size: attachment.size,
+            encoding: 'base64',
+            destination: '',
+            stream: '' as unknown as Readable,
+            filename: attachment.name,
+            fileHash,
+            path: '',
+            buffer: attachment.contentBytes
+              ? Buffer.from(attachment.contentBytes, 'base64')
+              : Buffer.from(''),
+          };
 
-        return this.fileService.upload({ userId }, file);
+          return (await this.fileService.upload({ userId }, file)).id;
+        } else {
+          return existingFiles[0].id;
+        }
       }),
     );
 
@@ -264,7 +284,7 @@ export class OutlookMailPromotionService {
       content: messageDetails.body || messageDetails.bodyPreview || '',
       category: 'personal', // TODO: Classify emails
       connection_id: connectionId,
-      attachments: attachmentUploads.map((file) => file.id),
+      attachments: attachmentUploadIds,
     });
   }
 

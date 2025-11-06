@@ -198,6 +198,46 @@ export interface UpdateEventDto {
   content?: CreateContentDto[];
 }
 
+export interface SearchEventDto {
+  id?: string;
+  title?: string;
+  description?: string;
+  event_type?: string;
+  category?: string;
+  start_time?: Date;
+  end_time?: Date;
+  location_name?: string;
+  event_entity_id?: string;
+  location_entity_id?: string;
+  location_coordinates?: Point;
+  organizer_entity_id?: string;
+  source_type?: string;
+  source_system?: string;
+  source_id?: string;
+  confidence_score?: number;
+  is_recurring?: boolean;
+  recurrence_pattern?: object;
+  is_all_day?: boolean;
+  is_private?: boolean;
+  priority?: number;
+  metadata?: object;
+  is_predicted?: boolean;
+  is_inferred?: boolean;
+  prediction_model?: string;
+  inference_sources?: object;
+  sentiment_score?: number;
+  energy_level?: number;
+  productivity_impact?: number;
+  status?: string;
+  is_deleted?: boolean;
+  external_sync_status?: string;
+  last_synced_at?: Date | undefined;
+  parent_event_id?: string;
+  supersedes_event_id?: string;
+  created_by?: string;
+  user_id?: string;
+}
+
 export interface Content {
   readonly id: string;
   readonly type: string;
