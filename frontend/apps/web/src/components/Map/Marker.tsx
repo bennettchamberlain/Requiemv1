@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 import { cn } from '@ci/shadcn';
 import { Squircle } from '@ci/shadcn/icons';
-import L from 'leaflet';
+import L, { type LeafletMouseEvent } from 'leaflet';
 import { renderToString } from 'react-dom/server';
 import { Marker as LeafletMarker, type MarkerProps } from 'react-leaflet';
 
@@ -58,10 +58,24 @@ export function makeMarkerIcon({ bgColor, borderColor }: MakeMarkerOpts): L.DivI
 interface Props extends Omit<MarkerProps, 'icon'> {
   bgColor?: string;
   borderColor?: string;
+  onClick?: (e: LeafletMouseEvent) => void;
 }
 
-export function Marker({ bgColor = 'blue-600', borderColor = 'blue-500', ...markerProps }: Props) {
+export function Marker({ bgColor = 'blue-600', borderColor = 'blue-500', onClick, ...markerProps }: Props) {
   const icon = useMemo(() => makeMarkerIcon({ bgColor, borderColor }), [bgColor, borderColor]);
 
-  return <LeafletMarker zIndexOffset={400} {...markerProps} icon={icon} />;
+  const eventHandlers = useMemo(
+    () => ({
+      click: (e: LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        onClick?.(e);
+      },
+      dblclick: (e: LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+      },
+    }),
+    [onClick],
+  );
+
+  return <LeafletMarker zIndexOffset={400} {...markerProps} icon={icon} eventHandlers={eventHandlers} />;
 }
