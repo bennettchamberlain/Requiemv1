@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { Button, Card } from '@ci/shadcn';
 import type { Meta, StoryObj } from '@storybook/react';
 import { type LatLngExpression } from 'leaflet';
-import { Marker, Popup } from 'react-leaflet';
+import { action } from 'storybook/actions';
 
 import { Map } from './Map';
 
@@ -34,12 +34,12 @@ type Story = StoryObj<Props>;
 
 export const Default: Story = {};
 
+const onMarkerClick = action('onClick');
+
 export const WithMarker: Story = {
   args: {
     children: (
-      <Marker position={SAN_FRANCISCO}>
-        <Popup>Hello from Leaflet 👋</Popup>
-      </Marker>
+      <Map.Marker position={SAN_FRANCISCO} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
     ),
   },
 };
