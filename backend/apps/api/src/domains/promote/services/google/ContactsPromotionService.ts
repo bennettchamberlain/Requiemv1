@@ -5,8 +5,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { EventService, Events } from '@ci/domains/events';
-import { GraphUtilityService, GraphNodeEntity } from '@ci/domains/graph';
-import { PersonService } from '@ci/domains/memory';
+import { PersonService, GraphUtilityService, GraphNodeEntity } from '@ci/domains/memory';
 
 interface GoogleContact {
   resourceName?: string;

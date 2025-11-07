@@ -5,10 +5,11 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
-import { GraphQueryService, UserContextService } from '@ci/domains/graph';
 import { EmbeddingService } from '@ci/domains/search';
 
 import { GraphEventService } from '../services/GraphEventService';
+import { GraphQueryService } from '../services/GraphQueryService';
+import { UserContextService } from '../services/UserContextService';
 
 const propertiesSchema = z.record(z.unknown());
 const optionalPropertiesSchema = propertiesSchema.optional();

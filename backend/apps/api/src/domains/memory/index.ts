@@ -27,7 +27,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BrowserActivityModule, BrowserActivityEntity } from '@ci/domains/browser-activity';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
-import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
@@ -39,17 +38,25 @@ import { CommunicationEntity } from './entities/CommunicationEntity';
 import { ContactEntity } from './entities/ContactEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
+import { FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
+import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { LocationEntity } from './entities/LocationEntity';
 import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
+import { RelationshipEntity } from './entities/RelationshipEntity';
 import { ThingEntity } from './entities/ThingEntity';
+import { GraphEventListener } from './listeners/GraphEventListener';
 import { CommunicationService } from './services/CommunicationService';
 import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
 import { GraphEventService } from './services/GraphEventService';
+import { GraphQueryService } from './services/GraphQueryService';
+import { GraphReadService } from './services/GraphReadService';
+import { GraphUtilityService } from './services/GraphUtilityService';
 import { MemoryService } from './services/MemoryService';
 import { PersonService } from './services/PersonService';
+import { UserContextService } from './services/UserContextService';
 
 /**
  * @internal
@@ -70,10 +77,11 @@ import { PersonService } from './services/PersonService';
       FileEntity,
       BrowserActivityEntity,
       UserEntity,
+      RelationshipEntity,
+      FactEntity,
     ]),
     UserModule,
     EventsModule,
-    GraphModule,
     EmbeddingModule,
     FilesModule,
     BrowserActivityModule,
@@ -84,6 +92,11 @@ import { PersonService } from './services/PersonService';
     ContentService,
     EventService,
     GraphEventService,
+    GraphUtilityService,
+    GraphQueryService,
+    GraphReadService,
+    UserContextService,
+    GraphEventListener,
     PersonService,
   ],
   controllers: [MemoryController, ContentController, EventController, GraphController],
@@ -94,6 +107,10 @@ import { PersonService } from './services/PersonService';
     EventService,
     GraphEventService,
     PersonService,
+    UserContextService,
+    GraphUtilityService,
+    GraphQueryService,
+    GraphReadService,
   ],
 })
 export class MemoryModule {}
@@ -107,6 +124,8 @@ export {
   PersonEntity,
   PlaceEntity,
   ThingEntity,
+  GraphNodeEntity,
+  RelationshipEntity,
 };
 
 // Services
@@ -117,6 +136,10 @@ export {
   CommunicationService,
   GraphEventService,
   PersonService,
+  UserContextService,
+  GraphUtilityService,
+  GraphQueryService,
+  GraphReadService,
 };
 
 // Types

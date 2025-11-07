@@ -10,12 +10,12 @@ import { RequestContext } from '@ci/common/types';
 import { BrowserActivityEntity } from '@ci/domains/browser-activity';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
 import { FileService, type File } from '@ci/domains/files';
-import { GraphQueryService } from '@ci/domains/graph';
 
 import { CommunicationEntity } from '../entities/CommunicationEntity';
 import { ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
 import { FileEntity } from '../entities/FileEntity';
+import { GraphQueryService } from '../services/GraphQueryService';
 import { Memory, MemoryLocation, MemoryResponse, MemorySearchParams } from '../types';
 
 type GraphNodeLike = {

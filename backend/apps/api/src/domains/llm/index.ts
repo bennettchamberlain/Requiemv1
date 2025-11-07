@@ -22,7 +22,6 @@ import { Module } from '@nestjs/common';
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
-import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 import { ToolsModule } from '@ci/domains/tools';
 
@@ -33,7 +32,7 @@ import { OllamaService } from './services/OllamaService';
  * @internal
  */
 @Module({
-  imports: [ConversationModule, EventsModule, FilesModule, MemoryModule, GraphModule, ToolsModule],
+  imports: [ConversationModule, EventsModule, FilesModule, MemoryModule, ToolsModule],
   providers: [OllamaService],
   controllers: [OllamaController],
   exports: [OllamaService],

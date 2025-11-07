@@ -12,7 +12,7 @@ import type { RequestContext } from '@ci/common/types';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { UserContextService } from '@ci/domains/graph';
+import { UserContextService } from '@ci/domains/memory';
 
 import { OllamaService } from '../services/OllamaService';
 import type { PromptInput } from '../types';
