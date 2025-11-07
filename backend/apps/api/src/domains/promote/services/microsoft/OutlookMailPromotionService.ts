@@ -269,25 +269,27 @@ export class OutlookMailPromotionService {
     const searchContent = this.buildCommunicationSearchContent(messageDetails);
 
     // Save to communications table
-    const communication = await this.communicationService.create({
-      time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
-      user_id: userId,
-      communication_type: 'email',
-      direction,
-      from_entity_id: fromEntityIds[0] || undefined,
-      to_entity_ids: toEntityIdsCombined,
-      participants_metadata: {
-        from: fromParticipants,
-        to: toParticipants,
-        cc: ccParticipants,
-        bcc: bccParticipants,
+    const communication = await this.communicationService.create(
+      { userId },
+      {
+        time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
+        communication_type: 'email',
+        direction,
+        from_entity_id: fromEntityIds[0] || undefined,
+        to_entity_ids: toEntityIdsCombined,
+        participants_metadata: {
+          from: fromParticipants,
+          to: toParticipants,
+          cc: ccParticipants,
+          bcc: bccParticipants,
+        },
+        subject: messageDetails.subject,
+        content: messageDetails.body || messageDetails.bodyPreview || '',
+        category: 'personal', // TODO: Classify emails
+        connection_id: connectionId,
+        attachments: attachmentUploadIds,
       },
-      subject: messageDetails.subject,
-      content: messageDetails.body || messageDetails.bodyPreview || '',
-      category: 'personal', // TODO: Classify emails
-      connection_id: connectionId,
-      attachments: attachmentUploadIds,
-    });
+    );
 
     await this.enqueueCommunicationEmbedding(userId, communication, searchContent);
   }
