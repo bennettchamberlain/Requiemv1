@@ -8,6 +8,7 @@ import 'leaflet/dist/leaflet.css';
 import { Controls } from './Controls';
 import { Marker } from './Marker';
 import { Panel } from './Panel';
+import { RouteLayer } from './RouteLayer';
 import { MapProvider } from './useMap';
 
 interface Props {
@@ -39,3 +40,4 @@ export function Map({ center, children }: Props) {
 Map.Controls = Controls;
 Map.Marker = Marker;
 Map.Panel = Panel;
+Map.RouteLayer = RouteLayer;

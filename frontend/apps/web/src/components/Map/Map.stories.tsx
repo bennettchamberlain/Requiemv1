@@ -6,7 +6,6 @@ import { type LatLngExpression } from 'leaflet';
 import { action } from 'storybook/actions';
 
 import { Map } from './Map';
-import { RouteLayer } from './RouteLayer';
 
 const TRANSAMERICA_PYRAMID: LatLngExpression = [37.7952, -122.4028];
 const GOLDEN_GATE_BRIDGE: LatLngExpression = [37.806409919782666, -122.47585786589606];
@@ -43,7 +42,6 @@ export const Default: Story = {
   args: {
     children: (
       <>
-        <RouteLayer />
         <Map.Marker
           position={TRANSAMERICA_PYRAMID}
           onClick={(...args: unknown[]) => onMarkerClick(...args)}
@@ -52,7 +50,11 @@ export const Default: Story = {
         <Map.Marker position={NOE_PEAK} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
         <Map.Marker position={GOLDEN_GATE_PARK} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
         <Map.Marker position={GOLDEN_GATE_BRIDGE} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
+
+        <Map.RouteLayer />
+
         <Map.Controls position="top-left" />
+
         <Map.Panel>
           <div className="space-y-4 p-4">
             <Card className="p-2 border-4 bg-secondary">
