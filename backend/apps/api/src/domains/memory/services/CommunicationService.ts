@@ -49,11 +49,7 @@ export class CommunicationService {
       is_archived: data.is_archived || false,
     });
 
-    if (data.participants_metadata) {
-      // TODO:
-      // fetch user entities by email address,
-      // create relationships.
-    }
+    // TODO: Build relationships using from_entity_id and to_entity_ids
 
     return this.communicationRepository.save(communication);
   }
