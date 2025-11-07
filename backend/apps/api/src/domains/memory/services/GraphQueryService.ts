@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
-import { GraphNodeEntity } from '@ci/domains/graph/entities/GraphNodeEntity';
-import { RelationshipEntity } from '@ci/domains/graph/entities/RelationshipEntity';
+import { GraphNodeEntity } from '../entities/GraphNodeEntity';
+import { RelationshipEntity } from '../entities/RelationshipEntity';
 
 import { GraphUtilityService } from './GraphUtilityService';
 

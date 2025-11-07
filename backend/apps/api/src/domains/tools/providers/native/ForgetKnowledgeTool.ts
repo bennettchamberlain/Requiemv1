@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { GraphUtilityService, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
+import { GraphUtilityService, GraphNodeEntity, RelationshipEntity } from '@ci/domains/memory';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';

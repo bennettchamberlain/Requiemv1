@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { GraphQueryService, GraphReadService } from '@ci/domains/graph';
+import { GraphQueryService, GraphReadService } from '@ci/domains/memory';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';

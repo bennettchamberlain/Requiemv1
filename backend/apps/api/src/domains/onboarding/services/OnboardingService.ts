@@ -2,9 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { RequestContext } from '@ci/common/types';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
-import { GraphQueryService } from '@ci/domains/graph';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { GraphEventService } from '@ci/domains/memory';
+import { GraphEventService, GraphQueryService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
 
 import { OnboardingInput } from '../types';

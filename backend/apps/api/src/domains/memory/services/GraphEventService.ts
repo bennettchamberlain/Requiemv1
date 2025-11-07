@@ -3,7 +3,8 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { Events, EventService } from '@ci/domains/events';
-import { GraphQueryService } from '@ci/domains/graph';
+
+import { GraphQueryService } from './GraphQueryService';
 
 type ConceptPayload = {
   entityId: string;

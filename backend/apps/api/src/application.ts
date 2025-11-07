@@ -23,7 +23,6 @@ import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
-import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
@@ -61,7 +60,6 @@ import { UserModule } from '@ci/domains/user';
     OnboardingModule,
     ToolsModule,
     MemoryModule,
-    GraphModule,
     PromoteModule,
     SpeechModule,
     UserModule,

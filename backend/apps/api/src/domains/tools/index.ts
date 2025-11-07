@@ -25,7 +25,6 @@ import { Module } from '@nestjs/common';
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
-import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 
 import { McpController } from './controllers/McpController';
@@ -58,7 +57,7 @@ const nativeToolInstances = [
  * @internal
  */
 @Module({
-  imports: [EventsModule, ConversationModule, FilesModule, MemoryModule, GraphModule],
+  imports: [EventsModule, ConversationModule, FilesModule, MemoryModule],
   controllers: [McpController],
   providers: [
     ToolRegistry,

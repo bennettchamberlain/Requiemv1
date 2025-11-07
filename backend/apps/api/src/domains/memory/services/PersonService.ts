@@ -5,8 +5,11 @@ import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { EventService, Events } from '@ci/domains/events';
-import { GraphUtilityService, GraphNodeEntity } from '@ci/domains/graph';
 import { UserEntity } from '@ci/domains/user';
+
+import { GraphNodeEntity } from '../entities/GraphNodeEntity';
+
+import { GraphUtilityService } from './GraphUtilityService';
 
 interface ParticipantInfo {
   email: string;
@@ -16,8 +19,8 @@ interface ParticipantInfo {
 }
 
 @Injectable()
-export class PersonPromotionService {
-  private logger = new LoggerService(PersonPromotionService.name);
+export class PersonService {
+  private logger = new LoggerService(PersonService.name);
 
   constructor(
     @InjectRepository(GraphNodeEntity)

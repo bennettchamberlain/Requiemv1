@@ -31,11 +31,10 @@ import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EtlModule, ApiLogEntity } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
-import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
-import { MemoryModule } from '@ci/domains/memory';
+import { MemoryModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/memory';
 import { OneDrivePromotionService } from '@ci/domains/promote/services/microsoft/OneDrivePromotionService';
 import { OutlookCalendarPromotionService } from '@ci/domains/promote/services/microsoft/OutlookCalendarPromotionService';
-import { UserModule, UserEntity } from '@ci/domains/user';
+import { UserModule } from '@ci/domains/user';
 
 import { PromoteController as MicrosoftPromoteController } from './controllers/microsoft/PromoteController';
 import { PromoteController } from './controllers/PromoteController';
@@ -45,7 +44,6 @@ import { DrivePromotionService } from './services/google/DrivePromotionService';
 import { GmailPromotionService } from './services/google/GmailPromotionService';
 import { YouTubePromotionService } from './services/google/YouTubePromotionService';
 import { OutlookMailPromotionService } from './services/microsoft/OutlookMailPromotionService';
-import { PersonPromotionService } from './services/PersonPromotionService';
 import { PromoteService } from './services/PromoteService';
 
 /**
@@ -53,19 +51,12 @@ import { PromoteService } from './services/PromoteService';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      ApiLogEntity,
-      ConnectionEntity,
-      GraphNodeEntity,
-      RelationshipEntity,
-      UserEntity,
-    ]),
+    TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity, GraphNodeEntity, RelationshipEntity]),
     ConnectionsModule,
     FilesModule,
     EtlModule,
     EventsModule,
     MemoryModule,
-    GraphModule,
     UserModule,
   ],
   providers: [
@@ -75,7 +66,6 @@ import { PromoteService } from './services/PromoteService';
     YouTubePromotionService,
     DrivePromotionService,
     ContactsPromotionService,
-    PersonPromotionService,
     OutlookMailPromotionService,
     OutlookCalendarPromotionService,
     OneDrivePromotionService,
@@ -88,7 +78,6 @@ import { PromoteService } from './services/PromoteService';
     YouTubePromotionService,
     DrivePromotionService,
     ContactsPromotionService,
-    PersonPromotionService,
   ],
 })
 export class PromoteModule {}
