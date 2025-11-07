@@ -8,8 +8,9 @@ import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
+import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { EventService as DomainEventService, Events , type CreateEventDto, MemoryService } from '@ci/domains/memory';
+import { EventService as MemoryEventService, type CreateEventDto, MemoryService } from '@ci/domains/memory';
 
 import { PersonPromotionService } from '../PersonPromotionService';
 
@@ -250,10 +251,11 @@ export class OneDrivePromotionService {
         },
       } as CreateEventDto;
 
-    const created = await this.eventService.create({ userId }, newEvent);
-    const createdEvent = Array.isArray(created) ? created[0] : created;
-    const searchContent = this.buildEventSearchContent(fileDetails, newEvent);
-    await this.enqueueEventEmbedding(userId, createdEvent.id, searchContent);
+      const created = await this.eventService.create({ userId }, newEvent);
+      const createdEvent = Array.isArray(created) ? created[0] : created;
+      const searchContent = this.buildEventSearchContent(fileDetails, newEvent);
+      await this.enqueueEventEmbedding(userId, createdEvent.id, searchContent);
+    }
   }
 
   private async extractFileDetails(file: OneDrivePageEntity): Promise<ExtractedFile> {
