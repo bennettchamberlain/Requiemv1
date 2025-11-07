@@ -53,7 +53,7 @@ export const Default: Story = {
 
         <Map.RouteLayer />
 
-        <Map.Controls position="top-left" />
+        <Map.Controls />
 
         <Map.Panel>
           <div className="space-y-4 p-4">
