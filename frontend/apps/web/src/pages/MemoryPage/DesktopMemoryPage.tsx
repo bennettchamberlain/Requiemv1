@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 
 import { Portal } from '@ci/common';
-import { Breadcrumb, Tabs, Sheet } from '@ci/shadcn';
+import { Breadcrumb, Tabs, Sheet, Tooltip } from '@ci/shadcn';
+import { MapPin, List, Images, Share2 } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -133,22 +134,44 @@ export default function DesktopMemoryPage() {
           />
 
           {/* View Toggle */}
-          <Tabs defaultValue="map" onValueChange={setActiveTab} value={activeTab}>
-            <Tabs.List className="grid grid-cols-4 w-64 h-11">
-              <Tabs.Trigger value="map" className="text-sm">
-                Map
-              </Tabs.Trigger>
-              <Tabs.Trigger value="list" className="text-sm">
-                List
-              </Tabs.Trigger>
-              <Tabs.Trigger value="gallery" className="text-sm">
-                Gallery
-              </Tabs.Trigger>
-              <Tabs.Trigger value="graph" className="text-sm">
-                Graph
-              </Tabs.Trigger>
-            </Tabs.List>
-          </Tabs>
+          <Tooltip.Provider>
+            <Tabs defaultValue="map" onValueChange={setActiveTab} value={activeTab}>
+              <Tabs.List className="flex items-center justify-center h-11.5 border-1">
+                <Tabs.Trigger value="map">
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Trigger className="flex items-center justify-center h-4 w-6">
+                      <MapPin />
+                    </Tooltip.Trigger>
+                    <Tooltip.Content side="bottom">Map view</Tooltip.Content>
+                  </Tooltip>
+                </Tabs.Trigger>
+                <Tabs.Trigger value="list">
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Trigger className="flex items-center justify-center h-4 w-6">
+                      <List />
+                    </Tooltip.Trigger>
+                    <Tooltip.Content side="bottom">List view</Tooltip.Content>
+                  </Tooltip>
+                </Tabs.Trigger>
+                <Tabs.Trigger value="gallery">
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Trigger className="flex items-center justify-center h-4 w-6">
+                      <Images />
+                    </Tooltip.Trigger>
+                    <Tooltip.Content side="bottom">Gallery view</Tooltip.Content>
+                  </Tooltip>
+                </Tabs.Trigger>
+                <Tabs.Trigger value="graph">
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Trigger className="flex items-center justify-center h-4 w-6">
+                      <Share2 />
+                    </Tooltip.Trigger>
+                    <Tooltip.Content side="bottom">Graph view</Tooltip.Content>
+                  </Tooltip>
+                </Tabs.Trigger>
+              </Tabs.List>
+            </Tabs>
+          </Tooltip.Provider>
         </div>
 
         {/* Content */}

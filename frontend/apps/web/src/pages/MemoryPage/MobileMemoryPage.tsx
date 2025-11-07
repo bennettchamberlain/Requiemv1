@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Select, Button, Sheet } from '@ci/shadcn';
-import { Search, Filter, MapPin, List, Images, X, Workflow, Share2 } from '@ci/shadcn/icons';
+import { Search, Filter, MapPin, List, Images, X, Share2 } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -121,10 +121,6 @@ export default function MobileMemoryPage() {
                 </Tabs.Trigger>
                 <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
                   <Share2 className="h-4 w-4" />
-                  Graph
-                </Tabs.Trigger>
-                <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
-                  <Workflow className="h-4 w-4" />
                   Graph
                 </Tabs.Trigger>
               </Tabs.List>
