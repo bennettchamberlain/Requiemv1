@@ -35,7 +35,7 @@ import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/gr
 import { MemoryModule } from '@ci/domains/memory';
 import { OneDrivePromotionService } from '@ci/domains/promote/services/microsoft/OneDrivePromotionService';
 import { OutlookCalendarPromotionService } from '@ci/domains/promote/services/microsoft/OutlookCalendarPromotionService';
-import { UserModule, UserEntity } from '@ci/domains/user';
+import { UserModule } from '@ci/domains/user';
 
 import { PromoteController as MicrosoftPromoteController } from './controllers/microsoft/PromoteController';
 import { PromoteController } from './controllers/PromoteController';
@@ -52,13 +52,7 @@ import { PromoteService } from './services/PromoteService';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      ApiLogEntity,
-      ConnectionEntity,
-      GraphNodeEntity,
-      RelationshipEntity,
-      UserEntity,
-    ]),
+    TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity, GraphNodeEntity, RelationshipEntity]),
     ConnectionsModule,
     FilesModule,
     EtlModule,

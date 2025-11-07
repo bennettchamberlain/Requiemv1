@@ -29,7 +29,7 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/graph';
 import { EmbeddingModule } from '@ci/domains/search';
-import { UserModule } from '@ci/domains/user';
+import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { ContentController } from './controllers/ContentController';
 import { EventController } from './controllers/EventController';
@@ -69,6 +69,7 @@ import { PersonService } from './services/PersonService';
       RelationshipEntity,
       FileEntity,
       BrowserActivityEntity,
+      UserEntity,
     ]),
     UserModule,
     EventsModule,
