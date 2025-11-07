@@ -261,6 +261,7 @@ export class GmailPromotionService {
           communication_type: 'email',
           direction,
           thread_id: message.threadId,
+          // TODO: We're missing from_entity_id and to_entity_ids, so we can't make a relationship.
           participants_metadata: {
             from: fromParticipants,
             to: toParticipants,
