@@ -13,6 +13,7 @@ type ReturnType = [
     toggleRoutes: () => void;
     zoomIn: () => void;
     zoomOut: () => void;
+    centerVisibleMarkers: () => void;
   },
 ];
 
@@ -33,6 +34,27 @@ function useMap(): ReturnType {
   const toggleRoutes = useCallback(() => {
     setDisplayRoutes((prev) => !prev);
   }, []);
+
+  const centerVisibleMarkers = useCallback(() => {
+    const mapBounds = map.getBounds();
+    const visibleMarkers = markers.filter((marker) => mapBounds.contains(marker.getLatLng()));
+
+    if (visibleMarkers.length === 0) {
+      return;
+    }
+
+    if (visibleMarkers.length === 1) {
+      map.panTo(visibleMarkers[0].getLatLng());
+
+      return;
+    }
+
+    const bounds = L.latLngBounds(visibleMarkers.map((marker) => marker.getLatLng()));
+
+    map.fitBounds(bounds, {
+      padding: [50, 50],
+    });
+  }, [map, markers]);
 
   useEffect(() => {
     if (!map) {
@@ -87,6 +109,7 @@ function useMap(): ReturnType {
       toggleRoutes,
       zoomIn,
       zoomOut,
+      centerVisibleMarkers,
     },
   ];
 }

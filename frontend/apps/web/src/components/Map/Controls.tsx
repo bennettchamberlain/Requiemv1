@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 
 import { Button, ButtonGroup, Toggle, cn } from '@ci/shadcn';
-import { Plus, Minus, Route } from '@ci/shadcn/icons';
+import { Crosshair, Plus, Minus, Route } from '@ci/shadcn/icons';
 
 import { Panel } from './Panel';
 import { useMap } from './useMap';
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function Controls({ className, position = 'top-left' }: Props) {
-  const [{ displayRoutes }, { toggleRoutes, zoomIn, zoomOut }] = useMap();
+  const [{ displayRoutes }, { toggleRoutes, zoomIn, zoomOut, centerVisibleMarkers }] = useMap();
 
   return (
     <Panel position={position} className={cn('p-2', className)}>
@@ -28,6 +28,10 @@ export function Controls({ className, position = 'top-left' }: Props) {
             <Minus />
           </Button>
         </ButtonGroup>
+
+        <Button variant="outline" size="icon" onClick={centerVisibleMarkers}>
+          <Crosshair />
+        </Button>
 
         <Toggle
           pressed={displayRoutes}
