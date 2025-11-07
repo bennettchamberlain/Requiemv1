@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
+import { EventService, Events } from '@ci/domains/events';
 import { GraphUtilityService, GraphNodeEntity } from '@ci/domains/graph';
 import { UserEntity } from '@ci/domains/user';
 
@@ -24,6 +25,7 @@ export class PersonPromotionService {
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     private readonly graphUtilityService: GraphUtilityService,
+    private readonly eventService: EventService,
   ) {}
 
   /**
@@ -66,6 +68,7 @@ export class PersonPromotionService {
         .getOne();
 
       let entityId: string;
+      let searchContent: string | null = null;
 
       if (!existingEntity) {
         // Create new person entity
@@ -74,7 +77,7 @@ export class PersonPromotionService {
         const [firstName, ...restName] = nameParts;
         const lastName = restName.length > 0 ? restName.join(' ') : null;
 
-        const properties = {
+        const properties: Record<string, unknown> = {
           email: participant.email,
           first_name: firstName || participant.name,
           last_name: lastName,
@@ -89,13 +92,15 @@ export class PersonPromotionService {
           },
         };
 
+        searchContent = this.buildPersonSearchContent(participant.name, properties);
+
         await this.graphUtilityService.createGraphNode({
           entityId,
           entityType: 'Person',
           name: participant.name,
           description: `Contact from ${source}`,
           properties,
-          searchContent: `${participant.name} ${participant.email}`,
+          searchContent,
           ownerUserId: userId,
         });
 
@@ -108,12 +113,13 @@ export class PersonPromotionService {
       } else {
         // Update existing entity with new source data
         entityId = existingEntity.entity_id;
-        const currentProperties = existingEntity.properties as Record<string, unknown>;
+        const currentProperties = (existingEntity.properties as Record<string, unknown>) ?? {};
         const sources = (currentProperties.sources || []) as string[];
+        let propertiesForSearch = currentProperties;
 
         if (!sources.includes(source)) {
           sources.push(source);
-          const updatedProperties = {
+          propertiesForSearch = {
             ...currentProperties,
             sources,
             [`${source}_data`]: {
@@ -123,7 +129,7 @@ export class PersonPromotionService {
             },
           };
 
-          existingEntity.properties = updatedProperties;
+          existingEntity.properties = propertiesForSearch;
           existingEntity.last_accessed = new Date();
           await this.entityRepository.save(existingEntity);
 
@@ -132,7 +138,11 @@ export class PersonPromotionService {
             sources,
           });
         }
+
+        searchContent = this.buildPersonSearchContent(existingEntity.name, propertiesForSearch);
       }
+
+      await this.enqueuePersonEmbedding(userId, entityId, searchContent);
 
       // Create or update relationship between user and this person
       // This ensures every entity has at least one relationship
@@ -158,6 +168,67 @@ export class PersonPromotionService {
       });
       throw error;
     }
+  }
+
+  private async enqueuePersonEmbedding(ownerId: string, entityId: string, searchContent: string | null) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.eventService.send(Events.SEARCH_EMBED_ENTITY, {
+        ownerId,
+        entityId,
+        entityType: 'Person',
+        searchContent,
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue person embedding', {
+        ownerId,
+        entityId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildPersonSearchContent(
+    name: string | null | undefined,
+    properties?: Record<string, unknown>,
+  ): string | null {
+    const parts = new Set<string>();
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(name ?? null);
+
+    const props: Record<string, unknown> = properties ?? {};
+    const candidateKeys = ['first_name', 'last_name', 'email', 'occupation', 'bio', 'phone'];
+    for (const key of candidateKeys) {
+      push(props[key]);
+    }
+
+    const aliases = props['aliases'];
+    if (Array.isArray(aliases)) {
+      for (const alias of aliases) {
+        push(alias);
+      }
+    }
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
   }
 
   /**
@@ -289,17 +360,21 @@ export class PersonPromotionService {
       properties.last_name = restName.join(' ');
     }
 
+    const searchContent = this.buildPersonSearchContent(user.name ?? user.email ?? null, properties);
+
     await this.graphUtilityService.createGraphNode({
       entityId,
       entityType: 'Person',
       name: user.name || user.email,
       description: `User: ${user.name || user.email}`,
       properties,
-      searchContent: `${user.name || ''} ${user.email}`,
+      searchContent,
       linkedTable: 'users',
       linkedId: user.id,
       ownerUserId: user.id,
     });
+
+    await this.enqueuePersonEmbedding(user.id, entityId, searchContent);
 
     // Update the user record with the new entity ID
     await this.userRepository.update(user.id, { entityId });

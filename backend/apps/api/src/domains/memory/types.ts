@@ -261,7 +261,7 @@ export interface CreateContentDto {
   external_id?: string;
   source_url?: string;
   user_id?: string;
-  event_id: string;
+  event_id?: string;
   event?: {
     id: string;
   };

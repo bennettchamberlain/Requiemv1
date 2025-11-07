@@ -8,8 +8,9 @@ import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
+import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { EventService, type CreateEventDto, MemoryService } from '@ci/domains/memory';
+import { EventService as MemoryEventService, type CreateEventDto, MemoryService } from '@ci/domains/memory';
 
 import { PersonPromotionService } from '../PersonPromotionService';
 
@@ -36,10 +37,11 @@ export class OneDrivePromotionService {
 
   constructor(
     private readonly memoryService: MemoryService,
-    private readonly eventService: EventService,
+    private readonly eventService: MemoryEventService,
     private readonly personPromotionService: PersonPromotionService,
     private readonly connectionService: ConnectionService,
     private readonly fileService: FileService,
+    private readonly domainEventService: DomainEventService,
   ) {}
 
   async promoteOneDriveFiles(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -81,6 +83,57 @@ export class OneDrivePromotionService {
       });
       throw error;
     }
+  }
+
+  private async enqueueEventEmbedding(ownerId: string, eventId: string, searchContent: string | null) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.domainEventService.send(Events.SEARCH_EMBED_EVENT, {
+        ownerId,
+        eventId,
+        searchContent,
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue OneDrive event embedding', {
+        ownerId,
+        eventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildEventSearchContent(fileDetails: ExtractedFile, newEvent: CreateEventDto): string | null {
+    const parts = new Set<string>();
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(newEvent.title);
+    push(fileDetails.content?.name);
+    push(fileDetails.content?.file?.mimeType);
+
+    for (const participant of fileDetails.participants) {
+      push(participant.name);
+      push(participant.email);
+    }
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
   }
 
   private extractOneDriveFiles(content: RawData[]): OneDrivePageEntity[] {
@@ -198,8 +251,10 @@ export class OneDrivePromotionService {
         },
       } as CreateEventDto;
 
-      // Save to events table
-      await this.eventService.create({ userId }, newEvent);
+      const created = await this.eventService.create({ userId }, newEvent);
+      const createdEvent = Array.isArray(created) ? created[0] : created;
+      const searchContent = this.buildEventSearchContent(fileDetails, newEvent);
+      await this.enqueueEventEmbedding(userId, createdEvent.id, searchContent);
     }
   }
 

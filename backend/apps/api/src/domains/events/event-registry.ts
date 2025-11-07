@@ -27,6 +27,9 @@ export const enum Events {
   GRAPH_NODE_UPSERTED = 'graph.node.upserted',
   GRAPH_RELATIONSHIP_UPSERTED = 'graph.relationship.upserted',
   SEARCH_EMBED_ENTITY = 'search.embed.entity',
+  SEARCH_EMBED_CONTENT = 'search.embed.content',
+  SEARCH_EMBED_EVENT = 'search.embed.event',
+  SEARCH_EMBED_COMMUNICATION = 'search.embed.communication',
   PROMOTE_OUTLOOK_MAIL_MESSAGES = 'PROMOTE_OUTLOOK_MAIL_MESSAGES',
   PROMOTE_OUTLOOK_CALENDAR_EVENTS = 'PROMOTE_OUTLOOK_CALENDAR_EVENTS',
   PROMOTE_ONEDRIVE_FILES = 'PROMOTE_ONEDRIVE_FILES',
@@ -217,6 +220,29 @@ interface SearchEmbedEntityPayload extends EventPayload {
   entityType?: string;
 }
 
+interface SearchEmbedContentPayload extends EventPayload {
+  ownerId: string;
+  contentId: string;
+  text: string;
+}
+
+interface SearchEmbedEventPayload extends EventPayload {
+  ownerId: string;
+  eventId: string;
+  searchContent: string;
+}
+
+interface SearchEmbedCommunicationPayload extends EventPayload {
+  ownerId: string;
+  communication: {
+    userId: string;
+    communicationType: string;
+    occurredAt: string;
+    subject?: string | null;
+    content: string;
+  };
+}
+
 interface PromoteOutlookMessagesPayload extends EventPayload {
   apiLogId: string;
   userId: string;
@@ -263,6 +289,9 @@ export type EventPayloads = {
   [Events.GRAPH_NODE_UPSERTED]: GraphNodeUpsertedPayload;
   [Events.GRAPH_RELATIONSHIP_UPSERTED]: GraphRelationshipUpsertedPayload;
   [Events.SEARCH_EMBED_ENTITY]: SearchEmbedEntityPayload;
+  [Events.SEARCH_EMBED_CONTENT]: SearchEmbedContentPayload;
+  [Events.SEARCH_EMBED_EVENT]: SearchEmbedEventPayload;
+  [Events.SEARCH_EMBED_COMMUNICATION]: SearchEmbedCommunicationPayload;
   [Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]: PromoteOutlookMessagesPayload;
   [Events.PROMOTE_OUTLOOK_CALENDAR_EVENTS]: PromoteOutlookCalendarEventsPayload;
   [Events.PROMOTE_ONEDRIVE_FILES]: PromoteOneDriveFilePayload;

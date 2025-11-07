@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/services';
+import { EventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
 
@@ -25,6 +26,7 @@ export class DrivePromotionService {
   constructor(
     private readonly contentService: ContentService,
     private readonly fileService: FileService,
+    private readonly eventService: EventService,
   ) {}
 
   async promoteDriveData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -130,10 +132,14 @@ export class DrivePromotionService {
         url: webViewLink ?? undefined,
         mimetype: mimeType,
         external_id: fileId,
+        // event_id omitted because no value is available
         user: { id: userId },
       };
 
-      await this.contentService.create({ userId }, contentDto as CreateContentDto);
+      const createdContent = await this.contentService.create({ userId }, contentDto as CreateContentDto);
+      const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
+      const contentId = contentRecord?.id ?? fileId;
+      await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
     }
 
     this.logger.log('Processed Drive file', {
@@ -143,6 +149,53 @@ export class DrivePromotionService {
       fileName,
       mimeType,
     });
+  }
+
+  private async enqueueContentEmbedding(ownerId: string, contentId: string, searchContent: string | null) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.eventService.send(Events.SEARCH_EMBED_CONTENT, {
+        ownerId,
+        contentId,
+        text: searchContent,
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue Drive content embedding', {
+        ownerId,
+        contentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildContentSearchText(contentDto: CreateContentDto): string | null {
+    const parts = new Set<string>();
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(contentDto.title ?? null);
+    push((contentDto as { text?: string }).text ?? null);
+    push(contentDto.mimetype ?? null);
+    push(contentDto.url ?? null);
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
   }
 
   private isDocumentType(mimeType: string): boolean {

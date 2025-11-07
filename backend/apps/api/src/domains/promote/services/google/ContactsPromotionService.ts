@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
+import { EventService, Events } from '@ci/domains/events';
 import { GraphUtilityService, GraphNodeEntity } from '@ci/domains/graph';
 
 import { PersonPromotionService } from '../PersonPromotionService';
@@ -59,6 +60,7 @@ export class ContactsPromotionService {
     private readonly entityRepository: Repository<GraphNodeEntity>,
     private readonly graphUtilityService: GraphUtilityService,
     private readonly personPromotionService: PersonPromotionService,
+    private readonly eventService: EventService,
   ) {}
 
   async promoteContacts(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -157,6 +159,7 @@ export class ContactsPromotionService {
     }
 
     let contactEntityId: string;
+    let searchContent: string | null = null;
 
     if (!existingEntity) {
       // Create new contact entity
@@ -218,13 +221,15 @@ export class ContactsPromotionService {
         properties.photo_url = contact.photos[0].url;
       }
 
+      searchContent = this.buildContactSearchContent(displayName, properties);
+
       await this.graphUtilityService.createGraphNode({
         entityId: contactEntityId,
         entityType: 'Person',
         name: displayName,
         description: `Contact from Google Contacts`,
         properties,
-        searchContent: `${displayName} ${primaryEmail || ''} ${primaryPhone || ''}`,
+        searchContent,
         ownerUserId: userId,
       });
 
@@ -236,7 +241,7 @@ export class ContactsPromotionService {
       // Update existing entity
       contactEntityId = existingEntity.entity_id;
 
-      const currentProperties = existingEntity.properties as Record<string, unknown>;
+      const currentProperties = (existingEntity.properties as Record<string, unknown>) ?? {};
       const updatedProperties = {
         ...currentProperties,
         google_contacts_synced: true,
@@ -246,11 +251,15 @@ export class ContactsPromotionService {
       existingEntity.properties = updatedProperties;
       await this.entityRepository.save(existingEntity);
 
+      searchContent = this.buildContactSearchContent(displayName, updatedProperties);
+
       this.logger.log('Updated existing contact entity', {
         contactEntityId,
         name: displayName,
       });
     }
+
+    await this.enqueueContactEmbedding(userId, contactEntityId, searchContent);
 
     // Create KNOWS relationship (ensuring every entity has at least one relationship)
     const existingRelationships = await this.graphUtilityService.findConnectedEntities(
@@ -306,6 +315,72 @@ export class ContactsPromotionService {
       contactEntityId,
       name: displayName,
     });
+  }
+
+  private async enqueueContactEmbedding(ownerId: string, entityId: string, searchContent: string | null) {
+    if (!searchContent || searchContent.trim().length === 0) {
+      return;
+    }
+
+    try {
+      await this.eventService.send(Events.SEARCH_EMBED_ENTITY, {
+        ownerId,
+        entityId,
+        entityType: 'Person',
+        searchContent,
+      });
+    } catch (error) {
+      this.logger.error('Failed to enqueue contact embedding', {
+        ownerId,
+        entityId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private buildContactSearchContent(displayName: string, properties: Record<string, unknown>): string | null {
+    const parts = new Set<string>();
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(displayName);
+    push(properties.email);
+    push(properties.phone);
+    push(properties.first_name);
+    push(properties.last_name);
+    push(properties.organization);
+    push(properties.job_title);
+    push(properties.occupation);
+
+    const emails = properties.emails;
+    if (Array.isArray(emails)) {
+      for (const email of emails) {
+        push(email?.value);
+      }
+    }
+
+    const phones = properties.phones;
+    if (Array.isArray(phones)) {
+      for (const phone of phones) {
+        push(phone?.value);
+      }
+    }
+
+    if (parts.size === 0) {
+      return null;
+    }
+
+    return Array.from(parts).join(' ');
   }
 
   private normalizeRelationType(type: string): string | null {
