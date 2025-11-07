@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { createHookContext } from '@ci/common';
 import L, { type LatLngExpression } from 'leaflet';
@@ -8,12 +8,29 @@ type ReturnType = [
   {
     locations: LatLngExpression[];
   },
+  {
+    zoomIn: () => void;
+    zoomOut: () => void;
+  },
 ];
 
 function useMap(): ReturnType {
   const map = useLeafletMap();
 
   const [markers, setMarkers] = useState<L.Marker[]>([]);
+  const [displayRoutes, setDisplayRoutes] = useState<boolean>(false);
+
+  const zoomIn = useCallback(() => {
+    map.zoomIn();
+  }, [map]);
+
+  const zoomOut = useCallback(() => {
+    map.zoomOut();
+  }, [map]);
+
+  const toggleRoutes = useCallback(() => {
+    setDisplayRoutes((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     if (!map) {
@@ -51,7 +68,7 @@ function useMap(): ReturnType {
     };
   }, [map]);
 
-  const markerLocations = useMemo(() => {
+  const locations = useMemo(() => {
     return markers.map((marker) => {
       const latLng = marker.getLatLng();
 
@@ -61,7 +78,11 @@ function useMap(): ReturnType {
 
   return [
     {
-      locations: markerLocations,
+      locations,
+    },
+    {
+      zoomIn,
+      zoomOut,
     },
   ];
 }
