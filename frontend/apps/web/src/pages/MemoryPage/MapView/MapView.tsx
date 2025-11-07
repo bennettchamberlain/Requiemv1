@@ -5,10 +5,10 @@ import 'leaflet/dist/leaflet.css';
 import { Route } from '@ci/shadcn/icons';
 import L from 'leaflet';
 
+import { loadGoogleMaps } from '@/components/Map/googleMaps';
+
 import { TimelineView } from '../TimelineView';
 import { useMemoryService } from '../useMemoryService';
-
-import { loadGoogleMaps } from './googleMaps';
 
 declare global {
   interface Window {
