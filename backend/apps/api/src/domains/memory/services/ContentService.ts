@@ -15,18 +15,19 @@ export class ContentService {
     private readonly contentRepository: Repository<ContentEntity>,
   ) {}
 
-  async create(
-    context: RequestContext,
-    data: CreateContentDto | CreateContentDto[],
-  ): Promise<Content | Content[]> {
+  async create(context: RequestContext, data: CreateContentDto | CreateContentDto[]): Promise<Content[]> {
     const isSingle = !Array.isArray(data);
     const dataArray: CreateContentDto[] = isSingle ? [data] : data;
 
-    const returned = await Promise.all(
+    // TODO: Some of these can fail, we need to return partial success here?
+    return Promise.all(
       dataArray.map(async (item) => {
         const content = await this.contentRepository.create({
           ...item,
           id: uuidv7(),
+          user: {
+            id: context.userId,
+          },
         });
 
         const contentResult = await this.contentRepository.save(content);
@@ -42,8 +43,6 @@ export class ContentService {
         }))!.toContent();
       }),
     );
-
-    return isSingle ? returned[0] : returned;
   }
 
   async findAll(context: RequestContext): Promise<Content[]> {
@@ -69,6 +68,11 @@ export class ContentService {
     });
 
     return result?.toContent() ?? null;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  findSomeById(context: RequestContext, ids: string[]) {
+    throw new Error('Not implemented');
   }
 
   async update(context: RequestContext, id: string, data: UpdateContentDto): Promise<Content | null> {
