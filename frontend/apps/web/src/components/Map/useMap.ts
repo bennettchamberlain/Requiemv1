@@ -7,8 +7,10 @@ import { useMap as useLeafletMap } from 'react-leaflet';
 type ReturnType = [
   {
     locations: LatLngExpression[];
+    displayRoutes: boolean;
   },
   {
+    toggleRoutes: () => void;
     zoomIn: () => void;
     zoomOut: () => void;
   },
@@ -79,8 +81,10 @@ function useMap(): ReturnType {
   return [
     {
       locations,
+      displayRoutes,
     },
     {
+      toggleRoutes,
       zoomIn,
       zoomOut,
     },
