@@ -41,7 +41,7 @@ export function Controls({ className, position = 'top-left' }: Props) {
           </ButtonGroup>
 
           <Tooltip delayDuration={600}>
-            <Tooltip.Content side="right">Center visible markers</Tooltip.Content>
+            <Tooltip.Content side="right">Center visible pins</Tooltip.Content>
             <Tooltip.Trigger asChild>
               <Button variant="outline" size="icon" onClick={centerVisibleMarkers}>
                 <Crosshair />
@@ -50,7 +50,7 @@ export function Controls({ className, position = 'top-left' }: Props) {
           </Tooltip>
 
           <Tooltip delayDuration={600}>
-            <Tooltip.Content side="right">Toggle route</Tooltip.Content>
+            <Tooltip.Content side="right">Toggle routes</Tooltip.Content>
             <Tooltip.Trigger asChild>
               <Toggle
                 pressed={displayRoutes}
