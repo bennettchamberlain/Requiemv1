@@ -10,7 +10,12 @@ import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
 import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { EventService as MemoryEventService, type CreateEventDto, MemoryService, PersonService } from '@ci/domains/memory';
+import {
+  EventService as MemoryEventService,
+  type CreateEventDto,
+  MemoryService,
+  PersonService,
+} from '@ci/domains/memory';
 
 interface RawData {
   data: object;
