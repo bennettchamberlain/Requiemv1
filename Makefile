@@ -263,7 +263,7 @@ gentoken: ## Generates a stable access token for use during development
 	@printf "🔑 Generating stable access token...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/generate-stable-access-token.ts
 
-signup: ## Generates a stable access token for use during development
+signup: ## Generates a set of signup codes for user registration
 	@printf "👋 Generating signup codes...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/generate-signup-codes.ts
 
