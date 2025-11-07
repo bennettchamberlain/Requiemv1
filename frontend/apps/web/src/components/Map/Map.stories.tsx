@@ -1,13 +1,18 @@
 import type { ComponentProps } from 'react';
 
-import { Button, Card } from '@ci/shadcn';
+import { Card } from '@ci/shadcn';
 import type { Meta, StoryObj } from '@storybook/react';
 import { type LatLngExpression } from 'leaflet';
 import { action } from 'storybook/actions';
 
 import { Map } from './Map';
+import { RouteLayer } from './RouteLayer';
 
-const SAN_FRANCISCO: LatLngExpression = [37.7749, -122.4194];
+const TRANSAMERICA_PYRAMID: LatLngExpression = [37.7952, -122.4028];
+const GOLDEN_GATE_BRIDGE: LatLngExpression = [37.806409919782666, -122.47585786589606];
+const GOLDEN_GATE_PARK: LatLngExpression = [37.77022987046795, -122.4856038608843];
+const NOE_PEAK: LatLngExpression = [37.7516, -122.4477];
+const CIVIC_CENTER: LatLngExpression = [37.7793, -122.4192];
 
 type Props = ComponentProps<typeof Map>;
 
@@ -17,7 +22,7 @@ const meta: Meta<Props> = {
     layout: 'fullscreen',
   },
   args: {
-    center: SAN_FRANCISCO,
+    center: [37.791302364205926, -122.43236422384159],
   },
   decorators: [
     (Story) => (
@@ -32,35 +37,21 @@ export default meta;
 
 type Story = StoryObj<Props>;
 
-export const Default: Story = {};
-
 const onMarkerClick = action('onClick');
 
-export const WithMarker: Story = {
-  args: {
-    children: (
-      <Map.Marker position={SAN_FRANCISCO} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
-    ),
-  },
-};
-
-export const WithPanel: Story = {
-  args: {
-    children: (
-      <Map.Panel className="bg-white/50">
-        <div className="space-y-4 p-4">
-          <div>Some informative text in the panel.</div>
-          <Button className="w-full">Action 1</Button>
-        </div>
-      </Map.Panel>
-    ),
-  },
-};
-
-export const WithScrollablePanel: Story = {
+export const Default: Story = {
   args: {
     children: (
       <>
+        <RouteLayer />
+        <Map.Marker
+          position={TRANSAMERICA_PYRAMID}
+          onClick={(...args: unknown[]) => onMarkerClick(...args)}
+        />
+        <Map.Marker position={CIVIC_CENTER} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
+        <Map.Marker position={NOE_PEAK} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
+        <Map.Marker position={GOLDEN_GATE_PARK} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
+        <Map.Marker position={GOLDEN_GATE_BRIDGE} onClick={(...args: unknown[]) => onMarkerClick(...args)} />
         <Map.Controls position="top-left" />
         <Map.Panel>
           <div className="space-y-4 p-4">
@@ -133,11 +124,5 @@ export const WithScrollablePanel: Story = {
         </Map.Panel>
       </>
     ),
-  },
-};
-
-export const WithControls: Story = {
-  args: {
-    children: <Map.Controls position="top-left" />,
   },
 };
