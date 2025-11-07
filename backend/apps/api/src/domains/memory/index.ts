@@ -35,13 +35,11 @@ import { EventController } from './controllers/EventController';
 import { GraphController } from './controllers/GraphController';
 import { MemoryController } from './controllers/MemoryController';
 import { CommunicationEntity } from './entities/CommunicationEntity';
-import { ContactEntity } from './entities/ContactEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
 import { FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
-import { LocationEntity } from './entities/LocationEntity';
 import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
@@ -65,10 +63,8 @@ import { UserContextService } from './services/UserContextService';
   imports: [
     TypeOrmModule.forFeature([
       CommunicationEntity,
-      ContactEntity,
       ContentEntity,
       EventEntity,
-      LocationEntity,
       PersonEntity,
       PlaceEntity,
       ThingEntity,
@@ -117,10 +113,8 @@ export class MemoryModule {}
 
 export {
   CommunicationEntity,
-  ContactEntity,
   ContentEntity,
   EventEntity,
-  LocationEntity,
   PersonEntity,
   PlaceEntity,
   ThingEntity,
