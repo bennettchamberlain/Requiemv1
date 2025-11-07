@@ -136,7 +136,7 @@ export default function DesktopMemoryPage() {
           {/* View Toggle */}
           <Tooltip.Provider>
             <Tabs defaultValue="map" onValueChange={setActiveTab} value={activeTab}>
-              <Tabs.List className="flex items-center justify-center h-11.5">
+              <Tabs.List className="flex items-center justify-center h-11.5 border-1">
                 <Tabs.Trigger value="map">
                   <Tooltip delayDuration={600}>
                     <Tooltip.Trigger className="flex items-center justify-center h-4 w-6">
