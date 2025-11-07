@@ -6,8 +6,7 @@ import { v7 as uuid7 } from 'uuid';
 import { LoggerService } from '@ci/common/services';
 import { EventService, Events } from '@ci/domains/events';
 import { GraphUtilityService, GraphNodeEntity } from '@ci/domains/graph';
-
-import { PersonPromotionService } from '../PersonPromotionService';
+import { PersonService } from '@ci/domains/memory';
 
 interface GoogleContact {
   resourceName?: string;
@@ -59,7 +58,7 @@ export class ContactsPromotionService {
     @InjectRepository(GraphNodeEntity)
     private readonly entityRepository: Repository<GraphNodeEntity>,
     private readonly graphUtilityService: GraphUtilityService,
-    private readonly personPromotionService: PersonPromotionService,
+    private readonly personService: PersonService,
     private readonly eventService: EventService,
   ) {}
 
@@ -85,7 +84,7 @@ export class ContactsPromotionService {
       });
 
       // Get user's entity ID (create if missing)
-      const userEntityId = await this.personPromotionService.getUserEntityId(userId);
+      const userEntityId = await this.personService.getUserEntityId(userId);
 
       for (const contact of contacts) {
         try {

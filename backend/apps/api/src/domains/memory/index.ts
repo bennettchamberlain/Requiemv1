@@ -49,6 +49,7 @@ import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
 import { GraphEventService } from './services/GraphEventService';
 import { MemoryService } from './services/MemoryService';
+import { PersonService } from './services/PersonService';
 
 /**
  * @internal
@@ -76,9 +77,23 @@ import { MemoryService } from './services/MemoryService';
     FilesModule,
     BrowserActivityModule,
   ],
-  providers: [MemoryService, CommunicationService, ContentService, EventService, GraphEventService],
+  providers: [
+    MemoryService,
+    CommunicationService,
+    ContentService,
+    EventService,
+    GraphEventService,
+    PersonService,
+  ],
   controllers: [MemoryController, ContentController, EventController, GraphController],
-  exports: [MemoryService, CommunicationService, ContentService, EventService, GraphEventService],
+  exports: [
+    MemoryService,
+    CommunicationService,
+    ContentService,
+    EventService,
+    GraphEventService,
+    PersonService,
+  ],
 })
 export class MemoryModule {}
 
@@ -94,7 +109,14 @@ export {
 };
 
 // Services
-export { MemoryService, ContentService, EventService, CommunicationService, GraphEventService };
+export {
+  MemoryService,
+  ContentService,
+  EventService,
+  CommunicationService,
+  GraphEventService,
+  PersonService,
+};
 
 // Types
 export type {

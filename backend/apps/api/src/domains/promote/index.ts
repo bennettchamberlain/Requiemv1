@@ -45,7 +45,6 @@ import { DrivePromotionService } from './services/google/DrivePromotionService';
 import { GmailPromotionService } from './services/google/GmailPromotionService';
 import { YouTubePromotionService } from './services/google/YouTubePromotionService';
 import { OutlookMailPromotionService } from './services/microsoft/OutlookMailPromotionService';
-import { PersonPromotionService } from './services/PersonPromotionService';
 import { PromoteService } from './services/PromoteService';
 
 /**
@@ -75,7 +74,6 @@ import { PromoteService } from './services/PromoteService';
     YouTubePromotionService,
     DrivePromotionService,
     ContactsPromotionService,
-    PersonPromotionService,
     OutlookMailPromotionService,
     OutlookCalendarPromotionService,
     OneDrivePromotionService,
@@ -88,7 +86,6 @@ import { PromoteService } from './services/PromoteService';
     YouTubePromotionService,
     DrivePromotionService,
     ContactsPromotionService,
-    PersonPromotionService,
   ],
 })
 export class PromoteModule {}

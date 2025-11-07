@@ -8,9 +8,7 @@ import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { EventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { CommunicationEntity, CommunicationService } from '@ci/domains/memory';
-
-import { PersonPromotionService } from '../PersonPromotionService';
+import { CommunicationEntity, CommunicationService, PersonService } from '@ci/domains/memory';
 
 interface RawData {
   data: object;
@@ -83,7 +81,7 @@ export class OutlookMailPromotionService {
   constructor(
     private readonly fileService: FileService,
     private readonly communicationService: CommunicationService,
-    private readonly personPromotionService: PersonPromotionService,
+    private readonly personService: PersonService,
     private readonly connectionService: ConnectionService,
     private readonly eventService: EventService,
   ) {}
@@ -187,7 +185,7 @@ export class OutlookMailPromotionService {
     const ccParticipants = messageDetails.participants.filter((p) => p.type === 'cc');
     const bccParticipants = messageDetails.participants.filter((p) => p.type === 'bcc');
 
-    const fromEntityIds = await this.personPromotionService.processParticipants(
+    const fromEntityIds = await this.personService.processParticipants(
       fromParticipants,
       userId,
       connectionId,
@@ -196,7 +194,7 @@ export class OutlookMailPromotionService {
     );
 
     // Create person entities for recipients (with EMAILED relationship)
-    const toEntityIds = await this.personPromotionService.processParticipants(
+    const toEntityIds = await this.personService.processParticipants(
       toParticipants,
       userId,
       connectionId,
@@ -205,7 +203,7 @@ export class OutlookMailPromotionService {
     );
 
     // Create person entities for recipients (with EMAILED relationship)
-    const ccEntityIds = await this.personPromotionService.processParticipants(
+    const ccEntityIds = await this.personService.processParticipants(
       ccParticipants,
       userId,
       connectionId,
@@ -214,7 +212,7 @@ export class OutlookMailPromotionService {
     );
 
     // Create person entities for recipients (with EMAILED relationship)
-    const bccEntityIds = await this.personPromotionService.processParticipants(
+    const bccEntityIds = await this.personService.processParticipants(
       ccParticipants,
       userId,
       connectionId,

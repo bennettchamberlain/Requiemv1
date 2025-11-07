@@ -3,9 +3,7 @@ import { Point } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
 import { EventService as DomainEventService, Events } from '@ci/domains/events';
-import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
-
-import { PersonPromotionService } from '../PersonPromotionService';
+import { EventService as MemoryEventService, type CreateEventDto, PersonService } from '@ci/domains/memory';
 
 interface CalendarEvent {
   id?: string;
@@ -73,7 +71,7 @@ export class GoogleCalendarEventPromotionService {
 
   constructor(
     private readonly eventService: MemoryEventService,
-    private readonly personPromotionService: PersonPromotionService,
+    private readonly personService: PersonService,
     private readonly domainEventService: DomainEventService,
   ) {}
 
@@ -459,7 +457,7 @@ export class GoogleCalendarEventPromotionService {
     const organizerInfos = participantInfos.filter((p) => p.type === 'organizer');
     const attendeeInfos = participantInfos.filter((p) => p.type === 'attendee');
 
-    const organizerEntityIds = await this.personPromotionService.processParticipants(
+    const organizerEntityIds = await this.personService.processParticipants(
       organizerInfos,
       userId,
       connectionId,
@@ -467,7 +465,7 @@ export class GoogleCalendarEventPromotionService {
       'ORGANIZED_EVENT_WITH',
     );
 
-    const attendeeEntityIds = await this.personPromotionService.processParticipants(
+    const attendeeEntityIds = await this.personService.processParticipants(
       attendeeInfos,
       userId,
       connectionId,
