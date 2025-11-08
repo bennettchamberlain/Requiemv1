@@ -48,6 +48,7 @@ import { GraphEventListener } from './listeners/GraphEventListener';
 import { CommunicationService } from './services/CommunicationService';
 import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
+import { FileService } from './services/FileService';
 import { GraphEventService } from './services/GraphEventService';
 import { GraphQueryService } from './services/GraphQueryService';
 import { GraphReadService } from './services/GraphReadService';
@@ -94,6 +95,7 @@ import { UserContextService } from './services/UserContextService';
     UserContextService,
     GraphEventListener,
     PersonService,
+    FileService,
   ],
   controllers: [MemoryController, ContentController, EventController, GraphController],
   exports: [
@@ -107,6 +109,7 @@ import { UserContextService } from './services/UserContextService';
     GraphUtilityService,
     GraphQueryService,
     GraphReadService,
+    FileService,
   ],
 })
 export class MemoryModule {}
@@ -134,6 +137,7 @@ export {
   GraphUtilityService,
   GraphQueryService,
   GraphReadService,
+  FileService,
 };
 
 // Types

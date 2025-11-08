@@ -9,12 +9,12 @@ import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
 import { EventService as DomainEventService, Events } from '@ci/domains/events';
-import { FileService } from '@ci/domains/files';
+import { FileService as FileStorageService } from '@ci/domains/files';
 import {
   EventService as MemoryEventService,
   type CreateEventDto,
-  MemoryService,
   PersonService,
+  FileService,
 } from '@ci/domains/memory';
 
 interface RawData {
@@ -39,10 +39,10 @@ export class OneDrivePromotionService {
   private logger = new LoggerService(OneDrivePromotionService.name);
 
   constructor(
-    private readonly memoryService: MemoryService,
     private readonly eventService: MemoryEventService,
     private readonly personService: PersonService,
     private readonly connectionService: ConnectionService,
+    private readonly fileStorageService: FileStorageService,
     private readonly fileService: FileService,
     private readonly domainEventService: DomainEventService,
   ) {}
@@ -210,7 +210,7 @@ export class OneDrivePromotionService {
         buffer: buff,
       };
 
-      const existingFiles = await this.fileService.search(
+      const existingFiles = await this.fileStorageService.search(
         { userId },
         {
           content_type: fileDetails.content.file?.mimeType,
@@ -221,7 +221,7 @@ export class OneDrivePromotionService {
       );
 
       if (existingFiles.length === 0) {
-        await this.memoryService.createFile(file);
+        await this.fileService.create({ userId }, file);
       }
     }
 
