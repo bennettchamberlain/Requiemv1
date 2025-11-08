@@ -285,3 +285,26 @@ export interface UpdateContentDto {
     id: string;
   };
 }
+
+export interface CreatePlaceDto {
+  id?: string;
+  entity_type?: string;
+  name?: string;
+  description?: string;
+  properties?: Record<string, unknown>;
+  type?: string;
+  geo_format?: string;
+  geolocation?: Record<string, unknown>;
+  location_boundary?: Record<string, unknown>;
+  estimated?: boolean;
+  tracked?: boolean;
+  uploaded?: boolean;
+  user_id?: string;
+  parent_id?: string;
+  user?: {
+    id: string;
+  };
+  parent?: {
+    id: string;
+  };
+}
