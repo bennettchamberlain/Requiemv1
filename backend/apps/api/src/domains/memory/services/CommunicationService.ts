@@ -3,12 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
+import { type RequestContext } from '@ci/common/types';
 
 import { CommunicationEntity } from '../entities/CommunicationEntity';
 
 export interface CreateCommunicationDto {
   time: Date;
-  user_id: string;
   communication_type: 'email' | 'sms' | 'call';
   direction: 'inbound' | 'outbound';
   thread_id?: string;
@@ -39,28 +39,46 @@ export class CommunicationService {
     private readonly communicationRepository: Repository<CommunicationEntity>,
   ) {}
 
-  async create(data: CreateCommunicationDto): Promise<CommunicationEntity> {
+  async create(context: RequestContext, data: CreateCommunicationDto): Promise<CommunicationEntity> {
     const communication = this.communicationRepository.create({
       ...data,
+      user_id: context.userId,
       participants_metadata: data.participants_metadata || {},
       attachments: data.attachments || [],
       is_encrypted: data.is_encrypted || false,
       is_archived: data.is_archived || false,
     });
 
+    // TODO: Build relationships using from_entity_id and to_entity_ids
+
     return this.communicationRepository.save(communication);
   }
 
-  async findByThreadId(threadId: string): Promise<CommunicationEntity[]> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  findById(context: RequestContext, id: string) {
+    throw new Error('Not implemented');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  findByIds(context: RequestContext, ids: string[]): Promise<CommunicationEntity[]> {
+    throw new Error('Not implemented');
+  }
+
+  async findByThreadId(context: RequestContext, threadId: string): Promise<CommunicationEntity[]> {
     return this.communicationRepository.find({
-      where: { thread_id: threadId },
+      where: {
+        user_id: context.userId,
+        thread_id: threadId,
+      },
       order: { time: 'ASC' },
     });
   }
 
-  async findByUserId(userId: string, limit = 100): Promise<CommunicationEntity[]> {
+  async findByUserId(context: RequestContext, limit = 100): Promise<CommunicationEntity[]> {
     return this.communicationRepository.find({
-      where: { user_id: userId },
+      where: {
+        user_id: context.userId,
+      },
       order: { time: 'DESC' },
       take: limit,
     });

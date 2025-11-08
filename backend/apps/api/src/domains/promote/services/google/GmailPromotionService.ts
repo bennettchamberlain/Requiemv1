@@ -254,24 +254,27 @@ export class GmailPromotionService {
       const toParticipants = messageDetails.participants.filter((p) => p.type === 'to');
 
       const searchContent = this.buildCommunicationSearchContent(messageDetails);
-      const communication = await this.communicationService.create({
-        time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
-        user_id: userId,
-        communication_type: 'email',
-        direction,
-        thread_id: message.threadId,
-        participants_metadata: {
-          from: fromParticipants,
-          to: toParticipants,
-          cc: messageDetails.participants.filter((p) => p.type === 'cc'),
-          bcc: messageDetails.participants.filter((p) => p.type === 'bcc'),
+      const communication = await this.communicationService.create(
+        { userId },
+        {
+          time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
+          communication_type: 'email',
+          direction,
+          thread_id: message.threadId,
+          // TODO: We're missing from_entity_id and to_entity_ids, so we can't make a relationship.
+          participants_metadata: {
+            from: fromParticipants,
+            to: toParticipants,
+            cc: messageDetails.participants.filter((p) => p.type === 'cc'),
+            bcc: messageDetails.participants.filter((p) => p.type === 'bcc'),
+          },
+          subject: messageDetails.subject,
+          content: messageDetails.body || messageDetails.snippet || '',
+          category: 'personal', // TODO: Classify emails
+          tags: messageDetails.labels,
+          connection_id: connectionId,
         },
-        subject: messageDetails.subject,
-        content: messageDetails.body || messageDetails.snippet || '',
-        category: 'personal', // TODO: Classify emails
-        tags: messageDetails.labels,
-        connection_id: connectionId,
-      });
+      );
 
       await this.enqueueCommunicationEmbedding(userId, communication, searchContent);
 

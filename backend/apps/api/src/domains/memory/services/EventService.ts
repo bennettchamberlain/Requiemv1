@@ -15,7 +15,7 @@ export class EventService {
     private readonly eventRepository: Repository<EventEntity>,
   ) {}
 
-  async create(context: RequestContext, data: CreateEventDto | CreateEventDto[]): Promise<Event | Event[]> {
+  async create(context: RequestContext, data: CreateEventDto | CreateEventDto[]): Promise<Event[]> {
     const isSingle = !Array.isArray(data);
     const dataArray: CreateEventDto[] = isSingle ? [data] : data;
 
@@ -24,6 +24,9 @@ export class EventService {
         const event = await this.eventRepository.create({
           ...item,
           id: uuidv7(),
+          user: {
+            id: context.userId,
+          },
         });
         const eventResult = await this.eventRepository.save(event);
 
@@ -31,7 +34,7 @@ export class EventService {
       }),
     );
 
-    return isSingle ? returned[0] : returned;
+    return returned;
   }
 
   async findAll(context: RequestContext): Promise<Event[]> {

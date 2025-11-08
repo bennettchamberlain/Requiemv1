@@ -22,7 +22,7 @@ import { RequestContext } from '@ci/common/types';
 
 import { ContentService } from '../services/ContentService';
 import { EventService } from '../services/EventService';
-import { CreateEventDto, UpdateEventDto, Content, Event } from '../types';
+import { CreateEventDto, UpdateEventDto, Content } from '../types';
 
 import { createContentSchema } from './ContentController';
 
@@ -153,13 +153,14 @@ export class EventController {
       const returned = await Promise.all(
         dataArray.map(async (item) => {
           const { content: contentInput, ...event } = item;
-          const newEvent = (await this.eventService.create(context, event)) as Event;
+          const newEvent = (await this.eventService.create(context, event))[0];
 
           if (contentInput) {
             const contentInputForEvent = contentInput.map((input) => ({
               ...input,
               event: { id: newEvent.id },
             }));
+
             const contentArray = (await this.contentService.create(
               context,
               contentInputForEvent,

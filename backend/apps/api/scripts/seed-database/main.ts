@@ -8,15 +8,7 @@ import { ConnectionEntity, ProviderEntity } from '@ci/domains/connections';
 import { MessageEntity, ThreadEntity } from '@ci/domains/conversations';
 import { FileEntity } from '@ci/domains/files';
 import { ActionEntity, AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
-import {
-  ContactEntity,
-  ContentEntity,
-  EventEntity,
-  LocationEntity,
-  PersonEntity,
-  PlaceEntity,
-  ThingEntity,
-} from '@ci/domains/memory';
+import { ContentEntity, EventEntity, PersonEntity, PlaceEntity, ThingEntity } from '@ci/domains/memory';
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
@@ -28,10 +20,8 @@ import { seedQuestions } from './seed-questions';
 import { seedThreads } from './seed-threads';
 import { seedUsers } from './seed-users';
 /*
-import { seedContacts } from './seed-contacts';
 import { seedContent } from './seed-content';
 import { seedEvents } from './seed-events';
-import { seedLocations } from './seed-locations';
 import { seedPeople } from './seed-people';
 import { seedPlaces } from './seed-places';
 import { seedThings } from './seed-things';
@@ -56,10 +46,8 @@ const logger = new Logger(path.basename(__filename));
       // Files
       FileEntity,
       // Memory
-      ContactEntity,
       ContentEntity,
       EventEntity,
-      LocationEntity,
       PersonEntity,
       PlaceEntity,
       ThingEntity,
