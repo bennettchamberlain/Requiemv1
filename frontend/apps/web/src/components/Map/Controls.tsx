@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 
-import { Button, ButtonGroup, Toggle, Tooltip, cn } from '@ci/shadcn';
+import { Button, ButtonGroup, Tooltip, cn } from '@ci/shadcn';
 import { Crosshair, Plus, Minus, Route } from '@ci/shadcn/icons';
 
 import { Panel } from './Panel';
@@ -52,19 +52,9 @@ export function Controls({ className, position = 'top-left' }: Props) {
           <Tooltip delayDuration={600}>
             <Tooltip.Content side="right">Toggle routes</Tooltip.Content>
             <Tooltip.Trigger asChild>
-              <Toggle
-                pressed={displayRoutes}
-                onPressedChange={toggleRoutes}
-                aria-label="Toggle timeline"
-                className={cn(
-                  'cursor-pointer',
-                  displayRoutes
-                    ? 'bg-blue-600! text-primary-foreground! border-2 border-blue-500!'
-                    : 'bg-primary-foreground! text-foreground!',
-                )}
-              >
+              <Button variant={displayRoutes ? 'active' : 'outline'} size="icon" onClick={toggleRoutes}>
                 <Route />
-              </Toggle>
+              </Button>
             </Tooltip.Trigger>
           </Tooltip>
         </div>
