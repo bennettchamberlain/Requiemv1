@@ -21,7 +21,9 @@ import {
   formDataSchema as s,
   cn,
 } from '@ci/shadcn';
-import { Search, X } from '@ci/shadcn/icons';
+import { Funnel, Search, X } from '@ci/shadcn/icons';
+
+import { FiltersProvider, useFilters } from './useFilters';
 
 const FormSchema = s.object({
   query: s.string(),
@@ -57,6 +59,7 @@ interface Props {
   autoSubmit?: boolean;
   autoSubmitDelay?: number;
   displayResults?: boolean;
+  displayFilters?: boolean;
   onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
   onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
@@ -73,6 +76,7 @@ function SearchBox(
     autoSubmit = false,
     autoSubmitDelay = 300,
     displayResults = false,
+    displayFilters = false,
     onSearch,
     onClear,
     onResultSelect,
@@ -83,6 +87,8 @@ function SearchBox(
     resolver: formDataResolver(FormSchema),
     defaultValues: EMPTY,
   });
+
+  const [{ isFiltersPanelVisible }, { toggleFilterPanel }] = useFilters();
 
   const queryValue = form.watch('query');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -261,7 +267,13 @@ function SearchBox(
 
   let resultsNode: ReactNode | null = null;
 
-  if (queryValue.length > 0 && !disabled && displayResults) {
+  if (displayFilters && isFiltersPanelVisible) {
+    resultsNode = (
+      <div className="flex border-t p-8">
+        <p className="text-muted-foreground font-medium">Filters UI goes here.</p>
+      </div>
+    );
+  } else if (queryValue.length > 0 && !disabled && displayResults) {
     if (isLoading) {
       resultsNode = (
         <div className="flex items-center justify-center border-t p-8">
@@ -395,35 +407,45 @@ function SearchBox(
               )}
             />
 
-            {queryValue.length > 0 && (
-              <button
-                type="button"
-                disabled={disabled}
-                className={`
-                  p-2 bg-transparent border-0 flex items-center justify-center
-                  ${
-                    disabled
-                      ? 'cursor-not-allowed text-muted-foreground'
-                      : 'cursor-pointer hover:text-foreground'
-                  }
-                `}
-                onClick={handleClear}
-                onMouseDown={(e) => e.preventDefault()}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
+            <div className="flex items-center gap-1 my-1.5 mr-1.5">
+              {queryValue.length > 0 && (
+                <Button
+                  type="button"
+                  disabled={disabled}
+                  variant="ghost"
+                  size="sm"
+                  className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform -mr-1"
+                  onClick={handleClear}
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
 
-            {variant === 'default' && (
-              <Button
-                type="submit"
-                disabled={disabled}
-                size="sm"
-                className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform m-1.5 ml-0"
-              >
-                <Search className="h-4 w-4" />
-              </Button>
-            )}
+              {displayFilters && (
+                <Button
+                  type="button"
+                  disabled={disabled}
+                  variant={isFiltersPanelVisible ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                  onClick={toggleFilterPanel}
+                >
+                  <Funnel className="h-4 w-4" />
+                </Button>
+              )}
+
+              {variant === 'default' && (
+                <Button
+                  type="submit"
+                  disabled={disabled}
+                  size="sm"
+                  className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
 
           {resultsNode}
@@ -435,4 +457,10 @@ function SearchBox(
 
 const SearchBoxForwarded = forwardRef(SearchBox);
 
-export { SearchBoxForwarded as SearchBox };
+const SearchBoxWithContext = forwardRef<HTMLInputElement, Props>((props, ref) => (
+  <FiltersProvider args={[]}>
+    <SearchBoxForwarded {...props} ref={ref} />
+  </FiltersProvider>
+));
+
+export { SearchBoxWithContext as SearchBox };
