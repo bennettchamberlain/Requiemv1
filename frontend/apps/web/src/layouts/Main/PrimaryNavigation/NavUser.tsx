@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { Avatar, DropdownMenu } from '@ci/shadcn';
-import { ListTodo, LogOut, Speech, SunMoon, Settings2, Cable } from '@ci/shadcn/icons';
+import { ListTodo, LogOut, SunMoon, Settings2, Cable, Blocks } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { useAuth, useTheme } from '@/hooks';
@@ -57,9 +57,15 @@ export function NavUser() {
 
         <DropdownMenu.Group>
           <DropdownMenu.Item asChild>
-            <Link to="/companions">
-              <Speech />
-              Companions
+            <Link to="/settings">
+              <Settings2 />
+              Settings
+            </Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item asChild>
+            <Link to="/plugins">
+              <Blocks />
+              Plugins
             </Link>
           </DropdownMenu.Item>
           <DropdownMenu.Item asChild>
@@ -72,12 +78,6 @@ export function NavUser() {
             <Link to="/jobs">
               <ListTodo />
               Jobs
-            </Link>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item asChild>
-            <Link to="/settings">
-              <Settings2 />
-              Settings
             </Link>
           </DropdownMenu.Item>
         </DropdownMenu.Group>

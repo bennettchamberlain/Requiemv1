@@ -193,7 +193,7 @@ function AppRoutes() {
         />
 
         <Route
-          path="/companions"
+          path="/plugins"
           element={
             <ProtectedRoute>
               <ToolsPage />

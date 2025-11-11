@@ -288,26 +288,27 @@ export function AiToolsTab() {
 
   return (
     <div className="space-y-6">
-      {/* Stats Section */}
-      <div className="flex gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-          <span>{enabledCount} Enabled Tools</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
-          <span>{disabledCount} Disabled Tools</span>
-        </div>
-      </div>
-
       {/* Tools Grid */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">AI Tools</h2>
+          <h2 className="text-xl font-semibold">AI Companions</h2>
           <p className="text-sm text-muted-foreground">
-            Use the toggles to enable or disable tools for your conversations
+            Use the toggles to enable or disable companions for your conversations
           </p>
         </div>
+
+        {/* Stats Section */}
+        <div className="flex gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+            <span>{enabledCount} Enabled Tools</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
+            <span>{disabledCount} Disabled Tools</span>
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {AVAILABLE_TOOLS.map((tool) => (
             <ToolCard key={tool.id} tool={tool} isEnabled={isToolEnabled(tool.id)} onToggle={toggleTool} />
