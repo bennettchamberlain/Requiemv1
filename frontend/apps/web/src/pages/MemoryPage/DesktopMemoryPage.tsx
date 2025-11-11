@@ -112,7 +112,7 @@ export default function DesktopMemoryPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>

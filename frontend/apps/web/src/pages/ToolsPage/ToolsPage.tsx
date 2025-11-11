@@ -16,11 +16,11 @@ export function ToolsPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>Tools</Breadcrumb.Page>
+              <Breadcrumb.Page>Extensions</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
