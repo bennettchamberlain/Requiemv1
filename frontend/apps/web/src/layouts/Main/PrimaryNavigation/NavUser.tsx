@@ -30,7 +30,7 @@ export function NavUser() {
   }, [currentUser]);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenu.Trigger asChild>
         <Avatar className="h-9 w-9 rounded-full select-none cursor-pointer">
           <Avatar.Image src={currentUser.avatar} alt={currentUser.name} />
