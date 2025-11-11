@@ -101,7 +101,7 @@ interface PromoteContactsPayload extends EventPayload {
 }
 
 interface GraphRelationshipInput {
-  relationshipId: string;
+  relationshipId?: string;
   fromEntityId: string;
   toEntityId: string;
   relationshipType: string;

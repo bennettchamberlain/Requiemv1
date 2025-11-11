@@ -32,7 +32,6 @@ export class PersonService {
     private readonly personRepository: Repository<PersonEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
-    private readonly graphUtilityService: GraphUtilityService,
     private readonly eventService: EventService,
   ) {}
 
@@ -150,9 +149,8 @@ export class PersonService {
       const userEntityId = await this.getUserEntityId(userId);
 
       // Check if person entity already exists by email in properties
-      const existingEntity = await this.entityRepository
+      const existingEntity = await this.personRepository
         .createQueryBuilder('entity')
-        .where("entity.entity_type = 'Person'")
         .andWhere("entity.properties->>'email' = :email", { email: participant.email })
         .andWhere("entity.properties->>'owner_user_id' = :userId", { userId })
         .getOne();
@@ -184,15 +182,17 @@ export class PersonService {
 
         searchContent = this.buildPersonSearchContent(participant.name, properties);
 
-        await this.graphUtilityService.createGraphNode({
-          entityId,
-          entityType: 'Person',
+        const newEntity = await this.personRepository.create({
+          id: entityId,
+          entity_type: 'Person',
           name: participant.name,
           description: `Contact from ${source}`,
           properties,
-          searchContent,
-          ownerUserId: userId,
+          search_content: searchContent,
+          owner_user_id: userId,
         });
+
+        await this.personRepository.save(newEntity);
 
         this.logger.log('Created new person entity', {
           entityId,
@@ -202,7 +202,7 @@ export class PersonService {
         });
       } else {
         // Update existing entity with new source data
-        entityId = existingEntity.entity_id;
+        entityId = existingEntity.id;
         const currentProperties = (existingEntity.properties as Record<string, unknown>) ?? {};
         const sources = (currentProperties.sources || []) as string[];
         let propertiesForSearch = currentProperties;
@@ -221,7 +221,7 @@ export class PersonService {
 
           existingEntity.properties = propertiesForSearch;
           existingEntity.last_accessed = new Date();
-          await this.entityRepository.save(existingEntity);
+          await this.personRepository.save(existingEntity);
 
           this.logger.log('Updated existing person entity', {
             entityId,
@@ -236,18 +236,27 @@ export class PersonService {
 
       // Create or update relationship between user and this person
       // This ensures every entity has at least one relationship
-      await this.createOrUpdateRelationship(
-        userEntityId,
-        entityId,
-        relationshipType,
-        {
-          source,
-          connection_id: connectionId,
-          participant_type: participant.type,
-          last_interaction: new Date().toISOString(),
+      await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
+        ownerId: userId,
+        person: {
+          entityId,
+          entityType: 'Person',
+          name: participant.name,
         },
-        userId,
-      );
+        relationships: [
+          {
+            fromEntityId: userEntityId,
+            toEntityId: entityId,
+            relationshipType,
+            properties: {
+              source,
+              connection_id: connectionId,
+              participant_type: participant.type,
+              last_interaction: new Date().toISOString(),
+            },
+          },
+        ],
+      });
 
       return entityId;
     } catch (error) {
@@ -319,50 +328,6 @@ export class PersonService {
     }
 
     return Array.from(parts).join(' ');
-  }
-
-  /**
-   * Create or update a relationship between two entities
-   */
-  private async createOrUpdateRelationship(
-    fromEntityId: string,
-    toEntityId: string,
-    relationshipType: string,
-    properties: Record<string, unknown>,
-    ownerUserId: string,
-  ): Promise<void> {
-    // Check if relationship already exists
-    const existingEntities = await this.graphUtilityService.findConnectedEntities(
-      fromEntityId,
-      [relationshipType],
-      'outbound',
-    );
-
-    const relationshipExists = existingEntities.some((entity) => entity.entity_id === toEntityId);
-
-    if (!relationshipExists) {
-      await this.graphUtilityService.createRelationship(
-        fromEntityId,
-        toEntityId,
-        relationshipType,
-        properties,
-        1.0,
-        ownerUserId,
-      );
-
-      this.logger.log('Created new relationship', {
-        fromEntityId,
-        toEntityId,
-        relationshipType,
-      });
-    } else {
-      // Relationship exists, could update properties here if needed
-      this.logger.log('Relationship already exists', {
-        fromEntityId,
-        toEntityId,
-        relationshipType,
-      });
-    }
   }
 
   /**
@@ -452,22 +417,30 @@ export class PersonService {
 
     const searchContent = this.buildPersonSearchContent(user.name ?? user.email ?? null, properties);
 
-    await this.graphUtilityService.createGraphNode({
-      entityId,
-      entityType: 'Person',
-      name: user.name || user.email,
-      description: `User: ${user.name || user.email}`,
-      properties,
-      searchContent,
-      linkedTable: 'users',
-      linkedId: user.id,
-      ownerUserId: user.id,
-    });
+    const existingEntity = await this.personRepository
+      .createQueryBuilder('entity')
+      .andWhere("entity.properties->>'email' = :email", { email: properties.email })
+      .andWhere("entity.properties->>'owner_user_id' = :userId", { userId: user.id })
+      .getOne();
 
-    await this.enqueuePersonEmbedding(user.id, entityId, searchContent);
+    if (!existingEntity) {
+      await this.personRepository.create({
+        id: entityId,
+        entity_type: 'Person',
+        name: user.name || user.email,
+        description: `User: ${user.name || user.email}`,
+        properties,
+        search_content: searchContent,
+        linked_table: 'users',
+        linked_id: user.id,
+        owner_user_id: user.id,
+      });
 
-    // Update the user record with the new entity ID
-    await this.userRepository.update(user.id, { entityId });
+      await this.enqueuePersonEmbedding(user.id, entityId, searchContent);
+
+      // Update the user record with the new entity ID
+      await this.userRepository.update(user.id, { entityId });
+    }
 
     this.logger.log('Created entity for legacy user', {
       userId: user.id,
