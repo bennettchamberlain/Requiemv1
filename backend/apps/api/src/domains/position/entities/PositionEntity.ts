@@ -1,0 +1,160 @@
+import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn, Point } from 'typeorm';
+
+import { DeviceEntity } from '@ci/domains/devices';
+import { GraphNodeEntity } from '@ci/domains/memory';
+import { UserEntity } from '@ci/domains/user';
+
+export type LocationSource = 'gps' | 'wifi' | 'cell_tower' | 'manual' | 'inferred' | 'other';
+
+export interface RelativeCoordinates {
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface RelativeOrientation {
+  phi?: number;
+  theta?: number;
+  [key: string]: number | undefined;
+}
+
+@Entity('position')
+export class PositionEntity {
+  @PrimaryColumn({ type: 'timestamptz' })
+  time!: Date;
+
+  @PrimaryColumn({ type: 'uuid' })
+  user_id!: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  device_id?: string | null;
+
+  // Spatial data (PostGIS) - nullable to support relative positioning
+  @Column({
+    type: 'geography',
+    nullable: true,
+    srid: 4326,
+    spatialFeatureType: 'Point',
+  })
+  location?: Point | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  altitude_meters?: number | null;
+
+  // Accuracy and quality
+  @Column({ type: 'double precision', nullable: true })
+  accuracy_meters?: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  hdop?: number | null; // Horizontal dilution of precision
+
+  @Column({ type: 'double precision', nullable: true })
+  vdop?: number | null; // Vertical dilution of precision
+
+  // Movement data
+  @Column({ type: 'double precision', nullable: true })
+  heading_degrees?: number | null;
+
+  // Source and context
+  @Column({ type: 'text' })
+  source!: LocationSource;
+
+  @Column({ type: 'text', nullable: true })
+  activity_type?: string | null;
+
+  // Semantic location (linked to entity)
+  @Column({ type: 'uuid', nullable: true })
+  location_entity_id?: string | null;
+
+  // Relative positioning support
+  @Column({ type: 'uuid', nullable: true })
+  reference_entity_id?: string | null;
+
+  @Column({ type: 'jsonb', default: '{}' })
+  relative_coordinates!: RelativeCoordinates | Record<string, unknown>;
+
+  @Column({ type: 'jsonb', default: '{}' })
+  relative_orientation!: RelativeOrientation | Record<string, unknown>;
+
+  // Vector embedding for semantic location context
+  @Column({
+    type: 'text',
+    nullable: true,
+    transformer: {
+      to: (v: number[] | null) => (v ? `[${v.join(',')}]` : null),
+      from: (v: string | null) => (v ? v.slice(1, -1).split(',').map(Number) : null),
+    },
+  })
+  location_embedding?: number[] | null;
+
+  // Privacy
+  @Column({ type: 'boolean', default: false })
+  is_private!: boolean;
+
+  // Relationships
+  @ManyToOne(() => UserEntity)
+  @JoinColumn({ name: 'user_id' })
+  user?: UserEntity | null;
+
+  @ManyToOne(() => DeviceEntity)
+  @JoinColumn({ name: 'device_id' })
+  device?: DeviceEntity | null;
+
+  @ManyToOne(() => GraphNodeEntity)
+  @JoinColumn({ name: 'location_entity_id' })
+  location_entity?: GraphNodeEntity | null;
+
+  @ManyToOne(() => GraphNodeEntity)
+  @JoinColumn({ name: 'reference_entity_id' })
+  reference_entity?: GraphNodeEntity | null;
+
+  toPosition(): Position {
+    return {
+      time: this.time,
+      user_id: this.user_id,
+      device_id: this.device_id ?? undefined,
+      location: this.location ?? undefined,
+      altitude_meters: this.altitude_meters ?? undefined,
+      accuracy_meters: this.accuracy_meters ?? undefined,
+      hdop: this.hdop ?? undefined,
+      vdop: this.vdop ?? undefined,
+      heading_degrees: this.heading_degrees ?? undefined,
+      source: this.source,
+      activity_type: this.activity_type ?? undefined,
+      location_entity_id: this.location_entity_id ?? undefined,
+      reference_entity_id: this.reference_entity_id ?? undefined,
+      relative_coordinates: this.relative_coordinates,
+      relative_orientation: this.relative_orientation,
+      location_embedding: this.location_embedding ?? undefined,
+      is_private: this.is_private,
+      user: this.user?.toUser(),
+      device: this.device?.toDevice(),
+      location_entity: this.location_entity ?? undefined,
+      reference_entity: this.reference_entity ?? undefined,
+    };
+  }
+}
+
+export interface Position {
+  readonly time: Date;
+  readonly user_id: string;
+  readonly device_id?: string;
+  readonly location?: Point;
+  readonly altitude_meters?: number;
+  readonly accuracy_meters?: number;
+  readonly hdop?: number;
+  readonly vdop?: number;
+  readonly heading_degrees?: number;
+  readonly source: LocationSource;
+  readonly activity_type?: string;
+  readonly location_entity_id?: string;
+  readonly reference_entity_id?: string;
+  readonly relative_coordinates: RelativeCoordinates | Record<string, unknown>;
+  readonly relative_orientation: RelativeOrientation | Record<string, unknown>;
+  readonly location_embedding?: number[];
+  readonly is_private: boolean;
+  readonly user?: import('@ci/domains/user').User;
+  readonly device?: import('@ci/domains/devices').Device;
+  readonly location_entity?: GraphNodeEntity;
+  readonly reference_entity?: GraphNodeEntity;
+}
