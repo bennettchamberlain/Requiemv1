@@ -218,7 +218,6 @@ export class PositionService {
   }
 
   private mapIosPositionToPositionDto(iosPosition: IosPositionDto, deviceId?: string): CreatePositionDto {
-    const source = this.normalizeSource(iosPosition.source);
     const metadata = this.extractMetadata(iosPosition);
     const heading_degrees = this.normalizeHeading(iosPosition.heading);
 
@@ -232,36 +231,9 @@ export class PositionService {
       altitude_meters: iosPosition.altitude,
       accuracy_meters: iosPosition.accuracy,
       heading_degrees,
-      source,
+      source: 'gps', // We dont use the source from the iOS positions
       relative_coordinates: Object.keys(metadata).length > 0 ? metadata : undefined,
     };
-  }
-
-  private normalizeSource(source?: string): LocationSource {
-    if (!source) {
-      return 'other';
-    }
-
-    const normalized = source.toLowerCase().trim();
-    const validSources: LocationSource[] = ['gps', 'wifi', 'cell_tower', 'manual', 'inferred', 'other'];
-
-    if (validSources.includes(normalized as LocationSource)) {
-      return normalized as LocationSource;
-    }
-
-    if (normalized.includes('gps') || normalized.includes('satellite')) {
-      return 'gps';
-    }
-
-    if (normalized.includes('wifi') || normalized.includes('network')) {
-      return 'wifi';
-    }
-
-    if (normalized.includes('cell') || normalized.includes('tower')) {
-      return 'cell_tower';
-    }
-
-    return 'other';
   }
 
   private extractMetadata(iosPosition: IosPositionDto): Record<string, unknown> {
