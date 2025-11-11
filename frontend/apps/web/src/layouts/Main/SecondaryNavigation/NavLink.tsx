@@ -24,7 +24,7 @@ export function NavLink({ to, label, children, ...props }: NavLinkProps) {
           className={cn(
             'p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition',
             isActive &&
-              'bg-blue-500 hover:bg-blue-400 dark:bg-accent dark:hover:text-accent-foreground text-white hover:text-white',
+              'bg-[#179298] hover:bg-[#1CAFB6] dark:bg-accent dark:hover:text-accent-foreground text-white hover:text-white',
           )}
           {...props}
         >
