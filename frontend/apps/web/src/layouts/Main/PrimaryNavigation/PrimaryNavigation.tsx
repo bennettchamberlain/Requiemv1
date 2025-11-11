@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
 import { Button, DropdownMenu, Separator } from '@ci/shadcn';
-import { Upload, Camera, Plus } from '@ci/shadcn/icons';
+import { Upload, Camera, Plus, Cable } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
 
 import { useUploadFile } from '@/api';
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -12,6 +13,8 @@ import { useModalControls } from '@/hooks';
 import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
+  const navigate = useNavigate();
+
   const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
     useModalControls();
   const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
@@ -70,17 +73,32 @@ export function PrimaryNavigation() {
                   <Plus />
                 </Button>
               </DropdownMenu.Trigger>
-              <DropdownMenu.Content className="min-w-42 rounded-lg" side="bottom" align="end" sideOffset={4}>
-                <DropdownMenu.Group>
-                  <DropdownMenu.Item onSelect={openUploadModal}>
-                    <Upload />
-                    Upload
+              <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
+                <div className="grid grid-cols-2 gap-2">
+                  <DropdownMenu.Item
+                    onSelect={openUploadModal}
+                    className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                  >
+                    <Upload className="h-6! w-6!" strokeWidth={1.25} />
+                    <span className="text-xs">Upload</span>
                   </DropdownMenu.Item>
-                  <DropdownMenu.Item onSelect={openCaptureModal}>
-                    <Camera />
-                    Capture
+
+                  <DropdownMenu.Item
+                    onSelect={openCaptureModal}
+                    className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                  >
+                    <Camera className="h-6! w-6!" strokeWidth={1.25} />
+                    <span className="text-xs">Capture</span>
                   </DropdownMenu.Item>
-                </DropdownMenu.Group>
+
+                  <DropdownMenu.Item
+                    onSelect={() => navigate('/connect')}
+                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                  >
+                    <Cable className="h-6! w-6!" strokeWidth={1.25} />
+                    <span className="text-xs">Connect</span>
+                  </DropdownMenu.Item>
+                </div>
               </DropdownMenu.Content>
             </DropdownMenu>
 
