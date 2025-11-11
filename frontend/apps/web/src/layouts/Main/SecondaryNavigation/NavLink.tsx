@@ -22,7 +22,7 @@ export function NavLink({ to, label, children, ...props }: NavLinkProps) {
           to={to}
           aria-label={label}
           className={cn(
-            'p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition',
+            'p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition will-change-transform active:scale-95',
             isActive &&
               'bg-[#179298] hover:bg-[#1CAFB6] dark:bg-accent dark:hover:text-accent-foreground text-white hover:text-white',
           )}
