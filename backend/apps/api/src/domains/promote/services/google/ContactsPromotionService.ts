@@ -221,15 +221,13 @@ export class ContactsPromotionService {
 
       searchContent = this.buildContactSearchContent(displayName, properties);
 
-      await this.graphUtilityService.createGraphNode({
-        entityId: contactEntityId,
-        entityType: 'Person',
+      await this.personService.create({ userId }, {
+        id: contactEntityId,
         name: displayName,
         description: `Contact from Google Contacts`,
         properties,
         searchContent,
-        ownerUserId: userId,
-      });
+      })
 
       this.logger.log('Created new contact entity', {
         contactEntityId,
@@ -247,7 +245,9 @@ export class ContactsPromotionService {
       };
 
       existingEntity.properties = updatedProperties;
-      await this.entityRepository.save(existingEntity);
+      await this.entityRepository.update({ userId }, entity_id, {
+        properties: updatedProperties,
+      });
 
       searchContent = this.buildContactSearchContent(displayName, updatedProperties);
 
@@ -269,7 +269,7 @@ export class ContactsPromotionService {
     const relationshipExists = existingRelationships.some((entity) => entity.entity_id === contactEntityId);
 
     if (!relationshipExists) {
-      await this.graphUtilityService.createRelationship(
+      await this.personService.createRelationship(
         userEntityId,
         contactEntityId,
         'KNOWS',

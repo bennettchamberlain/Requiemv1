@@ -323,9 +323,7 @@ export interface CreatePersonDto {
   id?: string;
   name?: string;
   description?: string;
-  entityType?: string;
   searchContent?: string;
-  ownerUserId?: string;
   linkedId?: string;
   linkedTable?: string;
   properties: {

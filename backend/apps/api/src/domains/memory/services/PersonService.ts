@@ -12,8 +12,6 @@ import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { PersonEntity } from '../entities/PersonEntity';
 import { CreatePersonDto, UpdatePersonDto } from '../types';
 
-import { GraphUtilityService } from './GraphUtilityService';
-
 interface ParticipantInfo {
   email: string;
   name: string;
@@ -42,7 +40,7 @@ export class PersonService {
       description: data.description,
       linked_table: data.linkedTable,
       linked_id: data.linkedId,
-      entity_type: data.entityType,
+      entity_type: 'Person',
       user: {
         id: context.userId,
       },
