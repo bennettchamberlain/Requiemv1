@@ -9,28 +9,11 @@ import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
-import { EntityTypeFilter } from './Components/EntityTypeFilter';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
 import { useMemoryService } from './useMemoryService';
-
-const AVAILABLE_ENTITY_TYPES = [
-  'Person',
-  'Event',
-  'Content',
-  'Browser',
-  'Thing',
-  'Contact',
-  'Place',
-  'Location',
-  'Document',
-  'File',
-  'Channel',
-  'Video',
-  'Communication',
-];
 
 export default function DesktopMemoryPage() {
   const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
@@ -38,16 +21,6 @@ export default function DesktopMemoryPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('map');
-
-  // types state - by default all are selected (none excluded)
-  const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
-
-  // Initialize entity types from URL parameters
-  useEffect(() => {
-    const excludedEntityTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || [];
-    const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
-    setSelectedEntityTypes(selectedTypes);
-  }, [searchParams]);
 
   useEffect(() => {
     setDetailsOpen(activeMemory != null);
@@ -60,7 +33,7 @@ export default function DesktopMemoryPage() {
   };
 
   const handleSearch = useCallback(
-    (data: { query: string }) => {
+    (data: { query: string; entityFilters?: string[] }) => {
       setSearchQuery(data.query);
 
       const currentParams = new URLSearchParams(searchParams);
@@ -86,26 +59,6 @@ export default function DesktopMemoryPage() {
     setSearchParams(currentParams);
   }, [setSearchQuery, searchParams, setSearchParams]);
 
-  const handleEntityTypesChange = useCallback(
-    (entityTypes: string[]) => {
-      setSelectedEntityTypes(entityTypes);
-
-      // Calculate excluded entity types (all available types minus selected ones)
-      const excludedEntityTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !entityTypes.includes(type));
-
-      // Update URL with excluded entity types
-      const currentParams = new URLSearchParams(searchParams);
-      if (excludedEntityTypes.length > 0) {
-        currentParams.set('excludedEntityTypes', excludedEntityTypes.join(','));
-      } else {
-        currentParams.delete('excludedEntityTypes');
-      }
-
-      setSearchParams(currentParams);
-    },
-    [searchParams, setSearchParams],
-  );
-
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -125,13 +78,8 @@ export default function DesktopMemoryPage() {
       <PageContent>
         <div className="flex items-center gap-4">
           <div className="flex-1">
-            <SearchBox onSearch={handleSearch} onClear={handleClear} autoSubmit />
+            <SearchBox onSearch={handleSearch} onClear={handleClear} autoSubmit displayFilters />
           </div>
-
-          <EntityTypeFilter
-            selectedEntityTypes={selectedEntityTypes}
-            onEntityTypesChange={handleEntityTypesChange}
-          />
 
           {/* View Toggle */}
           <Tooltip.Provider>
@@ -174,16 +122,10 @@ export default function DesktopMemoryPage() {
           </Tooltip.Provider>
         </div>
 
-        {/* Content */}
-        <>
-          {activeTab === 'list' && <ListView />}
-
-          {activeTab === 'map' && <DesktopMapView />}
-
-          {activeTab === 'gallery' && <GalleryView />}
-
-          {activeTab === 'graph' && <GraphView variant="desktop" />}
-        </>
+        {activeTab === 'list' && <ListView />}
+        {activeTab === 'map' && <DesktopMapView />}
+        {activeTab === 'gallery' && <GalleryView />}
+        {activeTab === 'graph' && <GraphView variant="desktop" />}
       </PageContent>
 
       {activeMemory && (
