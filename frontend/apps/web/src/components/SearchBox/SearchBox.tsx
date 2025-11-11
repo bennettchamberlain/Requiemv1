@@ -325,127 +325,117 @@ function SearchBox(
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)}>
-        <div
-          className={`
-            w-full
-            flex
-            flex-col
-
-            placeholder:text-muted-foreground/60
-            dark:bg-input/30
-            field-sizing-content
-
-            outline-none
-            border
-            shadow-xs
-            rounded-md
-            bg-transparent
-            text-base
-            md:text-sm
-
-            aria-[invalid=true]:ring-destructive/20
-            dark:aria-[invalid=true]:ring-destructive/40
-            aria-[invalid=true]:border-destructive
-
-            transition-[color,box-shadow]
-
-            ${disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}
-          `}
-        >
-          <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-3')}>
-            {variant === 'compact' && (
-              <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
-                <Search className="h-4 w-4" />
-              </div>
+        <div className="relative">
+          <div
+            className={cn(
+              'w-full flex flex-col',
+              'placeholder:text-muted-foreground/60 dark:bg-input/30 field-sizing-content',
+              'outline-none border shadow-xs rounded-md bg-transparent text-base md:text-sm',
+              'aria-[invalid=true]:ring-destructive/20 dark:aria-[invalid=true]:ring-destructive/40 aria-[invalid=true]:border-destructive',
+              'transition-[color,box-shadow]',
+              disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : '',
+              resultsNode ? 'rounded-b-none' : '',
             )}
-
-            <Form.Field
-              control={form.control}
-              name="query"
-              render={({ field }) => (
-                <Input
-                  {...field}
-                  ref={(el) => {
-                    field.ref(el);
-
-                    if (typeof forwardedRef === 'function') {
-                      forwardedRef(el);
-                    } else if (forwardedRef) {
-                      (forwardedRef as RefObject<HTMLInputElement | null>).current = el;
-                    }
-                  }}
-                  placeholder={placeholder}
-                  disabled={disabled}
-                  onKeyDown={handleKeyDown}
-                  className="
-                    !w-full
-                    !flex-1
-                    !bg-transparent
-                    !border-0
-                    !outline-none
-                    !ring-0
-                    !shadow-none
-                    !rounded-none
-                    !p-0
-                    !h-[calc(theme(spacing.9)-2px)]
-
-                    focus:!ring-0
-                    focus-visible:!ring-0
-                    focus-visible:!border-transparent
-                    focus:!border-transparent
-
-                    disabled:!bg-transparent
-
-                    resize-none
-                    text-base
-                    leading-none
-                  "
-                />
-              )}
-            />
-
-            <div className="flex items-center gap-1 my-1.5 mr-1.5">
-              {queryValue.length > 0 && (
-                <Button
-                  type="button"
-                  disabled={disabled}
-                  variant="ghost"
-                  size="sm"
-                  className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform -mr-1"
-                  onClick={handleClear}
-                  onMouseDown={(e) => e.preventDefault()}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-
-              {displayFilters && (
-                <Button
-                  type="button"
-                  disabled={disabled}
-                  variant={isFiltersPanelVisible ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
-                  onClick={toggleFilterPanel}
-                >
-                  <Funnel className="h-4 w-4" />
-                </Button>
-              )}
-
-              {variant === 'default' && (
-                <Button
-                  type="submit"
-                  disabled={disabled}
-                  size="sm"
-                  className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
-                >
+          >
+            <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-3')}>
+              {variant === 'compact' && (
+                <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
                   <Search className="h-4 w-4" />
-                </Button>
+                </div>
               )}
+
+              <Form.Field
+                control={form.control}
+                name="query"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    ref={(el) => {
+                      field.ref(el);
+
+                      if (typeof forwardedRef === 'function') {
+                        forwardedRef(el);
+                      } else if (forwardedRef) {
+                        (forwardedRef as RefObject<HTMLInputElement | null>).current = el;
+                      }
+                    }}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    onKeyDown={handleKeyDown}
+                    className="
+                      !w-full
+                      !flex-1
+                      !bg-transparent
+                      !border-0
+                      !outline-none
+                      !ring-0
+                      !shadow-none
+                      !rounded-none
+                      !p-0
+                      !h-[calc(theme(spacing.9)-2px)]
+
+                      focus:!ring-0
+                      focus-visible:!ring-0
+                      focus-visible:!border-transparent
+                      focus:!border-transparent
+
+                      disabled:!bg-transparent
+
+                      resize-none
+                      text-base
+                      leading-none
+                    "
+                  />
+                )}
+              />
+
+              <div className="flex items-center gap-1 my-1.5 mr-1.5">
+                {queryValue.length > 0 && (
+                  <Button
+                    type="button"
+                    disabled={disabled}
+                    variant="ghost"
+                    size="sm"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform -mr-1"
+                    onClick={handleClear}
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {displayFilters && (
+                  <Button
+                    type="button"
+                    disabled={disabled}
+                    variant={isFiltersPanelVisible ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                    onClick={toggleFilterPanel}
+                  >
+                    <Funnel className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {variant === 'default' && (
+                  <Button
+                    type="submit"
+                    disabled={disabled}
+                    size="sm"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
-          {resultsNode}
+          {resultsNode && (
+            <div className="absolute top-full left-0 right-0 z-50 bg-background border border-t-0 rounded-b-md shadow-xs">
+              {resultsNode}
+            </div>
+          )}
         </div>
       </form>
     </Form>
