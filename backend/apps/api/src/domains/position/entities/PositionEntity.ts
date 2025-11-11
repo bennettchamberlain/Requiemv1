@@ -29,7 +29,6 @@ export class PositionEntity {
   @Column({ type: 'uuid', nullable: true })
   device_id?: string | null;
 
-  // Spatial data (PostGIS) - nullable to support relative positioning
   @Column({
     type: 'geography',
     nullable: true,
@@ -41,32 +40,27 @@ export class PositionEntity {
   @Column({ type: 'double precision', nullable: true })
   altitude_meters?: number | null;
 
-  // Accuracy and quality
   @Column({ type: 'double precision', nullable: true })
   accuracy_meters?: number | null;
 
   @Column({ type: 'double precision', nullable: true })
-  hdop?: number | null; // Horizontal dilution of precision
+  hdop?: number | null;
 
   @Column({ type: 'double precision', nullable: true })
-  vdop?: number | null; // Vertical dilution of precision
+  vdop?: number | null;
 
-  // Movement data
   @Column({ type: 'double precision', nullable: true })
   heading_degrees?: number | null;
 
-  // Source and context
   @Column({ type: 'text' })
   source!: LocationSource;
 
   @Column({ type: 'text', nullable: true })
   activity_type?: string | null;
 
-  // Semantic location (linked to entity)
   @Column({ type: 'uuid', nullable: true })
   location_entity_id?: string | null;
 
-  // Relative positioning support
   @Column({ type: 'uuid', nullable: true })
   reference_entity_id?: string | null;
 
@@ -76,7 +70,6 @@ export class PositionEntity {
   @Column({ type: 'jsonb', default: '{}' })
   relative_orientation!: RelativeOrientation | Record<string, unknown>;
 
-  // Vector embedding for semantic location context
   @Column({
     type: 'text',
     nullable: true,
@@ -87,11 +80,9 @@ export class PositionEntity {
   })
   location_embedding?: number[] | null;
 
-  // Privacy
   @Column({ type: 'boolean', default: false })
   is_private!: boolean;
 
-  // Relationships
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity | null;

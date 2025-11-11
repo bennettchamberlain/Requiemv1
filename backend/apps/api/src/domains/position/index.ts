@@ -15,15 +15,8 @@ import { PositionService } from './services/PositionService';
 })
 export class PositionModule {}
 
-// Entities
 export { PositionEntity };
-
-// Services
 export { PositionService };
-
-// Controllers
 export { PositionController };
-
-// Types
 export * from './types';
 export * from './entities/PositionEntity';

@@ -7,7 +7,6 @@ import type {
   RelativeOrientation,
 } from './entities/PositionEntity';
 
-// Coordinate interface for geofencing
 export interface Coordinate {
   longitude: number;
   latitude: number;
@@ -24,7 +23,6 @@ export interface GeofencePolygon {
 
 export type Geofence = GeofenceRadius | GeofencePolygon;
 
-// Validation schema for creating position
 export const createPositionSchemaRoot = z.object({
   time: z.string().datetime(),
   device_id: z.string().uuid().optional(),
@@ -53,13 +51,12 @@ export const createPositionSchema = z.union([createPositionSchemaRoot, z.array(c
 
 export const updatePositionSchema = createPositionSchemaRoot.partial();
 
-// DTOs
 export interface CreatePositionDto {
   time: string;
   device_id?: string;
   location?: {
-    x: number; // longitude
-    y: number; // latitude
+    x: number;
+    y: number;
   };
   altitude_meters?: number;
   accuracy_meters?: number;
@@ -98,7 +95,6 @@ export interface UpdatePositionDto {
   is_private?: boolean;
 }
 
-// iOS position format (from iOS mobile apps)
 export interface IosPositionDto {
   id?: string;
   name?: string;
@@ -109,7 +105,7 @@ export interface IosPositionDto {
   altitude?: number;
   speed?: number;
   heading?: number;
-  timestamp: string; // ISO8601 string
+  timestamp: string;
   address?: string;
   city?: string;
   region?: string;
@@ -124,7 +120,6 @@ export interface IosPositionListDto {
   content: IosPositionDto[];
 }
 
-// Validation schema for iOS position format
 export const iosPositionSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
@@ -150,5 +145,4 @@ export const iosPositionListSchema = z.object({
   content: z.array(iosPositionSchema),
 });
 
-// Re-export entity types for convenience
 export type { Position, LocationSource, RelativeCoordinates, RelativeOrientation };
