@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 
 import { Tooltip, cn } from '@ci/shadcn';
-import { NavLink as BaseNavLink, useLocation } from 'react-router-dom';
+import { NavLink as BaseNavLink, useMatch, useResolvedPath } from 'react-router-dom';
 
 interface NavLinkProps extends ComponentProps<typeof BaseNavLink> {
   label: string;
@@ -9,11 +9,9 @@ interface NavLinkProps extends ComponentProps<typeof BaseNavLink> {
 }
 
 export function NavLink({ to, label, children, ...props }: NavLinkProps) {
-  const location = useLocation();
-  const targetPath = typeof to === 'string' ? to : (to.pathname ?? '');
-  const isActive = location.pathname.startsWith(targetPath) || location.pathname === targetPath;
-
-  console.log(isActive);
+  const resolvedPath = useResolvedPath(to);
+  const match = useMatch(resolvedPath.pathname);
+  const isActive = Boolean(match);
 
   return (
     <Tooltip>
