@@ -6,7 +6,7 @@ import { v7 as uuid7 } from 'uuid';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 import { EventService, Events } from '@ci/domains/events';
-import { PersonEntity } from '@ci/domains/memory';
+import { PersonEntity } from '../entities/PersonEntity';
 import { UserEntity } from '@ci/domains/user';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
