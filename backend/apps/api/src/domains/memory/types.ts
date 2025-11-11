@@ -318,3 +318,44 @@ export interface CreateFileDto {
     id: string;
   };
 }
+
+export interface CreatePersonDto {
+  id?: string;
+  name?: string;
+  description?: string;
+  entityType?: string;
+  searchContent?: string;
+  ownerUserId?: string;
+  linkedId?: string;
+  linkedTable?: string;
+  properties: {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    contactType?: string;
+    ownerUserId?: string;
+    connectionId?: string;
+    sources?: string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface UpdatePersonDto {
+  name?: string;
+  description?: string;
+  entityType?: string;
+  searchContent?: string;
+  ownerUserId?: string;
+  linkedId?: string;
+  linkedTable?: string;
+  properties: {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    contactType?: string;
+    ownerUserId?: string;
+    connectionId?: string;
+    sources?: string[];
+    [key: string]: unknown;
+  };
+}
