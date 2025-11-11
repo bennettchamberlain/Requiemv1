@@ -1,5 +1,7 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { Portal } from '@ci/common';
-import { Button, DropdownMenu } from '@ci/shadcn';
+import { Button, DropdownMenu, Separator } from '@ci/shadcn';
 import { Upload, Camera, Plus } from '@ci/shadcn/icons';
 
 import { useUploadFile } from '@/api';
@@ -17,6 +19,32 @@ export function PrimaryNavigation() {
 
   const [, { upload, reset: resetUploader }] = useUploadFile();
 
+  const [hasActions, setHasActions] = useState(false);
+  const observer = useRef<MutationObserver | null>(null);
+
+  const actionsRef = useCallback((node: HTMLDivElement | null) => {
+    if (observer.current) {
+      observer.current.disconnect();
+      observer.current = null;
+    }
+
+    if (node) {
+      observer.current = new MutationObserver(() => {
+        setHasActions(node.childElementCount > 0);
+      });
+
+      observer.current.observe(node, { childList: true });
+
+      setHasActions(node.childElementCount > 0);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      observer.current?.disconnect();
+    };
+  }, []);
+
   const handleUpload = (files: FileList) => {
     return upload(Array.from(files));
   };
@@ -28,8 +56,12 @@ export function PrimaryNavigation() {
           <Portal id="breadcrumbs" />
         </section>
 
-        <section className="flex flex-row items-center gap-2">
-          <Portal id="actions" className="flex flex-row items-center" />
+        <section className="flex flex-row items-center gap-4">
+          <Portal ref={actionsRef} id="actions" className="flex flex-row items-center" />
+
+          {hasActions && (
+            <Separator orientation="vertical" className="data-[orientation=vertical]:h-8 -mr-2" />
+          )}
 
           <div className="flex flex-row items-center gap-2">
             <DropdownMenu modal={false}>

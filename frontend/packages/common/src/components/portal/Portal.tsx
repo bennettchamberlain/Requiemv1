@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, type ForwardedRef, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 
 interface PortalProps {
@@ -6,8 +6,8 @@ interface PortalProps {
   className?: string;
 }
 
-function Portal({ id, className }: PortalProps) {
-  return <div id={id} className={className} />;
+function Portal({ id, className }: PortalProps, forwardedRef: ForwardedRef<HTMLDivElement>) {
+  return <div id={id} ref={forwardedRef} className={className} />;
 }
 
 interface SlotProps {
@@ -25,6 +25,14 @@ function Slot({ id, children }: SlotProps) {
   return createPortal(children, elem);
 }
 
-Portal.Slot = Slot;
+const PortalForwarded = forwardRef(Portal);
 
-export { Portal };
+type PortalComponent = typeof PortalForwarded & {
+  Slot: typeof Slot;
+};
+
+const AugmentedPortal = PortalForwarded as PortalComponent;
+
+AugmentedPortal.Slot = Slot;
+
+export { AugmentedPortal as Portal };
