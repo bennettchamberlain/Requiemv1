@@ -1,92 +1,32 @@
-import { Sidebar, useSidebar } from '@ci/shadcn';
-import {
-  Brain,
-  Cable,
-  ChartPie,
-  Inbox,
-  Lightbulb,
-  ListTodo,
-  MessagesSquare,
-  Settings2,
-  Speech,
-} from '@ci/shadcn/icons';
+import { Tooltip } from '@ci/shadcn';
+import { Brain, ChartPie, Inbox, Lightbulb, MessagesSquare } from '@ci/shadcn/icons';
 
-import logo from '../../../assets/logo.png';
-
-import { NavSection } from './NavSection';
-import { NavUser } from './NavUser';
-
-const INTELLIGENCE = [
-  {
-    name: 'Feed',
-    url: '/feed',
-    icon: Inbox,
-  },
-  {
-    name: 'Memory',
-    url: '/memory',
-    icon: Brain,
-  },
-  {
-    name: 'Insights',
-    url: '/insights',
-    icon: Lightbulb,
-  },
-  {
-    name: 'Chat',
-    url: '/chat',
-    icon: MessagesSquare,
-  },
-];
-
-const SYSTEM = [
-  {
-    name: 'Companions',
-    url: '/companions',
-    icon: Speech,
-  },
-  {
-    name: 'Connections',
-    url: '/connections',
-    icon: Cable,
-  },
-  {
-    name: 'Knowledge',
-    url: '/knowledge',
-    icon: ChartPie,
-  },
-  {
-    name: 'Jobs',
-    url: '/jobs',
-    icon: ListTodo,
-  },
-  {
-    name: 'Settings',
-    url: '/settings',
-    icon: Settings2,
-  },
-];
+import { NavLink } from './NavLink';
 
 export function SecondaryNavigation() {
-  const { open } = useSidebar();
-
   return (
-    <>
-      <Sidebar collapsible="icon">
-        <Sidebar.Header>
-          <div className="flex flex-row items-center gap-2">
-            <img src={logo} alt="Logo" className="w-8 h-auto" />
-            {open && <div>Companion Intelligence</div>}
-          </div>
-        </Sidebar.Header>
-        <Sidebar.Content className="gap-0">
-          <NavSection items={INTELLIGENCE} />
-        </Sidebar.Content>
-        <Sidebar.Footer>
-          <NavSection items={SYSTEM} />
-          <NavUser />
-        </Sidebar.Footer>
-      </Sidebar>
-    </>
+    <nav className="flex flex-col gap-2 p-2">
+      <Tooltip.Provider>
+        <NavLink to="/feed" label="Feed">
+          <Inbox className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/memory" label="Memory">
+          <Brain className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/insights" label="Insights">
+          <Lightbulb className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/chat" label="Chat">
+          <MessagesSquare className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/knowledge" label="Knowledge">
+          <ChartPie className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+      </Tooltip.Provider>
+    </nav>
   );
 }
