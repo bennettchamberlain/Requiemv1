@@ -104,6 +104,17 @@ export class PersonService {
     return true;
   }
 
+  async search(context: RequestContext, query: UpdatePersonDto): Promise<PersonEntity[]> {
+    return this.personRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+        ...query
+      }
+    });
+  }
+
   /**
    * Create or update a person entity from a participant
    * Every entity created will have at least one relationship to the user
