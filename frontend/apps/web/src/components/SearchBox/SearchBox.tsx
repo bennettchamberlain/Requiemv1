@@ -23,6 +23,7 @@ import {
 } from '@ci/shadcn';
 import { Funnel, Search, X } from '@ci/shadcn/icons';
 
+import { FilterContent } from './FilterContent';
 import { FiltersProvider, useFilters } from './useFilters';
 
 const FormSchema = s.object({
@@ -60,7 +61,7 @@ interface Props {
   autoSubmitDelay?: number;
   displayResults?: boolean;
   displayFilters?: boolean;
-  onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
+  onSearch?: (data: FormData & { entityFilters?: string[] }) => boolean | void | Promise<boolean | void>;
   onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
 }
@@ -268,11 +269,7 @@ function SearchBox(
   let resultsNode: ReactNode | null = null;
 
   if (displayFilters && isFiltersPanelVisible) {
-    resultsNode = (
-      <div className="flex border-t p-8">
-        <p className="text-muted-foreground font-medium">Filters UI goes here.</p>
-      </div>
-    );
+    resultsNode = <FilterContent />;
   } else if (queryValue.length > 0 && !disabled && displayResults) {
     if (isLoading) {
       resultsNode = (
