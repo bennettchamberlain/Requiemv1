@@ -173,7 +173,7 @@ export class PositionService {
 
     return {
       time: iosPosition.timestamp,
-      device_id: deviceId || iosPosition.id, // Use id as device_id if no device_id provided
+      device_id: deviceId || undefined, // Only use deviceId query parameter if provided
       location: {
         x: iosPosition.longitude,
         y: iosPosition.latitude,
