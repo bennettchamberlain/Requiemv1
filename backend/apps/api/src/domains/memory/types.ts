@@ -308,3 +308,13 @@ export interface CreatePlaceDto {
     id: string;
   };
 }
+
+export interface CreateFileDto {
+  name?: string;
+  description?: string;
+  properties?: Record<string, unknown>;
+  linkedId?: string;
+  user?: {
+    id: string;
+  };
+}

@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
 
 import { Injectable } from '@nestjs/common';
@@ -201,14 +202,6 @@ export class OneDrivePromotionService {
 
       const buff = fileDetails.content.raw ? fileDetails.content.raw : Buffer.from('');
       const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buff).digest('hex');
-      const file = {
-        userId,
-        mimeType: fileDetails.content.file?.mimeType,
-        size: fileDetails.content.size,
-        fileName: fileDetails.content.name,
-        fileHash,
-        buffer: buff,
-      };
 
       const existingFiles = await this.fileStorageService.search(
         { userId },
@@ -221,7 +214,19 @@ export class OneDrivePromotionService {
       );
 
       if (existingFiles.length === 0) {
-        await this.fileService.create({ userId }, file);
+        const file = {
+          fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
+          originalname: fileDetails.content.name, //Multer requires this, but it's not actually used in our logic
+          mimetype: fileDetails.content.file?.mimeType,
+          size: fileDetails.content.size,
+          encoding: 'base64',
+          destination: '',
+          stream: '' as unknown as Readable,
+          filename: fileDetails.content.name,
+          path: '',
+          buffer: buff,
+        };
+        await this.fileStorageService.upload({ userId }, file);
       }
     }
 
