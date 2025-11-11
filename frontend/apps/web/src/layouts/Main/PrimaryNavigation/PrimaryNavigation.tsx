@@ -1,15 +1,15 @@
 import { Portal } from '@ci/common';
-import { Button, DropdownMenu, Separator, Sidebar } from '@ci/shadcn';
-import { MoreHorizontal, SunMoon, Upload, Camera } from '@ci/shadcn/icons';
+import { Button, DropdownMenu } from '@ci/shadcn';
+import { Upload, Camera, Plus } from '@ci/shadcn/icons';
 
 import { useUploadFile } from '@/api';
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { UploadModal } from '@/components/modals/UploadModal';
-import { useModalControls, useTheme } from '@/hooks';
+import { useModalControls } from '@/hooks';
+
+import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
-  const { themeState, setTheme } = useTheme();
-
   const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
     useModalControls();
   const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
@@ -23,24 +23,22 @@ export function PrimaryNavigation() {
 
   return (
     <>
-      <header className="flex flex-row items-center justify-between pl-2 pr-4 py-2 border-b">
+      <header className="flex flex-row items-center justify-between p-2 px-4">
         <section className="flex flex-row items-center">
-          <Sidebar.Trigger />
-          <Separator orientation="vertical" className="ml-2 mr-3 data-[orientation=vertical]:h-5" />
           <Portal id="breadcrumbs" />
         </section>
 
         <section className="flex flex-row items-center gap-2">
           <Portal id="actions" className="flex flex-row items-center" />
 
-          <div className="flex flex-row items-center">
+          <div className="flex flex-row items-center gap-2">
             <DropdownMenu modal={false}>
               <DropdownMenu.Trigger asChild>
-                <Button variant="outline" size="icon" aria-label="More Options">
-                  <MoreHorizontal />
+                <Button variant="ghost" size="icon" aria-label="More Options">
+                  <Plus />
                 </Button>
               </DropdownMenu.Trigger>
-              <DropdownMenu.Content>
+              <DropdownMenu.Content className="min-w-42 rounded-lg" side="bottom" align="end" sideOffset={4}>
                 <DropdownMenu.Group>
                   <DropdownMenu.Item onSelect={openUploadModal}>
                     <Upload />
@@ -51,29 +49,10 @@ export function PrimaryNavigation() {
                     Capture
                   </DropdownMenu.Item>
                 </DropdownMenu.Group>
-
-                <DropdownMenu.Separator />
-
-                <DropdownMenu.Group>
-                  <DropdownMenu.Sub>
-                    <DropdownMenu.SubTrigger>
-                      <SunMoon />
-                      Set theme
-                    </DropdownMenu.SubTrigger>
-                    <DropdownMenu.SubContent>
-                      <DropdownMenu.RadioGroup
-                        value={themeState.mode}
-                        onValueChange={(value: string) => setTheme(value as 'light' | 'dark' | 'system')}
-                      >
-                        <DropdownMenu.RadioItem value="light">Light</DropdownMenu.RadioItem>
-                        <DropdownMenu.RadioItem value="dark">Dark</DropdownMenu.RadioItem>
-                        <DropdownMenu.RadioItem value="system">System</DropdownMenu.RadioItem>
-                      </DropdownMenu.RadioGroup>
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Sub>
-                </DropdownMenu.Group>
               </DropdownMenu.Content>
             </DropdownMenu>
+
+            <NavUser />
           </div>
         </section>
       </header>

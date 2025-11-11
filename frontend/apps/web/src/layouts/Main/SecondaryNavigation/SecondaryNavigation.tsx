@@ -1,92 +1,76 @@
-import { Sidebar, useSidebar } from '@ci/shadcn';
-import {
-  Brain,
-  Cable,
-  ChartPie,
-  Inbox,
-  Lightbulb,
-  ListTodo,
-  MessagesSquare,
-  Settings2,
-  Speech,
-} from '@ci/shadcn/icons';
-
-import logo from '../../../assets/logo.png';
-
-import { NavSection } from './NavSection';
-import { NavUser } from './NavUser';
-
-const INTELLIGENCE = [
-  {
-    name: 'Feed',
-    url: '/feed',
-    icon: Inbox,
-  },
-  {
-    name: 'Memory',
-    url: '/memory',
-    icon: Brain,
-  },
-  {
-    name: 'Insights',
-    url: '/insights',
-    icon: Lightbulb,
-  },
-  {
-    name: 'Chat',
-    url: '/chat',
-    icon: MessagesSquare,
-  },
-];
-
-const SYSTEM = [
-  {
-    name: 'Companions',
-    url: '/companions',
-    icon: Speech,
-  },
-  {
-    name: 'Connections',
-    url: '/connections',
-    icon: Cable,
-  },
-  {
-    name: 'Knowledge',
-    url: '/knowledge',
-    icon: ChartPie,
-  },
-  {
-    name: 'Jobs',
-    url: '/jobs',
-    icon: ListTodo,
-  },
-  {
-    name: 'Settings',
-    url: '/settings',
-    icon: Settings2,
-  },
-];
+import { Tooltip } from '@ci/shadcn';
+import { Brain, ChartPie, Inbox, Lightbulb, MessagesSquare } from '@ci/shadcn/icons';
+import { Link } from 'react-router-dom';
 
 export function SecondaryNavigation() {
-  const { open } = useSidebar();
-
   return (
-    <>
-      <Sidebar collapsible="icon">
-        <Sidebar.Header>
-          <div className="flex flex-row items-center gap-2">
-            <img src={logo} alt="Logo" className="w-8 h-auto" />
-            {open && <div>Companion Intelligence</div>}
-          </div>
-        </Sidebar.Header>
-        <Sidebar.Content className="gap-0">
-          <NavSection items={INTELLIGENCE} />
-        </Sidebar.Content>
-        <Sidebar.Footer>
-          <NavSection items={SYSTEM} />
-          <NavUser />
-        </Sidebar.Footer>
-      </Sidebar>
-    </>
+    <nav className="flex flex-col gap-2 p-2">
+      <Tooltip.Provider>
+        <Tooltip>
+          <Tooltip.Trigger asChild>
+            <Link
+              to="/feed"
+              aria-label="Feed"
+              className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition"
+            >
+              <Inbox className="h-6 w-6" strokeWidth={1.25} />
+            </Link>
+          </Tooltip.Trigger>
+          <Tooltip.Content side="right">Feed</Tooltip.Content>
+        </Tooltip>
+
+        <Tooltip>
+          <Tooltip.Trigger asChild>
+            <Link
+              to="/memory"
+              aria-label="Memory"
+              className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition"
+            >
+              <Brain className="h-6 w-6" strokeWidth={1.25} />
+            </Link>
+          </Tooltip.Trigger>
+          <Tooltip.Content side="right">Memory</Tooltip.Content>
+        </Tooltip>
+
+        <Tooltip>
+          <Tooltip.Trigger asChild>
+            <Link
+              to="/insights"
+              aria-label="Insights"
+              className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition"
+            >
+              <Lightbulb className="h-6 w-6" strokeWidth={1.25} />
+            </Link>
+          </Tooltip.Trigger>
+          <Tooltip.Content side="right">Insights</Tooltip.Content>
+        </Tooltip>
+
+        <Tooltip>
+          <Tooltip.Trigger asChild>
+            <Link
+              to="/chat"
+              aria-label="Chat"
+              className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition"
+            >
+              <MessagesSquare className="h-6 w-6" strokeWidth={1.25} />
+            </Link>
+          </Tooltip.Trigger>
+          <Tooltip.Content side="right">Chat</Tooltip.Content>
+        </Tooltip>
+
+        <Tooltip>
+          <Tooltip.Trigger asChild>
+            <Link
+              to="/knowledge"
+              aria-label="Knowledge"
+              className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition"
+            >
+              <ChartPie className="h-6 w-6" strokeWidth={1.25} />
+            </Link>
+          </Tooltip.Trigger>
+          <Tooltip.Content side="right">Knowledge</Tooltip.Content>
+        </Tooltip>
+      </Tooltip.Provider>
+    </nav>
   );
 }
