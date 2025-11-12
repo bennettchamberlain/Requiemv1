@@ -24,7 +24,12 @@ export function Controls({ className, position = 'top-left' }: Props) {
             <Tooltip delayDuration={600}>
               <Tooltip.Content side="right">Zoom in</Tooltip.Content>
               <Tooltip.Trigger asChild>
-                <Button variant="outline" size="icon" onClick={zoomIn}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={zoomIn}
+                  className="text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!"
+                >
                   <Plus />
                 </Button>
               </Tooltip.Trigger>
@@ -33,7 +38,12 @@ export function Controls({ className, position = 'top-left' }: Props) {
             <Tooltip delayDuration={600}>
               <Tooltip.Content side="right">Zoom out</Tooltip.Content>
               <Tooltip.Trigger asChild>
-                <Button variant="outline" size="icon" onClick={zoomOut}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={zoomOut}
+                  className="text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!"
+                >
                   <Minus />
                 </Button>
               </Tooltip.Trigger>
@@ -43,7 +53,12 @@ export function Controls({ className, position = 'top-left' }: Props) {
           <Tooltip delayDuration={600}>
             <Tooltip.Content side="right">Center visible pins</Tooltip.Content>
             <Tooltip.Trigger asChild>
-              <Button variant="outline" size="icon" onClick={centerVisibleMarkers}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={centerVisibleMarkers}
+                className="text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!"
+              >
                 <Crosshair />
               </Button>
             </Tooltip.Trigger>
@@ -52,7 +67,16 @@ export function Controls({ className, position = 'top-left' }: Props) {
           <Tooltip delayDuration={600}>
             <Tooltip.Content side="right">Toggle routes</Tooltip.Content>
             <Tooltip.Trigger asChild>
-              <Button variant={displayRoutes ? 'active' : 'outline'} size="icon" onClick={toggleRoutes}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={toggleRoutes}
+                className={cn(
+                  displayRoutes
+                    ? 'bg-blue-500! text-white! hover:bg-blue-400! border-blue-400!'
+                    : 'text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!',
+                )}
+              >
                 <Route />
               </Button>
             </Tooltip.Trigger>
