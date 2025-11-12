@@ -8,14 +8,7 @@ import type { RequestContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 
 import { PositionEntity, LocationSource } from '../entities/PositionEntity';
-import type {
-  CreatePositionDto,
-  Position,
-  Geofence,
-  GeofenceRadius,
-  GeofencePolygon,
-  IosPositionDto,
-} from '../types';
+import type { CreatePositionDto, Position, Geofence, GeofenceRadius, GeofencePolygon } from '../types';
 
 @Injectable()
 export class PositionService {
@@ -54,7 +47,11 @@ export class PositionService {
           }
         }
 
-        const position = this.createPositionEntity(item, context.userId!);
+        const normalizedItem = {
+          ...item,
+          heading_degrees: this.normalizeHeading(item.heading_degrees),
+        };
+        const position = this.createPositionEntity(normalizedItem, context.userId!);
         const result = await this.positionRepository.save(position);
         returned.push(result.toPosition());
       } catch (error) {
@@ -97,7 +94,7 @@ export class PositionService {
 
   async createFromBulkPositions(
     context: RequestContext,
-    positions: IosPositionDto[],
+    positions: CreatePositionDto[],
     deviceId?: string,
   ): Promise<Position[]> {
     this.logger.log('Creating position records from bulk positions', {
@@ -105,7 +102,7 @@ export class PositionService {
       count: positions.length,
     });
 
-    const uniquePositions = this.deduplicateByTimestamp(positions);
+    const uniquePositions = this.deduplicateByTime(positions);
 
     if (uniquePositions.length < positions.length) {
       this.logger.log('Deduplicated bulk positions', {
@@ -115,9 +112,12 @@ export class PositionService {
       });
     }
 
-    const positionDtos: CreatePositionDto[] = uniquePositions.map((position) =>
-      this.mapIosPositionToPositionDto(position, deviceId),
-    );
+    const positionDtos: CreatePositionDto[] = uniquePositions.map((position) => ({
+      ...position,
+      device_id: deviceId || position.device_id,
+      source: position.source || 'gps',
+      heading_degrees: this.normalizeHeading(position.heading_degrees),
+    }));
 
     const result = await this.create(context, positionDtos);
 
@@ -205,13 +205,10 @@ export class PositionService {
       params.push(endDate.toISOString());
     }
 
-    const query = `
-      SELECT * FROM position
-      WHERE ${whereClause}
-      ORDER BY time DESC
-    `;
-
-    const rawResults = await this.positionRepository.query(query, params);
+    const rawResults = await this.positionRepository.query(
+      `SELECT * FROM position WHERE ${whereClause} ORDER BY time DESC`,
+      params,
+    );
 
     return this.mapRawResultsToPositions(rawResults);
   }
@@ -258,45 +255,13 @@ export class PositionService {
     return error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION;
   }
 
-  private deduplicateByTimestamp(positions: IosPositionDto[]): IosPositionDto[] {
-    const seenTimestamps = new Map<string, IosPositionDto>();
+  private deduplicateByTime(positions: CreatePositionDto[]): CreatePositionDto[] {
+    const seenTimes = new Map<string, CreatePositionDto>();
     for (const position of positions) {
-      seenTimestamps.set(position.timestamp, position);
+      seenTimes.set(position.time, position);
     }
 
-    return Array.from(seenTimestamps.values());
-  }
-
-  private mapIosPositionToPositionDto(iosPosition: IosPositionDto, deviceId?: string): CreatePositionDto {
-    const heading_degrees = this.normalizeHeading(iosPosition.heading);
-    const metadata: Record<string, unknown> = {};
-
-    if (iosPosition.id) {
-      metadata.id = iosPosition.id;
-    }
-
-    return {
-      time: iosPosition.timestamp,
-      device_id: deviceId || undefined,
-      location: {
-        x: iosPosition.longitude,
-        y: iosPosition.latitude,
-      },
-      altitude_meters: iosPosition.altitude,
-      accuracy_meters: iosPosition.accuracy,
-      heading_degrees,
-      speed_meters_per_second: iosPosition.speed,
-      address: iosPosition.address,
-      city: iosPosition.city,
-      region: iosPosition.region,
-      country: iosPosition.country,
-      postal_code: iosPosition.postalCode,
-      name: iosPosition.name,
-      description: iosPosition.description,
-      provider: iosPosition.provider,
-      source: 'gps',
-      relative_coordinates: Object.keys(metadata).length > 0 ? metadata : undefined,
-    };
+    return Array.from(seenTimes.values());
   }
 
   private normalizeHeading(heading?: number): number | undefined {

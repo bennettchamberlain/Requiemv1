@@ -36,7 +36,7 @@ export const createPositionSchemaRoot = z.object({
   accuracy_meters: z.number().positive().optional(),
   hdop: z.number().optional(),
   vdop: z.number().optional(),
-  heading_degrees: z.number().min(0).max(360).optional(),
+  heading_degrees: z.number().optional(),
   speed_meters_per_second: z.number().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
@@ -122,54 +122,12 @@ export interface UpdatePositionDto {
   is_private?: boolean;
 }
 
-export interface IosPositionDto {
-  id?: string;
-  name?: string;
-  description?: string;
-  latitude: number;
-  longitude: number;
-  accuracy?: number;
-  altitude?: number;
-  speed?: number;
-  heading?: number;
-  timestamp: string;
-  address?: string;
-  city?: string;
-  region?: string;
-  country?: string;
-  postalCode?: string;
-  provider?: string;
-  isFromMockProvider?: boolean;
-  source?: string;
+export interface BulkPositionListDto {
+  content: CreatePositionDto[];
 }
 
-export interface IosPositionListDto {
-  content: IosPositionDto[];
-}
-
-export const iosPositionSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().optional(),
-  description: z.string().optional(),
-  latitude: z.number(),
-  longitude: z.number(),
-  accuracy: z.number().optional(),
-  altitude: z.number().optional(),
-  speed: z.number().optional(),
-  heading: z.number().optional(),
-  timestamp: z.string().datetime(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  region: z.string().optional(),
-  country: z.string().optional(),
-  postalCode: z.string().optional(),
-  provider: z.string().optional(),
-  isFromMockProvider: z.boolean().optional(),
-  source: z.string().optional(),
-});
-
-export const iosPositionListSchema = z.object({
-  content: z.array(iosPositionSchema),
+export const bulkPositionListSchema = z.object({
+  content: z.array(createPositionSchemaRoot),
 });
 
 export type { Position, LocationSource, RelativeCoordinates, RelativeOrientation };

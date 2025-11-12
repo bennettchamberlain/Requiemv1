@@ -24,8 +24,8 @@ import {
   Geofence,
   GeofenceRadius,
   GeofencePolygon,
-  IosPositionListDto,
-  iosPositionListSchema,
+  BulkPositionListDto,
+  bulkPositionListSchema,
 } from '../types';
 
 @Controller('position')
@@ -54,8 +54,8 @@ export class PositionController {
   @Post('bulk')
   async createFromBulkPositions(
     @Context() context: RequestContext,
-    @Body(new ValidationPipe(iosPositionListSchema))
-    input: IosPositionListDto,
+    @Body(new ValidationPipe(bulkPositionListSchema))
+    input: BulkPositionListDto,
     @Query('deviceId') deviceId?: string,
   ): Promise<Position[]> {
     this.validateContentArray(input.content);
@@ -101,7 +101,7 @@ export class PositionController {
     return this.positionService.findByGeofence(context, geofence, startDate, endDate);
   }
 
-  private validateContentArray(content?: IosPositionListDto['content']): void {
+  private validateContentArray(content?: CreatePositionDto[]): void {
     if (!content || content.length === 0) {
       throw new BadRequestException('Content array must contain at least one location');
     }
