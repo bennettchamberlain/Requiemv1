@@ -413,7 +413,7 @@ export function MapView({ showTimeline = false, className = '' }: MapViewProps) 
       <div
         ref={mapContainerRef}
         className="h-full w-full"
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: 'none', zIndex: 1 }}
         data-testid="map-container"
       />
     </div>
@@ -447,7 +447,7 @@ export function DesktopMapView() {
         {/* Timeline button overlaid on map - top left */}
         <button
           onClick={() => setShowTimeline(!showTimeline)}
-          className={`absolute top-4 left-4 z-[1000] flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer shadow-lg ${
+          className={`absolute top-4 left-4 z-1 flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border transition-colors cursor-pointer shadow-lg ${
             showTimeline
               ? 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
               : 'bg-background text-foreground border-input hover:bg-accent hover:text-accent-foreground'
