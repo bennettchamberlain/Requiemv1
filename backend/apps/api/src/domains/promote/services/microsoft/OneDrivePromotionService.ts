@@ -11,12 +11,9 @@ import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
 import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { FileService as FileStorageService } from '@ci/domains/files';
-import {
-  EventService as MemoryEventService,
-  type CreateEventDto,
-  PersonService,
-  FileService,
-} from '@ci/domains/memory';
+import { EventService as MemoryEventService, type CreateEventDto, FileService } from '@ci/domains/memory';
+
+import { PromoteService } from '../PromoteService';
 
 interface RawData {
   data: object;
@@ -41,11 +38,11 @@ export class OneDrivePromotionService {
 
   constructor(
     private readonly eventService: MemoryEventService,
-    private readonly personService: PersonService,
     private readonly connectionService: ConnectionService,
     private readonly fileStorageService: FileStorageService,
     private readonly fileService: FileService,
     private readonly domainEventService: DomainEventService,
+    private readonly promoteService: PromoteService,
   ) {}
 
   async promoteOneDriveFiles(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -186,7 +183,7 @@ export class OneDrivePromotionService {
       eventId: fileDetails.id,
     });
 
-    const participantEntityIds = await this.personService.processParticipants(
+    const participantEntityIds = await this.promoteService.processParticipants(
       fileDetails.participants,
       userId,
       connectionId,

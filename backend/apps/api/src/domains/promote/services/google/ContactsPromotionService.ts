@@ -5,6 +5,8 @@ import { LoggerService } from '@ci/common/services';
 import { EventService, Events } from '@ci/domains/events';
 import { PersonService, PersonEntity } from '@ci/domains/memory';
 
+import { PromoteService } from '../PromoteService';
+
 interface PropsToCheck {
   owner_user_id: string;
   email?: string;
@@ -60,6 +62,7 @@ export class ContactsPromotionService {
   constructor(
     private readonly personService: PersonService,
     private readonly eventService: EventService,
+    private readonly promoteService: PromoteService,
   ) {}
 
   async promoteContacts(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -84,7 +87,7 @@ export class ContactsPromotionService {
       });
 
       // Get user's entity ID (create if missing)
-      const userEntityId = await this.personService.getUserEntityId(userId);
+      const userEntityId = await this.promoteService.getUserEntityId(userId);
 
       for (const contact of contacts) {
         try {

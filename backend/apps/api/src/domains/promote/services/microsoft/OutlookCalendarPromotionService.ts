@@ -9,7 +9,9 @@ import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { EventService as MemoryEventService, type CreateEventDto, PersonService } from '@ci/domains/memory';
+import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
+
+import { PromoteService } from '../PromoteService';
 
 interface RawData {
   data: object;
@@ -103,7 +105,7 @@ export class OutlookCalendarPromotionService {
   constructor(
     private readonly fileService: FileService,
     private readonly eventService: MemoryEventService,
-    private readonly personService: PersonService,
+    private readonly promoteService: PromoteService,
     private readonly connectionService: ConnectionService,
     private readonly domainEventService: DomainEventService,
   ) {}
@@ -204,7 +206,7 @@ export class OutlookCalendarPromotionService {
     const participants = eventDetails.participants;
     const organizer = eventDetails.organizer;
 
-    const participantEntityIds = await this.personService.processParticipants(
+    const participantEntityIds = await this.promoteService.processParticipants(
       participants,
       userId,
       connectionId,
@@ -213,7 +215,7 @@ export class OutlookCalendarPromotionService {
     );
 
     const organizerEntityId = (
-      await this.personService.processParticipants(
+      await this.promoteService.processParticipants(
         [organizer],
         userId,
         connectionId,
