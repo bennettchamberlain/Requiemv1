@@ -6,6 +6,8 @@ import { useMemoryService } from '../useMemoryService';
 
 export function TimelineView() {
   const timelineRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
   const {
     memories,
     loading,
@@ -21,19 +23,22 @@ export function TimelineView() {
   const groupedMemories = groupMemoriesByDate(sortedMemories);
 
   useEffect(() => {
-    if (timelineRef.current && sortedMemories.length > 0) {
-      setTimeout(() => {
-        const container = timelineRef.current;
-        if (!container) {
-          return;
-        }
+    if (!scrollContainerRef.current) {
+      scrollContainerRef.current = timelineRef.current?.closest(
+        '[data-slot="scroll-area-viewport"]',
+      ) as HTMLDivElement | null;
+    }
+  }, []);
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+
+    if (container && sortedMemories.length > 0) {
+      setTimeout(() => {
         const currentTimeElement = container.querySelector('[data-current-time="true"]');
+
         if (currentTimeElement) {
-          currentTimeElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-          });
+          currentTimeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else {
           container.scrollTop = container.scrollHeight / 2;
         }
@@ -42,8 +47,9 @@ export function TimelineView() {
   }, [sortedMemories.length]);
 
   useEffect(() => {
-    if (timelineRef.current && memories.length > 0) {
-      const container = timelineRef.current;
+    const container = scrollContainerRef.current;
+
+    if (container && memories.length > 0) {
       const currentScrollTop = container.scrollTop;
       const currentScrollHeight = container.scrollHeight;
 
@@ -57,7 +63,8 @@ export function TimelineView() {
   }, [memories.length]);
 
   useEffect(() => {
-    const container = timelineRef.current;
+    const container = scrollContainerRef.current;
+
     if (!container) {
       return;
     }
