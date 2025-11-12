@@ -5,6 +5,12 @@ import { LoggerService } from '@ci/common/services';
 import { EventService, Events } from '@ci/domains/events';
 import { PersonService, PersonEntity } from '@ci/domains/memory';
 
+interface PropsToCheck {
+  owner_user_id: string;
+  email?: string;
+  phone?: string;
+}
+
 interface GoogleContact {
   resourceName?: string;
   names?: Array<{
@@ -142,18 +148,24 @@ export class ContactsPromotionService {
     // Check if contact entity already exists by email or phone
     let existingEntity: PersonEntity | null = null;
 
+    const propsToCheck: PropsToCheck = {
+      owner_user_id: userId,
+    };
     if (primaryEmail) {
-      const existingEntities = await this.personService.search(
-        { userId },
-        {
-          properties: {
-            email: primaryEmail,
-            owner_user_id: userId,
-          },
-        },
-      );
-      existingEntity = existingEntities.length > 0 ? existingEntities[0] : null;
+      propsToCheck.email = primaryEmail;
     }
+
+    if (primaryPhone) {
+      propsToCheck.phone = primaryPhone;
+    }
+
+    const existingEntities = await this.personService.search(
+      { userId },
+      {
+        properties: { ...propsToCheck },
+      },
+    );
+    existingEntity = existingEntities.length > 0 ? existingEntities[0] : null;
 
     let contactEntityId: string;
     let searchContent: string | null = null;
@@ -220,6 +232,7 @@ export class ContactsPromotionService {
 
       searchContent = this.buildContactSearchContent(displayName, properties);
 
+      console.log('creating new contact', properties);
       await this.personService.create(
         { userId },
         {

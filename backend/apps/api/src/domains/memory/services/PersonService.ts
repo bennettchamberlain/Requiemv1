@@ -42,6 +42,9 @@ export class PersonService {
       },
       search_content: data.searchContent || this.buildPersonSearchContent(data.name, data.properties),
       last_accessed: data.lastAccessed,
+      user: {
+        id: context.userId,
+      },
       properties: data.properties || [],
     });
 
@@ -108,14 +111,34 @@ export class PersonService {
   }
 
   async search(context: RequestContext, query: UpdatePersonDto): Promise<PersonEntity[]> {
-    return this.personRepository.find({
-      where: {
-        user: {
-          id: context.userId,
-        },
-        ...query,
-      },
-    });
+    let executable = this.personRepository
+      .createQueryBuilder('entity')
+      .where('owner_user_id = :userId', { userId: context.userId });
+
+    if (query.name) {
+      executable = executable.andWhere('name = :name', { name: query.name });
+    }
+
+    if (query.description) {
+      executable = executable.andWhere('description = :description', { description: query.description });
+    }
+
+    if (query.linkedId) {
+      executable = executable.andWhere('linked_id = :linkedId', { linkedId: query.linkedId });
+    }
+
+    if (query.linkedTable) {
+      executable = executable.andWhere('linked_table = :linkedTable', { linkedTable: query.linkedTable });
+    }
+
+    if (query.properties) {
+      for (const [key, val] of Object.entries(query.properties)) {
+        console.log('property to add', key, val);
+        executable = executable.andWhere(`entity.properties->>'${key}' = :${key}`, { [key]: val });
+      }
+    }
+
+    return executable.getMany();
   }
 
   /**
