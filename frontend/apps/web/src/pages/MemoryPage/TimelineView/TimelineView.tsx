@@ -102,22 +102,15 @@ export function TimelineView() {
   }
 
   return (
-    <div ref={timelineRef} className="space-y-6 h-full overflow-y-auto overflow-x-hidden">
+    <div ref={timelineRef} className="space-y-6 h-full py-2">
       {groupedMemories.map(({ date, memories: dayMemories }) => {
         const isCurrentDay = date === new Date().toISOString().split('T')[0];
-        const dateObj = new Date(date);
-        const now = new Date();
-        const isPastDay = dateObj < now;
 
         return (
           <div key={date} className="relative">
-            <div className="sticky top-0 z-10 bg-background border-b border-border py-3 mb-4">
+            <div className="border-border py-3 mb-4 bg-[#74c5c4] dark:bg-accent pl-2 rounded-r-lg relative z-1">
               <div className="flex items-center gap-3">
-                <div
-                  className={`w-3 h-3 rounded-full ml-2 ${
-                    isCurrentDay ? 'bg-primary' : isPastDay ? 'bg-muted' : 'bg-accent'
-                  }`}
-                />
+                <div className="w-3 h-3 rounded-full ml-2" />
                 <h2 className="text-lg font-semibold text-foreground">{formatDateForDisplay(date)}</h2>
                 {isCurrentDay && (
                   <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">Today</span>
@@ -125,7 +118,7 @@ export function TimelineView() {
               </div>
             </div>
 
-            <div className="absolute left-[14px] top-0 bottom-0 w-0.5 bg-border" />
+            <div className="absolute left-[14px] top-0 bottom-0 w-0.5 bg-[#0b5969]" />
 
             <div className="space-y-4 pl-8">
               {dayMemories.map((memory) => {
@@ -137,11 +130,7 @@ export function TimelineView() {
 
                 return (
                   <div key={memory.id} data-current-time={isCurrentTime} className="relative">
-                    <div
-                      className={`absolute -left-[23px] top-6 w-3 h-3 rounded-full border-2 border-background ${
-                        isCurrentTime ? 'bg-primary' : isPastDay ? 'bg-muted' : 'bg-accent'
-                      }`}
-                    />
+                    <div className="absolute top-1/2 -left-4.25 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-[#179298] border-2 border-[#179298]" />
 
                     <MemoryCard memory={memory} />
                   </div>
