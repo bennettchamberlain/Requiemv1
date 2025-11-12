@@ -1,8 +1,7 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Point, QueryFailedError } from 'typeorm';
+import { Repository, Between, Point, In } from 'typeorm';
 
-import { PgErrorCode } from '@ci/common/constants';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
@@ -32,11 +31,14 @@ export class PositionService {
       count: dataArray.length,
     });
 
-    const returned: Position[] = [];
-    const errors: Array<{ time: string; error: string }> = [];
+    const times = dataArray.map((item) => new Date(item.time));
+    const existingPositions = await this.findExistingByTimes(context.userId!, times);
+    const existingTimesSet = new Set(existingPositions.map((p) => p.time.toISOString()));
 
+    const newPositions: CreatePositionDto[] = [];
     for (const item of dataArray) {
-      try {
+      const itemTime = new Date(item.time).toISOString();
+      if (!existingTimesSet.has(itemTime)) {
         if (item.device_id) {
           const device = await this.deviceService.findOne(context, item.device_id);
           if (!device) {
@@ -51,45 +53,33 @@ export class PositionService {
           ...item,
           heading_degrees: this.normalizeHeading(item.heading_degrees),
         };
-        const position = this.createPositionEntity(normalizedItem, context.userId!);
-        const result = await this.positionRepository.save(position);
-        returned.push(result.toPosition());
-      } catch (error) {
-        if (this.isUniqueViolation(error)) {
-          this.logger.warn('Skipping duplicate position', {
-            time: item.time,
-            userId: context.userId,
-          });
-          errors.push({ time: item.time, error: 'Duplicate position' });
-          continue;
-        }
-
-        throw error;
+        newPositions.push(normalizedItem);
       }
     }
 
-    if (errors.length > 0) {
-      this.logger.log('Some positions were skipped due to duplicates', {
-        skippedCount: errors.length,
-        createdCount: returned.length,
-      });
+    const createdEntities: PositionEntity[] = [];
+    if (newPositions.length > 0) {
+      const entitiesToSave = newPositions.map((item) => this.createPositionEntity(item, context.userId!));
+      const saved = await this.positionRepository.save(entitiesToSave);
+      createdEntities.push(...saved);
     }
 
-    this.logger.log('Successfully created position records', {
+    const allPositions = [...existingPositions, ...createdEntities]
+      .sort((a, b) => b.time.getTime() - a.time.getTime())
+      .map((entity) => entity.toPosition());
+
+    this.logger.log('Successfully processed position records', {
       userId: context.userId,
-      count: returned.length,
-      skipped: errors.length,
+      totalCount: allPositions.length,
+      newCount: createdEntities.length,
+      existingCount: existingPositions.length,
     });
 
     if (isSingle) {
-      if (returned.length === 0) {
-        throw new ConflictException('Position record already exists for this time and user');
-      }
-
-      return returned[0];
+      return allPositions[0];
     }
 
-    return returned;
+    return allPositions;
   }
 
   async createFromBulkPositions(
@@ -251,8 +241,17 @@ export class PositionService {
     });
   }
 
-  private isUniqueViolation(error: unknown): boolean {
-    return error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION;
+  private async findExistingByTimes(userId: string, times: Date[]): Promise<PositionEntity[]> {
+    if (times.length === 0) {
+      return [];
+    }
+
+    return this.positionRepository.find({
+      where: {
+        user_id: userId,
+        time: In(times),
+      },
+    });
   }
 
   private deduplicateByTime(positions: CreatePositionDto[]): CreatePositionDto[] {
