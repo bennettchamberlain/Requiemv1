@@ -32,15 +32,10 @@ export function Panel({ position = 'right', className, children }: Props) {
 
   return (
     <div
-      className={cn(
-        'z-400 cursor-default text-base',
-        POSITION_CLASSES[position],
-        className,
-        'absolute overflow-hidden',
-      )}
+      className={cn('z-400 cursor-default text-base', POSITION_CLASSES[position], className, 'absolute')}
       ref={setPanelRef}
     >
-      <ScrollArea className="h-full w-full">
+      <ScrollArea className="h-full w-full" collapseX>
         {children}
       </ScrollArea>
     </div>
