@@ -5,13 +5,21 @@ import * as React from 'react';
 
 import { cn } from '../../lib/utils';
 
-function ScrollArea({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+interface ScrollAreaProps extends React.ComponentProps<typeof ScrollAreaPrimitive.Root> {
+  collapseX?: boolean;
+}
+
+function ScrollArea({ className, children, collapseX = false, ...props }: ScrollAreaProps) {
   return (
     <ScrollAreaPrimitive.Root data-slot="scroll-area" className={cn('relative', className)} {...props}>
+      {collapseX && (
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `[data-radix-scroll-area-viewport] > div { display: block !important }`,
+          }}
+        />
+      )}
+
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
         className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
