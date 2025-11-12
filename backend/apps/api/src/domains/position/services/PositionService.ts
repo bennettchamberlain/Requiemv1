@@ -237,7 +237,6 @@ export class PositionService {
       relative_coordinates: item.relative_coordinates ?? {},
       relative_orientation: item.relative_orientation ?? {},
       location_embedding: item.location_embedding ?? null,
-      is_private: item.is_private ?? false,
     });
   }
 

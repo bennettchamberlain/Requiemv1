@@ -53,12 +53,9 @@ export const createPositionSchemaRoot = z.object({
   relative_coordinates: z.record(z.unknown()).optional(),
   relative_orientation: z.record(z.unknown()).optional(),
   location_embedding: z.array(z.number()).optional(),
-  is_private: z.boolean().optional(),
 });
 
 export const createPositionSchema = z.union([createPositionSchemaRoot, z.array(createPositionSchemaRoot)]);
-
-export const updatePositionSchema = createPositionSchemaRoot.partial();
 
 export interface CreatePositionDto {
   time: string;
@@ -88,38 +85,6 @@ export interface CreatePositionDto {
   relative_coordinates?: RelativeCoordinates | Record<string, unknown>;
   relative_orientation?: RelativeOrientation | Record<string, unknown>;
   location_embedding?: number[];
-  is_private?: boolean;
-}
-
-export interface UpdatePositionDto {
-  time?: string;
-  device_id?: string;
-  location?: {
-    x: number;
-    y: number;
-  };
-  altitude_meters?: number;
-  accuracy_meters?: number;
-  hdop?: number;
-  vdop?: number;
-  heading_degrees?: number;
-  speed_meters_per_second?: number;
-  address?: string;
-  city?: string;
-  region?: string;
-  country?: string;
-  postal_code?: string;
-  name?: string;
-  description?: string;
-  provider?: string;
-  source?: LocationSource;
-  activity_type?: string;
-  location_entity_id?: string;
-  reference_entity_id?: string;
-  relative_coordinates?: RelativeCoordinates | Record<string, unknown>;
-  relative_orientation?: RelativeOrientation | Record<string, unknown>;
-  location_embedding?: number[];
-  is_private?: boolean;
 }
 
 export type { Position, LocationSource, RelativeCoordinates, RelativeOrientation };
