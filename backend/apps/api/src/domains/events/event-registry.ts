@@ -288,6 +288,15 @@ interface SummaryGenerationPayload extends EventPayload {
   sourceTypes?: string[];
 }
 
+interface SummaryGenerationPayload extends EventPayload {
+  userId: string;
+  periodType: SummaryPeriodType;
+  periodStart: string;
+  periodEnd: string;
+  timezone?: string;
+  sourceTypes?: string[];
+}
+
 interface PromoteFacebookProfilePayload extends EventPayload {
   apiLogId: string;
   userId: string;
@@ -359,6 +368,7 @@ export type EventPayloads = {
   [Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]: PromoteOutlookMessagesPayload;
   [Events.PROMOTE_OUTLOOK_CALENDAR_EVENTS]: PromoteOutlookCalendarEventsPayload;
   [Events.PROMOTE_ONEDRIVE_FILES]: PromoteOneDriveFilePayload;
+  [Events.MEMORY_SUMMARY_GENERATION]: SummaryGenerationPayload;
   [Events.MEMORY_SUMMARY_GENERATION]: SummaryGenerationPayload;
   [Events.PROMOTE_FACEBOOK_PROFILE]: PromoteFacebookProfilePayload;
   [Events.PROMOTE_FACEBOOK_POSTS]: PromoteFacebookPostsPayload;
