@@ -97,6 +97,7 @@ function SearchBox(
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
   const isLoading = loading || isAutoSubmitPending;
@@ -266,6 +267,29 @@ function SearchBox(
     }
   }, [selectedIndex, scrollToSelectedItem]);
 
+  // Close filters panel on outside click
+  useEffect(() => {
+    if (!isFiltersPanelVisible) {
+      return;
+    }
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!wrapperRef.current) {
+        return;
+      }
+
+      if (wrapperRef.current.contains(e.target as Node)) {
+        return;
+      }
+
+      toggleFilterPanel();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isFiltersPanelVisible, toggleFilterPanel]);
+
   let resultsNode: ReactNode | null = null;
 
   if (displayFilters && isFiltersPanelVisible) {
@@ -325,7 +349,7 @@ function SearchBox(
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)}>
-        <div className="relative">
+        <div className="relative" ref={wrapperRef}>
           <div
             className={cn(
               'w-full flex flex-col',
