@@ -115,14 +115,8 @@ export function TimelineView() {
 
         return (
           <div key={date} className="relative">
-            <div className="border-border py-3 mb-4 bg-[#74c5c4] dark:bg-accent pl-2 rounded-r-lg relative z-1">
-              <div className="flex items-center gap-3">
-                <div className="w-3 h-3 rounded-full ml-2" />
-                <h2 className="text-lg font-semibold text-foreground">{formatDateForDisplay(date)}</h2>
-                {isCurrentDay && (
-                  <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">Today</span>
-                )}
-              </div>
+            <div className="flex font-semibold text-lg border-border py-3 mb-4 bg-[#74c5c4] dark:bg-accent pl-3 rounded-r-lg relative z-1">
+              {formatDateForDisplay(date)}
             </div>
 
             <div className="absolute left-[14px] top-0 bottom-0 w-0.5 bg-[#0b5969]" />
