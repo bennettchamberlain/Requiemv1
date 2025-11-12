@@ -5,7 +5,6 @@ import { Map } from '@/components/Map';
 import { TimelineView } from '../TimelineView';
 import { useMemoryService } from '../useMemoryService';
 
-
 export function DesktopMapView() {
   const { memories, setActiveMemory } = useMemoryService();
 
