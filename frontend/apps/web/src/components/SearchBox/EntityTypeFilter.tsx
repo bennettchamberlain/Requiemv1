@@ -4,32 +4,16 @@ import { Checkbox } from '@ci/shadcn';
 import { ChevronDown } from '@ci/shadcn/icons';
 import { createPortal } from 'react-dom';
 
-interface EntityTypeFilterProps {
-  selectedEntityTypes: string[];
-  onEntityTypesChange: (entityTypes: string[]) => void;
-}
+import { AVAILABLE_ENTITY_TYPES, useFilters } from './useFilters';
 
-const AVAILABLE_ENTITY_TYPES = [
-  'Person',
-  'Event',
-  'Content',
-  'Browser',
-  'Thing',
-  'Contact',
-  'Place',
-  'Location',
-  'Document',
-  'File',
-  'Channel',
-  'Video',
-  'Communication',
-];
-
-export function EntityTypeFilter({ selectedEntityTypes, onEntityTypesChange }: EntityTypeFilterProps) {
+export function EntityTypeFilter() {
   const [isOpen, setIsOpen] = useState(false);
   const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const [{ selectedEntityTypes }, { clearEntityTypes, selectAllEntityTypes, toggleEntityType }] =
+    useFilters();
 
   const handleButtonClick = useCallback(() => {
     if (buttonRef.current) {
@@ -39,27 +23,6 @@ export function EntityTypeFilter({ selectedEntityTypes, onEntityTypesChange }: E
 
     setIsOpen(!isOpen);
   }, [isOpen]);
-
-  const handleEntityTypeToggle = useCallback(
-    (entityType: string, event?: React.SyntheticEvent) => {
-      // Prevent event bubbling
-      if (event) {
-        event.stopPropagation();
-        event.preventDefault();
-      }
-
-      if (selectedEntityTypes.includes(entityType)) {
-        // Remove from selected (exclude it)
-        const newTypes = selectedEntityTypes.filter((type) => type !== entityType);
-        onEntityTypesChange(newTypes);
-      } else {
-        // Add to selected (include it)
-        const newTypes = [...selectedEntityTypes, entityType];
-        onEntityTypesChange(newTypes);
-      }
-    },
-    [selectedEntityTypes, onEntityTypesChange],
-  );
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -149,20 +112,11 @@ export function EntityTypeFilter({ selectedEntityTypes, onEntityTypesChange }: E
               <div className="flex items-center justify-between p-2 border-b border-border mb-2">
                 <span className="text-sm font-medium">Entity Types</span>
                 <div className="flex gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEntityTypesChange(AVAILABLE_ENTITY_TYPES);
-                    }}
-                    className="text-xs px-2 py-1 rounded hover:bg-accent"
-                  >
+                  <button onClick={clearEntityTypes} className="text-xs px-2 py-1 rounded hover:bg-accent">
                     All
                   </button>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEntityTypesChange([]);
-                    }}
+                    onClick={selectAllEntityTypes}
                     className="text-xs px-2 py-1 rounded hover:bg-accent"
                   >
                     None
@@ -177,14 +131,14 @@ export function EntityTypeFilter({ selectedEntityTypes, onEntityTypesChange }: E
                     className="flex items-center gap-2 p-2 rounded hover:bg-accent cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleEntityTypeToggle(entityType, e);
+                      toggleEntityType(entityType);
                     }}
                   >
                     <Checkbox
                       checked={selectedEntityTypes.includes(entityType)}
                       onChange={(e) => {
                         e.stopPropagation();
-                        handleEntityTypeToggle(entityType, e);
+                        toggleEntityType(entityType);
                       }}
                     />
                     <span className="text-sm">{entityType}</span>
