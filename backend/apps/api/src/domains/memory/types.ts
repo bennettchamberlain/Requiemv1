@@ -326,6 +326,7 @@ export interface CreatePersonDto {
   searchContent?: string;
   linkedId?: string;
   linkedTable?: string;
+  lastAccessed?: Date;
   properties: {
     email?: string;
     firstName?: string;
@@ -341,11 +342,10 @@ export interface CreatePersonDto {
 export interface UpdatePersonDto {
   name?: string;
   description?: string;
-  entityType?: string;
   searchContent?: string;
-  ownerUserId?: string;
   linkedId?: string;
   linkedTable?: string;
+  lastAccessed?: Date;
   properties: {
     email?: string;
     firstName?: string;

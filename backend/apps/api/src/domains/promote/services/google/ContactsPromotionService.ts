@@ -1,11 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { EventService, Events } from '@ci/domains/events';
-import { PersonService, GraphUtilityService, GraphNodeEntity } from '@ci/domains/memory';
+import { PersonService, PersonEntity } from '@ci/domains/memory';
 
 interface GoogleContact {
   resourceName?: string;
@@ -54,9 +52,6 @@ export class ContactsPromotionService {
   private logger = new LoggerService(ContactsPromotionService.name);
 
   constructor(
-    @InjectRepository(GraphNodeEntity)
-    private readonly entityRepository: Repository<GraphNodeEntity>,
-    private readonly graphUtilityService: GraphUtilityService,
     private readonly personService: PersonService,
     private readonly eventService: EventService,
   ) {}
@@ -145,15 +140,19 @@ export class ContactsPromotionService {
     const primaryPhone = contact.phoneNumbers?.[0]?.value || null;
 
     // Check if contact entity already exists by email or phone
-    let existingEntity: GraphNodeEntity | null = null;
+    let existingEntity: PersonEntity | null = null;
 
     if (primaryEmail) {
-      existingEntity = await this.entityRepository
-        .createQueryBuilder('entity')
-        .where("entity.entity_type = 'Person'")
-        .andWhere("entity.properties->>'email' = :email", { email: primaryEmail })
-        .andWhere("entity.properties->>'owner_user_id' = :userId", { userId })
-        .getOne();
+      const existingEntities = await this.personService.search(
+        { userId },
+        {
+          properties: {
+            email: primaryEmail,
+            owner_user_id: userId,
+          },
+        },
+      );
+      existingEntity = existingEntities.length > 0 ? existingEntities[0] : null;
     }
 
     let contactEntityId: string;
@@ -221,13 +220,16 @@ export class ContactsPromotionService {
 
       searchContent = this.buildContactSearchContent(displayName, properties);
 
-      await this.personService.create({ userId }, {
-        id: contactEntityId,
-        name: displayName,
-        description: `Contact from Google Contacts`,
-        properties,
-        searchContent,
-      })
+      await this.personService.create(
+        { userId },
+        {
+          id: contactEntityId,
+          name: displayName,
+          description: `Contact from Google Contacts`,
+          properties,
+          searchContent: searchContent || undefined,
+        },
+      );
 
       this.logger.log('Created new contact entity', {
         contactEntityId,
@@ -235,7 +237,7 @@ export class ContactsPromotionService {
       });
     } else {
       // Update existing entity
-      contactEntityId = existingEntity.entity_id;
+      contactEntityId = existingEntity.id;
 
       const currentProperties = (existingEntity.properties as Record<string, unknown>) ?? {};
       const updatedProperties = {
@@ -245,7 +247,7 @@ export class ContactsPromotionService {
       };
 
       existingEntity.properties = updatedProperties;
-      await this.entityRepository.update({ userId }, entity_id, {
+      await this.personService.update({ userId }, existingEntity.id, {
         properties: updatedProperties,
       });
 
@@ -260,54 +262,55 @@ export class ContactsPromotionService {
     await this.enqueueContactEmbedding(userId, contactEntityId, searchContent);
 
     // Create KNOWS relationship (ensuring every entity has at least one relationship)
-    const existingRelationships = await this.graphUtilityService.findConnectedEntities(
-      userEntityId,
-      ['KNOWS'],
-      'outbound',
-    );
+    // FIXME: This should be re-implemented after we create a RelationshipService
+    // const existingRelationships = await this.graphUtilityService.findConnectedEntities(
+    //   userEntityId,
+    //   ['KNOWS'],
+    //   'outbound',
+    // );
 
-    const relationshipExists = existingRelationships.some((entity) => entity.entity_id === contactEntityId);
+    // const relationshipExists = existingRelationships.some((entity) => entity.entity_id === contactEntityId);
 
-    if (!relationshipExists) {
-      await this.personService.createRelationship(
-        userEntityId,
-        contactEntityId,
-        'KNOWS',
-        {
-          source: 'google_contacts',
-          connection_id: connectionId,
-          synced_at: new Date().toISOString(),
-        },
-        1.0,
-        userId,
-      );
-
-      this.logger.log('Created KNOWS relationship', {
-        userEntityId,
-        contactEntityId,
-      });
-    }
+    // if (!relationshipExists) {
+    //   await this.personService.createRelationship(
+    //     userEntityId,
+    //     contactEntityId,
+    //     'KNOWS',
+    //     {
+    //       source: 'google_contacts',
+    //       connection_id: connectionId,
+    //       synced_at: new Date().toISOString(),
+    //     },
+    //     1.0,
+    //     userId,
+    //   );
+    //
+    //   this.logger.log('Created KNOWS relationship', {
+    //     userEntityId,
+    //     contactEntityId,
+    //   });
+    // }
 
     // If contact has relations (e.g., spouse, child), create those relationships
-    if (contact.relations && contact.relations.length > 0) {
-      for (const relation of contact.relations) {
-        if (relation.person && relation.type) {
-          // Try to find the related person by name
-          const relatedPersonName = relation.person;
-          const relationType = this.normalizeRelationType(relation.type);
-
-          if (relationType) {
-            // Note: In a real implementation, you'd search for the person by name
-            // For now, we just log it
-            this.logger.log('Contact has relationship', {
-              contactName: displayName,
-              relatedPerson: relatedPersonName,
-              relationType,
-            });
-          }
-        }
-      }
-    }
+    // if (contact.relations && contact.relations.length > 0) {
+    //   for (const relation of contact.relations) {
+    //     if (relation.person && relation.type) {
+    //       // Try to find the related person by name
+    //       const relatedPersonName = relation.person;
+    //       const relationType = this.normalizeRelationType(relation.type);
+    //
+    //       if (relationType) {
+    //         // Note: In a real implementation, you'd search for the person by name
+    //         // For now, we just log it
+    //         this.logger.log('Contact has relationship', {
+    //           contactName: displayName,
+    //           relatedPerson: relatedPersonName,
+    //           relationType,
+    //         });
+    //       }
+    //     }
+    //   }
+    // }
 
     this.logger.log('Processed contact', {
       contactEntityId,
