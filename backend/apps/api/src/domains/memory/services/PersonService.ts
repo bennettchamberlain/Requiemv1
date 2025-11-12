@@ -45,7 +45,7 @@ export class PersonService {
       linked_id: data.linkedId,
       entity_type: data.entityType,
       user: {
-        id: data.ownerUserId,
+        id: context.userId,
       },
       search_content: data.searchContent || this.buildPersonSearchContent(data.name, data.properties),
       properties: data.properties || [],
@@ -84,6 +84,9 @@ export class PersonService {
     const updatedEntity = {
       ...existingEntity,
       ...data,
+      user: {
+        id: context.userId,
+      },
     };
 
     return this.personRepository.save(updatedEntity!);
