@@ -52,6 +52,33 @@ export class PositionEntity {
   @Column({ type: 'double precision', nullable: true })
   heading_degrees?: number | null;
 
+  @Column({ type: 'double precision', nullable: true })
+  speed_meters_per_second?: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  address?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  city?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  region?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  country?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  postal_code?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  name?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  description?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  provider?: string | null;
+
   @Column({ type: 'text' })
   source!: LocationSource;
 
@@ -110,6 +137,15 @@ export class PositionEntity {
       hdop: this.hdop ?? undefined,
       vdop: this.vdop ?? undefined,
       heading_degrees: this.heading_degrees ?? undefined,
+      speed_meters_per_second: this.speed_meters_per_second ?? undefined,
+      address: this.address ?? undefined,
+      city: this.city ?? undefined,
+      region: this.region ?? undefined,
+      country: this.country ?? undefined,
+      postal_code: this.postal_code ?? undefined,
+      name: this.name ?? undefined,
+      description: this.description ?? undefined,
+      provider: this.provider ?? undefined,
       source: this.source,
       activity_type: this.activity_type ?? undefined,
       location_entity_id: this.location_entity_id ?? undefined,
@@ -136,6 +172,15 @@ export interface Position {
   readonly hdop?: number;
   readonly vdop?: number;
   readonly heading_degrees?: number;
+  readonly speed_meters_per_second?: number;
+  readonly address?: string;
+  readonly city?: string;
+  readonly region?: string;
+  readonly country?: string;
+  readonly postal_code?: string;
+  readonly name?: string;
+  readonly description?: string;
+  readonly provider?: string;
   readonly source: LocationSource;
   readonly activity_type?: string;
   readonly location_entity_id?: string;

@@ -44,7 +44,15 @@ export class PositionService {
 
     for (const item of dataArray) {
       try {
-        await this.ensureDeviceExists(item.device_id, context);
+        if (item.device_id) {
+          const device = await this.deviceService.findOne(context, item.device_id);
+          if (!device) {
+            this.logger.warn('Device not found for position', {
+              deviceId: item.device_id,
+              userId: context.userId,
+            });
+          }
+        }
 
         const position = this.createPositionEntity(item, context.userId!);
         const result = await this.positionRepository.save(position);
@@ -87,12 +95,12 @@ export class PositionService {
     return returned;
   }
 
-  async createFromIosPositions(
+  async createFromBulkPositions(
     context: RequestContext,
     positions: IosPositionDto[],
     deviceId?: string,
   ): Promise<Position[]> {
-    this.logger.log('Creating position records from iOS positions', {
+    this.logger.log('Creating position records from bulk positions', {
       userId: context.userId,
       count: positions.length,
     });
@@ -100,7 +108,7 @@ export class PositionService {
     const uniquePositions = this.deduplicateByTimestamp(positions);
 
     if (uniquePositions.length < positions.length) {
-      this.logger.log('Deduplicated iOS positions', {
+      this.logger.log('Deduplicated bulk positions', {
         originalCount: positions.length,
         uniqueCount: uniquePositions.length,
         duplicatesRemoved: positions.length - uniquePositions.length,
@@ -125,7 +133,7 @@ export class PositionService {
 
     const results = await this.positionRepository.find({
       where: {
-        user_id: context.userId!,
+        user_id: context.userId,
         time: Between(start, end),
       },
       order: { time: 'DESC' },
@@ -147,7 +155,55 @@ export class PositionService {
       endDate: endDate?.toISOString(),
     });
 
-    const { whereClause, params } = this.buildGeofenceQuery(geofence, context.userId!, startDate, endDate);
+    let whereClause = 'user_id = $1 AND location IS NOT NULL';
+    const params: (string | number)[] = [context.userId!];
+    let paramIndex = 2;
+
+    if ('radius_meters' in geofence) {
+      const radiusGeofence = geofence as GeofenceRadius;
+      whereClause += ` AND ST_DWithin(
+        location::geography,
+        ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)::geography,
+        $${paramIndex + 2}
+      )`;
+      params.push(
+        radiusGeofence.center.longitude,
+        radiusGeofence.center.latitude,
+        radiusGeofence.radius_meters,
+      );
+      paramIndex += 3;
+    } else {
+      const polygonGeofence = geofence as GeofencePolygon;
+      if (polygonGeofence.coordinates.length < 3) {
+        this.logger.warn('Polygon geofence must have at least 3 coordinates');
+
+        return [];
+      }
+
+      const coordinatesStr = polygonGeofence.coordinates
+        .map((coord) => `${coord.longitude} ${coord.latitude}`)
+        .join(', ');
+      const firstCoord = polygonGeofence.coordinates[0];
+      const polygonWKT = `POLYGON((${coordinatesStr}, ${firstCoord.longitude} ${firstCoord.latitude}))`;
+
+      whereClause += ` AND ST_Within(
+        location::geography,
+        ST_GeogFromText($${paramIndex})::geography
+      )`;
+      params.push(`SRID=4326;${polygonWKT}`);
+      paramIndex += 1;
+    }
+
+    if (startDate) {
+      whereClause += ` AND time >= $${paramIndex}`;
+      params.push(startDate.toISOString());
+      paramIndex += 1;
+    }
+
+    if (endDate) {
+      whereClause += ` AND time <= $${paramIndex}`;
+      params.push(endDate.toISOString());
+    }
 
     const query = `
       SELECT * FROM position
@@ -158,21 +214,6 @@ export class PositionService {
     const rawResults = await this.positionRepository.query(query, params);
 
     return this.mapRawResultsToPositions(rawResults);
-  }
-
-  private async ensureDeviceExists(deviceId: string | undefined, context: RequestContext): Promise<void> {
-    if (!deviceId) {
-      return;
-    }
-
-    const device = await this.deviceService.findOne(context, deviceId);
-
-    if (!device) {
-      this.logger.warn('Device not found for position', {
-        deviceId,
-        userId: context.userId,
-      });
-    }
   }
 
   private createPositionEntity(item: CreatePositionDto, userId: string): PositionEntity {
@@ -193,6 +234,15 @@ export class PositionService {
       hdop: item.hdop ?? null,
       vdop: item.vdop ?? null,
       heading_degrees: item.heading_degrees ?? null,
+      speed_meters_per_second: item.speed_meters_per_second ?? null,
+      address: item.address ?? null,
+      city: item.city ?? null,
+      region: item.region ?? null,
+      country: item.country ?? null,
+      postal_code: item.postal_code ?? null,
+      name: item.name ?? null,
+      description: item.description ?? null,
+      provider: item.provider ?? null,
       source: item.source,
       activity_type: item.activity_type ?? null,
       location_entity_id: item.location_entity_id ?? null,
@@ -218,8 +268,12 @@ export class PositionService {
   }
 
   private mapIosPositionToPositionDto(iosPosition: IosPositionDto, deviceId?: string): CreatePositionDto {
-    const metadata = this.extractMetadata(iosPosition);
     const heading_degrees = this.normalizeHeading(iosPosition.heading);
+    const metadata: Record<string, unknown> = {};
+
+    if (iosPosition.id) {
+      metadata.id = iosPosition.id;
+    }
 
     return {
       time: iosPosition.timestamp,
@@ -231,59 +285,18 @@ export class PositionService {
       altitude_meters: iosPosition.altitude,
       accuracy_meters: iosPosition.accuracy,
       heading_degrees,
-      source: 'gps', // We dont use the source from the iOS positions
+      speed_meters_per_second: iosPosition.speed,
+      address: iosPosition.address,
+      city: iosPosition.city,
+      region: iosPosition.region,
+      country: iosPosition.country,
+      postal_code: iosPosition.postalCode,
+      name: iosPosition.name,
+      description: iosPosition.description,
+      provider: iosPosition.provider,
+      source: 'gps',
       relative_coordinates: Object.keys(metadata).length > 0 ? metadata : undefined,
     };
-  }
-
-  private extractMetadata(iosPosition: IosPositionDto): Record<string, unknown> {
-    const metadata: Record<string, unknown> = {};
-
-    if (iosPosition.id) {
-      metadata.id = iosPosition.id;
-    }
-
-    if (iosPosition.name) {
-      metadata.name = iosPosition.name;
-    }
-
-    if (iosPosition.description) {
-      metadata.description = iosPosition.description;
-    }
-
-    if (iosPosition.speed !== undefined) {
-      metadata.speed = iosPosition.speed;
-    }
-
-    if (iosPosition.address) {
-      metadata.address = iosPosition.address;
-    }
-
-    if (iosPosition.city) {
-      metadata.city = iosPosition.city;
-    }
-
-    if (iosPosition.region) {
-      metadata.region = iosPosition.region;
-    }
-
-    if (iosPosition.country) {
-      metadata.country = iosPosition.country;
-    }
-
-    if (iosPosition.postalCode) {
-      metadata.postalCode = iosPosition.postalCode;
-    }
-
-    if (iosPosition.provider) {
-      metadata.provider = iosPosition.provider;
-    }
-
-    if (iosPosition.isFromMockProvider !== undefined) {
-      metadata.isFromMockProvider = iosPosition.isFromMockProvider;
-    }
-
-    return metadata;
   }
 
   private normalizeHeading(heading?: number): number | undefined {
@@ -292,67 +305,6 @@ export class PositionService {
     }
 
     return heading;
-  }
-
-  private buildGeofenceQuery(
-    geofence: Geofence,
-    userId: string,
-    startDate?: Date,
-    endDate?: Date,
-  ): { whereClause: string; params: (string | number)[] } {
-    let whereClause = 'user_id = $1 AND location IS NOT NULL';
-    const params: (string | number)[] = [userId];
-    let paramIndex = 2;
-
-    if ('radius_meters' in geofence) {
-      const radiusGeofence = geofence as GeofenceRadius;
-      whereClause += ` AND ST_DWithin(
-        location::geography,
-        ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)::geography,
-        $${paramIndex + 2}
-      )`;
-      params.push(
-        radiusGeofence.center.longitude,
-        radiusGeofence.center.latitude,
-        radiusGeofence.radius_meters,
-      );
-      paramIndex += 3;
-    } else {
-      const polygonGeofence = geofence as GeofencePolygon;
-      if (polygonGeofence.coordinates.length < 3) {
-        this.logger.warn('Polygon geofence must have at least 3 coordinates');
-
-        return { whereClause: 'FALSE', params: [] };
-      }
-
-      const polygonWKT = this.createPolygonWKT(polygonGeofence.coordinates);
-      whereClause += ` AND ST_Within(
-        location::geography,
-        ST_GeogFromText($${paramIndex})::geography
-      )`;
-      params.push(`SRID=4326;${polygonWKT}`);
-      paramIndex += 1;
-    }
-
-    if (startDate) {
-      whereClause += ` AND time >= $${paramIndex}`;
-      params.push(startDate.toISOString());
-      paramIndex += 1;
-    }
-
-    if (endDate) {
-      whereClause += ` AND time <= $${paramIndex}`;
-      params.push(endDate.toISOString());
-    }
-
-    return { whereClause, params };
-  }
-
-  private createPolygonWKT(coordinates: Array<{ longitude: number; latitude: number }>): string {
-    const coordinatesStr = coordinates.map((coord) => `${coord.longitude} ${coord.latitude}`).join(', ');
-    const firstCoord = coordinates[0];
-
-    return `POLYGON((${coordinatesStr}, ${firstCoord.longitude} ${firstCoord.latitude}))`;
   }
 
   private mapRawResultsToPositions(rawResults: Array<Record<string, unknown>>): Position[] {
@@ -367,6 +319,15 @@ export class PositionService {
       entity.hdop = row.hdop as number | null;
       entity.vdop = row.vdop as number | null;
       entity.heading_degrees = row.heading_degrees as number | null;
+      entity.speed_meters_per_second = row.speed_meters_per_second as number | null;
+      entity.address = row.address as string | null;
+      entity.city = row.city as string | null;
+      entity.region = row.region as string | null;
+      entity.country = row.country as string | null;
+      entity.postal_code = row.postal_code as string | null;
+      entity.name = row.name as string | null;
+      entity.description = row.description as string | null;
+      entity.provider = row.provider as string | null;
       entity.source = row.source as LocationSource;
       entity.activity_type = row.activity_type as string | null;
       entity.location_entity_id = row.location_entity_id as string | null;

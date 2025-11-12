@@ -5,7 +5,6 @@ import {
   Query,
   Body,
   UseGuards,
-  UnauthorizedException,
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
@@ -40,8 +39,6 @@ export class PositionController {
     @Body(new ValidationPipe(createPositionSchema))
     input: CreatePositionDto | CreatePositionDto[],
   ): Promise<Position | Position[]> {
-    this.ensureAuthenticated(context);
-
     try {
       return await this.positionService.create(context, input);
     } catch (error) {
@@ -54,18 +51,17 @@ export class PositionController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('ios')
-  async createFromIosPositions(
+  @Post('bulk')
+  async createFromBulkPositions(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(iosPositionListSchema))
     input: IosPositionListDto,
     @Query('deviceId') deviceId?: string,
   ): Promise<Position[]> {
-    this.ensureAuthenticated(context);
     this.validateContentArray(input.content);
 
     try {
-      return await this.positionService.createFromIosPositions(context, input.content, deviceId);
+      return await this.positionService.createFromBulkPositions(context, input.content, deviceId);
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('One or more position records already exist for this time and user');
@@ -82,7 +78,6 @@ export class PositionController {
     @Query('start') start: string,
     @Query('end') end: string,
   ): Promise<Position[]> {
-    this.ensureAuthenticated(context);
     const { startDate, endDate } = this.parseAndValidateDateRange(start, end);
 
     return this.positionService.findByDateRange(context, startDate, endDate);
@@ -100,17 +95,10 @@ export class PositionController {
     @Query('start') start?: string,
     @Query('end') end?: string,
   ): Promise<Position[]> {
-    this.ensureAuthenticated(context);
     const geofence = this.parseGeofence(type, centerLon, centerLat, radius, coordinates);
     const { startDate, endDate } = this.parseOptionalDateRange(start, end);
 
     return this.positionService.findByGeofence(context, geofence, startDate, endDate);
-  }
-
-  private ensureAuthenticated(context: RequestContext): void {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated');
-    }
   }
 
   private validateContentArray(content?: IosPositionListDto['content']): void {
