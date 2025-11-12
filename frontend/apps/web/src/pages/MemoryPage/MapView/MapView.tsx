@@ -31,6 +31,7 @@ export function DesktopMapView() {
       <Map.Controls position="bottom-right" />
       <Map.Panel position="left" className="w-[300px] relative">
         <TimelineView />
+        <SoftBlur />
       </Map.Panel>
 
       <Map.RouteLayer />
@@ -47,4 +48,16 @@ export function DesktopMapView() {
 
 export function MobileMapView() {
   return null;
+}
+
+function SoftBlur({ className = '' }) {
+  return (
+    <div
+      className={`pointer-events-none absolute inset-0 backdrop-blur-xl -z-1 ${className}`}
+      style={{
+        WebkitMaskImage: 'linear-gradient(to right, black 70%, transparent)',
+        maskImage: 'linear-gradient(to right, black 70%, transparent)',
+      }}
+    />
+  );
 }
