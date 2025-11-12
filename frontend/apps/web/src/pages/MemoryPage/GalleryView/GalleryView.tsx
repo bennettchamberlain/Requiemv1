@@ -25,7 +25,7 @@ export function GalleryView() {
           icon={Images}
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4 pt-0">
           {combinedResults.map((result) => (
             <ResultCard key={result.id || Math.random()} result={result} />
           ))}
