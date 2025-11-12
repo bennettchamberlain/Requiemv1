@@ -122,12 +122,4 @@ export interface UpdatePositionDto {
   is_private?: boolean;
 }
 
-export interface BulkPositionListDto {
-  content: CreatePositionDto[];
-}
-
-export const bulkPositionListSchema = z.object({
-  content: z.array(createPositionSchemaRoot),
-});
-
 export type { Position, LocationSource, RelativeCoordinates, RelativeOrientation };

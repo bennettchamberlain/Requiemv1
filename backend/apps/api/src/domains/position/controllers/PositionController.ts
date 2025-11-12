@@ -9,6 +9,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
+import { z } from 'zod';
 
 import { PgErrorCode } from '@ci/common/constants';
 import { Context } from '@ci/common/decorators';
@@ -24,8 +25,7 @@ import {
   Geofence,
   GeofenceRadius,
   GeofencePolygon,
-  BulkPositionListDto,
-  bulkPositionListSchema,
+  createPositionSchemaRoot,
 } from '../types';
 
 @Controller('position')
@@ -54,14 +54,14 @@ export class PositionController {
   @Post('bulk')
   async createFromBulkPositions(
     @Context() context: RequestContext,
-    @Body(new ValidationPipe(bulkPositionListSchema))
-    input: BulkPositionListDto,
+    @Body(new ValidationPipe(z.array(createPositionSchemaRoot)))
+    input: CreatePositionDto[],
     @Query('deviceId') deviceId?: string,
   ): Promise<Position[]> {
-    this.validateContentArray(input.content);
+    this.validateContentArray(input);
 
     try {
-      return await this.positionService.createFromBulkPositions(context, input.content, deviceId);
+      return await this.positionService.createFromBulkPositions(context, input, deviceId);
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('One or more position records already exist for this time and user');
