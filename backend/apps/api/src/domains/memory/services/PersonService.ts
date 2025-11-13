@@ -1,13 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
+import { RequestContext } from '@ci/common/types';
 import { EventService, Events } from '@ci/domains/events';
 import { UserEntity } from '@ci/domains/user';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
+import { PersonEntity } from '../entities/PersonEntity';
+import { CreatePersonDto, UpdatePersonDto } from '../types';
 
 import { GraphUtilityService } from './GraphUtilityService';
 
@@ -25,11 +28,95 @@ export class PersonService {
   constructor(
     @InjectRepository(GraphNodeEntity)
     private readonly entityRepository: Repository<GraphNodeEntity>,
+    @InjectRepository(PersonEntity)
+    private readonly personRepository: Repository<PersonEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
     private readonly graphUtilityService: GraphUtilityService,
     private readonly eventService: EventService,
   ) {}
+
+  async create(context: RequestContext, data: CreatePersonDto): Promise<PersonEntity> {
+    const entity = await this.personRepository.create({
+      id: data.id || uuid7(),
+      name: data.name,
+      description: data.description,
+      linked_table: data.linkedTable,
+      linked_id: data.linkedId,
+      entity_type: data.entityType,
+      user: {
+        id: context.userId,
+      },
+      search_content: data.searchContent || this.buildPersonSearchContent(data.name, data.properties),
+      properties: data.properties || [],
+    });
+
+    return this.personRepository.save(entity);
+  }
+
+  async findOne(context: RequestContext, id: string): Promise<PersonEntity | null> {
+    return this.personRepository.findOne({
+      where: {
+        id,
+        user: {
+          id: context.userId,
+        },
+      },
+    });
+  }
+
+  async findAll(context: RequestContext): Promise<PersonEntity[]> {
+    return this.personRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+      },
+    });
+  }
+
+  async update(context: RequestContext, id: string, data: UpdatePersonDto): Promise<PersonEntity> {
+    const existingEntity = await this.findOne(context, id);
+    if (!existingEntity) {
+      throw new NotFoundException();
+    }
+
+    const updatedEntity = {
+      ...existingEntity,
+      ...data,
+      user: {
+        id: context.userId,
+      },
+    };
+
+    return this.personRepository.save(updatedEntity!);
+  }
+
+  async delete(context: RequestContext, id: string): Promise<boolean> {
+    const result = await this.personRepository.delete({
+      id,
+      user: {
+        id: context.userId,
+      },
+    });
+
+    if (result.affected === 0) {
+      throw new NotFoundException();
+    }
+
+    return true;
+  }
+
+  async search(context: RequestContext, query: UpdatePersonDto): Promise<PersonEntity[]> {
+    return this.personRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+        ...query,
+      },
+    });
+  }
 
   /**
    * Create or update a person entity from a participant

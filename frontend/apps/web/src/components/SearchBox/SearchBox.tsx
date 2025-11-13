@@ -21,7 +21,10 @@ import {
   formDataSchema as s,
   cn,
 } from '@ci/shadcn';
-import { Search, X } from '@ci/shadcn/icons';
+import { Funnel, Search, X } from '@ci/shadcn/icons';
+
+import { FilterContent } from './FilterContent';
+import { FiltersProvider, useFilters } from './useFilters';
 
 const FormSchema = s.object({
   query: s.string(),
@@ -57,7 +60,8 @@ interface Props {
   autoSubmit?: boolean;
   autoSubmitDelay?: number;
   displayResults?: boolean;
-  onSearch?: (data: FormData) => boolean | void | Promise<boolean | void>;
+  displayFilters?: boolean;
+  onSearch?: (data: FormData & { entityFilters?: string[] }) => boolean | void | Promise<boolean | void>;
   onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
 }
@@ -73,6 +77,7 @@ function SearchBox(
     autoSubmit = false,
     autoSubmitDelay = 300,
     displayResults = false,
+    displayFilters = false,
     onSearch,
     onClear,
     onResultSelect,
@@ -84,12 +89,15 @@ function SearchBox(
     defaultValues: EMPTY,
   });
 
+  const [{ isFiltersPanelVisible }, { toggleFilterPanel }] = useFilters();
+
   const queryValue = form.watch('query');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [isAutoSubmitPending, setIsAutoSubmitPending] = useState<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
   const isLoading = loading || isAutoSubmitPending;
@@ -259,9 +267,34 @@ function SearchBox(
     }
   }, [selectedIndex, scrollToSelectedItem]);
 
+  // Close filters panel on outside click
+  useEffect(() => {
+    if (!isFiltersPanelVisible) {
+      return;
+    }
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!wrapperRef.current) {
+        return;
+      }
+
+      if (wrapperRef.current.contains(e.target as Node)) {
+        return;
+      }
+
+      toggleFilterPanel();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isFiltersPanelVisible, toggleFilterPanel]);
+
   let resultsNode: ReactNode | null = null;
 
-  if (queryValue.length > 0 && !disabled && displayResults) {
+  if (displayFilters && isFiltersPanelVisible) {
+    resultsNode = <FilterContent />;
+  } else if (queryValue.length > 0 && !disabled && displayResults) {
     if (isLoading) {
       resultsNode = (
         <div className="flex items-center justify-center border-t p-8">
@@ -316,117 +349,117 @@ function SearchBox(
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)}>
-        <div
-          className={`
-            w-full
-            flex
-            flex-col
-
-            placeholder:text-muted-foreground/60
-            dark:bg-input/30
-            field-sizing-content
-
-            outline-none
-            border
-            shadow-xs
-            rounded-md
-            bg-transparent
-            text-base
-            md:text-sm
-
-            aria-[invalid=true]:ring-destructive/20
-            dark:aria-[invalid=true]:ring-destructive/40
-            aria-[invalid=true]:border-destructive
-
-            transition-[color,box-shadow]
-
-            ${disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : ''}
-          `}
-        >
-          <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-3')}>
-            {variant === 'compact' && (
-              <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
-                <Search className="h-4 w-4" />
-              </div>
+        <div className="relative" ref={wrapperRef}>
+          <div
+            className={cn(
+              'w-full flex flex-col',
+              'placeholder:text-muted-foreground/60 dark:bg-input/30 field-sizing-content',
+              'outline-none border shadow-xs rounded-md bg-transparent text-base md:text-sm',
+              'aria-[invalid=true]:ring-destructive/20 dark:aria-[invalid=true]:ring-destructive/40 aria-[invalid=true]:border-destructive',
+              'transition-[color,box-shadow]',
+              disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : '',
+              resultsNode ? 'rounded-b-none' : '',
             )}
-
-            <Form.Field
-              control={form.control}
-              name="query"
-              render={({ field }) => (
-                <Input
-                  {...field}
-                  ref={(el) => {
-                    field.ref(el);
-
-                    if (typeof forwardedRef === 'function') {
-                      forwardedRef(el);
-                    } else if (forwardedRef) {
-                      (forwardedRef as RefObject<HTMLInputElement | null>).current = el;
-                    }
-                  }}
-                  placeholder={placeholder}
-                  disabled={disabled}
-                  onKeyDown={handleKeyDown}
-                  className="
-                    !w-full
-                    !flex-1
-                    !bg-transparent
-                    !border-0
-                    !outline-none
-                    !ring-0
-                    !shadow-none
-                    !rounded-none
-                    !p-0
-                    !h-[calc(theme(spacing.9)-2px)]
-
-                    focus:!ring-0
-                    focus-visible:!ring-0
-                    focus-visible:!border-transparent
-                    focus:!border-transparent
-
-                    disabled:!bg-transparent
-
-                    resize-none
-                    text-base
-                    leading-none
-                  "
-                />
+          >
+            <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-3')}>
+              {variant === 'compact' && (
+                <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
+                  <Search className="h-4 w-4" />
+                </div>
               )}
-            />
 
-            {queryValue.length > 0 && (
-              <button
-                type="button"
-                disabled={disabled}
-                className={`
-                  p-2 bg-transparent border-0 flex items-center justify-center
-                  ${
-                    disabled
-                      ? 'cursor-not-allowed text-muted-foreground'
-                      : 'cursor-pointer hover:text-foreground'
-                  }
-                `}
-                onClick={handleClear}
-                onMouseDown={(e) => e.preventDefault()}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
+              <Form.Field
+                control={form.control}
+                name="query"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    ref={(el) => {
+                      field.ref(el);
 
-            {variant === 'default' && (
-              <Button
-                type="submit"
-                disabled={disabled}
-                size="sm"
-                className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform m-1.5 ml-0"
-              >
-                <Search className="h-4 w-4" />
-              </Button>
-            )}
+                      if (typeof forwardedRef === 'function') {
+                        forwardedRef(el);
+                      } else if (forwardedRef) {
+                        (forwardedRef as RefObject<HTMLInputElement | null>).current = el;
+                      }
+                    }}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    onKeyDown={handleKeyDown}
+                    className="
+                      !w-full
+                      !flex-1
+                      !bg-transparent
+                      !border-0
+                      !outline-none
+                      !ring-0
+                      !shadow-none
+                      !rounded-none
+                      !p-0
+                      !h-[calc(theme(spacing.9)-2px)]
+
+                      focus:!ring-0
+                      focus-visible:!ring-0
+                      focus-visible:!border-transparent
+                      focus:!border-transparent
+
+                      disabled:!bg-transparent
+
+                      resize-none
+                      text-base
+                      leading-none
+                    "
+                  />
+                )}
+              />
+
+              <div className="flex items-center gap-1 my-1.5 mr-1.5">
+                {queryValue.length > 0 && (
+                  <Button
+                    type="button"
+                    disabled={disabled}
+                    variant="ghost"
+                    size="sm"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform -mr-1"
+                    onClick={handleClear}
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {displayFilters && (
+                  <Button
+                    type="button"
+                    disabled={disabled}
+                    variant={isFiltersPanelVisible ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                    onClick={toggleFilterPanel}
+                  >
+                    <Funnel className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {variant === 'default' && (
+                  <Button
+                    type="submit"
+                    disabled={disabled}
+                    size="sm"
+                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
 
-          {resultsNode}
+          {resultsNode && (
+            <div className="absolute top-full left-0 right-0 z-50 bg-background border border-t-0 rounded-b-md shadow-xs">
+              {resultsNode}
+            </div>
+          )}
         </div>
       </form>
     </Form>
@@ -435,4 +468,10 @@ function SearchBox(
 
 const SearchBoxForwarded = forwardRef(SearchBox);
 
-export { SearchBoxForwarded as SearchBox };
+const SearchBoxWithContext = forwardRef<HTMLInputElement, Props>((props, ref) => (
+  <FiltersProvider args={[]}>
+    <SearchBoxForwarded {...props} ref={ref} />
+  </FiltersProvider>
+));
+
+export { SearchBoxWithContext as SearchBox };

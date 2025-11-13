@@ -11,26 +11,30 @@ const POINTER_HEIGHT = 38; // The height of the CSS triangle
 
 type MarkerVariant = 'blue' | 'red' | 'green' | 'default';
 
-const COLOR_MAP: Record<MarkerVariant, { bg: string; border: string; pointer: string }> = {
+const COLOR_MAP: Record<MarkerVariant, { bg: string; border: string; pointer: string; text: string }> = {
   default: {
     bg: 'bg-blue-600',
     border: 'border-blue-500',
     pointer: 'border-t-blue-500',
+    text: 'text-white',
   },
   blue: {
     bg: 'bg-blue-600',
     border: 'border-blue-500',
     pointer: 'border-t-blue-500',
+    text: 'text-white',
   },
   red: {
     bg: 'bg-red-600',
     border: 'border-red-500',
     pointer: 'border-t-red-500',
+    text: 'text-white',
   },
   green: {
     bg: 'bg-green-600',
     border: 'border-green-500',
     pointer: 'border-t-green-500',
+    text: 'text-white',
   },
 };
 
@@ -74,7 +78,7 @@ function makeMarkerIcon({ variant = 'default' }: MakeMarkerOpts): L.DivIcon {
           colors.border,
         )}
       >
-        <Squircle className="text-accent" />
+        <Squircle className={cn(colors.text)} />
       </div>
 
       <div

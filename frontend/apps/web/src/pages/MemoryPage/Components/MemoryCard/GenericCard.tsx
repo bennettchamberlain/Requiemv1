@@ -18,7 +18,7 @@ export function GenericCard({ memory, Icon, iconColorClass }: Props) {
 
   return (
     <Card
-      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      className="!gap-2 !py-4 px-6 cursor-pointer transition duration-200 active:scale-98 will-change-transform"
       onClick={handleClick}
     >
       <div className="flex items-start gap-3">

@@ -1,10 +1,10 @@
 import { type ReactNode, useCallback, useRef } from 'react';
 
-import { ScrollArea, ScrollBar, cn } from '@ci/shadcn';
+import { ScrollArea, cn } from '@ci/shadcn';
 import L from 'leaflet';
 
 interface Props {
-  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'left' | 'right' | 'top' | 'bottom';
+  position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'left' | 'right';
   className?: string;
   children?: ReactNode;
 }
@@ -16,8 +16,6 @@ const POSITION_CLASSES = {
   'bottom-right': 'bottom-0 right-0 h-fit w-fit',
   left: 'top-0 left-0 h-full w-1/4',
   right: 'top-0 right-0 h-full w-1/4',
-  top: 'top-0 left-0 w-full h-1/4',
-  bottom: 'bottom-0 left-0 w-full h-1/4',
 };
 
 export function Panel({ position = 'right', className, children }: Props) {
@@ -34,18 +32,11 @@ export function Panel({ position = 'right', className, children }: Props) {
 
   return (
     <div
-      className={cn(
-        'z-400 cursor-default text-base',
-        POSITION_CLASSES[position],
-        className,
-        'absolute overflow-hidden',
-      )}
+      className={cn('z-400 cursor-default text-base', POSITION_CLASSES[position], className, 'absolute')}
       ref={setPanelRef}
     >
-      <ScrollArea className="h-full w-full">
+      <ScrollArea className="h-full w-full" collapseX>
         {children}
-        <ScrollBar orientation="vertical" />
-        <ScrollBar orientation="horizontal" />
       </ScrollArea>
     </div>
   );

@@ -16,11 +16,11 @@ export function ToolsPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Page>Tools</Breadcrumb.Page>
+              <Breadcrumb.Page>Plugins</Breadcrumb.Page>
             </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
@@ -29,9 +29,9 @@ export function ToolsPage() {
       <PageContent>
         {/* Header Section */}
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold">Companions</h1>
+          <h1 className="text-2xl font-bold">Plugins</h1>
           <p className="text-muted-foreground">
-            Manage AI-powered Companions and tools with external capabilities that enhance your conversations
+            Manage AI-powered extensions and tools with external capabilities that enhance your conversations
             with personalized data and advanced functionality.
           </p>
         </div>

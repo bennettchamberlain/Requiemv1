@@ -308,3 +308,54 @@ export interface CreatePlaceDto {
     id: string;
   };
 }
+
+export interface CreateFileDto {
+  name?: string;
+  description?: string;
+  properties?: Record<string, unknown>;
+  linkedId?: string;
+  user?: {
+    id: string;
+  };
+}
+
+export interface CreatePersonDto {
+  id?: string;
+  name?: string;
+  description?: string;
+  entityType?: string;
+  searchContent?: string;
+  ownerUserId?: string;
+  linkedId?: string;
+  linkedTable?: string;
+  properties: {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    contactType?: string;
+    ownerUserId?: string;
+    connectionId?: string;
+    sources?: string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface UpdatePersonDto {
+  name?: string;
+  description?: string;
+  entityType?: string;
+  searchContent?: string;
+  ownerUserId?: string;
+  linkedId?: string;
+  linkedTable?: string;
+  properties: {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    contactType?: string;
+    ownerUserId?: string;
+    connectionId?: string;
+    sources?: string[];
+    [key: string]: unknown;
+  };
+}

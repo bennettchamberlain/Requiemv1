@@ -67,7 +67,7 @@ export default function MobileMemoryPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item>
-              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator />
             <Breadcrumb.Item>
