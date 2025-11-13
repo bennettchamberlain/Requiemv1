@@ -263,7 +263,7 @@ class SummaryStorage:
                 :timezone,
                 :source_types,
                 :title,
-                :content,
+                CAST(:content AS jsonb),
                 CAST(:structured_context AS jsonb),
                 CAST(:tags AS jsonb),
                 CAST(:content AS jsonb),
