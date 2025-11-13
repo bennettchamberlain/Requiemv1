@@ -54,7 +54,7 @@ export const createPositionSchemaRoot = z.object({
   relative_orientation: z.record(z.unknown()).optional(),
 });
 
-export const createPositionSchema = z.union([createPositionSchemaRoot, z.array(createPositionSchemaRoot)]);
+export const createPositionSchema = z.array(createPositionSchemaRoot);
 
 export interface CreatePositionDto {
   time: string;

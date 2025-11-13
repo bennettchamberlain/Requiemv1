@@ -9,7 +9,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
-import { z } from 'zod';
 
 import { PgErrorCode } from '@ci/common/constants';
 import { Context } from '@ci/common/decorators';
@@ -25,7 +24,6 @@ import {
   Geofence,
   GeofenceRadius,
   GeofencePolygon,
-  createPositionSchemaRoot,
 } from '../types';
 
 @Controller('position')
@@ -37,31 +35,12 @@ export class PositionController {
   async create(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createPositionSchema))
-    input: CreatePositionDto | CreatePositionDto[],
-  ): Promise<Position | Position[]> {
-    try {
-      return await this.positionService.create(context, input);
-    } catch (error) {
-      if (this.isUniqueViolation(error)) {
-        throw new ConflictException('Position record already exists for this time and user');
-      }
-
-      throw error;
-    }
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('bulk')
-  async createFromBulkPositions(
-    @Context() context: RequestContext,
-    @Body(new ValidationPipe(z.array(createPositionSchemaRoot)))
     input: CreatePositionDto[],
-    @Query('deviceId') deviceId?: string,
   ): Promise<Position[]> {
     this.validateContentArray(input);
 
     try {
-      return await this.positionService.createFromBulkPositions(context, input, deviceId);
+      return await this.positionService.create(context, input);
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('One or more position records already exist for this time and user');

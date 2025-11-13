@@ -19,24 +19,28 @@ export class PositionService {
     private readonly deviceService: DeviceService,
   ) {}
 
-  async create(
-    context: RequestContext,
-    data: CreatePositionDto | CreatePositionDto[],
-  ): Promise<Position | Position[]> {
-    const isSingle = !Array.isArray(data);
-    const dataArray: CreatePositionDto[] = isSingle ? [data] : data;
-
+  async create(context: RequestContext, data: CreatePositionDto[]): Promise<Position[]> {
     this.logger.log('Creating position records', {
       userId: context.userId,
-      count: dataArray.length,
+      count: data.length,
     });
 
-    const times = dataArray.map((item) => new Date(item.time));
+    const uniquePositions = this.deduplicateByTime(data);
+
+    if (uniquePositions.length < data.length) {
+      this.logger.log('Deduplicated positions', {
+        originalCount: data.length,
+        uniqueCount: uniquePositions.length,
+        duplicatesRemoved: data.length - uniquePositions.length,
+      });
+    }
+
+    const times = uniquePositions.map((item) => new Date(item.time));
     const existingPositions = await this.findExistingByTimes(context.userId!, times);
     const existingTimesSet = new Set(existingPositions.map((p) => p.time.toISOString()));
 
     const newPositions: CreatePositionDto[] = [];
-    for (const item of dataArray) {
+    for (const item of uniquePositions) {
       const itemTime = new Date(item.time).toISOString();
       if (!existingTimesSet.has(itemTime)) {
         if (item.device_id) {
@@ -75,43 +79,7 @@ export class PositionService {
       existingCount: existingPositions.length,
     });
 
-    if (isSingle) {
-      return allPositions[0];
-    }
-
     return allPositions;
-  }
-
-  async createFromBulkPositions(
-    context: RequestContext,
-    positions: CreatePositionDto[],
-    deviceId?: string,
-  ): Promise<Position[]> {
-    this.logger.log('Creating position records from bulk positions', {
-      userId: context.userId,
-      count: positions.length,
-    });
-
-    const uniquePositions = this.deduplicateByTime(positions);
-
-    if (uniquePositions.length < positions.length) {
-      this.logger.log('Deduplicated bulk positions', {
-        originalCount: positions.length,
-        uniqueCount: uniquePositions.length,
-        duplicatesRemoved: positions.length - uniquePositions.length,
-      });
-    }
-
-    const positionDtos: CreatePositionDto[] = uniquePositions.map((position) => ({
-      ...position,
-      device_id: deviceId || position.device_id,
-      source: position.source || 'gps',
-      heading_degrees: this.normalizeHeading(position.heading_degrees),
-    }));
-
-    const result = await this.create(context, positionDtos);
-
-    return Array.isArray(result) ? result : [result];
   }
 
   async findByDateRange(context: RequestContext, start: Date, end: Date): Promise<Position[]> {
