@@ -8,7 +8,7 @@ export function ListView() {
   const { searchQuery, searchResults } = useMemoryService();
 
   return (
-    <div className="pl-2 grid grid-cols-1 gap-1 h-[calc(100vh-150px)] -mx-6 -mb-6">
+    <div className="grid grid-cols-1 gap-4 p-4 pt-0">
       {/* Results Display */}
       {searchResults.length > 0 && (
         <>

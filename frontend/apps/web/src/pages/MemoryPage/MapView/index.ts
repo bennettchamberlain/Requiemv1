@@ -1,1 +1,1 @@
-export { MobileMapView, DesktopMapView, MapView } from './MapView';
+export { MobileMapView, DesktopMapView } from './MapView';
