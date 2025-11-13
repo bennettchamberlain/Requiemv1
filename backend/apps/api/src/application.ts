@@ -27,6 +27,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 import { OnboardingModule } from '@ci/domains/onboarding';
+import { PositionModule } from '@ci/domains/position';
 import { PromoteModule } from '@ci/domains/promote';
 import { EmbeddingModule } from '@ci/domains/search';
 import { SpeechModule } from '@ci/domains/speech';
@@ -58,6 +59,7 @@ import { UserModule } from '@ci/domains/user';
     IntelligenceModule,
     LLMModule,
     OnboardingModule,
+    PositionModule,
     ToolsModule,
     MemoryModule,
     PromoteModule,
