@@ -52,7 +52,6 @@ export const createPositionSchemaRoot = z.object({
   reference_entity_id: z.string().uuid().optional(),
   relative_coordinates: z.record(z.unknown()).optional(),
   relative_orientation: z.record(z.unknown()).optional(),
-  location_embedding: z.array(z.number()).optional(),
 });
 
 export const createPositionSchema = z.union([createPositionSchemaRoot, z.array(createPositionSchemaRoot)]);
@@ -84,7 +83,6 @@ export interface CreatePositionDto {
   reference_entity_id?: string;
   relative_coordinates?: RelativeCoordinates | Record<string, unknown>;
   relative_orientation?: RelativeOrientation | Record<string, unknown>;
-  location_embedding?: number[];
 }
 
 export type { Position, LocationSource, RelativeCoordinates, RelativeOrientation };

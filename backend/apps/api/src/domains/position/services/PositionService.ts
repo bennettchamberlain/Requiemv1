@@ -236,7 +236,6 @@ export class PositionService {
       reference_entity_id: item.reference_entity_id ?? null,
       relative_coordinates: item.relative_coordinates ?? {},
       relative_orientation: item.relative_orientation ?? {},
-      location_embedding: item.location_embedding ?? null,
     });
   }
 
