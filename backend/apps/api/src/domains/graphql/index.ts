@@ -15,6 +15,7 @@ import { GraphQLController } from './controllers/GraphQLController';
       autoSchemaFile: path.join(__dirname, '__generated__/schema.graphql'),
       sortSchema: true,
       playground: false,
+      introspection: true,
       graphiql: false,
     }),
     ConversationModule,

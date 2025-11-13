@@ -2,18 +2,17 @@
 <html lang="en">
   <head>
     <title>GraphiQL - Companion Intelligence</title>
-    <link rel="stylesheet" href="https://unpkg.com/graphiql/graphiql.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/graphiql@2.4.5/graphiql.min.css" />
   </head>
   <body style="margin:0; height:100vh;">
     <div id="graphiql" style="height: 100vh;"></div>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/graphiql/graphiql.min.js"></script>
+    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/graphiql@2.4.5/graphiql.min.js"></script>
     <script>
       const fetcher = async (graphQLParams) => {
         const token = localStorage.getItem('accessToken');
-
-        const response = await fetch('/api/graphql', {
+        const res = await fetch('/api/graphql', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -22,12 +21,15 @@
           body: JSON.stringify(graphQLParams),
         });
 
-        return response.json();
+        return res.json();
       };
 
-      const root = ReactDOM.createRoot(document.getElementById('graphiql'));
-
-      root.render(React.createElement(GraphiQL, { fetcher }));
+      if (!window.GraphiQL) {
+        console.error('GraphiQL not loaded');
+      } else {
+        const root = ReactDOM.createRoot(document.getElementById('graphiql'));
+        root.render(React.createElement(GraphiQL, { fetcher }));
+      }
     </script>
   </body>
 </html>

@@ -1,14 +1,14 @@
+import path from 'node:path';
+
 import { Controller, Get, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import path from 'node:path';
 
 import { Context } from '@ci/common/decorators';
 import type { RequestContext } from '@ci/common/types';
 
 @Controller()
 export class GraphQLController {
-  constructor(
-  ) {}
+  constructor() {}
 
   @Get('graphql')
   async playground(@Context() context: RequestContext, @Res() res: Response) {
