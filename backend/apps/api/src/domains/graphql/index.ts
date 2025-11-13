@@ -1,9 +1,10 @@
+import path from 'node:path';
+
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
-import path from 'node:path';
 
-import { LLMModule } from '@ci/domains/llm';
+import { ConversationModule } from '@ci/domains/conversations';
 
 import { GraphQLController } from './controllers/GraphQLController';
 
@@ -16,7 +17,7 @@ import { GraphQLController } from './controllers/GraphQLController';
       playground: false,
       graphiql: false,
     }),
-    LLMModule,
+    ConversationModule,
   ],
   providers: [],
   controllers: [GraphQLController],
