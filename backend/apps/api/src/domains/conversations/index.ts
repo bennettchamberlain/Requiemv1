@@ -28,7 +28,6 @@ import { FileEntity, FilesModule } from '@ci/domains/files';
 import { ThreadsController } from './controllers/ThreadsController';
 import { MessageEntity } from './entities/MessageEntity';
 import { ThreadEntity } from './entities/ThreadEntity';
-import { ThreadResolver } from './graphql/resolvers/ThreadResolver';
 import { MessageService } from './services/MessageService';
 import { ThreadService } from './services/ThreadService';
 
@@ -37,7 +36,7 @@ import { ThreadService } from './services/ThreadService';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([MessageEntity, ThreadEntity, FileEntity]), EventsModule, FilesModule],
-  providers: [MessageService, ThreadService, ThreadResolver],
+  providers: [MessageService, ThreadService],
   controllers: [ThreadsController],
   exports: [MessageService, ThreadService],
 })
@@ -51,6 +50,3 @@ export { MessageService, ThreadService };
 
 // Types
 export type { Message, Thread } from './types';
-
-// GraphQL
-export { ThreadResolver };

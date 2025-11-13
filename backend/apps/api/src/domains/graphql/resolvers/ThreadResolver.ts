@@ -4,8 +4,8 @@ import { Query, Resolver, Args } from '@nestjs/graphql';
 import { Context } from '@ci/common/decorators';
 import { GqlJwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
+import { ThreadService } from '@ci/domains/conversations';
 
-import { ThreadService } from '../../services/ThreadService';
 import { ThreadType } from '../types/ThreadType';
 
 @UseGuards(GqlJwtAuthGuard)

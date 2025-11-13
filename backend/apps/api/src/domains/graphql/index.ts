@@ -7,6 +7,7 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import { ConversationModule } from '@ci/domains/conversations';
 
 import { GraphQLController } from './controllers/GraphQLController';
+import { ThreadResolver } from './resolvers/ThreadResolver';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { GraphQLController } from './controllers/GraphQLController';
     }),
     ConversationModule,
   ],
-  providers: [],
+  providers: [ThreadResolver],
   controllers: [GraphQLController],
   exports: [],
 })

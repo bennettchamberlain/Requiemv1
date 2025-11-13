@@ -1,6 +1,6 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 
-import { Thread } from '../../types';
+import { type Thread } from '@ci/domains/conversations';
 
 @ObjectType({ description: 'thread' })
 export class ThreadType {
