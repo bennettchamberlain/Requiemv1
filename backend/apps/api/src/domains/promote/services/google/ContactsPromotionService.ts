@@ -235,7 +235,6 @@ export class ContactsPromotionService {
 
       searchContent = this.buildContactSearchContent(displayName, properties);
 
-      console.log('creating new contact', properties);
       await this.personService.create(
         { userId },
         {
