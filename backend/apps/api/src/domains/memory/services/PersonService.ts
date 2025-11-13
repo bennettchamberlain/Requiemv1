@@ -30,9 +30,6 @@ export class PersonService {
       linked_table: data.linkedTable,
       linked_id: data.linkedId,
       entity_type: 'Person',
-      user: {
-        id: context.userId,
-      },
       search_content: data.searchContent,
       last_accessed: data.lastAccessed,
       user: {
@@ -126,7 +123,6 @@ export class PersonService {
 
     if (query.properties) {
       for (const [key, val] of Object.entries(query.properties)) {
-        console.log('property to add', key, val);
         executable = executable.andWhere(`entity.properties->>'${key}' = :${key}`, { [key]: val });
       }
     }
