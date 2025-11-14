@@ -39,6 +39,7 @@ export interface Message {
   readonly canceled: boolean | null;
   readonly user?: User;
   readonly thread?: Thread;
+  readonly threadId?: string;
   readonly promptMessage?: Message | null;
   readonly files?: File[];
 }
