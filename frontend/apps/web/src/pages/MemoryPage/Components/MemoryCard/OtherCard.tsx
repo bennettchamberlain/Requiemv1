@@ -1,6 +1,8 @@
+import { cn } from '@ci/shadcn';
 import { Target, Radio } from '@ci/shadcn/icons';
 
 import type { MemoryItem } from '../../types';
+import { useMemoryService } from '../../useMemoryService';
 
 import { GenericCard } from './GenericCard';
 
@@ -12,11 +14,42 @@ export interface Props {
 }
 
 export function OtherCard({ memory }: Props) {
+  const { setActiveMemory } = useMemoryService();
   const entityType = memory.metadata?.entityType as string | undefined;
 
+  const handleClick = () => {
+    setActiveMemory(memory);
+  };
+
   if (entityType === 'Channel') {
-    return <GenericCard memory={memory} Icon={Radio} iconColorClass={ACCENT_ICON_CLASS} />;
+    const RadioIcon = ({ className }: { className?: string }) => (
+      <Radio className={cn(className, ACCENT_ICON_CLASS)} />
+    );
+
+    return (
+      <GenericCard
+        title={memory.title}
+        subtitle={memory.category}
+        description={memory.description || undefined}
+        tags={memory.tags}
+        icon={RadioIcon}
+        onClick={handleClick}
+      />
+    );
   }
 
-  return <GenericCard memory={memory} Icon={Target} iconColorClass={MUTED_ICON_CLASS} />;
+  const TargetIcon = ({ className }: { className?: string }) => (
+    <Target className={cn(className, MUTED_ICON_CLASS)} />
+  );
+
+  return (
+    <GenericCard
+      title={memory.title}
+      subtitle={memory.category}
+      description={memory.description || undefined}
+      tags={memory.tags}
+      icon={TargetIcon}
+      onClick={handleClick}
+    />
+  );
 }

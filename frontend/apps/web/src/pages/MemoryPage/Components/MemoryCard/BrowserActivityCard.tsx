@@ -1,6 +1,8 @@
 import { Card, cn } from '@ci/shadcn';
 import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
 
+import { Tag } from '@/components/Tag';
+
 import type { MemoryItem } from '../../types';
 
 export interface Props {
@@ -100,11 +102,9 @@ export function BrowserActivityCard({ memory }: Props) {
       </div>
 
       {memory.tags.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 pt-2">
           {memory.tags.map((tag, index) => (
-            <span key={index} className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
-              {tag}
-            </span>
+            <Tag key={index} text={tag} />
           ))}
         </div>
       )}

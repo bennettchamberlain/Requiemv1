@@ -1,6 +1,8 @@
+import { cn } from '@ci/shadcn';
 import { Contact } from '@ci/shadcn/icons';
 
 import type { MemoryItem } from '../../types';
+import { useMemoryService } from '../../useMemoryService';
 
 import { GenericCard } from './GenericCard';
 
@@ -11,5 +13,24 @@ export interface Props {
 }
 
 export function ContactCard({ memory }: Props) {
-  return <GenericCard memory={memory} Icon={Contact} iconColorClass={PRIMARY_ICON_CLASS} />;
+  const { setActiveMemory } = useMemoryService();
+
+  const handleClick = () => {
+    setActiveMemory(memory);
+  };
+
+  const ContactIcon = ({ className }: { className?: string }) => (
+    <Contact className={cn(className, PRIMARY_ICON_CLASS)} />
+  );
+
+  return (
+    <GenericCard
+      title={memory.title}
+      subtitle={memory.category}
+      description={memory.description || undefined}
+      tags={memory.tags}
+      icon={ContactIcon}
+      onClick={handleClick}
+    />
+  );
 }

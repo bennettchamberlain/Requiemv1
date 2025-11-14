@@ -3,6 +3,8 @@ import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 import DOMPurify from 'dompurify';
 import parse from 'html-react-parser';
 
+import { Tag } from '@/components/Tag';
+
 import type { MemoryItem, ParticipantData } from '../../types';
 import { useMemoryService } from '../../useMemoryService';
 
@@ -148,11 +150,9 @@ export function CommunicationCard({ memory }: Props) {
         )}
 
       {memory.tags.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 pt-2">
           {memory.tags.map((tag, index) => (
-            <span key={index} className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
-              {tag}
-            </span>
+            <Tag key={index} text={tag} />
           ))}
         </div>
       )}
