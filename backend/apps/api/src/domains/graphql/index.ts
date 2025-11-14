@@ -5,9 +5,11 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
 import { ConversationModule } from '@ci/domains/conversations';
+import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ThreadResolver } from './resolvers/ThreadResolver';
+import { UserResolver } from './resolvers/UserResolver';
 
 @Module({
   imports: [
@@ -20,8 +22,9 @@ import { ThreadResolver } from './resolvers/ThreadResolver';
       graphiql: false,
     }),
     ConversationModule,
+    UserModule,
   ],
-  providers: [ThreadResolver],
+  providers: [ThreadResolver, UserResolver],
   controllers: [GraphQLController],
   exports: [],
 })
