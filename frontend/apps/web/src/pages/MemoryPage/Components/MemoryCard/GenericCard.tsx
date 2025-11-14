@@ -1,17 +1,20 @@
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType } from 'react';
 
 import { Card } from '@ci/shadcn';
+
+import { Tag } from '@/components/Tag';
 
 export interface Props {
   title: string;
   subtitle?: string;
   description?: string;
-  preview: ReactNode;
+  // preview: ReactNode;
+  tags?: string[];
   icon: ComponentType<{ className?: string }>;
   onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 
-export function GenericCard({ title, subtitle, description, preview, icon: Icon, onClick }: Props) {
+export function GenericCard({ title, subtitle, description, tags, icon: Icon, onClick }: Props) {
   return (
     <Card
       className="!gap-2 !py-4 px-6 cursor-pointer transition duration-200 active:scale-98 will-change-transform"
@@ -25,13 +28,21 @@ export function GenericCard({ title, subtitle, description, preview, icon: Icon,
         </div>
       </div>
 
+      {tags && tags.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-2">
+          {tags.map((tag, index) => (
+            <Tag key={index} text={tag} />
+          ))}
+        </div>
+      )}
+
       {description && (
         <div className="pt-3 pb-3">
           <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
         </div>
       )}
 
-      {preview}
+      {/* {preview} */}
     </Card>
   );
 }

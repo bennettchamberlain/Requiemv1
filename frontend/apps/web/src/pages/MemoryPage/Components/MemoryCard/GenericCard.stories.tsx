@@ -17,13 +17,7 @@ const meta: Meta<Props> = {
     title: 'Example Memory Card',
     subtitle: 'Category',
     description: 'This is a description of the memory card that provides additional context.',
-    preview: (
-      <div className="flex flex-wrap gap-2">
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 1</span>
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 2</span>
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 3</span>
-      </div>
-    ),
+    tags: ['Tag 1', 'Tag 2', 'Tag 3'],
     icon: User,
     onClick: fn(),
   },
@@ -49,6 +43,7 @@ export const WithUserIcon: Story = {
     title: 'John Doe',
     subtitle: 'Person',
     description: 'A contact person in your network.',
+    tags: ['contact', 'friend', 'colleague'],
     icon: User,
   },
 };
@@ -58,6 +53,7 @@ export const WithFileIcon: Story = {
     title: 'Project Proposal.pdf',
     subtitle: 'Document',
     description: 'A document containing project details and requirements.',
+    tags: ['document', 'project', 'proposal'],
     icon: FileText,
   },
 };
@@ -67,6 +63,7 @@ export const WithLightbulbIcon: Story = {
     title: 'Machine Learning Concept',
     subtitle: 'Concept',
     description: 'An idea or concept related to machine learning algorithms.',
+    tags: ['concept', 'machine-learning', 'ai'],
     icon: Lightbulb,
   },
 };
@@ -76,6 +73,7 @@ export const WithPackageIcon: Story = {
     title: 'Laptop',
     subtitle: 'Thing',
     description: 'A physical object or item.',
+    tags: ['laptop', 'electronics', 'hardware'],
     icon: Package,
   },
 };
@@ -92,9 +90,9 @@ export const NoDescription: Story = {
   },
 };
 
-export const NoPreview: Story = {
+export const NoTags: Story = {
   args: {
-    preview: null,
+    tags: undefined,
   },
 };
 
@@ -102,7 +100,7 @@ export const Minimal: Story = {
   args: {
     subtitle: undefined,
     description: undefined,
-    preview: null,
+    tags: undefined,
   },
 };
 
@@ -121,15 +119,6 @@ export const LongDescription: Story = {
 
 export const ManyTags: Story = {
   args: {
-    preview: (
-      <div className="flex flex-wrap gap-2">
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 1</span>
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 2</span>
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 3</span>
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 4</span>
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 5</span>
-        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">Tag 6</span>
-      </div>
-    ),
+    tags: ['Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5', 'Tag 6', 'Tag 7', 'Tag 8'],
   },
 };

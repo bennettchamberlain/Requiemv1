@@ -21,17 +21,6 @@ export function ContentCard({ memory }: Props) {
     setActiveMemory(memory);
   };
 
-  const preview =
-    memory.tags.length > 0 ? (
-      <div className="flex flex-wrap gap-2">
-        {memory.tags.map((tag, index) => (
-          <span key={index} className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
-            {tag}
-          </span>
-        ))}
-      </div>
-    ) : null;
-
   if (entityType === 'Video') {
     const VideoIcon = ({ className }: { className?: string }) => (
       <Video className={cn(className, DESTRUCTIVE_ICON_CLASS)} />
@@ -42,7 +31,7 @@ export function ContentCard({ memory }: Props) {
         title={memory.title}
         subtitle={memory.category}
         description={memory.description || undefined}
-        preview={preview}
+        tags={memory.tags}
         icon={VideoIcon}
         onClick={handleClick}
       />
@@ -59,7 +48,7 @@ export function ContentCard({ memory }: Props) {
         title={memory.title}
         subtitle={memory.category}
         description={memory.description || undefined}
-        preview={preview}
+        tags={memory.tags}
         icon={FileIcon}
         onClick={handleClick}
       />
@@ -76,7 +65,7 @@ export function ContentCard({ memory }: Props) {
         title={memory.title}
         subtitle={memory.category}
         description={memory.description || undefined}
-        preview={preview}
+        tags={memory.tags}
         icon={FileTextIcon}
         onClick={handleClick}
       />
@@ -92,7 +81,7 @@ export function ContentCard({ memory }: Props) {
       title={memory.title}
       subtitle={memory.category}
       description={memory.description || undefined}
-      preview={preview}
+      tags={memory.tags}
       icon={FileTextIcon}
       onClick={handleClick}
     />
