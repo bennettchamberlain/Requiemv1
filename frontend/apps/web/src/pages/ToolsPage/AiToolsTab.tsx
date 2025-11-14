@@ -290,7 +290,7 @@ export function AiToolsTab() {
     <div className="space-y-6">
       {/* Tools Grid */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <h2 className="text-xl font-semibold">AI Companions</h2>
           <p className="text-sm text-muted-foreground">
             Use the toggles to enable or disable companions for your conversations
