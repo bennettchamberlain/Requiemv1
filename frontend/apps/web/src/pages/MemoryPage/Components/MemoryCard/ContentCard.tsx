@@ -1,6 +1,8 @@
+import { cn } from '@ci/shadcn';
 import { FileText, Video, File } from '@ci/shadcn/icons';
 
 import type { MemoryItem } from '../../types';
+import { useMemoryService } from '../../useMemoryService';
 
 import { GenericCard } from './GenericCard';
 
@@ -12,19 +14,87 @@ export interface Props {
 }
 
 export function ContentCard({ memory }: Props) {
+  const { setActiveMemory } = useMemoryService();
   const entityType = memory.metadata?.entityType as string | undefined;
 
+  const handleClick = () => {
+    setActiveMemory(memory);
+  };
+
+  const preview =
+    memory.tags.length > 0 ? (
+      <div className="flex flex-wrap gap-2">
+        {memory.tags.map((tag, index) => (
+          <span key={index} className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-full">
+            {tag}
+          </span>
+        ))}
+      </div>
+    ) : null;
+
   if (entityType === 'Video') {
-    return <GenericCard memory={memory} Icon={Video} iconColorClass={DESTRUCTIVE_ICON_CLASS} />;
+    const VideoIcon = ({ className }: { className?: string }) => (
+      <Video className={cn(className, DESTRUCTIVE_ICON_CLASS)} />
+    );
+
+    return (
+      <GenericCard
+        title={memory.title}
+        subtitle={memory.category}
+        description={memory.description || undefined}
+        preview={preview}
+        icon={VideoIcon}
+        onClick={handleClick}
+      />
+    );
   }
 
   if (entityType === 'File') {
-    return <GenericCard memory={memory} Icon={File} iconColorClass={ACCENT_ICON_CLASS} />;
+    const FileIcon = ({ className }: { className?: string }) => (
+      <File className={cn(className, ACCENT_ICON_CLASS)} />
+    );
+
+    return (
+      <GenericCard
+        title={memory.title}
+        subtitle={memory.category}
+        description={memory.description || undefined}
+        preview={preview}
+        icon={FileIcon}
+        onClick={handleClick}
+      />
+    );
   }
 
   if (entityType === 'Document') {
-    return <GenericCard memory={memory} Icon={FileText} iconColorClass={ACCENT_ICON_CLASS} />;
+    const FileTextIcon = ({ className }: { className?: string }) => (
+      <FileText className={cn(className, ACCENT_ICON_CLASS)} />
+    );
+
+    return (
+      <GenericCard
+        title={memory.title}
+        subtitle={memory.category}
+        description={memory.description || undefined}
+        preview={preview}
+        icon={FileTextIcon}
+        onClick={handleClick}
+      />
+    );
   }
 
-  return <GenericCard memory={memory} Icon={FileText} iconColorClass={ACCENT_ICON_CLASS} />;
+  const FileTextIcon = ({ className }: { className?: string }) => (
+    <FileText className={cn(className, ACCENT_ICON_CLASS)} />
+  );
+
+  return (
+    <GenericCard
+      title={memory.title}
+      subtitle={memory.category}
+      description={memory.description || undefined}
+      preview={preview}
+      icon={FileTextIcon}
+      onClick={handleClick}
+    />
+  );
 }
