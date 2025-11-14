@@ -297,35 +297,37 @@ export function KnowledgePage() {
       </Portal.Slot>
 
       <PageContent>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+          <Card className="lg:col-span-2 overflow-hidden">
             <Card.Header>
               <Card.Title className="flex items-center gap-2">Knowledge Graph</Card.Title>
               <Card.Description>
                 {currentUser ? `Connections around ${currentUser.name}` : 'Connections around your profile'}
               </Card.Description>
             </Card.Header>
-            <Card.Content>
+            <Card.Content className="overflow-hidden">
               {graphLoading ? (
                 <Skeleton className="h-[420px] w-full" />
               ) : graphError ? (
                 <p className="text-sm text-red-600">{graphError}</p>
               ) : filteredGraph && userEntityId ? (
-                <ForceGraph
-                  nodes={filteredGraph.nodes}
-                  links={filteredGraph.links}
-                  highlightedNodeId={userEntityId}
-                  centerNodeId={userEntityId}
-                  selectedNodeId={selectedNodeId}
-                  onNodeSelect={handleNodeSelect}
-                />
+                <div className="w-full overflow-hidden">
+                  <ForceGraph
+                    nodes={filteredGraph.nodes}
+                    links={filteredGraph.links}
+                    highlightedNodeId={userEntityId}
+                    centerNodeId={userEntityId}
+                    selectedNodeId={selectedNodeId}
+                    onNodeSelect={handleNodeSelect}
+                  />
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No graph data available yet.</p>
               )}
             </Card.Content>
           </Card>
 
-          <Card>
+          <Card className="overflow-hidden">
             <Card.Header>
               <Card.Title>Graph Stats</Card.Title>
               <Card.Description>Live numbers from your personal graph</Card.Description>
@@ -356,12 +358,12 @@ export function KnowledgePage() {
             </Card.Content>
           </Card>
         </div>
-        <Card>
+        <Card className="mb-4">
           <Card.Header>
             <Card.Title>Filters</Card.Title>
             <Card.Description>Adjust which neighbors appear in the graph</Card.Description>
           </Card.Header>
-          <Card.Content className="space-y-4">
+          <Card.Content className="space-y-4 pb-4">
             <div className="space-y-2">
               <label className="text-xs uppercase text-muted-foreground" htmlFor="graph-node-limit">
                 Node limit
