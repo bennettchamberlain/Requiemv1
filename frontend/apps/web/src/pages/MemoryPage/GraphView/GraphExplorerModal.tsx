@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge, Button, Input, Separator } from '@ci/shadcn';
+import { Badge, Button, Input, Separator, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
@@ -837,7 +837,10 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
 
       <div className="relative overflow-hidden">
         <div
-          className={`absolute ${variant === 'mobile' ? 'right-2 top-2' : 'right-6 top-6'} z-10 flex items-center gap-2 rounded-md border bg-background/95 p-1 shadow-sm`}
+          className={cn(
+            'absolute z-10 flex items-center gap-2 rounded-md border bg-background/95 p-1 shadow-sm',
+            variant === 'mobile' ? 'right-2 top-2' : 'right-6 top-6',
+          )}
         >
           <Button
             type="button"
@@ -859,7 +862,10 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
           </Button>
         </div>
         <div
-          className={`${variant === 'mobile' ? 'h-[400px]' : 'h-[520px]'} rounded-lg border bg-background/90 p-2 overflow-hidden`}
+          className={cn(
+            variant === 'mobile' ? 'h-[400px]' : 'h-[520px]',
+            'rounded-lg border bg-background/90 p-2 overflow-hidden',
+          )}
         >
           {viewMode === '2d' ? (
             <ForceGraph
