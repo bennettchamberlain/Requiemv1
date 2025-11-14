@@ -6,6 +6,7 @@ import { GqlJwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 
+import { GlobalUID } from '../types/GlobalUID';
 import { MessageConnection } from '../types/MessageConnection';
 import { MessageEdge } from '../types/MessageEdge';
 import { PageInfo } from '../types/PageInfo';
@@ -23,7 +24,12 @@ export class ThreadResolver {
   async threads(@Context() context: RequestContext): Promise<ThreadType[]> {
     const threads = await this.threadService.findAll(context);
 
-    return threads.map((thread) => ThreadType.fromThread(thread));
+    return threads.map((thread) => ({
+      id: GlobalUID.toGUID('thread', thread.id),
+      name: thread.name,
+      model: thread.model,
+      description: thread.description,
+    }));
   }
 
   @Query(() => ThreadType, { nullable: true })
@@ -31,9 +37,16 @@ export class ThreadResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) id: string,
   ): Promise<ThreadType> {
-    const thread = await this.threadService.findOne(context, id);
+    const threadId = GlobalUID.fromGUID('thread', id);
 
-    return ThreadType.fromThread(thread);
+    const thread = await this.threadService.findOne(context, threadId);
+
+    return {
+      id: GlobalUID.toGUID('thread', thread.id),
+      name: thread.name,
+      model: thread.model,
+      description: thread.description,
+    };
   }
 
   @ResolveField(() => MessageConnection)
@@ -41,17 +54,23 @@ export class ThreadResolver {
     @Parent() thread: ThreadType,
     @Context() context: RequestContext,
   ): Promise<MessageConnection> {
-    const messages = await this.messageService.findByThread(context, thread.id);
+    const threadId = GlobalUID.fromGUID('thread', thread.id);
 
-    const edges: MessageEdge[] = messages.map((message) => ({
-      cursor: Buffer.from(message.id).toString('base64'),
-      node: {
-        id: message.id,
-        content: message.content,
-        role: message.role,
-        threadId: message.threadId ?? null,
-      },
-    }));
+    const messages = await this.messageService.findByThread(context, threadId);
+
+    const edges: MessageEdge[] = messages.map((message) => {
+      const gid = GlobalUID.toGUID('message', message.id);
+
+      return {
+        cursor: gid,
+        node: {
+          id: gid,
+          content: message.content,
+          role: message.role,
+          threadId: message.threadId ?? null,
+        },
+      };
+    });
 
     const pageInfo: PageInfo = {
       hasNextPage: false,
