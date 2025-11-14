@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Badge, Button, Input, Separator } from '@ci/shadcn';
+import { Badge, Button, Input, Separator, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
 
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
@@ -789,7 +789,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
     [adjacencyMap, spawnLimit],
   );
 
-  const detailGridClass = variant === 'desktop' ? 'grid gap-4 md:grid-cols-3' : 'grid gap-4';
+  const detailGridClass = variant === 'desktop' ? 'grid gap-4 md:grid-cols-3' : 'grid gap-4 grid-cols-1';
 
   if (dataLoading) {
     return (
@@ -835,8 +835,13 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
         </p>
       </div>
 
-      <div className="relative">
-        <div className="absolute right-6 top-6 z-10 flex items-center gap-2 rounded-md border bg-background/95 p-1 shadow-sm">
+      <div className="relative overflow-hidden">
+        <div
+          className={cn(
+            'absolute z-10 flex items-center gap-2 rounded-md border bg-background/95 p-1 shadow-sm',
+            variant === 'mobile' ? 'right-2 top-2' : 'right-6 top-6',
+          )}
+        >
           <Button
             type="button"
             size="sm"
@@ -856,7 +861,12 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
             3D
           </Button>
         </div>
-        <div className="h-[520px] rounded-lg border bg-background/90 p-2">
+        <div
+          className={cn(
+            variant === 'mobile' ? 'h-[400px]' : 'h-[520px]',
+            'rounded-lg border bg-background/90 p-2 overflow-hidden',
+          )}
+        >
           {viewMode === '2d' ? (
             <ForceGraph
               nodes={visibleNodes}
@@ -866,7 +876,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
-              height={520}
+              height={variant === 'mobile' ? 400 : 520}
             />
           ) : (
             <ForceGraph3D
@@ -876,7 +886,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
               selectedNodeId={selectedNodeId ?? undefined}
               onNodeSelect={handleNodeSelect}
               anchoredNodeIds={anchoredNodeIds}
-              height={520}
+              height={variant === 'mobile' ? 400 : 520}
             />
           )}
         </div>
@@ -885,8 +895,8 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
       <Separator />
 
       <div className={detailGridClass}>
-        <div className="space-y-4">
-          <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="space-y-4 min-w-0">
+          <div className="rounded-lg border bg-muted/30 p-4 overflow-hidden">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <Users className="h-4 w-4 text-primary" />
               Graph Summary
@@ -919,7 +929,7 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
             </dl>
           </div>
 
-          <div className="rounded-lg border bg-muted/20 p-4">
+          <div className="rounded-lg border bg-muted/20 p-4 overflow-hidden">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Neighbors per click
             </p>
@@ -940,25 +950,27 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
               />
               <span className="text-sm text-muted-foreground">nodes</span>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={anchoringEnabled ? 'default' : 'secondary'}
-                onClick={() => setAnchoringEnabled((prev) => !prev)}
-              >
-                <Anchor className="mr-2 h-4 w-4" />
-                {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={traversalEnabled ? 'default' : 'secondary'}
-                onClick={() => setTraversalEnabled((prev) => !prev)}
-                aria-pressed={traversalEnabled}
-              >
-                Traversal
-              </Button>
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={anchoringEnabled ? 'default' : 'secondary'}
+                  onClick={() => setAnchoringEnabled((prev) => !prev)}
+                >
+                  <Anchor className="mr-2 h-4 w-4" />
+                  {anchoringEnabled ? 'Anchoring on' : 'Anchoring off'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={traversalEnabled ? 'default' : 'secondary'}
+                  onClick={() => setTraversalEnabled((prev) => !prev)}
+                  aria-pressed={traversalEnabled}
+                >
+                  Traversal
+                </Button>
+              </div>
               <span className="text-xs text-muted-foreground">
                 Toggle anchoring to keep the current layout steady or let the graph flow freely. Enable
                 traversal to recenter the graph on the node you select.
@@ -1035,21 +1047,27 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
           </div>
         </div>
 
-        <div className="md:col-span-2 space-y-3 rounded-lg border bg-muted/10 p-4">
+        <div className="md:col-span-2 space-y-3 rounded-lg border bg-muted/10 p-4 overflow-hidden min-w-0">
           <h3 className="text-sm font-semibold">Entity Details</h3>
           {selectedNode ? (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-base font-semibold">{selectedNode.name ?? 'Untitled Entity'}</span>
-                <Badge variant="outline" style={{ borderColor: getTypeColor(selectedNode.entity_type) }}>
+            <div className="space-y-2 text-sm min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base font-semibold truncate">
+                  {selectedNode.name ?? 'Untitled Entity'}
+                </span>
+                <Badge
+                  variant="outline"
+                  style={{ borderColor: getTypeColor(selectedNode.entity_type) }}
+                  className="flex-shrink-0"
+                >
                   {selectedNode.entity_type}
                 </Badge>
               </div>
               {selectedNode.description && (
-                <p className="text-muted-foreground">{selectedNode.description}</p>
+                <p className="text-muted-foreground break-words">{selectedNode.description}</p>
               )}
               {selectedNode.properties && Object.keys(selectedNode.properties).length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Properties
                   </p>
@@ -1057,16 +1075,18 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
                     {Object.entries(selectedNode.properties)
                       .slice(0, 8)
                       .map(([key, value]) => (
-                        <li key={key} className="flex gap-2 text-xs">
-                          <span className="min-w-[96px] text-muted-foreground">{key}</span>
-                          <span className="max-w-[320px] truncate">{String(value)}</span>
+                        <li key={key} className="flex gap-2 text-xs min-w-0">
+                          <span className="min-w-[80px] md:min-w-[96px] text-muted-foreground flex-shrink-0">
+                            {key}
+                          </span>
+                          <span className="truncate min-w-0">{String(value)}</span>
                         </li>
                       ))}
                   </ul>
                 </div>
               )}
               {relatedLinks.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-1 min-w-0">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Connected Entities
                   </p>
@@ -1078,9 +1098,13 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
                       const targetNode = rawNodes.find((node) => node.id === otherId);
 
                       return (
-                        <li key={link.id} className="flex items-center justify-between text-xs">
-                          <span>{targetNode?.name ?? targetNode?.entity_type ?? 'Unknown'}</span>
-                          <Badge variant="secondary">{link.relationship_type}</Badge>
+                        <li key={link.id} className="flex items-center justify-between gap-2 text-xs min-w-0">
+                          <span className="truncate min-w-0">
+                            {targetNode?.name ?? targetNode?.entity_type ?? 'Unknown'}
+                          </span>
+                          <Badge variant="secondary" className="flex-shrink-0">
+                            {link.relationship_type}
+                          </Badge>
                         </li>
                       );
                     })}

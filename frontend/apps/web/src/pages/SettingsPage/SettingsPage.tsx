@@ -132,7 +132,7 @@ export function SettingsPage() {
 
       <PageContent>
         {/* Header */}
-        <div className="flex flex-row items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
             <p className="text-muted-foreground">

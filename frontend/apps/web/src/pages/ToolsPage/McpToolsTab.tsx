@@ -105,16 +105,16 @@ const McpServerCard = ({
   };
 
   return (
-    <Card className="h-full">
+    <Card className="h-full overflow-hidden">
       <Card.Header className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary flex-shrink-0">
               <Server className="h-6 w-6" />
             </div>
-            <div>
-              <Card.Title className="text-lg">{serverName}</Card.Title>
-              <div className="flex items-center gap-2 mt-1">
+            <div className="min-w-0 flex-1">
+              <Card.Title className="text-lg truncate">{serverName}</Card.Title>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge variant="secondary" className="text-xs">
                   {tools.length} tools
                 </Badge>
@@ -128,7 +128,7 @@ const McpServerCard = ({
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-col items-end gap-2 flex-shrink-0">
             <Button
               size="sm"
               variant={isRunning ? 'destructive' : 'default'}
@@ -177,7 +177,10 @@ const McpServerCard = ({
           ) : (
             <div className="space-y-2">
               {tools.map((tool, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-muted/30 rounded-md">
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-2 bg-muted/30 rounded-md gap-2 min-w-0"
+                >
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium truncate">{tool.name}</div>
                     {tool.description && (
@@ -190,7 +193,7 @@ const McpServerCard = ({
                     variant="ghost"
                     onClick={() => handleToolExecution(tool.name)}
                     disabled={!isRunning}
-                    className="ml-2 h-6 px-2"
+                    className="h-6 px-2 flex-shrink-0"
                   >
                     <Zap className="h-3 w-3" />
                   </Button>
@@ -838,14 +841,14 @@ export function McpToolsTab() {
       )}
 
       {/* Header Section */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="min-w-0">
           <h2 className="text-xl font-semibold">MCP Server Tools</h2>
           <p className="text-sm text-muted-foreground">
             External tools provided by Model Context Protocol servers
           </p>
         </div>
-        <Button onClick={refreshData} variant="outline" size="sm">
+        <Button onClick={refreshData} variant="outline" size="sm" className="self-start md:self-auto">
           <Activity className="h-4 w-4 mr-2" />
           Refresh
         </Button>
@@ -864,7 +867,7 @@ export function McpToolsTab() {
       </div>
 
       {/* Servers Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {allServers.map((server) => (
           <McpServerCard
             key={server.name}
