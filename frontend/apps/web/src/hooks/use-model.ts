@@ -37,7 +37,7 @@ function useModel(): Value {
   const [activeModels, setActiveModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
-  const [toolsEnabled, setToolsEnabled] = useState<boolean>(false);
+  const [toolsEnabled, setToolsEnabled] = useState<boolean>(true);
   const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(true);
 
   const initialRequestRef = useRef<boolean>(false);
