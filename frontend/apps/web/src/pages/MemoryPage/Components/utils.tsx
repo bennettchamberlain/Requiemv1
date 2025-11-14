@@ -56,11 +56,12 @@ export function formatDateTime(dateStr: string, timeStr?: string): string {
 }
 
 export function formatDateForDisplay(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = new Date(dateStr + 'T12:00:00');
   if (isNaN(date.getTime())) {
     return dateStr;
   }
 
+  // Compare using local dates to match user's timezone
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today);
@@ -104,7 +105,12 @@ export function groupMemoriesByDate(memories: MemoryItem[]): Array<{
   memories.forEach((memory) => {
     const memoryDate = new Date(memory.timestamp);
     if (!isNaN(memoryDate.getTime())) {
-      const dateKey = memoryDate.toISOString().split('T')[0];
+      // Use local date instead of UTC to match user's timezone
+      const year = memoryDate.getFullYear();
+      const month = String(memoryDate.getMonth() + 1).padStart(2, '0');
+      const day = String(memoryDate.getDate()).padStart(2, '0');
+      const dateKey = `${year}-${month}-${day}`;
+
       if (!groups[dateKey]) {
         groups[dateKey] = [];
       }

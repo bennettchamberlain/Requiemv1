@@ -174,8 +174,9 @@ function useMemoryService(): MemoryContextValue {
           if (query.dateRange?.end) {
             params.append('endDate', query.dateRange.end);
           } else {
-            const oneMonthFromNow = new Date(now.getTime() + MONTH_IN_MS);
-            params.append('endDate', oneMonthFromNow.toISOString());
+            const today = new Date(now);
+            today.setDate(today.getDate());
+            params.append('endDate', today.toISOString());
           }
         }
 
