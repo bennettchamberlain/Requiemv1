@@ -83,7 +83,7 @@ export class AnswerEntity {
       isSensitive: this.is_sensitive,
       sharingLevel: this.sharing_level,
 
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
       question: this.question?.toQuestion(),
     } satisfies Answer;
   }

@@ -77,7 +77,7 @@ export class MessageEntity {
       toolCalls: this.tool_calls ?? null,
       canceled: this.canceled ?? null,
 
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
       thread: this.thread?.toThread(),
       promptMessage: this.promptMessage?.toMessage() ?? null,
       files: this.files?.map((file) => file.toFile()),

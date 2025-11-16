@@ -67,7 +67,7 @@ export class ActionEntity {
       imageUrl: this.imageUrl,
       threadId: this.threadId,
       thread: this.thread?.toThread(),
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
       tags: this.tags?.map((tag) => tag.toTag()).filter((tag) => !!tag) as string[],
     } satisfies Action;
   }
