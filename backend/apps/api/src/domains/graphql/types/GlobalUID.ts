@@ -1,4 +1,4 @@
-type ResourceType = 'message' | 'thread' | 'user';
+type ResourceType = 'message' | 'person' | 'thread' | 'user';
 
 export class GlobalUID {
   static toGUID(type: ResourceType, id: string): string {
