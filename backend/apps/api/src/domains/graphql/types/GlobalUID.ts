@@ -6,6 +6,16 @@ export class GlobalUID {
   }
 
   static fromGUID(type: ResourceType, globalId: string): string {
+    const { type: decodedType, id } = this.parse(globalId);
+
+    if (decodedType !== type) {
+      throw new Error('Unexpected global id type');
+    }
+
+    return id;
+  }
+
+  static parse(globalId: string): { type: string; id: string } {
     let decoded;
 
     try {
@@ -14,16 +24,15 @@ export class GlobalUID {
       throw new Error('Invalid global id');
     }
 
-    const [decodedType, id] = decoded.split(':');
+    const [type, id] = decoded.split(':');
 
-    if (!decodedType || !id) {
+    if (!type || !id) {
       throw new Error('Invalid global id format');
     }
 
-    if (decodedType !== type) {
-      throw new Error('Unexpected global id type');
-    }
-
-    return id;
+    return {
+      type,
+      id,
+    };
   }
 }
