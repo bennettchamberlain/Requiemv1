@@ -10,6 +10,8 @@ import { GlobalUID } from '../types/GlobalUID';
 import { MessageConnection } from '../types/MessageConnection';
 import { MessageEdge } from '../types/MessageEdge';
 import { PageInfo } from '../types/PageInfo';
+import { ThreadConnection } from '../types/ThreadConnection';
+import { ThreadEdge } from '../types/ThreadEdge';
 import { ThreadType } from '../types/ThreadType';
 
 @UseGuards(GqlJwtAuthGuard)
@@ -20,16 +22,36 @@ export class ThreadResolver {
     private readonly threadService: ThreadService,
   ) {}
 
-  @Query(() => [ThreadType])
-  async threads(@Context() context: RequestContext): Promise<ThreadType[]> {
+  @Query(() => ThreadConnection)
+  async threads(@Context() context: RequestContext): Promise<ThreadConnection> {
     const threads = await this.threadService.findAll(context);
 
-    return threads.map((thread) => ({
-      id: GlobalUID.toGUID('thread', thread.id),
-      name: thread.name,
-      model: thread.model,
-      description: thread.description,
-    }));
+    const edges: ThreadEdge[] = threads.map((thread) => {
+      const gid = GlobalUID.toGUID('thread', thread.id);
+
+      return {
+        cursor: gid,
+        node: {
+          id: gid,
+          name: thread.name,
+          model: thread.model,
+          description: thread.description,
+        },
+      };
+    });
+
+    const pageInfo: PageInfo = {
+      hasNextPage: false,
+      hasPreviousPage: false,
+      startCursor: edges.length > 0 ? edges[0].cursor : null,
+      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
+    };
+
+    return {
+      edges,
+      pageInfo,
+      totalCount: edges.length,
+    };
   }
 
   @Query(() => ThreadType, { nullable: true })
