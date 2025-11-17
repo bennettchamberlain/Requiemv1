@@ -9,6 +9,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import config from '@ci/configuration';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
@@ -117,12 +118,15 @@ export class OllamaController {
       }
     });
 
-    const systemPrompt = await this.buildSystemPrompt(context);
     const messagesWithSystem: OllamaMessage[] = [
-      {
-        role: 'system',
-        content: systemPrompt,
-      },
+      ...(config.features['enable.system.prompt']
+        ? [
+            {
+              role: 'system',
+              content: await this.buildSystemPrompt(context),
+            },
+          ]
+        : []),
       ...inputMessages,
     ];
 
