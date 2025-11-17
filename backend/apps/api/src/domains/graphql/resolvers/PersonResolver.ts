@@ -7,18 +7,43 @@ import { RequestContext } from '@ci/common/types';
 import { PersonService } from '@ci/domains/memory';
 
 import { GlobalUID } from '../types/GlobalUID';
+import { PaginationArgs } from '../types/PaginationArgs';
+import { PersonConnection } from '../types/PersonConnection';
+import { PersonEdge } from '../types/PersonEdge';
 import { PersonType } from '../types/PersonType';
+import { Paginator } from '../utils/Paginator';
 
 @UseGuards(GqlJwtAuthGuard)
 @Resolver(() => PersonType)
 export class PersonResolver {
   constructor(private readonly personService: PersonService) {}
 
-  @Query(() => [PersonType])
-  async people(@Context() context: RequestContext): Promise<PersonType[]> {
+  @Query(() => PersonConnection)
+  async people(
+    @Context() context: RequestContext,
+    @Args() pagination: PaginationArgs,
+  ): Promise<PersonConnection> {
     const entities = await this.personService.findAll(context);
 
-    return entities.map((entity) => PersonType.fromEntity(entity));
+    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
+      ...pagination,
+      getId: (entity) => GlobalUID.toGUID('person', entity.id),
+    });
+
+    const edges: PersonEdge[] = slice.map((entity) => {
+      const node = PersonType.fromEntity(entity);
+
+      return {
+        node,
+        cursor: node.id,
+      };
+    });
+
+    return {
+      edges,
+      pageInfo,
+      totalCount,
+    };
   }
 
   @Query(() => PersonType, { nullable: true })
