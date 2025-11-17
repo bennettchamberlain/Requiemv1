@@ -9,10 +9,10 @@ import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { GlobalUID } from '../types/GlobalUID';
 import { MessageConnection } from '../types/MessageConnection';
 import { MessageEdge } from '../types/MessageEdge';
-import { PageInfo } from '../types/PageInfo';
 import { ThreadConnection } from '../types/ThreadConnection';
 import { ThreadEdge } from '../types/ThreadEdge';
 import { ThreadType } from '../types/ThreadType';
+import { Paginator } from '../utils/Paginator';
 
 @UseGuards(GqlJwtAuthGuard)
 @Resolver(() => ThreadType)
@@ -26,7 +26,11 @@ export class ThreadResolver {
   async threads(@Context() context: RequestContext): Promise<ThreadConnection> {
     const threads = await this.threadService.findAll(context);
 
-    const edges: ThreadEdge[] = threads.map((thread) => {
+    const { slice, pageInfo } = Paginator.paginate(threads, {
+      getId: (thread) => GlobalUID.toGUID('thread', thread.id),
+    });
+
+    const edges: ThreadEdge[] = slice.map((thread) => {
       const gid = GlobalUID.toGUID('thread', thread.id);
 
       return {
@@ -39,13 +43,6 @@ export class ThreadResolver {
         },
       };
     });
-
-    const pageInfo: PageInfo = {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: edges.length > 0 ? edges[0].cursor : null,
-      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
-    };
 
     return {
       edges,
@@ -80,7 +77,11 @@ export class ThreadResolver {
 
     const messages = await this.messageService.findByThread(context, threadId);
 
-    const edges: MessageEdge[] = messages.map((message) => {
+    const { slice, pageInfo } = Paginator.paginate(messages, {
+      getId: (message) => GlobalUID.toGUID('message', message.id),
+    });
+
+    const edges: MessageEdge[] = slice.map((message) => {
       const gid = GlobalUID.toGUID('message', message.id);
 
       return {
@@ -93,13 +94,6 @@ export class ThreadResolver {
         },
       };
     });
-
-    const pageInfo: PageInfo = {
-      hasNextPage: false,
-      hasPreviousPage: false,
-      startCursor: edges.length > 0 ? edges[0].cursor : null,
-      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
-    };
 
     return {
       edges,
