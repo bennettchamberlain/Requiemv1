@@ -6,7 +6,6 @@ import { GqlJwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
 import { UserService } from '@ci/domains/user';
 
-import { GlobalUID } from '../types/GlobalUID';
 import { UserType } from '../types/UserType';
 
 @UseGuards(GqlJwtAuthGuard)
@@ -22,11 +21,6 @@ export class UserResolver {
       throw new NotFoundException();
     }
 
-    return {
-      id: GlobalUID.toGUID('user', user.id),
-      name: user.name,
-      email: user.email,
-      onboarded: user.onboarded,
-    };
+    return UserType.fromEntity(user);
   }
 }

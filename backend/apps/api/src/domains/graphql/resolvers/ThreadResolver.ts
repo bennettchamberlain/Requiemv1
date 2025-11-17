@@ -9,6 +9,7 @@ import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { GlobalUID } from '../types/GlobalUID';
 import { MessageConnection } from '../types/MessageConnection';
 import { MessageEdge } from '../types/MessageEdge';
+import { MessageType } from '../types/MessageType';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { ThreadConnection } from '../types/ThreadConnection';
 import { ThreadEdge } from '../types/ThreadEdge';
@@ -30,29 +31,24 @@ export class ThreadResolver {
   ): Promise<ThreadConnection> {
     const threads = await this.threadService.findAll(context);
 
-    const { slice, pageInfo } = Paginator.paginate(threads, {
+    const { slice, pageInfo, totalCount } = Paginator.paginate(threads, {
       ...pagination,
       getId: (thread) => GlobalUID.toGUID('thread', thread.id),
     });
 
     const edges: ThreadEdge[] = slice.map((thread) => {
-      const gid = GlobalUID.toGUID('thread', thread.id);
+      const node = ThreadType.fromEntity(thread);
 
       return {
-        cursor: gid,
-        node: {
-          id: gid,
-          name: thread.name,
-          model: thread.model,
-          description: thread.description,
-        },
+        node,
+        cursor: node.id,
       };
     });
 
     return {
       edges,
       pageInfo,
-      totalCount: edges.length,
+      totalCount,
     };
   }
 
@@ -65,12 +61,7 @@ export class ThreadResolver {
 
     const thread = await this.threadService.findOne(context, threadId);
 
-    return {
-      id: GlobalUID.toGUID('thread', thread.id),
-      name: thread.name,
-      model: thread.model,
-      description: thread.description,
-    };
+    return ThreadType.fromEntity(thread);
   }
 
   @ResolveField(() => MessageConnection)
@@ -83,29 +74,24 @@ export class ThreadResolver {
 
     const messages = await this.messageService.findByThread(context, threadId);
 
-    const { slice, pageInfo } = Paginator.paginate(messages, {
+    const { slice, pageInfo, totalCount } = Paginator.paginate(messages, {
       ...pagination,
       getId: (message) => GlobalUID.toGUID('message', message.id),
     });
 
     const edges: MessageEdge[] = slice.map((message) => {
-      const gid = GlobalUID.toGUID('message', message.id);
+      const node = MessageType.fromEntity(message);
 
       return {
-        cursor: gid,
-        node: {
-          id: gid,
-          content: message.content,
-          role: message.role,
-          threadId: message.threadId ?? null,
-        },
+        node,
+        cursor: node.id,
       };
     });
 
     return {
       edges,
       pageInfo,
-      totalCount: messages.length,
+      totalCount,
     };
   }
 }

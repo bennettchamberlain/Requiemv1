@@ -1,6 +1,10 @@
 import { Field, ObjectType, ID } from '@nestjs/graphql';
 
+import { type Message } from '@ci/domains/conversations';
+
+import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+
 @ObjectType({ implements: () => [Node] })
 export class MessageType implements Node {
   @Field(() => ID)
@@ -14,4 +18,13 @@ export class MessageType implements Node {
 
   @Field(() => String, { nullable: true })
   role!: string | null;
+
+  static fromEntity(message: Message): MessageType {
+    return {
+      id: GlobalUID.toGUID('message', message.id),
+      content: message.content,
+      role: message.role,
+      threadId: message.threadId ?? null,
+    };
+  }
 }

@@ -58,27 +58,25 @@ export class PersonType implements Node {
   @Field(() => String, { nullable: true })
   sourceUrl!: string | null;
 
-  static fromEntity(entity: PersonEntity): PersonType {
-    const person = new this();
-
-    person.id = GlobalUID.toGUID('person', entity.id);
-    person.name = entity.name;
-    person.description = entity.description;
-    person.type = entity.type;
-    person.firstName = entity.first_name;
-    person.lastName = entity.last_name;
-    person.gender = entity.gender;
-    person.address = entity.address;
-    person.streetAddress = entity.street_address;
-    person.streetAddress2 = entity.street_address_2;
-    person.city = entity.city;
-    person.region = entity.region;
-    person.country = entity.country;
-    person.postalCode = entity.postal_code;
-    person.avatarUrl = entity.avatar_url;
-    person.externalId = entity.external_id;
-    person.sourceUrl = entity.source_url;
-
-    return person;
+  static fromEntity(person: PersonEntity): PersonType {
+    return {
+      id: GlobalUID.toGUID('person', person.id),
+      name: person.name,
+      description: person.description,
+      type: person.type,
+      firstName: person.first_name,
+      lastName: person.last_name,
+      gender: person.gender,
+      address: person.address,
+      streetAddress: person.street_address,
+      streetAddress2: person.street_address_2,
+      city: person.city,
+      region: person.region,
+      country: person.country,
+      postalCode: person.postal_code,
+      avatarUrl: person.avatar_url,
+      externalId: person.external_id,
+      sourceUrl: person.source_url,
+    };
   }
 }
