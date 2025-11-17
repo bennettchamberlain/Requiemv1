@@ -3,9 +3,10 @@ import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { PersonEntity } from '@ci/domains/memory';
 
 import { GlobalUID } from './GlobalUID';
+import { Node } from './Node';
 
-@ObjectType()
-export class PersonType {
+@ObjectType({ implements: () => [Node] })
+export class PersonType implements Node {
   @Field(() => ID)
   id!: string;
 

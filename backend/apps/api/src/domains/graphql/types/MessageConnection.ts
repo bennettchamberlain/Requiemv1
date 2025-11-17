@@ -1,16 +1,10 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 
+import { Connection } from './Connection';
 import { MessageEdge } from './MessageEdge';
-import { PageInfo } from './PageInfo';
 
 @ObjectType()
-export class MessageConnection {
+export class MessageConnection extends Connection {
   @Field(() => [MessageEdge])
   edges!: MessageEdge[];
-
-  @Field(() => PageInfo)
-  pageInfo!: PageInfo;
-
-  @Field(() => Number)
-  totalCount!: number;
 }

@@ -1,16 +1,10 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 
-import { PageInfo } from './PageInfo';
+import { Connection } from './Connection';
 import { ThreadEdge } from './ThreadEdge';
 
 @ObjectType()
-export class ThreadConnection {
+export class ThreadConnection extends Connection {
   @Field(() => [ThreadEdge])
   edges!: ThreadEdge[];
-
-  @Field(() => PageInfo)
-  pageInfo!: PageInfo;
-
-  @Field(() => Number)
-  totalCount!: number;
 }

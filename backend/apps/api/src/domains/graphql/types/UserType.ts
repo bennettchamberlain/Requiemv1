@@ -1,7 +1,9 @@
 import { Field, ObjectType, ID } from '@nestjs/graphql';
 
-@ObjectType()
-export class UserType {
+import { Node } from './Node';
+
+@ObjectType({ implements: () => [Node] })
+export class UserType implements Node {
   @Field(() => ID)
   id!: string;
 

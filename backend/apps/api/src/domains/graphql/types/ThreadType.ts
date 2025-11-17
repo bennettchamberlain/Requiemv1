@@ -1,6 +1,9 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
-@ObjectType({ description: 'thread' })
-export class ThreadType {
+
+import { Node } from './Node';
+
+@ObjectType({ description: 'thread', implements: () => [Node] })
+export class ThreadType implements Node {
   @Field(() => ID)
   id!: string;
 
