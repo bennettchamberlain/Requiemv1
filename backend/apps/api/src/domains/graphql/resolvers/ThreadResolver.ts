@@ -9,6 +9,7 @@ import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { GlobalUID } from '../types/GlobalUID';
 import { MessageConnection } from '../types/MessageConnection';
 import { MessageEdge } from '../types/MessageEdge';
+import { PaginationArgs } from '../types/PaginationArgs';
 import { ThreadConnection } from '../types/ThreadConnection';
 import { ThreadEdge } from '../types/ThreadEdge';
 import { ThreadType } from '../types/ThreadType';
@@ -23,10 +24,14 @@ export class ThreadResolver {
   ) {}
 
   @Query(() => ThreadConnection)
-  async threads(@Context() context: RequestContext): Promise<ThreadConnection> {
+  async threads(
+    @Context() context: RequestContext,
+    @Args() pagination: PaginationArgs,
+  ): Promise<ThreadConnection> {
     const threads = await this.threadService.findAll(context);
 
     const { slice, pageInfo } = Paginator.paginate(threads, {
+      ...pagination,
       getId: (thread) => GlobalUID.toGUID('thread', thread.id),
     });
 
@@ -70,14 +75,16 @@ export class ThreadResolver {
 
   @ResolveField(() => MessageConnection)
   async messages(
-    @Parent() thread: ThreadType,
     @Context() context: RequestContext,
+    @Parent() thread: ThreadType,
+    @Args() pagination: PaginationArgs,
   ): Promise<MessageConnection> {
     const threadId = GlobalUID.fromGUID('thread', thread.id);
 
     const messages = await this.messageService.findByThread(context, threadId);
 
     const { slice, pageInfo } = Paginator.paginate(messages, {
+      ...pagination,
       getId: (message) => GlobalUID.toGUID('message', message.id),
     });
 
