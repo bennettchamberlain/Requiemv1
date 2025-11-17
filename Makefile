@@ -1,4 +1,4 @@
-.PHONY: help build dbclear dev index infra init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
+.PHONY: help build dbclear dev health index infra init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -124,13 +124,8 @@ dev: ## Boot the application
 	tmux select-pane -t 0; \
 	tmux attach -t $$SESSION
 
-index: ## Generate vector embeddings for indexable content
-	@printf "🗂 Indexing database...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings.ts
-	@printf "\nDatabase successfully indexed.\n"
-
-init: ## Initialize repository after checkout
-	@printf "🏗️ Initializing repository...\n\n"
+health: ## Check the repository for prerequisites
+	@printf "🩺 Checking health of prerequisites...\n\n"
 
 	@NODEJS=$$(which node 2>/dev/null); \
 	if [ -z "$$NODEJS" ]; then \
@@ -193,6 +188,15 @@ init: ## Initialize repository after checkout
 		exit 1; \
 	fi
 
+
+index: ## Generate vector embeddings for indexable content
+	@printf "🗂 Indexing database...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings.ts
+	@printf "\nDatabase successfully indexed.\n"
+
+init: ## Initialize repository after checkout
+	@printf "🏗️ Initializing repository...\n\n"
+
 	@corepack enable
 	@corepack prepare yarn@$$(grep '"packageManager"' package.json | cut -d@ -f2 | tr -d '", ') --activate
 	@which asdf >/dev/null && asdf reshim nodejs || printf "\n$(YELLOW)•$(RESET) asdf binary not found, skipping reshim step...\n\n"
@@ -200,12 +204,18 @@ init: ## Initialize repository after checkout
 
 	@printf "\n"
 	@yarn install
+
 	@printf "\n"
 	@yarn dlx @yarnpkg/sdks vscode
+
 	@printf "\n"
 	@yarn prepare
-	@printf "\n"
-	@if [ ! -f .env ]; then cp .env.default .env; fi
+
+	@if [ ! -f .env ]; then \
+		printf "\nCopying dotenv template file... "; \
+		cp -v .env.default .env; \
+	fi
+
 	@printf "\nRepository initialized.\n"
 
 install: ## Install project dependencies
