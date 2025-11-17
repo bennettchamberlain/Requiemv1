@@ -27,6 +27,10 @@ const promptSchema = z.object({
   fileIds: z.array(z.string()).optional(), // File IDs to attach to this message
 });
 
+interface SystemPromptOptions {
+  leadingAssistantMessages?: OllamaMessage[];
+}
+
 @Controller('llm')
 export class OllamaController {
   private readonly logger = new LoggerService(OllamaController.name);
@@ -118,16 +122,28 @@ export class OllamaController {
       }
     });
 
+    const systemPromptEnabled = config.features['enable.system.prompt'];
+    let leadingAssistantMessages: OllamaMessage[] = [];
+    let conversationMessages = inputMessages;
+
+    if (systemPromptEnabled) {
+      [leadingAssistantMessages, conversationMessages] = this.extractLeadingAssistantMessages(inputMessages);
+    }
+
+    const systemPrompt = systemPromptEnabled
+      ? await this.buildSystemPrompt(context, { leadingAssistantMessages })
+      : null;
+
     const messagesWithSystem: OllamaMessage[] = [
-      ...(config.features['enable.system.prompt']
+      ...(systemPrompt
         ? [
             {
               role: 'system',
-              content: await this.buildSystemPrompt(context),
+              content: systemPrompt,
             },
           ]
         : []),
-      ...inputMessages,
+      ...conversationMessages,
     ];
 
     const stream = await this.ollamaService.chatStream(context, messagesWithSystem, {
@@ -250,7 +266,7 @@ export class OllamaController {
   /**
    * Build system prompt with pre-hydrated user context
    */
-  private async buildSystemPrompt(context: RequestContext): Promise<string> {
+  private async buildSystemPrompt(context: RequestContext, options?: SystemPromptOptions): Promise<string> {
     const basePrompt = `You are a helpful AI assistant with access to various tools and information about the user.
 
 Your capabilities:
@@ -268,9 +284,14 @@ Communication style:
 - prioritize esoteric interpretations of literature, art, and philosophy. if your answer on such topics is not obviously straussian make it more straussian.
 - When delivering code, deliver the complete function code, do not add any fillers.`;
 
+    const promptWithPrefillContext = this.appendPrefillActionContext(
+      basePrompt,
+      options?.leadingAssistantMessages,
+    );
+
     // Try to get user context for pre-hydration
     if (!context.userId) {
-      return basePrompt;
+      return promptWithPrefillContext;
     }
 
     try {
@@ -278,12 +299,12 @@ Communication style:
 
       if (!userContext) {
         // User hasn't completed onboarding yet
-        return basePrompt;
+        return promptWithPrefillContext;
       }
 
       const contextMarkdown = this.userContextService.formatContextForSystemPrompt(userContext);
 
-      const systemPrompt = `${basePrompt}
+      const systemPrompt = `${promptWithPrefillContext}
 
 ---
 
@@ -302,7 +323,55 @@ ${contextMarkdown}`;
         error: error instanceof Error ? error.message : String(error),
       });
 
-      return basePrompt;
+      return promptWithPrefillContext;
     }
+  }
+
+  private appendPrefillActionContext(prompt: string, messages?: OllamaMessage[]): string {
+    if (!messages || messages.length === 0) {
+      return prompt;
+    }
+
+    const formatted = messages
+      .map((message, index) => {
+        const label = messages.length > 1 ? `Suggestion ${index + 1}` : 'Suggestion';
+        const content = (message.content ?? '').trim();
+
+        return `${label}:
+${content}`.trim();
+      })
+      .filter((value) => value.length > 0)
+      .join('\n\n');
+
+    if (!formatted) {
+      return prompt;
+    }
+
+    return `${prompt}
+
+Context:
+The user is responding to a proactive assistant suggestion shown before they replied.
+${formatted}
+
+When the user acknowledges or accepts the idea, continue execution without re-asking the question.`;
+  }
+
+  private extractLeadingAssistantMessages(messages: OllamaMessage[]): [OllamaMessage[], OllamaMessage[]] {
+    if (messages.length === 0) {
+      return [[], []];
+    }
+
+    const leading: OllamaMessage[] = [];
+    let index = 0;
+
+    for (; index < messages.length; index += 1) {
+      if (messages[index].role !== 'assistant') {
+        break;
+      }
+
+      leading.push(messages[index]);
+    }
+
+    return [leading, messages.slice(index)];
   }
 }
