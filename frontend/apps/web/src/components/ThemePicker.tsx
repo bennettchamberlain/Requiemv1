@@ -10,7 +10,6 @@ import {
   buildTextureBackground,
   readTexturePalette,
   DEFAULT_TEXTURE_PALETTE,
-  DEFAULT_TEXTURE_ID,
 } from '@/hooks/use-theme';
 
 import { ColorWheel } from './ColorWheel';
@@ -248,22 +247,6 @@ export function ThemePicker() {
         </div>
 
         <div className="border-t border-border pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium">Surface Texture</h3>
-              <p className="text-xs text-muted-foreground">Hero-inspired SVG patterns</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setTexture(DEFAULT_TEXTURE_ID)}
-              disabled={themeState.textureId === DEFAULT_TEXTURE_ID}
-              className="text-xs"
-            >
-              Clear
-            </Button>
-          </div>
-
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {TEXTURE_PATTERNS.map((pattern) => {
               const isSelected = pattern.id === themeState.textureId;

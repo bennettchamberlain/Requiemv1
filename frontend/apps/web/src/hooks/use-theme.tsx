@@ -116,7 +116,7 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
     id: 'micro-dots',
     name: 'Micro Dots',
-    description: 'Offset dots inspired by Hero Patterns "Polka Dots".',
+    description: 'Polka Dots',
     size: '48px 48px',
     build: ({ accent }, opacity) => {
       const alpha = (value: number) => formatOpacity(value * opacity);
@@ -137,7 +137,7 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
     id: 'cross-hatch',
     name: 'Cross Hatch',
-    description: 'Tight grid reminiscent of "Cross Stripes".',
+    description: 'Tight grid.',
     size: '64px 64px',
     build: ({ contrast }, opacity) =>
       svgTexture(`
@@ -162,7 +162,7 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
     id: 'overlapping-circles',
     name: 'Overlapping Circles',
-    description: 'Concentric arcs inspired by "Overlapping Circles".',
+    description: 'Concentric arcs',
     size: '96px 96px',
     build: ({ accent, muted }, opacity) =>
       svgTexture(`
@@ -178,7 +178,7 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
     id: 'isometric-cubes',
     name: 'Isometric Cubes',
-    description: 'Geometric tessellation inspired by "Cubes".',
+    description: 'Geometric tessellation',
     size: '96px 96px',
     build: ({ contrast, accent }, opacity) =>
       svgTexture(`
@@ -196,7 +196,7 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
     id: 'contour-lines',
     name: 'Contour Lines',
-    description: 'Organic waves reminiscent of "Topography".',
+    description: 'Organic waves',
     size: '160px 160px',
     build: ({ contrast }, opacity) =>
       svgTexture(`
@@ -211,7 +211,7 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
     id: 'corner-crosses',
     name: 'Corner Crosses',
-    description: 'Cross motifs hugging the corners for subtle framing.',
+    description: 'Cross motifs',
     size: '40px 40px',
     build: ({ accent }, opacity) =>
       svgTexture(`
