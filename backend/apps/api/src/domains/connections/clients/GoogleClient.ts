@@ -467,12 +467,14 @@ export class GoogleClient extends BaseOAuth2Client {
       'metadata',
     ].join(',');
     let nextPageToken: string | undefined;
+    let lastResponse: Record<string, unknown> | null = null;
 
     // Fetch all contacts (no sync token request during pagination)
     do {
       const params = new URLSearchParams({
         pageSize: '1000',
         personFields,
+        requestSyncToken: 'true',
       });
       if (nextPageToken) {
         params.set('pageToken', nextPageToken);
@@ -493,6 +495,7 @@ export class GoogleClient extends BaseOAuth2Client {
 
         return r.json();
       })) as Record<string, unknown>;
+      lastResponse = response;
       const connections = (response.connections as unknown[]) || [];
 
       nextPageToken = response.nextPageToken as string | undefined;
@@ -509,27 +512,9 @@ export class GoogleClient extends BaseOAuth2Client {
       throw new Error('Connection not authenticated');
     }
 
-    const tokenParams = new URLSearchParams({
-      pageSize: '1',
-      personFields,
-      requestSyncToken: 'true',
-    });
-    const tokenUrl = `https://people.googleapis.com/v1/people/me/connections?${tokenParams.toString()}`;
-    const tokenResp = (await fetch(tokenUrl, {
-      headers: { Authorization: `Bearer ${connection.accessToken}` },
-    }).then((r) => {
-      if (!r.ok) {
-        throw new Error(`People API request failed: ${r.status} ${r.statusText}`);
-      }
-
-      return r.json();
-    })) as Record<string, unknown>;
-    if (!tokenResp?.nextSyncToken) {
-      throw new Error('Failed to get nextSyncToken from People API');
-    }
-
+    const nextSyncToken = lastResponse?.nextSyncToken as string;
     const newSyncState: ContactsSyncState = {
-      syncToken: tokenResp.nextSyncToken as string,
+      syncToken: nextSyncToken as string,
       lastSyncAt: new Date().toISOString(),
     };
 

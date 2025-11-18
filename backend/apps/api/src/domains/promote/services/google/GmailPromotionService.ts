@@ -3,7 +3,9 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/services';
 import { ConnectionService, type Connection } from '@ci/domains/connections';
 import { EventService, Events } from '@ci/domains/events';
-import { CommunicationEntity, CommunicationService, PersonService } from '@ci/domains/memory';
+import { CommunicationEntity, CommunicationService } from '@ci/domains/memory';
+
+import { PromoteService } from '../PromoteService';
 
 interface GmailMessage {
   id?: string;
@@ -46,7 +48,7 @@ export class GmailPromotionService {
     private readonly communicationService: CommunicationService,
     private readonly connectionService: ConnectionService,
     private readonly eventService: EventService,
-    private readonly personService: PersonService,
+    private readonly promoteService: PromoteService,
   ) {}
 
   async promoteGmailMessages(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
@@ -256,7 +258,7 @@ export class GmailPromotionService {
       const ccParticipants = messageDetails.participants.filter((p) => p.type === 'cc');
       const bccParticipants = messageDetails.participants.filter((p) => p.type === 'bcc');
 
-      const fromEntityIds = await this.personService.processParticipants(
+      const fromEntityIds = await this.promoteService.processParticipants(
         fromParticipants,
         userId,
         connectionId,
@@ -265,7 +267,7 @@ export class GmailPromotionService {
       );
 
       // Create person entities for recipients (with EMAILED relationship)
-      const toEntityIds = await this.personService.processParticipants(
+      const toEntityIds = await this.promoteService.processParticipants(
         toParticipants,
         userId,
         connectionId,
@@ -274,7 +276,7 @@ export class GmailPromotionService {
       );
 
       // Create person entities for recipients (with EMAILED relationship)
-      const ccEntityIds = await this.personService.processParticipants(
+      const ccEntityIds = await this.promoteService.processParticipants(
         ccParticipants,
         userId,
         connectionId,
@@ -283,7 +285,7 @@ export class GmailPromotionService {
       );
 
       // Create person entities for recipients (with EMAILED relationship)
-      const bccEntityIds = await this.personService.processParticipants(
+      const bccEntityIds = await this.promoteService.processParticipants(
         ccParticipants,
         userId,
         connectionId,

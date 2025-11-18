@@ -36,8 +36,8 @@ import { OneDrivePromotionService } from '@ci/domains/promote/services/microsoft
 import { OutlookCalendarPromotionService } from '@ci/domains/promote/services/microsoft/OutlookCalendarPromotionService';
 import { UserModule } from '@ci/domains/user';
 
+import { PromoteController } from './controllers/google/PromoteController';
 import { PromoteController as MicrosoftPromoteController } from './controllers/microsoft/PromoteController';
-import { PromoteController } from './controllers/PromoteController';
 import { GoogleCalendarEventPromotionService } from './services/google/CalendarPromotionService';
 import { ContactsPromotionService } from './services/google/ContactsPromotionService';
 import { DrivePromotionService } from './services/google/DrivePromotionService';
