@@ -10,13 +10,18 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: companion_intel
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles: [ "all", "local", "staging" ]
 
   migrations:
     image: ci/api:latest
@@ -29,6 +34,9 @@ services:
       - web
     command: ["yarn", "migrate"]
     restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
     profiles: [ "all", "staging" ]
 
   minio:
@@ -45,14 +53,13 @@ services:
       - web
     command: server /data
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    profiles: [ "all", "local", "staging" ]
 
   stt-service:
     build:
       context: ./backend/apps/stt
       dockerfile: Dockerfile
     image: ci/stt-service
-    pull_policy: build
     container_name: stt-service
     ports:
       - 9001:9001
@@ -64,14 +71,13 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    profiles: [ "all", "local", "staging" ]
 
   tts-service:
     build:
       context: ./backend/apps/tts
       dockerfile: Dockerfile
     image: ci/tts-service
-    pull_policy: build
     container_name: tts-service
     ports:
       - 9002:9002
@@ -83,11 +89,11 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    profiles: [ "all", "local", "staging" ]
 
-  webserver:
+  dev-webserver:
     image: nginx:stable
-    container_name: webserver
+    container_name: dev-webserver
     ports:
       - 80:80
       - 443:443
@@ -131,6 +137,8 @@ services:
     depends_on:
       migrations:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     profiles: [ "all", "staging" ]
 
@@ -157,13 +165,13 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
     volumes:
       - ./infrastructure/iframely/config.js:/iframely/config.js
     deploy:
       resources:
         limits:
           memory: 4G
+    profiles: [ "all", "local", "staging" ]
 
 volumes:
   postgres-data:
