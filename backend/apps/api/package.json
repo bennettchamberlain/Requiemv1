@@ -20,6 +20,7 @@
     "migrate:make": "yarn dbmate new",
     "db:clear": "yarn dbmate --execute-file ./db/postgres/scripts/drop_all_pg_data.sql",
     "db:destroy": "yarn dbmate --execute-file ./db/postgres/scripts/drop_all_pg_tables.sql",
+    "db:chatreset": "yarn dbmate --execute-file ./db/postgres/scripts/reset_demo_chats.sql",
     "migration:run": "DOTENV_CONFIG_PATH=../../../.env ts-node -r tsconfig-paths/register --swc scripts/seed-database/run-migration.ts",
     "test": "DOTENV_CONFIG_PATH=../../../.env jest",
     "docs": "yarn docs:html",
