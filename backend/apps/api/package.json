@@ -11,6 +11,7 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "depcheck": "yarn depcruise --ignore-known",
+    "depcheck:accept": "depcruise \"src/**/*.ts\" --output-type baseline > .dependency-cruiser-known-violations.json",
     "typecheck": "tsc --noEmit",
     "dbmate": "DOTENV_CONFIG_PATH=../../../.env node bin/dbmate.js",
     "migrate": "yarn dbmate up",
