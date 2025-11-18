@@ -43,10 +43,5 @@ RUN cd /tmp && \
 # Switch back to postgres user
 USER postgres
 
-# Set environment variables
-ENV POSTGRES_DB=companion_intel
-ENV POSTGRES_USER=companion_intel
-ENV POSTGRES_PASSWORD=comp4nion_1ntel_ftw!
-
 # Expose PostgreSQL port
 EXPOSE 5432
