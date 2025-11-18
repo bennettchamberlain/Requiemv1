@@ -104,6 +104,13 @@ export function ForceGraph3D({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [activeParticleType, setActiveParticleType] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return document.documentElement.classList.contains('dark');
+    }
+
+    return false;
+  });
   const previousPositionsRef = useRef<Map<string, { x: number; y: number; z: number }>>(new Map());
   const anchoredKey = useMemo(() => anchoredNodeIds.join('|'), [anchoredNodeIds]);
   const anchoredSet = useMemo(() => new Set(anchoredNodeIds), [anchoredKey]);
@@ -124,6 +131,24 @@ export function ForceGraph3D({
 
     observer.observe(element);
     setContainerWidth(element.offsetWidth);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const checkTheme = () => {
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    };
+
+    // Check initial theme
+    checkTheme();
+
+    // Watch for theme changes
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
 
     return () => observer.disconnect();
   }, []);
@@ -250,7 +275,15 @@ export function ForceGraph3D({
     if (context) {
       canvas.width = 256;
       canvas.height = 64;
-      context.fillStyle = isCenter ? '#ffffff' : 'rgba(255, 255, 255, 0.9)';
+      // Use white text in dark mode, black text in light mode
+      const textColor = isDarkMode
+        ? isCenter
+          ? '#ffffff'
+          : 'rgba(255, 255, 255, 0.9)'
+        : isCenter
+          ? '#000000'
+          : 'rgba(0, 0, 0, 0.9)';
+      context.fillStyle = textColor;
       context.font = isCenter ? 'bold 28px Arial' : '20px Arial';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
