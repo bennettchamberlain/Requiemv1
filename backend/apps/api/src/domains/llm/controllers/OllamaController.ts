@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Post, Res, UseGuards, forwardRef } from '@nestjs/common';
 import type { Response } from 'express';
 import { ToolCall, Message as OllamaMessage } from 'ollama';
 import { z } from 'zod';
@@ -13,6 +13,7 @@ import config from '@ci/configuration';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
+import { ActionService } from '@ci/domains/intelligence';
 import { UserContextService } from '@ci/domains/memory';
 
 import { OllamaService } from '../services/OllamaService';
@@ -39,6 +40,8 @@ export class OllamaController {
 
   constructor(
     private readonly eventService: EventService,
+    @Inject(forwardRef(() => ActionService))
+    private readonly actionService: ActionService,
     private readonly messageService: MessageService,
     private readonly ollamaService: OllamaService,
     private readonly threadService: ThreadService,
@@ -91,10 +94,11 @@ export class OllamaController {
     });
 
     const messages = await this.messageService.findByThread(context, thread.id);
+    const seededMessages = await this.ensureActionPrompt(context, thread, messages);
 
     // Build input messages with files attached to their respective messages
     const inputMessages: OllamaMessage[] = await Promise.all(
-      messages.map((message) => this.resolveMessage(context, message)),
+      seededMessages.map((message) => this.resolveMessage(context, message)),
     );
 
     const { model, enableThinking, enableTools } = await this.ollamaService.resolveModel(context, {
@@ -222,6 +226,37 @@ export class OllamaController {
         tool_calls: message.toolCalls as unknown as ToolCall[],
       }),
     };
+  }
+
+  private async ensureActionPrompt(
+    context: RequestContext,
+    thread: Thread,
+    messages: Message[],
+  ): Promise<Message[]> {
+    const hasAssistantMessage = messages.some((message) => message.role === 'assistant');
+
+    if (hasAssistantMessage) {
+      return messages;
+    }
+
+    const action = await this.actionService.findByThreadId(context, thread.id);
+
+    if (!action?.text) {
+      return messages;
+    }
+
+    const syntheticActionMessage: Message = {
+      id: `action:${action.id}`,
+      model: thread.model ?? null,
+      role: 'assistant',
+      content: action.text,
+      mimetype: 'text/markdown',
+      toolCalls: null,
+      canceled: false,
+      thread,
+    };
+
+    return [syntheticActionMessage, ...messages];
   }
 
   @OnEvent(Events.CHAT_SUMMARIZATION)

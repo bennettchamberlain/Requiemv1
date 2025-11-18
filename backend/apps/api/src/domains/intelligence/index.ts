@@ -22,7 +22,7 @@
  * @module IntelligenceModule
  */
 
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
@@ -46,7 +46,7 @@ import { QuestionService } from './services/QuestionService';
   imports: [
     TypeOrmModule.forFeature([ActionEntity, AnswerEntity, QuestionEntity]),
     EventsModule,
-    LLMModule,
+    forwardRef(() => LLMModule),
     EmbeddingModule,
   ],
   providers: [ActionService, AnswerService, QuestionService],

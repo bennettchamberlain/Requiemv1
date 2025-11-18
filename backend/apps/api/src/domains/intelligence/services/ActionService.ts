@@ -64,4 +64,18 @@ export class ActionService {
 
     return result?.toAction() ?? null;
   }
+
+  async findByThreadId(context: RequestContext, threadId: string): Promise<Action | null> {
+    const result = await this.actionRepository.findOne({
+      where: {
+        user: {
+          id: context.userId,
+        },
+        threadId,
+      },
+      relations: ['tags'],
+    });
+
+    return result?.toAction() ?? null;
+  }
 }
