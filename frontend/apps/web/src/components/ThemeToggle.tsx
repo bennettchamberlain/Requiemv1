@@ -1,7 +1,7 @@
 import { Button } from '@ci/shadcn';
 import { Monitor, Moon, Sun } from '@ci/shadcn/icons';
 
-import { useTheme } from '@/hooks/use-theme';
+import { useTheme } from '@/hooks';
 
 export function ThemeToggle() {
   const { themeState, setTheme } = useTheme();

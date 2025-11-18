@@ -125,6 +125,14 @@
   }
 }
 
+.texture-surface {
+  background-image: var(--texture-image, none);
+  background-size: var(--texture-size, auto);
+  background-repeat: var(--texture-repeat, repeat);
+  background-attachment: var(--texture-attachment, local);
+  background-blend-mode: var(--texture-blend-mode, normal);
+}
+
 /* PWA standalone mode specific styles */
 @media (display-mode: standalone) {
   html, body {

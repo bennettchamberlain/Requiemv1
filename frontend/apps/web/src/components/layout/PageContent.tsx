@@ -20,7 +20,7 @@ export function PageContent({ children, className, relativeBoundary = true }: Pr
     <div
       className={cn(
         spacing,
-        'flex flex-col',
+        'flex flex-col texture-surface',
         className,
         relativeBoundary ? 'relative' : 'static',
         'w-full h-full overflow-auto',
