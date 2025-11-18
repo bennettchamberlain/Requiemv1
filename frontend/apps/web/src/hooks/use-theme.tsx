@@ -11,14 +11,46 @@ interface ColorTheme {
 interface ThemeState {
   mode: Theme;
   colorTheme: ColorTheme;
+  textureId: string;
+  textureOpacity: number;
+}
+
+interface TexturePalette {
+  background: string;
+  accent: string;
+  contrast: string;
+  muted: string;
+}
+
+export const DEFAULT_TEXTURE_PALETTE: TexturePalette = {
+  background: 'oklch(0.129 0 0)',
+  accent: 'oklch(0.65 0.1 250)',
+  contrast: 'oklch(0.95 0 0)',
+  muted: 'oklch(0.4 0 0)',
+};
+
+interface TexturePattern {
+  id: string;
+  name: string;
+  description: string;
+  size: string;
+  repeat?: string;
+  blendMode?: string;
+  attachment?: 'fixed' | 'local';
+  build: (palette: TexturePalette, opacity: number) => string | string[];
+  isDynamic?: boolean;
 }
 
 type ThemeProviderProps = {
   children: React.ReactNode;
   defaultTheme?: Theme;
   defaultColorTheme?: ColorTheme;
+  defaultTextureId?: string;
+  defaultTextureOpacity?: number;
   storageKey?: string;
   colorStorageKey?: string;
+  textureStorageKey?: string;
+  textureOpacityStorageKey?: string;
 };
 
 type ThemeProviderState = {
@@ -26,6 +58,8 @@ type ThemeProviderState = {
   setTheme: (theme: Theme) => void;
   setColorTheme: (colorTheme: ColorTheme) => void;
   setCustomColor: (hue: number) => void;
+  setTexture: (textureId: string) => void;
+  setTextureOpacity: (opacity: number) => void;
 };
 
 // Preset color themes
@@ -49,10 +83,10 @@ const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 const formatOpacity = (value: number) => clamp01(value).toFixed(3);
 
 const CONWAY_TEXTURE_ID = 'conway-life';
-const CONWAY_GRID_SIZE = 512;
-const CONWAY_CELL_SIZE = 3;
+const CONWAY_GRID_SIZE = 48;
+const CONWAY_CELL_SIZE = 6;
 const CONWAY_PATTERN_PX = CONWAY_GRID_SIZE * CONWAY_CELL_SIZE;
-const CONWAY_TICK_MS = 60;
+const CONWAY_TICK_MS = 360;
 
 export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
@@ -185,6 +219,26 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
     build: (palette, opacity) => generateConwayPreview(palette, opacity),
   },
 ];
+
+const resolveTexturePattern = (textureId: string) =>
+  TEXTURE_PATTERNS.find((pattern) => pattern.id === textureId) ?? TEXTURE_PATTERNS[0];
+
+const extractPalette = (styles: CSSStyleDeclaration): TexturePalette => {
+  const read = (key: string, fallback: string) => styles.getPropertyValue(key).trim() || fallback;
+
+  return {
+    background: read('--background', DEFAULT_TEXTURE_PALETTE.background),
+    accent: read('--primary', read('--accent', DEFAULT_TEXTURE_PALETTE.accent)),
+    contrast: read('--muted-foreground', read('--foreground', DEFAULT_TEXTURE_PALETTE.contrast)),
+    muted: read('--muted', read('--secondary', DEFAULT_TEXTURE_PALETTE.muted)),
+  };
+};
+
+const getPaletteFromRoot = (root: HTMLElement): TexturePalette => {
+  const styles = window.getComputedStyle(root);
+
+  return extractPalette(styles);
+};
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -386,6 +440,92 @@ const stopDynamicTextures = (excludeId?: string) => {
 
     controller.stop();
   });
+};
+
+const applyTextureToRoot = (root: HTMLElement, textureId: string, opacity: number) => {
+  const texture = resolveTexturePattern(textureId);
+  const normalizedOpacity = clamp01(opacity);
+
+  if (texture.id === DEFAULT_TEXTURE_ID) {
+    stopDynamicTextures();
+    root.style.removeProperty('--texture-image');
+    root.style.removeProperty('--texture-size');
+    root.style.removeProperty('--texture-repeat');
+    root.style.removeProperty('--texture-attachment');
+    root.style.removeProperty('--texture-blend-mode');
+
+    return;
+  }
+
+  const palette = getPaletteFromRoot(root);
+  const controller = dynamicTextureControllers[texture.id];
+
+  root.style.setProperty('--texture-size', texture.size);
+  root.style.setProperty('--texture-repeat', texture.repeat ?? 'repeat');
+  root.style.setProperty('--texture-attachment', texture.attachment ?? 'local');
+
+  if (controller) {
+    stopDynamicTextures(texture.id);
+    controller.start(root, palette, normalizedOpacity);
+    if (texture.blendMode) {
+      root.style.setProperty('--texture-blend-mode', texture.blendMode);
+    } else {
+      root.style.removeProperty('--texture-blend-mode');
+    }
+
+    return;
+  }
+
+  stopDynamicTextures();
+
+  const layers = texture.build(palette, normalizedOpacity);
+  const image = Array.isArray(layers) ? layers.join(', ') : layers;
+
+  if (!image || image === 'none') {
+    root.style.removeProperty('--texture-image');
+    root.style.removeProperty('--texture-size');
+    root.style.removeProperty('--texture-repeat');
+    root.style.removeProperty('--texture-attachment');
+    root.style.removeProperty('--texture-blend-mode');
+
+    return;
+  }
+
+  root.style.setProperty('--texture-image', image);
+
+  if (texture.blendMode) {
+    root.style.setProperty('--texture-blend-mode', texture.blendMode);
+  } else {
+    root.style.removeProperty('--texture-blend-mode');
+  }
+};
+
+export const readTexturePalette = (): TexturePalette | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return getPaletteFromRoot(window.document.documentElement);
+};
+
+export const buildTextureBackground = (
+  textureId: string,
+  palette: TexturePalette,
+  opacity: number,
+  options: { preview?: boolean } = {},
+) => {
+  const texture = resolveTexturePattern(textureId);
+  if (texture.id === DEFAULT_TEXTURE_ID) {
+    return 'none';
+  }
+
+  if (texture.isDynamic && !options.preview) {
+    return 'none';
+  }
+
+  const layers = texture.build(palette, clamp01(opacity));
+
+  return Array.isArray(layers) ? layers.join(', ') : layers;
 };
 
 // Generate theme colors based on base hue and mode
@@ -660,10 +800,14 @@ const initialState: ThemeProviderState = {
   themeState: {
     mode: 'system',
     colorTheme: PRESET_THEMES[0],
+    textureId: DEFAULT_TEXTURE_ID,
+    textureOpacity: 0.35,
   },
   setTheme: () => null,
   setColorTheme: () => null,
   setCustomColor: () => null,
+  setTexture: () => null,
+  setTextureOpacity: () => null,
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
@@ -672,13 +816,19 @@ export function ThemeProvider({
   children,
   defaultTheme = 'system',
   defaultColorTheme = PRESET_THEMES[0],
+  defaultTextureId = DEFAULT_TEXTURE_ID,
+  defaultTextureOpacity = 0.35,
   storageKey = 'ci-ui-theme',
   colorStorageKey = 'ci-ui-color-theme',
+  textureStorageKey = 'ci-ui-texture',
+  textureOpacityStorageKey = 'ci-ui-texture-opacity',
 }: ThemeProviderProps) {
   const [themeState, setThemeState] = useState<ThemeState>(() => {
     // Try to get theme from localStorage first
     const storedTheme = localStorage.getItem(storageKey) as Theme;
     const storedColorTheme = localStorage.getItem(colorStorageKey);
+    const storedTexture = localStorage.getItem(textureStorageKey);
+    const storedTextureOpacity = localStorage.getItem(textureOpacityStorageKey);
 
     let colorTheme = defaultColorTheme;
     if (storedColorTheme) {
@@ -689,9 +839,22 @@ export function ThemeProvider({
       }
     }
 
+    const resolvedTexture = resolveTexturePattern(storedTexture || defaultTextureId);
+    const resolvedOpacity = (() => {
+      if (!storedTextureOpacity) {
+        return clamp01(defaultTextureOpacity);
+      }
+
+      const parsed = Number(storedTextureOpacity);
+
+      return Number.isFinite(parsed) ? clamp01(parsed) : clamp01(defaultTextureOpacity);
+    })();
+
     return {
       mode: storedTheme || defaultTheme,
       colorTheme,
+      textureId: resolvedTexture.id,
+      textureOpacity: resolvedOpacity,
     };
   });
 
@@ -755,6 +918,8 @@ export function ThemeProvider({
         root.style.setProperty(`--${key}`, value);
       });
     }
+
+    applyTextureToRoot(root, themeState.textureId, themeState.textureOpacity);
   }, [themeState]);
 
   const setTheme = (theme: Theme) => {
@@ -776,11 +941,25 @@ export function ThemeProvider({
     setColorTheme(customTheme);
   };
 
+  const setTexture = (textureId: string) => {
+    const resolved = resolveTexturePattern(textureId).id;
+    localStorage.setItem(textureStorageKey, resolved);
+    setThemeState((prev) => ({ ...prev, textureId: resolved }));
+  };
+
+  const setTextureOpacity = (opacity: number) => {
+    const normalized = clamp01(opacity);
+    localStorage.setItem(textureOpacityStorageKey, normalized.toString());
+    setThemeState((prev) => ({ ...prev, textureOpacity: normalized }));
+  };
+
   const value = {
     themeState,
     setTheme,
     setColorTheme,
     setCustomColor,
+    setTexture,
+    setTextureOpacity,
   };
 
   return <ThemeProviderContext.Provider value={value}>{children}</ThemeProviderContext.Provider>;
