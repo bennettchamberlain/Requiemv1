@@ -17,6 +17,7 @@ interface TexturePattern {
   blendMode?: string;
   attachment?: 'fixed' | 'local';
   build: (palette: TexturePalette, opacity: number) => string | string[];
+  isDynamic?: boolean;
 }
 
 interface TexturePalette {
@@ -25,6 +26,30 @@ interface TexturePalette {
   contrast: string;
   muted: string;
 }
+
+export const DEFAULT_TEXTURE_PALETTE: TexturePalette = {
+  background: 'oklch(0.129 0 0)',
+  accent: 'oklch(0.65 0.1 250)',
+  contrast: 'oklch(0.95 0 0)',
+  muted: 'oklch(0.4 0 0)',
+};
+
+const extractPalette = (styles: CSSStyleDeclaration): TexturePalette => {
+  const read = (key: string, fallback: string) => styles.getPropertyValue(key).trim() || fallback;
+
+  return {
+    background: read('--background', DEFAULT_TEXTURE_PALETTE.background),
+    accent: read('--primary', read('--accent', DEFAULT_TEXTURE_PALETTE.accent)),
+    contrast: read('--muted-foreground', read('--foreground', DEFAULT_TEXTURE_PALETTE.contrast)),
+    muted: read('--muted', read('--secondary', DEFAULT_TEXTURE_PALETTE.muted)),
+  };
+};
+
+const getPaletteFromRoot = (root: HTMLElement): TexturePalette => {
+  const styles = window.getComputedStyle(root);
+
+  return extractPalette(styles);
+};
 
 interface ThemeState {
   mode: Theme;
@@ -73,6 +98,12 @@ const svgTexture = (svg: string) => `url("data:image/svg+xml,${encodeURIComponen
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 const formatOpacity = (value: number) => clamp01(value).toFixed(3);
+
+const CONWAY_TEXTURE_ID = 'conway-life';
+const CONWAY_GRID_SIZE = 512;
+const CONWAY_CELL_SIZE = 3;
+const CONWAY_PATTERN_PX = CONWAY_GRID_SIZE * CONWAY_CELL_SIZE;
+const CONWAY_TICK_MS = 60;
 
 export const TEXTURE_PATTERNS: TexturePattern[] = [
   {
@@ -195,7 +226,218 @@ export const TEXTURE_PATTERNS: TexturePattern[] = [
         </svg>
       `),
   },
+  {
+    id: CONWAY_TEXTURE_ID,
+    name: "Conway's Life",
+    description: 'Animated Game of Life seeded per page refresh.',
+    size: `${CONWAY_PATTERN_PX}px ${CONWAY_PATTERN_PX}px`,
+    repeat: 'repeat',
+    isDynamic: true,
+    build: (palette, opacity) => generateConwayPreview(palette, opacity),
+  },
 ];
+
+const isBrowser = typeof window !== 'undefined';
+
+const createConwayState = () => new Uint8Array(CONWAY_GRID_SIZE * CONWAY_GRID_SIZE);
+
+const seedConwayState = (state: Uint8Array, density = 0.35) => {
+  for (let i = 0; i < state.length; i += 1) {
+    state[i] = Math.random() < density ? 1 : 0;
+  }
+};
+
+const idx = (x: number, y: number) => {
+  const wrapX = (x + CONWAY_GRID_SIZE) % CONWAY_GRID_SIZE;
+  const wrapY = (y + CONWAY_GRID_SIZE) % CONWAY_GRID_SIZE;
+
+  return wrapY * CONWAY_GRID_SIZE + wrapX;
+};
+
+const stepConway = (state: Uint8Array, buffer: Uint8Array) => {
+  let activeCells = 0;
+  for (let y = 0; y < CONWAY_GRID_SIZE; y += 1) {
+    for (let x = 0; x < CONWAY_GRID_SIZE; x += 1) {
+      let neighbors = 0;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (dx === 0 && dy === 0) {
+            continue;
+          }
+
+          neighbors += state[idx(x + dx, y + dy)];
+        }
+      }
+
+      const current = state[idx(x, y)];
+      const next = neighbors === 3 || (current === 1 && neighbors === 2) ? 1 : 0;
+      buffer[idx(x, y)] = next;
+      activeCells += next;
+    }
+  }
+
+  state.set(buffer);
+
+  return activeCells;
+};
+
+const drawConwayState = (
+  ctx: CanvasRenderingContext2D,
+  state: Uint8Array,
+  palette: TexturePalette,
+  opacity: number,
+) => {
+  const clampedOpacity = clamp01(opacity);
+  const aliveAlpha = clamp01(clampedOpacity * 0.85);
+  const gridAlpha = clamp01(clampedOpacity * 0.15);
+
+  ctx.clearRect(0, 0, CONWAY_PATTERN_PX, CONWAY_PATTERN_PX);
+  ctx.fillStyle = palette.background;
+  ctx.fillRect(0, 0, CONWAY_PATTERN_PX, CONWAY_PATTERN_PX);
+
+  if (gridAlpha > 0) {
+    ctx.strokeStyle = palette.muted;
+    ctx.globalAlpha = gridAlpha;
+    for (let i = 0; i <= CONWAY_GRID_SIZE; i += 1) {
+      const offset = i * CONWAY_CELL_SIZE;
+      ctx.beginPath();
+      ctx.moveTo(offset, 0);
+      ctx.lineTo(offset, CONWAY_PATTERN_PX);
+      ctx.moveTo(0, offset);
+      ctx.lineTo(CONWAY_PATTERN_PX, offset);
+      ctx.stroke();
+    }
+  }
+
+  if (aliveAlpha > 0) {
+    ctx.globalAlpha = aliveAlpha;
+    ctx.fillStyle = palette.accent;
+    const cellSize = Math.max(1, CONWAY_CELL_SIZE - 1);
+    for (let y = 0; y < CONWAY_GRID_SIZE; y += 1) {
+      for (let x = 0; x < CONWAY_GRID_SIZE; x += 1) {
+        if (state[idx(x, y)] === 1) {
+          ctx.fillRect(x * CONWAY_CELL_SIZE, y * CONWAY_CELL_SIZE, cellSize, cellSize);
+        }
+      }
+    }
+  }
+
+  ctx.globalAlpha = 1;
+};
+
+function generateConwayPreview(palette: TexturePalette, opacity: number) {
+  if (!isBrowser) {
+    return 'none';
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = CONWAY_PATTERN_PX;
+  canvas.height = CONWAY_PATTERN_PX;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return 'none';
+  }
+
+  const state = createConwayState();
+  const buffer = createConwayState();
+  seedConwayState(state);
+  for (let i = 0; i < 4; i += 1) {
+    const active = stepConway(state, buffer);
+    if (active === 0) {
+      seedConwayState(state);
+    }
+  }
+
+  drawConwayState(ctx, state, palette, opacity);
+
+  return `url(${canvas.toDataURL('image/png')})`;
+}
+
+interface DynamicTextureController {
+  start: (root: HTMLElement, palette: TexturePalette, opacity: number) => void;
+  stop: () => void;
+}
+
+class ConwayLifeAnimator implements DynamicTextureController {
+  private canvas: HTMLCanvasElement | null = null;
+
+  private ctx: CanvasRenderingContext2D | null = null;
+
+  private state: Uint8Array = createConwayState();
+
+  private buffer: Uint8Array = createConwayState();
+
+  private timer: number | null = null;
+
+  private palette: TexturePalette = DEFAULT_TEXTURE_PALETTE;
+
+  private opacity = 0.35;
+
+  private root: HTMLElement | null = null;
+
+  constructor() {
+    if (isBrowser) {
+      this.canvas = document.createElement('canvas');
+      this.canvas.width = CONWAY_PATTERN_PX;
+      this.canvas.height = CONWAY_PATTERN_PX;
+      this.ctx = this.canvas.getContext('2d');
+    }
+  }
+
+  start(root: HTMLElement, palette: TexturePalette, opacity: number) {
+    if (!isBrowser || !this.canvas || !this.ctx) {
+      return;
+    }
+
+    this.stop();
+    this.root = root;
+    this.palette = palette;
+    this.opacity = opacity;
+    seedConwayState(this.state);
+    this.drawAndApply();
+    this.timer = window.setInterval(() => {
+      const active = stepConway(this.state, this.buffer);
+      if (active === 0) {
+        seedConwayState(this.state);
+      }
+
+      this.drawAndApply();
+    }, CONWAY_TICK_MS);
+  }
+
+  stop() {
+    if (this.timer) {
+      window.clearInterval(this.timer);
+      this.timer = null;
+    }
+
+    this.root = null;
+  }
+
+  private drawAndApply() {
+    if (!this.canvas || !this.ctx || !this.root) {
+      return;
+    }
+
+    drawConwayState(this.ctx, this.state, this.palette, this.opacity);
+    const dataUrl = this.canvas.toDataURL('image/png');
+    this.root.style.setProperty('--texture-image', `url(${dataUrl})`);
+  }
+}
+
+const dynamicTextureControllers: Record<string, DynamicTextureController> = {
+  [CONWAY_TEXTURE_ID]: new ConwayLifeAnimator(),
+};
+
+const stopDynamicTextures = (excludeId?: string) => {
+  Object.entries(dynamicTextureControllers).forEach(([id, controller]) => {
+    if (excludeId && id === excludeId) {
+      return;
+    }
+
+    controller.stop();
+  });
+};
 
 // Generate theme colors based on base hue and mode
 function generateThemeColors(baseHue: number, isDark: boolean = true): Record<string, string> {
@@ -468,34 +710,12 @@ function generateNeutralTheme(isDark: boolean, variant: 'dark' | 'light'): Recor
 const resolveTexturePattern = (textureId: string) =>
   TEXTURE_PATTERNS.find((pattern) => pattern.id === textureId) ?? TEXTURE_PATTERNS[0];
 
-export const DEFAULT_TEXTURE_PALETTE: TexturePalette = {
-  background: 'oklch(0.129 0 0)',
-  accent: 'oklch(0.65 0.1 250)',
-  contrast: 'oklch(0.95 0 0)',
-  muted: 'oklch(0.4 0 0)',
-};
-
-const extractPalette = (styles: CSSStyleDeclaration): TexturePalette => {
-  const read = (key: string, fallback: string) => styles.getPropertyValue(key).trim() || fallback;
-
-  return {
-    background: read('--background', DEFAULT_TEXTURE_PALETTE.background),
-    accent: read('--primary', read('--accent', DEFAULT_TEXTURE_PALETTE.accent)),
-    contrast: read('--muted-foreground', read('--foreground', DEFAULT_TEXTURE_PALETTE.contrast)),
-    muted: read('--muted', read('--secondary', DEFAULT_TEXTURE_PALETTE.muted)),
-  };
-};
-
-const getPaletteFromRoot = (root: HTMLElement): TexturePalette => {
-  const styles = window.getComputedStyle(root);
-
-  return extractPalette(styles);
-};
-
 const applyTextureToRoot = (root: HTMLElement, textureId: string, opacity: number) => {
   const texture = resolveTexturePattern(textureId);
+  const normalizedOpacity = clamp01(opacity);
 
   if (texture.id === DEFAULT_TEXTURE_ID) {
+    stopDynamicTextures();
     root.style.removeProperty('--texture-image');
     root.style.removeProperty('--texture-size');
     root.style.removeProperty('--texture-repeat');
@@ -506,7 +726,26 @@ const applyTextureToRoot = (root: HTMLElement, textureId: string, opacity: numbe
   }
 
   const palette = getPaletteFromRoot(root);
-  const normalizedOpacity = clamp01(opacity);
+  const dynamicController = dynamicTextureControllers[texture.id];
+
+  root.style.setProperty('--texture-size', texture.size);
+  root.style.setProperty('--texture-repeat', texture.repeat ?? 'repeat');
+  root.style.setProperty('--texture-attachment', texture.attachment ?? 'local');
+
+  if (dynamicController) {
+    stopDynamicTextures(texture.id);
+    dynamicController.start(root, palette, normalizedOpacity);
+    if (texture.blendMode) {
+      root.style.setProperty('--texture-blend-mode', texture.blendMode);
+    } else {
+      root.style.removeProperty('--texture-blend-mode');
+    }
+
+    return;
+  }
+
+  stopDynamicTextures();
+
   const layers = texture.build(palette, normalizedOpacity);
   const image = Array.isArray(layers) ? layers.join(', ') : layers;
 
@@ -521,9 +760,6 @@ const applyTextureToRoot = (root: HTMLElement, textureId: string, opacity: numbe
   }
 
   root.style.setProperty('--texture-image', image);
-  root.style.setProperty('--texture-size', texture.size);
-  root.style.setProperty('--texture-repeat', texture.repeat ?? 'repeat');
-  root.style.setProperty('--texture-attachment', texture.attachment ?? 'local');
 
   if (texture.blendMode) {
     root.style.setProperty('--texture-blend-mode', texture.blendMode);
@@ -540,9 +776,18 @@ export const readTexturePalette = (): TexturePalette | null => {
   return getPaletteFromRoot(window.document.documentElement);
 };
 
-export const buildTextureBackground = (textureId: string, palette: TexturePalette, opacity: number) => {
+export const buildTextureBackground = (
+  textureId: string,
+  palette: TexturePalette,
+  opacity: number,
+  options: { preview?: boolean } = {},
+) => {
   const texture = resolveTexturePattern(textureId);
   if (texture.id === DEFAULT_TEXTURE_ID) {
+    return 'none';
+  }
+
+  if (texture.isDynamic && !options.preview) {
     return 'none';
   }
 

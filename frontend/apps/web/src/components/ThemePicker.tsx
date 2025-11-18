@@ -31,7 +31,9 @@ export function ThemePicker() {
   const texturePreviews = useMemo<Record<string, CSSProperties>>(() => {
     return Object.fromEntries(
       TEXTURE_PATTERNS.map((pattern) => {
-        const image = buildTextureBackground(pattern.id, texturePalette, textureOpacity);
+        const image = buildTextureBackground(pattern.id, texturePalette, textureOpacity, {
+          preview: true,
+        });
 
         return [
           pattern.id,
