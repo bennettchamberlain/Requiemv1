@@ -15,6 +15,7 @@ import {
 } from 'three';
 
 import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
+import { useTheme } from '@/hooks/use-theme';
 
 export interface ForceGraph3DProps {
   nodes: GraphNode[];
@@ -100,6 +101,7 @@ export function ForceGraph3D({
   anchoredNodeIds = [],
   height = 600,
 }: ForceGraph3DProps) {
+  const { themeState } = useTheme();
   const graphRef = useRef<ForceGraphMethods | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -250,7 +252,16 @@ export function ForceGraph3D({
     if (context) {
       canvas.width = 256;
       canvas.height = 64;
-      context.fillStyle = isCenter ? '#ffffff' : 'rgba(255, 255, 255, 0.9)';
+      // Use white text in dark mode, black text in light mode
+      const textColor =
+        themeState.mode === 'light'
+          ? isCenter
+            ? '#000000'
+            : 'rgba(0, 0, 0, 0.9)'
+          : isCenter
+            ? '#ffffff'
+            : 'rgba(255, 255, 255, 0.9)';
+      context.fillStyle = textColor;
       context.font = isCenter ? 'bold 28px Arial' : '20px Arial';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
