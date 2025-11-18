@@ -38,22 +38,29 @@ export function FeedModal({ onClose }: Props) {
   }, []);
 
   const messages = useMemo(() => {
+    const baseMessages = thread?.messages ?? [];
+    const actionMessage =
+      action?.text != null
+        ? [
+            {
+              role: 'assistant',
+              content: action.text,
+            },
+          ]
+        : [];
+
     if (isMobile) {
-      return [
-        ...(action?.text != null
-          ? [
-              {
-                role: 'assistant',
-                content: action?.text,
-              },
-            ]
-          : []),
-        ...(thread?.messages ?? []),
-      ];
+      return [...actionMessage, ...baseMessages];
     }
 
-    return thread?.messages;
-  }, [thread, isMobile]);
+    const hasAssistantMessage = baseMessages.some((message) => message.role === 'assistant');
+
+    if (!hasAssistantMessage) {
+      return [...actionMessage, ...baseMessages];
+    }
+
+    return baseMessages;
+  }, [thread, isMobile, action?.text]);
 
   const renderTitle = !(actionLoading || actionError);
   let emptyState: ReactNode;

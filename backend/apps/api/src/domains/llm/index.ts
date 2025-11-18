@@ -17,11 +17,12 @@
  * @module LLMModule
  */
 
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
+import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { ToolsModule } from '@ci/domains/tools';
 
@@ -32,7 +33,14 @@ import { OllamaService } from './services/OllamaService';
  * @internal
  */
 @Module({
-  imports: [ConversationModule, EventsModule, FilesModule, MemoryModule, ToolsModule],
+  imports: [
+    ConversationModule,
+    EventsModule,
+    FilesModule,
+    MemoryModule,
+    ToolsModule,
+    forwardRef(() => IntelligenceModule),
+  ],
   providers: [OllamaService],
   controllers: [OllamaController],
   exports: [OllamaService],
