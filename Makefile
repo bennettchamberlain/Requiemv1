@@ -1,4 +1,4 @@
-.PHONY: help build dbclear dev health index init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
+.PHONY: help build chatreset dbclear dev health index init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -267,6 +267,11 @@ signup: ## Generates a set of signup codes for user registration
 userpw: ## Change a user's password
 	@printf "🔑 Changing user password...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/change-password.ts
+
+chatreset: ## Reset John Smith's demo threads
+	@printf "🧼 Resetting John Smith's demo threads...\n\n"
+	@cd backend/apps/api && yarn db:chatreset
+	@printf "\nDemo threads reset.\n"
 
 ####################
 # MCP SERVER SETUP #
