@@ -38,6 +38,7 @@ interface Message {
 
 interface Props extends ChatInputProps {
   autoFocus?: boolean;
+  hasStartedReceiving?: boolean | null;
   messages?: Message[];
   readable?: ReadableStream<Uint8Array>;
   emptyState?: ReactNode;
@@ -57,6 +58,7 @@ export function Chat({
   readable,
   loading,
   streaming,
+  hasStartedReceiving,
   emptyState,
   onSubmit,
   children,
@@ -73,13 +75,6 @@ export function Chat({
   const { isVoiceModeActive, toggleVoiceMode } = useVoiceModeContext();
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
   const lastProcessedResponseRef = useRef<string>('');
-
-  // We want to track when to display the loader. We have `loading` for
-  // when the LLM response is latent, `streaming` for when it's sending
-  // data, but that alone won't account for whether the first chunk has
-  // been received.
-  const [isReceiving, setIsReceiving] = useState(false);
-  const hasStartedReceivingRef = useRef(false);
 
   // We want to maintain reference to the scroll container so that we can auto-scroll
   // when we deem it appropriate. According to the contract stipulated here, that's when
@@ -186,11 +181,6 @@ export function Chat({
 
   const handleFrameChunk = useCallback(
     (chunk: Decoded) => {
-      if (!hasStartedReceivingRef.current) {
-        hasStartedReceivingRef.current = true;
-        setIsReceiving(true);
-      }
-
       if (!supportedChannels.has(chunk.channel)) {
         console.warn('Ignored unsupported chunk channel:', chunk.channel);
 
@@ -300,9 +290,6 @@ export function Chat({
   );
 
   const handleFinished = useCallback(() => {
-    hasStartedReceivingRef.current = false;
-    setIsReceiving(false);
-
     const lastChannel = lastChannelRef.current;
 
     // Prevent multiple processing of the same response
@@ -377,8 +364,6 @@ export function Chat({
     maybeAutoScroll();
   }, [accumulatedMessages]);
 
-  const showLoader = useMemo(() => loading || (streaming && !isReceiving), [loading, streaming, isReceiving]);
-
   const renderedMessages = useMemo(
     () => messages?.map((message, i) => <ChatMessage key={i} {...message} />),
     [messages],
@@ -406,7 +391,7 @@ export function Chat({
         </div>
       )}
 
-      {showLoader && <ChatLoader className={loaderMargin} />}
+      {hasStartedReceiving === false && <ChatLoader className={loaderMargin} />}
 
       <div className={cn('w-full', contentPadding)}>
         <VoiceMode

@@ -26,10 +26,12 @@ export function FeedModal({ onClose }: Props) {
 
   const [{ data: action, loading: actionLoading, error: actionError }] = useActionService(actionId ?? null);
   const [{ thread }] = useThreadService(action?.threadId ?? null);
-  const [{ stream, streaming: chatRequestStreaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
-    useChatRequester({
-      threadId: thread?.id ?? null,
-    });
+  const [
+    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
+    { submit: submitChatRequest, stop: stopChatRequest },
+  ] = useChatRequester({
+    threadId: thread?.id ?? null,
+  });
 
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
@@ -101,7 +103,9 @@ export function FeedModal({ onClose }: Props) {
           <Chat
             placeholder={renderTitle ? 'Continue the conversation...' : ''}
             disabled={!renderTitle}
+            loading={chatRequestLoading}
             streaming={chatRequestStreaming}
+            hasStartedReceiving={hasStartedReceiving}
             messages={messages}
             readable={stream ?? undefined}
             onSubmit={submitChatRequest}
@@ -163,7 +167,9 @@ export function FeedModal({ onClose }: Props) {
             <Chat
               placeholder={renderTitle ? 'Continue the conversation...' : ''}
               disabled={!renderTitle}
+              loading={chatRequestLoading}
               streaming={chatRequestStreaming}
+              hasStartedReceiving={hasStartedReceiving}
               messages={messages}
               readable={stream ?? undefined}
               onSubmit={submitChatRequest}

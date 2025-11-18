@@ -30,10 +30,12 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
   const [{ files: fileData }, { upload, reset: resetUploader }] = useUploadFile();
 
-  const [{ stream, loading, streaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
-    useChatRequester({
-      threadId,
-    });
+  const [
+    { stream, loading, streaming, hasStartedReceiving },
+    { submit: submitChatRequest, stop: stopChatRequest },
+  ] = useChatRequester({
+    threadId,
+  });
 
   const handleClose = useCallback(() => {
     setFiles([]);
@@ -189,7 +191,9 @@ export function CaptureModal({ open = false, onClose }: Props) {
         <VoiceModeProvider>
           <Chat
             placeholder="Ask about this content..."
+            loading={loading}
             streaming={streaming}
+            hasStartedReceiving={hasStartedReceiving}
             readable={stream ?? undefined}
             onSubmit={handleSubmit}
             onStop={stopChatRequest}
@@ -249,6 +253,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
                 <Chat
                   loading={loading}
                   streaming={streaming}
+                  hasStartedReceiving={hasStartedReceiving}
                   readable={stream ?? undefined}
                   onSubmit={handleSubmit}
                   onStop={stopChatRequest}

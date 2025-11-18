@@ -16,6 +16,7 @@ type ReturnType = [
     loading: boolean;
     error: unknown | null;
     streaming: boolean;
+    hasStartedReceiving: boolean | null;
   },
   {
     submit: (data: FormData) => Promise<boolean>;
@@ -33,6 +34,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown | null>(null);
   const [streaming, setStreaming] = useState<boolean>(false);
+  const [hasStartedReceiving, setHasStartedReceiving] = useState<boolean | null>(null);
 
   const submit = useCallback(
     async (data: FormData) => {
@@ -50,6 +52,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
       setLoading(true);
       setError(null);
       setStreaming(false);
+      setHasStartedReceiving(false); // Reset on new submission
 
       let success = false;
 
@@ -87,12 +90,20 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           onNewThread?.(newThreadId);
         }
 
+        let hasSeenFirstChunk = false;
+
         const monitor = new TransformStream({
           transform(chunk, controller) {
+            if (!hasSeenFirstChunk) {
+              hasSeenFirstChunk = true;
+              setHasStartedReceiving(true);
+            }
+
             controller.enqueue(chunk);
           },
           flush(controller) {
             setStreaming(false);
+            setHasStartedReceiving(null);
             abortControllerRef.current = null;
             controller.terminate();
           },
@@ -121,6 +132,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
     setStream(null);
     setStreaming(false);
+    setHasStartedReceiving(null);
   }, []);
 
   useEffect(() => {
@@ -135,6 +147,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
       loading,
       error,
       streaming,
+      hasStartedReceiving,
     },
     {
       submit,
