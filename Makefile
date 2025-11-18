@@ -1,4 +1,4 @@
-.PHONY: help build dbclear dev health index infra init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
+.PHONY: help build dbclear dev health index init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -62,11 +62,6 @@ build: mcp ## Build the application
 
 	@printf "\nApplication successfully built.\n"
 
-infra: ## Boot the local infrastructure
-	@printf "🐳 Starting Docker dependencies...\n\n"
-	@docker compose --profile infra up -d
-	@printf "\nDocker dependencies successfully started.\n"
-
 dbclear: ## Clear the PostgreSQL database and start from scratch
 	@printf "🧻 Clearing PostgreSQL data...\n\n"
 	@cd backend/apps/api && yarn db:clear
@@ -78,11 +73,11 @@ dbdestroy: ## Clear the PostgreSQL database and start from scratch
 	@printf "\nDatabase successfully destroyed. 💥\n"
 
 deploy: ## Deploy the application (staging)
+	@printf "🐳 Deploying Companion Intelligence application...\n\n"
+
 	$(MAKE) init
 	@printf "\n"
 	$(MAKE) build
-	@printf "\n"
-	$(MAKE) infra
 	@printf "\n"
 	$(MAKE) staging
 
@@ -90,8 +85,6 @@ dev: ## Boot the application
 	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
 
 	$(MAKE) init
-	@printf "\n"
-	$(MAKE) infra
 	@printf "\n"
 	$(MAKE) migrate
 	@printf "\n"
@@ -226,11 +219,8 @@ install: ## Install project dependencies
 local: ## Run the local dependencies from Docker images
 	@printf "⌨️ Starting the local services...\n\n"
 
-	@printf "Stopping any local profile services...\n\n"
-	@docker compose --profile staging down
-
-	@printf "\nStopping any prior local profile services...\n\n"
-	@docker compose --profile local down
+	@printf "Stopping any staging profile services...\n\n"
+	@docker compose down ci-api staging-webserver
 
 	@printf "\nStarting a new local deployment cluster...\n\n"
 	@docker compose --profile local up -d
@@ -255,10 +245,7 @@ staging: ## Run the staging server from Docker images
 	@printf "🎭 Starting the staging services...\n\n"
 
 	@printf "Stopping any local profile services...\n\n"
-	@docker compose --profile local down
-
-	@printf "\nStopping any prior staging profile services...\n\n"
-	@docker compose --profile staging down
+	@docker compose down dev-webserver
 
 	@printf "\nStarting a new staging deployment cluster...\n\n"
 	@docker compose --profile staging up -d
