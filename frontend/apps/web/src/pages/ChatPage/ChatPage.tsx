@@ -60,7 +60,7 @@ function ChatPageContent() {
   );
 
   const [
-    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming },
+    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
     { submit: submitChatRequest, stop: stopChatRequest },
   ] = useChatRequester({
     threadId: resolvedThreadId.current,
@@ -230,6 +230,7 @@ function ChatPageContent() {
           key={initialThreadId ?? `new-thread-${newThreadCount}`}
           loading={loading}
           streaming={chatRequestStreaming}
+          hasStartedReceiving={hasStartedReceiving}
           disabled={isSubmitDisabled}
           placeholder={inputPlaceholder}
           messages={initialMessages}
