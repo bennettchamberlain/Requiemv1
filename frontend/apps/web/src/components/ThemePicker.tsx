@@ -3,8 +3,8 @@ import { type CSSProperties, useMemo, useState } from 'react';
 import { Button, Card, Tabs } from '@ci/shadcn';
 import { Palette, Settings2 } from '@ci/shadcn/icons';
 
+import { useTheme } from '@/hooks';
 import {
-  useTheme,
   PRESET_THEMES,
   TEXTURE_PATTERNS,
   buildTextureBackground,
