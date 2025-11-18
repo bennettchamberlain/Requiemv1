@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Card, Input, Label, Select, Switch, Separator, Badge, Alert } from '@ci/shadcn';
+import { Breadcrumb, Button, Card, Input, Label, Select, Switch, Badge, Alert } from '@ci/shadcn';
 import {
   Database,
   Key,
@@ -480,20 +480,24 @@ export function SettingsPage() {
             </Card.Title>
             <Card.Description>Configure general system behavior and appearance</Card.Description>
           </Card.Header>
-          <Card.Content>
+          <Card.Content className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-2">
-              {/* Theme Picker Section */}
-              <div className="space-y-4">
-                <div>
-                  <Label>Theme & Color</Label>
-                  <p className="text-sm text-muted-foreground">Customize your interface appearance</p>
-                </div>
-                <ThemePicker />
-              </div>
+              <Card className="shadow-none border-border/60">
+                <Card.Header>
+                  <Card.Title className="text-base">Theme & Texture</Card.Title>
+                  <Card.Description>Customize your interface appearance</Card.Description>
+                </Card.Header>
+                <Card.Content>
+                  <ThemePicker />
+                </Card.Content>
+              </Card>
 
-              {/* Other System Settings */}
-              <div className="space-y-4">
-                <div className="grid gap-4">
+              <Card className="shadow-none border-border/60">
+                <Card.Header>
+                  <Card.Title className="text-base">Locale Settings</Card.Title>
+                  <Card.Description>Language and timezone preferences</Card.Description>
+                </Card.Header>
+                <Card.Content className="space-y-4">
                   <div className="grid gap-2">
                     <Label htmlFor="language">Language</Label>
                     <Select
@@ -530,11 +534,9 @@ export function SettingsPage() {
                       </Select.Content>
                     </Select>
                   </div>
-                </div>
-              </div>
+                </Card.Content>
+              </Card>
             </div>
-
-            <Separator className="my-6" />
 
             <div className="flex flex-col sm:flex-row gap-4">
               <Button variant="outline" className="flex-1">
