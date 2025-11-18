@@ -3,7 +3,14 @@ import { useState } from 'react';
 import { Button, Card, Separator, Tabs } from '@ci/shadcn';
 import { Palette, Settings2 } from '@ci/shadcn/icons';
 
-import { useTheme, PRESET_THEMES } from '@/hooks/use-theme';
+import {
+  useTheme,
+  PRESET_THEMES,
+  TEXTURE_PATTERNS,
+  buildTextureBackground,
+  readTexturePalette,
+  DEFAULT_TEXTURE_PALETTE,
+} from '@/hooks/use-theme';
 
 import { ColorWheel } from './ColorWheel';
 
@@ -195,15 +202,63 @@ export function ThemePicker() {
                 ))}
               </div>
 
-              {isCustomSelected && (
-                <div className="text-center pt-2">
-                  <span className="text-sm text-muted-foreground">{themeState.colorTheme.name}</span>
-                </div>
-              )}
+        <div className="border-t border-border pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {TEXTURE_PATTERNS.map((pattern) => {
+              const isSelected = pattern.id === themeState.textureId;
+              const styles = texturePreviews[pattern.id] ?? {
+                backgroundColor: texturePalette.background,
+              };
+
+              return (
+                <button
+                  key={pattern.id}
+                  onClick={() => setTexture(pattern.id)}
+                  className={`
+                  group relative rounded-lg border p-2 text-left transition-all focus-visible:outline-none
+                  ${
+                    isSelected
+                      ? 'border-primary ring-2 ring-primary/30'
+                      : 'border-border hover:border-primary/40'
+                  }
+                `}
+                  title={pattern.description}
+                >
+                  <div
+                    className="aspect-square w-full rounded-md border border-border overflow-hidden"
+                    style={styles}
+                  />
+                  <div className="mt-2 text-xs font-medium text-foreground">{pattern.name}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Texture opacity</span>
+              <span>{Math.round(textureOpacity * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min={TEXTURE_OPACITY_MIN}
+              max={TEXTURE_OPACITY_MAX}
+              step={TEXTURE_OPACITY_STEP}
+              value={textureOpacity}
+              onChange={(event) => setTextureOpacity(parseFloat(event.target.value))}
+              className="w-full"
+            />
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Subtle</span>
+              <span>Bold</span>
             </div>
           </div>
-        </Tabs.Content>
-      </Tabs>
+
+          {selectedTexture && (
+            <p className="text-xs text-muted-foreground text-center">{selectedTexture.description}</p>
+          )}
+        </div>
+      </div>
     </Card>
   );
 }
