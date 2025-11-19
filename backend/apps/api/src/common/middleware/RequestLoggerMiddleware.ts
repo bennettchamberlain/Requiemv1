@@ -24,7 +24,6 @@ export class RequestLoggerMiddleware implements NestMiddleware {
       const duration = process.hrtime.bigint() - start;
 
       this.logger.log('Request processed', {
-        ...req.context,
         method: req.method,
         path: req.path,
         statusCode: res.statusCode,
