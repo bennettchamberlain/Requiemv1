@@ -9,7 +9,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
-import { ThreadMessagesLoader } from './dataloaders/ThreadMessagesLoader';
+import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { SearchResolver } from './resolvers/SearchResolver';

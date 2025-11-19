@@ -6,7 +6,7 @@ import { GqlJwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
 import { ThreadService } from '@ci/domains/conversations';
 
-import { ThreadMessagesLoader } from '../dataloaders/ThreadMessagesLoader';
+import { ThreadMessagesLoader } from '../loaders/ThreadMessagesLoader';
 import { GlobalUID } from '../types/GlobalUID';
 import { MessageConnection } from '../types/MessageConnection';
 import { MessageEdge } from '../types/MessageEdge';

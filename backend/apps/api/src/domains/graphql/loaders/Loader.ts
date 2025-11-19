@@ -3,8 +3,8 @@ import DataLoader from 'dataloader';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 
-export abstract class ContextDataLoader<V, K = string> {
-  private readonly logger = new LoggerService(ContextDataLoader.name);
+export abstract class Loader<V, K = string> {
+  private readonly logger = new LoggerService(Loader.name);
 
   private readonly loaders = new WeakMap<RequestContext, DataLoader<K, V>>();
 

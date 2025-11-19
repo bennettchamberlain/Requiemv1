@@ -3,10 +3,10 @@ import { Injectable } from '@nestjs/common';
 import type { RequestContext } from '@ci/common/types';
 import { MessageService, type Message } from '@ci/domains/conversations';
 
-import { ContextDataLoader } from './ContextDataLoader';
+import { Loader } from './Loader';
 
 @Injectable()
-export class ThreadMessagesLoader extends ContextDataLoader<Message[]> {
+export class ThreadMessagesLoader extends Loader<Message[]> {
   constructor(private readonly messageService: MessageService) {
     super();
   }
