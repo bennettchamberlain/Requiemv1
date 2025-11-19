@@ -1,9 +1,13 @@
-import { Field, Int, ObjectType } from '@nestjs/graphql';
+import { Field, Int, InterfaceType } from '@nestjs/graphql';
 
+import { Edge } from './Edge';
 import { PageInfo } from './PageInfo';
 
-@ObjectType({ isAbstract: true })
+@InterfaceType()
 export abstract class Connection {
+  @Field(() => [Edge])
+  edges!: Edge[];
+
   @Field(() => PageInfo)
   pageInfo!: PageInfo;
 

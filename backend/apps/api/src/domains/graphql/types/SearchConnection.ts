@@ -6,5 +6,5 @@ import { SearchEdge } from './SearchEdge';
 @ObjectType()
 export class SearchConnection extends Connection {
   @Field(() => [SearchEdge])
-  edges!: SearchEdge[];
+  declare edges: SearchEdge[];
 }
