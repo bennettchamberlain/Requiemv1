@@ -54,7 +54,7 @@ export class PersonType implements Node {
   static fromEntity(person: PersonEntity): PersonType {
     return {
       __typename: PersonType.name,
-      id: GlobalUID.toGUID('person', person.id),
+      id: GlobalUID.encode('person', person.id),
       name: person.name,
       description: person.description,
       firstName: person.first_name,

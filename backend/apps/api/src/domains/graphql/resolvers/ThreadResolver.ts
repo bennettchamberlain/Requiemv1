@@ -34,7 +34,7 @@ export class ThreadResolver {
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(threads, {
       ...pagination,
-      getId: (thread) => GlobalUID.toGUID('thread', thread.id),
+      getId: (thread) => GlobalUID.encode('thread', thread.id),
     });
 
     const edges: ThreadEdge[] = slice.map((thread) => {
@@ -58,7 +58,7 @@ export class ThreadResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) id: string,
   ): Promise<ThreadType> {
-    const threadId = GlobalUID.fromGUID('thread', id);
+    const threadId = GlobalUID.parse('thread', id);
 
     const thread = await this.threadService.findOne(context, threadId);
 
@@ -71,13 +71,13 @@ export class ThreadResolver {
     @Parent() thread: ThreadType,
     @Args() pagination: PaginationArgs,
   ): Promise<MessageConnection> {
-    const threadId = GlobalUID.fromGUID('thread', thread.id);
+    const threadId = GlobalUID.parse('thread', thread.id);
 
     const messages = await this.threadMessagesLoader.load(context, threadId);
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(messages, {
       ...pagination,
-      getId: (message) => GlobalUID.toGUID('message', message.id),
+      getId: (message) => GlobalUID.encode('message', message.id),
     });
 
     const edges: MessageEdge[] = slice.map((message) => {

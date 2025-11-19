@@ -24,7 +24,7 @@ export class MessageType implements Node {
   static fromEntity(message: Message): MessageType {
     return {
       __typename: MessageType.name,
-      id: GlobalUID.toGUID('message', message.id),
+      id: GlobalUID.encode('message', message.id),
       content: message.content,
       role: message.role,
       threadId: message.threadId ?? null,

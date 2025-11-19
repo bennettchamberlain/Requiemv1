@@ -27,7 +27,7 @@ export class PersonResolver {
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
       ...pagination,
-      getId: (entity) => GlobalUID.toGUID('person', entity.id),
+      getId: (entity) => GlobalUID.encode('person', entity.id),
     });
 
     const edges: PersonEdge[] = slice.map((entity) => {
@@ -51,7 +51,7 @@ export class PersonResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<PersonType | null> {
-    const id = GlobalUID.fromGUID('person', gid);
+    const id = GlobalUID.parse('person', gid);
 
     const entity = await this.personService.findOne(context, id);
 

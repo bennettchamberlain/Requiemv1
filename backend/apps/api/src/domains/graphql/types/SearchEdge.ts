@@ -9,7 +9,7 @@ export const SearchResult = createUnionType({
   name: 'SearchResult',
   types: () => [ThreadType, PersonType] as const,
   resolveType(instance): typeof Node {
-    const { type } = GlobalUID.parse(instance.id);
+    const { type } = GlobalUID.decode(instance.id);
 
     switch (type) {
       case 'thread':

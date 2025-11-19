@@ -24,7 +24,7 @@ export class UserType implements Node {
   static fromEntity(user: User): UserType {
     return {
       __typename: UserType.name,
-      id: GlobalUID.toGUID('user', user.id),
+      id: GlobalUID.encode('user', user.id),
       name: user.name,
       email: user.email,
       onboarded: user.onboarded,

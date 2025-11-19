@@ -1,21 +1,11 @@
 type ResourceType = 'message' | 'person' | 'thread' | 'user';
 
 export class GlobalUID {
-  static toGUID(type: ResourceType, id: string): string {
+  static encode(type: ResourceType, id: string): string {
     return Buffer.from(`${type}:${id}`).toString('base64');
   }
 
-  static fromGUID(type: ResourceType, globalId: string): string {
-    const { type: decodedType, id } = this.parse(globalId);
-
-    if (decodedType !== type) {
-      throw new Error('Unexpected global id type');
-    }
-
-    return id;
-  }
-
-  static parse(globalId: string): { type: string; id: string } {
+  static decode(globalId: string): { type: string; id: string } {
     let decoded;
 
     try {
@@ -34,5 +24,15 @@ export class GlobalUID {
       type,
       id,
     };
+  }
+
+  static parse(type: ResourceType, globalId: string): string {
+    const { type: decodedType, id } = this.decode(globalId);
+
+    if (decodedType !== type) {
+      throw new Error('Unexpected global id type');
+    }
+
+    return id;
   }
 }

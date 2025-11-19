@@ -27,7 +27,7 @@ export class NodeResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<Node | null> {
-    const { type, id } = GlobalUID.parse(gid);
+    const { type, id } = GlobalUID.decode(gid);
 
     switch (type) {
       case 'message': {
