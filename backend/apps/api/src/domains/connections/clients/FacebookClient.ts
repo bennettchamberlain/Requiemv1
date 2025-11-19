@@ -183,7 +183,7 @@ export class FacebookClient extends BaseOAuth2Client {
     try {
       const url =
         syncState?.nextUrl ||
-        '/v21.0/me/videos?fields=id,title,description,created_time,source,permalink_url';
+        '/v21.0/me/videos?type=uploaded&fields=id,title,description,created_time,source,permalink_url';
 
       const response = await this.request<{
         data: Array<{
@@ -199,6 +199,12 @@ export class FacebookClient extends BaseOAuth2Client {
           previous?: string;
         };
       }>(connection, url);
+
+      this.logger.debug('Facebook videos response', {
+        connectionId: connection.id,
+        videoCount: response.data?.length || 0,
+        hasPaging: !!response.paging?.next,
+      });
 
       const newSyncState: FacebookSyncState['videos'] = {
         nextUrl: response.paging?.next,
@@ -242,6 +248,14 @@ export class FacebookClient extends BaseOAuth2Client {
           total_count: number;
         };
       }>(connection, url);
+
+      this.logger.debug('Facebook friends response', {
+        connectionId: connection.id,
+        friendCount: response.data?.length || 0,
+        totalCount: response.summary?.total_count,
+        hasPaging: !!response.paging?.next,
+        note: 'Note: Only returns friends who have also authorized this app (Facebook API limitation)',
+      });
 
       const newSyncState: FacebookSyncState['friends'] = {
         nextUrl: response.paging?.next,
@@ -315,7 +329,7 @@ export class FacebookClient extends BaseOAuth2Client {
           data: {
             results: [
               {
-                api: 'profile',
+                api: 'facebook profile',
                 data: profile,
                 syncState: {},
               },
@@ -333,7 +347,7 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook profile sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`profile: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook.profile: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
@@ -348,7 +362,7 @@ export class FacebookClient extends BaseOAuth2Client {
           data: {
             results: [
               {
-                api: 'posts',
+                api: 'facebook posts',
                 data: posts.data,
                 syncState: posts.syncState,
               },
@@ -367,7 +381,7 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook posts sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`posts: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook.posts: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
@@ -382,7 +396,7 @@ export class FacebookClient extends BaseOAuth2Client {
           data: {
             results: [
               {
-                api: 'photos',
+                api: 'facebook photos',
                 data: photos.data,
                 syncState: photos.syncState,
               },
@@ -401,7 +415,7 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook photos sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`photos: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook.photos: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
@@ -416,7 +430,7 @@ export class FacebookClient extends BaseOAuth2Client {
           data: {
             results: [
               {
-                api: 'videos',
+                api: 'facebook videos',
                 data: videos.data,
                 syncState: videos.syncState,
               },
@@ -435,22 +449,30 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook videos sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`videos: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook.videos: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
 
       // Fetch friends
+      // Note: Facebook Graph API v2.0+ only returns friends who have also authorized this app.
+      // This is a Facebook privacy policy limitation, not a bug.
       try {
         const friends = await this.fetchFriends(connection, syncState.friends || null);
 
+        const friendCount = friends.data?.length || 0;
+        const message =
+          friendCount > 0
+            ? `Facebook friends sync completed successfully (${friendCount} mutual friends found)`
+            : 'Facebook friends sync completed (no mutual friends - only friends who have also authorized this app are returned per Facebook API policy)';
+
         responses.push({
           success: true,
-          message: 'Facebook friends sync completed successfully',
+          message,
           data: {
             results: [
               {
-                api: 'friends',
+                api: 'facebook friends',
                 data: friends.data,
                 syncState: friends.syncState,
               },
@@ -469,7 +491,7 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook friends sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`friends: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook.friends: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
@@ -484,7 +506,7 @@ export class FacebookClient extends BaseOAuth2Client {
           data: {
             results: [
               {
-                api: 'likes',
+                api: 'facebook likes',
                 data: likes.data,
                 syncState: likes.syncState,
               },
@@ -503,7 +525,7 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook likes sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`likes: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook.likes: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
