@@ -1,9 +1,10 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 
+import { Edge } from './Edge';
 import { PersonType } from './PersonType';
 
-@ObjectType()
-export class PersonEdge {
+@ObjectType({ implements: () => [Edge] })
+export class PersonEdge implements Edge {
   @Field(() => String)
   cursor!: string;
 
