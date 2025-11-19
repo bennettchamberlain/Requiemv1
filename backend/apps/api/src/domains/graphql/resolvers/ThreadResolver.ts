@@ -4,8 +4,9 @@ import { Query, Resolver, Args, Parent, ResolveField, ID } from '@nestjs/graphql
 import { Context } from '@ci/common/decorators';
 import { GqlJwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
-import { MessageService, ThreadService } from '@ci/domains/conversations';
+import { ThreadService } from '@ci/domains/conversations';
 
+import { ThreadMessagesLoader } from '../dataloaders/ThreadMessagesLoader';
 import { GlobalUID } from '../types/GlobalUID';
 import { MessageConnection } from '../types/MessageConnection';
 import { MessageEdge } from '../types/MessageEdge';
@@ -20,7 +21,7 @@ import { Paginator } from '../utils/Paginator';
 @Resolver(() => ThreadType)
 export class ThreadResolver {
   constructor(
-    private readonly messageService: MessageService,
+    private readonly threadMessagesLoader: ThreadMessagesLoader,
     private readonly threadService: ThreadService,
   ) {}
 
@@ -72,7 +73,7 @@ export class ThreadResolver {
   ): Promise<MessageConnection> {
     const threadId = GlobalUID.fromGUID('thread', thread.id);
 
-    const messages = await this.messageService.findByThread(context, threadId);
+    const messages = await this.threadMessagesLoader.load(context, threadId);
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(messages, {
       ...pagination,
