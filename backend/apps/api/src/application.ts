@@ -1,4 +1,5 @@
 import { networkInterfaces } from 'node:os';
+import path from 'node:path';
 
 import {
   MiddlewareConsumer,
@@ -11,7 +12,6 @@ import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import path from 'node:path';
 
 import { IdFormatGuard } from '@ci/common/guards';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
