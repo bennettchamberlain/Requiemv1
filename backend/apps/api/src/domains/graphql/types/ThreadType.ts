@@ -5,7 +5,7 @@ import { type Thread } from '@ci/domains/conversations';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
 
-@ObjectType({ description: 'thread', implements: () => [Node] })
+@ObjectType({ implements: () => [Node] })
 export class ThreadType implements Node {
   __typename = ThreadType.name;
 

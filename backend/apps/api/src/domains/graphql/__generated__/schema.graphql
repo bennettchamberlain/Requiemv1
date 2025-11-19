@@ -73,35 +73,11 @@ type PersonType implements Node {
 type Query {
   me: UserType
   node(id: ID!): Node
-  people(
-    """Cursor to start after"""
-    after: ID
-
-    """Cursor to start before"""
-    before: ID
-
-    """Number of items to return from the beginning"""
-    first: Int
-
-    """Number of items to return from the end"""
-    last: Int
-  ): PersonConnection!
+  people(after: ID, before: ID, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
   search(query: String!): SearchConnection!
   thread(id: ID!): ThreadType
-  threads(
-    """Cursor to start after"""
-    after: ID
-
-    """Cursor to start before"""
-    before: ID
-
-    """Number of items to return from the beginning"""
-    first: Int
-
-    """Number of items to return from the end"""
-    last: Int
-  ): ThreadConnection!
+  threads(after: ID, before: ID, first: Int, last: Int): ThreadConnection!
 }
 
 type SearchConnection {
@@ -128,23 +104,10 @@ type ThreadEdge implements Edge {
   node: ThreadType!
 }
 
-"""thread"""
 type ThreadType implements Node {
   description: String
   id: ID!
-  messages(
-    """Cursor to start after"""
-    after: ID
-
-    """Cursor to start before"""
-    before: ID
-
-    """Number of items to return from the beginning"""
-    first: Int
-
-    """Number of items to return from the end"""
-    last: Int
-  ): MessageConnection!
+  messages(after: ID, before: ID, first: Int, last: Int): MessageConnection!
   model: String
   name: String
 }

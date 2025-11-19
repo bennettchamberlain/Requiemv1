@@ -2,15 +2,15 @@ import { ArgsType, Field, ID, Int } from '@nestjs/graphql';
 
 @ArgsType()
 export class PaginationArgs {
-  @Field(() => Int, { nullable: true, description: 'Number of items to return from the beginning' })
+  @Field(() => Int, { nullable: true })
   first?: number;
 
-  @Field(() => ID, { nullable: true, description: 'Cursor to start after' })
+  @Field(() => ID, { nullable: true })
   after?: string;
 
-  @Field(() => Int, { nullable: true, description: 'Number of items to return from the end' })
+  @Field(() => Int, { nullable: true })
   last?: number;
 
-  @Field(() => ID, { nullable: true, description: 'Cursor to start before' })
+  @Field(() => ID, { nullable: true })
   before?: string;
 }
