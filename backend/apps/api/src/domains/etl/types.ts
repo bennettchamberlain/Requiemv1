@@ -1,4 +1,5 @@
-import type { Connection } from '../connections/types';
+import type { Connection } from '@ci/domains/connections';
+
 import type { User } from '../user';
 
 export interface ApiLog {

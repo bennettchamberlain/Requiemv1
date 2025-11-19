@@ -25,8 +25,9 @@ export interface ContactsSyncState {
 export interface YouTubeSyncState {
   lastSyncAt?: string;
   lastLikesItemId?: string;
-  lastHistoryItemId?: string;
   lastPlaylistId?: string;
+  lastSubscriptionId?: string;
+  lastActivityId?: string;
 }
 
 export interface GoogleSyncState {
@@ -62,7 +63,15 @@ export interface FacebookSyncState {
 
 export interface SyncResult {
   data: unknown;
-  syncState: CalendarSyncState | GmailSyncState | DriveSyncState | ContactsSyncState | YouTubeSyncState;
+  syncState:
+    | CalendarSyncState
+    | GmailSyncState
+    | DriveSyncState
+    | ContactsSyncState
+    | YouTubeSyncState
+    | OutlookMailSyncState
+    | OutlookCalendarsSyncState
+    | OneDriveSyncState;
 }
 
 export interface CalendarSyncResult {
@@ -73,4 +82,20 @@ export interface CalendarSyncResult {
 export interface GmailSyncResult {
   data: unknown;
   syncState: GmailSyncState;
+}
+
+export interface OutlookMailSyncState {
+  skip?: string;
+}
+
+export interface OutlookCalendarsSyncState {
+  [key: string]: OutlookCalendarSyncState;
+}
+
+export interface OutlookCalendarSyncState {
+  skip?: string;
+}
+
+export interface OneDriveSyncState {
+  nextLink?: string | undefined;
 }

@@ -26,8 +26,9 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Global variables for model
-voice = None
+# Global variables for models
+voices = {}  # Dictionary to store multiple voice models
+current_voice = None  # Currently active voice
 
 def create_wav_file(audio_data, sample_rate=22050):
     """Create a proper WAV file with headers from audio data"""
@@ -65,19 +66,56 @@ def create_wav_file(audio_data, sample_rate=22050):
     
     return wav_header + audio_bytes
 
-def download_piper_model():
-    """Download a small Piper TTS model if not present"""
+def download_piper_model(voice_name="ryan"):
+    """Download a Piper TTS model if not present"""
     model_dir = "/app/models"
-    model_name = "en_US-lessac-medium"
-    model_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
-    config_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
     
-    model_path = os.path.join(model_dir, f"{model_name}.onnx")
-    config_path = os.path.join(model_dir, f"{model_name}.onnx.json")
+    # Voice mapping - you can add more voices here
+    voice_configs = {
+        "robot": {
+            "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/high/en_US-lessac-high.onnx",
+            "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/high/en_US-lessac-high.onnx.json"
+        },
+        "amy": {
+            "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx",
+            "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx.json"
+        },
+        "ryan": {
+            "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/high/en_US-ryan-high.onnx",
+            "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/high/en_US-ryan-high.onnx.json"
+        },
+        "sam": {
+            "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/sam/medium/en_US-sam-medium.onnx",
+            "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/sam/medium/en_US-sam-medium.onnx.json"
+        },
+        "sarah": {
+            "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx",
+            "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx.json"
+        },
+        "david": {
+            "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/hfc_male/medium/en_US-hfc_male-medium.onnx",
+            "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/hfc_male/medium/en_US-hfc_male-medium.onnx.json"
+        },
+        "norman": {
+            "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/norman/medium/en_US-norman-medium.onnx",
+            "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/norman/medium/en_US-norman-medium.onnx.json"
+        }
+    }
+    
+    if voice_name not in voice_configs:
+        logger.error(f"Unknown voice: {voice_name}")
+        return None
+        
+    config = voice_configs[voice_name]
+    model_url = config["model_url"]
+    config_url = config["config_url"]
+    
+    model_path = os.path.join(model_dir, f"{voice_name}.onnx")
+    config_path = os.path.join(model_dir, f"{voice_name}.onnx.json")
     
     # Download model if not exists
     if not os.path.exists(model_path):
-        logger.info(f"Downloading Piper model: {model_name}")
+        logger.info(f"Downloading Piper model: {voice_name}")
         try:
             response = requests.get(model_url, stream=True)
             response.raise_for_status()
@@ -91,7 +129,7 @@ def download_piper_model():
     
     # Download config if not exists
     if not os.path.exists(config_path):
-        logger.info(f"Downloading Piper config: {model_name}")
+        logger.info(f"Downloading Piper config: {voice_name}")
         try:
             response = requests.get(config_url, stream=True)
             response.raise_for_status()
@@ -105,30 +143,69 @@ def download_piper_model():
     
     return model_path
 
-def load_piper_model():
-    """Load Piper TTS model"""
-    global voice
+def load_piper_model(voice_name="ryan"):
+    """Load a specific Piper TTS model"""
+    global voices
 
     try:
         if PiperVoice is None:
             logger.error("Piper TTS not available")
             return False
 
-        logger.info("Loading Piper TTS model...")
+        # Check if voice is already loaded
+        if voice_name in voices:
+            logger.info(f"Voice {voice_name} already loaded")
+            return True
+
+        logger.info(f"Loading Piper TTS model: {voice_name}")
         
         # Download model if needed
-        model_path = download_piper_model()
+        model_path = download_piper_model(voice_name)
         if model_path is None:
-            logger.error("Failed to download Piper model")
+            logger.error(f"Failed to download Piper model: {voice_name}")
             return False
         
         # Load the voice model
-        voice = PiperVoice.load(model_path)
-        logger.info("Piper TTS model loaded successfully")
+        voices[voice_name] = PiperVoice.load(model_path)
+        logger.info(f"Piper TTS model {voice_name} loaded successfully")
         
         return True
     except Exception as e:
-        logger.error(f"Failed to load Piper model: {e}")
+        logger.error(f"Failed to load Piper model {voice_name}: {e}")
+        return False
+
+def get_voice(voice_name="ryan"):
+    """Get a voice model, loading it if necessary"""
+    global voices
+    
+    if voice_name not in voices:
+        logger.info(f"Voice {voice_name} not loaded, loading now...")
+        if not load_piper_model(voice_name):
+            logger.error(f"Failed to load voice {voice_name}, falling back to default")
+            voice_name = "ryan"
+            if voice_name not in voices:
+                if not load_piper_model(voice_name):
+                    return None
+    
+    return voices.get(voice_name)
+
+def switch_voice(voice_name="ryan"):
+    """Switch the active voice model"""
+    global current_voice, voices
+    
+    try:
+        # Load the voice if not already loaded
+        voice = get_voice(voice_name)
+        if voice is None:
+            logger.error(f"Failed to load voice {voice_name}")
+            return False
+        
+        # Set as current voice
+        current_voice = voice_name
+        logger.info(f"Switched to voice: {voice_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Error switching voice to {voice_name}: {e}")
         return False
 
 # Initialize FastAPI app
@@ -150,6 +227,7 @@ app.add_middleware(
 # Pydantic models for API
 class ConvertRequest(BaseModel):
     text: str
+    voice: Optional[str] = "en_US-lessac-medium"  # Default voice
 
 class ConvertResponse(BaseModel):
     audio: str  # Base64 encoded audio data
@@ -167,12 +245,19 @@ async def convert_text_to_speech(request: ConvertRequest):
     Returns:
         ConvertResponse: Contains base64 encoded audio data
     """
+    # Use the currently active voice
+    global current_voice
+    if current_voice is None:
+        # Initialize with default voice if none is set
+        switch_voice("ryan")
+    
+    voice = voices.get(current_voice)
     if voice is None:
-        raise HTTPException(status_code=503, detail="Piper TTS model not loaded")
+        raise HTTPException(status_code=503, detail=f"Piper TTS model not available for current voice: {current_voice}")
     
     try:
         # Use real Piper TTS to synthesize speech
-        logger.info(f"Synthesizing text: '{request.text}'")
+        logger.info(f"Synthesizing text: '{request.text}' with current voice: {current_voice}")
         
         # Synthesize audio using Piper
         audio_generator = voice.synthesize(request.text)
@@ -233,12 +318,55 @@ async def convert_text_to_speech(request: ConvertRequest):
         logger.error(f"Synthesis error: {e}")
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")
 
+@app.post("/tts/switch")
+async def switch_voice_endpoint(request: ConvertRequest):
+    """
+    Switch the active voice model for TTS synthesis.
+    """
+    try:
+        voice_name = request.voice or "ryan"
+        success = switch_voice(voice_name)
+        
+        if not success:
+            raise HTTPException(status_code=503, detail=f"Failed to switch to voice: {voice_name}")
+        
+        return {
+            "status": "success",
+            "voice": voice_name,
+            "message": f"Switched to voice: {voice_name}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Voice switch failed: {str(e)}")
+
+@app.post("/tts/preload")
+async def preload_voice(request: ConvertRequest):
+    """
+    Preload a voice model without synthesizing speech.
+    This helps reduce latency when switching voices.
+    """
+    try:
+        voice_name = request.voice or "ryan"
+        voice = get_voice(voice_name)
+        
+        if voice is None:
+            raise HTTPException(status_code=503, detail=f"Failed to load voice: {voice_name}")
+        
+        return {
+            "status": "success",
+            "voice": voice_name,
+            "message": f"Voice {voice_name} is ready"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Preload failed: {str(e)}")
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "model_loaded": voice is not None,
+        "models_loaded": len(voices),
+        "available_voices": list(voices.keys()),
+        "current_voice": current_voice,
         "service": "piper-tts"
     }
 
@@ -250,17 +378,22 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "convert": "/tts/convert",
+            "switch": "/tts/switch",
+            "preload": "/tts/preload",
             "health": "/health"
         }
     }
 
-# Load model on startup
+# Load default model on startup
 @app.on_event("startup")
 async def startup_event():
-    """Load Piper TTS model on startup"""
+    """Load default Piper TTS model on startup"""
     logger.info("Starting TTS service...")
-    if not load_piper_model():
-        logger.error("Failed to load Piper TTS model. Service may not function properly.")
+    if not load_piper_model("ryan"):
+        logger.error("Failed to load default Piper TTS model. Service may not function properly.")
+    else:
+        # Set as current voice
+        switch_voice("ryan")
     logger.info("TTS service started successfully")
 
 if __name__ == "__main__":

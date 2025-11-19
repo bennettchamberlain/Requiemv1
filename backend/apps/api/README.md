@@ -41,3 +41,16 @@ You can rollback a migration with:
 ```bash
 yarn migrate:down
 ```
+
+## Dependency violations
+
+We use dependency cruiser to validate various imports. If the import check build step fails you should
+generally fix these violations. Accepting the new violations you're introducing constitutes an increase
+in technical debt. You should comment on this in any PR and decide with your PR reviewer if the trade-off
+is worth it.
+
+To accept new violations:
+
+```
+yarn depcheck:accept
+```

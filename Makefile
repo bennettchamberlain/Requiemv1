@@ -1,4 +1,4 @@
-.PHONY: help build dbclear dev index infra init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
+.PHONY: help build chatreset dbclear dev health index init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -39,28 +39,28 @@ help: ## List make commands with their descriptions
 build: mcp ## Build the application
 	@printf "🧱 Building the application...\n\n"
 
-	@printf "Compiling API...\n\n"
+	@printf "Building PostgreSQL image...\n\n"
+	@docker compose build postgres
+
+	@printf "\nBuilding Speech-to-text service image...\n\n"
+	@docker compose build stt-service
+
+	@printf "\nBuilding Text-to-speech service image...\n\n"
+	@docker compose build tts-service
+
+	@printf "\nCompiling API...\n\n"
 	@cd backend/apps/api && yarn clean && yarn build
-	@printf "\nAPI successfully compiled.\n"
+
+	@printf "\nBuilding API image...\n\n"
+	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
 
 	@printf "\nCompiling web frontend...\n\n"
 	@cd frontend/apps/web && yarn clean && yarn build
-	@printf "\nWeb frontend successfully compiled.\n"
 
-	@printf "\nBuilding API Docker image...\n\n"
-	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
-	@printf "\nAPI Docker image successfully built.\n"
-
-	@printf "\nBuilding webserver Docker image...\n\n"
+	@printf "\nBuilding webserver image...\n\n"
 	@docker build -f docker/webserver/Dockerfile -t $(WEBSERVER_REPO):latest .
-	@printf "\nWebserver Docker image successfully built.\n"
 
 	@printf "\nApplication successfully built.\n"
-
-infra: ## Boot the local infrastructure
-	@printf "🐳 Starting Docker dependencies...\n\n"
-	@docker compose --profile infra up -d
-	@printf "\nDocker dependencies successfully started.\n"
 
 dbclear: ## Clear the PostgreSQL database and start from scratch
 	@printf "🧻 Clearing PostgreSQL data...\n\n"
@@ -73,15 +73,9 @@ dbdestroy: ## Clear the PostgreSQL database and start from scratch
 	@printf "\nDatabase successfully destroyed. 💥\n"
 
 deploy: ## Deploy the application (staging)
+	@printf "🐳 Deploying Companion Intelligence application...\n\n"
+
 	$(MAKE) init
-	@printf "\n"
-	$(MAKE) infra
-	@printf "\n"
-	$(MAKE) migrate
-	@printf "\n"
-	$(MAKE) seed
-	@printf "\n"
-	$(MAKE) index
 	@printf "\n"
 	$(MAKE) build
 	@printf "\n"
@@ -91,8 +85,6 @@ dev: ## Boot the application
 	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
 
 	$(MAKE) init
-	@printf "\n"
-	$(MAKE) infra
 	@printf "\n"
 	$(MAKE) migrate
 	@printf "\n"
@@ -125,13 +117,8 @@ dev: ## Boot the application
 	tmux select-pane -t 0; \
 	tmux attach -t $$SESSION
 
-index: ## Generate vector embeddings for indexable content
-	@printf "🗂 Indexing database...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings.ts
-	@printf "\nDatabase successfully indexed.\n"
-
-init: ## Initialize repository after checkout
-	@printf "🏗️ Initializing repository...\n\n"
+health: ## Check the repository for prerequisites
+	@printf "🩺 Checking health of prerequisites...\n\n"
 
 	@NODEJS=$$(which node 2>/dev/null); \
 	if [ -z "$$NODEJS" ]; then \
@@ -194,6 +181,15 @@ init: ## Initialize repository after checkout
 		exit 1; \
 	fi
 
+
+index: ## Generate vector embeddings for indexable content
+	@printf "🗂 Indexing database...\n\n"
+	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings.ts
+	@printf "\nDatabase successfully indexed.\n"
+
+init: ## Initialize repository after checkout
+	@printf "🏗️ Initializing repository...\n\n"
+
 	@corepack enable
 	@corepack prepare yarn@$$(grep '"packageManager"' package.json | cut -d@ -f2 | tr -d '", ') --activate
 	@which asdf >/dev/null && asdf reshim nodejs || printf "\n$(YELLOW)•$(RESET) asdf binary not found, skipping reshim step...\n\n"
@@ -201,11 +197,18 @@ init: ## Initialize repository after checkout
 
 	@printf "\n"
 	@yarn install
+
 	@printf "\n"
 	@yarn dlx @yarnpkg/sdks vscode
+
 	@printf "\n"
 	@yarn prepare
-	@printf "\n"
+
+	@if [ ! -f .env ]; then \
+		printf "\nCopying dotenv template file... "; \
+		cp -v .env.default .env; \
+	fi
+
 	@printf "\nRepository initialized.\n"
 
 install: ## Install project dependencies
@@ -215,31 +218,17 @@ install: ## Install project dependencies
 
 local: ## Run the local dependencies from Docker images
 	@printf "⌨️ Starting the local services...\n\n"
-	@docker compose --profile staging down
+
+	@printf "Stopping any staging profile services...\n\n"
+	@docker compose down ci-api staging-webserver
+
+	@printf "\nStarting a new local deployment cluster...\n\n"
 	@docker compose --profile local up -d
+
 	@printf "\nLocal services successfully started.\n"
 
 migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
-	@printf "⏳ Waiting for PostgreSQL to be ready (timeout: 20s)...\n"
-	@POSTGRES_PORT=$$(grep -E '^POSTGRES_PORT=' .env | cut -d= -f2- | tr -d '"'); \
-	POSTGRES_HOST=$$(grep -E '^POSTGRES_HOST=' .env | cut -d= -f2- | tr -d '"'); \
-	TIMEOUT=20; \
-	ELAPSED=0; \
-	until nc -z $$POSTGRES_HOST $$POSTGRES_PORT > /dev/null 2>&1; do \
-		if [ $$ELAPSED -ge $$TIMEOUT ]; then \
-			printf "\n$(RED)✗$(RESET) PostgreSQL failed to start within $$TIMEOUT seconds\n"; \
-			printf "$(RED)✗$(RESET) Migration failed - PostgreSQL is not ready\n"; \
-			exit 1; \
-		fi; \
-		printf "."; \
-		sleep 1; \
-		ELAPSED=$$((ELAPSED + 1)); \
-	done; \
-	printf "\n$(GREEN)✓$(RESET) PostgreSQL port is open!\n"
-	@printf "⏳ Waiting for PostgreSQL to fully initialize...\n"
-	@sleep 5
-	@printf "$(GREEN)✓$(RESET) PostgreSQL is ready!\n\n"
 	@cd backend/apps/api && yarn migrate
 	@printf "\nMigrations successfully run.\n"
 
@@ -254,8 +243,13 @@ seed: ## Seed backend database
 
 staging: ## Run the staging server from Docker images
 	@printf "🎭 Starting the staging services...\n\n"
-	@docker compose --profile local down
+
+	@printf "Stopping any local profile services...\n\n"
+	@docker compose down dev-webserver
+
+	@printf "\nStarting a new staging deployment cluster...\n\n"
 	@docker compose --profile staging up -d
+
 	@printf "\nStaging services successfully started.\n"
 
 #####################
@@ -266,17 +260,18 @@ gentoken: ## Generates a stable access token for use during development
 	@printf "🔑 Generating stable access token...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/generate-stable-access-token.ts
 
-signup: ## Generates a stable access token for use during development
+signup: ## Generates a set of signup codes for user registration
 	@printf "👋 Generating signup codes...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/generate-signup-codes.ts
-
-useradd: ## Add a user to the PostgreSQL database
-	@printf "👤 Adding user...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/add-user.ts
 
 userpw: ## Change a user's password
 	@printf "🔑 Changing user password...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/change-password.ts
+
+chatreset: ## Reset John Smith's demo threads
+	@printf "🧼 Resetting John Smith's demo threads...\n\n"
+	@cd backend/apps/api && yarn db:chatreset
+	@printf "\nDemo threads reset.\n"
 
 ####################
 # MCP SERVER SETUP #

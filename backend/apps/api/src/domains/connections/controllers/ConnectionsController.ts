@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
+import { EventService, Events } from '@ci/domains/events';
 
 import { ConnectionService } from '../services/ConnectionService';
 import type { CompleteConnectionDto, CreateConnectionDto, UpdateConnectionDto } from '../types';
@@ -59,19 +59,38 @@ export class ConnectionsController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createConnectionSchema)) input: CreateConnectionDto,
   ) {
-    return this.connectionService.create(context, input);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.create(
+      context,
+      input,
+    );
+
+    return returnedConnection;
   }
 
   @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
-    return this.connectionService.findAll(context);
+    const connections = await this.connectionService.findAll(context);
+
+    return connections.map((connection) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { accessToken, refreshToken, ...returnedConnection } = connection;
+
+      return returnedConnection;
+    });
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.connectionService.findOne(context, id);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.findOne(
+      context,
+      id,
+    );
+
+    return returnedConnection;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -81,7 +100,14 @@ export class ConnectionsController {
     @Param('id') id: string,
     @Body(new ValidationPipe(updateConnectionSchema)) input: UpdateConnectionDto,
   ) {
-    return this.connectionService.update(context, id, input);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.update(
+      context,
+      id,
+      input,
+    );
+
+    return returnedConnection;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -146,13 +172,14 @@ export class ConnectionsController {
     });
 
     try {
-      // Use ConnectionService.sync which handles the sync logic
-      const result = await this.connectionService.sync(context, id);
+      await this.eventService.send(Events.SYNC_CONNECTION, {
+        connectionId: id,
+        userId: context.userId!,
+      });
 
       return {
         success: true,
-        message: 'Sync completed successfully',
-        responseCount: result.length,
+        message: 'Sync queued successfully',
       };
     } catch (error) {
       this.logger.error('Manual sync failed', {
@@ -165,40 +192,6 @@ export class ConnectionsController {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
-    }
-  }
-
-  // REMOVED: This cron was disabled to avoid conflicts with EtlController.cronCheckGoogleConnections()
-  // The EtlController handles sync with proper data persistence and sync state updates
-
-  @OnEvent(Events.SYNC_CONNECTION)
-  async syncConnection(payload: EventPayloads[Events.SYNC_CONNECTION]) {
-    const context: RequestContext = {
-      userId: payload.userId,
-    };
-
-    this.logger.log('Syncing connection', {
-      connectionId: payload.connectionId,
-      userId: payload.userId,
-    });
-
-    try {
-      // Use ConnectionService.sync which handles the sync logic
-      const result = await this.connectionService.sync(context, payload.connectionId);
-
-      this.logger.log('Connection sync completed', {
-        connectionId: payload.connectionId,
-        userId: payload.userId,
-        responseCount: result.length,
-      });
-    } catch (error) {
-      // Keep in mind this swallows the error and marks the job as a success.
-      // Is this a transient failure? Should we retry?
-
-      this.logger.error('Connection sync failed', {
-        connectionId: payload.connectionId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
     }
   }
 }

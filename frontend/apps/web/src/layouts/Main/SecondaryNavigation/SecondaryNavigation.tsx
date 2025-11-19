@@ -1,114 +1,32 @@
-import { Sidebar, useSidebar } from '@ci/shadcn';
-import {
-  BookImage,
-  Brain,
-  Cable,
-  ChartPie,
-  Inbox,
-  Lightbulb,
-  ListTodo,
-  MessagesSquare,
-  Search,
-  Settings2,
-  Wrench,
-  Zap,
-} from '@ci/shadcn/icons';
+import { Tooltip } from '@ci/shadcn';
+import { Brain, ChartPie, Inbox, Lightbulb, MessagesSquare } from '@ci/shadcn/icons';
 
-import logo from '../../../assets/logo.png';
-
-import { NavSection } from './NavSection';
-import { NavUser } from './NavUser';
-
-const INTELLIGENCE = [
-  {
-    name: 'Feed',
-    url: '/feed',
-    icon: Inbox,
-  },
-  {
-    name: 'Search',
-    url: '/search',
-    icon: Search,
-  },
-  {
-    name: 'Memory',
-    url: '/memory',
-    icon: Brain,
-  },
-  {
-    name: 'Insights',
-    url: '/insights',
-    icon: Lightbulb,
-  },
-  {
-    name: 'Actions',
-    url: '/actions',
-    icon: Zap,
-  },
-  {
-    name: 'Chat',
-    url: '/chat',
-    icon: MessagesSquare,
-  },
-];
-
-const CONTENT = [
-  {
-    name: 'Content',
-    url: '/files',
-    icon: BookImage,
-  },
-];
-
-const SYSTEM = [
-  {
-    name: 'Analytics',
-    url: '/analytics',
-    icon: ChartPie,
-  },
-  {
-    name: 'Jobs',
-    url: '/jobs',
-    icon: ListTodo,
-  },
-  {
-    name: 'Tools',
-    url: '/tools',
-    icon: Wrench,
-  },
-  {
-    name: 'Connections',
-    url: '/connections',
-    icon: Cable,
-  },
-  {
-    name: 'Settings',
-    url: '/settings',
-    icon: Settings2,
-  },
-];
+import { NavLink } from './NavLink';
 
 export function SecondaryNavigation() {
-  const { open } = useSidebar();
-
   return (
-    <>
-      <Sidebar collapsible="icon">
-        <Sidebar.Header>
-          <div className="flex flex-row items-center gap-2">
-            <img src={logo} alt="Logo" className="w-8 h-auto" />
-            {open && <div>Companion Intelligence</div>}
-          </div>
-        </Sidebar.Header>
-        <Sidebar.Content className="gap-0">
-          <NavSection title="Intelligence" items={INTELLIGENCE} />
-          <NavSection title="Content" items={CONTENT} />
-        </Sidebar.Content>
-        <Sidebar.Footer>
-          <NavSection items={SYSTEM} />
-          <NavUser />
-        </Sidebar.Footer>
-      </Sidebar>
-    </>
+    <nav className="flex flex-col gap-2 p-2">
+      <Tooltip.Provider>
+        <NavLink to="/feed" label="Feed">
+          <Inbox className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/memory" label="Memory">
+          <Brain className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/insights" label="Insights">
+          <Lightbulb className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/chat" label="Chat">
+          <MessagesSquare className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/knowledge" label="Knowledge">
+          <ChartPie className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+      </Tooltip.Provider>
+    </nav>
   );
 }

@@ -180,7 +180,7 @@ class GraphDataGenerator:
         self.relationships: List[Dict[str, Any]] = []
         self._user_entity_links: Set[Tuple[str, str]] = set()
         self.owner_user_id: Optional[str] = None
-    
+
     @classmethod
     def from_env_file(cls, env_file_path: str = None, user_id: str = None):
         """Create generator by reading database config from .env file"""
@@ -189,10 +189,10 @@ class GraphDataGenerator:
             script_dir = Path(__file__).parent
             ci_server_root = script_dir.parent.parent.parent.parent.parent  # Go up to CI-Server root
             env_file_path = ci_server_root / ".env"
-        
+
         if not os.path.exists(env_file_path):
             raise FileNotFoundError(f"Could not find .env file at {env_file_path}")
-        
+
         # Read .env file
         env_vars = {}
         with open(env_file_path, 'r') as f:
@@ -203,26 +203,26 @@ class GraphDataGenerator:
                     # Remove quotes if present
                     value = value.strip().strip('"\'')
                     env_vars[key] = value
-        
+
         # Build database URL from env vars
         host = env_vars.get('POSTGRES_HOST', 'localhost')
         port = env_vars.get('POSTGRES_PORT', '5432')
         username = env_vars.get('POSTGRES_USERNAME', 'postgres')
         password = env_vars.get('POSTGRES_PASSWORD', 'password')
         database = 'companion_intel'  # Standard development database name
-        
+
         database_url = f"postgresql://{username}:{password}@{host}:{port}/{database}"
-        
+
         # Use default user from env or provided user_id
         if user_id is None:
             # Generate a default test user ID
             user_id = "b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b"
-        
+
         print(f"📡 Connecting to database: {host}:{port}/{database}")
         print(f"👤 Using user ID: {user_id}")
-        
+
         return cls(database_url, user_id)
-        
+
     def connect_db(self):
         """Connect to PostgreSQL database"""
         return psycopg2.connect(self.database_url, cursor_factory=RealDictCursor)
@@ -233,7 +233,7 @@ class GraphDataGenerator:
             return self.owner_user_id
 
         cur.execute(
-            "SELECT id FROM users WHERE LOWER(email) = LOWER(%s) LIMIT 1",
+            "SELECT id FROM ci_core.users WHERE LOWER(email) = LOWER(%s) LIMIT 1",
             (JOHN_SMITH_EMAIL,),
         )
         row = cur.fetchone()
@@ -245,11 +245,11 @@ class GraphDataGenerator:
 
         self.owner_user_id = row["id"]
         return self.owner_user_id
-    
+
     def generate_uuid(self) -> str:
         """Generate UUID v7 style ID"""
         return str(uuid.uuid4())
-    
+
     def create_person_entity(
         self,
         first_name: str,
@@ -288,7 +288,7 @@ class GraphDataGenerator:
 
         self.entities.append(entity)
         return entity
-    
+
     def create_location_entity(self, location_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a location entity"""
         entity_id = self.generate_uuid()
@@ -298,7 +298,7 @@ class GraphDataGenerator:
             "longitude": location_data["lng"],
             "address": f"{location_data['name']}, USA"
         }
-        
+
         entity = {
             "entity_id": entity_id,
             "entity_type": "Location",
@@ -309,14 +309,14 @@ class GraphDataGenerator:
             "is_active": True,
             "is_archived": False
         }
-        
+
         self.entities.append(entity)
         return entity
-    
+
     def create_object_entity(self, object_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create an object entity"""
         entity_id = self.generate_uuid()
-        
+
         entity = {
             "entity_id": entity_id,
             "entity_type": "Object",
@@ -327,27 +327,27 @@ class GraphDataGenerator:
             "is_active": True,
             "is_archived": False
         }
-        
+
         self.entities.append(entity)
         return entity
-    
+
     def create_concept_entity(self, concept_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a concept entity with rich properties"""
         entity_id = self.generate_uuid()
-        
+
         # Extract name, type, and description
         name = concept_data["name"]
         entity_type_value = concept_data["type"]
         description = concept_data.get("description", f"{entity_type_value}: {name}")
-        
+
         # Copy all fields to properties, excluding name, type, and description
         # as they have dedicated columns
-        properties = {k: v for k, v in concept_data.items() 
+        properties = {k: v for k, v in concept_data.items()
                      if k not in ["name", "description"]}
-        
+
         # Build search content from all available text fields
         search_parts = [name, entity_type_value, description]
-        
+
         # Add any list or string fields to search content
         for key, value in concept_data.items():
             if key not in ["name", "type", "description"]:
@@ -355,9 +355,9 @@ class GraphDataGenerator:
                     search_parts.extend([str(item) for item in value])
                 elif isinstance(value, str):
                     search_parts.append(value)
-        
+
         search_content = " ".join(search_parts)
-        
+
         entity = {
             "entity_id": entity_id,
             "entity_type": "Concept",
@@ -368,10 +368,10 @@ class GraphDataGenerator:
             "is_active": True,
             "is_archived": False
         }
-        
+
         self.entities.append(entity)
         return entity
-    
+
     def create_company_entity(self, company_name: str) -> Dict[str, Any]:
         """Create a company entity"""
         entity_id = self.generate_uuid()
@@ -381,7 +381,7 @@ class GraphDataGenerator:
             "size": random.choice(["Startup", "Mid-size", "Enterprise"]),
             "website": f"https://{company_name.lower().replace(' ', '')}.com"
         }
-        
+
         entity = {
             "entity_id": entity_id,
             "entity_type": "Organization",
@@ -392,10 +392,10 @@ class GraphDataGenerator:
             "is_active": True,
             "is_archived": False
         }
-        
+
         self.entities.append(entity)
         return entity
-    
+
     def create_john_smith_family(self, system_user_id: str) -> List[Dict[str, Any]]:
         """Create John Smith and his family with realistic preferences for demo"""
         # Create family members
@@ -405,40 +405,40 @@ class GraphDataGenerator:
             bio="Software engineer and family man who loves organizing family activities",
             occupation="Software Engineer"
         )
-        
+
         sarah = self.create_family_member(
             "Sarah", "Smith", 40, "mother",
             bio="Marketing manager with a passion for healthy living and outdoor activities",
             occupation="Marketing Manager"
         )
-        
+
         emma = self.create_family_member(
             "Emma", "Smith", 14, "daughter",
             bio="High school student interested in art, music, and social causes",
             occupation="Student"
         )
-        
+
         lucas = self.create_family_member(
             "Lucas", "Smith", 10, "son",
             bio="Elementary school student who loves sports, video games, and adventure",
             occupation="Student"
         )
-        
+
         family_members = [john, sarah, emma, lucas]
-        
+
         # Create family relationships
         self.create_family_relationships(john, sarah, emma, lucas)
-        
+
         # Create home location
         home = self.create_home_location()
-        
+
         # Link family members to home
         for member in family_members:
             self.create_relationship(member, home, "LIVES_IN", {
                 "since": "2015-06-01",
                 "relationship": "primary_residence"
             })
-        
+
         # Store family members for later preference assignment
         self._family_members = {
             'john': john,
@@ -446,15 +446,15 @@ class GraphDataGenerator:
             'emma': emma,
             'lucas': lucas
         }
-        
+
         return family_members
-    
+
     def create_family_member(self, first_name: str, last_name: str, age: int,
                             role: str, system_user_id: str = None, bio: str = None,
                             occupation: str = None) -> Dict[str, Any]:
         """Create a family member entity"""
         entity_id = self.generate_uuid()
-        
+
         properties = {
             "first_name": first_name,
             "last_name": last_name,
@@ -489,7 +489,7 @@ class GraphDataGenerator:
 
         self.entities.append(entity)
         return entity
-    
+
     def create_family_relationships(self, john, sarah, emma, lucas):
         """Create family relationship network"""
         # Marriage
@@ -501,7 +501,7 @@ class GraphDataGenerator:
             "married_since": "2008-06-15",
             "anniversary": "June 15"
         })
-        
+
         # Parent-child relationships
         for parent in [john, sarah]:
             for child, rel_type in [(emma, "daughter"), (lucas, "son")]:
@@ -513,7 +513,7 @@ class GraphDataGenerator:
                 self.create_relationship(child, parent, "CHILD_OF", {
                     "parent": parent_type
                 })
-        
+
         # Sibling relationships
         self.create_relationship(emma, lucas, "SIBLING_OF", {
             "relationship": "older_sister",
@@ -523,11 +523,11 @@ class GraphDataGenerator:
             "relationship": "younger_brother",
             "age_gap": 4
         })
-    
+
     def create_home_location(self) -> Dict[str, Any]:
         """Create the family home location"""
         entity_id = self.generate_uuid()
-        
+
         entity = {
             "entity_id": entity_id,
             "entity_type": "Location",
@@ -536,7 +536,7 @@ class GraphDataGenerator:
             "properties": {
                 "type": "Residence",
                 "latitude": 33.5427,
-                "longitude": 117.7854,
+                "longitude": -117.7854,
                 "address": "123 Maple Street, Laguna Beach, CA",
                 "bedrooms": 4,
                 "neighborhood": "Generic area"
@@ -545,15 +545,15 @@ class GraphDataGenerator:
             "is_active": True,
             "is_archived": False
         }
-        
+
         self.entities.append(entity)
         return entity
-    
-    def create_relationship(self, from_entity: Dict, to_entity: Dict, relationship_type: str, 
+
+    def create_relationship(self, from_entity: Dict, to_entity: Dict, relationship_type: str,
                           properties: Dict[str, Any] = None) -> Dict[str, Any]:
         """Create a relationship between two entities"""
         relationship_id = self.generate_uuid()
-        
+
         relationship = {
             "relationship_id": relationship_id,
             "from_entity_id": from_entity["entity_id"],
@@ -564,24 +564,24 @@ class GraphDataGenerator:
             "is_active": True,
             "is_bidirectional": relationship_type in ["KNOWS", "WORKS_WITH", "COLLABORATED_WITH"]
         }
-        
+
         self.relationships.append(relationship)
         return relationship
-    
-    def generate_test_data(self, num_people: int = 20, num_companies: int = 5, 
+
+    def generate_test_data(self, num_people: int = 20, num_companies: int = 5,
                           include_family: bool = False, family_user_id: str = None):
         """Generate comprehensive test data"""
         print(f"Generating test data for user {self.user_id}...")
-        
+
         people = []
-        
+
         # Create John Smith family if requested
         if include_family:
             print("\n👨‍👩‍👧‍👦 Creating John Smith family...")
             family_members = self.create_john_smith_family(family_user_id or self.user_id)
             people.extend(family_members)
             print(f"✅ Created Smith family: {len(family_members)} members")
-        
+
         # Create additional random people
         remaining_people = num_people - len(people)
         if remaining_people > 0:
@@ -591,74 +591,74 @@ class GraphDataGenerator:
                 last_name = random.choice(LAST_NAMES)
                 person = self.create_person_entity(first_name, last_name)
                 people.append(person)
-        
+
         # Create locations
         locations = []
         for location_data in LOCATIONS:
             location = self.create_location_entity(location_data)
             locations.append(location)
-        
+
         # Create companies
         companies = []
         for _ in range(num_companies):
             company_name = random.choice(COMPANIES)
             company = self.create_company_entity(company_name)
             companies.append(company)
-        
+
         # Create objects
         objects = []
         for object_data in OBJECTS:
             obj = self.create_object_entity(object_data)
             objects.append(obj)
-        
+
         # Create general concepts (interests)
         concepts = []
         for concept_data in CONCEPTS:
             concept = self.create_concept_entity(concept_data)
             concepts.append(concept)
-        
+
         # Create preference concepts
         preferences = []
-        
+
         # Food preferences
         for pref_data in FOOD_PREFERENCES:
             pref = self.create_concept_entity(pref_data)
             preferences.append(pref)
-        
+
         # Movie preferences
         for pref_data in MOVIE_PREFERENCES:
             pref = self.create_concept_entity(pref_data)
             preferences.append(pref)
-        
+
         # Music preferences
         for pref_data in MUSIC_PREFERENCES:
             pref = self.create_concept_entity(pref_data)
             preferences.append(pref)
-        
+
         # Activity preferences
         for pref_data in ACTIVITY_PREFERENCES:
             pref = self.create_concept_entity(pref_data)
             preferences.append(pref)
-        
+
         # Drink preferences
         for pref_data in DRINK_PREFERENCES:
             pref = self.create_concept_entity(pref_data)
             preferences.append(pref)
-        
+
         # Generate relationships
-        self.generate_relationships(people, locations, companies, objects, concepts, preferences, 
+        self.generate_relationships(people, locations, companies, objects, concepts, preferences,
                                    include_family=include_family)
-        
+
         print(f"\nGenerated {len(self.entities)} entities and {len(self.relationships)} relationships")
-    
-    def generate_relationships(self, people: List[Dict], locations: List[Dict], 
+
+    def generate_relationships(self, people: List[Dict], locations: List[Dict],
                              companies: List[Dict], objects: List[Dict], concepts: List[Dict],
                              preferences: List[Dict], include_family: bool = False):
         """Generate realistic relationships between entities"""
-        
+
         # Keep track of created relationships to avoid duplicates
         created_relationships = set()
-        
+
         def add_relationship_if_unique(from_entity, to_entity, rel_type, properties=None):
             """Add relationship only if it doesn't already exist"""
             # Create a key to check for duplicates (consider bidirectional relationships)
@@ -669,34 +669,34 @@ class GraphDataGenerator:
             else:
                 # For directional relationships, use the exact direction
                 key = (from_entity["entity_id"], to_entity["entity_id"], rel_type)
-            
+
             if key not in created_relationships:
                 created_relationships.add(key)
                 self.create_relationship(from_entity, to_entity, rel_type, properties)
                 return True
             return False
-        
+
         # If family is included, assign their curated preferences first
         family_people = []
         non_family_people = people.copy()
-        
+
         if include_family and hasattr(self, '_family_members'):
             print("\n🎯 Assigning curated family preferences...")
             family_people = list(self._family_members.values())
             # Remove family from non_family list
             family_ids = {fm["entity_id"] for fm in family_people}
             non_family_people = [p for p in people if p["entity_id"] not in family_ids]
-            
+
             # Assign specific preferences to each family member
             self.assign_family_preferences(preferences)
-        
+
         # People know each other
         for i, person1 in enumerate(people):
             # Each person knows 3-7 other people
             num_connections = random.randint(3, 7)
             attempts = 0
             connections_made = 0
-            
+
             while connections_made < num_connections and attempts < num_connections * 2:
                 person2 = random.choice(people[:i] + people[i+1:])  # Exclude self
                 if add_relationship_if_unique(person1, person2, "KNOWS", {
@@ -705,7 +705,7 @@ class GraphDataGenerator:
                 }):
                     connections_made += 1
                 attempts += 1
-        
+
         # People work at companies
         for person in people:
             if random.random() < 0.8:  # 80% of people work at companies
@@ -714,7 +714,7 @@ class GraphDataGenerator:
                     "position": random.choice(["Engineer", "Designer", "Manager", "Analyst", "Consultant"]),
                     "start_date": (datetime.now() - timedelta(days=random.randint(90, 1460))).isoformat()
                 })
-        
+
         # People live in or visit locations
         for person in people:
             # Each person lives in one location
@@ -722,7 +722,7 @@ class GraphDataGenerator:
             add_relationship_if_unique(person, home_location, "LIVES_IN", {
                 "since": (datetime.now() - timedelta(days=random.randint(365, 2920))).isoformat()
             })
-            
+
             # People visit other locations
             for _ in range(random.randint(2, 5)):
                 visited_location = random.choice(locations)
@@ -731,7 +731,7 @@ class GraphDataGenerator:
                         "date": (datetime.now() - timedelta(days=random.randint(1, 365))).isoformat(),
                         "purpose": random.choice(["vacation", "business", "conference", "personal"])
                     })
-        
+
         # People own objects
         for person in people:
             num_objects = random.randint(2, 4)
@@ -741,7 +741,7 @@ class GraphDataGenerator:
                     "acquired_date": (datetime.now() - timedelta(days=random.randint(30, 730))).isoformat(),
                     "condition": random.choice(["new", "used", "refurbished"])
                 })
-        
+
         # People are interested in concepts
         for person in people:
             num_interests = random.randint(2, 4)
@@ -751,7 +751,7 @@ class GraphDataGenerator:
                     "level": random.choice(["beginner", "intermediate", "advanced", "expert"]),
                     "since": (datetime.now() - timedelta(days=random.randint(90, 1095))).isoformat()
                 })
-        
+
         # Some people collaborate with each other
         for _ in range(random.randint(5, 10)):
             if len(people) >= 2:
@@ -761,11 +761,11 @@ class GraphDataGenerator:
                     "duration": f"{random.randint(1, 12)} months",
                     "type": random.choice(["software", "research", "design", "consulting"])
                 })
-        
+
         # People have preferences (15-25 preferences per person)
         # Family members already have curated preferences, so only assign to non-family
         people_needing_prefs = non_family_people if include_family else people
-        
+
         if people_needing_prefs:
             print("Generating preference relationships...")
             for person in people_needing_prefs:
@@ -773,48 +773,48 @@ class GraphDataGenerator:
                 num_preferences = random.randint(15, 25)
                 # Sample random preferences to ensure variety
                 selected_prefs = random.sample(preferences, min(num_preferences, len(preferences)))
-                
+
                 for pref in selected_prefs:
                     # Generate preference strength (0.3 to 1.0)
                     # Higher strength = stronger preference
                     strength = round(random.uniform(0.3, 1.0), 2)
-                    
+
                     # Some preferences have been around longer
                     days_since = random.randint(30, 2190)  # 1 month to 6 years
-                    
+
                     add_relationship_if_unique(person, pref, "PREFERS", {
                         "strength": strength,
                         "since": (datetime.now() - timedelta(days=days_since)).isoformat(),
                         "context": random.choice(["discovered", "childhood", "recent", "always loved", "acquired taste"])
                     })
-                
+
                 # DISLIKES relationships (3-8 per person)
                 # Get preferences not already linked with PREFERS
                 remaining_prefs = [p for p in preferences if p not in selected_prefs]
                 if remaining_prefs:
                     num_dislikes = random.randint(3, min(8, len(remaining_prefs)))
                     disliked_prefs = random.sample(remaining_prefs, num_dislikes)
-                    
+
                     for pref in disliked_prefs:
                         # Generate dislike strength (0.3 to 1.0)
                         # Higher strength = stronger dislike
                         strength = round(random.uniform(0.3, 1.0), 2)
-                        
+
                         days_since = random.randint(30, 2190)
-                        
+
                         add_relationship_if_unique(person, pref, "DISLIKES", {
                             "strength": strength,
                             "since": (datetime.now() - timedelta(days=days_since)).isoformat(),
                             "reason": random.choice(["bad experience", "never appealed", "tried once", "health reasons", "personal taste"])
                         })
-    
+
     def find_pref(self, pref_list: List[Dict], name: str) -> Dict[str, Any]:
         """Find a preference by name"""
         for pref in pref_list:
             if pref["name"] == name:
                 return pref
         return None
-    
+
     def add_preference(self, person: Dict, preference: Dict, strength: float, context: str = "always loved"):
         """Helper to add a preference with strength"""
         if preference is None:
@@ -825,7 +825,7 @@ class GraphDataGenerator:
             "since": (datetime.now() - timedelta(days=days_since)).isoformat(),
             "context": context
         })
-    
+
     def add_dislike(self, person: Dict, preference: Dict, strength: float, reason: str = "personal taste"):
         """Helper to add a dislike with strength"""
         if preference is None:
@@ -836,7 +836,7 @@ class GraphDataGenerator:
             "since": (datetime.now() - timedelta(days=days_since)).isoformat(),
             "reason": reason
         })
-    
+
     def assign_family_preferences(self, preferences: List[Dict]):
         """Assign curated preferences to Smith family members"""
         # Group preferences by type for easy lookup
@@ -846,12 +846,12 @@ class GraphDataGenerator:
         music_prefs = [p for p in preferences if p["properties"]["type"] == "music_genre"]
         activity_prefs = [p for p in preferences if p["properties"]["type"] == "activity"]
         drink_prefs = [p for p in preferences if p["properties"]["type"] == "beverage"]
-        
+
         john = self._family_members['john']
         sarah = self._family_members['sarah']
         emma = self._family_members['emma']
         lucas = self._family_members['lucas']
-        
+
         # John - balanced, adult tastes
         self.add_preference(john, self.find_pref(food_prefs, "Italian Cuisine"), 0.9, "childhood")
         self.add_preference(john, self.find_pref(food_prefs, "Pizza"), 0.85, "always loved")
@@ -867,7 +867,7 @@ class GraphDataGenerator:
         self.add_preference(john, self.find_pref(activity_prefs, "Cycling"), 0.7, "recent")
         self.add_preference(john, self.find_pref(drink_prefs, "Coffee"), 0.95, "always loved")
         self.add_preference(john, self.find_pref(drink_prefs, "Beer"), 0.7, "discovered")
-        
+
         # Sarah - health-conscious, sophisticated
         self.add_preference(sarah, self.find_pref(food_prefs, "Mediterranean"), 0.95, "acquired taste")
         self.add_preference(sarah, self.find_pref(food_prefs, "Thai Food"), 0.9, "always loved")
@@ -885,7 +885,7 @@ class GraphDataGenerator:
         self.add_preference(sarah, self.find_pref(drink_prefs, "Tea"), 0.9, "always loved")
         self.add_preference(sarah, self.find_pref(drink_prefs, "Wine"), 0.85, "acquired taste")
         self.add_preference(sarah, self.find_pref(drink_prefs, "Smoothies"), 0.8, "discovered")
-        
+
         # Emma - teenage girl, artistic, social
         self.add_preference(emma, self.find_pref(food_prefs, "Pizza"), 0.95, "always loved")
         self.add_preference(emma, self.find_pref(food_prefs, "Mexican Food"), 0.9, "always loved")
@@ -902,7 +902,7 @@ class GraphDataGenerator:
         self.add_preference(emma, self.find_pref(activity_prefs, "Writing"), 0.75, "recent")
         self.add_preference(emma, self.find_pref(drink_prefs, "Smoothies"), 0.9, "always loved")
         self.add_preference(emma, self.find_pref(drink_prefs, "Tea"), 0.7, "discovered")
-        
+
         # Lucas - 10 year old boy, energetic, playful
         self.add_preference(lucas, self.find_pref(food_prefs, "Pizza"), 1.0, "always loved")
         self.add_preference(lucas, self.find_pref(food_prefs, "Tacos"), 0.95, "always loved")
@@ -918,33 +918,33 @@ class GraphDataGenerator:
         self.add_preference(lucas, self.find_pref(activity_prefs, "Cycling"), 0.9, "discovered")
         self.add_preference(lucas, self.find_pref(activity_prefs, "Hiking"), 0.8, "recent")
         self.add_preference(lucas, self.find_pref(drink_prefs, "Smoothies"), 0.95, "always loved")
-        
+
         # Add some curated dislikes for each family member
         # John dislikes
         self.add_dislike(john, self.find_pref(movie_prefs, "Horror"), 0.9, "too scary")
         self.add_dislike(john, self.find_pref(food_prefs, "Seafood"), 0.7, "allergies")
         self.add_dislike(john, self.find_pref(activity_prefs, "Dancing"), 0.6, "not my thing")
-        
+
         # Sarah dislikes
         self.add_dislike(sarah, self.find_pref(movie_prefs, "Horror"), 0.85, "too intense")
         self.add_dislike(sarah, self.find_pref(food_prefs, "BBQ"), 0.7, "health reasons")
         self.add_dislike(sarah, self.find_pref(drink_prefs, "Beer"), 0.8, "taste preference")
-        
+
         # Emma dislikes
         self.add_dislike(emma, self.find_pref(movie_prefs, "Horror"), 1.0, "nightmares")
         self.add_dislike(emma, self.find_pref(food_prefs, "Seafood"), 0.9, "texture issues")
         self.add_dislike(emma, self.find_pref(activity_prefs, "Running"), 0.7, "prefer other activities")
-        
+
         # Lucas dislikes
         self.add_dislike(lucas, self.find_pref(food_prefs, "Vegetarian"), 0.85, "likes meat")
         self.add_dislike(lucas, self.find_pref(food_prefs, "Seafood"), 0.95, "yuck!")
         self.add_dislike(lucas, self.find_pref(movie_prefs, "Romance"), 0.9, "boring")
         self.add_dislike(lucas, self.find_pref(activity_prefs, "Yoga"), 0.8, "too slow")
-    
+
     def save_to_database(self):
         """Save generated data to PostgreSQL database"""
         print("Connecting to database...")
-        
+
         with self.connect_db() as conn:
             with conn.cursor() as cur:
                 owner_user_id = self.resolve_owner_user_id(cur)
@@ -972,7 +972,7 @@ class GraphDataGenerator:
                         "linked_id": entity.get("linked_id"),
                         "owner_user_id": owner_user_id,
                     })
-                
+
                 # Insert relationships
                 print(f"Inserting {len(self.relationships)} relationships...")
                 for rel in self.relationships:
@@ -997,7 +997,7 @@ class GraphDataGenerator:
                     for user_id, entity_id in self._user_entity_links:
                         cur.execute(
                             """
-                                UPDATE users
+                                UPDATE ci_core.users
                                 SET entity_id = %s
                                 WHERE id = %s AND (entity_id IS NULL OR entity_id <> %s)
                             """,
@@ -1006,7 +1006,7 @@ class GraphDataGenerator:
 
                 cur.execute(
                     """
-                        UPDATE users u
+                        UPDATE ci_core.users u
                         SET entity_id = e.entity_id
                         FROM entities e
                         WHERE e.linked_table = 'users'
@@ -1017,29 +1017,29 @@ class GraphDataGenerator:
 
                 conn.commit()
                 print("✅ Test data saved successfully!")
-    
+
     def generate_summary(self):
         """Print a summary of generated data"""
         entity_types = {}
         for entity in self.entities:
             entity_type = entity["entity_type"]
             entity_types[entity_type] = entity_types.get(entity_type, 0) + 1
-        
+
         relationship_types = {}
         for rel in self.relationships:
             rel_type = rel["relationship_type"]
             relationship_types[rel_type] = relationship_types.get(rel_type, 0) + 1
-        
+
         print("\n📊 Data Generation Summary:")
         print("=" * 40)
         print("Entities:")
         for entity_type, count in sorted(entity_types.items()):
             print(f"  {entity_type}: {count}")
-        
+
         print("\nRelationships:")
         for rel_type, count in sorted(relationship_types.items()):
             print(f"  {rel_type}: {count}")
-        
+
         print(f"\nTotal: {len(self.entities)} entities, {len(self.relationships)} relationships")
 
 
@@ -1074,22 +1074,22 @@ def main():
         "--family-user-id",
         help="Specific user ID to link John Smith to (defaults to --user-id)"
     )
-    
+
     args = parser.parse_args()
-    
+
     try:
         generator = GraphDataGenerator.from_env_file(args.env_file, args.user_id)
-        
+
         # Generate test data
         generator.generate_test_data(
-            args.num_people, 
+            args.num_people,
             args.num_companies,
             include_family=args.family,
             family_user_id=args.family_user_id
         )
-        
+
         generator.generate_summary()
-        
+
         # Show family info if included
         if args.family:
             print("\n" + "="*60)
@@ -1104,18 +1104,18 @@ def main():
             print("📍 Location: Smith Family Home, Somerville, MA")
             if args.family_user_id or args.user_id:
                 print(f"👤 John Smith linked to user: {args.family_user_id or args.user_id}")
-        
+
         generator.save_to_database()
-        
+
         print("\n🎉 Graph test data generation complete!")
         print("You can now test the frontend with this realistic graph data.")
-        
+
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
         return 1
-    
+
     return 0
 
 

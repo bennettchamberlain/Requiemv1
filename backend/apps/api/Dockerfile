@@ -64,6 +64,7 @@ RUN yarn workspaces focus --production @ci/be-api
 COPY backend/apps/api/dist ./backend/apps/api/dist
 COPY backend/apps/api/config ./backend/apps/api/config
 COPY backend/apps/api/db ./backend/apps/api/db
+COPY backend/apps/api/bin ./backend/apps/api/bin
 
 WORKDIR /app/backend/apps/api
 

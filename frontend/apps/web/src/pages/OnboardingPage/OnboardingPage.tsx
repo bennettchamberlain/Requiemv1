@@ -7,8 +7,8 @@ import logo from '@/assets/logo.png';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 import { ActivityPreferences } from './ActivityPreferences';
-import focusAreasImage from './assets/focus-areas.jpg';
-import peopleImage from './assets/people.jpg';
+import focusAreasImage from './assets/focus-areas.png';
+import peopleImage from './assets/people.png';
 import { FocusAreas } from './FocusAreas';
 import { FoodPreferences } from './FoodPreferences';
 import { Intro } from './Intro';

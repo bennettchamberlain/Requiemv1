@@ -1,18 +1,38 @@
+/**
+ * This module encapsulates all authentication and session management functionalities.
+ * It is responsible for handling user login, issuing JSON Web Tokens (JWTs),
+ * validating tokens for protected routes, and managing user sessions.
+ *
+ * ### Features:
+ * - **JWT-based Authentication**: Uses `@nestjs/jwt` to create and validate JWTs.
+ *   The `JwtStrategy` is a Passport strategy that automatically handles token
+ *   validation on incoming requests.
+ * - **Session Management**: The `SessionController` and `SessionService` manage the
+ *   lifecycle of user sessions, persisting them in the database via the `SessionEntity`.
+ * - **User Integration**: Integrates with the `UserModule` to authenticate users against
+ *   the user database.
+ * - **Signup Flow**: Includes services for handling signup codes (`SignupCodeService`),
+ *   linking the authentication process with user registration.
+ *
+ * @module AuthModule
+ */
+
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from '@ci/configuration';
-import { UserModule, SignupCodeEntity } from '@ci/domains/user';
-import { SignupCodeService } from '@ci/domains/user/services/SignupCodeService';
+import { UserModule, SignupCodeEntity, SignupCodeService } from '@ci/domains/user';
 
 import { SessionController } from './controllers/SessionController';
 import { SessionEntity } from './entities/SessionEntity';
 import { AuthService } from './services/AuthService';
 import { JwtStrategy } from './services/JwtStrategy';
-import { SessionService } from './services/SessionService';
 
+/**
+ * @internal
+ */
 @Module({
   imports: [
     TypeOrmModule.forFeature([SessionEntity, SignupCodeEntity]),
@@ -25,9 +45,7 @@ import { SessionService } from './services/SessionService';
       },
     }),
   ],
-  providers: [AuthService, JwtStrategy, SessionService, SignupCodeService],
+  providers: [AuthService, JwtStrategy, SignupCodeService],
   controllers: [SessionController],
 })
 export class AuthModule {}
-
-export type { LoginDto } from './types';

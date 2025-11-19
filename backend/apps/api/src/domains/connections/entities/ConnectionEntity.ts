@@ -14,7 +14,7 @@ import type { Connection } from '../types';
 
 import { ProviderEntity } from './ProviderEntity';
 
-@Entity({ name: 'connections' })
+@Entity({ schema: 'ci_core', name: 'connections' })
 export class ConnectionEntity {
   @PrimaryColumn({ type: 'uuid' })
   id!: string;

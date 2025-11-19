@@ -7,29 +7,36 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { useThreadService } from '@/api';
 import { Chat, type FormData } from '@/components/Chat';
-import { parseChatContent } from '@/components/Chat/parser';
+import { VoiceModeProvider, useVoiceModeContext } from '@/components/Chat/VoiceModeProvider';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
+import { useCompanionAudioPlayback } from '@/hooks/useCompanionAudioPlayback';
 
 import { ChatSidebar } from './ChatSidebar';
 import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
 
-export default function ChatPage() {
-  usePageTitle('Chat - Companion Intelligence');
-
+function ChatPageContent() {
   const { isMobile } = useDeviceLayout();
+  const { isVoiceModeActive } = useVoiceModeContext();
 
   const resolvedThreadId = useRef<string | null>(null);
   const hasSetInitialMessages = useRef(false);
+  const lastProcessedResponseRef = useRef<string>('');
 
   const navigate = useNavigate();
 
   const { id: initialThreadId } = useParams<{ id?: string }>();
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
-  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
-  const [companionResponse, setCompanionResponse] = useState<string>('');
   const [{ selectedModel }] = useModel();
+
+  // Voice state management
+  const [selectedVoice, setSelectedVoice] = useState('ryan');
+
+  // Audio playback for voice mode
+  const { playCompanionResponse, stopAudioPlayback } = useCompanionAudioPlayback({
+    voice: selectedVoice,
+  });
 
   const [
     { threads, loading: threadsLoading, error: threadsError },
@@ -53,7 +60,7 @@ export default function ChatPage() {
   );
 
   const [
-    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming },
+    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
     { submit: submitChatRequest, stop: stopChatRequest },
   ] = useChatRequester({
     threadId: resolvedThreadId.current,
@@ -110,39 +117,22 @@ export default function ChatPage() {
     [submitChatRequest],
   );
 
-  const handleVoiceModeToggle = useCallback(() => {
-    setIsVoiceModeActive((prev) => !prev);
-  }, []);
-
-  // Extract only text content from chat response (excluding thinking blocks)
-  const extractTextContent = useCallback((content: string): string => {
-    const segments = parseChatContent(content);
-    const textSegments = segments
-      .filter((segment) => segment.type === 'text')
-      .map((segment) => segment.content)
-      .join(' ')
-      .trim();
-
-    return textSegments;
-  }, []);
-
   // Handle response finished for TTS
   const handleResponseFinished = useCallback(
     (text: string) => {
-      if (isVoiceModeActive && text.trim()) {
-        console.log('🎤 ChatPage: Received text for TTS:', text.substring(0, 100) + '...');
-        // Extract only text content (excluding thinking blocks) for TTS
-        const textContent = extractTextContent(text);
-        if (textContent) {
-          console.log(
-            '🎤 ChatPage: Setting companion response for TTS:',
-            textContent.substring(0, 100) + '...',
-          );
-          setCompanionResponse(textContent);
+      if (text.trim()) {
+        // Only process new responses
+        if (text !== lastProcessedResponseRef.current) {
+          lastProcessedResponseRef.current = text;
+
+          // Handle TTS if voice mode is active
+          if (isVoiceModeActive) {
+            playCompanionResponse(text);
+          }
         }
       }
     },
-    [isVoiceModeActive, extractTextContent],
+    [isVoiceModeActive, playCompanionResponse],
   );
 
   const loading = threadsLoading || threadLoading || chatRequestLoading;
@@ -195,7 +185,7 @@ export default function ChatPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
@@ -240,6 +230,7 @@ export default function ChatPage() {
           key={initialThreadId ?? `new-thread-${newThreadCount}`}
           loading={loading}
           streaming={chatRequestStreaming}
+          hasStartedReceiving={hasStartedReceiving}
           disabled={isSubmitDisabled}
           placeholder={inputPlaceholder}
           messages={initialMessages}
@@ -248,12 +239,22 @@ export default function ChatPage() {
           onSubmit={handleSubmit}
           onStop={stopChatRequest}
           autoFocus={true}
-          onVoiceModeToggle={handleVoiceModeToggle}
-          isVoiceModeActive={isVoiceModeActive}
-          companionResponse={companionResponse}
           onResponseFinished={handleResponseFinished}
+          selectedVoice={selectedVoice}
+          onVoiceChange={setSelectedVoice}
+          onStopAudio={stopAudioPlayback}
         />
       </div>
     </>
+  );
+}
+
+export default function ChatPage() {
+  usePageTitle('Chat - Companion Intelligence');
+
+  return (
+    <VoiceModeProvider>
+      <ChatPageContent />
+    </VoiceModeProvider>
   );
 }

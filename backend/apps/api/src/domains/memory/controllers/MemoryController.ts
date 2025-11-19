@@ -30,6 +30,16 @@ const memorySearchSchema = z.object({
 
       return val;
     }),
+  excludeCategories: z
+    .union([z.array(z.string()), z.string()])
+    .optional()
+    .transform((val) => {
+      if (typeof val === 'string') {
+        return val.split(',').map((cat) => cat.trim());
+      }
+
+      return val;
+    }),
   hasLocation: z
     .union([z.boolean(), z.string()])
     .optional()
@@ -46,7 +56,7 @@ const memorySearchSchema = z.object({
     .transform((val) => {
       const num = typeof val === 'string' ? parseInt(val, 10) : val;
 
-      return Math.min(Math.max(1, num || 50), 100);
+      return Math.min(Math.max(1, num || 50), 1000);
     }),
   offset: z
     .union([z.number(), z.string()])
@@ -70,28 +80,7 @@ export class MemoryController {
     @Context() context: RequestContext,
     @Query(new ValidationPipe(memorySearchSchema)) params: MemorySearchParams,
   ) {
-    this.logger.debug('Memory findAll request', {
-      userId: context.userId,
-      params,
-      hasUserId: !!context.userId,
-    });
-
-    if (!context.userId) {
-      this.logger.warn('No userId in context', { context });
-    }
-
-    try {
-      const result = await this.memoryService.findAll(context, params);
-      this.logger.debug('Memory findAll response', {
-        dataLength: result.data.length,
-        total: result.total,
-      });
-
-      return result;
-    } catch (error) {
-      this.logger.error('Error in memory findAll', { error, userId: context.userId });
-      throw error;
-    }
+    return this.memoryService.findAll(context, params);
   }
 
   @Get(':id')
@@ -102,8 +91,6 @@ export class MemoryController {
 
   @Get('debug/info')
   async debugInfo(@Context() context: RequestContext) {
-    this.logger.debug('Debug info endpoint called', { userId: context.userId });
-
     try {
       const result = await this.memoryService.getDebugInfo(context);
 
@@ -113,8 +100,6 @@ export class MemoryController {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error('Debug info error', { error, userId: context.userId });
-
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',

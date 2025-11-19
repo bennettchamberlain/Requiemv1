@@ -1,4 +1,5 @@
 {
+  "hostname": "HOSTNAME",
   "auth": {
     "jwt": {
       "authTokenSecret": "AUTH_TOKEN_SECRET",
@@ -6,6 +7,9 @@
     },
     "session": {
       "fieldPepper": "AUTH_SESSION_PEPPER"
+    },
+    "oauth": {
+      "callbackUrl": "OAUTH_CALLBACK_URL"
     }
   },
   "db": {
@@ -35,7 +39,9 @@
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
     "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",
-    "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION"
+    "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION",
+    "pinned.demo.models": "ENABLE_PINNED_DEMO_MODELS",
+    "enable.system.prompt": "ENABLE_SYSTEM_PROMPT"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

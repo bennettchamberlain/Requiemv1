@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Card, Input, Label, Select, Switch, Separator, Badge, Alert } from '@ci/shadcn';
+import { Breadcrumb, Button, Card, Input, Label, Select, Switch, Badge, Alert } from '@ci/shadcn';
 import {
   Database,
   Key,
@@ -27,6 +27,7 @@ interface SettingsState {
   cacheSize: string;
 
   // API Keys
+  metaKey: string;
   openaiKey: string;
   githubToken: string;
   slackToken: string;
@@ -59,6 +60,7 @@ export function SettingsPage() {
     cacheSize: '2048',
 
     // API Keys defaults (masked)
+    metaKey: 'meta-***********************************',
     openaiKey: 'sk-***********************************',
     githubToken: 'ghp_********************************',
     slackToken: 'xoxb-***************************',
@@ -82,6 +84,7 @@ export function SettingsPage() {
   });
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({
+    metaKey: false,
     openaiKey: false,
     githubToken: false,
     slackToken: false,
@@ -117,7 +120,7 @@ export function SettingsPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
@@ -129,7 +132,7 @@ export function SettingsPage() {
 
       <PageContent>
         {/* Header */}
-        <div className="flex flex-row items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
             <p className="text-muted-foreground">
@@ -361,10 +364,94 @@ export function SettingsPage() {
             </Card.Header>
             <Card.Content className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="openai">OpenAI API Key</Label>
+                <div className="grid gap-2">
+                  <Label htmlFor="meta">Meta API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="meta"
+                      type={showKeys.metaKey ? 'text' : 'password'}
+                      value={settings.metaKey}
+                      onChange={(e) => updateSetting('metaKey', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('metaKey')}>
+                      {showKeys.metaKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-muted-foreground">Connected</span>
+                    <Badge variant="secondary">Valid</Badge>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="google">Google API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="google"
+                      type={showKeys.openaiKey ? 'text' : 'password'}
+                      value={settings.openaiKey}
+                      onChange={(e) => updateSetting('openaiKey', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('openaiKey')}>
+                      {showKeys.openaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-muted-foreground">Connected</span>
+                    <Badge variant="secondary">Valid</Badge>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="github">GitHub Personal Access Token</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="github"
+                      type={showKeys.githubToken ? 'text' : 'password'}
+                      value={settings.githubToken}
+                      onChange={(e) => updateSetting('githubToken', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('githubToken')}>
+                      {showKeys.githubToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-sm text-muted-foreground">Connected</span>
+                    <Badge variant="secondary">Valid</Badge>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="slack">Slack Bot Token</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="slack"
+                      type={showKeys.slackToken ? 'text' : 'password'}
+                      value={settings.slackToken}
+                      onChange={(e) => updateSetting('slackToken', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('slackToken')}>
+                      {showKeys.slackToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-yellow-500" />
+                    <span className="text-sm text-muted-foreground">Needs refresh</span>
+                    <Badge variant="outline">Expired</Badge>
+                  </div>
+                </div>
+
+                <Label htmlFor="spotify">Spotify API Key</Label>
                 <div className="flex gap-2">
                   <Input
-                    id="openai"
+                    id="spotify"
                     type={showKeys.openaiKey ? 'text' : 'password'}
                     value={settings.openaiKey}
                     onChange={(e) => updateSetting('openaiKey', e.target.value)}
@@ -380,48 +467,6 @@ export function SettingsPage() {
                   <Badge variant="secondary">Valid</Badge>
                 </div>
               </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="github">GitHub Personal Access Token</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="github"
-                    type={showKeys.githubToken ? 'text' : 'password'}
-                    value={settings.githubToken}
-                    onChange={(e) => updateSetting('githubToken', e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('githubToken')}>
-                    {showKeys.githubToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-muted-foreground">Connected</span>
-                  <Badge variant="secondary">Valid</Badge>
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="slack">Slack Bot Token</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="slack"
-                    type={showKeys.slackToken ? 'text' : 'password'}
-                    value={settings.slackToken}
-                    onChange={(e) => updateSetting('slackToken', e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('slackToken')}>
-                    {showKeys.slackToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-yellow-500" />
-                  <span className="text-sm text-muted-foreground">Needs refresh</span>
-                  <Badge variant="outline">Expired</Badge>
-                </div>
-              </div>
             </Card.Content>
           </Card>
         </div>
@@ -435,20 +480,24 @@ export function SettingsPage() {
             </Card.Title>
             <Card.Description>Configure general system behavior and appearance</Card.Description>
           </Card.Header>
-          <Card.Content>
+          <Card.Content className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-2">
-              {/* Theme Picker Section */}
-              <div className="space-y-4">
-                <div>
-                  <Label>Theme & Color</Label>
-                  <p className="text-sm text-muted-foreground">Customize your interface appearance</p>
-                </div>
-                <ThemePicker />
-              </div>
+              <Card className="shadow-none border-border/60">
+                <Card.Header>
+                  <Card.Title className="text-base">Theme & Texture</Card.Title>
+                  <Card.Description>Customize your interface appearance</Card.Description>
+                </Card.Header>
+                <Card.Content>
+                  <ThemePicker />
+                </Card.Content>
+              </Card>
 
-              {/* Other System Settings */}
-              <div className="space-y-4">
-                <div className="grid gap-4">
+              <Card className="shadow-none border-border/60">
+                <Card.Header>
+                  <Card.Title className="text-base">Locale Settings</Card.Title>
+                  <Card.Description>Language and timezone preferences</Card.Description>
+                </Card.Header>
+                <Card.Content className="space-y-4">
                   <div className="grid gap-2">
                     <Label htmlFor="language">Language</Label>
                     <Select
@@ -485,11 +534,9 @@ export function SettingsPage() {
                       </Select.Content>
                     </Select>
                   </div>
-                </div>
-              </div>
+                </Card.Content>
+              </Card>
             </div>
-
-            <Separator className="my-6" />
 
             <div className="flex flex-col sm:flex-row gap-4">
               <Button variant="outline" className="flex-1">

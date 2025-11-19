@@ -2,9 +2,9 @@ import { lazy } from 'react';
 
 import { ResponsiveLoader } from '@/components/ResponsiveLoader';
 
-const DesktopPage = lazy(() => import('./DesktopSearchPage'));
 const MobilePage = lazy(() => import('./MobileSearchPage'));
+const DesktopRedirect = lazy(() => import('./DesktopSearchRedirect'));
 
 export default function SearchPage() {
-  return <ResponsiveLoader desktop={DesktopPage} mobile={MobilePage} />;
+  return <ResponsiveLoader desktop={DesktopRedirect} mobile={MobilePage} />;
 }

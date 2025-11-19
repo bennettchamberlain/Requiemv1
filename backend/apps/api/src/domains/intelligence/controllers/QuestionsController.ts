@@ -133,7 +133,9 @@ export class QuestionsController {
       //
       // const associatedQuestions = await this.embeddingService.findNearest({}, question.text, 'question', 5);
 
-      const llmResponse = await this.ollamaService.chat({}, ragThread);
+      const llmResponse = await this.ollamaService.chat({}, ragThread, {
+        model: 'gemma3:1b',
+      });
 
       this.logger.log('Inferred answer to question', {
         userId: payload.ownerId,

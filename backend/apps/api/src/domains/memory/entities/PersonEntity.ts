@@ -5,13 +5,16 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToMany,
+  ManyToOne,
   JoinTable,
+  JoinColumn,
   AfterLoad,
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
+import { UserEntity } from '@ci/domains/user';
 
 @Entity({ name: 'entities' })
 export class PersonEntity {
@@ -29,6 +32,19 @@ export class PersonEntity {
 
   @Column({ type: 'jsonb', default: '{}' })
   properties!: Record<string, unknown>;
+
+  @Column({ type: 'text', nullable: true })
+  search_content!: string | null;
+
+  @Column({ type: 'text', nullable: false })
+  linked_id!: string;
+
+  @Column({ type: 'text', nullable: false })
+  linked_table!: string;
+
+  @ManyToOne(() => UserEntity, { nullable: true })
+  @JoinColumn({ name: 'owner_user_id' })
+  user?: UserEntity;
 
   // Backward compatibility fields - populated from properties JSONB after load
   type!: string | null;
@@ -90,9 +106,6 @@ export class PersonEntity {
       .where(`${alias}.entity_type = :entityType`, { entityType: 'Person' });
   }
 
-  @Column({ type: 'uuid', name: 'user_id', nullable: true })
-  userId?: string | null;
-
   @ManyToMany(() => TagEntity, { nullable: true })
   @JoinTable({
     name: 'person_tag',
@@ -106,4 +119,7 @@ export class PersonEntity {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
+
+  @Column({ type: 'timestamptz', default: () => 'NOW()' })
+  last_accessed!: Date;
 }

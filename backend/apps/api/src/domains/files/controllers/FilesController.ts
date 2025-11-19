@@ -5,11 +5,11 @@ import {
   HttpCode,
   Param,
   Post,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -46,14 +46,14 @@ export class FilesController {
 
   @UseGuards(JwtAuthGuard)
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
-  // Note that the literal 'file' is referencing the input with name `file` in a hypothetical form.
-  // All other fields would show up in the `body` here.
-  async upload(@Context() context: RequestContext, @UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('File is required');
+  @UseInterceptors(FilesInterceptor('files', undefined, { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
+  async upload(@Context() context: RequestContext, @UploadedFiles() files: Express.Multer.File[]) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one file is required');
     }
 
-    return this.fileService.upload(context, file);
+    const results = await Promise.all(files.map((file) => this.fileService.upload(context, file)));
+
+    return results;
   }
 }

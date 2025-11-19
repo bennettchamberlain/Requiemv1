@@ -8,6 +8,7 @@ import { Send, Settings, X } from '@ci/shadcn/icons';
 import { useUploadFile } from '@/api';
 import type { File as FileData, Thread } from '@/api/types';
 import { Chat, type FormData } from '@/components/Chat';
+import { VoiceModeProvider } from '@/components/Chat/VoiceModeProvider';
 import { InlineModal } from '@/components/InlineModal';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useChatRequester, useModel } from '@/hooks';
@@ -15,39 +16,46 @@ import { getMediaType } from '@/lib/utils';
 
 interface Props {
   open?: boolean;
-  initialFiles?: FileData[];
   onClose?: () => void;
 }
 
-export function CaptureModal({ open = false, initialFiles = [], onClose }: Props) {
+export function CaptureModal({ open = false, onClose }: Props) {
   const [{ authToken }] = useAuth();
   const [{ selectedModel }] = useModel();
 
   const { isMobile } = useDeviceLayout();
 
-  const [files, setFiles] = useState<FileData[]>(initialFiles);
+  const [files, setFiles] = useState<FileData[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
 
-  const [{ file: fileData }, { upload }] = useUploadFile();
+  const [{ files: fileData }, { upload, reset: resetUploader }] = useUploadFile();
 
-  const [{ stream, loading, streaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
-    useChatRequester({
-      threadId,
-    });
+  const [
+    { stream, loading, streaming, hasStartedReceiving },
+    { submit: submitChatRequest, stop: stopChatRequest },
+  ] = useChatRequester({
+    threadId,
+  });
 
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) {
-        setFiles([]);
-        onClose?.();
-      }
-    },
-    [onClose],
-  );
+  const handleClose = useCallback(() => {
+    setFiles([]);
+    setThreadId(null);
+    resetUploader();
+    stopChatRequest();
+
+    onClose?.();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      setFiles([]);
+      setThreadId(null);
+    }
+  }, [open]);
 
   const handleMediaCaptured = useCallback(
     async (file: File) => {
-      upload(file);
+      upload([file]);
     },
     [upload],
   );
@@ -69,7 +77,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
   useEffect(() => {
     (async () => {
-      if (fileData == null) {
+      if (fileData.length === 0) {
         return;
       }
 
@@ -80,12 +88,13 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
       // Check if this file is already in the files array to prevent duplicates
       setFiles((current) => {
-        const alreadyExists = current.some((file) => file.id === fileData.id);
+        const alreadyExists = current.some((file) => file.id === fileData[0].id);
+
         if (alreadyExists) {
           return current;
         }
 
-        return [...current, fileData];
+        return [...current, fileData[0]];
       });
 
       // Only create thread if we don't have one yet
@@ -96,7 +105,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   }, [fileData, isMobile, createFileThread, threadId]);
 
   const handleSelectLastCapture = useCallback(async () => {
-    if (fileData == null) {
+    if (fileData.length === 0) {
       return;
     }
 
@@ -107,12 +116,13 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
 
     // Check if this file is already in the files array to prevent duplicates
     setFiles((current) => {
-      const alreadyExists = current.some((file) => file.id === fileData.id);
+      const alreadyExists = current.some((file) => file.id === fileData[0].id);
+
       if (alreadyExists) {
         return current;
       }
 
-      return [...current, fileData];
+      return [...current, fileData[0]];
     });
   }, [fileData, createFileThread, threadId]);
 
@@ -130,10 +140,10 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
   if (isMobile) {
     if (files.length === 0) {
       return (
-        <InlineModal open={open} onClose={onClose} className="fixed">
+        <InlineModal open={open} onClose={handleClose} className="fixed">
           <div className="absolute top-[env(safe-area-inset-top)] right-0 z-10">
             <div className="flex-1 text-right text-white">
-              <Button variant="ghost" size="icon" onClick={onClose}>
+              <Button variant="ghost" size="icon" onClick={handleClose}>
                 <X />
               </Button>
             </div>
@@ -154,7 +164,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
     }
 
     return (
-      <InlineModal open={open} onClose={onClose}>
+      <InlineModal open={open} onClose={handleClose}>
         <div className="flex flex-row items-center border-b bg-stone-50 dark:bg-secondary gap-2 p-2 pt-[max(1rem,env(safe-area-inset-top))]">
           <div className="flex items-center flex-1">
             <Popover>
@@ -169,30 +179,34 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
             </Popover>
           </div>
 
-          <div className="flex items-center justify-center font-bold">{fileData?.name}</div>
+          <div className="flex items-center justify-center font-bold">{fileData[0]?.name}</div>
 
           <div className="flex items-center justify-end flex-1">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={handleClose}>
               <X />
             </Button>
           </div>
         </div>
 
-        <Chat
-          placeholder="Ask about this content..."
-          streaming={streaming}
-          readable={stream ?? undefined}
-          onSubmit={handleSubmit}
-          onStop={stopChatRequest}
-        >
-          <Files files={files} />
-        </Chat>
+        <VoiceModeProvider>
+          <Chat
+            placeholder="Ask about this content..."
+            loading={loading}
+            streaming={streaming}
+            hasStartedReceiving={hasStartedReceiving}
+            readable={stream ?? undefined}
+            onSubmit={handleSubmit}
+            onStop={stopChatRequest}
+          >
+            <Files files={files} />
+          </Chat>
+        </VoiceModeProvider>
       </InlineModal>
     );
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <Dialog.Content
         className={cn(
           'w-[90vw] h-[90vh] sm:max-w-[90vw] sm:max-h-[80vh] p-0 flex flex-col gap-0',
@@ -207,7 +221,7 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
           <ModelSelector withToggles />
 
           <div className="flex items-center justify-end">
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={handleClose}>
               <X />
             </Button>
           </div>
@@ -235,25 +249,28 @@ export function CaptureModal({ open = false, initialFiles = [], onClose }: Props
             </div>
 
             <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
-              <Chat
-                loading={loading}
-                streaming={streaming}
-                readable={stream ?? undefined}
-                onSubmit={handleSubmit}
-                onStop={stopChatRequest}
-                placeholder="Ask about this content..."
-                emptyState={
-                  <div className="text-center text-gray-500 mt-8">
-                    <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
-                      <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
+              <VoiceModeProvider>
+                <Chat
+                  loading={loading}
+                  streaming={streaming}
+                  hasStartedReceiving={hasStartedReceiving}
+                  readable={stream ?? undefined}
+                  onSubmit={handleSubmit}
+                  onStop={stopChatRequest}
+                  placeholder="Ask about this content..."
+                  emptyState={
+                    <div className="text-center text-gray-500 mt-8">
+                      <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
+                        <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
+                      </div>
+                      <p className="text-sm">Start a conversation about this content</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Ask questions, get recommendations, or explore ideas
+                      </p>
                     </div>
-                    <p className="text-sm">Start a conversation about this content</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Ask questions, get recommendations, or explore ideas
-                    </p>
-                  </div>
-                }
-              />
+                  }
+                />
+              </VoiceModeProvider>
             </div>
           </div>
         )}

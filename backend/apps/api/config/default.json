@@ -1,6 +1,7 @@
 {
   "host": "0.0.0.0",
   "port": 3030,
+  "hostname": "dev.companionintelligence.com",
   "logging": {
     "level": "info"
   },
@@ -67,7 +68,9 @@
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
-    "scheduled.entity.promotion": true
+    "scheduled.entity.promotion": true,
+    "pinned.demo.models": false,
+    "enable.system.prompt": false
   },
   "environment": {
     "database.query.logging": false

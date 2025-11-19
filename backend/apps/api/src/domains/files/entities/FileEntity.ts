@@ -6,10 +6,8 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-  ManyToMany,
 } from 'typeorm';
 
-import { MessageEntity } from '@ci/domains/conversations/entities/MessageEntity';
 import { UserEntity } from '@ci/domains/user';
 
 import type { File } from '../types';
@@ -28,14 +26,23 @@ export class FileEntity {
   @Column({ type: 'text', name: 'storage_type' })
   storage_type!: string;
 
+  @Column({ type: 'text', name: 'storage_provider', nullable: true })
+  storage_provider!: string | null;
+
+  @Column({ type: 'text', name: 'cloud_file_id', nullable: true })
+  cloud_file_id!: string | null;
+
+  @Column({ type: 'text', name: 'storage_account', nullable: true })
+  storage_account!: string | null;
+
   @Column({ type: 'timestamptz', name: 'modified_at_source' })
   modified_at_source!: Date;
 
-  @Column({ type: 'text' })
-  bucket!: string;
+  @Column({ type: 'text', nullable: true })
+  bucket!: string | null;
 
-  @Column({ type: 'uuid' })
-  key!: string;
+  @Column({ type: 'uuid', nullable: true })
+  key!: string | null;
 
   @Column({ type: 'text', name: 'original_filename' })
   original_name!: string;
@@ -43,15 +50,15 @@ export class FileEntity {
   @Column({ type: 'text', name: 'mime_type' })
   content_type!: string;
 
+  @Column({ type: 'text', name: 'file_hash' })
+  file_hash!: string | null;
+
   @Column({ type: 'bigint', name: 'file_size_bytes' })
   size!: number;
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
-
-  @ManyToMany(() => MessageEntity, (message) => message.files)
-  messages?: MessageEntity[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
@@ -63,6 +70,7 @@ export class FileEntity {
     return {
       id: this.id,
       name: this.original_name,
+      fileHash: this.file_hash || undefined,
       key: this.key,
       contentType: this.content_type,
       size: this.size,

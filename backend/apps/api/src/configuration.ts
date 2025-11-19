@@ -18,6 +18,7 @@ const booleanStringSchema = z.preprocess((val) => {
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
+  hostname: z.string(),
   logging: z.object({
     level: z.string(),
   }),
@@ -85,6 +86,8 @@ export const ConfigSchema = z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.sync': booleanStringSchema,
     'scheduled.entity.promotion': booleanStringSchema,
+    'pinned.demo.models': booleanStringSchema,
+    'enable.system.prompt': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

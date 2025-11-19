@@ -1,6 +1,8 @@
+import type { Point } from 'typeorm';
+
 export interface Memory {
   id: string;
-  type: 'event' | 'content' | 'thing' | 'person' | 'contact' | 'other';
+  type: string;
   title: string;
   description: string | null;
   timestamp: Date;
@@ -8,6 +10,7 @@ export interface Memory {
   location?: MemoryLocation;
   tags: string[];
   userId: string;
+  sourceLink?: string;
   metadata?: {
     eventId?: string;
     eventType?: string;
@@ -17,6 +20,16 @@ export interface Memory {
     contentRef?: string;
     thingRef?: string;
     entityType?: string;
+    communicationType?: string;
+    direction?: string;
+    participantsMetadata?: unknown;
+    relationships?: Array<{
+      type: string;
+      targetId: string;
+      targetName: string;
+      targetType: string;
+      direction: 'outgoing' | 'incoming';
+    }>;
     [key: string]: unknown;
   };
 }
@@ -35,6 +48,7 @@ export interface MemorySearchParams {
   startDate?: Date;
   endDate?: Date;
   categories?: string[];
+  excludeCategories?: string[];
   hasLocation?: boolean;
   limit?: number;
   offset?: number;
@@ -46,32 +60,94 @@ export interface MemoryResponse {
   limit: number;
   offset: number;
 }
+
 export interface Event {
   readonly id: string;
-  readonly name: string | null;
-  readonly type: string | null;
+  readonly title: string;
   readonly description: string | null;
-  readonly start_time: Date | null;
+  readonly event_type: string | null;
+  readonly category: string | null;
+  readonly start_time: Date;
   readonly end_time: Date | null;
-  readonly external_id: string | null;
-  readonly source_url: string | null;
-  readonly source_data: object | null;
+  readonly duration_minutes: number | null;
+  readonly location_name: string | null;
+  readonly location_coordinates: Point | null;
+  readonly event_entity_id: string | null;
+  readonly location_entity_id: string | null;
+  readonly participant_entity_ids: string[] | null;
+  readonly organizer_entity_id: string | null;
+  readonly source_type: string | null;
+  readonly source_system: string | null;
+  readonly source_id: string | null;
+  readonly confidence_score: number;
+  readonly is_recurring: boolean;
+  readonly recurrence_pattern: object | null;
+  readonly is_all_day: boolean;
+  readonly is_private: boolean;
+  readonly priority: number;
+  readonly metadata: object;
+  readonly is_predicted: boolean;
+  readonly is_inferred: boolean;
+  readonly prediction_model: string | null;
+  readonly inference_sources: object;
+  readonly tags: string[] | null;
+  readonly sentiment_score: number | null;
+  readonly energy_level: number | null;
+  readonly productivity_impact: number | null;
+  readonly status: string;
+  readonly is_deleted: boolean;
+  readonly external_sync_status: string | null;
+  readonly last_synced_at: Date | null;
+  readonly parent_event_id: string | null;
+  readonly related_event_ids: string[] | null;
+  readonly supersedes_event_id: string | null;
+  readonly created_by: string | null;
   readonly user_id: string | undefined;
-  readonly connection_id: string | undefined;
+  readonly created_at: Date;
+  readonly updated_at: Date;
 }
 
 export interface CreateEventDto {
   id: string;
-  name?: string;
-  type: string;
+  title: string;
   description?: string;
-  start_time?: Date;
+  event_type?: string;
+  category?: string;
+  start_time: Date;
   end_time?: Date;
-  external_id?: string;
-  source_url?: string;
-  source_data?: object;
+  location_name?: string;
+  event_entity_id?: string;
+  location_entity_id?: string;
+  location_coordinates?: Point;
+  participant_entity_ids?: string[];
+  organizer_entity_id?: string;
+  source_type?: string;
+  source_system?: string;
+  source_id?: string;
+  confidence_score?: number;
+  is_recurring?: boolean;
+  recurrence_pattern?: object;
+  is_all_day?: boolean;
+  is_private?: boolean;
+  priority?: number;
+  metadata?: object;
+  is_predicted?: boolean;
+  is_inferred?: boolean;
+  prediction_model?: string;
+  inference_sources?: object;
+  tags?: string[];
+  sentiment_score?: number;
+  energy_level?: number;
+  productivity_impact?: number;
+  status?: string;
+  is_deleted?: boolean;
+  external_sync_status?: string;
+  last_synced_at?: Date;
+  parent_event_id?: string;
+  related_event_ids?: string[];
+  supersedes_event_id?: string;
+  created_by?: string;
   user_id?: string;
-  connection_id?: string;
   user?: {
     id: string;
   };
@@ -80,17 +156,86 @@ export interface CreateEventDto {
 
 export interface UpdateEventDto {
   id?: string;
-  name?: string;
-  type?: string;
+  title?: string;
   description?: string;
+  event_type?: string;
+  category?: string;
   start_time?: Date;
   end_time?: Date;
-  external_id?: string;
-  source_url?: string;
-  source_data?: object;
+  location_name?: string;
+  event_entity_id?: string;
+  location_entity_id?: string;
+  location_coordinates?: Point;
+  participant_entity_ids?: string[];
+  organizer_entity_id?: string;
+  source_type?: string;
+  source_system?: string;
+  source_id?: string;
+  confidence_score?: number;
+  is_recurring?: boolean;
+  recurrence_pattern?: object;
+  is_all_day?: boolean;
+  is_private?: boolean;
+  priority?: number;
+  metadata?: object;
+  is_predicted?: boolean;
+  is_inferred?: boolean;
+  prediction_model?: string;
+  inference_sources?: object;
+  tags?: string[];
+  sentiment_score?: number;
+  energy_level?: number;
+  productivity_impact?: number;
+  status?: string;
+  is_deleted?: boolean;
+  external_sync_status?: string;
+  last_synced_at?: Date;
+  parent_event_id?: string;
+  related_event_ids?: string[];
+  supersedes_event_id?: string;
+  created_by?: string;
   user_id?: string;
-  connection_id?: string;
   content?: CreateContentDto[];
+}
+
+export interface SearchEventDto {
+  id?: string;
+  title?: string;
+  description?: string;
+  event_type?: string;
+  category?: string;
+  start_time?: Date;
+  end_time?: Date;
+  location_name?: string;
+  event_entity_id?: string;
+  location_entity_id?: string;
+  location_coordinates?: Point;
+  organizer_entity_id?: string;
+  source_type?: string;
+  source_system?: string;
+  source_id?: string;
+  confidence_score?: number;
+  is_recurring?: boolean;
+  recurrence_pattern?: object;
+  is_all_day?: boolean;
+  is_private?: boolean;
+  priority?: number;
+  metadata?: object;
+  is_predicted?: boolean;
+  is_inferred?: boolean;
+  prediction_model?: string;
+  inference_sources?: object;
+  sentiment_score?: number;
+  energy_level?: number;
+  productivity_impact?: number;
+  status?: string;
+  is_deleted?: boolean;
+  external_sync_status?: string;
+  last_synced_at?: Date | undefined;
+  parent_event_id?: string;
+  supersedes_event_id?: string;
+  created_by?: string;
+  user_id?: string;
 }
 
 export interface Content {
@@ -116,7 +261,7 @@ export interface CreateContentDto {
   external_id?: string;
   source_url?: string;
   user_id?: string;
-  event_id: string;
+  event_id?: string;
   event?: {
     id: string;
   };
@@ -138,5 +283,77 @@ export interface UpdateContentDto {
   };
   user?: {
     id: string;
+  };
+}
+
+export interface CreatePlaceDto {
+  id?: string;
+  entity_type?: string;
+  name?: string;
+  description?: string;
+  properties?: Record<string, unknown>;
+  type?: string;
+  geo_format?: string;
+  geolocation?: Record<string, unknown>;
+  location_boundary?: Record<string, unknown>;
+  estimated?: boolean;
+  tracked?: boolean;
+  uploaded?: boolean;
+  user_id?: string;
+  parent_id?: string;
+  user?: {
+    id: string;
+  };
+  parent?: {
+    id: string;
+  };
+}
+
+export interface CreateFileDto {
+  name?: string;
+  description?: string;
+  properties?: Record<string, unknown>;
+  linkedId?: string;
+  user?: {
+    id: string;
+  };
+}
+
+export interface CreatePersonDto {
+  id?: string;
+  name?: string;
+  description?: string;
+  searchContent?: string;
+  linkedId?: string;
+  linkedTable?: string;
+  lastAccessed?: Date;
+  properties: {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    contactType?: string;
+    ownerUserId?: string;
+    connectionId?: string;
+    sources?: string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface UpdatePersonDto {
+  name?: string;
+  description?: string;
+  searchContent?: string;
+  linkedId?: string;
+  linkedTable?: string;
+  lastAccessed?: Date;
+  properties: {
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    contactType?: string;
+    ownerUserId?: string;
+    connectionId?: string;
+    sources?: string[];
+    [key: string]: unknown;
   };
 }

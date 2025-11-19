@@ -1,5 +1,15 @@
 import { Card, Switch } from '@ci/shadcn';
-import { Bot, Clapperboard, Play, Utensils } from '@ci/shadcn/icons';
+import {
+  Bot,
+  BookOpen,
+  Clapperboard,
+  Music,
+  Plane,
+  Play,
+  ShoppingBag,
+  Utensils,
+  Dumbbell,
+} from '@ci/shadcn/icons';
 
 import { useToolPreferences } from './useToolPreferences';
 
@@ -12,12 +22,13 @@ interface ToolCard {
   capabilities: string[];
   canToggle: boolean;
   systemStatus: 'active' | 'disabled';
+  isDemo?: boolean; // Purely aesthetic demo tool that always appears enabled
 }
 
 const AVAILABLE_TOOLS: ToolCard[] = [
   {
     id: 'food-preferences',
-    name: 'Food Preferences',
+    name: 'Food & Nutrition Companion',
     description:
       'Get user food preferences, dietary restrictions, allergies, and eating habits for meal planning and cooking recommendations.',
     category: 'Lifestyle',
@@ -33,9 +44,9 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'entertainment-preferences',
-    name: 'Entertainment Preferences',
+    name: 'Entertainment Companion',
     description:
-      'Access movie genres, TV show types, streaming preferences, and viewing habits for personalized entertainment recommendations.',
+      'Monitor movie genres, TV show types, streaming preferences, and viewing habits for personalized entertainment recommendations.',
     category: 'Entertainment',
     icon: <Clapperboard className="h-6 w-6" />,
     capabilities: [
@@ -49,9 +60,9 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'streaming-availability',
-    name: 'Streaming Availability',
+    name: 'Playlist Creation Companion',
     description:
-      'Check what movies and TV shows are currently available across different streaming platforms.',
+      'Create playlists of videos, music, games, podcasts, movies and TV shows available across different platforms.',
     category: 'Entertainment',
     icon: <Play className="h-6 w-6" />,
     capabilities: [
@@ -65,9 +76,9 @@ const AVAILABLE_TOOLS: ToolCard[] = [
   },
   {
     id: 'family-members',
-    name: 'Family Members',
+    name: 'Family Companion',
     description:
-      'Access information about family members and relationships for personalized interactions and planning.',
+      'Monitor information about family members and relationships for personalized interactions and planning.',
     category: 'Personal',
     icon: <Bot className="h-6 w-6" />,
     capabilities: [
@@ -78,6 +89,91 @@ const AVAILABLE_TOOLS: ToolCard[] = [
     ],
     canToggle: true,
     systemStatus: 'active',
+  },
+  {
+    id: 'shopping-preferences',
+    name: 'Shopping Companion',
+    description:
+      'Track and plan shopping habits, preferred brands, purchase history, and price tracking for smart shopping recommendations.',
+    category: 'Lifestyle',
+    icon: <ShoppingBag className="h-6 w-6" />,
+    capabilities: [
+      'Brand and store preferences',
+      'Purchase history tracking',
+      'Price alerts and deals',
+      'Wishlist management',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'travel-assistant',
+    name: 'Travel Companion',
+    description:
+      'Manage travel preferences, favorite destinations, trip history, and travel-related information for personalized travel planning.',
+    category: 'Travel',
+    icon: <Plane className="h-6 w-6" />,
+    capabilities: [
+      'Favorite destinations and places',
+      'Travel history and itineraries',
+      'Accommodation preferences',
+      'Destination recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'fitness-tracking',
+    name: 'Fitness Companion',
+    description:
+      'Monitor fitness goals, workout preferences, activity patterns, and health metrics for personalized fitness guidance.',
+    category: 'Health',
+    icon: <Dumbbell className="h-6 w-6" />,
+    capabilities: [
+      'Workout preferences and routines',
+      'Fitness goals and progress',
+      'Activity tracking history',
+      'Personalized fitness recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'reading-habits',
+    name: 'Learning Companion',
+    description:
+      'Track learning interest, classes, reading history, favorite book genres, and reading patterns for personalized educational recommendations.',
+    category: 'Entertainment',
+    icon: <BookOpen className="h-6 w-6" />,
+    capabilities: [
+      'Educational interests and subjects',
+      'Reading history and favorites',
+      'Learning pace and habits',
+      'Personalized education and career recommendations',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
+  },
+  {
+    id: 'music-preferences',
+    name: 'Music Teacher Companion',
+    description:
+      'Learn how to sing or play an instrument, learn to play songs from your favorite artists, tracks learning lessons from the songs you know.',
+    category: 'Entertainment',
+    icon: <Music className="h-6 w-6" />,
+    capabilities: [
+      'Education and preferences',
+      'Listening history and patterns',
+      'Understand instruments in your home',
+      'Music Lesson support',
+    ],
+    canToggle: true,
+    systemStatus: 'active',
+    isDemo: true,
   },
 ];
 
@@ -90,7 +186,8 @@ const ToolCard = ({
   isEnabled: boolean;
   onToggle: (toolId: string) => void;
 }) => {
-  const isEffectivelyEnabled = tool.systemStatus === 'active' && isEnabled;
+  // Demo tools always appear enabled for aesthetic purposes
+  const isEffectivelyEnabled = tool.isDemo ? true : tool.systemStatus === 'active' && isEnabled;
   const canInteract = tool.canToggle && tool.systemStatus === 'active';
 
   return (
@@ -128,8 +225,13 @@ const ToolCard = ({
 
           <div className="flex flex-col items-end gap-1">
             <Switch
-              checked={isEnabled}
-              onCheckedChange={() => canInteract && onToggle(tool.id)}
+              checked={tool.isDemo ? true : isEnabled}
+              onCheckedChange={() => {
+                if (!tool.isDemo && canInteract) {
+                  onToggle(tool.id);
+                }
+                // Demo tools: toggle does nothing, purely aesthetic
+              }}
               disabled={!canInteract}
               aria-label={`Toggle ${tool.name}`}
               className="data-[state=unchecked]:opacity-50"
@@ -146,8 +248,8 @@ const ToolCard = ({
           <h4 className="text-sm font-medium mb-2">Capabilities:</h4>
           <ul className="space-y-1">
             {tool.capabilities.map((capability, index) => (
-              <li key={index} className="text-xs text-muted-foreground flex items-start gap-2">
-                <span className="text-primary mt-1">•</span>
+              <li key={index} className="text-sm text-muted-foreground flex items-baseline gap-2">
+                <span className="text-primary">•</span>
                 <span>{capability}</span>
               </li>
             ))}
@@ -179,54 +281,39 @@ export function AiToolsTab() {
     );
   }
 
-  const enabledCount = getEnabledToolsCount();
+  // Include demo tools in the enabled count for display purposes
+  const demoToolsCount = AVAILABLE_TOOLS.filter((tool) => tool.isDemo).length;
+  const enabledCount = getEnabledToolsCount() + demoToolsCount;
   const disabledCount = getDisabledToolsCount();
 
   return (
     <div className="space-y-6">
-      {/* Stats Section */}
-      <div className="flex gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-          <span>{enabledCount} Enabled Tools</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
-          <span>{disabledCount} Disabled Tools</span>
-        </div>
-      </div>
-
       {/* Tools Grid */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">AI Tools</h2>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <h2 className="text-xl font-semibold">AI Companions</h2>
           <p className="text-sm text-muted-foreground">
-            Use the toggles to enable or disable tools for your conversations
+            Use the toggles to enable or disable companions for your conversations
           </p>
         </div>
+
+        {/* Stats Section */}
+        <div className="flex gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+            <span>{enabledCount} Enabled Tools</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
+            <span>{disabledCount} Disabled Tools</span>
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {AVAILABLE_TOOLS.map((tool) => (
             <ToolCard key={tool.id} tool={tool} isEnabled={isToolEnabled(tool.id)} onToggle={toggleTool} />
           ))}
         </div>
-      </div>
-
-      {/* Help Text */}
-      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <h3 className="text-sm font-medium text-blue-900 mb-2">How Tool Toggles Work</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>
-            • <strong>Enabled tools</strong> are available for AI conversations and will provide personalized
-            responses
-          </li>
-          <li>
-            • <strong>Disabled tools</strong> won't be used by the AI, giving you control over data access
-          </li>
-          <li>
-            • <strong>System tools</strong> are controlled by administrators and cannot be toggled by users
-          </li>
-          <li>• Your preferences are saved locally and will persist between sessions</li>
-        </ul>
       </div>
     </div>
   );

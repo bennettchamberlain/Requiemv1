@@ -1,6 +1,6 @@
 import { UnauthorizedException, type INestApplication } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 
@@ -21,7 +21,15 @@ describe('File routes', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const module = await Test.createTestingModule({
+    const repositoryTokensToMock = [
+      getRepositoryToken(FileEntity),
+      'PgBossJobEntityRepository',
+      'PgBossArchiveEntityRepository',
+      'PgBossScheduleEntityRepository',
+      'PgBossQueueEntityRepository',
+    ];
+
+    let moduleBuilder = Test.createTestingModule({
       imports: [FilesModule],
       providers: [
         {
@@ -40,10 +48,14 @@ describe('File routes', () => {
         upload: jest.fn(),
       })
       .overrideProvider(EventService)
-      .useValue({})
-      .overrideProvider(getRepositoryToken(FileEntity))
-      .useValue({})
-      .compile();
+      .useValue({});
+
+    moduleBuilder = repositoryTokensToMock.reduce(
+      (builder, token) => builder.overrideProvider(token).useValue({}),
+      moduleBuilder satisfies TestingModuleBuilder,
+    );
+
+    const module = await moduleBuilder.compile();
 
     app = module.createNestApplication();
 
@@ -68,7 +80,7 @@ describe('File routes', () => {
 
       return request(app.getHttpServer())
         .post('/files/upload')
-        .attach('file', buffer, 'hello.txt')
+        .attach('files', buffer, 'hello.txt')
         .expect(201);
     });
 

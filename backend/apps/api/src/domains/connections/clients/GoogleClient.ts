@@ -467,12 +467,14 @@ export class GoogleClient extends BaseOAuth2Client {
       'metadata',
     ].join(',');
     let nextPageToken: string | undefined;
+    let lastResponse: Record<string, unknown> | null = null;
 
     // Fetch all contacts (no sync token request during pagination)
     do {
       const params = new URLSearchParams({
         pageSize: '1000',
         personFields,
+        requestSyncToken: 'true',
       });
       if (nextPageToken) {
         params.set('pageToken', nextPageToken);
@@ -493,6 +495,7 @@ export class GoogleClient extends BaseOAuth2Client {
 
         return r.json();
       })) as Record<string, unknown>;
+      lastResponse = response;
       const connections = (response.connections as unknown[]) || [];
 
       nextPageToken = response.nextPageToken as string | undefined;
@@ -509,27 +512,9 @@ export class GoogleClient extends BaseOAuth2Client {
       throw new Error('Connection not authenticated');
     }
 
-    const tokenParams = new URLSearchParams({
-      pageSize: '1',
-      personFields,
-      requestSyncToken: 'true',
-    });
-    const tokenUrl = `https://people.googleapis.com/v1/people/me/connections?${tokenParams.toString()}`;
-    const tokenResp = (await fetch(tokenUrl, {
-      headers: { Authorization: `Bearer ${connection.accessToken}` },
-    }).then((r) => {
-      if (!r.ok) {
-        throw new Error(`People API request failed: ${r.status} ${r.statusText}`);
-      }
-
-      return r.json();
-    })) as Record<string, unknown>;
-    if (!tokenResp?.nextSyncToken) {
-      throw new Error('Failed to get nextSyncToken from People API');
-    }
-
+    const nextSyncToken = lastResponse?.nextSyncToken as string;
     const newSyncState: ContactsSyncState = {
-      syncToken: tokenResp.nextSyncToken as string,
+      syncToken: nextSyncToken as string,
       lastSyncAt: new Date().toISOString(),
     };
 
@@ -644,8 +629,9 @@ export class GoogleClient extends BaseOAuth2Client {
     const newSyncState: YouTubeSyncState = {
       lastSyncAt: new Date().toISOString(),
       lastLikesItemId: syncState?.lastLikesItemId,
-      lastHistoryItemId: syncState?.lastHistoryItemId,
       lastPlaylistId: syncState?.lastPlaylistId,
+      lastSubscriptionId: syncState?.lastSubscriptionId,
+      lastActivityId: syncState?.lastActivityId,
     };
 
     const collectPlaylistItemsIncremental = async (
@@ -773,20 +759,125 @@ export class GoogleClient extends BaseOAuth2Client {
       });
     }
 
-    // History (playlistId=HL)
+    // Subscriptions
     try {
-      const inc = await collectPlaylistItemsIncremental('HL', syncState?.lastHistoryItemId);
-      if (inc.newTopItemId) {
-        newSyncState.lastHistoryItemId = inc.newTopItemId;
+      const subscriptions: unknown[] = [];
+      let pageToken: string | undefined;
+      let newestId: string | undefined;
+
+      do {
+        const params = new URLSearchParams({
+          part: 'snippet,contentDetails',
+          mine: 'true',
+          maxResults: '50',
+        });
+        if (pageToken) {
+          params.set('pageToken', pageToken);
+        }
+
+        const url = `https://www.googleapis.com/youtube/v3/subscriptions?${params.toString()}`;
+        const resp = (await fetch(url, {
+          headers: { Authorization: `Bearer ${connection.accessToken}` },
+        }).then((r) => {
+          if (!r.ok) {
+            throw new Error(`YouTube subscriptions API failed: ${r.status} ${r.statusText}`);
+          }
+
+          return r.json();
+        })) as Record<string, unknown>;
+
+        const items = (resp.items as unknown[]) || [];
+        for (const item of items) {
+          const itemObj = item as Record<string, unknown>;
+          const itemId = itemObj.id as string;
+
+          if (!newestId) {
+            newestId = itemId;
+          }
+
+          if (itemId === syncState?.lastSubscriptionId) {
+            break;
+          }
+
+          subscriptions.push(item);
+        }
+
+        pageToken = resp.nextPageToken as string | undefined;
+      } while (pageToken && subscriptions.length < 500);
+
+      if (newestId) {
+        newSyncState.lastSubscriptionId = newestId;
       }
 
-      if (inc.items.length > 0) {
-        results.push({ data: { type: 'history', items: inc.items }, syncState: newSyncState });
+      if (subscriptions.length > 0) {
+        results.push({ data: { type: 'subscriptions', items: subscriptions }, syncState: newSyncState });
       } else {
         results.push({ data: null, syncState: newSyncState });
       }
     } catch (e) {
-      this.logger.warn('YouTube history fetch skipped', {
+      this.logger.warn('YouTube subscriptions fetch skipped', {
+        connectionId: connection.id,
+        error: e instanceof Error ? e.message : 'Unknown error',
+      });
+    }
+
+    // Activities (comments, uploads, likes)
+    try {
+      const activities: unknown[] = [];
+      let pageToken: string | undefined;
+      let newestId: string | undefined;
+
+      do {
+        const params = new URLSearchParams({
+          part: 'snippet,contentDetails',
+          mine: 'true',
+          maxResults: '50',
+        });
+        if (pageToken) {
+          params.set('pageToken', pageToken);
+        }
+
+        const url = `https://www.googleapis.com/youtube/v3/activities?${params.toString()}`;
+        const resp = (await fetch(url, {
+          headers: { Authorization: `Bearer ${connection.accessToken}` },
+        }).then((r) => {
+          if (!r.ok) {
+            throw new Error(`YouTube activities API failed: ${r.status} ${r.statusText}`);
+          }
+
+          return r.json();
+        })) as Record<string, unknown>;
+
+        const items = (resp.items as unknown[]) || [];
+        for (const item of items) {
+          const itemObj = item as Record<string, unknown>;
+          const itemId = itemObj.id as string;
+
+          if (!newestId) {
+            newestId = itemId;
+          }
+
+          if (itemId === syncState?.lastActivityId) {
+            break;
+          }
+
+          activities.push(item);
+        }
+
+        pageToken = resp.nextPageToken as string | undefined;
+      } while (pageToken && activities.length < 500);
+
+      if (newestId) {
+        newSyncState.lastActivityId = newestId;
+      }
+
+      if (activities.length > 0) {
+        results.push({ data: { type: 'activities', items: activities }, syncState: newSyncState });
+      } else {
+        results.push({ data: null, syncState: newSyncState });
+      }
+    } catch (e) {
+      this.logger.warn('YouTube activities fetch skipped', {
         connectionId: connection.id,
         error: e instanceof Error ? e.message : 'Unknown error',
       });

@@ -1,9 +1,9 @@
 import { Form, useFormContext } from '@ci/shadcn';
 
-import clown from './assets/clown.jpg';
-import drama from './assets/drama.jpg';
-import nature from './assets/nature.jpg';
-import zombie from './assets/zombie.jpg';
+import comedy from './assets/comedy.png';
+import documentary from './assets/documentary.png';
+import drama from './assets/drama.png';
+import horror from './assets/horror.png';
 import { OptionGrid } from './OptionGrid';
 
 const options = [
@@ -15,17 +15,17 @@ const options = [
   {
     id: 'Documentaries',
     title: 'Documentaries',
-    imageUrl: nature,
+    imageUrl: documentary,
   },
   {
     id: 'Comedies',
     title: 'Comedies',
-    imageUrl: clown,
+    imageUrl: comedy,
   },
   {
     id: 'Horror',
     title: 'Horror',
-    imageUrl: zombie,
+    imageUrl: horror,
   },
 ];
 

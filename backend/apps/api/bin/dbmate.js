@@ -38,12 +38,36 @@ try {
 const { type, host, port, database, username, password, sslmode } = parsedDb;
 const DATABASE_URL = `${type}://${username}:${password}@${host}:${port}/${database}?sslmode=${sslmode}`;
 
+async function waitForDatabase(maxRetries = 30, retryDelay = 1000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const client = new Client(DATABASE_URL);
+
+      await client.connect();
+      await client.query('SELECT 1');
+      await client.end();
+
+      return;
+    } catch (err) {
+      if (attempt === maxRetries) {
+        console.error(`Database not available after ${maxRetries} attempts:`, err.message);
+        process.exit(1);
+      }
+
+      console.log(`Database not ready (attempt ${attempt}/${maxRetries}), retrying in ${retryDelay}ms...`);
+
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    }
+  }
+}
+
 const program = new Command();
 
 program
   .name('dbmate')
   .description('Wrapper for dbmate with .env and config support')
   .option('--execute-file <file>', 'Execute raw SQL from a file')
+  .option('--no-wait', 'Skip waiting for database availability')
   .allowUnknownOption(true)
   .allowExcessArguments(true);
 
@@ -52,28 +76,32 @@ program.parse(process.argv);
 const opts = program.opts();
 const forwardArgs = program.args;
 
-if (opts.executeFile) {
-  const filePath = path.resolve(opts.executeFile);
-
-  let sql;
-
-  try {
-    sql = readFileSync(filePath, 'utf8');
-  } catch {
-    console.error(`Failed to read SQL file: ${opts.executeFile}`);
-    process.exit(1);
+(async () => {
+  if (opts.wait !== false) {
+    await waitForDatabase();
   }
 
-  let client;
+  if (opts.executeFile) {
+    const filePath = path.resolve(opts.executeFile);
 
-  try {
-    client = new Client(DATABASE_URL);
-  } catch {
-    console.error(`Failed to connect to SQL database`);
-    process.exit(1);
-  }
+    let sql;
 
-  (async () => {
+    try {
+      sql = readFileSync(filePath, 'utf8');
+    } catch {
+      console.error(`Failed to read SQL file: ${opts.executeFile}`);
+      process.exit(1);
+    }
+
+    let client;
+
+    try {
+      client = new Client(DATABASE_URL);
+    } catch {
+      console.error(`Failed to connect to SQL database`);
+      process.exit(1);
+    }
+
     if (UNSAFE_OPERATIONS.has(path.basename(filePath)) || /(drop|delete)/i.test(sql)) {
       console.log('⚠️ WARNING ⚠️\n');
       console.log('This command will execute the following SQL:\n');
@@ -102,17 +130,17 @@ if (opts.executeFile) {
     }
 
     process.exit(0);
-  })();
-} else {
-  const result = spawnSync('dbmate', forwardArgs, {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      DATABASE_URL,
-      DBMATE_MIGRATIONS_DIR: './db/postgres/migrations',
-      DBMATE_SCHEMA_FILE: './db/postgres/schema.sql',
-    },
-  });
+  } else {
+    const result = spawnSync('dbmate', forwardArgs, {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        DATABASE_URL,
+        DBMATE_MIGRATIONS_DIR: './db/postgres/migrations',
+        DBMATE_SCHEMA_FILE: './db/postgres/schema.sql',
+      },
+    });
 
-  process.exit(result.status);
-}
+    process.exit(result.status);
+  }
+})();

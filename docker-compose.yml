@@ -4,20 +4,40 @@ services:
       context: ./docker/postgres
       dockerfile: Dockerfile
     image: ci/postgres
-    pull_policy: build
     container_name: postgres
     ports:
       - 5432:5432
     environment:
       POSTGRES_USER: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: companion_intel
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles: [ "all", "local", "staging" ]
+
+  migrations:
+    image: ci/api:latest
+    container_name: migrations
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - web
+    command: ["yarn", "migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [ "all", "staging" ]
 
   minio:
     image: minio/minio
@@ -33,14 +53,13 @@ services:
       - web
     command: server /data
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    profiles: [ "all", "local", "staging" ]
 
   stt-service:
     build:
       context: ./backend/apps/stt
       dockerfile: Dockerfile
     image: ci/stt-service
-    pull_policy: build
     container_name: stt-service
     ports:
       - 9001:9001
@@ -52,14 +71,13 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    profiles: [ "all", "local", "staging" ]
 
   tts-service:
     build:
       context: ./backend/apps/tts
       dockerfile: Dockerfile
     image: ci/tts-service
-    pull_policy: build
     container_name: tts-service
     ports:
       - 9002:9002
@@ -71,11 +89,11 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
+    profiles: [ "all", "local", "staging" ]
 
-  webserver:
+  dev-webserver:
     image: nginx:stable
-    container_name: webserver
+    container_name: dev-webserver
     ports:
       - 80:80
       - 443:443
@@ -99,13 +117,14 @@ services:
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET}
       AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET}
       AUTH_SESSION_PEPPER: ${AUTH_SESSION_PEPPER}
+      POSTGRES_HOST: postgres
       POSTGRES_USERNAME: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       OLLAMA_HOST: http://host.docker.internal:11434
-      STT_HOST: ${STT_HOST}
-      TTS_HOST: ${TTS_HOST}
+      STT_HOST: http://stt-service:9001
+      TTS_HOST: http://tts-service:9002
       TMDB_API_KEY: ${TMDB_API_KEY}
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
@@ -115,6 +134,11 @@ services:
       - web
     extra_hosts:
       - host.docker.internal:host-gateway
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     profiles: [ "all", "staging" ]
 
@@ -141,13 +165,13 @@ services:
     networks:
       - web
     restart: unless-stopped
-    profiles: [ "all", "infra" ]
     volumes:
       - ./infrastructure/iframely/config.js:/iframely/config.js
     deploy:
       resources:
         limits:
           memory: 4G
+    profiles: [ "all", "local", "staging" ]
 
 volumes:
   postgres-data:

@@ -1,9 +1,9 @@
 import { Form, useFormContext } from '@ci/shadcn';
 
-import burger from './assets/burger.jpg';
-import pasta from './assets/pasta.jpg';
-import salad from './assets/salad.jpg';
-import tacos from './assets/tacos.jpg';
+import burger from './assets/burger.png';
+import pasta from './assets/pasta.png';
+import salad from './assets/salad.png';
+import tacos from './assets/tacos.png';
 import { OptionGrid } from './OptionGrid';
 
 const options = [

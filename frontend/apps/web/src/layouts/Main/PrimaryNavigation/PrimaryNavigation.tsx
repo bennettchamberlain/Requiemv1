@@ -1,33 +1,128 @@
-import { Portal } from '@ci/common';
-import { Separator, Sidebar } from '@ci/shadcn';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { CaptureModalToggle } from '@/components/CaptureModalToggle';
+import { Portal } from '@ci/common';
+import { Button, DropdownMenu, Separator } from '@ci/shadcn';
+import { Upload, Camera, Plus, Cable } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
+
+import { useUploadFile } from '@/api';
 import { CaptureModal } from '@/components/modals/CaptureModal';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { UploadModal } from '@/components/modals/UploadModal';
 import { useModalControls } from '@/hooks';
 
+import { NavUser } from './NavUser';
+
 export function PrimaryNavigation() {
-  const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls();
+  const navigate = useNavigate();
+
+  const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
+    useModalControls();
+  const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
+    useModalControls();
+
+  const [, { upload, reset: resetUploader }] = useUploadFile();
+
+  const [hasActions, setHasActions] = useState(false);
+  const observer = useRef<MutationObserver | null>(null);
+
+  const actionsRef = useCallback((node: HTMLDivElement | null) => {
+    if (observer.current) {
+      observer.current.disconnect();
+      observer.current = null;
+    }
+
+    if (node) {
+      observer.current = new MutationObserver(() => {
+        setHasActions(node.childElementCount > 0);
+      });
+
+      observer.current.observe(node, { childList: true });
+
+      setHasActions(node.childElementCount > 0);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      observer.current?.disconnect();
+    };
+  }, []);
+
+  const handleUpload = (files: FileList) => {
+    return upload(Array.from(files));
+  };
 
   return (
     <>
-      <header className="flex flex-row items-center justify-between pl-2 pr-4 py-2 border-b">
+      <header className="flex flex-row items-center justify-between p-2 px-4">
         <section className="flex flex-row items-center">
-          <Sidebar.Trigger />
-          <Separator orientation="vertical" className="ml-2 mr-3 data-[orientation=vertical]:h-5" />
           <Portal id="breadcrumbs" />
         </section>
 
-        <section className="flex flex-row items-center gap-2">
-          <Portal id="actions" className="flex flex-row items-center" />
+        <section className="flex flex-row items-center gap-4">
+          <Portal ref={actionsRef} id="actions" className="flex flex-row items-center" />
 
-          <div className="flex flex-row items-center">
-            <CaptureModalToggle openModal={openModal} />
-            <ThemeToggle />
+          {hasActions && (
+            <Separator orientation="vertical" className="data-[orientation=vertical]:h-8 -mr-2" />
+          )}
+
+          <div className="flex flex-row items-center gap-2">
+            <DropdownMenu modal={false}>
+              <DropdownMenu.Trigger asChild>
+                <Button variant="ghost" size="icon" aria-label="More Options">
+                  <Plus />
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
+                <div className="grid grid-cols-2 gap-2">
+                  <DropdownMenu.Item
+                    onSelect={openUploadModal}
+                    className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                  >
+                    <Upload className="h-6! w-6!" strokeWidth={1.25} />
+                    <span className="text-xs">Upload</span>
+                  </DropdownMenu.Item>
+
+                  <DropdownMenu.Item
+                    onSelect={openCaptureModal}
+                    className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                  >
+                    <Camera className="h-6! w-6!" strokeWidth={1.25} />
+                    <span className="text-xs">Capture</span>
+                  </DropdownMenu.Item>
+
+                  <DropdownMenu.Item
+                    onSelect={() => navigate('/connect')}
+                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                  >
+                    <Cable className="h-6! w-6!" strokeWidth={1.25} />
+                    <span className="text-xs">Connect</span>
+                  </DropdownMenu.Item>
+                </div>
+              </DropdownMenu.Content>
+            </DropdownMenu>
+
+            <NavUser />
           </div>
         </section>
       </header>
-      <CaptureModal open={isModalOpen} initialFiles={[]} onClose={closeModal} />
+
+      <UploadModal
+        open={isUploadModalOpen}
+        onClose={() => {
+          resetUploader();
+          closeUploadModal();
+        }}
+        onSubmit={handleUpload}
+      />
+
+      <CaptureModal
+        open={isCaptureModalOpen}
+        onClose={() => {
+          resetUploader();
+          closeCaptureModal();
+        }}
+      />
     </>
   );
 }

@@ -5,10 +5,13 @@ import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
-import type { SyncResponse } from '@ci/domains/connections/clients/types';
-import { ConnectionEntity } from '@ci/domains/connections/entities/ConnectionEntity';
-import { ConnectionService } from '@ci/domains/connections/services/ConnectionService';
-import type { Connection } from '@ci/domains/connections/types';
+import {
+  ConnectionEntity,
+  ConnectionService,
+  type Connection,
+  type SyncResponse,
+} from '@ci/domains/connections';
+import { OnEvent, Events, EventPayloads } from '@ci/domains/events';
 
 import { ApiLogEntity } from '../entities/ApiLogEntity';
 
@@ -71,8 +74,8 @@ export class EtlService {
     return (
       connection.active &&
       !!connection.accessToken &&
-      !!connection.tokenExpiry &&
-      connection.tokenExpiry > new Date()
+      !(connection.tokenExpiry && connection.tokenExpiry < new Date() && !connection.refreshToken) &&
+      !!connection.provider?.id
     );
   }
 
@@ -80,11 +83,21 @@ export class EtlService {
     Array<Connection & { userId: string; lastSyncedAt?: Date; createdAt: Date }>
   > {
     const entities = await this.connectionRepository.find({
-      where: {
-        active: true,
-        accessToken: Not(IsNull()), // Must have an access token
-        tokenExpiry: MoreThan(new Date()), // Token must not be expired
-      },
+      where: [
+        {
+          active: true,
+          accessToken: Not(IsNull()), // Must have an access token
+          refreshToken: IsNull(), // No refresh token
+          tokenExpiry: MoreThan(new Date()), // Token must not be expired
+          provider: { id: Not(IsNull()) }, // Must have a valid provider
+        },
+        {
+          active: true,
+          accessToken: Not(IsNull()), // Must have an access token
+          refreshToken: Not(IsNull()), //If there's a refresh token, then an expired access token can be refreshed
+          provider: { id: Not(IsNull()) }, // Must have a valid provider
+        },
+      ],
       relations: ['user', 'provider'],
     });
 
@@ -163,5 +176,16 @@ export class EtlService {
     );
 
     await this.apiLogRepository.save(entities);
+  }
+
+  @OnEvent(Events.SYNC_CONNECTION)
+  async handleSyncEvent(payload: EventPayloads[Events.SYNC_CONNECTION]) {
+    if (!payload.userId) {
+      this.logger.warn('SYNC_CONNECTION payload missing userId', { payload });
+
+      return;
+    }
+
+    await this.handleConnectionSync({ userId: payload.userId } as RequestContext, payload.connectionId);
   }
 }

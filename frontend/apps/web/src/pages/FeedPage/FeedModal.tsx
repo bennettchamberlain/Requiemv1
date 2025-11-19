@@ -7,6 +7,7 @@ import { useParams } from 'react-router-dom';
 
 import { useActionService, useThreadService } from '@/api';
 import { Chat } from '@/components/Chat';
+import { VoiceModeProvider } from '@/components/Chat/VoiceModeProvider';
 import { InlineModal } from '@/components/InlineModal';
 import { Markdown } from '@/components/Markdown';
 import { ModelSelector } from '@/components/ModelSelector';
@@ -25,10 +26,12 @@ export function FeedModal({ onClose }: Props) {
 
   const [{ data: action, loading: actionLoading, error: actionError }] = useActionService(actionId ?? null);
   const [{ thread }] = useThreadService(action?.threadId ?? null);
-  const [{ stream, streaming: chatRequestStreaming }, { submit: submitChatRequest, stop: stopChatRequest }] =
-    useChatRequester({
-      threadId: thread?.id ?? null,
-    });
+  const [
+    { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
+    { submit: submitChatRequest, stop: stopChatRequest },
+  ] = useChatRequester({
+    threadId: thread?.id ?? null,
+  });
 
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) {
@@ -37,22 +40,29 @@ export function FeedModal({ onClose }: Props) {
   }, []);
 
   const messages = useMemo(() => {
+    const baseMessages = thread?.messages ?? [];
+    const actionMessage =
+      action?.text != null
+        ? [
+            {
+              role: 'assistant',
+              content: action.text,
+            },
+          ]
+        : [];
+
     if (isMobile) {
-      return [
-        ...(action?.text != null
-          ? [
-              {
-                role: 'assistant',
-                content: action?.text,
-              },
-            ]
-          : []),
-        ...(thread?.messages ?? []),
-      ];
+      return [...actionMessage, ...baseMessages];
     }
 
-    return thread?.messages;
-  }, [thread, isMobile]);
+    const hasAssistantMessage = baseMessages.some((message) => message.role === 'assistant');
+
+    if (!hasAssistantMessage) {
+      return [...actionMessage, ...baseMessages];
+    }
+
+    return baseMessages;
+  }, [thread, isMobile, action?.text]);
 
   const renderTitle = !(actionLoading || actionError);
   let emptyState: ReactNode;
@@ -89,16 +99,20 @@ export function FeedModal({ onClose }: Props) {
           </div>
         </div>
 
-        <Chat
-          placeholder={renderTitle ? 'Continue the conversation...' : ''}
-          disabled={!renderTitle}
-          streaming={chatRequestStreaming}
-          messages={messages}
-          readable={stream ?? undefined}
-          onSubmit={submitChatRequest}
-          onStop={stopChatRequest}
-          emptyState={emptyState}
-        />
+        <VoiceModeProvider>
+          <Chat
+            placeholder={renderTitle ? 'Continue the conversation...' : ''}
+            disabled={!renderTitle}
+            loading={chatRequestLoading}
+            streaming={chatRequestStreaming}
+            hasStartedReceiving={hasStartedReceiving}
+            messages={messages}
+            readable={stream ?? undefined}
+            onSubmit={submitChatRequest}
+            onStop={stopChatRequest}
+            emptyState={emptyState}
+          />
+        </VoiceModeProvider>
       </InlineModal>
     );
   }
@@ -149,16 +163,20 @@ export function FeedModal({ onClose }: Props) {
             </div>
           </div>
 
-          <Chat
-            placeholder={renderTitle ? 'Continue the conversation...' : ''}
-            disabled={!renderTitle}
-            streaming={chatRequestStreaming}
-            messages={messages}
-            readable={stream ?? undefined}
-            onSubmit={submitChatRequest}
-            onStop={stopChatRequest}
-            emptyState={emptyState}
-          />
+          <VoiceModeProvider>
+            <Chat
+              placeholder={renderTitle ? 'Continue the conversation...' : ''}
+              disabled={!renderTitle}
+              loading={chatRequestLoading}
+              streaming={chatRequestStreaming}
+              hasStartedReceiving={hasStartedReceiving}
+              messages={messages}
+              readable={stream ?? undefined}
+              onSubmit={submitChatRequest}
+              onStop={stopChatRequest}
+              emptyState={emptyState}
+            />
+          </VoiceModeProvider>
         </div>
       </Dialog.Content>
     </Dialog>

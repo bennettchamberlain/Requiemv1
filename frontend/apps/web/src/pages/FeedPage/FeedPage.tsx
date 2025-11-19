@@ -122,7 +122,7 @@ export function FeedPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Home</Breadcrumb.Link>
+              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
@@ -133,7 +133,7 @@ export function FeedPage() {
       </Portal.Slot>
 
       <PageContent>
-        <h2 className="text-2xl font-bold text-gray-900">Actions</h2>
+        <h2 className="text-2xl font-bold text-foreground">Actions</h2>
 
         <Carousel {...carouselProps} initialIndex={selectedActionIndex}>
           {!loading &&
@@ -155,7 +155,7 @@ export function FeedPage() {
             ))}
         </Carousel>
 
-        <h2 className="text-2xl font-bold text-gray-900">Insights</h2>
+        <h2 className="text-2xl font-bold text-foreground">Insights</h2>
 
         <Carousel {...carouselProps}>
           {actionInsightData.map((item) => (
@@ -164,7 +164,7 @@ export function FeedPage() {
               title={item.title}
               description={item.description}
               tags={item.tags}
-              className="hover:shadow-lg transition-shadow duration-200"
+              className="hover:shadow-lg transition-shadow duration-200 h-110"
             />
           ))}
         </Carousel>

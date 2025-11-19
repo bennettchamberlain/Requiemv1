@@ -1,5 +1,7 @@
 # PostgreSQL with TimescaleDB, PostGIS, Apache AGE, and pgvector
-FROM timescale/timescaledb-ha:pg16
+# Pinned to 16.11-ts2.23.0 for stability; :pg16 tag is frequently updated,
+# which leads to deletion of existing database and replacement with a new empty one.
+FROM timescale/timescaledb-ha:pg16.11-ts2.23.0
 
 # Switch to root for installation
 USER root
@@ -40,11 +42,6 @@ RUN cd /tmp && \
 
 # Switch back to postgres user
 USER postgres
-
-# Set environment variables
-ENV POSTGRES_DB=companion_intel
-ENV POSTGRES_USER=companion_intel
-ENV POSTGRES_PASSWORD=comp4nion_1ntel_ftw!
 
 # Expose PostgreSQL port
 EXPOSE 5432

@@ -1,9 +1,9 @@
 import { Form, useFormContext } from '@ci/shadcn';
 
-import arcade from './assets/arcade.jpg';
-import bowling from './assets/bowling.jpg';
-import hiking from './assets/hiking.jpg';
-import skating from './assets/skating.jpg';
+import arcade from './assets/arcade.png';
+import bowling from './assets/bowling.png';
+import hiking from './assets/hiking.png';
+import skating from './assets/skating.png';
 import { OptionGrid } from './OptionGrid';
 
 const options = [
