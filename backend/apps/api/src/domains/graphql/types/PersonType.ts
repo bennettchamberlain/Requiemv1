@@ -17,9 +17,6 @@ export class PersonType implements Node {
   description!: string | null;
 
   @Field(() => String, { nullable: true })
-  type!: string | null;
-
-  @Field(() => String, { nullable: true })
   firstName!: string | null;
 
   @Field(() => String, { nullable: true })
@@ -52,18 +49,11 @@ export class PersonType implements Node {
   @Field(() => String, { nullable: true })
   avatarUrl!: string | null;
 
-  @Field(() => String, { nullable: true })
-  externalId!: string | null;
-
-  @Field(() => String, { nullable: true })
-  sourceUrl!: string | null;
-
   static fromEntity(person: PersonEntity): PersonType {
     return {
       id: GlobalUID.toGUID('person', person.id),
       name: person.name,
       description: person.description,
-      type: person.type,
       firstName: person.first_name,
       lastName: person.last_name,
       gender: person.gender,
@@ -75,8 +65,6 @@ export class PersonType implements Node {
       country: person.country,
       postalCode: person.postal_code,
       avatarUrl: person.avatar_url,
-      externalId: person.external_id,
-      sourceUrl: person.source_url,
     };
   }
 }
