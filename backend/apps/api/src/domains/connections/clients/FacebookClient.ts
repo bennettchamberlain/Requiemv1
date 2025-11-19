@@ -200,12 +200,6 @@ export class FacebookClient extends BaseOAuth2Client {
         };
       }>(connection, url);
 
-      this.logger.debug('Facebook videos response', {
-        connectionId: connection.id,
-        videoCount: response.data?.length || 0,
-        hasPaging: !!response.paging?.next,
-      });
-
       const newSyncState: FacebookSyncState['videos'] = {
         nextUrl: response.paging?.next,
         since: response.data[0]?.created_time || syncState?.since,
@@ -248,14 +242,6 @@ export class FacebookClient extends BaseOAuth2Client {
           total_count: number;
         };
       }>(connection, url);
-
-      this.logger.debug('Facebook friends response', {
-        connectionId: connection.id,
-        friendCount: response.data?.length || 0,
-        totalCount: response.summary?.total_count,
-        hasPaging: !!response.paging?.next,
-        note: 'Note: Only returns friends who have also authorized this app (Facebook API limitation)',
-      });
 
       const newSyncState: FacebookSyncState['friends'] = {
         nextUrl: response.paging?.next,
@@ -381,7 +367,7 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook posts sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`facebook.posts: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook posts: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
@@ -455,20 +441,12 @@ export class FacebookClient extends BaseOAuth2Client {
       }
 
       // Fetch friends
-      // Note: Facebook Graph API v2.0+ only returns friends who have also authorized this app.
-      // This is a Facebook privacy policy limitation, not a bug.
       try {
         const friends = await this.fetchFriends(connection, syncState.friends || null);
 
-        const friendCount = friends.data?.length || 0;
-        const message =
-          friendCount > 0
-            ? `Facebook friends sync completed successfully (${friendCount} mutual friends found)`
-            : 'Facebook friends sync completed (no mutual friends - only friends who have also authorized this app are returned per Facebook API policy)';
-
         responses.push({
           success: true,
-          message,
+          message: 'Facebook friends sync completed successfully',
           data: {
             results: [
               {
@@ -491,7 +469,7 @@ export class FacebookClient extends BaseOAuth2Client {
           message: `Facebook friends sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           data: {
             results: [],
-            errors: [`facebook.friends: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            errors: [`facebook friends: ${error instanceof Error ? error.message : 'Unknown error'}`],
           },
         });
       }
