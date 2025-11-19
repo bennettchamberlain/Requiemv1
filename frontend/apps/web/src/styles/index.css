@@ -120,8 +120,20 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html,
   body {
-    @apply bg-background text-foreground;
+    @apply font-sans bg-background text-foreground;
+    line-height: 1.0;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Montserrat', system-ui, sans-serif;
+    font-weight: 200;
+    line-height: 1.0;
   }
 }
 
