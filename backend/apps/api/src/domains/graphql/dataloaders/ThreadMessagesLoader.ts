@@ -15,10 +15,8 @@ export class ThreadMessagesLoader extends ContextDataLoader<Message[]> {
     context: RequestContext,
     threadIds: readonly string[],
   ): Promise<readonly Message[][]> {
-    const results = await Promise.all(
-      threadIds.map((threadId) => this.messageService.findByThread(context, threadId)),
-    );
+    const messagesMap = await this.messageService.findByThreads(context, [...threadIds]);
 
-    return results;
+    return threadIds.map((threadId) => messagesMap.get(threadId) ?? []);
   }
 }
