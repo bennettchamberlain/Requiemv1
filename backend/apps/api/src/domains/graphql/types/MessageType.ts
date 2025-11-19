@@ -7,6 +7,8 @@ import { Node } from './Node';
 
 @ObjectType({ implements: () => [Node] })
 export class MessageType implements Node {
+  __typename: string = MessageType.name;
+
   @Field(() => ID)
   id!: string;
 
@@ -21,6 +23,7 @@ export class MessageType implements Node {
 
   static fromEntity(message: Message): MessageType {
     return {
+      __typename: MessageType.name,
       id: GlobalUID.toGUID('message', message.id),
       content: message.content,
       role: message.role,

@@ -10,6 +10,7 @@ import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ThreadMessagesLoader } from './dataloaders/ThreadMessagesLoader';
+import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
@@ -29,7 +30,14 @@ import { UserResolver } from './resolvers/UserResolver';
     MemoryModule,
     UserModule,
   ],
-  providers: [PersonResolver, SearchResolver, ThreadMessagesLoader, ThreadResolver, UserResolver],
+  providers: [
+    NodeResolver,
+    PersonResolver,
+    SearchResolver,
+    ThreadMessagesLoader,
+    ThreadResolver,
+    UserResolver,
+  ],
   controllers: [GraphQLController],
   exports: [],
 })

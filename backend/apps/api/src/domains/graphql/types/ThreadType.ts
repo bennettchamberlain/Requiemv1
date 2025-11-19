@@ -7,6 +7,8 @@ import { Node } from './Node';
 
 @ObjectType({ description: 'thread', implements: () => [Node] })
 export class ThreadType implements Node {
+  __typename = ThreadType.name;
+
   @Field(() => ID)
   id!: string;
 
@@ -21,6 +23,7 @@ export class ThreadType implements Node {
 
   static fromEntity(thread: Thread): ThreadType {
     return {
+      __typename: ThreadType.name,
       id: GlobalUID.toGUID('thread', thread.id),
       name: thread.name,
       model: thread.model,
