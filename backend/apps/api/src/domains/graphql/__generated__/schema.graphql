@@ -73,11 +73,11 @@ type PersonType implements Node {
 type Query {
   me: UserType
   node(id: ID!): Node
-  people(after: ID, before: ID, first: Int, last: Int): PersonConnection!
+  people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
   search(query: String!): SearchConnection!
   thread(id: ID!): ThreadType
-  threads(after: ID, before: ID, first: Int, last: Int): ThreadConnection!
+  threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
 }
 
 type SearchConnection {
@@ -107,7 +107,7 @@ type ThreadEdge implements Edge {
 type ThreadType implements Node {
   description: String
   id: ID!
-  messages(after: ID, before: ID, first: Int, last: Int): MessageConnection!
+  messages(after: String, before: String, first: Int, last: Int): MessageConnection!
   model: String
   name: String
 }
