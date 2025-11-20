@@ -128,9 +128,24 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * @deprecated Use the new distributed EventPayloads type instead.
+   */
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
+    options?: { queue?: string },
+  ): Promise<string[]>;
+
+  async send<E extends keyof Events.EventPayloads>(
+    name: E,
+    event: Events.EventPayloads[E],
+    options?: { queue?: string },
+  ): Promise<string[]>;
+
+  async send<E extends string>(
+    name: E,
+    event: Events.EventPayloads[keyof Events.EventPayloads] | EventPayloads[keyof EventPayloads],
     options?: { queue?: string },
   ): Promise<string[]> {
     const resolvedData = {
