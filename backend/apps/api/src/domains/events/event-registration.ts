@@ -50,4 +50,6 @@ class EventDefinitionRegistry {
   }
 }
 
-export const defineEvent = EventDefinitionRegistry.defineEvent;
+export function defineEvent<T extends Record<string, unknown> & { name?: never }>(name: string) {
+  return EventDefinitionRegistry.defineEvent<T>(name);
+}
