@@ -124,7 +124,12 @@ export function ConnectPage() {
               background="bg-blue-500"
               border="border-blue-400"
               text="Install the Chrome extension to automatically track your browsing history, bookmarks, and web activity."
-              disabled
+              onClick={() => {
+                window.open(
+                  'https://chromewebstore.google.com/detail/companion-intelligence/bcocflgkdeimninckpmdifcniajoneih?authuser=3&hl=en',
+                  '_blank',
+                );
+              }}
             />
             <Card
               logo="/branding/firefox/logo.svg"
