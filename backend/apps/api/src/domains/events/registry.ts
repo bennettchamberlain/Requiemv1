@@ -35,8 +35,5 @@ export function defineEvent<T extends Record<string, unknown> & { name?: never }
  *   }
  * }
  */
-export interface EventRegistry {
-  [key: string]: object;
-  [key: number]: never;
-  [key: symbol]: never;
-}
+/* eslint-disable-next-line @typescript-eslint/no-empty-object-type */
+export interface EventRegistry {}
