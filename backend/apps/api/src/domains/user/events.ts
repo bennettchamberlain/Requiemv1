@@ -1,21 +1,21 @@
-import { EventRegistry } from '@ci/domains/events';
+import { defineEvent } from '@ci/domains/events/registry';
 
 /**
- * Emitted as a side-effect of creating a new user
- * with `UserService`.
+ * Emitted as a side-effect of creating a new user with `UserService`.
  */
 export const UserCreatedEvent = 'user.created';
 
-const userCreated = EventRegistry.define<{
+/**
+ * Event payload of
+ */
+export type UserCreatedPayload = {
   userId: string;
-}>(UserCreatedEvent);
+};
 
-export type UserCreatedPayload = typeof userCreated;
+defineEvent<UserCreatedPayload>(UserCreatedEvent);
 
-declare global {
-  namespace Events {
-    interface EventPayloads {
-      [UserCreatedEvent]: UserCreatedPayload;
-    }
+declare module '@ci/domains/events/registry' {
+  interface EventRegistry {
+    [UserCreatedEvent]: UserCreatedPayload;
   }
 }

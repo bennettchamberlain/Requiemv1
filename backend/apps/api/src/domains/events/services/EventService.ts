@@ -10,6 +10,7 @@ import config from '@ci/configuration';
 import { DEFAULT_QUEUE } from '../constants';
 import { type EventPayloads } from '../event-registry';
 import { EventListenerRegistry } from '../EventListenerRegistry';
+import { EventRegistry } from '../registry';
 
 interface EventData {
   name: string;
@@ -137,15 +138,15 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     options?: { queue?: string },
   ): Promise<string[]>;
 
-  async send<E extends keyof Events.EventPayloads>(
+  async send<E extends keyof EventRegistry>(
     name: E,
-    event: Events.EventPayloads[E],
+    event: EventRegistry[E],
     options?: { queue?: string },
   ): Promise<string[]>;
 
   async send<E extends string>(
     name: E,
-    event: Events.EventPayloads[keyof Events.EventPayloads] | EventPayloads[keyof EventPayloads],
+    event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
     options?: { queue?: string },
   ): Promise<string[]> {
     const resolvedData = {

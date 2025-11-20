@@ -4,6 +4,7 @@ import { OnEvent as BaseOnEvent } from '@nestjs/event-emitter';
 import { DEFAULT_QUEUE } from '../constants';
 import type { EventPayloads } from '../event-registry';
 import { EventListenerRegistry } from '../EventListenerRegistry';
+import type { EventRegistry } from '../registry';
 import type { Acknowledgement } from '../types';
 
 interface Opts {
@@ -18,7 +19,7 @@ export function OnEvent<E extends keyof EventPayloads>(
   event: E,
   opts?: Opts,
 ): ReturnType<typeof applyDecorators>;
-export function OnEvent<E extends keyof Events.EventPayloads>(
+export function OnEvent<E extends keyof EventRegistry>(
   event: E,
   opts?: Opts,
 ): ReturnType<typeof applyDecorators>;
