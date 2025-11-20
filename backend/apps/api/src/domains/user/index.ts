@@ -45,3 +45,4 @@ export { SignupCodeService, UserService };
 
 // Types
 export type { CreateUserDto, UpdateUserDto, User, SignupCode, SignupDto, UpdateSignupCodeDto } from './types';
+export { UserCreatedEvent, type UserCreatedPayload } from './events';
