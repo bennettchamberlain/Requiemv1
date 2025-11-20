@@ -1,3 +1,15 @@
+/*
+ * --------------- IMPORTANT NOTE ---------------
+ *
+ * This file is now considered a legacy implementation and should
+ * no longer be modified. For an example of the new implementation
+ * please refer to:
+ *
+ *   backend/apps/api/domains/user/events.ts
+ *
+ * --------------- IMPORTANT NOTE ---------------
+ */
+
 interface EventPayload {
   name?: never;
 }
