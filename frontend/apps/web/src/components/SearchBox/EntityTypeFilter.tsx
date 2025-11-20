@@ -100,6 +100,7 @@ export function EntityTypeFilter() {
         createPortal(
           <div
             ref={dropdownRef}
+            data-filter-dropdown="true"
             className="fixed bg-background border border-border rounded-md shadow-lg z-[9999] max-h-80 overflow-y-auto w-64"
             style={{
               top: buttonRect.bottom + 4,
@@ -125,25 +126,34 @@ export function EntityTypeFilter() {
               </div>
 
               <div className="space-y-1">
-                {AVAILABLE_ENTITY_TYPES.map((entityType) => (
-                  <label
-                    key={entityType}
-                    className="flex items-center gap-2 p-2 rounded hover:bg-accent cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleEntityType(entityType);
-                    }}
-                  >
-                    <Checkbox
-                      checked={selectedEntityTypes.includes(entityType)}
-                      onChange={(e) => {
+                {AVAILABLE_ENTITY_TYPES.map((entityType) => {
+                  const isChecked = selectedEntityTypes.includes(entityType);
+
+                  return (
+                    <div
+                      key={entityType}
+                      className="flex items-center gap-2 p-2 rounded hover:bg-accent cursor-pointer"
+                      onClick={(e) => {
                         e.stopPropagation();
                         toggleEntityType(entityType);
                       }}
-                    />
-                    <span className="text-sm">{entityType}</span>
-                  </label>
-                ))}
+                    >
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={() => {
+                            toggleEntityType(entityType);
+                          }}
+                        />
+                      </div>
+                      <span className="text-sm">{entityType}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>,
