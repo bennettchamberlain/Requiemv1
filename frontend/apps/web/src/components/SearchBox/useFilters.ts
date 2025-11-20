@@ -38,13 +38,13 @@ function useFilters(): ReturnType {
   const [isFiltersPanelVisible, setFilterPanelVisibile] = useState(false);
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
 
-  // Initialize entity types from URL parameters
+  // Sync entity types with URL parameters
   useEffect(() => {
     const excludedEntityTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || [];
     const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
 
     setSelectedEntityTypes(selectedTypes);
-  }, []);
+  }, [searchParams]);
 
   const clearEntityTypes = useCallback(() => {
     setSelectedEntityTypes(AVAILABLE_ENTITY_TYPES);
