@@ -8,8 +8,9 @@ import { RequestContextService } from '@ci/common/services/RequestContextService
 import config from '@ci/configuration';
 
 import { DEFAULT_QUEUE } from '../constants';
+import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
-import { EventListenerRegistry } from '../EventListenerRegistry';
+import { EventRegistry } from '../registry';
 
 interface EventData {
   name: string;
@@ -128,9 +129,24 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * @deprecated Use the new distributed EventPayloads type instead.
+   */
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
+    options?: { queue?: string },
+  ): Promise<string[]>;
+
+  async send<E extends keyof EventRegistry>(
+    name: E,
+    event: EventRegistry[E],
+    options?: { queue?: string },
+  ): Promise<string[]>;
+
+  async send<E extends string>(
+    name: E,
+    event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
     options?: { queue?: string },
   ): Promise<string[]> {
     const resolvedData = {

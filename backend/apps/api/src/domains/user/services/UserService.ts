@@ -5,9 +5,10 @@ import { DeleteResult, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import config from '@ci/configuration';
-import { EventService, Events } from '@ci/domains/events';
+import { EventService } from '@ci/domains/events';
 
 import { UserEntity } from '../entities/UserEntity';
+import { UserCreatedEvent } from '../events';
 import { CreateUserDto, UpdateUserDto, User } from '../types';
 
 @Injectable()
@@ -29,7 +30,7 @@ export class UserService {
 
     const entity = await this.userRepository.save(instance);
 
-    await this.eventService.send(Events.USER_CREATED, {
+    await this.eventService.send(UserCreatedEvent, {
       userId: entity.id,
     });
 
