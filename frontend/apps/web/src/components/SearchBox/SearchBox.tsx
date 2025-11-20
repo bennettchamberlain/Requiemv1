@@ -278,7 +278,14 @@ function SearchBox(
         return;
       }
 
-      if (wrapperRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+
+      if (wrapperRef.current.contains(target)) {
+        return;
+      }
+
+      const isDropdownClick = (target as Element).closest?.('[data-filter-dropdown="true"]');
+      if (isDropdownClick) {
         return;
       }
 
