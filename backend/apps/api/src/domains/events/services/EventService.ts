@@ -8,8 +8,8 @@ import { RequestContextService } from '@ci/common/services/RequestContextService
 import config from '@ci/configuration';
 
 import { DEFAULT_QUEUE } from '../constants';
+import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
-import { EventListenerRegistry } from '../EventListenerRegistry';
 import { EventRegistry } from '../registry';
 
 interface EventData {

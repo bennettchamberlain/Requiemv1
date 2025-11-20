@@ -31,3 +31,23 @@ export class EventListenerRegistry {
     this.listeners.clear();
   }
 }
+
+class EventDefinitionRegistry {
+  private static names = new Set<string>();
+
+  /**
+   * Event registration helper method used to enforce event payload constraints
+   * at compile time and name uniqueness at runtime.
+   */
+  static defineEvent<T extends Record<string, unknown> & { name?: never }>(name: string) {
+    if (this.names.has(name)) {
+      throw new Error(`Event name "${name}" is already registered.`);
+    }
+
+    this.names.add(name);
+
+    return {} as T;
+  }
+}
+
+export const defineEvent = EventDefinitionRegistry.defineEvent;

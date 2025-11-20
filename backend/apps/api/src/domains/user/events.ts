@@ -1,4 +1,4 @@
-import { defineEvent } from '@ci/domains/events/registry';
+import { defineEvent } from '@ci/domains/events';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { UserService } from './services/UserService';

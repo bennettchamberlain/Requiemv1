@@ -2,8 +2,8 @@ import { applyDecorators } from '@nestjs/common';
 import { OnEvent as BaseOnEvent } from '@nestjs/event-emitter';
 
 import { DEFAULT_QUEUE } from '../constants';
+import { EventListenerRegistry } from '../event-registration';
 import type { EventPayloads } from '../event-registry';
-import { EventListenerRegistry } from '../EventListenerRegistry';
 import type { EventRegistry } from '../registry';
 import type { Acknowledgement } from '../types';
 
