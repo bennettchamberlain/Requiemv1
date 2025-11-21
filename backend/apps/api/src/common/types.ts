@@ -9,3 +9,7 @@ export interface RequestContext {
 export interface RequestWithContext extends ExpressRequest {
   context?: RequestContext;
 }
+
+export interface ServiceContext {
+  userId: string;
+}
