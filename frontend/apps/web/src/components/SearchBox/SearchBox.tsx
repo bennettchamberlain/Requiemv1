@@ -284,11 +284,6 @@ function SearchBox(
         return;
       }
 
-      const isDropdownClick = (target as Element).closest?.('[data-filter-dropdown="true"]');
-      if (isDropdownClick) {
-        return;
-      }
-
       toggleFilterPanel();
     };
 

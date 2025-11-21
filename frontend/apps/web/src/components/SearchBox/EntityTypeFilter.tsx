@@ -100,7 +100,7 @@ export function EntityTypeFilter() {
         createPortal(
           <div
             ref={dropdownRef}
-            data-filter-dropdown="true"
+            onPointerDown={(e) => e.stopPropagation()}
             className="fixed bg-background border border-border rounded-md shadow-lg z-[9999] max-h-80 overflow-y-auto w-64"
             style={{
               top: buttonRect.bottom + 4,
