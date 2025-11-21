@@ -8,6 +8,10 @@ import {
   Body,
   Query,
   UseGuards,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+  NotFoundException,
   UnauthorizedException,
   ConflictException,
 } from '@nestjs/common';
@@ -65,6 +69,32 @@ export class BrowserActivityController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findById(
+    @Context() context: RequestContext,
+    @Param('id') id: string,
+   ): Promise<BrowserActivity | null> {
+    if (!context.userId) {
+      throw new UnauthorizedException('User must be authenticated to view browser activity');
+    }
+
+    return this.browserActivityService.findById(context, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':ids')
+  async findByIds(
+    @Context() context: RequestContext,
+    @Param('ids') ids: string[],
+  ): Promise<BrowserActivity[]> {
+    if (!context.userId) {
+      throw new UnauthorizedException('User must be authenticated to view browser activity');
+    }
+
+    return this.browserActivityService.findByIds(context, ids);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('range')
   async findByTimeRange(
     @Context() context: RequestContext,
@@ -80,7 +110,7 @@ export class BrowserActivityController {
 
   @UseGuards(JwtAuthGuard)
   @Get(':time/:deviceId')
-  async findOne(
+  async findByTimeAndDevice(
     @Context() context: RequestContext,
     @Param('time') time: string,
     @Param('deviceId') deviceId: string,
@@ -89,26 +119,26 @@ export class BrowserActivityController {
       throw new UnauthorizedException('User must be authenticated to view browser activity');
     }
 
-    return this.browserActivityService.findOne(context, time, deviceId);
+    return this.browserActivityService.findByTimeAndDevice(context, time, deviceId);
   }
 
   @UseGuards(JwtAuthGuard)
-  @Patch(':time/:deviceId')
+  @Patch(':id')
   async update(
     @Context() context: RequestContext,
-    @Param('time') time: string,
-    @Param('deviceId') deviceId: string,
+    @Param('id') id: string,
     @Body(new ValidationPipe(updateBrowserActivitySchema)) data: UpdateBrowserActivityDto,
   ): Promise<BrowserActivity | null> {
     if (!context.userId) {
       throw new UnauthorizedException('User must be authenticated to update browser activity');
     }
 
-    return this.browserActivityService.update(context, time, deviceId, data);
+    return this.browserActivityService.update(context, id, data);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':time/:deviceId')
+  @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @Context() context: RequestContext,
     @Param('time') time: string,
@@ -118,6 +148,14 @@ export class BrowserActivityController {
       throw new UnauthorizedException('User must be authenticated to delete browser activity');
     }
 
-    return this.browserActivityService.remove(context, time, deviceId);
+    const activity = await this.browserActivityService.findByTimeAndDevice(context, time, deviceId);
+
+    if (!activity) throw new NotFoundException()
+
+    try {
+      await this.browserActivityService.remove(context, activity.id);
+    } catch(err) {
+      throw new BadRequestException(err.message);
+    }
   }
 }
