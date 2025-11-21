@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { EventService, Events, type EventPayloads, OnEvent } from '@ci/domains/events';
-import { UserService } from '@ci/domains/user';
+import { UserService, UserCreatedEvent, type UserCreatedPayload } from '@ci/domains/user';
 
 import { GraphUtilityService } from '../services/GraphUtilityService';
 
@@ -302,12 +302,12 @@ export class GraphEventListener {
     }
   }
 
-  @OnEvent(Events.USER_CREATED)
-  async handleUserCreated(payload: EventPayloads[Events.USER_CREATED]) {
+  @OnEvent(UserCreatedEvent)
+  async handleUserCreated(payload: UserCreatedPayload) {
     const user = await this.userService.findOne(payload.userId);
 
     if (!user) {
-      this.logger.warn('User not found when handling USER_CREATED graph hook', {
+      this.logger.warn('User not found when handling user created event', {
         userId: payload.userId,
       });
 

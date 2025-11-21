@@ -4,11 +4,14 @@ import pino from 'pino';
 
 import config from '@ci/configuration';
 
+import { RequestContextService } from './RequestContextService';
+
 type LogData = string | Record<string, unknown>;
 
 interface ResolvedData {
-  message?: string;
+  traceId?: string;
   context?: string;
+  message?: string;
 }
 
 const NEST_CONTEXT_DOWNGRADES = new Set([
@@ -66,10 +69,18 @@ export class LoggerService implements NestLoggerService {
 
   private normalizeLogContext(context: LogData | Error = {}) {
     if (context instanceof Error) {
-      return { err: context };
+      return {
+        traceId: RequestContextService.getTraceId(),
+        err: context,
+      };
     }
 
-    return typeof context === 'string' ? { context } : context;
+    const contextObj = typeof context === 'string' ? { context } : context;
+
+    return {
+      traceId: RequestContextService.getTraceId(),
+      ...contextObj,
+    };
   }
 
   private normalizeLogData(message: LogData = {}, context: LogData | Error = {}): ResolvedData {

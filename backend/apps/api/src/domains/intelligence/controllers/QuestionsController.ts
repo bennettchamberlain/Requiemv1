@@ -1,7 +1,7 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
 
-import { Context } from '@ci/common/decorators';
+import { Context, Cron } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';

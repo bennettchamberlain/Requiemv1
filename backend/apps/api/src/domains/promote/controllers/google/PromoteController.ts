@@ -1,8 +1,9 @@
 import { Controller } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 
+import { Cron } from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { ApiLogEntity } from '@ci/domains/etl';

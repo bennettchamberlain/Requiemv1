@@ -1,3 +1,15 @@
+/*
+ * --------------- IMPORTANT NOTE ---------------
+ *
+ * This file is now considered a legacy implementation and should
+ * no longer be modified. For an example of the new implementation
+ * please refer to:
+ *
+ *   backend/apps/api/domains/user/events.ts
+ *
+ * --------------- IMPORTANT NOTE ---------------
+ */
+
 interface EventPayload {
   name?: never;
 }
@@ -8,7 +20,6 @@ export const enum Events {
   INFER_QUESTION_ANSWER = 'infer.question.answer',
   SYNC_CONNECTION = 'sync.connection',
   MCP_TOOL_CALL = 'mcp.tool.call',
-  USER_CREATED = 'user.created',
   PROMOTE_CONTACTS = 'PROMOTE_CONTACTS',
   PROMOTE_DRIVE_DATA = 'PROMOTE_DRIVE_DATA',
   PROMOTE_YOUTUBE_DATA = 'PROMOTE_YOUTUBE_DATA',
@@ -59,10 +70,6 @@ interface McpToolCallPayload extends EventPayload {
   userId: string;
   toolName: string;
   arguments: unknown;
-}
-
-interface UserCreatedPayload extends EventPayload {
-  userId: string;
 }
 
 interface PromoteGmailMessagesPayload extends EventPayload {
@@ -270,7 +277,6 @@ export type EventPayloads = {
   [Events.INFER_QUESTION_ANSWER]: InferQuestionAnswerPayload;
   [Events.SYNC_CONNECTION]: SyncConnectionPayload;
   [Events.MCP_TOOL_CALL]: McpToolCallPayload;
-  [Events.USER_CREATED]: UserCreatedPayload;
   [Events.PROMOTE_GMAIL_MESSAGES]: PromoteGmailMessagesPayload;
   [Events.PROMOTE_CALENDAR_EVENTS]: PromoteCalendarEventsPayload;
   [Events.PROMOTE_YOUTUBE_DATA]: PromoteYouTubeDataPayload;

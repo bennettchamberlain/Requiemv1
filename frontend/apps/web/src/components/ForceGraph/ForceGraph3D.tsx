@@ -253,14 +253,21 @@ export function ForceGraph3D({
       canvas.width = 256;
       canvas.height = 64;
       // Use white text in dark mode, black text in light mode
-      const textColor =
-        themeState.mode === 'light'
-          ? isCenter
-            ? '#000000'
-            : 'rgba(0, 0, 0, 0.9)'
-          : isCenter
-            ? '#ffffff'
-            : 'rgba(255, 255, 255, 0.9)';
+      // For system mode, check the actual system preference
+      const effectiveMode =
+        themeState.mode === 'system'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+          : themeState.mode;
+      const isLightMode = effectiveMode === 'light';
+      const textColor = isLightMode
+        ? isCenter
+          ? '#000000'
+          : 'rgba(0, 0, 0, 0.9)'
+        : isCenter
+          ? '#ffffff'
+          : 'rgba(255, 255, 255, 0.9)';
       context.fillStyle = textColor;
       context.font = isCenter ? 'bold 28px Arial' : '20px Arial';
       context.textAlign = 'center';
