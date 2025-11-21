@@ -11,11 +11,11 @@ BEGIN
     hyperid := (SELECT id FROM _timescaledb_catalog.hypertable WHERE table_name = 'browser_activity');
     chunkids := ARRAY(SELECT id FROM _timescaledb_catalog.chunk WHERE hypertable_id = hyperid);
     FOREACH chunkid IN ARRAY chunkids LOOP
-        EXECUTE DELETE FROM _timescaledb_catalog.chunk_constraint WHERE chunk_id = chunkid;
+        EXECUTE 'DELETE FROM _timescaledb_catalog.chunk_constraint WHERE chunk_id = ' || chunkid;
     END LOOP;
-    EXECUTE DELETE FROM _timescaledb_catalog.chunk where hypertable_id = hyperid;
-    EXECUTE DELETE FROM _timescaledb_catalog.hypertable WHERE id = hyperid;
-    EXECUTE ALTER TABLE browser_activity ADD COLUMN id UUID PRIMARY KEY DEFAULT gen_uuid_v7();
+    EXECUTE 'DELETE FROM _timescaledb_catalog.chunk where hypertable_id = ' || hyperid;
+    EXECUTE 'DELETE FROM _timescaledb_catalog.hypertable WHERE id = ' || hyperid;
+    EXECUTE 'ALTER TABLE browser_activity ADD COLUMN id UUID PRIMARY KEY DEFAULT gen_uuid_v7()';
 END $$;
 
 -- migrate:down
