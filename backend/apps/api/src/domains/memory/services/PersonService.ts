@@ -55,6 +55,7 @@ export class PersonService {
   async findAll(context: RequestContext): Promise<PersonEntity[]> {
     return this.personRepository.find({
       where: {
+        entity_type: 'Person',
         user: {
           id: context.userId,
         },

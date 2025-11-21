@@ -45,6 +45,9 @@ export class MessageEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
+  @Column({ type: 'text', nullable: true, name: 'thread_id' })
+  threadId?: string;
+
   @ManyToOne(() => ThreadEntity)
   @JoinColumn({ name: 'thread_id' })
   thread?: ThreadEntity;
@@ -77,8 +80,9 @@ export class MessageEntity {
       toolCalls: this.tool_calls ?? null,
       canceled: this.canceled ?? null,
 
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
       thread: this.thread?.toThread(),
+      threadId: this.threadId,
       promptMessage: this.promptMessage?.toMessage() ?? null,
       files: this.files?.map((file) => file.toFile()),
     } satisfies Message;

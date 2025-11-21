@@ -1,10 +1,3 @@
-export interface User {
-  readonly id: string;
-  readonly name: string;
-  readonly email: string;
-  readonly onboarded: boolean;
-}
-
 export interface CreateUserDto {
   name: string;
   email: string;

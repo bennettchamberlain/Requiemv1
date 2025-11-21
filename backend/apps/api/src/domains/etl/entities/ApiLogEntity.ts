@@ -43,7 +43,7 @@ export class ApiLogEntity {
       connection_id: this.connection_id,
       scope: this.scope,
       content: this.content,
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
       connection: this.connection?.toConnection(),
       created_at: this.created_at,
       last_processed: this.last_processed,
