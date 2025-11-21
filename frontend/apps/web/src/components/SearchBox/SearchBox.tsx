@@ -278,7 +278,9 @@ function SearchBox(
         return;
       }
 
-      if (wrapperRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+
+      if (wrapperRef.current.contains(target)) {
         return;
       }
 
