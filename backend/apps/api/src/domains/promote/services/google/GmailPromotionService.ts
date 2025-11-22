@@ -67,7 +67,7 @@ export class GmailPromotionService {
       }
 
       // Get the connection
-      const connection = await this.connectionService.findById(connectionId);
+      const connection = await this.connectionService.findById({ userId }, connectionId);
       if (!connection || !connection.accessToken) {
         this.logger.error('Connection not found or missing access token', { connectionId });
 

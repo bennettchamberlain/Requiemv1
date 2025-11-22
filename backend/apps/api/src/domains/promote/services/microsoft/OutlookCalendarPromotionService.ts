@@ -127,7 +127,7 @@ export class OutlookCalendarPromotionService {
       const events = this.extractOutlookCalendarEvents(apiLogContent as RawData[]);
 
       // Get the connection
-      const connection = await this.connectionService.findById(connectionId);
+      const connection = await this.connectionService.findById({ userId }, connectionId);
       if (!connection || !connection.accessToken) {
         this.logger.error('Connection not found or missing access token', { connectionId });
 
@@ -195,7 +195,7 @@ export class OutlookCalendarPromotionService {
     connectionId: string,
   ): Promise<void> {
     // Extract event details
-    const eventDetails = await this.extractEventDetails(event, connectionId);
+    const eventDetails = await this.extractEventDetails(userId, event, connectionId);
 
     this.logger.log('Processing OutlookCalendar event', {
       eventId: eventDetails.id,
@@ -358,10 +358,11 @@ export class OutlookCalendarPromotionService {
   }
 
   private async extractEventDetails(
+    userId: string,
     event: OutlookCalendarEvent,
     connectionId: string,
   ): Promise<ExtractedEvent> {
-    const connection = await this.connectionService.findById(connectionId);
+    const connection = await this.connectionService.findById({ userId }, connectionId);
     const { id, start, end, subject, isAllDay, hasAttachments, attendees, organizer } = event;
     let attachments;
 
