@@ -44,7 +44,7 @@ export class ApiLogEntity {
       scope: this.scope,
       content: this.content,
       user: this.user ? UserEntity.toEgressType(this.user) : undefined,
-      connection: this.connection?.toConnection(),
+      connection: this.connection ? ConnectionEntity.toEgressType(this.connection) : undefined,
       created_at: this.created_at,
       last_processed: this.last_processed,
     };
