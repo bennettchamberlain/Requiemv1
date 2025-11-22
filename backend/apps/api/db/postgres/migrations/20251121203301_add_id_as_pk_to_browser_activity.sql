@@ -2,21 +2,7 @@
 ALTER TABLE browser_activity DROP CONSTRAINT IF EXISTS browser_activity_pkey;
 DROP INDEX IF EXISTS browser_activity_time_idx;
 DROP INDEX IF EXISTS browser_activity_user_id_time_idx;
-DO $$
-DECLARE
-    hyperid INT;
-    chunkids INT[];
-    chunkid INT;
-BEGIN
-    hyperid := (SELECT id FROM _timescaledb_catalog.hypertable WHERE table_name = 'browser_activity');
-    chunkids := ARRAY(SELECT id FROM _timescaledb_catalog.chunk WHERE hypertable_id = hyperid);
-    FOREACH chunkid IN ARRAY chunkids LOOP
-        EXECUTE 'DELETE FROM _timescaledb_catalog.chunk_constraint WHERE chunk_id = ' || chunkid;
-    END LOOP;
-    EXECUTE 'DELETE FROM _timescaledb_catalog.chunk where hypertable_id = ' || hyperid;
-    EXECUTE 'DELETE FROM _timescaledb_catalog.hypertable WHERE id = ' || hyperid;
-    EXECUTE 'ALTER TABLE browser_activity ADD COLUMN id UUID PRIMARY KEY DEFAULT gen_uuid_v7()';
-END $$;
+ALTER TABLE browser_activity ADD COLUMN id UUID DEFAULT gen_uuid_v7();
 
 -- migrate:down
 ALTER TABLE browser_activity DROP CONSTRAINT IF EXISTS browser_activity_pkey;
