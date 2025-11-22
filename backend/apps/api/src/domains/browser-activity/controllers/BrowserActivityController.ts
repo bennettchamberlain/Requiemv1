@@ -152,10 +152,6 @@ export class BrowserActivityController {
 
     if (!activity) throw new NotFoundException()
 
-    try {
-      await this.browserActivityService.remove(context, activity.id);
-    } catch(err) {
-      throw new BadRequestException(err.message);
-    }
+    await this.browserActivityService.remove(context, activity.id);
   }
 }

@@ -8,8 +8,8 @@ import {DeviceService} from '@ci/domains/devices';
 
 import {BrowserActivity, BrowserActivityEntity} from '../entities/BrowserActivityEntity';
 import type {CreateBrowserActivityDto, UpdateBrowserActivityDto} from '../types';
-import {BrowserActivityCreatedEvent, BrowserActivityRemovedEvent} from "../events";
-import {EventService} from "@ci/domains/events";
+import {BrowserActivityCreatedEvent, BrowserActivityUpdatedEvent, BrowserActivityRemovedEvent} from "../events";
+import { EventService } from "@ci/domains/events";
 
 @Injectable()
 export class BrowserActivityService {
@@ -126,8 +126,7 @@ export class BrowserActivityService {
   ): Promise<BrowserActivity | null> {
     this.logger.log('Updating browser activity record', {
       userId: context.userId,
-      time,
-      deviceId,
+      id
     });
 
     // Handle time field conversion if present
@@ -164,8 +163,7 @@ export class BrowserActivityService {
   async remove(context: RequestContext, id: string): Promise<boolean> {
     this.logger.log('Removing browser activity record', {
       userId: context.userId,
-      time,
-      deviceId,
+      id
     });
 
     const browserActivity = this.browserActivityRepository.findOne({

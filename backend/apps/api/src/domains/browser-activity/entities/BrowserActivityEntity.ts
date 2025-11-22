@@ -8,6 +8,9 @@ export interface Device {
 
 @Entity('browser_activity')
 export class BrowserActivityEntity {
+  @Column({ type: 'uuid' })
+  id!: string;
+
   @PrimaryColumn({ type: 'timestamptz' })
   time!: Date;
 
@@ -66,10 +69,11 @@ export class BrowserActivityEntity {
 
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
-  user?: UserEntity | null;
+  user?: UserEntity | undefined;
 
   static toEgressType(entity: BrowserActivityEntity): BrowserActivity {
     return {
+      id: entity.id,
       time: entity.time,
       user_id: entity.user_id,
       device_id: entity.device_id,
@@ -85,7 +89,7 @@ export class BrowserActivityEntity {
       productivity_score: entity.productivity_score,
       is_incognito: entity.is_incognito,
       contains_sensitive: entity.contains_sensitive,
-      user: entity.user == null ? undefined : UserEntity.toEgressType(entity.user),
+      user: entity.user == null ? undefined : entity.user,
     };
   }
 }
