@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 
 import config from '@ci/configuration';
 
-import type { Connection } from '../types';
+import type { Connection } from '../entities/ConnectionEntity';
 
 import { BaseClient } from './BaseClient';
 import type { TokenExchange, TokenResponse } from './types';

@@ -8,7 +8,7 @@ import type {
   GoogleSyncState,
 } from '@ci/domains/etl';
 
-import type { Connection } from '../types';
+import type { Connection } from '../entities/ConnectionEntity';
 
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResponse } from './types';

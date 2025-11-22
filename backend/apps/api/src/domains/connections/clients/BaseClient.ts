@@ -1,6 +1,6 @@
 import { LoggerService } from '@ci/common/services';
 
-import type { Connection } from '../types';
+import type { Connection } from '../entities/ConnectionEntity';
 
 import type { SyncResponse, TokenExchange } from './types';
 
