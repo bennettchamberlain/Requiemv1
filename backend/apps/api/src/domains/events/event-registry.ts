@@ -44,6 +44,7 @@ export const enum Events {
   PROMOTE_OUTLOOK_MAIL_MESSAGES = 'PROMOTE_OUTLOOK_MAIL_MESSAGES',
   PROMOTE_OUTLOOK_CALENDAR_EVENTS = 'PROMOTE_OUTLOOK_CALENDAR_EVENTS',
   PROMOTE_ONEDRIVE_FILES = 'PROMOTE_ONEDRIVE_FILES',
+  PROMOTE_FACEBOOK_DATA = 'PROMOTE_FACEBOOK_DATA',
 }
 
 interface FileUploadPayload extends EventPayload {
@@ -271,6 +272,13 @@ interface PromoteOneDriveFilePayload extends EventPayload {
   content: unknown;
 }
 
+interface PromoteFacebookDataPayload extends EventPayload {
+  apiLogId: string;
+  userId: string;
+  connectionId: string;
+  content: unknown;
+}
+
 export type EventPayloads = {
   [Events.FILE_UPLOAD]: FileUploadPayload;
   [Events.CHAT_SUMMARIZATION]: ChatSummarizationPayload;
@@ -301,4 +309,5 @@ export type EventPayloads = {
   [Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]: PromoteOutlookMessagesPayload;
   [Events.PROMOTE_OUTLOOK_CALENDAR_EVENTS]: PromoteOutlookCalendarEventsPayload;
   [Events.PROMOTE_ONEDRIVE_FILES]: PromoteOneDriveFilePayload;
+  [Events.PROMOTE_FACEBOOK_DATA]: PromoteFacebookDataPayload;
 };

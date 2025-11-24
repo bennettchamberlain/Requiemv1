@@ -30,14 +30,15 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EtlModule, ApiLogEntity } from '@ci/domains/etl';
 import { EventsModule } from '@ci/domains/events';
-import { FilesModule } from '@ci/domains/files';
-import { MemoryModule, GraphNodeEntity, RelationshipEntity } from '@ci/domains/memory';
+import { FilesModule, FileEntity } from '@ci/domains/files';
+import { MemoryModule, GraphNodeEntity, RelationshipEntity, ContentEntity } from '@ci/domains/memory';
 import { OneDrivePromotionService } from '@ci/domains/promote/services/microsoft/OneDrivePromotionService';
 import { OutlookCalendarPromotionService } from '@ci/domains/promote/services/microsoft/OutlookCalendarPromotionService';
 import { UserModule } from '@ci/domains/user';
 
 import { PromoteController } from './controllers/google/PromoteController';
 import { PromoteController as MicrosoftPromoteController } from './controllers/microsoft/PromoteController';
+import { FacebookPromotionService } from './services/facebook/FacebookPromotionService';
 import { GoogleCalendarEventPromotionService } from './services/google/CalendarPromotionService';
 import { ContactsPromotionService } from './services/google/ContactsPromotionService';
 import { DrivePromotionService } from './services/google/DrivePromotionService';
@@ -51,7 +52,14 @@ import { PromoteService } from './services/PromoteService';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity, GraphNodeEntity, RelationshipEntity]),
+    TypeOrmModule.forFeature([
+      ApiLogEntity,
+      ConnectionEntity,
+      GraphNodeEntity,
+      RelationshipEntity,
+      FileEntity,
+      ContentEntity,
+    ]),
     ConnectionsModule,
     FilesModule,
     EtlModule,
@@ -69,6 +77,7 @@ import { PromoteService } from './services/PromoteService';
     OutlookMailPromotionService,
     OutlookCalendarPromotionService,
     OneDrivePromotionService,
+    FacebookPromotionService,
   ],
   controllers: [PromoteController, MicrosoftPromoteController],
   exports: [

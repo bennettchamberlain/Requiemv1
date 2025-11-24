@@ -99,7 +99,9 @@ export class FacebookClient extends BaseOAuth2Client {
    */
   private async fetchPosts(connection: Connection, syncState: FacebookSyncState['posts'] | null) {
     try {
-      const url = syncState?.nextUrl || '/v21.0/me/posts?fields=id,message,created_time,story,link,type';
+      const url =
+        syncState?.nextUrl ||
+        '/v21.0/me/posts?fields=id,message,created_time,story,link,type,full_picture,picture,attachments{media,subattachments}';
 
       const response = await this.request<{
         data: Array<{
@@ -109,6 +111,24 @@ export class FacebookClient extends BaseOAuth2Client {
           story?: string;
           link?: string;
           type: string;
+          full_picture?: string;
+          picture?: string;
+          attachments?: {
+            data: Array<{
+              media?: {
+                image?: { src: string };
+                video?: { source: string };
+              };
+              subattachments?: {
+                data: Array<{
+                  media?: {
+                    image?: { src: string };
+                    video?: { source: string };
+                  };
+                }>;
+              };
+            }>;
+          };
         }>;
         paging?: {
           next?: string;
@@ -141,7 +161,7 @@ export class FacebookClient extends BaseOAuth2Client {
     try {
       const url =
         syncState?.nextUrl ||
-        '/v21.0/me/photos?type=uploaded&fields=id,name,created_time,images,link,picture';
+        '/v21.0/me/photos?type=uploaded&fields=id,name,created_time,images,link,picture,place';
 
       const response = await this.request<{
         data: Array<{
