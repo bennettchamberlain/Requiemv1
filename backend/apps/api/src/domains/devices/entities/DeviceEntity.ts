@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { UserEntity } from '@ci/domains/user';
+import { UserEntity, type User } from '@ci/domains/user';
 
 @Entity('devices')
 export class DeviceEntity {
@@ -95,7 +95,7 @@ export class DeviceEntity {
       privacy_settings: this.privacy_settings,
       created_at: this.created_at,
       updated_at: this.updated_at,
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
     };
   }
 }
@@ -119,5 +119,5 @@ export interface Device {
   readonly privacy_settings: Record<string, unknown>;
   readonly created_at: Date;
   readonly updated_at: Date;
-  readonly user?: import('@ci/domains/user').User;
+  readonly user?: User;
 }

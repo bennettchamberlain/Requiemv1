@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 
-import { UserEntity } from '@ci/domains/user';
+import { UserEntity, type User } from '@ci/domains/user';
 
 export interface Device {
   device_id: string;
@@ -85,7 +85,7 @@ export class BrowserActivityEntity {
       productivity_score: this.productivity_score,
       is_incognito: this.is_incognito,
       contains_sensitive: this.contains_sensitive,
-      user: this.user?.toUser(),
+      user: this.user == null ? undefined : UserEntity.toEgressType(this.user),
     };
   }
 }
@@ -106,5 +106,5 @@ export interface BrowserActivity {
   readonly productivity_score?: number;
   readonly is_incognito: boolean;
   readonly contains_sensitive: boolean;
-  readonly user?: import('@ci/domains/user').User;
+  readonly user?: User;
 }

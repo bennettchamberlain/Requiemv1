@@ -22,7 +22,7 @@ import { EventsModule } from '@ci/domains/events';
 
 import { UserController } from './controllers/UserController';
 import { SignupCodeEntity } from './entities/SignupCodeEntity';
-import { UserEntity } from './entities/UserEntity';
+import { UserEntity, type User } from './entities/UserEntity';
 import { SignupCodeService } from './services/SignupCodeService';
 import { UserService } from './services/UserService';
 
@@ -44,4 +44,6 @@ export { UserEntity, SignupCodeEntity };
 export { SignupCodeService, UserService };
 
 // Types
-export type { CreateUserDto, UpdateUserDto, User, SignupCode, SignupDto, UpdateSignupCodeDto } from './types';
+export type { User };
+export type { CreateUserDto, UpdateUserDto, SignupCode, SignupDto, UpdateSignupCodeDto } from './types';
+export { UserCreatedEvent, type UserCreatedPayload } from './events';

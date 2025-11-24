@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
@@ -66,6 +66,25 @@ export class MessageService {
     });
   }
 
+  async findOne(context: RequestContext, id: string): Promise<Message> {
+    const entity = await this.messsageRepository.findOne({
+      where: {
+        id,
+        user: {
+          id: context.userId,
+        },
+        canceled: false,
+      },
+      relations: ['files'],
+    });
+
+    if (entity == null) {
+      throw new NotFoundException();
+    }
+
+    return entity.toMessage();
+  }
+
   async findAll(context: RequestContext): Promise<Message[]> {
     const entities = await this.messsageRepository.find({
       where: {
@@ -100,23 +119,42 @@ export class MessageService {
     return entities.map((entity) => entity.toMessage());
   }
 
-  async findOne(context: RequestContext, id: string): Promise<Message> {
-    const entity = await this.messsageRepository.findOne({
+  async findByThreads(context: RequestContext, threadIds: string[]): Promise<Map<string, Message[]>> {
+    if (threadIds.length === 0) {
+      return new Map();
+    }
+
+    const entities = await this.messsageRepository.find({
       where: {
-        id,
         user: {
           id: context.userId,
         },
+        thread: {
+          id: In(threadIds),
+        },
         canceled: false,
       },
-      relations: ['files'],
     });
 
-    if (entity == null) {
-      throw new NotFoundException();
-    }
+    const messagesByThread = new Map<string, Message[]>();
 
-    return entity.toMessage();
+    threadIds.forEach((threadId) => {
+      messagesByThread.set(threadId, []);
+    });
+
+    entities.forEach((entity) => {
+      const threadId = entity.threadId;
+
+      if (threadId) {
+        const messages = messagesByThread.get(threadId) || [];
+
+        messages.push(entity.toMessage());
+
+        messagesByThread.set(threadId, messages);
+      }
+    });
+
+    return messagesByThread;
   }
 
   async update(context: RequestContext, id: string, data: UpdateMessageDto): Promise<boolean> {

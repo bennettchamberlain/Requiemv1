@@ -43,7 +43,7 @@ export class ThreadEntity {
       model: null, // Model is now per-message, not per-thread
       description: this.description ?? null,
 
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
     } satisfies Thread;
   }
 }

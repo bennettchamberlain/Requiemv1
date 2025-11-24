@@ -4,11 +4,13 @@ import plimit from 'p-limit';
 import PgBoss, { JobWithMetadata } from 'pg-boss';
 
 import { LoggerService } from '@ci/common/services';
+import { RequestContextService } from '@ci/common/services/RequestContextService';
 import config from '@ci/configuration';
 
 import { DEFAULT_QUEUE } from '../constants';
+import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
-import { EventListenerRegistry } from '../EventListenerRegistry';
+import { EventRegistry } from '../registry';
 
 interface EventData {
   name: string;
@@ -127,9 +129,24 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * @deprecated Use the new distributed EventPayloads type instead.
+   */
   async send<E extends keyof EventPayloads>(
     name: E,
     event: EventPayloads[E],
+    options?: { queue?: string },
+  ): Promise<string[]>;
+
+  async send<E extends keyof EventRegistry>(
+    name: E,
+    event: EventRegistry[E],
+    options?: { queue?: string },
+  ): Promise<string[]>;
+
+  async send<E extends string>(
+    name: E,
+    event: EventRegistry[keyof EventRegistry] | EventPayloads[keyof EventPayloads],
     options?: { queue?: string },
   ): Promise<string[]> {
     const resolvedData = {
@@ -245,26 +262,39 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async executeJob(queue: string, job: JobWithMetadata<EventData>): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const { name, ...data } = job.data;
+    return RequestContextService.run({ traceId: job.id }, () => {
+      return new Promise<void>((resolve, reject) => {
+        const { name, ...data } = job.data;
 
-      const resolvedData = {
-        ...data,
-        jobId: job.id,
-      };
+        const resolvedData = {
+          ...data,
+          jobId: job.id,
+        };
 
-      const done = () => resolve(undefined);
-      const fail = (reason: unknown) => reject(reason instanceof Error ? reason : new Error(String(reason)));
+        this.logger.debug(`Executing job ${job.id} for event ${name} in queue ${queue}`);
 
-      const queueSpecificEventName = `${name}:${queue}`;
+        const done = () => {
+          this.logger.debug(`Completed job ${job.id} for event ${name}`);
+          resolve();
+        };
 
-      if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
-        this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail });
-      } else {
-        this.logger.log(`No listeners for event ${name} in queue ${queue}`);
+        const fail = (reason: unknown) => {
+          this.logger.error(
+            `Failed job ${job.id} for event ${name}`,
+            reason instanceof Error ? reason : new Error(String(reason)),
+          );
+          reject(reason instanceof Error ? reason : new Error(String(reason)));
+        };
 
-        resolve(undefined);
-      }
+        const queueSpecificEventName = `${name}:${queue}`;
+
+        if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
+          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail });
+        } else {
+          this.logger.log(`No listeners for event ${name} in queue ${queue}`);
+          resolve();
+        }
+      });
     });
   }
 }

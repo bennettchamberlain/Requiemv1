@@ -1,8 +1,8 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn, Point } from 'typeorm';
 
-import { DeviceEntity } from '@ci/domains/devices';
+import { DeviceEntity, type Device } from '@ci/domains/devices';
 import { GraphNodeEntity } from '@ci/domains/memory';
-import { UserEntity } from '@ci/domains/user';
+import { UserEntity, type User } from '@ci/domains/user';
 
 export type LocationSource = 'gps' | 'wifi' | 'cell_tower' | 'manual' | 'inferred' | 'other';
 
@@ -154,7 +154,7 @@ export class PositionEntity {
       relative_orientation: this.relative_orientation,
       location_embedding: this.location_embedding ?? undefined,
       is_private: this.is_private,
-      user: this.user?.toUser(),
+      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
       device: this.device?.toDevice(),
       location_entity: this.location_entity ?? undefined,
       reference_entity: this.reference_entity ?? undefined,
@@ -189,8 +189,8 @@ export interface Position {
   readonly relative_orientation: RelativeOrientation | Record<string, unknown>;
   readonly location_embedding?: number[];
   readonly is_private: boolean;
-  readonly user?: import('@ci/domains/user').User;
-  readonly device?: import('@ci/domains/devices').Device;
+  readonly user?: User;
+  readonly device?: Device;
   readonly location_entity?: GraphNodeEntity;
   readonly reference_entity?: GraphNodeEntity;
 }

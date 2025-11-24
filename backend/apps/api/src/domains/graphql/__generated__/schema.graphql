@@ -1,0 +1,120 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+interface Connection {
+  edges: [Edge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+interface Edge {
+  cursor: String!
+  node: Node!
+}
+
+type MessageConnection implements Connection {
+  edges: [MessageEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type MessageEdge implements Edge {
+  cursor: String!
+  node: MessageType!
+}
+
+type MessageType implements Node {
+  content: String!
+  id: ID!
+  role: String
+  threadId: ID!
+}
+
+interface Node {
+  id: ID!
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+}
+
+type PersonConnection implements Connection {
+  edges: [PersonEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type PersonEdge implements Edge {
+  cursor: String!
+  node: PersonType!
+}
+
+type PersonType implements Node {
+  address: String
+  avatarUrl: String
+  city: String
+  country: String
+  description: String
+  firstName: String
+  gender: String
+  id: ID!
+  lastName: String
+  name: String
+  postalCode: String
+  region: String
+  streetAddress: String
+  streetAddress2: String
+}
+
+type Query {
+  me: UserType
+  node(id: ID!): Node
+  people(after: String, before: String, first: Int, last: Int): PersonConnection!
+  person(id: ID!): PersonType
+  search(query: String!): SearchConnection!
+  thread(id: ID!): ThreadType
+  threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
+}
+
+type SearchConnection {
+  edges: [SearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type SearchEdge {
+  cursor: String!
+  node: SearchResult!
+}
+
+union SearchResult = PersonType | ThreadType
+
+type ThreadConnection implements Connection {
+  edges: [ThreadEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ThreadEdge implements Edge {
+  cursor: String!
+  node: ThreadType!
+}
+
+type ThreadType implements Node {
+  description: String
+  id: ID!
+  messages(after: String, before: String, first: Int, last: Int): MessageConnection!
+  model: String
+  name: String
+}
+
+type UserType implements Node {
+  email: String!
+  id: ID!
+  name: String!
+  onboarded: Boolean!
+}

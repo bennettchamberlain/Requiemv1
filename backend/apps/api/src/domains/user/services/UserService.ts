@@ -5,10 +5,11 @@ import { DeleteResult, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import config from '@ci/configuration';
-import { EventService, Events } from '@ci/domains/events';
+import { EventService } from '@ci/domains/events';
 
-import { UserEntity } from '../entities/UserEntity';
-import { CreateUserDto, UpdateUserDto, User } from '../types';
+import { type User, UserEntity } from '../entities/UserEntity';
+import { UserCreatedEvent } from '../events';
+import { CreateUserDto, UpdateUserDto } from '../types';
 
 @Injectable()
 export class UserService {
@@ -29,17 +30,17 @@ export class UserService {
 
     const entity = await this.userRepository.save(instance);
 
-    await this.eventService.send(Events.USER_CREATED, {
+    await this.eventService.send(UserCreatedEvent, {
       userId: entity.id,
     });
 
-    return entity.toUser();
+    return UserEntity.toEgressType(entity);
   }
 
   async findAll(): Promise<User[]> {
     const result = await this.userRepository.find();
 
-    return result.map((entity) => entity.toUser());
+    return result.map((entity) => UserEntity.toEgressType(entity));
   }
 
   async findOne(id: string): Promise<User | null> {
@@ -49,7 +50,7 @@ export class UserService {
       },
     });
 
-    return result?.toUser() ?? null;
+    return result ? UserEntity.toEgressType(result) : null;
   }
 
   async update(id: string, data: UpdateUserDto): Promise<User | null> {
@@ -79,7 +80,7 @@ export class UserService {
       return null;
     }
 
-    return result.toUser();
+    return UserEntity.toEgressType(result);
   }
 
   async checkEmailAvailability(email: string): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { Controller } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
 
+import { Cron } from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';

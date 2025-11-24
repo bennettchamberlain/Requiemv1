@@ -1,10 +1,16 @@
-import type { ExecutionContext } from '@nestjs/common';
-import { createParamDecorator } from '@nestjs/common';
+import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
+import { GqlExecutionContext } from '@nestjs/graphql';
 
-import type { RequestWithContext } from '../types';
+import type { RequestContext, RequestWithContext } from '../types';
 
-export const Context = createParamDecorator((data: unknown, ctx: ExecutionContext) => {
-  const request: RequestWithContext = ctx.switchToHttp().getRequest();
+export const Context = createParamDecorator((data: unknown, ctx: ExecutionContext): RequestContext => {
+  if (ctx.getType<'graphql' | 'http'>() === 'graphql') {
+    const gqlCtx = GqlExecutionContext.create(ctx);
 
-  return request.context;
+    return gqlCtx.getContext<RequestContext>();
+  }
+
+  const req = ctx.switchToHttp().getRequest<RequestWithContext>();
+
+  return req.context ?? {};
 });
