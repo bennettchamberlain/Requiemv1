@@ -601,6 +601,245 @@ Deliver a concise, reflective narrative.""",
             logger.error("period_summary_generation_failed", period=period_label, error=str(exc))
             raise
 
+    def generate_user_dossier(
+        self,
+        *,
+        user_id: str,
+        lookback_start: datetime,
+        lookback_end: datetime,
+        timezone: str,
+        daily_summaries: List[Dict[str, Any]],
+        max_chars: int,
+    ) -> Optional[Dict[str, Any]]:
+        if not daily_summaries:
+            logger.info("dossier_generation_skipped_no_summaries", user_id=user_id)
+            return None
+
+        self._ensure_client()
+
+        prompt = self._build_dossier_prompt(
+            user_id=user_id,
+            lookback_start=lookback_start,
+            lookback_end=lookback_end,
+            timezone=timezone,
+            daily_summaries=daily_summaries,
+        )
+
+        messages = [
+            {
+                "role": "system",
+                "content": """You are drafting a concise user dossier for another AI assistant. The dossier should summarize personality, conversational preferences, and best practices for interacting with the user. Keep the response factual, grounded in the supplied summaries, and under 4000 characters. Respond with valid JSON matching:
+{
+  \"summary\": string,
+  \"tone\": string | null,
+  \"personalityTraits\": string[] | null,
+  \"interactionGuidelines\": string[] | null,
+  \"preferences\": string[] | null
+}
+Avoid markdown or additional prose.""",
+            },
+            {"role": "user", "content": prompt},
+        ]
+
+        chat_kwargs = {
+            "model": settings.llm_model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": min(settings.llm_max_tokens, 1200),
+        }
+
+        parsed: Optional[Dict[str, Any]] = None
+        try:
+            if settings.debug_prompts:
+                self._log_prompt("user_dossier", messages)
+            self._log_llm_request("chat.completions.create", chat_kwargs)
+            response = self.client.chat.completions.create(**chat_kwargs)
+            raw = response.choices[0].message.content or ""
+            parsed = self._parse_json_object(raw)
+        except Exception as exc:
+            logger.error("user_dossier_generation_failed", user_id=user_id, error=str(exc))
+
+        if not parsed:
+            logger.warning("user_dossier_fallback", user_id=user_id)
+            parsed = self._fallback_dossier_summary(daily_summaries)
+
+        return self._normalize_dossier_payload(
+            parsed,
+            max_chars=max_chars,
+            lookback_start=lookback_start,
+            lookback_end=lookback_end,
+            timezone=timezone,
+        )
+
+    def _build_dossier_prompt(
+        self,
+        *,
+        user_id: str,
+        lookback_start: datetime,
+        lookback_end: datetime,
+        timezone: str,
+        daily_summaries: List[Dict[str, Any]],
+    ) -> str:
+        lines: List[str] = [
+            f"User: {user_id}",
+            f"Window: {lookback_start.isoformat()} to {lookback_end.isoformat()} ({timezone})",
+            "",
+            "Daily Summaries:",
+        ]
+
+        for record in daily_summaries:
+            start_val = record.get('period_start') or record.get('periodStart')
+            start_label = start_val.strftime('%Y-%m-%d') if isinstance(start_val, datetime) else str(start_val)
+            summary_text = self._coerce_optional_string(record.get('summary_text')) or ''
+            counts = record.get('activity_counts') or {}
+            highlights = [
+                f"{key}={value}"
+                for key, value in counts.items()
+                if key != 'total' and isinstance(value, (int, float)) and value
+            ][:4]
+
+            lines.append(f"- {start_label}:")
+            if summary_text:
+                lines.append(f"  Narrative: {summary_text}")
+            if highlights:
+                lines.append(f"  Activity: {', '.join(highlights)}")
+
+            insights = self._normalize_string_list(
+                self._extract_list_from_context(record, 'key_insights'),
+                limit=3,
+                item_limit=200,
+            )
+            if insights:
+                lines.append("  Insights:")
+                for insight in insights:
+                    lines.append(f"    - {insight}")
+
+        return "\n".join(lines)
+
+    def _extract_list_from_context(self, record: Dict[str, Any], key: str) -> List[str]:
+        context = record.get('structured_context') or {}
+        if isinstance(context, str):
+            try:
+                context = json.loads(context)
+            except json.JSONDecodeError:
+                context = {}
+        values = context.get(key)
+        if isinstance(values, list):
+            return [str(item) for item in values]
+
+        content = record.get('content') or {}
+        if isinstance(content, dict):
+            direct_values = content.get(key)
+            if isinstance(direct_values, list):
+                return [str(item) for item in direct_values]
+            summary_block = content.get('summary')
+            if isinstance(summary_block, dict):
+                inner = summary_block.get(key)
+                if isinstance(inner, list):
+                    return [str(item) for item in inner]
+
+        return []
+
+    def _parse_json_object(self, raw_text: str) -> Optional[Dict[str, Any]]:
+        cleaned = self._strip_code_fences(raw_text.strip())
+        parsed = self._try_parse_json(cleaned)
+        if parsed:
+            return parsed
+
+        blob = self._extract_json_blob(cleaned)
+        if blob:
+            return self._try_parse_json(blob)
+
+        return None
+
+    def _normalize_dossier_payload(
+        self,
+        payload: Dict[str, Any],
+        *,
+        max_chars: int,
+        lookback_start: datetime,
+        lookback_end: datetime,
+        timezone: str,
+    ) -> Dict[str, Any]:
+        summary = self._coerce_optional_string(payload.get('summary')) or 'No significant activity recorded.'
+        if len(summary) > max_chars:
+            summary = summary[: max_chars - 3] + '...'
+
+        dossier: Dict[str, Any] = {
+            'summary': summary,
+            'tone': self._coerce_optional_string(payload.get('tone')),
+            'personalityTraits': self._normalize_string_list(payload.get('personalityTraits')),
+            'interactionGuidelines': self._normalize_string_list(payload.get('interactionGuidelines'), item_limit=300),
+            'preferences': self._normalize_string_list(payload.get('preferences')),
+            'metadata': payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
+            'lastUpdatedAt': self._coerce_optional_string(payload.get('lastUpdatedAt')) or datetime.utcnow().isoformat(),
+            'version': payload.get('version', 1),
+        }
+
+        source_window = payload.get('sourceWindow')
+        if isinstance(source_window, dict) and source_window.get('start') and source_window.get('end'):
+            dossier['sourceWindow'] = source_window
+        else:
+            dossier['sourceWindow'] = {
+                'start': lookback_start.isoformat(),
+                'end': lookback_end.isoformat(),
+                'timezone': timezone,
+            }
+
+        return dossier
+
+    def _normalize_string_list(
+        self,
+        values: Any,
+        *,
+        limit: int = 20,
+        item_limit: int = 200,
+    ) -> Optional[List[str]]:
+        if not isinstance(values, list):
+            return None
+
+        cleaned: List[str] = []
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            text = value.strip()
+            if not text:
+                continue
+            cleaned.append(text[:item_limit])
+            if len(cleaned) >= limit:
+                break
+
+        return cleaned or None
+
+    def _coerce_optional_string(self, value: Any) -> Optional[str]:
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return None
+
+    def _fallback_dossier_summary(self, daily_summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        recent = daily_summaries[-3:]
+        narratives = [self._coerce_optional_string(record.get('summary_text')) for record in recent]
+        summary_text = ' '.join(filter(None, narratives)) or 'Limited summary data available.'
+
+        tags = []
+        if daily_summaries:
+            tags = self._extract_list_from_context(daily_summaries[-1], 'tags')
+
+        traits = self._normalize_string_list(tags, limit=3) or ['thoughtful']
+        guidelines = [
+            'Provide direct, respectful explanations.',
+            'Reference recent activities when offering help.',
+        ]
+
+        return {
+            'summary': summary_text,
+            'tone': 'supportive',
+            'personalityTraits': traits,
+            'interactionGuidelines': guidelines,
+            'preferences': None,
+        }
+
     def _aggregate_counts(self, summaries: List[Dict[str, Any]]) -> Dict[str, int]:
         keys = [
             "measurements",

@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from .browser_history_processor import history_processor
 from .data_aggregator import aggregator
+from .dossier_builder import dossier_builder
+from .database import db
 from .storage import storage, SummaryMetadata
 from .summarizer import summarizer
 from .config import settings
@@ -131,13 +133,15 @@ async def manual_trigger_summary(
     if request.start_time:
         start_time = _parse_iso(request.start_time)
     else:
-        # Default to last hour for hourly summaries
+        # Default window per period type
         if request.period_type == "hourly":
             start_time = end_time - timedelta(hours=1)
         elif request.period_type == "daily":
             start_time = end_time - timedelta(days=1)
         elif request.period_type == "weekly":
             start_time = end_time - timedelta(weeks=1)
+        elif request.period_type == "dossier":
+            start_time = end_time - timedelta(days=1)
         else:
             raise HTTPException(
                 status_code=400,
@@ -166,6 +170,14 @@ async def manual_trigger_summary(
                 start_time,
                 end_time,
                 request.timezone
+            )
+        elif request.period_type == "dossier":
+            result = _execute_dossier_refresh(
+                user_id,
+                start_time,
+                end_time,
+                request.timezone,
+                lookback_override=None,
             )
         else:
             raise HTTPException(
@@ -370,6 +382,105 @@ def _execute_weekly_summary(
         "activity_counts": summary_data['activity_counts'],
         "num_daily_summaries": len(daily_summaries),
     }
+
+
+def _execute_dossier_refresh(
+    user_id: uuid.UUID,
+    start_time: datetime,
+    end_time: datetime,
+    timezone: str,
+    *,
+    lookback_override: Optional[int],
+) -> Dict[str, Any]:
+    dossier_payload = dossier_builder.build(
+        user_id,
+        end_time,
+        timezone,
+        lookback_override=lookback_override,
+    )
+
+    if not dossier_payload:
+        raise ValueError('Unable to compose dossier from available summaries')
+
+    entity_id = _persist_user_dossier(user_id, dossier_payload)
+
+    return {
+        "entity_id": entity_id,
+        "dossier": dossier_payload,
+        "period_start": start_time.isoformat(),
+        "period_end": end_time.isoformat(),
+    }
+
+
+def _persist_user_dossier(user_id: uuid.UUID, dossier_payload: Dict[str, Any]) -> str:
+    entity_id = _resolve_user_entity_id(user_id)
+    if not entity_id:
+        raise ValueError(f"No graph entity found for user {user_id}")
+
+    db.execute_write(
+        """
+        UPDATE entities
+        SET dossier = CAST(:dossier AS jsonb),
+            updated_at = NOW()
+        WHERE entity_id = :entity_id
+        """,
+        {
+            "entity_id": entity_id,
+            "dossier": json.dumps(dossier_payload, ensure_ascii=False),
+        },
+    )
+
+    return entity_id
+
+
+def _resolve_user_entity_id(user_id: uuid.UUID) -> Optional[str]:
+    rows = db.execute_query(
+        """
+        SELECT entity_id
+        FROM ci_core.users
+        WHERE id = :user_id
+        LIMIT 1
+        """,
+        {"user_id": str(user_id)},
+    )
+
+    if rows:
+        entity_id = rows[0].get('entity_id')
+        if entity_id:
+            return str(entity_id)
+
+    fallback = db.execute_query(
+        """
+        SELECT entity_id
+        FROM entities
+        WHERE owner_user_id = :user_id
+          AND entity_type = 'Person'
+        ORDER BY (linked_table = 'users') DESC, created_at ASC
+        LIMIT 1
+        """,
+        {"user_id": str(user_id)},
+    )
+
+    if not fallback:
+        return None
+
+    entity_id = str(fallback[0]['entity_id'])
+
+    if rows and not rows[0].get('entity_id'):
+        db.execute_write(
+            """
+            UPDATE ci_core.users
+            SET entity_id = :entity_id,
+                updated_at = NOW()
+            WHERE id = :user_id
+            """,
+            {
+                "entity_id": entity_id,
+                "user_id": str(user_id),
+            },
+        )
+
+    return entity_id
 
 
 def _derive_source_types(aggregated_data: Dict[str, Any]) -> list[str]:

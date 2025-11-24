@@ -193,6 +193,32 @@ The manual trigger endpoint bypasses the queue system and executes the same summ
 - Backfilling summaries for specific periods
 - Development and local testing
 
+### Daily User Dossier Refresh
+
+The memory worker now produces a compact **user dossier** once per day. A scheduler job in the API enqueues a `memory.dossier.refresh` event shortly after the daily summary job, and the worker consumes it from the standard `memory-summaries` queue.
+
+- Configure refresh behavior with:
+  - `DOSSIER_LOOKBACK_DAYS` (default `7`)
+  - `DOSSIER_MAX_CHARS` (default `4000`)
+- The dossier is derived from the latest daily summaries and stored in the `entities.dossier` JSONB column.
+- If no daily summaries exist for the window, the refresh is skipped.
+
+Manual trigger example:
+
+```bash
+curl -X POST http://localhost:8000/summary/manual-trigger \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "<user-uuid>",
+    "period_type": "dossier",
+    "start_time": "2025-11-10T00:00:00Z",
+    "end_time": "2025-11-11T00:00:00Z",
+    "timezone": "UTC"
+  }'
+```
+
+The response includes the persisted entity ID and the dossier payload so you can inspect what was written.
+
 ### Manual Browser History Processing
 
 You can also summarize ad-hoc browser history exports without going through the queue/listener.

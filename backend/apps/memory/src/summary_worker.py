@@ -17,6 +17,7 @@ from .data_aggregator import aggregator
 from .database import db
 from .storage import storage, SummaryMetadata
 from .summarizer import summarizer
+from .dossier_builder import dossier_builder
 
 logger = structlog.get_logger()
 
@@ -108,7 +109,7 @@ class SummaryWorker:
             end_time = self._parse_iso(payload.get("periodEnd"))
             timezone = payload.get("timezone") or "UTC"
 
-            if period_type not in {"hourly", "daily", "weekly"}:
+            if period_type not in {"hourly", "daily", "weekly", "monthly", "seasonal", "yearly", "dossier"}:
                 raise NotImplementedError(f"Unsupported period type: {period_type}")
 
             message_id = self._record_agent_task(
@@ -139,6 +140,14 @@ class SummaryWorker:
                 result = self._execute_rollup_summary(user_id, start_time, end_time, timezone, 'seasonal')
             elif period_type == "yearly":
                 result = self._execute_rollup_summary(user_id, start_time, end_time, timezone, 'yearly')
+            elif period_type == "dossier":
+                result = self._execute_dossier_job(
+                    user_id,
+                    start_time,
+                    end_time,
+                    timezone,
+                    payload,
+                )
             else:
                 raise NotImplementedError(f"Unsupported period type: {period_type}")
 
@@ -497,6 +506,39 @@ class SummaryWorker:
             "num_daily_summaries": len(daily_summaries),
         }
 
+    def _execute_dossier_job(
+        self,
+        user_id: uuid.UUID,
+        start_time: datetime,
+        end_time: datetime,
+        timezone: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        logger.info("executing_dossier_refresh", user_id=str(user_id))
+
+        lookback_override = None
+        if isinstance(payload.get('lookbackDays'), int):
+            lookback_override = payload['lookbackDays']
+
+        dossier_payload = dossier_builder.build(
+            user_id,
+            end_time,
+            timezone,
+            lookback_override=lookback_override,
+        )
+
+        if not dossier_payload:
+            raise ValueError('Unable to build dossier – missing summary context')
+
+        entity_id = self._persist_user_dossier(user_id, dossier_payload)
+
+        return {
+            "entity_id": entity_id,
+            "dossier": dossier_payload,
+            "period_start": start_time.isoformat(),
+            "period_end": end_time.isoformat(),
+        }
+
     # ------------------------------------------------------------------
     # PgBoss helpers
     # ------------------------------------------------------------------
@@ -585,6 +627,75 @@ class SummaryWorker:
             except json.JSONDecodeError:
                 return text
         return text
+
+    def _persist_user_dossier(self, user_id: uuid.UUID, dossier_payload: Dict[str, Any]) -> str:
+        entity_id = self._resolve_user_entity_id(user_id)
+        if not entity_id:
+            raise ValueError(f"No entity found for user {user_id}")
+
+        db.execute_write(
+            """
+            UPDATE entities
+            SET dossier = CAST(:dossier AS jsonb),
+                updated_at = NOW()
+            WHERE entity_id = :entity_id
+            """,
+            {
+                "entity_id": entity_id,
+                "dossier": json.dumps(dossier_payload, ensure_ascii=False),
+            },
+        )
+
+        return entity_id
+
+    def _resolve_user_entity_id(self, user_id: uuid.UUID) -> Optional[str]:
+        records = db.execute_query(
+            """
+            SELECT entity_id
+            FROM ci_core.users
+            WHERE id = :user_id
+            LIMIT 1
+            """,
+            {"user_id": str(user_id)},
+        )
+
+        if records:
+            entity_id = records[0].get('entity_id')
+            if entity_id:
+                return str(entity_id)
+
+        fallback = db.execute_query(
+            """
+            SELECT entity_id
+            FROM entities
+            WHERE owner_user_id = :user_id
+              AND entity_type = 'Person'
+            ORDER BY (linked_table = 'users') DESC, created_at ASC
+            LIMIT 1
+            """,
+            {"user_id": str(user_id)},
+        )
+
+        if not fallback:
+            return None
+
+        entity_id = str(fallback[0]['entity_id'])
+
+        if records and not records[0].get('entity_id'):
+            db.execute_write(
+                """
+                UPDATE ci_core.users
+                SET entity_id = :entity_id,
+                    updated_at = NOW()
+                WHERE id = :user_id
+                """,
+                {
+                    "entity_id": entity_id,
+                    "user_id": str(user_id),
+                },
+            )
+
+        return entity_id
 
 
 worker = SummaryWorker()

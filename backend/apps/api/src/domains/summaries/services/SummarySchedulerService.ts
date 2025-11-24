@@ -38,6 +38,67 @@ export class SummarySchedulerService {
     await this.enqueueSummaries('daily');
   }
 
+  @Cron('12 0 * * *', { timeZone: 'UTC' })
+  async enqueueDailyDossierRefresh(): Promise<void> {
+    if (!config.features['scheduled.memory.summaries']) {
+      this.logger.debug('Scheduled memory summaries are disabled', { periodType: 'dossier' });
+
+      return;
+    }
+
+    const window = this.calculateWindow('daily');
+    const users = await this.userRepository.find({
+      select: ['id'],
+      where: { onboarded: true },
+    });
+
+    if (users.length === 0) {
+      this.logger.debug('No onboarded users available for dossier refresh');
+
+      return;
+    }
+
+    const payloadBase = {
+      periodStart: window.start.toISOString(),
+      periodEnd: window.end.toISOString(),
+      timezone: this.timezone,
+    } as const;
+
+    const jobCounts = await Promise.all(
+      users.map(async ({ id }) => {
+        try {
+          const jobIds = await this.eventService.send(
+            Events.MEMORY_DOSSIER_REFRESH,
+            {
+              ...payloadBase,
+              userId: id,
+              trigger: 'auto',
+            },
+            { queue: this.summaryQueue },
+          );
+
+          return jobIds.length;
+        } catch (error) {
+          this.logger.error('Failed to enqueue dossier refresh job', {
+            userId: id,
+            error: error instanceof Error ? error.message : error,
+          });
+
+          return 0;
+        }
+      }),
+    );
+
+    const enqueuedJobs = jobCounts.reduce((sum, count) => sum + count, 0);
+
+    this.logger.log('Enqueued user dossier refresh jobs', {
+      userCount: users.length,
+      enqueuedJobs,
+      windowStart: payloadBase.periodStart,
+      windowEnd: payloadBase.periodEnd,
+    });
+  }
+
   @Cron('15 0 * * 1', { timeZone: 'UTC' })
   async enqueueWeeklySummaries(): Promise<void> {
     await this.enqueueSummaries('weekly');

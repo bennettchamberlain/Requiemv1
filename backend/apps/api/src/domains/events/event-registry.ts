@@ -44,6 +44,7 @@ export const enum Events {
   PROMOTE_OUTLOOK_CALENDAR_EVENTS = 'PROMOTE_OUTLOOK_CALENDAR_EVENTS',
   PROMOTE_ONEDRIVE_FILES = 'PROMOTE_ONEDRIVE_FILES',
   MEMORY_SUMMARY_GENERATION = 'memory.summary.generate',
+  MEMORY_DOSSIER_REFRESH = 'memory.dossier.refresh',
   PROMOTE_FACEBOOK_PROFILE = 'PROMOTE_FACEBOOK_PROFILE',
   PROMOTE_FACEBOOK_POSTS = 'PROMOTE_FACEBOOK_POSTS',
   PROMOTE_FACEBOOK_PHOTOS = 'PROMOTE_FACEBOOK_PHOTOS',
@@ -288,6 +289,15 @@ interface SummaryGenerationPayload extends EventPayload {
   sourceTypes?: string[];
 }
 
+interface MemoryDossierRefreshPayload extends EventPayload {
+  userId: string;
+  periodStart: string;
+  periodEnd: string;
+  timezone?: string;
+  trigger?: 'auto' | 'manual';
+  lookbackDays?: number;
+}
+
 interface SummaryGenerationPayload extends EventPayload {
   userId: string;
   periodType: SummaryPeriodType;
@@ -369,6 +379,7 @@ export type EventPayloads = {
   [Events.PROMOTE_OUTLOOK_CALENDAR_EVENTS]: PromoteOutlookCalendarEventsPayload;
   [Events.PROMOTE_ONEDRIVE_FILES]: PromoteOneDriveFilePayload;
   [Events.MEMORY_SUMMARY_GENERATION]: SummaryGenerationPayload;
+  [Events.MEMORY_DOSSIER_REFRESH]: MemoryDossierRefreshPayload;
   [Events.MEMORY_SUMMARY_GENERATION]: SummaryGenerationPayload;
   [Events.PROMOTE_FACEBOOK_PROFILE]: PromoteFacebookProfilePayload;
   [Events.PROMOTE_FACEBOOK_POSTS]: PromoteFacebookPostsPayload;

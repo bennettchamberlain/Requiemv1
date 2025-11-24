@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     max_items_per_category: int = Field(
         default_factory=lambda: int(os.getenv("MEMORY_MAX_ITEMS_PER_CATEGORY", 100))
     )
+    dossier_lookback_days: int = Field(
+        default_factory=lambda: int(os.getenv("DOSSIER_LOOKBACK_DAYS", 7))
+    )
+    dossier_max_chars: int = Field(
+        default_factory=lambda: int(os.getenv("DOSSIER_MAX_CHARS", 4000))
+    )
     
     # Logging
     log_level: str = Field(default_factory=lambda: os.getenv("MEMORY_LOG_LEVEL", "INFO"))
