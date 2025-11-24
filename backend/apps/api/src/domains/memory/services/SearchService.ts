@@ -5,12 +5,12 @@ import { DataSource } from 'typeorm';
 import { EmbeddingService } from '@ci/domains/search';
 
 export type SearchMode = 'semantic' | 'keyword' | 'hybrid' | 'auto';
-export type SearchScope = 'entities' | 'facts' | 'documents' | 'messages' | 'all';
+export type SearchScope = 'entities' | 'facts' | 'documents' | 'messages';
 
 export interface DatabaseSearchOptions {
   query: string;
   searchMode?: SearchMode;
-  scope?: SearchScope;
+  scopes?: SearchScope[];
   entityTypes?: string[];
   includeRelationships?: boolean;
   maxResults?: number;
@@ -121,29 +121,29 @@ export class SearchService {
     // Generate embedding for the query
     const queryEmbedding = await this.embeddingService.generateEmbedding(options.query);
 
-    const scopes = this.normalizeScope(options.scope);
+    const scopes = this.normalizeScopes(options.scopes);
     const results: SearchResultItem[] = [];
 
     // Search entities if in scope
-    if (scopes.includes('entities') || scopes.includes('all')) {
+    if (scopes.includes('entities')) {
       const entityResults = await this.semanticSearchEntities(userId, queryEmbedding, options, maxResults);
       results.push(...entityResults);
     }
 
     // Search facts if in scope
-    if (scopes.includes('facts') || scopes.includes('all')) {
+    if (scopes.includes('facts')) {
       const factResults = await this.semanticSearchFacts(userId, queryEmbedding, maxResults);
       results.push(...factResults);
     }
 
     // Search documents if in scope
-    if (scopes.includes('documents') || scopes.includes('all')) {
+    if (scopes.includes('documents')) {
       const docResults = await this.semanticSearchDocuments(userId, queryEmbedding, maxResults);
       results.push(...docResults);
     }
 
     // Search messages if in scope
-    if (scopes.includes('messages') || scopes.includes('all')) {
+    if (scopes.includes('messages')) {
       const messageResults = await this.semanticSearchMessages(userId, queryEmbedding, maxResults);
       results.push(...messageResults);
     }
@@ -322,29 +322,29 @@ export class SearchService {
     options: DatabaseSearchOptions,
     maxResults: number,
   ): Promise<SearchResultItem[]> {
-    const scopes = this.normalizeScope(options.scope);
+    const scopes = this.normalizeScopes(options.scopes);
     const results: SearchResultItem[] = [];
 
     // Search entities if in scope
-    if (scopes.includes('entities') || scopes.includes('all')) {
+    if (scopes.includes('entities')) {
       const entityResults = await this.keywordSearchEntities(userId, options, maxResults);
       results.push(...entityResults);
     }
 
     // Search facts if in scope
-    if (scopes.includes('facts') || scopes.includes('all')) {
+    if (scopes.includes('facts')) {
       const factResults = await this.keywordSearchFacts(userId, options.query, maxResults);
       results.push(...factResults);
     }
 
     // Search documents if in scope
-    if (scopes.includes('documents') || scopes.includes('all')) {
+    if (scopes.includes('documents')) {
       const docResults = await this.keywordSearchDocuments(userId, options.query, maxResults);
       results.push(...docResults);
     }
 
     // Search messages if in scope
-    if (scopes.includes('messages') || scopes.includes('all')) {
+    if (scopes.includes('messages')) {
       const messageResults = await this.keywordSearchMessages(userId, options.query, maxResults);
       results.push(...messageResults);
     }
@@ -576,11 +576,12 @@ export class SearchService {
     return this.hybridSearch(userId, options, maxResults);
   }
 
-  private normalizeScope(scope?: SearchScope): SearchScope[] {
-    if (!scope) {
-      return ['all'];
+  private normalizeScopes(scopes?: SearchScope[]): SearchScope[] {
+    // If no scopes provided, search everything
+    if (!scopes || scopes.length === 0) {
+      return ['entities', 'facts', 'documents', 'messages'];
     }
 
-    return [scope];
+    return scopes;
   }
 }

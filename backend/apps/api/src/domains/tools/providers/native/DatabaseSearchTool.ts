@@ -9,7 +9,7 @@ import type { ToolExecutionContext } from '../../core/types';
 const DatabaseSearchInputSchema = z.object({
   query: z.string().min(1).max(500),
   searchMode: z.enum(['semantic', 'keyword', 'hybrid', 'auto']).optional(),
-  scope: z.enum(['entities', 'facts', 'documents', 'messages', 'all']).optional(),
+  scopes: z.array(z.enum(['entities', 'facts', 'documents', 'messages'])).optional(),
   entityTypes: z.array(z.string()).optional(),
   includeRelationships: z.boolean().optional(),
   maxResults: z.number().int().min(1).max(100).optional(),
@@ -47,13 +47,17 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
             'hybrid (combines both for best results), ' +
             'or auto (automatically choose based on query). Default: auto',
         },
-        scope: {
-          type: 'string',
-          enum: ['entities', 'facts', 'documents', 'messages', 'all'],
+        scopes: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['entities', 'facts', 'documents', 'messages'],
+          },
           description:
-            'What to search: entities (people/places/concepts), facts (archived knowledge), ' +
-            'documents (PDFs/files), messages (conversation history), or all. ' +
-            'Default: all. Note: To search multiple specific scopes, call the tool multiple times.',
+            'Which data types to search. Options: entities (people/places/concepts), ' +
+            'facts (archived knowledge), documents (PDFs/files), messages (conversation history). ' +
+            'Omit this parameter or provide empty array to search all data types. ' +
+            'Examples: ["entities", "documents"] or ["messages"]',
         },
         entityTypes: {
           type: 'array',
@@ -80,7 +84,6 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
         input: {
           query: 'coffee shops I visited',
           searchMode: 'auto',
-          scope: 'all',
           maxResults: 10,
         },
         output: {
@@ -105,13 +108,13 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
           searchMode: 'hybrid',
           executionTimeMs: 45,
         },
-        description: 'Natural language search across all data types',
+        description: 'Natural language search across all data types (default behavior)',
       },
       {
         input: {
           query: 'john.smith@example.com',
           searchMode: 'keyword',
-          scope: 'entities',
+          scopes: ['entities'],
           entityTypes: ['Person'],
         },
         output: {
@@ -135,7 +138,7 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
         input: {
           query: 'machine learning papers I read',
           searchMode: 'semantic',
-          scope: 'documents',
+          scopes: ['documents', 'messages'],
           maxResults: 15,
         },
         output: {
@@ -152,7 +155,7 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
           searchMode: 'semantic',
           executionTimeMs: 67,
         },
-        description: 'Semantic search across documents only',
+        description: 'Semantic search across documents and messages only',
       },
     ],
   };
@@ -176,7 +179,7 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
     return await this.searchService.search(context.userId, {
       query: input.query,
       searchMode: input.searchMode,
-      scope: input.scope,
+      scopes: input.scopes,
       entityTypes: input.entityTypes,
       includeRelationships: input.includeRelationships,
       maxResults: input.maxResults,
