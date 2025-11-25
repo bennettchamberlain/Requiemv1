@@ -2,13 +2,14 @@ import type { ChangeEvent } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
-import { Input, Label } from '@ci/shadcn';
+import { Badge, Input, Label } from '@ci/shadcn';
 
 export type EntitySearchResult = {
   entityId: string;
   entityType: string;
   name: string | null;
   description: string | null;
+  isLocal?: boolean;
 };
 
 interface GraphSearchResponse {
@@ -31,6 +32,7 @@ interface EntitySearchInputProps {
   onClear(): void;
   disabled?: boolean;
   minQueryLength?: number;
+  localOptions?: EntitySearchResult[];
 }
 
 const DEFAULT_MIN_QUERY = 2;
@@ -44,10 +46,11 @@ export function EntitySearchInput({
   onClear,
   disabled,
   minQueryLength = DEFAULT_MIN_QUERY,
+  localOptions,
 }: EntitySearchInputProps) {
   const inputId = useId();
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<EntitySearchResult[]>([]);
+  const [remoteResults, setRemoteResults] = useState<EntitySearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -90,7 +93,7 @@ export function EntitySearchInput({
         }
 
         if (!cancelled) {
-          setResults(
+          setRemoteResults(
             response.nodes.map((node) => ({
               entityId: node.id ?? node.entity_id,
               entityType: node.entity_type,
@@ -109,7 +112,7 @@ export function EntitySearchInput({
           return;
         }
 
-        setResults([]);
+        setRemoteResults([]);
         setError(searchError instanceof Error ? searchError.message : 'Search failed');
       } finally {
         if (!cancelled) {
@@ -128,19 +131,56 @@ export function EntitySearchInput({
 
   useEffect(() => {
     if (!meetsLength) {
-      setResults([]);
+      setRemoteResults([]);
       setError(null);
       setSearching(false);
       setDropdownOpen(false);
     }
   }, [meetsLength]);
 
+  const localMatches = useMemo(() => {
+    if (!localOptions?.length || !meetsLength) {
+      return [];
+    }
+
+    const search = trimmedQuery.toLowerCase();
+
+    return localOptions.filter((option) => {
+      const name = option.name?.toLowerCase() ?? '';
+      const type = option.entityType.toLowerCase();
+      const id = option.entityId.toLowerCase();
+
+      return name.includes(search) || type.includes(search) || id.includes(search);
+    });
+  }, [localOptions, trimmedQuery, meetsLength]);
+
+  const combinedResults = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: EntitySearchResult[] = [];
+
+    for (const local of localMatches) {
+      if (!seen.has(local.entityId)) {
+        seen.add(local.entityId);
+        merged.push({ ...local, isLocal: true });
+      }
+    }
+
+    for (const remote of remoteResults) {
+      if (!seen.has(remote.entityId)) {
+        seen.add(remote.entityId);
+        merged.push(remote);
+      }
+    }
+
+    return merged;
+  }, [localMatches, remoteResults]);
+
   const showDropdown = dropdownOpen && !disabled;
 
   const handleResultSelect = (result: EntitySearchResult) => {
     onSelect(result);
     setDropdownOpen(false);
-    setResults([]);
+    setRemoteResults([]);
   };
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -159,7 +199,7 @@ export function EntitySearchInput({
   const handleClearSelection = () => {
     setQuery('');
     onClear();
-    setResults([]);
+    setRemoteResults([]);
     setDropdownOpen(false);
   };
 
@@ -196,12 +236,12 @@ export function EntitySearchInput({
           <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-auto rounded-md border bg-popover p-2 text-sm shadow-lg">
             {searching && <p className="py-1 text-muted-foreground">Searching…</p>}
             {!searching && error && <p className="py-1 text-red-600">{error}</p>}
-            {!searching && !error && results.length === 0 && (
+            {!searching && !error && combinedResults.length === 0 && (
               <p className="py-1 text-muted-foreground">No matches yet</p>
             )}
             {!searching &&
               !error &&
-              results.map((result) => (
+              combinedResults.map((result) => (
                 <button
                   key={result.entityId}
                   type="button"
@@ -212,7 +252,10 @@ export function EntitySearchInput({
                   <span className="font-medium text-foreground">
                     {result.name ?? result.entityType ?? result.entityId}
                   </span>
-                  <span className="text-xs text-muted-foreground">{result.entityType}</span>
+                  <span className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{result.entityType}</span>
+                    {result.isLocal && <Badge variant="outline">Pending</Badge>}
+                  </span>
                 </button>
               ))}
           </div>

@@ -109,6 +109,7 @@ export function KnowledgePage() {
     properties: '',
     isBidirectional: false,
   });
+  const [localEntities, setLocalEntities] = useState<EntitySearchResult[]>([]);
 
   useEffect(() => {
     if (!nodeData) {
@@ -162,6 +163,23 @@ export function KnowledgePage() {
       setCreateRelationshipSuccess(null);
     }
   }, [createRelationshipOpen]);
+
+  useEffect(() => {
+    if (!subgraph) {
+      return;
+    }
+
+    const presentIds = new Set(subgraph.nodes.map((node) => node.id));
+    setLocalEntities((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+
+      const filtered = current.filter((entity) => !presentIds.has(entity.entityId));
+
+      return filtered.length === current.length ? current : filtered;
+    });
+  }, [subgraph]);
 
   const handleNodeSelect = (nodeId: string) => {
     setSelectedNodeId(nodeId);
@@ -373,7 +391,7 @@ export function KnowledgePage() {
 
     setCreatingNode(true);
     try {
-      await fetchJson('/api/graph/node', {
+      const response = await fetchJson<{ success: boolean; entityId: string }>('/api/graph/node', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -386,6 +404,20 @@ export function KnowledgePage() {
       setCreateNodeSuccess('Node creation requested. The graph updates once processing completes.');
       setCreateNodeForm({ entityType: '', name: '', description: '', properties: '' });
       setGraphRefreshKey((prev) => prev + 1);
+      if (response?.entityId) {
+        const pendingEntity: EntitySearchResult = {
+          entityId: response.entityId,
+          entityType,
+          name: name || null,
+          description: description || null,
+          isLocal: true,
+        };
+        setLocalEntities((current) => {
+          const filtered = current.filter((entry) => entry.entityId !== pendingEntity.entityId);
+
+          return [pendingEntity, ...filtered].slice(0, 10);
+        });
+      }
     } catch (error) {
       setCreateNodeError(error instanceof Error ? error.message : 'Unable to create node');
     } finally {
@@ -1065,6 +1097,7 @@ export function KnowledgePage() {
                 onSelect={(entity) => updateRelationshipForm('fromEntity', entity)}
                 onClear={() => updateRelationshipForm('fromEntity', null)}
                 disabled={creatingRelationship}
+                localOptions={localEntities}
               />
 
               <EntitySearchInput
@@ -1075,6 +1108,7 @@ export function KnowledgePage() {
                 onSelect={(entity) => updateRelationshipForm('toEntity', entity)}
                 onClear={() => updateRelationshipForm('toEntity', null)}
                 disabled={creatingRelationship}
+                localOptions={localEntities}
               />
 
               <div>

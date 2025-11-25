@@ -5,7 +5,6 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
-import { EmbeddingService } from '@ci/domains/search';
 
 import { GraphEventService } from '../services/GraphEventService';
 import { GraphQueryService } from '../services/GraphQueryService';
@@ -167,7 +166,6 @@ export class GraphController {
     private readonly graphEvents: GraphEventService,
     private readonly graphQuery: GraphQueryService,
     private readonly userContext: UserContextService,
-    private readonly embeddingService: EmbeddingService,
   ) {}
 
   private ensureUserId(ctx: RequestContext): string {
@@ -353,11 +351,8 @@ export class GraphController {
     const ownerId = this.ensureUserId(ctx);
     const limit = query.limit ?? 10;
 
-    const results = await this.embeddingService.findNearest(ctx, query.query, ['graph_node'], limit);
-    const nodeIds = results
-      .filter((result) => result.type === 'graph_node')
-      .map((result) => result.id)
-      .slice(0, limit);
+    const matches = await this.graphQuery.searchNodesByText(ownerId, query.query, { limit });
+    const nodeIds = matches.map((match) => match.node.entity_id);
 
     if (nodeIds.length === 0) {
       return {
@@ -365,10 +360,6 @@ export class GraphController {
         nodes: [],
       };
     }
-
-    const nodes = await this.graphQuery.getNodesByIds(ownerId, nodeIds);
-    const nodeMap = new Map(nodes.map((node) => [node.entity_id, node]));
-    const distanceMap = new Map(results.map((result) => [result.id, result.distance]));
 
     const relationships = await this.graphQuery.getRelationships(ownerId, {
       entityIds: nodeIds,
@@ -379,36 +370,15 @@ export class GraphController {
       (rel) => nodeIds.includes(rel.from_entity_id) && nodeIds.includes(rel.to_entity_id),
     );
 
-    const responseNodes = nodeIds
-      .map((id) => {
-        const node = nodeMap.get(id);
-        if (!node) {
-          return null;
-        }
-
-        return {
-          id: node.entity_id,
-          entity_id: node.entity_id,
-          entity_type: node.entity_type,
-          name: node.name,
-          description: node.description,
-          properties: node.properties ?? {},
-          score: distanceMap.get(id) ?? null,
-        };
-      })
-      .filter(
-        (
-          value,
-        ): value is {
-          id: string;
-          entity_id: string;
-          entity_type: string;
-          name: string | null;
-          description: string | null;
-          properties: Record<string, unknown>;
-          score: number | null;
-        } => value !== null,
-      );
+    const responseNodes = matches.map((match) => ({
+      id: match.node.entity_id,
+      entity_id: match.node.entity_id,
+      entity_type: match.node.entity_type,
+      name: match.node.name,
+      description: match.node.description,
+      properties: match.node.properties ?? {},
+      score: match.score,
+    }));
 
     return {
       success: true,

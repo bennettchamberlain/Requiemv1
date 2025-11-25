@@ -120,6 +120,36 @@ export class GraphUtilityService {
     return query.getMany();
   }
 
+  async searchNodesByText(
+    ownerUserId: string,
+    queryText: string,
+    options: { limit?: number } = {},
+  ): Promise<Array<{ node: GraphNodeEntity; rank: number }>> {
+    const limit = Math.min(options.limit ?? 10, 50);
+    if (!queryText.trim()) {
+      return [];
+    }
+
+    const tsquery = `plainto_tsquery('english', :search)`;
+
+    const qb = this.entityRepo
+      .createQueryBuilder('entity')
+      .where('entity.owner_user_id = :ownerUserId', { ownerUserId })
+      .andWhere('entity.is_active = true')
+      .andWhere(`entity.search_vector @@ ${tsquery}`, { search: queryText })
+      .addSelect(`ts_rank_cd(entity.search_vector, ${tsquery})`, 'rank')
+      .orderBy('rank', 'DESC')
+      .addOrderBy('entity.updated_at', 'DESC')
+      .limit(limit);
+
+    const result = await qb.getRawAndEntities();
+
+    return result.entities.map((node, index) => ({
+      node,
+      rank: Number(result.raw[index]?.rank ?? 0),
+    }));
+  }
+
   async createOrUpdateNode(
     ownerUserId: string,
     payload: {
