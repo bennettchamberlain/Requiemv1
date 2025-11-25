@@ -1,13 +1,30 @@
+import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Portal, fetchJson, usePageTitle } from '@ci/common';
-import { Badge, Breadcrumb, Button, Card, Drawer, Input, Skeleton, Textarea } from '@ci/shadcn';
+import {
+  Badge,
+  Breadcrumb,
+  Button,
+  Card,
+  Checkbox,
+  Dialog,
+  Drawer,
+  DropdownMenu,
+  Input,
+  Label,
+  Skeleton,
+  Textarea,
+} from '@ci/shadcn';
+import { Plus } from '@ci/shadcn/icons';
 
 import { useGraphOverview } from '@/api/useGraphOverview';
 import { ForceGraph } from '@/components/ForceGraph';
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
+import type { EntitySearchResult } from './EntitySearchInput';
+import { EntitySearchInput } from './EntitySearchInput';
 import { useNodeDetails } from './use-node-details';
 
 type GraphSummary = {
@@ -22,10 +39,27 @@ type EditableProperty = {
   value: string;
 };
 
+type CreateNodeFormState = {
+  entityType: string;
+  name: string;
+  description: string;
+  properties: string;
+};
+
+type RelationshipFormState = {
+  fromEntity: EntitySearchResult | null;
+  toEntity: EntitySearchResult | null;
+  relationshipType: string;
+  strength: string;
+  properties: string;
+  isBidirectional: boolean;
+};
+
 export function KnowledgePage() {
   usePageTitle('Knowledge - Companion Intelligence');
 
   const [{ user, loading: authLoading, error: authError, authToken }] = useAuth();
+  const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const {
     loading: graphLoading,
     error: graphError,
@@ -33,7 +67,7 @@ export function KnowledgePage() {
     userEntityId,
     quickStats,
     currentUser,
-  } = useGraphOverview(authToken);
+  } = useGraphOverview(authToken, { refreshKey: graphRefreshKey });
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -53,6 +87,28 @@ export function KnowledgePage() {
     data: nodeData,
   } = useNodeDetails(drawerOpen ? selectedNodeId : null, authToken, nodeRevision);
   const [relationshipFilter, setRelationshipFilter] = useState<string>('ALL');
+  const [createNodeOpen, setCreateNodeOpen] = useState(false);
+  const [creatingNode, setCreatingNode] = useState(false);
+  const [createNodeError, setCreateNodeError] = useState<string | null>(null);
+  const [createNodeSuccess, setCreateNodeSuccess] = useState<string | null>(null);
+  const [createNodeForm, setCreateNodeForm] = useState<CreateNodeFormState>({
+    entityType: '',
+    name: '',
+    description: '',
+    properties: '',
+  });
+  const [createRelationshipOpen, setCreateRelationshipOpen] = useState(false);
+  const [creatingRelationship, setCreatingRelationship] = useState(false);
+  const [createRelationshipError, setCreateRelationshipError] = useState<string | null>(null);
+  const [createRelationshipSuccess, setCreateRelationshipSuccess] = useState<string | null>(null);
+  const [relationshipForm, setRelationshipForm] = useState<RelationshipFormState>({
+    fromEntity: null,
+    toEntity: null,
+    relationshipType: '',
+    strength: '',
+    properties: '',
+    isBidirectional: false,
+  });
 
   useEffect(() => {
     if (!nodeData) {
@@ -83,6 +139,29 @@ export function KnowledgePage() {
   useEffect(() => {
     setSaveSuccess(null);
   }, [editableName, editableDescription, editableProperties]);
+
+  useEffect(() => {
+    if (!createNodeOpen) {
+      setCreateNodeForm({ entityType: '', name: '', description: '', properties: '' });
+      setCreateNodeError(null);
+      setCreateNodeSuccess(null);
+    }
+  }, [createNodeOpen]);
+
+  useEffect(() => {
+    if (!createRelationshipOpen) {
+      setRelationshipForm({
+        fromEntity: null,
+        toEntity: null,
+        relationshipType: '',
+        strength: '',
+        properties: '',
+        isBidirectional: false,
+      });
+      setCreateRelationshipError(null);
+      setCreateRelationshipSuccess(null);
+    }
+  }, [createRelationshipOpen]);
 
   const handleNodeSelect = (nodeId: string) => {
     setSelectedNodeId(nodeId);
@@ -244,6 +323,176 @@ export function KnowledgePage() {
     ]);
   };
 
+  const updateCreateNodeForm = (field: keyof CreateNodeFormState, value: string) => {
+    setCreateNodeForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateRelationshipForm = <K extends keyof RelationshipFormState>(
+    field: K,
+    value: RelationshipFormState[K],
+  ) => {
+    setRelationshipForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreateNodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateNodeError(null);
+    setCreateNodeSuccess(null);
+
+    const entityType = createNodeForm.entityType.trim();
+    if (!entityType) {
+      setCreateNodeError('Entity type is required');
+
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      entityType,
+    };
+
+    const name = createNodeForm.name.trim();
+    if (name) {
+      payload.name = name;
+    }
+
+    const description = createNodeForm.description.trim();
+    if (description) {
+      payload.description = description;
+    }
+
+    try {
+      const properties = parseJsonObjectInput(createNodeForm.properties);
+      if (properties) {
+        payload.properties = properties;
+      }
+    } catch (error) {
+      setCreateNodeError(error instanceof Error ? error.message : 'Invalid properties JSON');
+
+      return;
+    }
+
+    setCreatingNode(true);
+    try {
+      await fetchJson('/api/graph/node', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      setCreateNodeSuccess('Node creation requested. The graph updates once processing completes.');
+      setCreateNodeForm({ entityType: '', name: '', description: '', properties: '' });
+      setGraphRefreshKey((prev) => prev + 1);
+    } catch (error) {
+      setCreateNodeError(error instanceof Error ? error.message : 'Unable to create node');
+    } finally {
+      setCreatingNode(false);
+    }
+  };
+
+  const handleCreateRelationshipSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateRelationshipError(null);
+    setCreateRelationshipSuccess(null);
+
+    if (!relationshipForm.fromEntity || !relationshipForm.toEntity) {
+      setCreateRelationshipError('Both nodes are required');
+
+      return;
+    }
+
+    if (relationshipForm.fromEntity.entityId === relationshipForm.toEntity.entityId) {
+      setCreateRelationshipError('Please choose two different nodes');
+
+      return;
+    }
+
+    const relationshipType = relationshipForm.relationshipType.trim();
+    if (!relationshipType) {
+      setCreateRelationshipError('Relationship type is required');
+
+      return;
+    }
+
+    let strengthValue: number | undefined;
+    const trimmedStrength = relationshipForm.strength.trim();
+    if (trimmedStrength) {
+      const parsed = Number.parseFloat(trimmedStrength);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 1) {
+        setCreateRelationshipError('Strength must be a number between 0 and 1');
+
+        return;
+      }
+
+      strengthValue = parsed;
+    }
+
+    const payload: Record<string, unknown> = {
+      fromEntityId: relationshipForm.fromEntity.entityId,
+      toEntityId: relationshipForm.toEntity.entityId,
+      relationshipType,
+    };
+
+    if (typeof strengthValue === 'number') {
+      payload.strength = strengthValue;
+    }
+
+    if (relationshipForm.isBidirectional) {
+      payload.isBidirectional = true;
+    }
+
+    try {
+      const properties = parseJsonObjectInput(relationshipForm.properties);
+      if (properties) {
+        payload.properties = properties;
+      }
+    } catch (error) {
+      setCreateRelationshipError(
+        error instanceof Error ? error.message : 'Relationship properties must be JSON',
+      );
+
+      return;
+    }
+
+    setCreatingRelationship(true);
+    try {
+      await fetchJson('/api/graph/relationship', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      setCreateRelationshipSuccess('Relationship creation requested. Refreshing view…');
+      const involvesSelected = selectedNodeId
+        ? [relationshipForm.fromEntity.entityId, relationshipForm.toEntity.entityId].includes(selectedNodeId)
+        : false;
+      if (involvesSelected) {
+        setNodeRevision((prev) => prev + 1);
+      }
+
+      setGraphRefreshKey((prev) => prev + 1);
+      setRelationshipForm({
+        fromEntity: null,
+        toEntity: null,
+        relationshipType: '',
+        strength: '',
+        properties: '',
+        isBidirectional: false,
+      });
+    } catch (error) {
+      setCreateRelationshipError(error instanceof Error ? error.message : 'Unable to create relationship');
+    } finally {
+      setCreatingRelationship(false);
+    }
+  };
+
   const graphSummary = useMemo<GraphSummary>(() => {
     const fallback: GraphSummary = { nodeCount: 0, linkCount: 0, topTypes: [] };
 
@@ -299,11 +548,46 @@ export function KnowledgePage() {
       <PageContent>
         <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
           <Card className="lg:col-span-2 overflow-hidden">
-            <Card.Header>
-              <Card.Title className="flex items-center gap-2">Knowledge Graph</Card.Title>
-              <Card.Description>
-                {currentUser ? `Connections around ${currentUser.name}` : 'Connections around your profile'}
-              </Card.Description>
+            <Card.Header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <Card.Title className="flex items-center gap-2">Knowledge Graph</Card.Title>
+                <Card.Description>
+                  {currentUser ? `Connections around ${currentUser.name}` : 'Connections around your profile'}
+                </Card.Description>
+              </div>
+              <DropdownMenu modal={false}>
+                <DropdownMenu.Trigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    aria-label="Add to graph"
+                    className="self-start"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end" className="w-48 p-2" sideOffset={8}>
+                  <DropdownMenu.Item
+                    className="cursor-pointer rounded-md px-2 py-1.5 text-sm"
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setCreateNodeOpen(true);
+                    }}
+                  >
+                    Add node…
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="cursor-pointer rounded-md px-2 py-1.5 text-sm"
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setCreateRelationshipOpen(true);
+                    }}
+                  >
+                    Add relationship…
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu>
             </Card.Header>
             <Card.Content className="overflow-hidden">
               {graphLoading ? (
@@ -678,6 +962,191 @@ export function KnowledgePage() {
           </div>
         </Drawer.Content>
       </Drawer>
+
+      <Dialog open={createNodeOpen} onOpenChange={setCreateNodeOpen}>
+        <Dialog.Content className="sm:max-w-[520px]">
+          <form className="space-y-4" onSubmit={handleCreateNodeSubmit}>
+            <Dialog.Header>
+              <Dialog.Title>Add node</Dialog.Title>
+              <Dialog.Description>Create a new entity for your personal knowledge graph.</Dialog.Description>
+            </Dialog.Header>
+
+            {createNodeError && <p className="text-sm text-red-600">{createNodeError}</p>}
+            {createNodeSuccess && <p className="text-sm text-emerald-600">{createNodeSuccess}</p>}
+
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="new-node-type">Entity type</Label>
+                <Input
+                  id="new-node-type"
+                  placeholder="Person, Concept, Location…"
+                  value={createNodeForm.entityType}
+                  onChange={(event) => updateCreateNodeForm('entityType', event.target.value)}
+                  required
+                  disabled={creatingNode}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="new-node-name">Name</Label>
+                <Input
+                  id="new-node-name"
+                  placeholder="Optional display name"
+                  value={createNodeForm.name}
+                  onChange={(event) => updateCreateNodeForm('name', event.target.value)}
+                  disabled={creatingNode}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="new-node-description">Description</Label>
+                <Textarea
+                  id="new-node-description"
+                  rows={3}
+                  placeholder="Give additional context"
+                  value={createNodeForm.description}
+                  onChange={(event) => updateCreateNodeForm('description', event.target.value)}
+                  disabled={creatingNode}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="new-node-properties">Properties (JSON)</Label>
+                <Textarea
+                  id="new-node-properties"
+                  rows={4}
+                  placeholder='{"age": 32, "hobbies": ["skiing"]}'
+                  value={createNodeForm.properties}
+                  onChange={(event) => updateCreateNodeForm('properties', event.target.value)}
+                  disabled={creatingNode}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Provide a JSON object to seed the node&apos;s properties.
+                </p>
+              </div>
+            </div>
+
+            <Dialog.Footer>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setCreateNodeOpen(false)}
+                disabled={creatingNode}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingNode}>
+                {creatingNode ? 'Creating…' : 'Create node'}
+              </Button>
+            </Dialog.Footer>
+          </form>
+        </Dialog.Content>
+      </Dialog>
+
+      <Dialog open={createRelationshipOpen} onOpenChange={setCreateRelationshipOpen}>
+        <Dialog.Content className="sm:max-w-[620px]">
+          <form className="space-y-4" onSubmit={handleCreateRelationshipSubmit}>
+            <Dialog.Header>
+              <Dialog.Title>Add relationship</Dialog.Title>
+              <Dialog.Description>Link any two entities with a typed relationship.</Dialog.Description>
+            </Dialog.Header>
+
+            {createRelationshipError && <p className="text-sm text-red-600">{createRelationshipError}</p>}
+            {createRelationshipSuccess && (
+              <p className="text-sm text-emerald-600">{createRelationshipSuccess}</p>
+            )}
+
+            <div className="space-y-4">
+              <EntitySearchInput
+                label="From node"
+                placeholder="Search by name"
+                authToken={authToken}
+                selected={relationshipForm.fromEntity}
+                onSelect={(entity) => updateRelationshipForm('fromEntity', entity)}
+                onClear={() => updateRelationshipForm('fromEntity', null)}
+                disabled={creatingRelationship}
+              />
+
+              <EntitySearchInput
+                label="To node"
+                placeholder="Search by name"
+                authToken={authToken}
+                selected={relationshipForm.toEntity}
+                onSelect={(entity) => updateRelationshipForm('toEntity', entity)}
+                onClear={() => updateRelationshipForm('toEntity', null)}
+                disabled={creatingRelationship}
+              />
+
+              <div>
+                <Label htmlFor="relationship-type">Relationship type</Label>
+                <Input
+                  id="relationship-type"
+                  placeholder="PREFERS, LIVES_IN, WORKS_WITH…"
+                  value={relationshipForm.relationshipType}
+                  onChange={(event) => updateRelationshipForm('relationshipType', event.target.value)}
+                  disabled={creatingRelationship}
+                  required
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="relationship-strength">Strength (0-1)</Label>
+                  <Input
+                    id="relationship-strength"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="1"
+                    placeholder="Optional"
+                    value={relationshipForm.strength}
+                    onChange={(event) => updateRelationshipForm('strength', event.target.value)}
+                    disabled={creatingRelationship}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={relationshipForm.isBidirectional}
+                    onCheckedChange={(value) => updateRelationshipForm('isBidirectional', Boolean(value))}
+                    disabled={creatingRelationship}
+                  />
+                  Treat as bidirectional
+                </label>
+              </div>
+
+              <div>
+                <Label htmlFor="relationship-properties">Properties (JSON)</Label>
+                <Textarea
+                  id="relationship-properties"
+                  rows={4}
+                  placeholder='{"context": "Met in college"}'
+                  value={relationshipForm.properties}
+                  onChange={(event) => updateRelationshipForm('properties', event.target.value)}
+                  disabled={creatingRelationship}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional JSON payload describing the relationship metadata.
+                </p>
+              </div>
+            </div>
+
+            <Dialog.Footer>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setCreateRelationshipOpen(false)}
+                disabled={creatingRelationship}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingRelationship}>
+                {creatingRelationship ? 'Linking…' : 'Create relationship'}
+              </Button>
+            </Dialog.Footer>
+          </form>
+        </Dialog.Content>
+      </Dialog>
     </>
   );
 }
@@ -730,6 +1199,24 @@ function parsePropertyValueForUpdate(value: string): unknown {
     return JSON.parse(trimmed);
   } catch {
     return value;
+  }
+}
+
+function parseJsonObjectInput(value: string): Record<string, unknown> | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Properties must be a JSON object');
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new Error('Properties must be a valid JSON object');
   }
 }
 

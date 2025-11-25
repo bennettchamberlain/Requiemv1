@@ -120,6 +120,25 @@ const updateNodeSchema = z.object({
 });
 
 const deleteRelationshipSchema = z.object({ relationshipId: z.string() });
+
+const createNodeSchema = z.object({
+  entityType: z.string().min(1),
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  properties: optionalPropertiesSchema,
+  searchContent: z.string().optional(),
+});
+
+const createRelationshipSchema = z.object({
+  fromEntityId: z.string().uuid(),
+  toEntityId: z.string().uuid(),
+  relationshipType: z.string().min(1),
+  properties: optionalPropertiesSchema,
+  strength: z.number().min(0).max(1).optional(),
+  isBidirectional: z.boolean().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
 const getNodeDetailsSchema = z.object({ entityId: z.string() });
 const graphSearchSchema = z.object({
   query: z.string().min(1),
@@ -136,6 +155,8 @@ type AddConnectionDto = z.infer<typeof addConnectionSchema>;
 type DeleteNodeDto = z.infer<typeof deleteNodeSchema>;
 type UpdateNodeDto = z.infer<typeof updateNodeSchema>;
 type DeleteRelationshipDto = z.infer<typeof deleteRelationshipSchema>;
+type CreateNodeDto = z.infer<typeof createNodeSchema>;
+type CreateRelationshipDto = z.infer<typeof createRelationshipSchema>;
 type GetNodeDetailsDto = z.infer<typeof getNodeDetailsSchema>;
 type GraphSearchDto = z.infer<typeof graphSearchSchema>;
 
@@ -484,6 +505,27 @@ export class GraphController {
     };
   }
 
+  @Post('node')
+  async createNode(
+    @Context() ctx: RequestContext,
+    @Body(new ValidationPipe(createNodeSchema)) body: CreateNodeDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+    const { entityId } = await this.graphEvents.upsertNode(ownerId, {
+      entityType: body.entityType,
+      name: body.name ?? null,
+      description: body.description ?? null,
+      properties: body.properties ?? {},
+      searchContent: body.searchContent ?? null,
+      mergeProperties: false,
+    });
+
+    return {
+      success: true,
+      entityId,
+    };
+  }
+
   @Post('node/update')
   async updateNode(
     @Context() ctx: RequestContext,
@@ -499,6 +541,30 @@ export class GraphController {
     return {
       success: true,
       node: updated,
+    };
+  }
+
+  @Post('relationship')
+  async createRelationship(
+    @Context() ctx: RequestContext,
+    @Body(new ValidationPipe(createRelationshipSchema)) body: CreateRelationshipDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+    const { relationshipId } = await this.graphEvents.upsertRelationship(ownerId, {
+      fromEntityId: body.fromEntityId,
+      toEntityId: body.toEntityId,
+      relationshipType: body.relationshipType,
+      properties: body.properties ?? {},
+      strength: body.strength,
+      isBidirectional: body.isBidirectional,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      mergeProperties: false,
+    });
+
+    return {
+      success: true,
+      relationshipId,
     };
   }
 
