@@ -216,12 +216,47 @@ export class PromoteService {
           });
           break;
         case ApiLogScopes.FACEBOOK_PROFILE:
+          await this.eventService.send(Events.PROMOTE_FACEBOOK_PROFILE, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
         case ApiLogScopes.FACEBOOK_POSTS:
+          await this.eventService.send(Events.PROMOTE_FACEBOOK_POSTS, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
         case ApiLogScopes.FACEBOOK_PHOTOS:
+          await this.eventService.send(Events.PROMOTE_FACEBOOK_PHOTOS, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
         case ApiLogScopes.FACEBOOK_VIDEOS:
+          await this.eventService.send(Events.PROMOTE_FACEBOOK_VIDEOS, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
         case ApiLogScopes.FACEBOOK_FRIENDS:
+          await this.eventService.send(Events.PROMOTE_FACEBOOK_FRIENDS, {
+            apiLogId: apiLog.id,
+            userId: context.userId,
+            connectionId: apiLog.connection_id,
+            content: apiLog.content,
+          });
+          break;
         case ApiLogScopes.FACEBOOK_LIKES:
-          await this.eventService.send(Events.PROMOTE_FACEBOOK_DATA, {
+          await this.eventService.send(Events.PROMOTE_FACEBOOK_LIKES, {
             apiLogId: apiLog.id,
             userId: context.userId,
             connectionId: apiLog.connection_id,

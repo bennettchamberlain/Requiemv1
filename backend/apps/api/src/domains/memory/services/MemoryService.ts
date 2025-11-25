@@ -817,16 +817,8 @@ export class MemoryService {
       }
     }
 
-    // Extract link from source_data if url/source_url is not set
-    let sourceLink: string | undefined = content.url || content.source_url || undefined;
-    if (!sourceLink && sourceData) {
-      sourceLink = (sourceData.link as string) || undefined;
-      // If still no link, construct URL from post ID if available
-      if (!sourceLink && sourceData.facebook_post_id) {
-        const postId = sourceData.facebook_post_id as string;
-        sourceLink = `https://www.facebook.com/${postId}`;
-      }
-    }
+    // Extract link from url or source_url (should be set during promotion)
+    const sourceLink: string | undefined = content.url || content.source_url || undefined;
 
     const category = content.type || 'Content';
 

@@ -9,7 +9,6 @@ import config from '@ci/configuration';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
 
-import { FacebookPromotionService } from '../../services/facebook/FacebookPromotionService';
 import { GoogleCalendarEventPromotionService } from '../../services/google/CalendarPromotionService';
 import { ContactsPromotionService } from '../../services/google/ContactsPromotionService';
 import { DrivePromotionService } from '../../services/google/DrivePromotionService';
@@ -28,7 +27,6 @@ export class PromoteController {
     private readonly youtubePromotionService: YouTubePromotionService,
     private readonly drivePromotionService: DrivePromotionService,
     private readonly contactsPromotionService: ContactsPromotionService,
-    private readonly facebookPromotionService: FacebookPromotionService,
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
   ) {}
@@ -241,54 +239,6 @@ export class PromoteController {
     } catch (error) {
       // Log as warning - job will complete anyway to avoid infinite retries
       this.logger.warn('Contacts promotion failed', {
-        apiLogId: payload.apiLogId,
-        userId: payload.userId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-    }
-  }
-
-  /**
-   * Handle Facebook data promotion event
-   * This runs asynchronously in the job queue after the API log has been marked as processed
-   * Promotes Facebook profile, posts, photos, videos, likes, and friends to appropriate tables
-   */
-  @OnEvent(Events.PROMOTE_FACEBOOK_DATA)
-  async handlePromoteFacebookData(payload: EventPayloads[Events.PROMOTE_FACEBOOK_DATA]) {
-    try {
-      // Fetch the API log to get the scope
-      const apiLog = await this.apiLogRepository.findOne({
-        where: { id: payload.apiLogId },
-      });
-
-      if (!apiLog) {
-        this.logger.error('API log not found', { apiLogId: payload.apiLogId });
-
-        return;
-      }
-
-      const scope = apiLog.scope || '';
-      this.logger.log('Processing Facebook promotion job', {
-        apiLogId: payload.apiLogId,
-        userId: payload.userId,
-        scope,
-      });
-
-      await this.facebookPromotionService.promoteFacebookData(
-        payload.content,
-        payload.userId,
-        payload.connectionId,
-        scope,
-      );
-
-      this.logger.log('Facebook promotion completed successfully', {
-        apiLogId: payload.apiLogId,
-        scope,
-      });
-    } catch (error) {
-      // Log as warning - job will complete anyway to avoid infinite retries
-      this.logger.warn('Facebook promotion failed', {
         apiLogId: payload.apiLogId,
         userId: payload.userId,
         error: error instanceof Error ? error.message : 'Unknown error',
