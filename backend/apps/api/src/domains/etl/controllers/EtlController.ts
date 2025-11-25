@@ -5,22 +5,18 @@ import { Cron } from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
+import { type Connection, ConnectionService } from '@ci/domains/connections';
 
 import { EtlService } from '../services/EtlService';
-
-interface ConnectionWithUser {
-  id: string;
-  userId: string;
-  schedule: string | null;
-  lastSyncedAt?: Date;
-  createdAt: Date;
-}
 
 @Controller('etl')
 export class EtlController {
   private logger = new LoggerService(EtlController.name);
 
-  constructor(private readonly etlService: EtlService) {}
+  constructor(
+    private readonly connectionService: ConnectionService,
+    private readonly etlService: EtlService,
+  ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async syncConnections(): Promise<void> {
@@ -29,12 +25,12 @@ export class EtlController {
     }
 
     try {
-      const connections = await this.etlService.findActiveConnections();
+      const connections = await this.connectionService.findActiveConnections();
       const now = new Date();
 
       for (const connection of connections) {
-        if (this.shouldSyncConnection(connection, now)) {
-          await this.syncConnection(connection);
+        if (this.shouldSyncConnection(connection.connection, connection.lastSyncedAt, now)) {
+          await this.syncConnection(connection.connection);
         }
       }
     } catch (error) {
@@ -42,13 +38,13 @@ export class EtlController {
     }
   }
 
-  private shouldSyncConnection(connection: ConnectionWithUser, now: Date): boolean {
+  private shouldSyncConnection(connection: Connection, lastSyncedAt: Date | null, now: Date): boolean {
     if (!connection.schedule) {
       return false;
     }
 
     // Use lastSyncedAt if available, otherwise use createdAt
-    const lastSync = connection.lastSyncedAt || connection.createdAt;
+    const lastSync = lastSyncedAt || connection.createdAt;
     const timeSinceLastSync = now.getTime() - lastSync.getTime();
 
     const scheduleInterval = this.getScheduleIntervalMs(connection.schedule);
@@ -73,7 +69,7 @@ export class EtlController {
     return intervals[schedule] || 60 * 60 * 1000;
   }
 
-  private async syncConnection(connection: ConnectionWithUser): Promise<void> {
+  private async syncConnection(connection: Connection): Promise<void> {
     try {
       await this.etlService.handleConnectionSync(
         { userId: connection.userId } as RequestContext,

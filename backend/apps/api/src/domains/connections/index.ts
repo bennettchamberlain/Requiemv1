@@ -39,7 +39,7 @@ import { ProviderService } from './services/ProviderService';
   imports: [TypeOrmModule.forFeature([ConnectionEntity, ProviderEntity]), EventsModule],
   providers: [ClientFactory, GoogleClient, ConnectionService, ProviderService, MicrosoftClient],
   controllers: [ConnectionsController, ProvidersController],
-  exports: [ConnectionService, ProviderService, GoogleClient, MicrosoftClient],
+  exports: [ClientFactory, ConnectionService, ProviderService, GoogleClient, MicrosoftClient],
 })
 export class ConnectionsModule {}
 
@@ -48,10 +48,11 @@ export { ConnectionEntity, ProviderEntity };
 
 // Services
 export { ConnectionService, ProviderService };
+export { ClientFactory } from './clients';
 
 // Clients
 export { GoogleClient, MicrosoftClient };
 
 // Types
-export type { Connection } from './types';
+export type { Connection } from './entities/ConnectionEntity';
 export type { SyncResponse } from './clients/types';

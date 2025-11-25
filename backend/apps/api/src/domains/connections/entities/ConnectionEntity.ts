@@ -8,9 +8,9 @@ import {
   JoinColumn,
 } from 'typeorm';
 
-import { UserEntity } from '@ci/domains/user';
+import { UserEntity, type User } from '@ci/domains/user';
 
-import type { Connection } from '../types';
+import type { Provider } from '../types';
 
 import { ProviderEntity } from './ProviderEntity';
 
@@ -40,6 +40,12 @@ export class ConnectionEntity {
   @Column({ type: 'jsonb', nullable: true, name: 'sync_state' })
   syncState!: Record<string, unknown> | null;
 
+  @Column({ type: 'uuid', name: 'user_id' })
+  userId!: string;
+
+  @Column({ type: 'uuid', name: 'provider_id' })
+  providerId!: string;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -48,23 +54,33 @@ export class ConnectionEntity {
   @JoinColumn({ name: 'provider_id' })
   provider?: ProviderEntity;
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
 
-  toConnection(): Connection {
+  static toEgressType(entity: ConnectionEntity): Connection {
     return {
-      id: this.id,
-      name: this.name ?? null,
-      active: this.active,
-      schedule: this.schedule ?? null,
-      accessToken: this.accessToken ?? null,
-      refreshToken: this.refreshToken ?? null,
-      tokenExpiry: this.tokenExpiry ?? null,
-      syncState: this.syncState ?? null,
-      provider: this.provider?.toProvider(),
-    } satisfies Connection;
+      id: entity.id,
+      name: entity.name,
+      active: entity.active,
+      schedule: entity.schedule,
+      accessToken: entity.accessToken,
+      refreshToken: entity.refreshToken,
+      tokenExpiry: entity.tokenExpiry,
+      syncState: entity.syncState,
+      userId: entity.userId,
+      providerId: entity.providerId,
+      user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
+      provider: entity.provider?.toProvider(),
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    };
   }
 }
+
+export type Connection = Readonly<Omit<ConnectionEntity, 'user' | 'provider'>> & {
+  user?: User;
+  provider?: Provider;
+};

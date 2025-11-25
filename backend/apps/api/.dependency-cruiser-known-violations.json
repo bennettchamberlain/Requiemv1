@@ -320,19 +320,12 @@
   {
     "type": "cycle",
     "from": "src/domains/connections/controllers/ConnectionsController.ts",
-    "to": "src/domains/connections/services/ConnectionService.ts",
+    "to": "src/domains/connections/clients/index.ts",
     "rule": {
       "severity": "error",
       "name": "no-circular"
     },
     "cycle": [
-      {
-        "name": "src/domains/connections/services/ConnectionService.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
       {
         "name": "src/domains/connections/clients/index.ts",
         "dependencyTypes": [
@@ -417,19 +410,12 @@
   {
     "type": "cycle",
     "from": "src/domains/connections/controllers/ProvidersController.ts",
-    "to": "src/domains/connections/services/ConnectionService.ts",
+    "to": "src/domains/connections/clients/index.ts",
     "rule": {
       "severity": "error",
       "name": "no-circular"
     },
     "cycle": [
-      {
-        "name": "src/domains/connections/services/ConnectionService.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
       {
         "name": "src/domains/connections/clients/index.ts",
         "dependencyTypes": [
@@ -581,13 +567,6 @@
         ]
       },
       {
-        "name": "src/domains/connections/services/ConnectionService.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
         "name": "src/domains/connections/clients/index.ts",
         "dependencyTypes": [
           "local",
@@ -648,13 +627,6 @@
         ]
       },
       {
-        "name": "src/domains/connections/services/ConnectionService.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
         "name": "src/domains/connections/clients/index.ts",
         "dependencyTypes": [
           "local",
@@ -700,52 +672,13 @@
   },
   {
     "type": "cycle",
-    "from": "src/domains/connections/index.ts",
-    "to": "src/domains/connections/services/ConnectionService.ts",
+    "from": "src/domains/etl/controllers/EtlController.ts",
+    "to": "src/domains/connections/index.ts",
     "rule": {
       "severity": "error",
       "name": "no-circular"
     },
     "cycle": [
-      {
-        "name": "src/domains/connections/services/ConnectionService.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/connections/clients/index.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/connections/clients/ClientFactory.ts",
-        "dependencyTypes": [
-          "local",
-          "export"
-        ]
-      },
-      {
-        "name": "src/domains/connections/clients/GoogleClient.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/etl/index.ts",
-        "dependencyTypes": [
-          "aliased",
-          "aliased-tsconfig",
-          "aliased-tsconfig-paths",
-          "local",
-          "type-only",
-          "import"
-        ]
-      },
       {
         "name": "src/domains/connections/index.ts",
         "dependencyTypes": [
@@ -755,18 +688,7 @@
           "local",
           "import"
         ]
-      }
-    ]
-  },
-  {
-    "type": "cycle",
-    "from": "src/domains/connections/services/ConnectionService.ts",
-    "to": "src/domains/connections/clients/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-circular"
-    },
-    "cycle": [
+      },
       {
         "name": "src/domains/connections/clients/index.ts",
         "dependencyTypes": [
@@ -801,46 +723,6 @@
       },
       {
         "name": "src/domains/etl/controllers/EtlController.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/etl/services/EtlService.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/etl/entities/ApiLogEntity.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/etl/types.ts",
-        "dependencyTypes": [
-          "local",
-          "type-only",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/connections/index.ts",
-        "dependencyTypes": [
-          "aliased",
-          "aliased-tsconfig",
-          "aliased-tsconfig-paths",
-          "local",
-          "type-only",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/connections/services/ConnectionService.ts",
         "dependencyTypes": [
           "local",
           "import"

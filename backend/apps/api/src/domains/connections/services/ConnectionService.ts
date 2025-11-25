@@ -1,32 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Not, IsNull, MoreThan, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services/LoggerService';
-import type { RequestContext } from '@ci/common/types';
+import type { ServiceContext } from '@ci/common/types';
 
-import { ClientFactory } from '../clients';
-import { ConnectionEntity } from '../entities/ConnectionEntity';
-import type {
-  CreateConnectionDto,
-  Connection,
-  UpdateConnectionDto,
-  UpdateConnectionCredentialsDto,
-} from '../types';
+import { ConnectionEntity, type Connection } from '../entities/ConnectionEntity';
+import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
 
 @Injectable()
 export class ConnectionService {
-  private logger = new LoggerService(ConnectionService.name);
-
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(ConnectionEntity)
     private readonly connectionRepository: Repository<ConnectionEntity>,
-    private readonly clientFactory: ClientFactory,
   ) {}
 
-  async create(context: RequestContext, data: CreateConnectionDto): Promise<Connection> {
+  async create(context: ServiceContext, data: CreateConnectionDto): Promise<Connection> {
     const { providerId, ...rest } = data;
 
     const sanitizedData = {
@@ -49,10 +38,10 @@ export class ConnectionService {
 
     const entity = await this.connectionRepository.save(instance);
 
-    return this.findOne(context, entity.id);
+    return ConnectionEntity.toEgressType(entity);
   }
 
-  async findAll(context: RequestContext): Promise<Connection[]> {
+  async findAll(context: ServiceContext): Promise<Connection[]> {
     const entities = await this.connectionRepository.find({
       where: {
         user: {
@@ -63,10 +52,24 @@ export class ConnectionService {
       relations: ['provider'],
     });
 
-    return entities.map((entity) => entity.toConnection());
+    return entities.map((entity) => ConnectionEntity.toEgressType(entity));
   }
 
-  async findOne(context: RequestContext, id: string): Promise<Connection> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Connection[]> {
+    const entities = await this.connectionRepository.find({
+      where: {
+        id: In(ids),
+        user: {
+          id: context.userId,
+        },
+      },
+      relations: ['provider'],
+    });
+
+    return entities.map((entity) => ConnectionEntity.toEgressType(entity));
+  }
+
+  async findById(context: ServiceContext, id: string): Promise<Connection | null> {
     const entity = await this.connectionRepository.findOne({
       where: {
         id,
@@ -77,23 +80,11 @@ export class ConnectionService {
       relations: ['provider'],
     });
 
-    if (entity == null) {
-      throw new NotFoundException();
-    }
-
-    return entity.toConnection();
+    return entity ? ConnectionEntity.toEgressType(entity) : null;
   }
 
-  async update(
-    context: RequestContext,
-    id: string,
-    data: UpdateConnectionDto & UpdateConnectionCredentialsDto,
-  ): Promise<Connection> {
-    const updatePayload: UpdateConnectionDto = {
-      ...data,
-      clientid: data.clientid?.trim(),
-      clientsecret: data.clientsecret?.trim(),
-    };
+  async update(context: ServiceContext, id: string, data: UpdateConnectionDto): Promise<Connection | null> {
+    const { syncState, ...rest } = data;
 
     const result = await this.connectionRepository.update(
       {
@@ -102,19 +93,21 @@ export class ConnectionService {
           id: context.userId,
         },
       },
-      updatePayload,
+      {
+        ...rest,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        syncState: syncState as any, // TypeORM will handle JSON serialization
+      },
     );
 
     if (result.affected === 0) {
-      throw new NotFoundException();
+      return null;
     }
 
-    const updated = await this.findOne(context, id);
-
-    return updated;
+    return this.findById(context, id);
   }
 
-  async delete(context: RequestContext, id: string): Promise<boolean> {
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
     const result = await this.connectionRepository.update(
       {
         id,
@@ -134,122 +127,29 @@ export class ConnectionService {
     return true;
   }
 
-  async findSyncTargetsByUserId(): Promise<Map<string, string[]>> {
-    type Row = {
-      id: string;
-      user_id: string;
-    };
-
-    const rows = (await this.dataSource.query(`
-      SELECT
-        ci_core.connections.id as id,
-        ci_core.connections.user_id as user_id
-      FROM
-        ci_core.connections
-      WHERE active = true
-        AND access_token IS NOT NULL
-        AND token_expiry > NOW();
-    `)) satisfies Array<Row>;
-
-    const groupedByUserId = new Map<string, string[]>();
-
-    for (const row of rows) {
-      const userId = row.user_id;
-
-      if (!groupedByUserId.has(userId)) {
-        groupedByUserId.set(userId, []);
-      }
-
-      groupedByUserId.get(userId)!.push(row.id);
-    }
-
-    return groupedByUserId;
-  }
-
-  async getAuthorizationUrl(connection: Connection, providerId?: string) {
-    const resolvedProviderId = providerId ?? connection.provider?.id;
-    const client = this.clientFactory.getClientByProviderId(resolvedProviderId);
-
-    return client.getAuthorizationUrl(connection);
-  }
-
-  async connect(context: RequestContext, connectionId: string): Promise<{ url: string }> {
-    const connection = await this.findOne(context, connectionId);
-    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-
-    return {
-      url: await client.getAuthorizationUrl(connection),
-    };
-  }
-
-  async callback(context: RequestContext, connectionId: string, code: string): Promise<Connection> {
-    const connection = await this.findOne(context, connectionId);
-    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-    const tokenExchange = await client.exchangeAuthorizationCode(code);
-
-    return this.update(context, connectionId, {
-      ...tokenExchange,
-    });
-  }
-
-  async sync(context: RequestContext, connectionId: string) {
-    this.logger.log('Starting manual sync for connection', {
-      connectionId,
-      userId: context.userId,
-    });
-
-    try {
-      let connection = await this.findOne(context, connectionId);
-      const { refreshToken, tokenExpiry } = connection;
-      const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
-      if (refreshToken && tokenExpiry && new Date(tokenExpiry) < new Date()) {
-        const newCredentials = await client.refreshAccessToken(connection);
-        connection = await this.update(context, connectionId, {
-          ...newCredentials,
-        });
-      }
-
-      const syncResponses = await client.sync(connection);
-
-      // Aggregate results from all endpoint syncs
-      const allSuccessful = syncResponses.every((response) => response.success);
-      const totalResults = syncResponses.reduce(
-        (sum, response) => sum + (response.data?.results?.length || 0),
-        0,
-      );
-      const totalErrors = syncResponses.reduce(
-        (sum, response) => sum + (response.data?.errors?.length || 0),
-        0,
-      );
-
-      this.logger.log('Sync completed', {
-        connectionId,
-        userId: context.userId,
-        success: allSuccessful,
-        totalEndpoints: syncResponses.length,
-        totalResults,
-        totalErrors,
-      });
-
-      // Return the array of responses as requested
-      return syncResponses;
-    } catch (error) {
-      this.logger.error('Sync failed', {
-        connectionId,
-        userId: context.userId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-
-      throw error;
-    }
-  }
-
-  async findById(connectionId: string): Promise<Connection | null> {
-    const entity = await this.connectionRepository.findOne({
-      where: { id: connectionId },
+  async findActiveConnections() {
+    const entities = await this.connectionRepository.find({
+      where: [
+        {
+          active: true,
+          accessToken: Not(IsNull()), // Must have an access token
+          refreshToken: IsNull(), // No refresh token
+          tokenExpiry: MoreThan(new Date()), // Token must not be expired
+          provider: { id: Not(IsNull()) }, // Must have a valid provider
+        },
+        {
+          active: true,
+          accessToken: Not(IsNull()), // Must have an access token
+          refreshToken: Not(IsNull()), //If there's a refresh token, then an expired access token can be refreshed
+          provider: { id: Not(IsNull()) }, // Must have a valid provider
+        },
+      ],
       relations: ['user', 'provider'],
     });
 
-    return entity?.toConnection() ?? null;
+    return entities.map((entity) => ({
+      connection: ConnectionEntity.toEgressType(entity),
+      lastSyncedAt: entity.syncState?.lastSyncedAt ? new Date(entity.syncState.lastSyncedAt as string) : null,
+    }));
   }
 }
