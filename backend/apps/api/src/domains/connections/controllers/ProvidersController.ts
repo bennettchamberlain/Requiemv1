@@ -1,4 +1,12 @@
-import { Controller, Get, InternalServerErrorException, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  InternalServerErrorException,
+  NotFoundException,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -39,6 +47,12 @@ export class ProvidersController {
     };
 
     const provider = await this.providerService.findOne(id);
+
+    if (provider == null) {
+      this.logger.log('Attmpted to connect to a provider that does not exist');
+
+      throw new NotFoundException();
+    }
 
     const client = this.clientFactory.getClientByProviderId(id);
 
