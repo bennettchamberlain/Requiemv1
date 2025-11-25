@@ -1,7 +1,5 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-import type { Provider } from '../types';
-
 @Entity({ schema: 'ci_core', name: 'providers' })
 export class ProviderEntity {
   @PrimaryColumn({ type: 'uuid' })
@@ -10,16 +8,20 @@ export class ProviderEntity {
   @Column({ type: 'text', nullable: true })
   name!: string | null;
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
 
-  toProvider(): Provider {
+  static toEgressType(entity: ProviderEntity): Provider {
     return {
-      id: this.id,
-      name: this.name ?? null,
-    } satisfies Provider;
+      id: entity.id,
+      name: entity.name ?? null,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    };
   }
 }
+
+export type Provider = Readonly<Omit<ProviderEntity, never>>;

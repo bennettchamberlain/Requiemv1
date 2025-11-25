@@ -1,8 +1,3 @@
-export interface Provider {
-  readonly id: string;
-  readonly name: string | null;
-}
-
 export interface CompleteConnectionDto {
   state: string;
   code: string;

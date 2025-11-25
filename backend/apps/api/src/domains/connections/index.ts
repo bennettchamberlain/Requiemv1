@@ -55,4 +55,5 @@ export { GoogleClient, MicrosoftClient };
 
 // Types
 export type { Connection } from './entities/ConnectionEntity';
+export type { Provider } from './entities/ProviderEntity';
 export type { SyncResponse } from './clients/types';
