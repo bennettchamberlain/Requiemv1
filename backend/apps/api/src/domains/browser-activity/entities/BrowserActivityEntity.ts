@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 
-import { UserEntity, type User } from '@ci/domains/user';
+import { UserEntity } from '@ci/domains/user';
 
 export interface Device {
   device_id: string;

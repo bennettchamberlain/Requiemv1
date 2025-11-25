@@ -1,15 +1,19 @@
-import {Injectable} from '@nestjs/common';
-import {InjectRepository} from '@nestjs/typeorm';
-import {Between, In, Repository} from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Between, In, Repository } from 'typeorm';
 
-import {LoggerService} from '@ci/common/services';
-import type {RequestContext} from '@ci/common/types';
-import {DeviceService} from '@ci/domains/devices';
+import { LoggerService } from '@ci/common/services';
+import type { RequestContext } from '@ci/common/types';
+import { DeviceService } from '@ci/domains/devices';
+import { EventService } from '@ci/domains/events';
 
-import {BrowserActivity, BrowserActivityEntity} from '../entities/BrowserActivityEntity';
-import type {CreateBrowserActivityDto, UpdateBrowserActivityDto} from '../types';
-import {BrowserActivityCreatedEvent, BrowserActivityUpdatedEvent, BrowserActivityRemovedEvent} from "../events";
-import { EventService } from "@ci/domains/events";
+import { BrowserActivity, BrowserActivityEntity } from '../entities/BrowserActivityEntity';
+import {
+  BrowserActivityCreatedEvent,
+  BrowserActivityUpdatedEvent,
+  BrowserActivityRemovedEvent,
+} from '../events';
+import type { CreateBrowserActivityDto, UpdateBrowserActivityDto } from '../types';
 
 @Injectable()
 export class BrowserActivityService {
@@ -61,7 +65,7 @@ export class BrowserActivityService {
 
         await this.eventService.send(BrowserActivityCreatedEvent, {
           browserActivityId: result.id,
-        })
+        });
 
         return BrowserActivityEntity.toEgressType(result);
       }),
@@ -91,13 +95,13 @@ export class BrowserActivityService {
   async findByIds(context: RequestContext, ids: string[]): Promise<BrowserActivity[]> {
     this.logger.log('Fetching specific browser activity entries for user', {
       userId: context.userId,
-      ids
+      ids,
     });
 
     const results = await this.browserActivityRepository.find({
       where: {
         id: In(ids),
-        user_id: context.userId!
+        user_id: context.userId!,
       },
       order: { time: 'DESC' },
     });
@@ -108,14 +112,14 @@ export class BrowserActivityService {
   async findById(context: RequestContext, id: string): Promise<BrowserActivity | null> {
     this.logger.log('Fetching specific browser activity entry for user', {
       userId: context.userId,
-      id
+      id,
     });
 
     return this.browserActivityRepository.findOne({
       where: {
         id,
-        user_id: context.userId!
-      }
+        user_id: context.userId!,
+      },
     });
   }
 
@@ -126,7 +130,7 @@ export class BrowserActivityService {
   ): Promise<BrowserActivity | null> {
     this.logger.log('Updating browser activity record', {
       userId: context.userId,
-      id
+      id,
     });
 
     // Handle time field conversion if present
@@ -143,7 +147,9 @@ export class BrowserActivityService {
       },
     });
 
-    if (!browserActivity) return null
+    if (!browserActivity) {
+      return null;
+    }
 
     await this.browserActivityRepository.update(
       {
@@ -155,7 +161,7 @@ export class BrowserActivityService {
 
     await this.eventService.send(BrowserActivityUpdatedEvent, {
       browserActivityId: browserActivity.id,
-    })
+    });
 
     return this.findById(context, browserActivity.id);
   }
@@ -163,7 +169,7 @@ export class BrowserActivityService {
   async remove(context: RequestContext, id: string): Promise<boolean> {
     this.logger.log('Removing browser activity record', {
       userId: context.userId,
-      id
+      id,
     });
 
     const browserActivity = this.browserActivityRepository.findOne({
@@ -173,9 +179,11 @@ export class BrowserActivityService {
       },
     });
 
-    if (!browserActivity) return false
+    if (!browserActivity) {
+      return false;
+    }
 
-    const removed = await this.browserActivityRepository.delete({
+    await this.browserActivityRepository.delete({
       id,
       user_id: context.userId!,
     });
@@ -184,7 +192,7 @@ export class BrowserActivityService {
       browserActivityId: id,
     });
 
-    return true
+    return true;
   }
 
   private async ensureDeviceExists(deviceId: string, context: RequestContext): Promise<void> {
@@ -227,7 +235,11 @@ export class BrowserActivityService {
     return results.map((entity) => BrowserActivityEntity.toEgressType(entity));
   }
 
-  async findByTimeAndDevice(context: RequestContext, time: string, deviceId: string): Promise<BrowserActivity | null> {
+  async findByTimeAndDevice(
+    context: RequestContext,
+    time: string,
+    deviceId: string,
+  ): Promise<BrowserActivity | null> {
     const result = await this.browserActivityRepository.findOne({
       where: {
         time: new Date(time),

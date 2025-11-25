@@ -10,7 +10,6 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  BadRequestException,
   NotFoundException,
   UnauthorizedException,
   ConflictException,
@@ -73,31 +72,33 @@ export class BrowserActivityController {
   async findById(
     @Context() context: RequestContext,
     @Param('id') id: string,
-   ): Promise<BrowserActivity | null> {
+  ): Promise<BrowserActivity | null> {
     if (!context.userId) {
       throw new UnauthorizedException('User must be authenticated to view browser activity');
     }
 
     const result = await this.browserActivityService.findById(context, id);
 
-    if (!result) throw new NotFoundException()
-    return result
+    if (!result) {
+      throw new NotFoundException();
+    }
+
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(
-    @Context() context: RequestContext,
-    @Param('id') id: string,
-  ): Promise<void> {
+  async remove(@Context() context: RequestContext, @Param('id') id: string): Promise<void> {
     if (!context.userId) {
       throw new UnauthorizedException('User must be authenticated to delete browser activity');
     }
 
     const activity = await this.browserActivityService.findById(context, id);
 
-    if (!activity) throw new NotFoundException()
+    if (!activity) {
+      throw new NotFoundException();
+    }
 
     await this.browserActivityService.remove(context, activity.id);
   }
@@ -143,7 +144,9 @@ export class BrowserActivityController {
 
     const result = await this.browserActivityService.update(context, id, data);
 
-    if (!result) throw new NotFoundException()
+    if (!result) {
+      throw new NotFoundException();
+    }
 
     return result;
   }
@@ -162,7 +165,9 @@ export class BrowserActivityController {
 
     const activity = await this.browserActivityService.findByTimeAndDevice(context, time, deviceId);
 
-    if (!activity) throw new NotFoundException()
+    if (!activity) {
+      throw new NotFoundException();
+    }
 
     await this.browserActivityService.remove(context, activity.id);
   }
