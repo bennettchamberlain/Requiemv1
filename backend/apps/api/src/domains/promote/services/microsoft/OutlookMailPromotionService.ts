@@ -105,7 +105,7 @@ export class OutlookMailPromotionService {
       const messages = this.extractOutlookMailMessages(apiLogContent as RawData[]);
 
       // Get the connection
-      const connection = await this.connectionService.findById(connectionId);
+      const connection = await this.connectionService.findById({ userId }, connectionId);
       if (!connection || !connection.accessToken) {
         this.logger.error('Connection not found or missing access token', { connectionId });
 
@@ -171,7 +171,7 @@ export class OutlookMailPromotionService {
     connectionId: string,
   ): Promise<void> {
     // Extract message details
-    const messageDetails = await this.extractMessageDetails(message, connectionId);
+    const messageDetails = await this.extractMessageDetails(userId, message, connectionId);
 
     this.logger.log('Processing OutlookMail message', {
       messageId: messageDetails.id,
@@ -363,10 +363,11 @@ export class OutlookMailPromotionService {
   }
 
   private async extractMessageDetails(
+    userId: string,
     message: OutlookMailMessage,
     connectionId: string,
   ): Promise<ExtractedMessage> {
-    const connection = await this.connectionService.findById(connectionId);
+    const connection = await this.connectionService.findById({ userId }, connectionId);
     const { id, subject, from, toRecipients, ccRecipients, bccRecipients, sentDateTime, hasAttachments } =
       message;
     let attachments;

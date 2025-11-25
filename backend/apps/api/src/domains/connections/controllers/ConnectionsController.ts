@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  InternalServerErrorException,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -8,6 +20,7 @@ import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import { EventService, Events } from '@ci/domains/events';
 
+import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';
 import type { CompleteConnectionDto, CreateConnectionDto, UpdateConnectionDto } from '../types';
 
@@ -49,6 +62,7 @@ export class ConnectionsController {
   private logger = new LoggerService(ConnectionsController.name);
 
   constructor(
+    private readonly clientFactory: ClientFactory,
     private readonly connectionService: ConnectionService,
     private readonly eventService: EventService,
   ) {}
@@ -59,11 +73,14 @@ export class ConnectionsController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createConnectionSchema)) input: CreateConnectionDto,
   ) {
+    const serviceContext = {
+      userId: context.userId!,
+    };
+
+    const connection = await this.connectionService.create(serviceContext, input);
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.create(
-      context,
-      input,
-    );
+    const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
   }
@@ -71,7 +88,11 @@ export class ConnectionsController {
   @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
-    const connections = await this.connectionService.findAll(context);
+    const serviceContext = {
+      userId: context.userId!,
+    };
+
+    const connections = await this.connectionService.findAll(serviceContext);
 
     return connections.map((connection) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -84,11 +105,18 @@ export class ConnectionsController {
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') id: string) {
+    const serviceContext = {
+      userId: context.userId!,
+    };
+
+    const connection = await this.connectionService.findById(serviceContext, id);
+
+    if (connection == null) {
+      throw new NotFoundException();
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.findOne(
-      context,
-      id,
-    );
+    const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
   }
@@ -100,12 +128,18 @@ export class ConnectionsController {
     @Param('id') id: string,
     @Body(new ValidationPipe(updateConnectionSchema)) input: UpdateConnectionDto,
   ) {
+    const serviceContext = {
+      userId: context.userId!,
+    };
+
+    const connection = await this.connectionService.update(serviceContext, id, input);
+
+    if (connection == null) {
+      throw new NotFoundException();
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { accessToken, refreshToken, ...returnedConnection } = await this.connectionService.update(
-      context,
-      id,
-      input,
-    );
+    const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
   }
@@ -114,84 +148,93 @@ export class ConnectionsController {
   @Delete(':id')
   @HttpCode(204)
   async delete(@Context() context: RequestContext, @Param('id') id: string) {
-    await this.connectionService.delete(context, id);
+    const serviceContext = {
+      userId: context.userId!,
+    };
+
+    await this.connectionService.remove(serviceContext, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
-    try {
-      return this.connectionService.connect(context, id);
-    } catch (error) {
-      this.logger.error('Connect endpoint error', {
-        connectionId: id,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+    const serviceContext = {
+      userId: context.userId!,
+    };
 
-      throw error;
+    const connection = await this.connectionService.findById(serviceContext, id);
+
+    if (connection == null) {
+      this.logger.log('Attempted to connect a `null` connection');
+
+      throw new NotFoundException();
     }
+
+    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
+
+    if (client == null) {
+      this.logger.log('Attmpted to connect without an associated client');
+
+      throw new InternalServerErrorException();
+    }
+
+    return {
+      url: await client.getAuthorizationUrl(connection),
+    };
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('complete')
-  @HttpCode(200)
+  @HttpCode(204)
   async completeCallback(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(completeConnectionSchema)) body: CompleteConnectionDto,
   ) {
-    const { state, code } = body;
+    const serviceContext = {
+      userId: context.userId!,
+    };
 
-    try {
-      const result = await this.connectionService.callback(context, state, code);
+    const { state: connectionId, code } = body;
 
-      return {
-        success: true,
-        connection: result,
-      };
-    } catch (error) {
-      this.logger.error('Error completing OAuth callback', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        connectionId: state,
-        userId: context.userId,
-      });
+    const connection = await this.connectionService.findById(serviceContext, connectionId);
 
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
+    if (connection == null) {
+      this.logger.log('Performed a callback on `null` connection');
+
+      throw new NotFoundException();
     }
+
+    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
+
+    if (client == null) {
+      this.logger.log('Performed a callback without an associated client');
+
+      throw new InternalServerErrorException();
+    }
+
+    const tokenExchange = await client.exchangeAuthorizationCode(code);
+
+    await this.update(context, connectionId, {
+      ...tokenExchange,
+    });
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/sync')
-  @HttpCode(200)
+  @HttpCode(204)
   async sync(@Context() context: RequestContext, @Param('id') id: string) {
     this.logger.log('Manual sync requested', {
-      connectionId: id,
       userId: context.userId,
+      connectionId: id,
     });
 
-    try {
-      await this.eventService.send(Events.SYNC_CONNECTION, {
-        connectionId: id,
-        userId: context.userId!,
-      });
+    const jobIds = await this.eventService.send(Events.SYNC_CONNECTION, {
+      connectionId: id,
+      userId: context.userId!,
+    });
 
-      return {
-        success: true,
-        message: 'Sync queued successfully',
-      };
-    } catch (error) {
-      this.logger.error('Manual sync failed', {
-        connectionId: id,
-        userId: context.userId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
+    this.logger.log('Manual sync enqueued', {
+      jobIds,
+    });
   }
 }

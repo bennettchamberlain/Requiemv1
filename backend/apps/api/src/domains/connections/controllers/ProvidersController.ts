@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 
+import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';
 import { ProviderService } from '../services/ProviderService';
 
@@ -13,8 +14,9 @@ export class ProvidersController {
   private readonly logger = new LoggerService(this.constructor.name);
 
   constructor(
-    private readonly providerService: ProviderService,
+    private readonly clientFactory: ClientFactory,
     private readonly connectionService: ConnectionService,
+    private readonly providerService: ProviderService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -32,7 +34,19 @@ export class ProvidersController {
   @UseGuards(JwtAuthGuard)
   @Post(':id')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
+    const serviceContext = {
+      userId: context.userId!,
+    };
+
     const provider = await this.providerService.findOne(id);
+
+    const client = this.clientFactory.getClientByProviderId(id);
+
+    if (client == null) {
+      this.logger.log('Attmpted to create a connection without an associated client');
+
+      throw new InternalServerErrorException();
+    }
 
     const clientIdVariable = `${provider.name?.toUpperCase()}_CLIENT_ID`;
     const clientSecretVariable = `${provider.name?.toUpperCase()}_CLIENT_SECRET`;
@@ -57,7 +71,7 @@ export class ProvidersController {
       throw new InternalServerErrorException('Client secret not configured for provider');
     }
 
-    const connection = await this.connectionService.create(context, {
+    const connection = await this.connectionService.create(serviceContext, {
       providerId: provider.id,
       name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
       clientid: clientId,
@@ -65,7 +79,7 @@ export class ProvidersController {
       schedule: '1 hour',
     });
 
-    const authorizationUrl = await this.connectionService.getAuthorizationUrl(connection, id);
+    const authorizationUrl = await client.getAuthorizationUrl(connection);
 
     return {
       authorizationUrl,
