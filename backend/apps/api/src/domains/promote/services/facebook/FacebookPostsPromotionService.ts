@@ -20,13 +20,15 @@ interface FacebookPost {
     data: Array<{
       media?: {
         image?: { src: string };
-        video?: { source: string };
+        source?: string;
       };
       subattachments?: {
         data: Array<{
+          url: string;
+          type: string;
           media?: {
             image?: { src: string };
-            video?: { source: string };
+            source?: string;
           };
         }>;
       };
@@ -125,11 +127,11 @@ export class FacebookPostsPromotionService {
               }
             }
 
-            if (attachment.media?.video?.source) {
-              mediaUrls.push(attachment.media.video.source);
+            if (post.type === 'video' && attachment.media?.source) {
+              mediaUrls.push(attachment.media.source);
               try {
                 const fileRecord = await this.utils.downloadAndSaveFile(
-                  attachment.media.video.source,
+                  attachment.media.source,
                   `${post.id}_attachment_video_${fileIds.length}`,
                   userId,
                   connectionId,
@@ -142,7 +144,7 @@ export class FacebookPostsPromotionService {
               } catch (error) {
                 this.logger.warn('Failed to download attachment video', {
                   postId: post.id,
-                  url: attachment.media.video.source,
+                  url: attachment.media.source,
                   error: error instanceof Error ? error.message : 'Unknown error',
                 });
               }
@@ -173,11 +175,11 @@ export class FacebookPostsPromotionService {
                   }
                 }
 
-                if (subattachment.media?.video?.source) {
-                  mediaUrls.push(subattachment.media.video.source);
+                if (subattachment.type === 'video' && subattachment.media?.source) {
+                  mediaUrls.push(subattachment.media.source);
                   try {
                     const fileRecord = await this.utils.downloadAndSaveFile(
-                      subattachment.media.video.source,
+                      subattachment.media.source,
                       `${post.id}_subattachment_video_${fileIds.length}`,
                       userId,
                       connectionId,
@@ -190,7 +192,7 @@ export class FacebookPostsPromotionService {
                   } catch (error) {
                     this.logger.warn('Failed to download subattachment video', {
                       postId: post.id,
-                      url: subattachment.media.video.source,
+                      url: subattachment.media.source,
                       error: error instanceof Error ? error.message : 'Unknown error',
                     });
                   }
