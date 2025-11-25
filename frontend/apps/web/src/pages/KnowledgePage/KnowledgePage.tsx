@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Portal, fetchJson, usePageTitle } from '@ci/common';
 import {
@@ -19,13 +19,14 @@ import {
 import { Plus } from '@ci/shadcn/icons';
 
 import { useGraphOverview } from '@/api/useGraphOverview';
+import type { GraphLink, GraphNode, Subgraph } from '@/api/useGraphOverview';
 import { ForceGraph } from '@/components/ForceGraph';
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
 import type { EntitySearchResult } from './EntitySearchInput';
 import { EntitySearchInput } from './EntitySearchInput';
-import { useNodeDetails } from './use-node-details';
+import { useNodeDetails, type NodeDetailsResponse } from './use-node-details';
 
 type GraphSummary = {
   nodeCount: number;
@@ -110,6 +111,22 @@ export function KnowledgePage() {
     isBidirectional: false,
   });
   const [localEntities, setLocalEntities] = useState<EntitySearchResult[]>([]);
+  const [graphSearchSelection, setGraphSearchSelection] = useState<EntitySearchResult | null>(null);
+  const [focusGraph, setFocusGraph] = useState<Subgraph | null>(null);
+  const [focusCenterNodeId, setFocusCenterNodeId] = useState<string | null>(null);
+  const [focusGraphLoading, setFocusGraphLoading] = useState(false);
+  const [focusGraphError, setFocusGraphError] = useState<string | null>(null);
+  const [focusedNodeDetails, setFocusedNodeDetails] = useState<NodeDetailsResponse | null>(null);
+  const focusRequestRef = useRef(0);
+
+  const nodeLimit = useMemo(() => {
+    const parsed = Number.parseInt(nodeLimitInput, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      return 10;
+    }
+
+    return Math.min(parsed, 100);
+  }, [nodeLimitInput]);
 
   useEffect(() => {
     if (!nodeData) {
@@ -181,6 +198,21 @@ export function KnowledgePage() {
     });
   }, [subgraph]);
 
+  useEffect(() => {
+    if (!focusedNodeDetails) {
+      setFocusGraph(null);
+      if (!graphSearchSelection) {
+        setFocusCenterNodeId(null);
+      }
+
+      return;
+    }
+
+    const nextGraph = buildNeighborhoodGraph(focusedNodeDetails, nodeLimit);
+    setFocusGraph(nextGraph);
+    setFocusCenterNodeId(focusedNodeDetails.node.entityId);
+  }, [focusedNodeDetails, nodeLimit, graphSearchSelection]);
+
   const handleNodeSelect = (nodeId: string) => {
     setSelectedNodeId(nodeId);
     setDrawerOpen(true);
@@ -200,15 +232,6 @@ export function KnowledgePage() {
 
     return types;
   }, [subgraph]);
-
-  const nodeLimit = useMemo(() => {
-    const parsed = Number.parseInt(nodeLimitInput, 10);
-    if (Number.isNaN(parsed) || parsed <= 0) {
-      return 10;
-    }
-
-    return Math.min(parsed, 100);
-  }, [nodeLimitInput]);
 
   const filteredGraph = useMemo(() => {
     if (!subgraph || !userEntityId) {
@@ -525,15 +548,84 @@ export function KnowledgePage() {
     }
   };
 
+  const handleGraphSearchSelect = (entity: EntitySearchResult) => {
+    setGraphSearchSelection(entity);
+    focusGraphOnEntity(entity.entityId);
+  };
+
+  const handleGraphSearchClear = () => {
+    focusRequestRef.current += 1;
+    setGraphSearchSelection(null);
+    setFocusedNodeDetails(null);
+    setFocusGraph(null);
+    setFocusCenterNodeId(null);
+    setFocusGraphError(null);
+    setFocusGraphLoading(false);
+  };
+
+  const focusGraphOnEntity = async (entityId: string) => {
+    const requestId = focusRequestRef.current + 1;
+    focusRequestRef.current = requestId;
+    setFocusGraphLoading(true);
+    setFocusGraphError(null);
+    setFocusedNodeDetails(null);
+    setFocusGraph(null);
+    setFocusCenterNodeId(entityId);
+    try {
+      const response = await fetchJson<NodeDetailsResponse>(
+        `/api/graph/node?entityId=${encodeURIComponent(entityId)}`,
+        {
+          credentials: 'include',
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+        },
+      );
+
+      if (focusRequestRef.current !== requestId) {
+        return;
+      }
+
+      setFocusedNodeDetails(response);
+      setFocusGraphError(null);
+    } catch (error) {
+      if (focusRequestRef.current !== requestId) {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : 'Unable to load node';
+      setFocusGraphError(message);
+      setFocusedNodeDetails(null);
+    } finally {
+      if (focusRequestRef.current === requestId) {
+        setFocusGraphLoading(false);
+      }
+    }
+  };
+
+  const searchViewActive =
+    graphSearchSelection !== null ||
+    focusGraphLoading ||
+    focusGraphError !== null ||
+    focusedNodeDetails !== null;
+  const graphDataSource = searchViewActive ? focusGraph : filteredGraph;
+  const graphCenterId = searchViewActive ? focusCenterNodeId : userEntityId;
+  const graphIsLoading = searchViewActive ? focusGraphLoading : graphLoading;
+  const graphErrorMessage = searchViewActive ? focusGraphError : graphError;
+
+  const graphContextDescription = focusedNodeDetails
+    ? `Connections around ${focusedNodeDetails.node.name ?? focusedNodeDetails.node.entityType}`
+    : currentUser
+      ? `Connections around ${currentUser.name}`
+      : 'Connections around your profile';
+
   const graphSummary = useMemo<GraphSummary>(() => {
     const fallback: GraphSummary = { nodeCount: 0, linkCount: 0, topTypes: [] };
 
-    if (!subgraph) {
+    if (!graphDataSource) {
       return fallback;
     }
 
     const typeCounts = new Map<string, number>();
-    for (const node of subgraph.nodes) {
+    for (const node of graphDataSource.nodes) {
       typeCounts.set(node.entity_type, (typeCounts.get(node.entity_type) ?? 0) + 1);
     }
 
@@ -543,11 +635,11 @@ export function KnowledgePage() {
       .map(([type, count]) => ({ type, count }));
 
     return {
-      nodeCount: subgraph.nodes.length,
-      linkCount: subgraph.links.length,
+      nodeCount: graphDataSource.nodes.length,
+      linkCount: graphDataSource.links.length,
       topTypes,
     };
-  }, [subgraph]);
+  }, [graphDataSource]);
 
   if (authLoading) {
     return <div className="p-6">Loading analytics…</div>;
@@ -583,9 +675,7 @@ export function KnowledgePage() {
             <Card.Header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <Card.Title className="flex items-center gap-2">Knowledge Graph</Card.Title>
-                <Card.Description>
-                  {currentUser ? `Connections around ${currentUser.name}` : 'Connections around your profile'}
-                </Card.Description>
+                <Card.Description>{graphContextDescription}</Card.Description>
               </div>
               <DropdownMenu modal={false}>
                 <DropdownMenu.Trigger asChild>
@@ -622,21 +712,23 @@ export function KnowledgePage() {
               </DropdownMenu>
             </Card.Header>
             <Card.Content className="overflow-hidden">
-              {graphLoading ? (
+              {graphIsLoading ? (
                 <Skeleton className="h-[420px] w-full" />
-              ) : graphError ? (
-                <p className="text-sm text-red-600">{graphError}</p>
-              ) : filteredGraph && userEntityId ? (
+              ) : graphErrorMessage ? (
+                <p className="text-sm text-red-600">{graphErrorMessage}</p>
+              ) : graphDataSource && graphCenterId ? (
                 <div className="w-full overflow-hidden">
                   <ForceGraph
-                    nodes={filteredGraph.nodes}
-                    links={filteredGraph.links}
-                    highlightedNodeId={userEntityId}
-                    centerNodeId={userEntityId}
+                    nodes={graphDataSource.nodes}
+                    links={graphDataSource.links}
+                    highlightedNodeId={graphCenterId}
+                    centerNodeId={graphCenterId}
                     selectedNodeId={selectedNodeId}
                     onNodeSelect={handleNodeSelect}
                   />
                 </div>
+              ) : searchViewActive ? (
+                <p className="text-sm text-muted-foreground">Select a node to view its relationships.</p>
               ) : (
                 <p className="text-sm text-muted-foreground">No graph data available yet.</p>
               )}
@@ -720,6 +812,42 @@ export function KnowledgePage() {
                     </Button>
                   ))}
               </div>
+            </div>
+
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase text-muted-foreground">Jump to node</p>
+                {graphSearchSelection && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleGraphSearchClear}
+                    disabled={focusGraphLoading}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <EntitySearchInput
+                label="Search nodes"
+                placeholder="Search entities…"
+                authToken={authToken}
+                selected={graphSearchSelection}
+                onSelect={handleGraphSearchSelect}
+                onClear={handleGraphSearchClear}
+                disabled={focusGraphLoading}
+                localOptions={localEntities}
+              />
+              {focusGraphLoading && (
+                <p className="text-xs text-muted-foreground">Loading node neighborhood…</p>
+              )}
+              {focusGraphError && <p className="text-xs text-red-600">{focusGraphError}</p>}
+              {graphSearchSelection && !focusGraphLoading && !focusGraphError && (
+                <p className="text-xs text-muted-foreground">
+                  Showing connections for {graphSearchSelection.name ?? graphSearchSelection.entityType}.
+                </p>
+              )}
             </div>
           </Card.Content>
         </Card>
@@ -1183,6 +1311,63 @@ export function KnowledgePage() {
       </Dialog>
     </>
   );
+}
+
+function buildNeighborhoodGraph(details: NodeDetailsResponse, nodeLimit: number): Subgraph {
+  const centerNode: GraphNode = {
+    id: details.node.entityId,
+    entity_id: details.node.entityId,
+    entity_type: details.node.entityType,
+    name: details.node.name,
+    description: details.node.description,
+    properties: details.node.properties ?? {},
+  };
+
+  const nodes: GraphNode[] = [centerNode];
+  const links: GraphLink[] = [];
+
+  const neighborSlots = Math.max(0, nodeLimit - 1);
+  if (neighborSlots > 0) {
+    const included = new Set<string>();
+    for (const rel of details.relationships) {
+      const other = rel.otherEntity;
+      if (!other) {
+        continue;
+      }
+
+      if (included.has(other.entityId)) {
+        continue;
+      }
+
+      included.add(other.entityId);
+      nodes.push({
+        id: other.entityId,
+        entity_id: other.entityId,
+        entity_type: other.entityType,
+        name: other.name,
+        description: other.description,
+        properties: other.properties ?? {},
+      });
+
+      const source = rel.direction === 'outbound' ? details.node.entityId : other.entityId;
+      const target = rel.direction === 'outbound' ? other.entityId : details.node.entityId;
+      links.push({
+        id: rel.relationshipId,
+        relationship_id: rel.relationshipId,
+        source,
+        target,
+        relationship_type: rel.relationshipType,
+        strength: rel.strength ?? 0.5,
+        properties: rel.properties ?? {},
+      });
+
+      if (included.size >= neighborSlots) {
+        break;
+      }
+    }
+  }
+
+  return { nodes, links };
 }
 
 function StatLine({ label, value }: { label: string; value: number | string }) {
