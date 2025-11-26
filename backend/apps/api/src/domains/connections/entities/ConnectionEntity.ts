@@ -10,9 +10,7 @@ import {
 
 import { UserEntity, type User } from '@ci/domains/user';
 
-import type { Provider } from '../types';
-
-import { ProviderEntity } from './ProviderEntity';
+import { ProviderEntity, type Provider } from './ProviderEntity';
 
 @Entity({ schema: 'ci_core', name: 'connections' })
 export class ConnectionEntity {
@@ -73,7 +71,7 @@ export class ConnectionEntity {
       userId: entity.userId,
       providerId: entity.providerId,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
-      provider: entity.provider?.toProvider(),
+      provider: entity.provider ? ProviderEntity.toEgressType(entity.provider) : undefined,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

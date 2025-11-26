@@ -1,9 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { ProviderEntity } from '../entities/ProviderEntity';
-import type { Provider } from '../types';
+import { ProviderEntity, type Provider } from '../entities/ProviderEntity';
 
 @Injectable()
 export class ProviderService {
@@ -15,20 +14,16 @@ export class ProviderService {
   async findAll(): Promise<Provider[]> {
     const entities = await this.providerRepository.find();
 
-    return entities.map((entity) => entity.toProvider());
+    return entities.map((entity) => ProviderEntity.toEgressType(entity));
   }
 
-  async findOne(id: string): Promise<Provider> {
+  async findOne(id: string): Promise<Provider | null> {
     const entity = await this.providerRepository.findOne({
       where: {
         id,
       },
     });
 
-    if (entity == null) {
-      throw new NotFoundException();
-    }
-
-    return entity.toProvider();
+    return entity ? ProviderEntity.toEgressType(entity) : null;
   }
 }
