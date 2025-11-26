@@ -172,7 +172,7 @@ export class BrowserActivityService {
       id,
     });
 
-    const browserActivity = this.browserActivityRepository.findOne({
+    const browserActivity = await this.browserActivityRepository.findOne({
       where: {
         id,
         user_id: context.userId!,

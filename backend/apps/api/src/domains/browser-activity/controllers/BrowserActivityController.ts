@@ -87,6 +87,26 @@ export class BrowserActivityController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async update(
+    @Context() context: RequestContext,
+    @Param('id') id: string,
+    @Body(new ValidationPipe(updateBrowserActivitySchema)) data: UpdateBrowserActivityDto,
+  ): Promise<BrowserActivity | null> {
+    if (!context.userId) {
+      throw new UnauthorizedException('User must be authenticated to update browser activity');
+    }
+
+    const result = await this.browserActivityService.update(context, id, data);
+
+    if (!result) {
+      throw new NotFoundException();
+    }
+
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') id: string): Promise<void> {
@@ -94,13 +114,11 @@ export class BrowserActivityController {
       throw new UnauthorizedException('User must be authenticated to delete browser activity');
     }
 
-    const activity = await this.browserActivityService.findById(context, id);
+    const removal = await this.browserActivityService.remove(context, id);
 
-    if (!activity) {
+    if (!removal) {
       throw new NotFoundException();
     }
-
-    await this.browserActivityService.remove(context, activity.id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -129,26 +147,6 @@ export class BrowserActivityController {
     }
 
     return this.browserActivityService.findByTimeAndDevice(context, time, deviceId);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Patch(':id')
-  async update(
-    @Context() context: RequestContext,
-    @Param('id') id: string,
-    @Body(new ValidationPipe(updateBrowserActivitySchema)) data: UpdateBrowserActivityDto,
-  ): Promise<BrowserActivity | null> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to update browser activity');
-    }
-
-    const result = await this.browserActivityService.update(context, id, data);
-
-    if (!result) {
-      throw new NotFoundException();
-    }
-
-    return result;
   }
 
   @UseGuards(JwtAuthGuard)
