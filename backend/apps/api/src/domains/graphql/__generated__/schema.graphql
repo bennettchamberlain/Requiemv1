@@ -108,7 +108,6 @@ type ThreadType implements Node {
   description: String
   id: ID!
   messages(after: String, before: String, first: Int, last: Int): MessageConnection!
-  model: String
   name: String
 }
 

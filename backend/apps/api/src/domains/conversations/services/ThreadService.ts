@@ -5,8 +5,8 @@ import { v7 as uuid7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
 
-import { ThreadEntity } from '../entities/ThreadEntity';
-import type { CreateThreadDto, Thread, UpdateThreadDto } from '../types';
+import { ThreadEntity, type Thread } from '../entities/ThreadEntity';
+import type { CreateThreadDto, UpdateThreadDto } from '../types';
 
 import { MessageService } from './MessageService';
 
@@ -30,7 +30,7 @@ export class ThreadService {
 
     const entity = await this.threadRepository.save(instance);
 
-    return entity.toThread();
+    return ThreadEntity.toEgressType(entity);
   }
 
   exists(context: RequestContext, id: string): Promise<boolean> {
@@ -40,7 +40,7 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
-        is_archived: false,
+        isArchived: false,
       },
     });
   }
@@ -51,11 +51,11 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
-        is_archived: false,
+        isArchived: false,
       },
     });
 
-    return entities.map((entity) => entity.toThread());
+    return entities.map((entity) => ThreadEntity.toEgressType(entity));
   }
 
   async findOne(context: RequestContext, id: string): Promise<Thread> {
@@ -65,7 +65,7 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
-        is_archived: false,
+        isArchived: false,
       },
     });
 
@@ -73,7 +73,7 @@ export class ThreadService {
       throw new NotFoundException();
     }
 
-    return result.toThread();
+    return ThreadEntity.toEgressType(result);
   }
 
   async update(context: RequestContext, id: string, data: UpdateThreadDto): Promise<boolean> {
@@ -83,7 +83,7 @@ export class ThreadService {
         user: {
           id: context.userId,
         },
-        is_archived: false,
+        isArchived: false,
       },
       data,
     );
@@ -111,7 +111,7 @@ export class ThreadService {
         },
       },
       {
-        is_archived: true,
+        isArchived: true,
       },
     );
 

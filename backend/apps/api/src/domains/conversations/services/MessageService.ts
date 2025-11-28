@@ -6,8 +6,8 @@ import { v7 as uuid7 } from 'uuid';
 import { RequestContext } from '@ci/common/types';
 import { FileService } from '@ci/domains/files';
 
-import { MessageEntity } from '../entities/MessageEntity';
-import type { CreateMessageDto, Message, UpdateMessageDto } from '../types';
+import { MessageEntity, type Message } from '../entities/MessageEntity';
+import type { CreateMessageDto, UpdateMessageDto } from '../types';
 
 @Injectable()
 export class MessageService {
@@ -24,7 +24,7 @@ export class MessageService {
       ...rest,
       id: uuid7(),
       content,
-      tool_calls: toolCalls,
+      toolCalls: toolCalls,
       user: {
         id: context.userId,
       },
@@ -51,7 +51,7 @@ export class MessageService {
       }
     }
 
-    return entity.toMessage();
+    return MessageEntity.toEgressType(entity);
   }
 
   exists(context: RequestContext, id: string): Promise<boolean> {
@@ -82,7 +82,7 @@ export class MessageService {
       throw new NotFoundException();
     }
 
-    return entity.toMessage();
+    return MessageEntity.toEgressType(entity);
   }
 
   async findAll(context: RequestContext): Promise<Message[]> {
@@ -96,7 +96,7 @@ export class MessageService {
       relations: ['files'],
     });
 
-    return entities.map((entity) => entity.toMessage());
+    return entities.map((entity) => MessageEntity.toEgressType(entity));
   }
 
   async findByThread(context: RequestContext, threadId: string): Promise<Message[]> {
@@ -116,7 +116,7 @@ export class MessageService {
       },
     });
 
-    return entities.map((entity) => entity.toMessage());
+    return entities.map((entity) => MessageEntity.toEgressType(entity));
   }
 
   async findByThreads(context: RequestContext, threadIds: string[]): Promise<Map<string, Message[]>> {
@@ -148,7 +148,7 @@ export class MessageService {
       if (threadId) {
         const messages = messagesByThread.get(threadId) || [];
 
-        messages.push(entity.toMessage());
+        messages.push(MessageEntity.toEgressType(entity));
 
         messagesByThread.set(threadId, messages);
       }

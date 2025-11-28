@@ -16,9 +16,6 @@ export class ThreadType implements Node {
   name!: string | null;
 
   @Field(() => String, { nullable: true })
-  model!: string | null;
-
-  @Field(() => String, { nullable: true })
   description!: string | null;
 
   static fromEntity(thread: Thread): ThreadType {
@@ -26,7 +23,6 @@ export class ThreadType implements Node {
       __typename: ThreadType.name,
       id: GlobalUID.encode('thread', thread.id),
       name: thread.name,
-      model: thread.model,
       description: thread.description,
     };
   }

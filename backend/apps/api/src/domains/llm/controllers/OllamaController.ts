@@ -103,7 +103,7 @@ export class OllamaController {
 
     const { model, enableThinking, enableTools } = await this.ollamaService.resolveModel(context, {
       messages: inputMessages,
-      requestedModel: input.model ?? thread.model,
+      requestedModel: input.model,
       enableThinking: input.enableThinking,
       enableTools: input.enableTools,
     });
@@ -247,13 +247,15 @@ export class OllamaController {
 
     const syntheticActionMessage: Message = {
       id: `action:${action.id}`,
-      model: thread.model ?? null,
+      model: null,
       role: 'assistant',
       content: action.text,
       mimetype: 'text/markdown',
       toolCalls: null,
       canceled: false,
       thread,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
     return [syntheticActionMessage, ...messages];
