@@ -8,11 +8,12 @@ import {
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
 import { LoggerService } from '@ci/common/services';
@@ -74,6 +75,10 @@ import { UserModule } from '@ci/domains/user';
     {
       provide: APP_GUARD,
       useClass: IdFormatGuard,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionsFilter,
     },
   ],
 })
