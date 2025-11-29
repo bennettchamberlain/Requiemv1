@@ -70,6 +70,7 @@ export class LoggerService implements NestLoggerService {
 
   private resolveArgs(message: ErrorableLogData, context: ErrorableLogData = {}): PinoParams {
     const obj: Record<string, unknown> = {};
+    const data: Record<string, unknown> = {};
 
     let msg: string | undefined;
 
@@ -78,7 +79,7 @@ export class LoggerService implements NestLoggerService {
     } else if (typeof context === 'string') {
       obj['context'] = context;
     } else if (typeof context === 'object' && context !== null) {
-      Object.assign(obj, context);
+      Object.assign(data, context);
     }
 
     if (message instanceof Error) {
@@ -90,7 +91,11 @@ export class LoggerService implements NestLoggerService {
     } else if (typeof message === 'string') {
       msg = message;
     } else if (typeof message === 'object' && message !== null) {
-      Object.assign(obj, message);
+      Object.assign(data, message);
+    }
+
+    if (Object.keys(data).length > 0) {
+      obj['data'] = data;
     }
 
     return { obj, msg };
