@@ -1,9 +1,8 @@
 import type { Request as ExpressRequest } from 'express';
 
 export interface RequestContext {
-  requestId?: string;
+  traceId?: string;
   userId?: string;
-  query?: Record<string, unknown>;
 }
 
 export interface RequestWithContext extends ExpressRequest {

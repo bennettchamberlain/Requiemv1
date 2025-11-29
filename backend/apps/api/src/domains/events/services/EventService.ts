@@ -4,7 +4,7 @@ import plimit from 'p-limit';
 import PgBoss, { JobWithMetadata } from 'pg-boss';
 
 import { LoggerService } from '@ci/common/services';
-import { RequestContextService } from '@ci/common/services/RequestContextService';
+import { RequestContextService } from '@ci/common/services';
 import config from '@ci/configuration';
 
 import { DEFAULT_QUEUE } from '../constants';
