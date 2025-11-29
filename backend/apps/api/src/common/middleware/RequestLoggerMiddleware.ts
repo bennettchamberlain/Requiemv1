@@ -24,7 +24,7 @@ export class RequestLoggerMiddleware implements NestMiddleware {
       this.logger.log('Request processed', {
         ...(userId && { userId }),
         method: req.method,
-        path: req.path,
+        path: req.originalUrl,
         statusCode: res.statusCode,
         duration: Number(duration) / 1_000_000,
         termination: res.writableEnded ? 'finished' : 'closed',
