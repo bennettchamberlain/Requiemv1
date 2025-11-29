@@ -91,6 +91,21 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
   }
 
   onApplicationBootstrap() {
+    process.on('unhandledRejection', (reason: unknown) => {
+      const error =
+        reason instanceof Error ? reason : new Error(String(reason ?? 'Unknown unhandled rejection'));
+
+      this.logger.error(error, 'Unhandled rejection');
+
+      process.exit(1);
+    });
+
+    process.on('uncaughtException', (error: Error) => {
+      this.logger.error(error, 'Uncaught exception');
+
+      process.exit(1);
+    });
+
     let bindings: string[];
 
     if (config.host === '0.0.0.0') {
