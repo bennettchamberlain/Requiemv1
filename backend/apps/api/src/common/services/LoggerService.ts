@@ -58,7 +58,7 @@ export class LoggerService implements NestLoggerService {
     this.logger.error(obj, msg);
   }
 
-  warn(message: LogData, context: LogData = {}) {
+  warn(message: ErrorableLogData, context: ErrorableLogData = {}) {
     const { obj, msg } = this.resolveArgs(message, context);
     this.logger.warn(obj, msg);
   }
