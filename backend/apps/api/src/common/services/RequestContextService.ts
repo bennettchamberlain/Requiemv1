@@ -21,4 +21,12 @@ export class RequestContextService {
   static run<T>(context: RequestContext, fn: () => T): T {
     return this.storage.run(context, fn);
   }
+
+  static set(data: Partial<RequestContext>): void {
+    const store = this.storage.getStore();
+
+    if (store) {
+      Object.assign(store, data);
+    }
+  }
 }
