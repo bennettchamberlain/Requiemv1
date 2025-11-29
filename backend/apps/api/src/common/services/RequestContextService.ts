@@ -18,6 +18,12 @@ export class RequestContextService {
     return context?.traceId ?? null;
   }
 
+  static getUserId(): string | null {
+    const context = this.getContext();
+
+    return context?.userId ?? null;
+  }
+
   static run<T>(context: RequestContext, fn: () => T): T {
     return this.storage.run(context, fn);
   }
