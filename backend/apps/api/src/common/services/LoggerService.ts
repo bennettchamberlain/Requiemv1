@@ -7,11 +7,11 @@ import config from '@ci/configuration';
 import { RequestContextService } from './RequestContextService';
 
 type LogData = string | Record<string, unknown>;
+type ErrorableLogData = Error | LogData;
 
-interface ResolvedData {
-  traceId?: string;
-  context?: string;
-  message?: string;
+interface PinoParams {
+  obj: Record<string, unknown>;
+  msg?: string;
 }
 
 const NEST_CONTEXT_DOWNGRADES = new Set([
@@ -28,68 +28,71 @@ export class LoggerService implements NestLoggerService {
   constructor(name?: string, options?: LoggerOptions) {
     this.logger = pino({
       level: config.logging.level ?? 'debug',
+      serializers: {
+        err: pino.stdSerializers.err,
+        error: pino.stdSerializers.err,
+      },
+      mixin: () => {
+        const traceId = RequestContextService.getTraceId();
+
+        return traceId ? { traceId } : {};
+      },
       ...options,
-    } satisfies LoggerOptions).child(name ? { name } : {});
+    }).child(name ? { name } : {});
   }
 
   log(message: LogData, context: LogData = {}) {
-    const { message: msg, ...rest } = this.normalizeLogData(message, context);
+    const { obj, msg } = this.resolveArgs(message, context);
 
-    if (rest.context != null && NEST_CONTEXT_DOWNGRADES.has(rest.context)) {
-      this.logger.debug(rest, msg);
+    const contextName = typeof obj['context'] === 'string' ? obj['context'] : '';
+
+    if (contextName && NEST_CONTEXT_DOWNGRADES.has(contextName)) {
+      this.logger.debug(obj, msg);
     } else {
-      this.logger.info(rest, msg);
+      this.logger.info(obj, msg);
     }
   }
 
-  error(message: LogData | Error, context: LogData | Error = {}) {
-    if (message instanceof Error) {
-      const resolvedContext = this.normalizeLogContext(context);
-      const childLogger = this.logger.child(resolvedContext);
-
-      childLogger.error(message);
-    } else {
-      const { message: msg, ...rest } = this.normalizeLogData(message, context);
-
-      this.logger.error(rest, msg);
-    }
+  error(message: ErrorableLogData, context: ErrorableLogData = {}) {
+    const { obj, msg } = this.resolveArgs(message, context);
+    this.logger.error(obj, msg);
   }
 
   warn(message: LogData, context: LogData = {}) {
-    const { message: msg, ...rest } = this.normalizeLogData(message, context);
-
-    this.logger.warn(rest, msg);
+    const { obj, msg } = this.resolveArgs(message, context);
+    this.logger.warn(obj, msg);
   }
 
   debug(message: LogData, context: LogData = {}) {
-    const { message: msg, ...rest } = this.normalizeLogData(message, context);
-
-    this.logger.debug(rest, msg);
+    const { obj, msg } = this.resolveArgs(message, context);
+    this.logger.debug(obj, msg);
   }
 
-  private normalizeLogContext(context: LogData | Error = {}) {
+  private resolveArgs(message: ErrorableLogData, context: ErrorableLogData = {}): PinoParams {
+    const obj: Record<string, unknown> = {};
+
+    let msg: string | undefined;
+
     if (context instanceof Error) {
-      return {
-        traceId: RequestContextService.getTraceId(),
-        err: context,
-      };
+      obj['err'] = context;
+    } else if (typeof context === 'string') {
+      obj['context'] = context;
+    } else if (typeof context === 'object' && context !== null) {
+      Object.assign(obj, context);
     }
 
-    const contextObj = typeof context === 'string' ? { context } : context;
+    if (message instanceof Error) {
+      obj['err'] = message;
 
-    return {
-      traceId: RequestContextService.getTraceId(),
-      ...contextObj,
-    };
-  }
+      if (!msg) {
+        msg = message.message;
+      }
+    } else if (typeof message === 'string') {
+      msg = message;
+    } else if (typeof message === 'object' && message !== null) {
+      Object.assign(obj, message);
+    }
 
-  private normalizeLogData(message: LogData = {}, context: LogData | Error = {}): ResolvedData {
-    const resolvedMessage = typeof message === 'string' ? { message } : message;
-    const resolvedContext = this.normalizeLogContext(context);
-
-    return {
-      ...(resolvedContext as object),
-      ...(resolvedMessage as object),
-    };
+    return { obj, msg };
   }
 }
