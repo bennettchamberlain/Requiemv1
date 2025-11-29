@@ -1,15 +1,27 @@
 import { type ExecutionContext, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { GqlExecutionContext } from '@nestjs/graphql';
 import { AuthGuard } from '@nestjs/passport';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  canActivate(context: ExecutionContext) {
-    // This guard is specifically for HTTP controllers. If used elsewhere, it's
-    // a developer error.
-    if (context.getType<'graphql' | 'http'>() !== 'http') {
-      throw new InternalServerErrorException('JwtAuthGuard can only be used with HTTP controllers');
+  getRequest(context: ExecutionContext) {
+    if (context.getType<string>() === 'graphql') {
+      const ctx = GqlExecutionContext.create(context);
+      const { req } = ctx.getContext();
+
+      if (req == null) {
+        throw new InternalServerErrorException('Request object not found in GraphQL context');
+      }
+
+      return req;
     }
 
-    return super.canActivate(context);
+    if (context.getType<string>() === 'http') {
+      return context.switchToHttp().getRequest();
+    }
+
+    throw new InternalServerErrorException(
+      `JwtAuthGuard does not support context type: ${context.getType()}`,
+    );
   }
 }
