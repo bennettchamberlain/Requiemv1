@@ -272,10 +272,10 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
           jobId: job.id,
         };
 
-        this.logger.debug(`Executing job ${job.id} for event ${name} in queue ${queue}`);
+        this.logger.log(`Executing job for event ${name} in queue ${queue}`, userId ? { userId } : undefined);
 
         const done = () => {
-          this.logger.debug(`Completed job ${job.id} for event ${name}`);
+          this.logger.log(`Completed job ${job.id} for event ${name}`);
           resolve();
         };
 
