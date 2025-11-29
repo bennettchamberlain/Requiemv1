@@ -1,7 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 
-import { RequestContextService, LoggerService } from '../services';
+import { ContextService, LoggerService } from '../services';
 
 @Injectable()
 export class RequestLoggerMiddleware implements NestMiddleware {
@@ -19,7 +19,7 @@ export class RequestLoggerMiddleware implements NestMiddleware {
       fired = true;
 
       const duration = process.hrtime.bigint() - start;
-      const userId = RequestContextService.getUserId();
+      const userId = ContextService.getUserId();
 
       this.logger.log('Request processed', {
         ...(userId && { userId }),

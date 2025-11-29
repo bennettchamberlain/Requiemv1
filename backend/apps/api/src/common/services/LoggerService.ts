@@ -4,7 +4,7 @@ import pino from 'pino';
 
 import config from '@ci/configuration';
 
-import { RequestContextService } from './RequestContextService';
+import { ContextService } from './ContextService';
 
 type LogData = string | Record<string, unknown>;
 type ErrorableLogData = Error | LogData;
@@ -33,7 +33,7 @@ export class LoggerService implements NestLoggerService {
         error: pino.stdSerializers.err,
       },
       mixin: () => {
-        const traceId = RequestContextService.getTraceId();
+        const traceId = ContextService.getTraceId();
 
         return traceId ? { traceId } : {};
       },

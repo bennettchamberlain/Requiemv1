@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import plimit from 'p-limit';
 import PgBoss, { JobWithMetadata } from 'pg-boss';
 
-import { LoggerService, RequestContextService } from '@ci/common/services';
+import { LoggerService, ContextService } from '@ci/common/services';
 import config from '@ci/configuration';
 
 import { DEFAULT_QUEUE } from '../constants';
@@ -263,7 +263,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   private async executeJob(queue: string, job: JobWithMetadata<EventData>): Promise<void> {
     const userId = (job as { userId?: string }).userId;
 
-    return RequestContextService.run({ traceId: job.id, userId }, () => {
+    return ContextService.run({ traceId: job.id, userId }, () => {
       return new Promise<void>((resolve, reject) => {
         const { name, ...data } = job.data;
 

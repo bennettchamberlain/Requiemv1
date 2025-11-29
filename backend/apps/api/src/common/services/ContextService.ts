@@ -9,7 +9,7 @@ type RequestContextRequiredTrace = RequestContext & {
 };
 
 @Injectable()
-export class RequestContextService {
+export class ContextService {
   private static storage = new AsyncLocalStorage<RequestContext>();
 
   static getContext(): RequestContext | undefined {

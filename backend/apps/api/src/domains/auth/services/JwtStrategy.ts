@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { z } from 'zod';
 
-import { RequestContextService } from '@ci/common/services';
+import { ContextService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
@@ -41,7 +41,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User not found');
     }
 
-    RequestContextService.set({
+    ContextService.set({
       userId: user.id,
     });
 

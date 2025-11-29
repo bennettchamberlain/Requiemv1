@@ -1,10 +1,10 @@
 import { createParamDecorator, InternalServerErrorException } from '@nestjs/common';
 
-import { RequestContextService } from '../services';
+import { ContextService } from '../services';
 import type { RequestContext } from '../types';
 
 export const Context = createParamDecorator((): RequestContext => {
-  const context = RequestContextService.getContext();
+  const context = ContextService.getContext();
 
   if (context == null) {
     throw new InternalServerErrorException('Request context not found');
