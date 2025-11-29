@@ -4,6 +4,10 @@ import { Injectable } from '@nestjs/common';
 
 import type { RequestContext } from '../types';
 
+type RequestContextRequiredTrace = RequestContext & {
+  traceId: string;
+};
+
 @Injectable()
 export class RequestContextService {
   private static storage = new AsyncLocalStorage<RequestContext>();
@@ -24,7 +28,7 @@ export class RequestContextService {
     return context?.userId ?? null;
   }
 
-  static run<T>(context: RequestContext, fn: () => T): T {
+  static run<T>(context: RequestContextRequiredTrace, fn: () => T): T {
     return this.storage.run(context, fn);
   }
 
