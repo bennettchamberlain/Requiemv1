@@ -71,31 +71,27 @@ export class LoggerService implements NestLoggerService {
   private resolveArgs(message: ErrorableLogData, context: ErrorableLogData = {}): PinoParams {
     const obj: Record<string, unknown> = {};
     const data: Record<string, unknown> = {};
-
     let msg: string | undefined;
 
     if (context instanceof Error) {
-      obj['err'] = context;
+      obj.err = context;
     } else if (typeof context === 'string') {
-      obj['context'] = context;
-    } else if (typeof context === 'object' && context !== null) {
+      obj.context = context;
+    } else if (context && typeof context === 'object') {
       Object.assign(data, context);
     }
 
     if (message instanceof Error) {
-      obj['err'] = message;
-
-      if (!msg) {
-        msg = message.message;
-      }
+      obj.err = message;
+      msg = message.message;
     } else if (typeof message === 'string') {
       msg = message;
-    } else if (typeof message === 'object' && message !== null) {
+    } else if (message && typeof message === 'object') {
       Object.assign(data, message);
     }
 
     if (Object.keys(data).length > 0) {
-      obj['data'] = data;
+      obj.data = data;
     }
 
     return { obj, msg };
