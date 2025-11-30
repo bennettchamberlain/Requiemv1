@@ -3,8 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, IsNull, MoreThan, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { InvalidSystemUserOperationException } from '@ci/common/exceptions';
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 
 import { ConnectionEntity, type Connection } from '../entities/ConnectionEntity';
 import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
@@ -16,11 +15,7 @@ export class ConnectionService {
     private readonly connectionRepository: Repository<ConnectionEntity>,
   ) {}
 
-  async create(context: ServiceContext, data: CreateConnectionDto): Promise<Connection> {
-    if (context.userId === SYSTEM_USER) {
-      throw new InvalidSystemUserOperationException();
-    }
-
+  async create(context: UserServiceContext, data: CreateConnectionDto): Promise<Connection> {
     const { providerId, ...rest } = data;
 
     const sanitizedData = {

@@ -2,9 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 
-import { InvalidSystemUserOperationException } from '@ci/common/exceptions';
 import { LoggerService } from '@ci/common/services';
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 import { EventService } from '@ci/domains/events';
 
@@ -28,13 +27,9 @@ export class BrowserActivityService {
   ) {}
 
   async create(
-    context: ServiceContext,
+    context: UserServiceContext,
     data: CreateBrowserActivityDto | CreateBrowserActivityDto[],
   ): Promise<BrowserActivity | BrowserActivity[]> {
-    if (context.userId === SYSTEM_USER) {
-      throw new InvalidSystemUserOperationException();
-    }
-
     // Required for TypeScript type narrowing to work within the closure.
     const userId = context.userId;
 
@@ -197,7 +192,7 @@ export class BrowserActivityService {
     return true;
   }
 
-  private async ensureDeviceExists(context: ServiceContext, deviceId: string): Promise<void> {
+  private async ensureDeviceExists(context: UserServiceContext, deviceId: string): Promise<void> {
     const device = await this.deviceService.findById(context, deviceId);
 
     if (!device) {

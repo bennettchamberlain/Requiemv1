@@ -2,9 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Point, In } from 'typeorm';
 
-import { InvalidSystemUserOperationException } from '@ci/common/exceptions';
 import { LoggerService } from '@ci/common/services';
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 
 import { PositionEntity, LocationSource } from '../entities/PositionEntity';
@@ -20,11 +19,7 @@ export class PositionService {
     private readonly deviceService: DeviceService,
   ) {}
 
-  async create(context: ServiceContext, data: CreatePositionDto[]): Promise<Position[]> {
-    if (context.userId === SYSTEM_USER) {
-      throw new InvalidSystemUserOperationException();
-    }
-
+  async create(context: UserServiceContext, data: CreatePositionDto[]): Promise<Position[]> {
     this.logger.log('Creating position records', {
       userId: context.userId,
       count: data.length,
@@ -191,11 +186,7 @@ export class PositionService {
     return this.mapRawResultsToPositions(rawResults);
   }
 
-  private createPositionEntity(context: ServiceContext, item: CreatePositionDto): PositionEntity {
-    if (context.userId === SYSTEM_USER) {
-      throw new InvalidSystemUserOperationException();
-    }
-
+  private createPositionEntity(context: UserServiceContext, item: CreatePositionDto): PositionEntity {
     const location = item.location
       ? {
           type: 'Point' as const,
@@ -231,11 +222,7 @@ export class PositionService {
     });
   }
 
-  private async findExistingByTimes(context: ServiceContext, times: Date[]): Promise<PositionEntity[]> {
-    if (context.userId === SYSTEM_USER) {
-      throw new InvalidSystemUserOperationException();
-    }
-
+  private async findExistingByTimes(context: UserServiceContext, times: Date[]): Promise<PositionEntity[]> {
     if (times.length === 0) {
       return [];
     }

@@ -3,8 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { InvalidSystemUserOperationException } from '@ci/common/exceptions';
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 
 import { DeviceEntity } from '../entities/DeviceEntity';
 import type { CreateDeviceDto, UpdateDeviceDto, Device } from '../types';
@@ -17,13 +16,9 @@ export class DeviceService {
   ) {}
 
   async create(
-    context: ServiceContext,
+    context: UserServiceContext,
     data: CreateDeviceDto | CreateDeviceDto[],
   ): Promise<Device | Device[]> {
-    if (context.userId === SYSTEM_USER) {
-      throw new InvalidSystemUserOperationException();
-    }
-
     // Required for TypeScript type narrowing to work within the closure.
     const userId = context.userId;
 
@@ -177,11 +172,7 @@ export class DeviceService {
     });
   }
 
-  async setPrimary(context: ServiceContext, deviceId: string): Promise<Device | null> {
-    if (context.userId === SYSTEM_USER) {
-      throw new InvalidSystemUserOperationException();
-    }
-
+  async setPrimary(context: UserServiceContext, deviceId: string): Promise<Device | null> {
     // First, unset all other devices as primary
     await this.deviceRepository.update(
       {
