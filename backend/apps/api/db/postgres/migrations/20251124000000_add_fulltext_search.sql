@@ -44,15 +44,19 @@ GENERATED ALWAYS AS (
 
 CREATE INDEX document_chunks_fts_idx ON document_chunks USING GIN(content_search_vector);
 
+CREATE OR REPLACE FUNCTION immutable_array_to_string(text[], text)
+    RETURNS text as $$ SELECT array_to_string($1, $2); $$
+LANGUAGE sql IMMUTABLE;
+
 ALTER TABLE messages
 ADD COLUMN search_vector tsvector
 GENERATED ALWAYS AS (
   to_tsvector('english',
     coalesce(content, '') || ' ' ||
-    coalesce(array_to_string(extracted_entities, ' '), '') || ' ' ||
-    coalesce(array_to_string(intent_categories, ' '), '')
+    coalesce(immutable_array_to_string(extracted_entities, ' '), '') || ' ' ||
+    coalesce(immutable_array_to_string(intent_categories, ' '), '')
   )
-) STORED
+) STORED;
 
 CREATE INDEX messages_thread_idx ON messages(thread_id);
 CREATE INDEX messages_user_idx ON messages(user_id);
