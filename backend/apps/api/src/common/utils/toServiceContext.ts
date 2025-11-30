@@ -1,6 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 
-import type { RequestContext, ServiceContext } from '../types';
+import type { RequestContext, UserServiceContext } from '../types';
 
 /**
  * Converts a RequestContext to a ServiceContext. Throws UnauthorizedException
@@ -10,7 +10,7 @@ import type { RequestContext, ServiceContext } from '../types';
  * @returns ServiceContext with guaranteed userId
  * @throws UnauthorizedException if userId is missing
  */
-export function toServiceContext(context: RequestContext): ServiceContext {
+export function toServiceContext(context: RequestContext): UserServiceContext {
   if (!context.userId) {
     throw new UnauthorizedException('User authentication required');
   }
