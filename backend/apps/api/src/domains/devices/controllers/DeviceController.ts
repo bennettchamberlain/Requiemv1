@@ -7,7 +7,6 @@ import {
   Param,
   Body,
   UseGuards,
-  UnauthorizedException,
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
@@ -18,6 +17,7 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { DeviceService } from '../services/DeviceService';
 import { CreateDeviceDto, UpdateDeviceDto, Device, createDeviceSchema, updateDeviceSchema } from '../types';
@@ -32,12 +32,10 @@ export class DeviceController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createDeviceSchema)) input: CreateDeviceDto | CreateDeviceDto[],
   ): Promise<Device | Device[]> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to create devices');
-    }
+    const serviceContext = toServiceContext(context);
 
     try {
-      return await this.deviceService.create(context, input);
+      return await this.deviceService.create(serviceContext, input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
         throw new ConflictException('Device record already exists');
@@ -50,21 +48,17 @@ export class DeviceController {
   @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext): Promise<Device[]> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to view devices');
-    }
+    const serviceContext = toServiceContext(context);
 
-    return this.deviceService.findAll(context);
+    return this.deviceService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') deviceId: string): Promise<Device | null> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to view devices');
-    }
+    const serviceContext = toServiceContext(context);
 
-    const device = await this.deviceService.findOne(context, deviceId);
+    const device = await this.deviceService.findById(serviceContext, deviceId);
     if (!device) {
       throw new NotFoundException('Device not found');
     }
@@ -79,11 +73,10 @@ export class DeviceController {
     @Param('id') deviceId: string,
     @Body(new ValidationPipe(updateDeviceSchema)) data: UpdateDeviceDto,
   ): Promise<Device | null> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to update devices');
-    }
+    const serviceContext = toServiceContext(context);
 
-    const device = await this.deviceService.update(context, deviceId, data);
+    const device = await this.deviceService.update(serviceContext, deviceId, data);
+
     if (!device) {
       throw new NotFoundException('Device not found');
     }
@@ -94,16 +87,15 @@ export class DeviceController {
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
   async remove(@Context() context: RequestContext, @Param('id') deviceId: string): Promise<void> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to delete devices');
-    }
+    const serviceContext = toServiceContext(context);
 
-    const device = await this.deviceService.findOne(context, deviceId);
+    const device = await this.deviceService.findById(serviceContext, deviceId);
+
     if (!device) {
       throw new NotFoundException('Device not found');
     }
 
-    return this.deviceService.remove(context, deviceId);
+    return this.deviceService.remove(serviceContext, deviceId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -112,11 +104,9 @@ export class DeviceController {
     @Context() context: RequestContext,
     @Param('id') deviceId: string,
   ): Promise<Device | null> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to set primary device');
-    }
+    const serviceContext = toServiceContext(context);
 
-    const device = await this.deviceService.setPrimary(context, deviceId);
+    const device = await this.deviceService.setPrimary(serviceContext, deviceId);
     if (!device) {
       throw new NotFoundException('Device not found');
     }
@@ -130,11 +120,9 @@ export class DeviceController {
     @Context() context: RequestContext,
     @Param('id') deviceId: string,
   ): Promise<Device | null> {
-    if (!context.userId) {
-      throw new UnauthorizedException('User must be authenticated to update device last seen');
-    }
+    const serviceContext = toServiceContext(context);
 
-    const device = await this.deviceService.updateLastSeen(context, deviceId);
+    const device = await this.deviceService.updateLastSeen(serviceContext, deviceId);
     if (!device) {
       throw new NotFoundException('Device not found');
     }
