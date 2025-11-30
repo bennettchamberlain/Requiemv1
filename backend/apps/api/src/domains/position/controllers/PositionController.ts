@@ -15,6 +15,7 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { PositionService } from '../services/PositionService';
 import {
@@ -37,10 +38,12 @@ export class PositionController {
     @Body(new ValidationPipe(createPositionSchema))
     input: CreatePositionDto[],
   ): Promise<Position[]> {
+    const serviceContext = toServiceContext(context);
+
     this.validateContentArray(input);
 
     try {
-      return await this.positionService.create(context, input);
+      return await this.positionService.create(serviceContext, input);
     } catch (error) {
       if (this.isUniqueViolation(error)) {
         throw new ConflictException('One or more position records already exist for this time and user');
@@ -57,9 +60,11 @@ export class PositionController {
     @Query('start') start: string,
     @Query('end') end: string,
   ): Promise<Position[]> {
+    const serviceContext = toServiceContext(context);
+
     const { startDate, endDate } = this.parseAndValidateDateRange(start, end);
 
-    return this.positionService.findByDateRange(context, startDate, endDate);
+    return this.positionService.findByDateRange(serviceContext, startDate, endDate);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -74,10 +79,12 @@ export class PositionController {
     @Query('start') start?: string,
     @Query('end') end?: string,
   ): Promise<Position[]> {
+    const serviceContext = toServiceContext(context);
+
     const geofence = this.parseGeofence(type, centerLon, centerLat, radius, coordinates);
     const { startDate, endDate } = this.parseOptionalDateRange(start, end);
 
-    return this.positionService.findByGeofence(context, geofence, startDate, endDate);
+    return this.positionService.findByGeofence(serviceContext, geofence, startDate, endDate);
   }
 
   private validateContentArray(content?: CreatePositionDto[]): void {
