@@ -93,8 +93,8 @@ export class AnswerService {
     return result?.toAnswer() ?? null;
   }
 
-  async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<boolean> {
-    const result = await this.answerRepository.update(
+  async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<Answer | null> {
+    const updateResult = await this.answerRepository.update(
       {
         answer_id: id,
         user: {
@@ -104,10 +104,21 @@ export class AnswerService {
       data,
     );
 
-    if (result.affected === 0) {
+    if (updateResult.affected === 0) {
       throw new NotFoundException();
     }
 
-    return true;
+    // Fetch and return the updated answer
+    const updatedAnswer = await this.answerRepository.findOne({
+      where: {
+        answer_id: id,
+        user: {
+          id: context.userId,
+        },
+      },
+      relations: ['user', 'question'],
+    });
+
+    return updatedAnswer?.toAnswer() ?? null;
   }
 }
