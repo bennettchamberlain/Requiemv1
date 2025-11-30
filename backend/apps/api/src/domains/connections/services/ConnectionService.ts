@@ -3,7 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, IsNull, MoreThan, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import type { ServiceContext } from '@ci/common/types';
+import { InvalidSystemUserOperationException } from '@ci/common/exceptions';
+import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
 
 import { ConnectionEntity, type Connection } from '../entities/ConnectionEntity';
 import type { CreateConnectionDto, UpdateConnectionDto } from '../types';
@@ -16,6 +17,10 @@ export class ConnectionService {
   ) {}
 
   async create(context: ServiceContext, data: CreateConnectionDto): Promise<Connection> {
+    if (context.userId === SYSTEM_USER) {
+      throw new InvalidSystemUserOperationException();
+    }
+
     const { providerId, ...rest } = data;
 
     const sanitizedData = {
@@ -44,9 +49,11 @@ export class ConnectionService {
   async findAll(context: ServiceContext): Promise<Connection[]> {
     const entities = await this.connectionRepository.find({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
         active: true,
       },
       relations: ['provider'],
@@ -59,9 +66,11 @@ export class ConnectionService {
     const entities = await this.connectionRepository.find({
       where: {
         id: In(ids),
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
       relations: ['provider'],
     });
@@ -73,9 +82,11 @@ export class ConnectionService {
     const entity = await this.connectionRepository.findOne({
       where: {
         id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
       relations: ['provider'],
     });
@@ -89,9 +100,11 @@ export class ConnectionService {
     const result = await this.connectionRepository.update(
       {
         id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
       {
         ...rest,
@@ -111,9 +124,11 @@ export class ConnectionService {
     const result = await this.connectionRepository.update(
       {
         id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
       {
         active: false,
