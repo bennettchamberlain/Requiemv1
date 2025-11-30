@@ -16,6 +16,7 @@ import {
 } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
+import { EditAnswerDialog } from '@/components/modals/EditAnswerDialog/EditAnswerDialog';
 import { useAuth } from '@/hooks';
 
 interface Answer {
@@ -39,6 +40,8 @@ export function InsightsPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
   const [expandedTexts, setExpandedTexts] = useState<Set<string>>(new Set());
+  const [editingAnswer, setEditingAnswer] = useState<Answer | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   const fetchAnswers = async () => {
     try {
@@ -148,6 +151,43 @@ export function InsightsPage() {
   const isLLMAnswered = (answer: Answer) => {
     // If there's no user ID but there's an answer, it was LLM answered
     return !answer.user?.id && answer.answer;
+  };
+
+  const handleEditClick = (answer: Answer) => {
+    setEditingAnswer(answer);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveAnswer = async (answerId: string, answerText: string) => {
+    if (!authToken) {
+      throw new Error('Authentication token not found');
+    }
+
+    const response = await fetch(`/api/answers/${answerId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        answer_text: answerText,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Failed to update answer: ${response.statusText}`);
+    }
+
+    const updatedAnswer = await response.json();
+
+    // Update the answer in the local state
+    setAnswers((prevAnswers) => prevAnswers.map((ans) => (ans.id === answerId ? updatedAnswer : ans)));
+  };
+
+  const handleCloseEditDialog = () => {
+    setIsEditDialogOpen(false);
+    setEditingAnswer(null);
   };
 
   const ExpandableText = ({
@@ -332,7 +372,12 @@ export function InsightsPage() {
                           <div className="flex items-center gap-1">
                             {isManuallyAnswered(answer) ? (
                               <>
-                                <Button variant="ghost" size="sm" className="h-8 px-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-2"
+                                  onClick={() => handleEditClick(answer)}
+                                >
                                   <Edit className="h-3 w-3 mr-1" />
                                   Edit
                                 </Button>
@@ -349,7 +394,12 @@ export function InsightsPage() {
                                 <Button variant="ghost" size="sm" className="h-8 px-2">
                                   <ThumbsDown className="h-3 w-3 mr-1" />
                                 </Button>
-                                <Button variant="ghost" size="sm" className="h-8 px-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-2"
+                                  onClick={() => handleEditClick(answer)}
+                                >
                                   <Edit className="h-3 w-3 mr-1" />
                                   Edit
                                 </Button>
@@ -426,7 +476,12 @@ export function InsightsPage() {
                               <div className="flex items-center gap-1 flex-wrap">
                                 {isManuallyAnswered(answer) ? (
                                   <>
-                                    <Button variant="ghost" size="sm" className="h-8 px-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => handleEditClick(answer)}
+                                    >
                                       <Edit className="h-3 w-3 mr-1" />
                                       Edit
                                     </Button>
@@ -443,7 +498,12 @@ export function InsightsPage() {
                                     <Button variant="ghost" size="sm" className="h-8 px-2">
                                       <ThumbsDown className="h-3 w-3 mr-1" />
                                     </Button>
-                                    <Button variant="ghost" size="sm" className="h-8 px-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => handleEditClick(answer)}
+                                    >
                                       <Edit className="h-3 w-3 mr-1" />
                                       Edit
                                     </Button>
@@ -465,6 +525,13 @@ export function InsightsPage() {
           </>
         )}
       </PageContent>
+
+      <EditAnswerDialog
+        open={isEditDialogOpen}
+        answer={editingAnswer}
+        onClose={handleCloseEditDialog}
+        onSave={handleSaveAnswer}
+      />
     </>
   );
 }
