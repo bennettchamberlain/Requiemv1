@@ -49,9 +49,10 @@ ADD COLUMN search_vector tsvector
 GENERATED ALWAYS AS (
   to_tsvector('english',
     coalesce(content, '') || ' ' ||
-    coalesce(array_to_string(extracted_entities, ' '), '')
+    coalesce(array_to_string(extracted_entities, ' '), '') || ' ' ||
+    coalesce(array_to_string(intent_categories, ' '), '')
   )
-) STORED;
+) STORED
 
 CREATE INDEX messages_thread_idx ON messages(thread_id);
 CREATE INDEX messages_user_idx ON messages(user_id);
