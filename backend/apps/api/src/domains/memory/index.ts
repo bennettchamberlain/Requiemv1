@@ -55,7 +55,6 @@ import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { MemoryService } from './services/MemoryService';
 import { PersonService } from './services/PersonService';
-import { SearchService } from './services/SearchService';
 import { UserContextService } from './services/UserContextService';
 
 /**
@@ -97,7 +96,6 @@ import { UserContextService } from './services/UserContextService';
     GraphEventListener,
     PersonService,
     FileService,
-    SearchService,
   ],
   controllers: [MemoryController, ContentController, EventController, GraphController],
   exports: [
@@ -112,7 +110,6 @@ import { UserContextService } from './services/UserContextService';
     GraphQueryService,
     GraphReadService,
     FileService,
-    SearchService,
   ],
 })
 export class MemoryModule {}
@@ -141,7 +138,6 @@ export {
   GraphQueryService,
   GraphReadService,
   FileService,
-  SearchService,
 };
 
 // Types
@@ -155,12 +151,3 @@ export type {
   CreateContentDto,
   UpdateContentDto,
 } from './types';
-
-// Search types
-export type {
-  SearchMode,
-  SearchScope,
-  DatabaseSearchOptions,
-  SearchResultItem,
-  DatabaseSearchResults,
-} from './services/SearchService';
