@@ -382,7 +382,7 @@ export function InsightsPage() {
                                   <Edit className="h-3 w-3 mr-1" />
                                   Edit
                                 </Button>
-                                <Button variant="ghost" size="sm" className="h-8 px-2">
+                                <Button variant="ghost" size="sm" className="h-8 px-2" disabled>
                                   <Tag className="h-3 w-3 mr-1" />
                                   Tag
                                 </Button>
@@ -486,7 +486,7 @@ export function InsightsPage() {
                                       <Edit className="h-3 w-3 mr-1" />
                                       Edit
                                     </Button>
-                                    <Button variant="ghost" size="sm" className="h-8 px-2">
+                                    <Button variant="ghost" size="sm" className="h-8 px-2" disabled>
                                       <Tag className="h-3 w-3 mr-1" />
                                       Tag
                                     </Button>
