@@ -95,7 +95,11 @@ export class DeviceController {
       throw new NotFoundException('Device not found');
     }
 
-    return this.deviceService.remove(serviceContext, deviceId);
+    const removal = this.deviceService.remove(serviceContext, deviceId);
+
+    if (!removal) {
+      throw new NotFoundException();
+    }
   }
 
   @UseGuards(JwtAuthGuard)
