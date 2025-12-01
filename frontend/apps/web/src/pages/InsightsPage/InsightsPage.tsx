@@ -8,7 +8,6 @@ import {
   Grid3X3,
   List,
   Edit,
-  Tag,
   ThumbsUp,
   ThumbsDown,
   ChevronDown,
@@ -382,10 +381,6 @@ export function InsightsPage() {
                                   <Edit className="h-3 w-3 mr-1" />
                                   Edit
                                 </Button>
-                                <Button variant="ghost" size="sm" className="h-8 px-2" disabled>
-                                  <Tag className="h-3 w-3 mr-1" />
-                                  Tag
-                                </Button>
                               </>
                             ) : isLLMAnswered(answer) ? (
                               <>
@@ -485,10 +480,6 @@ export function InsightsPage() {
                                     >
                                       <Edit className="h-3 w-3 mr-1" />
                                       Edit
-                                    </Button>
-                                    <Button variant="ghost" size="sm" className="h-8 px-2" disabled>
-                                      <Tag className="h-3 w-3 mr-1" />
-                                      Tag
                                     </Button>
                                   </>
                                 ) : isLLMAnswered(answer) ? (
