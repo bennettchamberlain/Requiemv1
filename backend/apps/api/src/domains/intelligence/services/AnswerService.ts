@@ -94,7 +94,7 @@ export class AnswerService {
   }
 
   async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<Answer | null> {
-    const updateResult = await this.answerRepository.update(
+    const result = await this.answerRepository.update(
       {
         answer_id: id,
         user: {
@@ -104,11 +104,10 @@ export class AnswerService {
       data,
     );
 
-    if (updateResult.affected === 0) {
+    if (result.affected === 0) {
       throw new NotFoundException();
     }
 
-    // Fetch and return the updated answer using the existing findOne method
     return this.findOne(context, id);
   }
 }
