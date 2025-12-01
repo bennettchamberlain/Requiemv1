@@ -118,7 +118,7 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
         }
 
         // Reset form and fetch next question
-        e.currentTarget.reset();
+        formRef.current?.reset();
         setCharCount(0);
         onAnswerSubmitted?.();
         // Keep current question visible while fetching next one to prevent flash
