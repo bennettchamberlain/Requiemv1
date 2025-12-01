@@ -108,17 +108,7 @@ export class AnswerService {
       throw new NotFoundException();
     }
 
-    // Fetch and return the updated answer
-    const updatedAnswer = await this.answerRepository.findOne({
-      where: {
-        answer_id: id,
-        user: {
-          id: context.userId,
-        },
-      },
-      relations: ['user', 'question'],
-    });
-
-    return updatedAnswer?.toAnswer() ?? null;
+    // Fetch and return the updated answer using the existing findOne method
+    return this.findOne(context, id);
   }
 }
