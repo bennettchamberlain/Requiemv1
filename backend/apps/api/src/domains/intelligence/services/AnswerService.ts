@@ -93,7 +93,7 @@ export class AnswerService {
     return result?.toAnswer() ?? null;
   }
 
-  async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<boolean> {
+  async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<Answer | null> {
     const result = await this.answerRepository.update(
       {
         answer_id: id,
@@ -108,6 +108,6 @@ export class AnswerService {
       throw new NotFoundException();
     }
 
-    return true;
+    return this.findOne(context, id);
   }
 }
