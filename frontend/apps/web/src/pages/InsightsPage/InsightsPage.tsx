@@ -15,6 +15,7 @@ import {
   ChevronUp,
 } from '@ci/shadcn/icons';
 
+import { AnswerQuestionPrompt } from '@/components/AnswerQuestionPrompt/AnswerQuestionPrompt';
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
@@ -254,6 +255,8 @@ export function InsightsPage() {
       </Portal.Slot>
 
       <PageContent>
+        <AnswerQuestionPrompt onAnswerSubmitted={fetchAnswers} />
+
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           {/* Mobile: Title and refresh button in same row */}
           <div className="flex items-center justify-between lg:justify-start">

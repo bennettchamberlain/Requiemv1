@@ -32,6 +32,12 @@ export class QuestionsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('unanswered')
+  findOneUnanswered(@Context() context: RequestContext) {
+    return this.questionService.findOneUnanswered(context);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Context() context: RequestContext, @Param('id') id: string) {
     return this.questionService.findOne(context, id);

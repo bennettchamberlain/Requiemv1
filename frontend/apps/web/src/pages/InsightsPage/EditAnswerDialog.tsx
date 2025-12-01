@@ -25,6 +25,7 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
   const [answerText, setAnswerText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldShake, setShouldShake] = useState(false);
 
   // Update local state when answer changes
   useEffect(() => {
@@ -51,8 +52,19 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
       return;
     }
 
-    if (!answerText.trim()) {
+    const trimmedText = answerText.trim();
+    if (!trimmedText) {
       setError('Answer text is required');
+      setShouldShake(true);
+      setTimeout(() => setShouldShake(false), 500);
+
+      return;
+    }
+
+    if (trimmedText.length > 5000) {
+      setError('Answer text must be 5000 characters or less');
+      setShouldShake(true);
+      setTimeout(() => setShouldShake(false), 500);
 
       return;
     }
@@ -61,7 +73,7 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
     setError(null);
 
     try {
-      await onSave(answer.id, answerText.trim());
+      await onSave(answer.id, trimmedText);
       handleClose();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update answer';
@@ -104,19 +116,34 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
             <Textarea
               id="answer-text"
               value={answerText}
-              onChange={(e) => setAnswerText(e.target.value)}
+              onChange={(e) => {
+                setAnswerText(e.target.value);
+                setError(null);
+              }}
               disabled={loading}
-              className="min-h-32"
+              className={`min-h-32 transition-all ${
+                error
+                  ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
+                  : ''
+              } ${shouldShake ? 'animate-shake' : ''}`}
               placeholder="Enter your answer..."
+              maxLength={5000}
             />
-            {error && <p className="text-sm text-destructive mt-1">{error}</p>}
+            <div className="flex items-center justify-between mt-1">
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <p
+                className={`text-xs ml-auto ${answerText.length > 5000 ? 'text-destructive' : 'text-muted-foreground'}`}
+              >
+                {answerText.length}/5000
+              </p>
+            </div>
           </div>
 
           <Dialog.Footer>
             <Button type="button" variant="secondary" onClick={handleClose} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading || !answerText.trim()}>
+            <Button type="submit" disabled={loading}>
               {loading ? <Spinner variant="circle" /> : null}
               Save
             </Button>

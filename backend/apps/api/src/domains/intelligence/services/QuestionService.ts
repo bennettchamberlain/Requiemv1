@@ -138,4 +138,39 @@ export class QuestionService {
 
     return groupedByUserId;
   }
+
+  async findOneUnanswered(context: RequestContext): Promise<Question | null> {
+    if (!context.userId) {
+      return null;
+    }
+
+    type Row = {
+      id: string;
+    };
+
+    const rows = (await this.dataSource.query(
+      `
+      SELECT
+        questions.question_id as id
+      FROM
+        questions
+      LEFT JOIN answers ON answers.question_id = questions.question_id
+        AND answers.user_id = $1
+      WHERE questions.is_active = TRUE
+        AND (answers.answer_id IS NULL OR answers.answer_text IS NULL)
+        AND (
+          questions.is_private_to IS NULL
+          OR questions.is_private_to = $1
+        )
+      LIMIT 1;
+    `,
+      [context.userId],
+    )) satisfies Array<Row>;
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return this.findOne(context, rows[0].id);
+  }
 }
