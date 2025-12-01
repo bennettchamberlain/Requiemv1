@@ -169,7 +169,7 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
               disabled={loading}
               className={`min-h-24 transition-all ${
                 error
-                  ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20 animate-shake'
+                  ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
                   : ''
               }`}
               placeholder="Enter your answer..."
