@@ -12,6 +12,7 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';
@@ -29,24 +30,26 @@ export class ProvidersController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  async findAll() {
-    return this.providerService.findAll();
+  async findAll(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    return this.providerService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.providerService.findOne(id);
+  async findOne(@Context() context: RequestContext, @Param('id') id: string) {
+    const serviceContext = toServiceContext(context);
+
+    return this.providerService.findById(serviceContext, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
-    const provider = await this.providerService.findOne(id);
+    const provider = await this.providerService.findById(serviceContext, id);
 
     if (provider == null) {
       this.logger.log('Attmpted to connect to a provider that does not exist');

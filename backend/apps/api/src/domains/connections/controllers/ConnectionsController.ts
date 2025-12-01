@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import { EventService, Events } from '@ci/domains/events';
 
 import { ClientFactory } from '../clients';
@@ -73,9 +74,7 @@ export class ConnectionsController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createConnectionSchema)) input: CreateConnectionDto,
   ) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
     const connection = await this.connectionService.create(serviceContext, input);
 
@@ -88,9 +87,7 @@ export class ConnectionsController {
   @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
     const connections = await this.connectionService.findAll(serviceContext);
 
@@ -105,9 +102,7 @@ export class ConnectionsController {
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
     const connection = await this.connectionService.findById(serviceContext, id);
 
@@ -128,9 +123,7 @@ export class ConnectionsController {
     @Param('id') id: string,
     @Body(new ValidationPipe(updateConnectionSchema)) input: UpdateConnectionDto,
   ) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
     const connection = await this.connectionService.update(serviceContext, id, input);
 
@@ -148,9 +141,7 @@ export class ConnectionsController {
   @Delete(':id')
   @HttpCode(204)
   async delete(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
     await this.connectionService.remove(serviceContext, id);
   }
@@ -158,9 +149,7 @@ export class ConnectionsController {
   @UseGuards(JwtAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
     const connection = await this.connectionService.findById(serviceContext, id);
 
@@ -190,9 +179,7 @@ export class ConnectionsController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(completeConnectionSchema)) body: CompleteConnectionDto,
   ) {
-    const serviceContext = {
-      userId: context.userId!,
-    };
+    const serviceContext = toServiceContext(context);
 
     const { state: connectionId, code } = body;
 

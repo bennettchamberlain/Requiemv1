@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Point, In } from 'typeorm';
 
 import { LoggerService } from '@ci/common/services';
-import type { RequestContext } from '@ci/common/types';
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 
 import { PositionEntity, LocationSource } from '../entities/PositionEntity';
@@ -19,7 +19,7 @@ export class PositionService {
     private readonly deviceService: DeviceService,
   ) {}
 
-  async create(context: RequestContext, data: CreatePositionDto[]): Promise<Position[]> {
+  async create(context: UserServiceContext, data: CreatePositionDto[]): Promise<Position[]> {
     this.logger.log('Creating position records', {
       userId: context.userId,
       count: data.length,
@@ -36,15 +36,17 @@ export class PositionService {
     }
 
     const times = uniquePositions.map((item) => new Date(item.time));
-    const existingPositions = await this.findExistingByTimes(context.userId!, times);
+    const existingPositions = await this.findExistingByTimes(context, times);
     const existingTimesSet = new Set(existingPositions.map((p) => p.time.toISOString()));
-
     const newPositions: CreatePositionDto[] = [];
+
     for (const item of uniquePositions) {
       const itemTime = new Date(item.time).toISOString();
+
       if (!existingTimesSet.has(itemTime)) {
         if (item.device_id) {
-          const device = await this.deviceService.findOne(context, item.device_id);
+          const device = await this.deviceService.findById(context, item.device_id);
+
           if (!device) {
             this.logger.warn('Device not found for position', {
               deviceId: item.device_id,
@@ -57,13 +59,15 @@ export class PositionService {
           ...item,
           heading_degrees: this.normalizeHeading(item.heading_degrees),
         };
+
         newPositions.push(normalizedItem);
       }
     }
 
     const createdEntities: PositionEntity[] = [];
+
     if (newPositions.length > 0) {
-      const entitiesToSave = newPositions.map((item) => this.createPositionEntity(item, context.userId!));
+      const entitiesToSave = newPositions.map((item) => this.createPositionEntity(context, item));
       const saved = await this.positionRepository.save(entitiesToSave);
       createdEntities.push(...saved);
     }
@@ -82,7 +86,7 @@ export class PositionService {
     return allPositions;
   }
 
-  async findByDateRange(context: RequestContext, start: Date, end: Date): Promise<Position[]> {
+  async findByDateRange(context: ServiceContext, start: Date, end: Date): Promise<Position[]> {
     this.logger.log('Fetching positions for date range', {
       userId: context.userId,
       start: start.toISOString(),
@@ -91,7 +95,11 @@ export class PositionService {
 
     const results = await this.positionRepository.find({
       where: {
-        user_id: context.userId,
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
         time: Between(start, end),
       },
       order: { time: 'DESC' },
@@ -101,7 +109,7 @@ export class PositionService {
   }
 
   async findByGeofence(
-    context: RequestContext,
+    context: ServiceContext,
     geofence: Geofence,
     startDate?: Date,
     endDate?: Date,
@@ -113,9 +121,16 @@ export class PositionService {
       endDate: endDate?.toISOString(),
     });
 
-    let whereClause = 'user_id = $1 AND location IS NOT NULL';
-    const params: (string | number)[] = [context.userId!];
-    let paramIndex = 2;
+    let whereClause = 'location IS NOT NULL';
+    const params: (string | number)[] = [];
+    let paramIndex = 1;
+
+    // Only filter by user_id if not system user
+    if (context.userId !== SYSTEM_USER) {
+      whereClause += ` AND user_id = $${paramIndex}`;
+      params.push(context.userId);
+      paramIndex++;
+    }
 
     if ('radius_meters' in geofence) {
       const radiusGeofence = geofence as GeofenceRadius;
@@ -171,7 +186,7 @@ export class PositionService {
     return this.mapRawResultsToPositions(rawResults);
   }
 
-  private createPositionEntity(item: CreatePositionDto, userId: string): PositionEntity {
+  private createPositionEntity(context: UserServiceContext, item: CreatePositionDto): PositionEntity {
     const location = item.location
       ? {
           type: 'Point' as const,
@@ -181,7 +196,7 @@ export class PositionService {
 
     return this.positionRepository.create({
       time: new Date(item.time),
-      user_id: userId,
+      user_id: context.userId,
       device_id: item.device_id ?? null,
       location,
       altitude_meters: item.altitude_meters ?? null,
@@ -207,14 +222,14 @@ export class PositionService {
     });
   }
 
-  private async findExistingByTimes(userId: string, times: Date[]): Promise<PositionEntity[]> {
+  private async findExistingByTimes(context: UserServiceContext, times: Date[]): Promise<PositionEntity[]> {
     if (times.length === 0) {
       return [];
     }
 
     return this.positionRepository.find({
       where: {
-        user_id: userId,
+        user_id: context.userId,
         time: In(times),
       },
     });
