@@ -16,8 +16,9 @@ import {
 } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
-import { EditAnswerDialog } from '@/components/modals/EditAnswerDialog/EditAnswerDialog';
 import { useAuth } from '@/hooks';
+
+import { EditAnswerDialog } from './EditAnswerDialog';
 
 interface Answer {
   id: string;
