@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type FormEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
 
 import { Button, Card, Textarea, Spinner } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
@@ -18,12 +18,12 @@ interface Props {
 export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
   const [{ authToken }] = useAuth();
   const [question, setQuestion] = useState<Question | null>(null);
-  const [answerText, setAnswerText] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetchingQuestion, setFetchingQuestion] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const [shouldShake, setShouldShake] = useState(false);
+  const [charCount, setCharCount] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const fetchUnansweredQuestion = useCallback(async () => {
     if (!authToken) {
@@ -78,19 +78,18 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
         return;
       }
 
+      const formData = new FormData(e.currentTarget);
+      const answerText = (formData.get('answer') as string) || '';
       const trimmedText = answerText.trim();
+
       if (!trimmedText) {
         setError('Answer text is required');
-        setShouldShake(true);
-        setTimeout(() => setShouldShake(false), 500);
 
         return;
       }
 
       if (trimmedText.length > 5000) {
         setError('Answer text must be 5000 characters or less');
-        setShouldShake(true);
-        setTimeout(() => setShouldShake(false), 500);
 
         return;
       }
@@ -119,7 +118,8 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
         }
 
         // Reset form and fetch next question
-        setAnswerText('');
+        e.currentTarget.reset();
+        setCharCount(0);
         onAnswerSubmitted?.();
         // Keep current question visible while fetching next one to prevent flash
         await fetchUnansweredQuestion();
@@ -130,7 +130,7 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
         setLoading(false);
       }
     },
-    [question, authToken, answerText, onAnswerSubmitted, fetchUnansweredQuestion],
+    [question, authToken, onAnswerSubmitted, fetchUnansweredQuestion],
   );
 
   const handleDismiss = useCallback(() => {
@@ -150,7 +150,7 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
           <span className="text-sm text-muted-foreground">Loading question...</span>
         </div>
       ) : question ? (
-        <form onSubmit={handleSubmit} className="space-y-3" key="answer-question-form">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-3" key="answer-question-form">
           <div>
             <label className="text-sm font-medium text-foreground mb-2 block">
               {fetchingQuestion && (
@@ -161,26 +161,26 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
               {question.text}
             </label>
             <Textarea
-              value={answerText}
-              onChange={(e) => {
-                setAnswerText(e.target.value);
+              name="answer"
+              onInput={(e) => {
+                setCharCount(e.currentTarget.value.length);
                 setError(null);
               }}
               disabled={loading}
               className={`min-h-24 transition-all ${
                 error
-                  ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
+                  ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20 animate-shake'
                   : ''
-              } ${shouldShake ? 'animate-shake' : ''}`}
+              }`}
               placeholder="Enter your answer..."
               maxLength={5000}
             />
             <div className="flex items-center justify-between mt-1">
               {error && <p className="text-sm text-destructive">{error}</p>}
               <p
-                className={`text-xs ml-auto ${answerText.length > 5000 ? 'text-destructive' : 'text-muted-foreground'}`}
+                className={`text-xs ml-auto ${charCount > 5000 ? 'text-destructive' : 'text-muted-foreground'}`}
               >
-                {answerText.length}/5000
+                {charCount}/5000
               </p>
             </div>
           </div>
