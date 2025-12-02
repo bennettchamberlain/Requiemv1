@@ -155,7 +155,7 @@ export class PositionEntity {
       location_embedding: this.location_embedding ?? undefined,
       is_private: this.is_private,
       user: this.user ? UserEntity.toEgressType(this.user) : undefined,
-      device: this.device?.toDevice(),
+      device: this.device ? DeviceEntity.toEgressType(this.device) : undefined,
       location_entity: this.location_entity ?? undefined,
       reference_entity: this.reference_entity ?? undefined,
     };
