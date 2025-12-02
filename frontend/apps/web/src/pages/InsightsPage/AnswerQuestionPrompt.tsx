@@ -41,15 +41,15 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
         },
       });
 
+      if (response.status === 204) {
+        // No unanswered questions - only clear if we truly have no questions
+        setQuestion(null);
+        setFetchingQuestion(false);
+
+        return;
+      }
+
       if (!response.ok) {
-        if (response.status === 404) {
-          // No unanswered questions - only clear if we truly have no questions
-          setQuestion(null);
-          setFetchingQuestion(false);
-
-          return;
-        }
-
         throw new Error(`Failed to fetch question: ${response.statusText}`);
       }
 
