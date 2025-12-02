@@ -12,7 +12,7 @@ export type EntitySearchResult = {
   isLocal?: boolean;
 };
 
-interface GraphSearchResponse {
+export interface GraphSearchResponse {
   success: boolean;
   nodes: Array<{
     id: string;
@@ -20,6 +20,16 @@ interface GraphSearchResponse {
     entity_type: string;
     name: string | null;
     description: string | null;
+    properties?: Record<string, unknown>;
+  }>;
+  links?: Array<{
+    id: string;
+    relationship_id: string;
+    source: string;
+    target: string;
+    relationship_type: string;
+    strength: number;
+    properties: Record<string, unknown>;
   }>;
 }
 
@@ -33,6 +43,7 @@ interface EntitySearchInputProps {
   disabled?: boolean;
   minQueryLength?: number;
   localOptions?: EntitySearchResult[];
+  onRemoteResponse?(response: GraphSearchResponse | null): void;
 }
 
 const DEFAULT_MIN_QUERY = 1;
@@ -47,6 +58,7 @@ export function EntitySearchInput({
   disabled,
   minQueryLength = DEFAULT_MIN_QUERY,
   localOptions,
+  onRemoteResponse,
 }: EntitySearchInputProps) {
   const inputId = useId();
   const [query, setQuery] = useState('');
@@ -102,6 +114,7 @@ export function EntitySearchInput({
             })),
           );
           setDropdownOpen(true);
+          onRemoteResponse?.(response);
         }
       } catch (searchError) {
         if (cancelled) {
@@ -114,6 +127,7 @@ export function EntitySearchInput({
 
         setRemoteResults([]);
         setError(searchError instanceof Error ? searchError.message : 'Search failed');
+        onRemoteResponse?.(null);
       } finally {
         if (!cancelled) {
           setSearching(false);
@@ -135,8 +149,9 @@ export function EntitySearchInput({
       setError(null);
       setSearching(false);
       setDropdownOpen(false);
+      onRemoteResponse?.(null);
     }
-  }, [meetsLength]);
+  }, [meetsLength, onRemoteResponse]);
 
   const localMatches = useMemo(() => {
     if (!localOptions?.length || !meetsLength) {

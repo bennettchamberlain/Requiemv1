@@ -24,7 +24,7 @@ import { ForceGraph } from '@/components/ForceGraph';
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
-import type { EntitySearchResult } from './EntitySearchInput';
+import type { EntitySearchResult, GraphSearchResponse } from './EntitySearchInput';
 import { EntitySearchInput } from './EntitySearchInput';
 import { useNodeDetails, type NodeDetailsResponse } from './use-node-details';
 
@@ -118,6 +118,8 @@ export function KnowledgePage() {
   const [focusGraphError, setFocusGraphError] = useState<string | null>(null);
   const [focusedNodeDetails, setFocusedNodeDetails] = useState<NodeDetailsResponse | null>(null);
   const focusRequestRef = useRef(0);
+  const [searchGraphData, setSearchGraphData] = useState<Subgraph | null>(null);
+  const [searchGraphCenterId, setSearchGraphCenterId] = useState<string | null>(null);
 
   const nodeLimit = useMemo(() => {
     const parsed = Number.parseInt(nodeLimitInput, 10);
@@ -561,6 +563,43 @@ export function KnowledgePage() {
     setFocusCenterNodeId(null);
     setFocusGraphError(null);
     setFocusGraphLoading(false);
+    setSearchGraphCenterId(null);
+    setSearchGraphData(null);
+  };
+
+  const handleGraphSearchResponse = (response: GraphSearchResponse | null) => {
+    if (!response || response.nodes.length === 0) {
+      setSearchGraphData(null);
+      setSearchGraphCenterId(null);
+      if (!graphSearchSelection) {
+        setFocusedNodeDetails(null);
+        setFocusGraph(null);
+        setFocusCenterNodeId(null);
+      }
+
+      return;
+    }
+
+    const nodes: GraphNode[] = response.nodes.map((node) => ({
+      id: node.id ?? node.entity_id,
+      entity_id: node.entity_id,
+      entity_type: node.entity_type,
+      name: node.name,
+      description: node.description,
+      properties: (node.properties as Record<string, unknown>) ?? {},
+    }));
+    const links: GraphLink[] = (response.links ?? []).map((link) => ({
+      id: link.id ?? link.relationship_id,
+      relationship_id: link.relationship_id,
+      source: link.source,
+      target: link.target,
+      relationship_type: link.relationship_type,
+      strength: link.strength ?? 0.5,
+      properties: link.properties ?? {},
+    }));
+
+    setSearchGraphData({ nodes, links });
+    setSearchGraphCenterId(nodes[0]?.id ?? null);
   };
 
   const focusGraphOnEntity = async (entityId: string) => {
@@ -601,21 +640,28 @@ export function KnowledgePage() {
     }
   };
 
-  const searchViewActive =
+  const focusViewActive =
     graphSearchSelection !== null ||
     focusGraphLoading ||
     focusGraphError !== null ||
     focusedNodeDetails !== null;
-  const graphDataSource = searchViewActive ? focusGraph : filteredGraph;
-  const graphCenterId = searchViewActive ? focusCenterNodeId : userEntityId;
-  const graphIsLoading = searchViewActive ? focusGraphLoading : graphLoading;
-  const graphErrorMessage = searchViewActive ? focusGraphError : graphError;
+  const graphDataSource = focusViewActive ? (focusGraph ?? null) : (searchGraphData ?? filteredGraph);
+  const graphCenterId = focusViewActive
+    ? focusCenterNodeId
+    : searchGraphData
+      ? searchGraphCenterId
+      : userEntityId;
+  const graphIsLoading = focusViewActive ? focusGraphLoading : graphLoading;
+  const graphErrorMessage = focusViewActive ? focusGraphError : graphError;
+  const searchViewActive = focusViewActive || !!searchGraphData;
 
   const graphContextDescription = focusedNodeDetails
     ? `Connections around ${focusedNodeDetails.node.name ?? focusedNodeDetails.node.entityType}`
-    : currentUser
-      ? `Connections around ${currentUser.name}`
-      : 'Connections around your profile';
+    : searchGraphData
+      ? 'Search results'
+      : currentUser
+        ? `Connections around ${currentUser.name}`
+        : 'Connections around your profile';
 
   const graphSummary = useMemo<GraphSummary>(() => {
     const fallback: GraphSummary = { nodeCount: 0, linkCount: 0, topTypes: [] };
@@ -685,6 +731,7 @@ export function KnowledgePage() {
               onClear={handleGraphSearchClear}
               disabled={focusGraphLoading}
               localOptions={localEntities}
+              onRemoteResponse={handleGraphSearchResponse}
             />
             {focusGraphLoading && <p className="text-xs text-muted-foreground">Loading node neighborhood…</p>}
             {focusGraphError && <p className="text-xs text-red-600">{focusGraphError}</p>}
