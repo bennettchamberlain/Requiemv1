@@ -670,6 +670,32 @@ export function KnowledgePage() {
       </Portal.Slot>
 
       <PageContent>
+        <Card className="mb-4">
+          <Card.Header>
+            <Card.Title>Find a node</Card.Title>
+            <Card.Description>Select any entity to focus the graph on its relationships.</Card.Description>
+          </Card.Header>
+          <Card.Content className="space-y-3">
+            <EntitySearchInput
+              label="Search nodes"
+              placeholder="Search entities…"
+              authToken={authToken}
+              selected={graphSearchSelection}
+              onSelect={handleGraphSearchSelect}
+              onClear={handleGraphSearchClear}
+              disabled={focusGraphLoading}
+              localOptions={localEntities}
+            />
+            {focusGraphLoading && <p className="text-xs text-muted-foreground">Loading node neighborhood…</p>}
+            {focusGraphError && <p className="text-xs text-red-600">{focusGraphError}</p>}
+            {graphSearchSelection && !focusGraphLoading && !focusGraphError && (
+              <p className="text-xs text-muted-foreground">
+                Showing connections for {graphSearchSelection.name ?? graphSearchSelection.entityType}.
+              </p>
+            )}
+          </Card.Content>
+        </Card>
+
         <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
           <Card className="lg:col-span-2 overflow-hidden">
             <Card.Header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -812,42 +838,6 @@ export function KnowledgePage() {
                     </Button>
                   ))}
               </div>
-            </div>
-
-            <div className="space-y-2 border-t pt-4">
-              <div className="flex items-center justify-between">
-                <p className="text-xs uppercase text-muted-foreground">Jump to node</p>
-                {graphSearchSelection && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleGraphSearchClear}
-                    disabled={focusGraphLoading}
-                  >
-                    Clear
-                  </Button>
-                )}
-              </div>
-              <EntitySearchInput
-                label="Search nodes"
-                placeholder="Search entities…"
-                authToken={authToken}
-                selected={graphSearchSelection}
-                onSelect={handleGraphSearchSelect}
-                onClear={handleGraphSearchClear}
-                disabled={focusGraphLoading}
-                localOptions={localEntities}
-              />
-              {focusGraphLoading && (
-                <p className="text-xs text-muted-foreground">Loading node neighborhood…</p>
-              )}
-              {focusGraphError && <p className="text-xs text-red-600">{focusGraphError}</p>}
-              {graphSearchSelection && !focusGraphLoading && !focusGraphError && (
-                <p className="text-xs text-muted-foreground">
-                  Showing connections for {graphSearchSelection.name ?? graphSearchSelection.entityType}.
-                </p>
-              )}
             </div>
           </Card.Content>
         </Card>

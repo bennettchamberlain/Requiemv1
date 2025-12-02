@@ -150,6 +150,31 @@ export class GraphUtilityService {
     }));
   }
 
+  async searchNodesByPrefix(
+    ownerUserId: string,
+    queryText: string,
+    options: { limit?: number } = {},
+  ): Promise<GraphNodeEntity[]> {
+    const limit = Math.min(options.limit ?? 10, 50);
+    if (!queryText.trim()) {
+      return [];
+    }
+
+    const like = `${queryText.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+
+    return this.entityRepo
+      .createQueryBuilder('entity')
+      .where('entity.owner_user_id = :ownerUserId', { ownerUserId })
+      .andWhere('entity.is_active = true')
+      .andWhere(
+        `(entity.name ILIKE :like OR entity.entity_type ILIKE :like OR entity.entity_id::text ILIKE :like)`,
+        { like },
+      )
+      .orderBy('entity.name', 'ASC')
+      .limit(limit)
+      .getMany();
+  }
+
   async createOrUpdateNode(
     ownerUserId: string,
     payload: {

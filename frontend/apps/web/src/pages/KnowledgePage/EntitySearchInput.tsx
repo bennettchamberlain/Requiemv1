@@ -35,7 +35,7 @@ interface EntitySearchInputProps {
   localOptions?: EntitySearchResult[];
 }
 
-const DEFAULT_MIN_QUERY = 2;
+const DEFAULT_MIN_QUERY = 1;
 
 export function EntitySearchInput({
   label,
@@ -264,7 +264,7 @@ export function EntitySearchInput({
       <p className="text-xs text-muted-foreground">
         {selected
           ? `Selected: ${displayLabel}`
-          : `Type at least ${minQueryLength} characters to search your nodes.`}
+          : `Type at least ${minQueryLength} character${minQueryLength === 1 ? '' : 's'} to search your nodes.`}
       </p>
     </div>
   );

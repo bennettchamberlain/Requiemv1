@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
 
+import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { GraphEventService } from '../services/GraphEventService';
 import { GraphQueryService } from '../services/GraphQueryService';
 import { UserContextService } from '../services/UserContextService';
@@ -351,8 +352,42 @@ export class GraphController {
     const ownerId = this.ensureUserId(ctx);
     const limit = query.limit ?? 10;
 
-    const matches = await this.graphQuery.searchNodesByText(ownerId, query.query, { limit });
-    const nodeIds = matches.map((match) => match.node.entity_id);
+    const trimmedQuery = query.query.trim();
+    if (!trimmedQuery) {
+      return { success: true, nodes: [] };
+    }
+
+    const textMatches = await this.graphQuery.searchNodesByText(ownerId, trimmedQuery, { limit });
+    const prefixMatches = await this.graphQuery.searchNodesByPrefix(ownerId, trimmedQuery, { limit });
+
+    const merged: Array<{ node: GraphNodeEntity; score: number | null }> = [];
+    const seen = new Set<string>();
+
+    for (const candidate of prefixMatches) {
+      if (seen.has(candidate.entity_id)) {
+        continue;
+      }
+
+      seen.add(candidate.entity_id);
+      merged.push({ node: candidate, score: null });
+      if (merged.length >= limit) {
+        break;
+      }
+    }
+
+    for (const candidate of textMatches) {
+      if (seen.has(candidate.node.entity_id)) {
+        continue;
+      }
+
+      seen.add(candidate.node.entity_id);
+      merged.push({ node: candidate.node, score: candidate.score });
+      if (merged.length >= limit) {
+        break;
+      }
+    }
+
+    const nodeIds = merged.map((match) => match.node.entity_id);
 
     if (nodeIds.length === 0) {
       return {
@@ -370,7 +405,7 @@ export class GraphController {
       (rel) => nodeIds.includes(rel.from_entity_id) && nodeIds.includes(rel.to_entity_id),
     );
 
-    const responseNodes = matches.map((match) => ({
+    const responseNodes = merged.map((match) => ({
       id: match.node.entity_id,
       entity_id: match.node.entity_id,
       entity_type: match.node.entity_type,

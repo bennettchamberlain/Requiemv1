@@ -106,6 +106,10 @@ export class GraphQueryService {
     }));
   }
 
+  searchNodesByPrefix(ownerId: string, query: string, options: { limit?: number } = {}) {
+    return this.graphUtility.searchNodesByPrefix(ownerId, query, options);
+  }
+
   collectEntitySnapshot(entityId: string, ownerId: string, options: { includeRelationships?: boolean } = {}) {
     return this.graphUtility.collectEntitySnapshot(entityId, ownerId, options);
   }
