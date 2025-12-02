@@ -95,9 +95,9 @@ export class DeviceEntity {
       privacy_settings: entity.privacy_settings,
       created_at: entity.created_at,
       updated_at: entity.updated_at,
-      user: entity.user == null ? undefined : entity.user
+      user: entity.user == null ? undefined : entity.user,
     };
   }
 }
 
-export type Device = Readonly<DeviceEntity>;;
+export type Device = Readonly<DeviceEntity>;

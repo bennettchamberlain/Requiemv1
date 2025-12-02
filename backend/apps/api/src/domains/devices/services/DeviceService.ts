@@ -7,8 +7,8 @@ import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common
 import { EventService } from '@ci/domains/events';
 
 import { DeviceEntity } from '../entities/DeviceEntity';
+import { DeviceCreatedEvent, DeviceUpdatedEvent, DeviceRemovedEvent } from '../events';
 import type { CreateDeviceDto, UpdateDeviceDto, Device } from '../types';
-import { DeviceCreatedEvent, DeviceUpdatedEvent, DeviceRemovedEvent } from "../events";
 
 @Injectable()
 export class DeviceService {
@@ -51,8 +51,8 @@ export class DeviceService {
         const result = await this.deviceRepository.save(device);
 
         await this.eventService.send(DeviceCreatedEvent, {
-          deviceId: result.device_id
-        })
+          deviceId: result.device_id,
+        });
 
         return DeviceEntity.toEgressType(result);
       }),
@@ -85,7 +85,7 @@ export class DeviceService {
         ...(context.userId !== SYSTEM_USER && {
           user_id: context.userId,
         }),
-      }
+      },
     });
 
     return results.map((entity) => DeviceEntity.toEgressType(entity));
@@ -179,7 +179,7 @@ export class DeviceService {
     }
 
     await this.eventService.send(DeviceUpdatedEvent, {
-      deviceId: deviceId
+      deviceId: deviceId,
     });
 
     return this.findById(context, deviceId);
@@ -209,10 +209,10 @@ export class DeviceService {
     });
 
     await this.eventService.send(DeviceRemovedEvent, {
-      deviceId: deviceId
+      deviceId: deviceId,
     });
 
-    return true
+    return true;
   }
 
   async setPrimary(context: UserServiceContext, deviceId: string): Promise<Device | null> {
