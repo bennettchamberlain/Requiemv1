@@ -34,6 +34,8 @@ export interface DatabaseSearchResults {
   executionTimeMs: number;
 }
 
+const ENTITY_RELATIONSHIP_SUMMARY_LIMIT = 5;
+
 // Internal query result types
 interface EntityQueryResult {
   id: string;
@@ -73,6 +75,35 @@ interface MessageQueryResult {
   thread_id: string;
   thread_title: string | null;
   score: string;
+}
+
+interface EntityRelationshipRow {
+  relationship_id: string;
+  relationship_type: string;
+  properties: Record<string, unknown> | null;
+  strength: string | null;
+  is_bidirectional: boolean;
+  entity_id: string;
+  other_entity_id: string;
+  direction: 'inbound' | 'outbound';
+}
+
+interface NeighborEntityRow {
+  entity_id: string;
+  entity_type: string;
+  name: string | null;
+}
+
+interface EntityRelationshipSummary {
+  relationshipId: string;
+  type: string;
+  direction: 'inbound' | 'outbound';
+  otherEntityId: string;
+  otherEntityName?: string | null;
+  otherEntityType?: string | null;
+  strength?: number;
+  isBidirectional: boolean;
+  properties: Record<string, unknown>;
 }
 
 @Injectable()
@@ -185,7 +216,7 @@ export class SearchService {
 
     const results = await this.dataSource.query(query, params);
 
-    return results.map((row: EntityQueryResult) => ({
+    const entities = results.map((row: EntityQueryResult) => ({
       id: row.id,
       type: 'entity' as const,
       score: parseFloat(row.score),
@@ -196,6 +227,12 @@ export class SearchService {
         entityType: row.entity_type,
       },
     }));
+
+    if (options.includeRelationships) {
+      await this.attachEntityRelationships(userId, entities, ENTITY_RELATIONSHIP_SUMMARY_LIMIT);
+    }
+
+    return entities;
   }
 
   private async semanticSearchFacts(
@@ -253,8 +290,7 @@ export class SearchService {
         1 - (dc.chunk_embedding <=> $1::vector) as score
       FROM document_chunks dc
       JOIN documents d ON d.document_id = dc.document_id
-      JOIN files f ON f.file_id = d.file_id
-      WHERE f.owner_user_id = $2
+      WHERE d.user_id = $2
         AND dc.chunk_embedding IS NOT NULL
       ORDER BY dc.chunk_embedding <=> $1::vector
       LIMIT $3
@@ -383,7 +419,7 @@ export class SearchService {
 
     const results = await this.dataSource.query(query, params);
 
-    return results.map((row: EntityQueryResult) => ({
+    const entities = results.map((row: EntityQueryResult) => ({
       id: row.id,
       type: 'entity' as const,
       score: parseFloat(row.score),
@@ -394,6 +430,12 @@ export class SearchService {
         entityType: row.entity_type,
       },
     }));
+
+    if (options.includeRelationships) {
+      await this.attachEntityRelationships(userId, entities, ENTITY_RELATIONSHIP_SUMMARY_LIMIT);
+    }
+
+    return entities;
   }
 
   private async keywordSearchFacts(
@@ -447,8 +489,7 @@ export class SearchService {
         ts_rank(dc.content_search_vector, websearch_to_tsquery('english', $1)) as score
       FROM document_chunks dc
       JOIN documents d ON d.document_id = dc.document_id
-      JOIN files f ON f.file_id = d.file_id
-      WHERE f.owner_user_id = $2
+      WHERE d.user_id = $2
         AND dc.content_search_vector @@ websearch_to_tsquery('english', $1)
       ORDER BY score DESC
       LIMIT $3
@@ -507,6 +548,121 @@ export class SearchService {
         createdAt: row.created_at,
       },
     }));
+  }
+
+  private async attachEntityRelationships(
+    userId: string,
+    entities: SearchResultItem[],
+    perEntityLimit: number,
+  ): Promise<void> {
+    if (!entities.length || perEntityLimit <= 0) {
+      return;
+    }
+
+    const entityIds = entities.map((entity) => entity.id);
+
+    const rows: EntityRelationshipRow[] = await this.dataSource.query(
+      `
+        WITH entity_relationships AS (
+          SELECT
+            rel.relationship_id,
+            rel.relationship_type,
+            rel.properties,
+            rel.strength,
+            rel.is_bidirectional,
+            rel.from_entity_id AS entity_id,
+            rel.to_entity_id AS other_entity_id,
+            'outbound'::text AS direction,
+            rel.updated_at
+          FROM relationships rel
+          WHERE rel.owner_user_id = $1
+            AND rel.is_active = TRUE
+            AND rel.from_entity_id = ANY($2::uuid[])
+          UNION ALL
+          SELECT
+            rel.relationship_id,
+            rel.relationship_type,
+            rel.properties,
+            rel.strength,
+            rel.is_bidirectional,
+            rel.to_entity_id AS entity_id,
+            rel.from_entity_id AS other_entity_id,
+            'inbound'::text AS direction,
+            rel.updated_at
+          FROM relationships rel
+          WHERE rel.owner_user_id = $1
+            AND rel.is_active = TRUE
+            AND rel.to_entity_id = ANY($2::uuid[])
+        )
+        SELECT relationship_id, relationship_type, properties, strength, is_bidirectional, entity_id, other_entity_id, direction
+        FROM (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY entity_id ORDER BY updated_at DESC) AS relation_rank
+          FROM entity_relationships
+        ) ranked
+        WHERE relation_rank <= $3
+      `,
+      [userId, entityIds, perEntityLimit],
+    );
+
+    if (!rows.length) {
+      return;
+    }
+
+    const relationshipMap = new Map<string, EntityRelationshipSummary[]>();
+    const neighborIds = new Set<string>();
+
+    rows.forEach((row) => {
+      const summary: EntityRelationshipSummary = {
+        relationshipId: row.relationship_id,
+        type: row.relationship_type,
+        direction: row.direction,
+        otherEntityId: row.other_entity_id,
+        strength: row.strength !== null ? parseFloat(row.strength) : undefined,
+        isBidirectional: row.is_bidirectional,
+        properties: row.properties || {},
+      };
+
+      neighborIds.add(row.other_entity_id);
+
+      const bucket = relationshipMap.get(row.entity_id) || [];
+      bucket.push(summary);
+      relationshipMap.set(row.entity_id, bucket);
+    });
+
+    if (neighborIds.size > 0) {
+      const neighborRows: NeighborEntityRow[] = await this.dataSource.query(
+        `
+          SELECT entity_id, entity_type, name
+          FROM entities
+          WHERE entity_id = ANY($1::uuid[])
+        `,
+        [Array.from(neighborIds)],
+      );
+
+      const neighborMap = new Map<string, NeighborEntityRow>(
+        neighborRows.map((neighbor) => [neighbor.entity_id, neighbor]),
+      );
+
+      relationshipMap.forEach((bucket) => {
+        bucket.forEach((relationship) => {
+          const neighbor = neighborMap.get(relationship.otherEntityId);
+          if (neighbor) {
+            relationship.otherEntityType = neighbor.entity_type;
+            relationship.otherEntityName = neighbor.name;
+          }
+        });
+      });
+    }
+
+    entities.forEach((entity) => {
+      const relationships = relationshipMap.get(entity.id);
+      if (relationships?.length) {
+        entity.metadata = {
+          ...(entity.metadata || {}),
+          relationships,
+        };
+      }
+    });
   }
 
   private async hybridSearch(
