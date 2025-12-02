@@ -311,6 +311,12 @@ If there is no data to summarize, return an empty JSON object."""
         structured_summary: Optional[Dict[str, Any]],
         fallback_text: str,
     ) -> Dict[str, Any]:
+        if isinstance(structured_summary, str):
+            try:
+                structured_summary = json.loads(structured_summary)
+            except json.JSONDecodeError:
+                structured_summary = None
+
         if structured_summary:
             return self._parse_structured_summary(structured_summary)
         return self._parse_summary_response(fallback_text)
@@ -610,6 +616,7 @@ Deliver a concise, reflective narrative.""",
         timezone: str,
         daily_summaries: List[Dict[str, Any]],
         max_chars: int,
+        previous_dossier: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         if not daily_summaries:
             logger.info("dossier_generation_skipped_no_summaries", user_id=user_id)
@@ -623,18 +630,20 @@ Deliver a concise, reflective narrative.""",
             lookback_end=lookback_end,
             timezone=timezone,
             daily_summaries=daily_summaries,
+            previous_dossier=previous_dossier,
         )
 
         messages = [
             {
                 "role": "system",
-                "content": """You are drafting a concise user dossier for another AI assistant. The dossier should summarize personality, conversational preferences, and best practices for interacting with the user. Keep the response factual, grounded in the supplied summaries, and under 4000 characters. Respond with valid JSON matching:
+                "content": """You are drafting a concise user dossier for another AI assistant. The dossier should summarize personality, conversational preferences, challenges, and best practices for interacting with the user. Keep the response factual, grounded in the supplied summaries (and prior dossier if provided), and under 4000 characters. Prefer incremental updates: reuse existing guidance unless the new data clearly requires a change. Respond with valid JSON matching:
 {
   \"summary\": string,
   \"tone\": string | null,
   \"personalityTraits\": string[] | null,
   \"interactionGuidelines\": string[] | null,
-  \"preferences\": string[] | null
+  \"preferences\": string[] | null,
+  \"challenges\": string[] | null
 }
 Avoid markdown or additional prose.""",
             },
@@ -679,6 +688,7 @@ Avoid markdown or additional prose.""",
         lookback_end: datetime,
         timezone: str,
         daily_summaries: List[Dict[str, Any]],
+        previous_dossier: Optional[Dict[str, Any]],
     ) -> str:
         lines: List[str] = [
             f"User: {user_id}",
@@ -713,6 +723,26 @@ Avoid markdown or additional prose.""",
                 lines.append("  Insights:")
                 for insight in insights:
                     lines.append(f"    - {insight}")
+
+        if previous_dossier:
+            lines.append("")
+            lines.append("Previous Dossier Snapshot (use as baseline):")
+            prev_summary = self._coerce_optional_string(previous_dossier.get('summary'))
+            if prev_summary:
+                lines.append(f"- Summary: {prev_summary}")
+            prev_tone = self._coerce_optional_string(previous_dossier.get('tone'))
+            if prev_tone:
+                lines.append(f"- Tone: {prev_tone}")
+
+            for label, raw_values in (
+                ("Personality Traits", previous_dossier.get('personalityTraits')),
+                ("Interaction Guidelines", previous_dossier.get('interactionGuidelines')),
+                ("Preferences", previous_dossier.get('preferences')),
+                ("Challenges", previous_dossier.get('challenges')),
+            ):
+                normalized_values = self._normalize_string_list(raw_values, limit=5)
+                if normalized_values:
+                    lines.append(f"- {label}: {', '.join(normalized_values[:5])}")
 
         return "\n".join(lines)
 
@@ -771,6 +801,7 @@ Avoid markdown or additional prose.""",
             'personalityTraits': self._normalize_string_list(payload.get('personalityTraits')),
             'interactionGuidelines': self._normalize_string_list(payload.get('interactionGuidelines'), item_limit=300),
             'preferences': self._normalize_string_list(payload.get('preferences')),
+            'challenges': self._normalize_string_list(payload.get('challenges'), item_limit=300),
             'metadata': payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
             'lastUpdatedAt': self._coerce_optional_string(payload.get('lastUpdatedAt')) or datetime.utcnow().isoformat(),
             'version': payload.get('version', 1),
@@ -838,6 +869,7 @@ Avoid markdown or additional prose.""",
             'personalityTraits': traits,
             'interactionGuidelines': guidelines,
             'preferences': None,
+            'challenges': None,
         }
 
     def _aggregate_counts(self, summaries: List[Dict[str, Any]]) -> Dict[str, int]:

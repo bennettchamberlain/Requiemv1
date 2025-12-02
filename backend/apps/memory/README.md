@@ -193,14 +193,14 @@ The manual trigger endpoint bypasses the queue system and executes the same summ
 - Backfilling summaries for specific periods
 - Development and local testing
 
-### Daily User Dossier Refresh
+### Hourly User Dossier Refresh
 
-The memory worker now produces a compact **user dossier** once per day. A scheduler job in the API enqueues a `memory.dossier.refresh` event shortly after the daily summary job, and the worker consumes it from the standard `memory-summaries` queue.
+The memory worker now produces a compact **user dossier** every hour. A scheduler job in the API enqueues a `memory.dossier.refresh` event shortly after the top of the hour, and the worker consumes it from the standard `memory-summaries` queue.
 
 - Configure refresh behavior with:
   - `DOSSIER_LOOKBACK_DAYS` (default `7`)
   - `DOSSIER_MAX_CHARS` (default `4000`)
-- The dossier is derived from the latest daily summaries and stored in the `entities.dossier` JSONB column.
+- The dossier is derived from the latest daily summaries plus the previously persisted dossier so that updates remain incremental. The result is stored in the `entities.dossier` JSONB column.
 - If no daily summaries exist for the window, the refresh is skipped.
 
 Manual trigger example:

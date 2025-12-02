@@ -291,6 +291,7 @@ interface SummaryGenerationPayload extends EventPayload {
 
 interface MemoryDossierRefreshPayload extends EventPayload {
   userId: string;
+  periodType?: 'dossier';
   periodStart: string;
   periodEnd: string;
   timezone?: string;

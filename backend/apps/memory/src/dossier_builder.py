@@ -28,6 +28,7 @@ class UserDossierBuilder:
         timezone: str,
         *,
         lookback_override: Optional[int] = None,
+        previous_dossier: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         lookback_days = max(1, lookback_override or self._lookback_days)
         window_end = period_end
@@ -51,6 +52,7 @@ class UserDossierBuilder:
             timezone=timezone,
             daily_summaries=context_payload,
             max_chars=self._max_chars,
+            previous_dossier=previous_dossier,
         )
 
         if not dossier:

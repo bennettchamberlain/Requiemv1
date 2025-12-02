@@ -520,17 +520,20 @@ class SummaryWorker:
         if isinstance(payload.get('lookbackDays'), int):
             lookback_override = payload['lookbackDays']
 
+        entity_id, previous_dossier = self._load_entity_and_dossier(user_id)
+
         dossier_payload = dossier_builder.build(
             user_id,
             end_time,
             timezone,
             lookback_override=lookback_override,
+            previous_dossier=previous_dossier,
         )
 
         if not dossier_payload:
             raise ValueError('Unable to build dossier – missing summary context')
 
-        entity_id = self._persist_user_dossier(user_id, dossier_payload)
+        entity_id = self._persist_user_dossier(user_id, dossier_payload, entity_id=entity_id)
 
         return {
             "entity_id": entity_id,
@@ -628,8 +631,14 @@ class SummaryWorker:
                 return text
         return text
 
-    def _persist_user_dossier(self, user_id: uuid.UUID, dossier_payload: Dict[str, Any]) -> str:
-        entity_id = self._resolve_user_entity_id(user_id)
+    def _persist_user_dossier(
+        self,
+        user_id: uuid.UUID,
+        dossier_payload: Dict[str, Any],
+        *,
+        entity_id: Optional[str] = None,
+    ) -> str:
+        entity_id = entity_id or self._resolve_user_entity_id(user_id)
         if not entity_id:
             raise ValueError(f"No entity found for user {user_id}")
 
@@ -647,6 +656,42 @@ class SummaryWorker:
         )
 
         return entity_id
+
+    def _load_entity_and_dossier(
+        self,
+        user_id: uuid.UUID,
+    ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+        entity_id = self._resolve_user_entity_id(user_id)
+        if not entity_id:
+            return None, None
+
+        dossier = self._fetch_entity_dossier(entity_id)
+        return entity_id, dossier
+
+    def _fetch_entity_dossier(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        records = db.execute_query(
+            """
+            SELECT dossier
+            FROM entities
+            WHERE entity_id = :entity_id
+            LIMIT 1
+            """,
+            {"entity_id": entity_id},
+        )
+
+        if not records:
+            return None
+
+        dossier = records[0].get('dossier')
+        if isinstance(dossier, dict):
+            return dossier
+        if isinstance(dossier, str) and dossier:
+            try:
+                return json.loads(dossier)
+            except json.JSONDecodeError:
+                logger.warning("invalid_dossier_json", entity_id=entity_id)
+                return None
+        return None
 
     def _resolve_user_entity_id(self, user_id: uuid.UUID) -> Optional[str]:
         records = db.execute_query(

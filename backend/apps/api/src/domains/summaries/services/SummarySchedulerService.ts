@@ -38,15 +38,15 @@ export class SummarySchedulerService {
     await this.enqueueSummaries('daily');
   }
 
-  @Cron('12 0 * * *', { timeZone: 'UTC' })
-  async enqueueDailyDossierRefresh(): Promise<void> {
+  @Cron('12 * * * *', { timeZone: 'UTC' })
+  async enqueueHourlyDossierRefresh(): Promise<void> {
     if (!config.features['scheduled.memory.summaries']) {
       this.logger.debug('Scheduled memory summaries are disabled', { periodType: 'dossier' });
 
       return;
     }
 
-    const window = this.calculateWindow('daily');
+    const window = this.calculateWindow('hourly');
     const users = await this.userRepository.find({
       select: ['id'],
       where: { onboarded: true },
@@ -59,6 +59,7 @@ export class SummarySchedulerService {
     }
 
     const payloadBase = {
+      periodType: 'dossier' as const,
       periodStart: window.start.toISOString(),
       periodEnd: window.end.toISOString(),
       timezone: this.timezone,

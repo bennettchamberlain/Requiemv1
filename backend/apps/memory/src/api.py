@@ -109,6 +109,28 @@ class ManualSummaryRequest(BaseModel):
     )
 
 
+class DossierRefreshRequest(BaseModel):
+    """Request payload for manual dossier refresh."""
+    user_id: str = Field(description="User UUID to refresh dossier for")
+    start_time: Optional[str] = Field(
+        default=None,
+        description="ISO start time for the window used during refresh (defaults to 1 hour before end_time)",
+    )
+    end_time: Optional[str] = Field(
+        default=None,
+        description="ISO end time for the refresh window (defaults to current time)",
+    )
+    timezone: str = Field(default="UTC", description="Timezone label for metadata")
+    lookback_days: Optional[int] = Field(
+        default=None,
+        description="Override for historical lookback when synthesizing the dossier",
+    )
+
+
+class DossierFetchRequest(BaseModel):
+    user_id: str = Field(description="User UUID to fetch dossier for")
+
+
 @app.post("/summary/manual-trigger")
 async def manual_trigger_summary(
     request: ManualSummaryRequest,
@@ -200,6 +222,64 @@ async def manual_trigger_summary(
             status_code=500,
             detail=f"Summary generation failed: {str(exc)}"
         ) from exc
+
+
+@app.post("/dossier/refresh")
+async def refresh_dossier(request: DossierRefreshRequest) -> Dict[str, Any]:
+    """Manually trigger dossier generation and persistence."""
+    try:
+        user_id = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id UUID: {exc}") from exc
+
+    end_time = _parse_iso(request.end_time) if request.end_time else datetime.utcnow()
+    if request.start_time:
+        start_time = _parse_iso(request.start_time)
+    else:
+        start_time = end_time - timedelta(hours=1)
+
+    try:
+        result = _execute_dossier_refresh(
+            user_id,
+            start_time,
+            end_time,
+            request.timezone,
+            lookback_override=request.lookback_days,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - surfaced to client
+        raise HTTPException(status_code=500, detail=f"Dossier refresh failed: {exc}") from exc
+
+    return {
+        "status": "success",
+        "message": "Dossier refreshed",
+        "result": result,
+        "time_range": {
+            "start": start_time.isoformat(),
+            "end": end_time.isoformat(),
+        },
+    }
+
+
+@app.post("/dossier/get")
+async def get_dossier(request: DossierFetchRequest) -> Dict[str, Any]:
+    """Fetch the latest persisted dossier for a user."""
+    try:
+        user_uuid = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id UUID: {exc}") from exc
+
+    entity_id, dossier = _load_entity_and_dossier(user_uuid)
+    if not entity_id:
+        raise HTTPException(status_code=404, detail="No entity found for user")
+    if not dossier:
+        raise HTTPException(status_code=404, detail="No dossier available for user")
+
+    return {
+        "entity_id": entity_id,
+        "dossier": dossier,
+    }
 
 
 @app.get("/summary/aggregate")
@@ -392,17 +472,20 @@ def _execute_dossier_refresh(
     *,
     lookback_override: Optional[int],
 ) -> Dict[str, Any]:
+    entity_id, previous_dossier = _load_entity_and_dossier(user_id)
+
     dossier_payload = dossier_builder.build(
         user_id,
         end_time,
         timezone,
         lookback_override=lookback_override,
+        previous_dossier=previous_dossier,
     )
 
     if not dossier_payload:
         raise ValueError('Unable to compose dossier from available summaries')
 
-    entity_id = _persist_user_dossier(user_id, dossier_payload)
+    entity_id = _persist_user_dossier(user_id, dossier_payload, entity_id=entity_id)
 
     return {
         "entity_id": entity_id,
@@ -412,8 +495,13 @@ def _execute_dossier_refresh(
     }
 
 
-def _persist_user_dossier(user_id: uuid.UUID, dossier_payload: Dict[str, Any]) -> str:
-    entity_id = _resolve_user_entity_id(user_id)
+def _persist_user_dossier(
+    user_id: uuid.UUID,
+    dossier_payload: Dict[str, Any],
+    *,
+    entity_id: Optional[str] = None,
+) -> str:
+    entity_id = entity_id or _resolve_user_entity_id(user_id)
     if not entity_id:
         raise ValueError(f"No graph entity found for user {user_id}")
 
@@ -431,6 +519,15 @@ def _persist_user_dossier(user_id: uuid.UUID, dossier_payload: Dict[str, Any]) -
     )
 
     return entity_id
+
+
+def _load_entity_and_dossier(user_id: uuid.UUID) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    entity_id = _resolve_user_entity_id(user_id)
+    if not entity_id:
+        return None, None
+
+    dossier = _fetch_entity_dossier(entity_id)
+    return entity_id, dossier
 
 
 def _resolve_user_entity_id(user_id: uuid.UUID) -> Optional[str]:
@@ -481,6 +578,31 @@ def _resolve_user_entity_id(user_id: uuid.UUID) -> Optional[str]:
         )
 
     return entity_id
+
+
+def _fetch_entity_dossier(entity_id: str) -> Optional[Dict[str, Any]]:
+    rows = db.execute_query(
+        """
+        SELECT dossier
+        FROM entities
+        WHERE entity_id = :entity_id
+        LIMIT 1
+        """,
+        {"entity_id": entity_id},
+    )
+
+    if not rows:
+        return None
+
+    data = rows[0].get('dossier')
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, str) and data:
+        try:
+            return json.loads(data)
+        except json.JSONDecodeError:
+            return None
+    return None
 
 
 def _derive_source_types(aggregated_data: Dict[str, Any]) -> list[str]:
