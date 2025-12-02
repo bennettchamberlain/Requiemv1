@@ -1,5 +1,6 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Param, Res, UseGuards } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
+import type { Response } from 'express';
 
 import { Context, Cron } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -29,6 +30,17 @@ export class QuestionsController {
   @Get()
   findAll(@Context() context: RequestContext) {
     return this.questionService.findAll(context);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('unanswered')
+  async findOneUnanswered(@Context() context: RequestContext, @Res() res: Response) {
+    const question = await this.questionService.findOneUnanswered(context);
+    if (!question) {
+      return res.status(HttpStatus.NO_CONTENT).send();
+    }
+
+    return res.status(HttpStatus.OK).json(question);
   }
 
   @UseGuards(JwtAuthGuard)

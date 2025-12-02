@@ -1,12 +1,12 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useRef, useEffect, type FormEvent } from 'react';
 
 import { Button, Dialog, Textarea, Spinner } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 
 interface Answer {
   id: string;
+  ragAnswer: string;
   answer: string;
-  ragAnswer?: string;
   user?: { id: string };
   question?: {
     id: string;
@@ -22,14 +22,15 @@ interface Props {
 }
 
 export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
-  const [answerText, setAnswerText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [charCount, setCharCount] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  // Update local state when answer changes
+  // Initialize character count when answer changes
   useEffect(() => {
     if (answer) {
-      setAnswerText(answer.answer || '');
+      setCharCount((answer.answer || '').length);
       setError(null);
     }
   }, [answer]);
@@ -39,7 +40,8 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
       return;
     }
 
-    setAnswerText('');
+    formRef.current?.reset();
+    setCharCount(0);
     setError(null);
     onClose?.();
   };
@@ -51,8 +53,18 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
       return;
     }
 
-    if (!answerText.trim()) {
+    const formData = new FormData(e.currentTarget);
+    const answerText = (formData.get('answer') as string) || '';
+    const trimmedText = answerText.trim();
+
+    if (!trimmedText) {
       setError('Answer text is required');
+
+      return;
+    }
+
+    if (trimmedText.length > 5000) {
+      setError('Answer text must be 5000 characters or less');
 
       return;
     }
@@ -61,7 +73,7 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
     setError(null);
 
     try {
-      await onSave(answer.id, answerText.trim());
+      await onSave(answer.id, trimmedText);
       handleClose();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update answer';
@@ -89,7 +101,7 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
           </div>
         </Dialog.Header>
 
-        <form onSubmit={handleSave} className="flex flex-col gap-4 p-4">
+        <form ref={formRef} onSubmit={handleSave} className="flex flex-col gap-4 p-4" key={answer.id}>
           {answer.question && (
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-1 block">Question</label>
@@ -103,20 +115,36 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
             </label>
             <Textarea
               id="answer-text"
-              value={answerText}
-              onChange={(e) => setAnswerText(e.target.value)}
+              name="answer"
+              defaultValue={answer.answer || ''}
+              onInput={(e) => {
+                setCharCount(e.currentTarget.value.length);
+                setError(null);
+              }}
               disabled={loading}
-              className="min-h-32"
+              className={`min-h-32 transition-all ${
+                error
+                  ? 'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20'
+                  : ''
+              }`}
               placeholder="Enter your answer..."
+              maxLength={5000}
             />
-            {error && <p className="text-sm text-destructive mt-1">{error}</p>}
+            <div className="flex items-center justify-between mt-1">
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <p
+                className={`text-xs ml-auto ${charCount > 5000 ? 'text-destructive' : 'text-muted-foreground'}`}
+              >
+                {charCount}/5000
+              </p>
+            </div>
           </div>
 
           <Dialog.Footer>
             <Button type="button" variant="secondary" onClick={handleClose} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading || !answerText.trim()}>
+            <Button type="submit" disabled={loading}>
               {loading ? <Spinner variant="circle" /> : null}
               Save
             </Button>
