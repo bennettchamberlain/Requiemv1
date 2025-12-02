@@ -9,6 +9,8 @@ import {
   UseGuards,
   ConflictException,
   NotFoundException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 
@@ -86,6 +88,7 @@ export class DeviceController {
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') deviceId: string): Promise<void> {
     const serviceContext = toServiceContext(context);
 
