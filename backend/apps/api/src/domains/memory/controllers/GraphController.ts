@@ -1,14 +1,24 @@
-import { Body, Controller, Get, NotFoundException, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
-import { EmbeddingService } from '@ci/domains/search';
 
+import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { GraphEventService } from '../services/GraphEventService';
 import { GraphQueryService } from '../services/GraphQueryService';
+import { GraphUtilityService } from '../services/GraphUtilityService';
 import { UserContextService } from '../services/UserContextService';
 
 const propertiesSchema = z.record(z.unknown());
@@ -120,6 +130,25 @@ const updateNodeSchema = z.object({
 });
 
 const deleteRelationshipSchema = z.object({ relationshipId: z.string() });
+
+const createNodeSchema = z.object({
+  entityType: z.string().min(1),
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  properties: optionalPropertiesSchema,
+  searchContent: z.string().optional(),
+});
+
+const createRelationshipSchema = z.object({
+  fromEntityId: z.string().uuid(),
+  toEntityId: z.string().uuid(),
+  relationshipType: z.string().min(1),
+  properties: optionalPropertiesSchema,
+  strength: z.number().min(0).max(1).optional(),
+  isBidirectional: z.boolean().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
 const getNodeDetailsSchema = z.object({ entityId: z.string() });
 const graphSearchSchema = z.object({
   query: z.string().min(1),
@@ -136,6 +165,8 @@ type AddConnectionDto = z.infer<typeof addConnectionSchema>;
 type DeleteNodeDto = z.infer<typeof deleteNodeSchema>;
 type UpdateNodeDto = z.infer<typeof updateNodeSchema>;
 type DeleteRelationshipDto = z.infer<typeof deleteRelationshipSchema>;
+type CreateNodeDto = z.infer<typeof createNodeSchema>;
+type CreateRelationshipDto = z.infer<typeof createRelationshipSchema>;
 type GetNodeDetailsDto = z.infer<typeof getNodeDetailsSchema>;
 type GraphSearchDto = z.infer<typeof graphSearchSchema>;
 
@@ -145,8 +176,8 @@ export class GraphController {
   constructor(
     private readonly graphEvents: GraphEventService,
     private readonly graphQuery: GraphQueryService,
+    private readonly graphUtility: GraphUtilityService,
     private readonly userContext: UserContextService,
-    private readonly embeddingService: EmbeddingService,
   ) {}
 
   private ensureUserId(ctx: RequestContext): string {
@@ -332,11 +363,42 @@ export class GraphController {
     const ownerId = this.ensureUserId(ctx);
     const limit = query.limit ?? 10;
 
-    const results = await this.embeddingService.findNearest(ctx, query.query, ['graph_node'], limit);
-    const nodeIds = results
-      .filter((result) => result.type === 'graph_node')
-      .map((result) => result.id)
-      .slice(0, limit);
+    const trimmedQuery = query.query.trim();
+    if (!trimmedQuery) {
+      return { success: true, nodes: [] };
+    }
+
+    const textMatches = await this.graphQuery.searchNodesByText(ownerId, trimmedQuery, { limit });
+    const prefixMatches = await this.graphQuery.searchNodesByPrefix(ownerId, trimmedQuery, { limit });
+
+    const merged: Array<{ node: GraphNodeEntity; score: number | null }> = [];
+    const seen = new Set<string>();
+
+    for (const candidate of prefixMatches) {
+      if (seen.has(candidate.entity_id)) {
+        continue;
+      }
+
+      seen.add(candidate.entity_id);
+      merged.push({ node: candidate, score: null });
+      if (merged.length >= limit) {
+        break;
+      }
+    }
+
+    for (const candidate of textMatches) {
+      if (seen.has(candidate.node.entity_id)) {
+        continue;
+      }
+
+      seen.add(candidate.node.entity_id);
+      merged.push({ node: candidate.node, score: candidate.score });
+      if (merged.length >= limit) {
+        break;
+      }
+    }
+
+    const nodeIds = merged.map((match) => match.node.entity_id);
 
     if (nodeIds.length === 0) {
       return {
@@ -344,10 +406,6 @@ export class GraphController {
         nodes: [],
       };
     }
-
-    const nodes = await this.graphQuery.getNodesByIds(ownerId, nodeIds);
-    const nodeMap = new Map(nodes.map((node) => [node.entity_id, node]));
-    const distanceMap = new Map(results.map((result) => [result.id, result.distance]));
 
     const relationships = await this.graphQuery.getRelationships(ownerId, {
       entityIds: nodeIds,
@@ -358,36 +416,15 @@ export class GraphController {
       (rel) => nodeIds.includes(rel.from_entity_id) && nodeIds.includes(rel.to_entity_id),
     );
 
-    const responseNodes = nodeIds
-      .map((id) => {
-        const node = nodeMap.get(id);
-        if (!node) {
-          return null;
-        }
-
-        return {
-          id: node.entity_id,
-          entity_id: node.entity_id,
-          entity_type: node.entity_type,
-          name: node.name,
-          description: node.description,
-          properties: node.properties ?? {},
-          score: distanceMap.get(id) ?? null,
-        };
-      })
-      .filter(
-        (
-          value,
-        ): value is {
-          id: string;
-          entity_id: string;
-          entity_type: string;
-          name: string | null;
-          description: string | null;
-          properties: Record<string, unknown>;
-          score: number | null;
-        } => value !== null,
-      );
+    const responseNodes = merged.map((match) => ({
+      id: match.node.entity_id,
+      entity_id: match.node.entity_id,
+      entity_type: match.node.entity_type,
+      name: match.node.name,
+      description: match.node.description,
+      properties: match.node.properties ?? {},
+      score: match.score,
+    }));
 
     return {
       success: true,
@@ -484,6 +521,48 @@ export class GraphController {
     };
   }
 
+  @Post('node')
+  async createNode(
+    @Context() ctx: RequestContext,
+    @Body(new ValidationPipe(createNodeSchema)) body: CreateNodeDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+    try {
+      const { node } = await this.graphUtility.createOrUpdateNode(ownerId, {
+        entityType: body.entityType,
+        name: body.name ?? null,
+        description: body.description ?? null,
+        properties: body.properties ?? {},
+        searchContent: body.searchContent ?? null,
+        mergeProperties: false,
+      });
+
+      await this.graphEvents.upsertNode(ownerId, {
+        entityId: node.entity_id,
+        entityType: node.entity_type,
+        name: node.name,
+        description: node.description,
+        properties: node.properties ?? {},
+        searchContent: node.search_content ?? null,
+        mergeProperties: false,
+      });
+
+      return {
+        success: true,
+        entityId: node.entity_id,
+        entity: {
+          entityId: node.entity_id,
+          entityType: node.entity_type,
+          name: node.name,
+          description: node.description,
+          properties: node.properties ?? {},
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Failed to create node');
+    }
+  }
+
   @Post('node/update')
   async updateNode(
     @Context() ctx: RequestContext,
@@ -499,6 +578,30 @@ export class GraphController {
     return {
       success: true,
       node: updated,
+    };
+  }
+
+  @Post('relationship')
+  async createRelationship(
+    @Context() ctx: RequestContext,
+    @Body(new ValidationPipe(createRelationshipSchema)) body: CreateRelationshipDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+    const { relationshipId } = await this.graphEvents.upsertRelationship(ownerId, {
+      fromEntityId: body.fromEntityId,
+      toEntityId: body.toEntityId,
+      relationshipType: body.relationshipType,
+      properties: body.properties ?? {},
+      strength: body.strength,
+      isBidirectional: body.isBidirectional,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      mergeProperties: false,
+    });
+
+    return {
+      success: true,
+      relationshipId,
     };
   }
 

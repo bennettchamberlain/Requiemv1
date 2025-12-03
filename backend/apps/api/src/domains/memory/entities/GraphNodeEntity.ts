@@ -33,6 +33,9 @@ export class GraphNodeEntity {
   @Column({ type: 'text', nullable: true })
   search_content!: string | null;
 
+  @Column({ type: 'tsvector', nullable: true, select: false })
+  search_vector?: string | null;
+
   @Column({ type: 'text', nullable: true })
   linked_table!: string | null;
 

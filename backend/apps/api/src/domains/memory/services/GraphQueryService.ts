@@ -93,6 +93,23 @@ export class GraphQueryService {
     return this.graphUtility.findConnectedEntities(entityId, relationshipTypes, direction, ownerId);
   }
 
+  async searchNodesByText(
+    ownerId: string,
+    query: string,
+    options: { limit?: number } = {},
+  ): Promise<Array<{ node: GraphNodeEntity; score: number }>> {
+    const results = await this.graphUtility.searchNodesByText(ownerId, query, options);
+
+    return results.map((result) => ({
+      node: result.node,
+      score: result.rank,
+    }));
+  }
+
+  searchNodesByPrefix(ownerId: string, query: string, options: { limit?: number } = {}) {
+    return this.graphUtility.searchNodesByPrefix(ownerId, query, options);
+  }
+
   collectEntitySnapshot(entityId: string, ownerId: string, options: { includeRelationships?: boolean } = {}) {
     return this.graphUtility.collectEntitySnapshot(entityId, ownerId, options);
   }

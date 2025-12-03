@@ -1,14 +1,35 @@
-import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Portal, fetchJson, usePageTitle } from '@ci/common';
-import { Badge, Breadcrumb, Button, Card, Drawer, Input, Skeleton, Textarea } from '@ci/shadcn';
+import {
+  Badge,
+  Breadcrumb,
+  Button,
+  Card,
+  Checkbox,
+  Dialog,
+  Drawer,
+  DropdownMenu,
+  Input,
+  Label,
+  Select,
+  Skeleton,
+  Textarea,
+} from '@ci/shadcn';
+import { Plus } from '@ci/shadcn/icons';
 
 import { useGraphOverview } from '@/api/useGraphOverview';
+import type { GraphLink, GraphNode, Subgraph } from '@/api/useGraphOverview';
 import { ForceGraph } from '@/components/ForceGraph';
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
 
-import { useNodeDetails } from './use-node-details';
+import type { EntitySearchResult, GraphSearchResponse } from './EntitySearchInput';
+import { EntitySearchInput } from './EntitySearchInput';
+import { useNodeDetails, type NodeDetailsResponse } from './use-node-details';
+
+const BASE_ENTITY_TYPES = ['Concept', 'Event', 'Goal', 'Location', 'Object', 'Person'];
 
 type GraphSummary = {
   nodeCount: number;
@@ -22,10 +43,39 @@ type EditableProperty = {
   value: string;
 };
 
+type CreateNodeFormState = {
+  entityType: string;
+  name: string;
+  description: string;
+  properties: string;
+};
+
+type CreateNodeResponse = {
+  success: boolean;
+  entityId: string;
+  entity?: {
+    entityId: string;
+    entityType: string;
+    name: string | null;
+    description: string | null;
+    properties: Record<string, unknown>;
+  };
+};
+
+type RelationshipFormState = {
+  fromEntity: EntitySearchResult | null;
+  toEntity: EntitySearchResult | null;
+  relationshipType: string;
+  strength: string;
+  properties: string;
+  isBidirectional: boolean;
+};
+
 export function KnowledgePage() {
   usePageTitle('Knowledge - Companion Intelligence');
 
   const [{ user, loading: authLoading, error: authError, authToken }] = useAuth();
+  const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const {
     loading: graphLoading,
     error: graphError,
@@ -33,7 +83,7 @@ export function KnowledgePage() {
     userEntityId,
     quickStats,
     currentUser,
-  } = useGraphOverview(authToken);
+  } = useGraphOverview(authToken, { refreshKey: graphRefreshKey });
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -53,6 +103,48 @@ export function KnowledgePage() {
     data: nodeData,
   } = useNodeDetails(drawerOpen ? selectedNodeId : null, authToken, nodeRevision);
   const [relationshipFilter, setRelationshipFilter] = useState<string>('ALL');
+  const [createNodeOpen, setCreateNodeOpen] = useState(false);
+  const [creatingNode, setCreatingNode] = useState(false);
+  const [createNodeError, setCreateNodeError] = useState<string | null>(null);
+  const [createNodeSuccess, setCreateNodeSuccess] = useState<string | null>(null);
+  const [createNodeForm, setCreateNodeForm] = useState<CreateNodeFormState>({
+    entityType: BASE_ENTITY_TYPES[0] ?? '',
+    name: '',
+    description: '',
+    properties: '',
+  });
+  const [createRelationshipOpen, setCreateRelationshipOpen] = useState(false);
+  const [creatingRelationship, setCreatingRelationship] = useState(false);
+  const [createRelationshipError, setCreateRelationshipError] = useState<string | null>(null);
+  const [createRelationshipSuccess, setCreateRelationshipSuccess] = useState<string | null>(null);
+  const [relationshipForm, setRelationshipForm] = useState<RelationshipFormState>({
+    fromEntity: null,
+    toEntity: null,
+    relationshipType: '',
+    strength: '',
+    properties: '',
+    isBidirectional: false,
+  });
+  const [localEntities, setLocalEntities] = useState<EntitySearchResult[]>([]);
+  const [useCustomEntityType, setUseCustomEntityType] = useState(false);
+  const [graphSearchSelection, setGraphSearchSelection] = useState<EntitySearchResult | null>(null);
+  const [focusGraph, setFocusGraph] = useState<Subgraph | null>(null);
+  const [focusCenterNodeId, setFocusCenterNodeId] = useState<string | null>(null);
+  const [focusGraphLoading, setFocusGraphLoading] = useState(false);
+  const [focusGraphError, setFocusGraphError] = useState<string | null>(null);
+  const [focusedNodeDetails, setFocusedNodeDetails] = useState<NodeDetailsResponse | null>(null);
+  const focusRequestRef = useRef(0);
+  const [searchGraphData, setSearchGraphData] = useState<Subgraph | null>(null);
+  const [searchGraphCenterId, setSearchGraphCenterId] = useState<string | null>(null);
+
+  const nodeLimit = useMemo(() => {
+    const parsed = Number.parseInt(nodeLimitInput, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      return 10;
+    }
+
+    return Math.min(parsed, 100);
+  }, [nodeLimitInput]);
 
   useEffect(() => {
     if (!nodeData) {
@@ -84,6 +176,67 @@ export function KnowledgePage() {
     setSaveSuccess(null);
   }, [editableName, editableDescription, editableProperties]);
 
+  useEffect(() => {
+    if (!createNodeOpen) {
+      setCreateNodeForm({
+        entityType: BASE_ENTITY_TYPES[0] ?? '',
+        name: '',
+        description: '',
+        properties: '',
+      });
+      setCreateNodeError(null);
+      setCreateNodeSuccess(null);
+      setUseCustomEntityType(false);
+    }
+  }, [createNodeOpen]);
+
+  useEffect(() => {
+    if (!createRelationshipOpen) {
+      setRelationshipForm({
+        fromEntity: null,
+        toEntity: null,
+        relationshipType: '',
+        strength: '',
+        properties: '',
+        isBidirectional: false,
+      });
+      setCreateRelationshipError(null);
+      setCreateRelationshipSuccess(null);
+    }
+  }, [createRelationshipOpen]);
+
+  useEffect(() => {
+    if (!subgraph) {
+      return;
+    }
+
+    const presentIds = new Set(subgraph.nodes.map((node) => node.id));
+    setLocalEntities((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+
+      const filtered = current.filter((entity) => !presentIds.has(entity.entityId));
+
+      return filtered.length === current.length ? current : filtered;
+    });
+  }, [subgraph]);
+
+  useEffect(() => {
+    if (!focusedNodeDetails) {
+      setFocusGraph(null);
+      if (!graphSearchSelection) {
+        setFocusCenterNodeId(null);
+      }
+
+      return;
+    }
+
+    const nextGraph = buildNeighborhoodGraph(focusedNodeDetails, nodeLimit);
+    setFocusGraph(nextGraph);
+    setFocusCenterNodeId(focusedNodeDetails.node.entityId);
+  }, [focusedNodeDetails, nodeLimit, graphSearchSelection]);
+
   const handleNodeSelect = (nodeId: string) => {
     setSelectedNodeId(nodeId);
     setDrawerOpen(true);
@@ -104,14 +257,11 @@ export function KnowledgePage() {
     return types;
   }, [subgraph]);
 
-  const nodeLimit = useMemo(() => {
-    const parsed = Number.parseInt(nodeLimitInput, 10);
-    if (Number.isNaN(parsed) || parsed <= 0) {
-      return 10;
-    }
+  const entityTypeOptions = useMemo(() => {
+    const dynamicTypes = Array.from(availableTypes).filter((type): type is string => Boolean(type));
 
-    return Math.min(parsed, 100);
-  }, [nodeLimitInput]);
+    return Array.from(new Set([...BASE_ENTITY_TYPES, ...dynamicTypes])).sort((a, b) => a.localeCompare(b));
+  }, [availableTypes]);
 
   const filteredGraph = useMemo(() => {
     if (!subgraph || !userEntityId) {
@@ -244,15 +394,342 @@ export function KnowledgePage() {
     ]);
   };
 
+  const updateCreateNodeForm = (field: keyof CreateNodeFormState, value: string) => {
+    setCreateNodeForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateRelationshipForm = <K extends keyof RelationshipFormState>(
+    field: K,
+    value: RelationshipFormState[K],
+  ) => {
+    setRelationshipForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreateNodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateNodeError(null);
+    setCreateNodeSuccess(null);
+
+    const entityType = createNodeForm.entityType.trim();
+    if (!entityType) {
+      setCreateNodeError('Entity type is required');
+
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      entityType,
+    };
+
+    const name = createNodeForm.name.trim();
+    if (name) {
+      payload.name = name;
+    }
+
+    const description = createNodeForm.description.trim();
+    if (description) {
+      payload.description = description;
+    }
+
+    try {
+      const properties = parseJsonObjectInput(createNodeForm.properties);
+      if (properties) {
+        payload.properties = properties;
+      }
+    } catch (error) {
+      setCreateNodeError(error instanceof Error ? error.message : 'Invalid properties JSON');
+
+      return;
+    }
+
+    setCreatingNode(true);
+    try {
+      const response = await fetchJson<CreateNodeResponse>('/api/graph/node', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const createdEntity:
+        | CreateNodeResponse['entity']
+        | {
+            entityId: string;
+            entityType: string;
+            name: string | null;
+            description: string | null;
+            properties: Record<string, unknown>;
+          }
+        | undefined = response.entity ?? {
+        entityId: response.entityId,
+        entityType,
+        name: name || null,
+        description: description || null,
+        properties: (payload.properties as Record<string, unknown>) ?? {},
+      };
+
+      setCreateNodeSuccess('Node created. Updating graph…');
+      setCreateNodeForm({
+        entityType: BASE_ENTITY_TYPES[0] ?? '',
+        name: '',
+        description: '',
+        properties: '',
+      });
+      setGraphRefreshKey((prev) => prev + 1);
+      if (createdEntity) {
+        const pendingEntity: EntitySearchResult = {
+          entityId: createdEntity.entityId,
+          entityType: createdEntity.entityType,
+          name: createdEntity.name,
+          description: createdEntity.description,
+          isLocal: true,
+        };
+        setLocalEntities((current) => {
+          const filtered = current.filter((entry) => entry.entityId !== pendingEntity.entityId);
+
+          return [pendingEntity, ...filtered].slice(0, 10);
+        });
+      }
+    } catch (error) {
+      setCreateNodeError(error instanceof Error ? error.message : 'Unable to create node');
+    } finally {
+      setCreatingNode(false);
+    }
+  };
+
+  const handleCreateRelationshipSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateRelationshipError(null);
+    setCreateRelationshipSuccess(null);
+
+    if (!relationshipForm.fromEntity || !relationshipForm.toEntity) {
+      setCreateRelationshipError('Both nodes are required');
+
+      return;
+    }
+
+    if (relationshipForm.fromEntity.entityId === relationshipForm.toEntity.entityId) {
+      setCreateRelationshipError('Please choose two different nodes');
+
+      return;
+    }
+
+    const relationshipType = relationshipForm.relationshipType.trim();
+    if (!relationshipType) {
+      setCreateRelationshipError('Relationship type is required');
+
+      return;
+    }
+
+    let strengthValue: number | undefined;
+    const trimmedStrength = relationshipForm.strength.trim();
+    if (trimmedStrength) {
+      const parsed = Number.parseFloat(trimmedStrength);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 1) {
+        setCreateRelationshipError('Strength must be a number between 0 and 1');
+
+        return;
+      }
+
+      strengthValue = parsed;
+    }
+
+    const payload: Record<string, unknown> = {
+      fromEntityId: relationshipForm.fromEntity.entityId,
+      toEntityId: relationshipForm.toEntity.entityId,
+      relationshipType,
+    };
+
+    if (typeof strengthValue === 'number') {
+      payload.strength = strengthValue;
+    }
+
+    if (relationshipForm.isBidirectional) {
+      payload.isBidirectional = true;
+    }
+
+    try {
+      const properties = parseJsonObjectInput(relationshipForm.properties);
+      if (properties) {
+        payload.properties = properties;
+      }
+    } catch (error) {
+      setCreateRelationshipError(
+        error instanceof Error ? error.message : 'Relationship properties must be JSON',
+      );
+
+      return;
+    }
+
+    setCreatingRelationship(true);
+    try {
+      await fetchJson('/api/graph/relationship', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      setCreateRelationshipSuccess('Relationship creation requested. Refreshing view…');
+      const involvesSelected = selectedNodeId
+        ? [relationshipForm.fromEntity.entityId, relationshipForm.toEntity.entityId].includes(selectedNodeId)
+        : false;
+      if (involvesSelected) {
+        setNodeRevision((prev) => prev + 1);
+      }
+
+      setGraphRefreshKey((prev) => prev + 1);
+      setRelationshipForm({
+        fromEntity: null,
+        toEntity: null,
+        relationshipType: '',
+        strength: '',
+        properties: '',
+        isBidirectional: false,
+      });
+    } catch (error) {
+      setCreateRelationshipError(error instanceof Error ? error.message : 'Unable to create relationship');
+    } finally {
+      setCreatingRelationship(false);
+    }
+  };
+
+  const handleGraphSearchSelect = (entity: EntitySearchResult) => {
+    setGraphSearchSelection(entity);
+    setSearchGraphData(null);
+    setSearchGraphCenterId(null);
+    focusGraphOnEntity(entity.entityId);
+  };
+
+  const handleGraphSearchClear = () => {
+    focusRequestRef.current += 1;
+    setGraphSearchSelection(null);
+    setFocusedNodeDetails(null);
+    setFocusGraph(null);
+    setFocusCenterNodeId(null);
+    setFocusGraphError(null);
+    setFocusGraphLoading(false);
+    setSearchGraphCenterId(null);
+    setSearchGraphData(null);
+  };
+
+  const handleGraphSearchResponse = (response: GraphSearchResponse | null) => {
+    if (!response || response.nodes.length === 0) {
+      setSearchGraphData(null);
+      setSearchGraphCenterId(null);
+      if (!graphSearchSelection) {
+        setFocusedNodeDetails(null);
+        setFocusGraph(null);
+        setFocusCenterNodeId(null);
+      }
+
+      return;
+    }
+
+    if (graphSearchSelection) {
+      return;
+    }
+
+    const nodes: GraphNode[] = response.nodes.map((node) => ({
+      id: node.id ?? node.entity_id,
+      entity_id: node.entity_id,
+      entity_type: node.entity_type,
+      name: node.name,
+      description: node.description,
+      properties: (node.properties as Record<string, unknown>) ?? {},
+    }));
+    const links: GraphLink[] = (response.links ?? []).map((link) => ({
+      id: link.id ?? link.relationship_id,
+      relationship_id: link.relationship_id,
+      source: link.source,
+      target: link.target,
+      relationship_type: link.relationship_type,
+      strength: link.strength ?? 0.5,
+      properties: link.properties ?? {},
+    }));
+
+    setSearchGraphData({ nodes, links });
+    setSearchGraphCenterId(nodes[0]?.id ?? null);
+  };
+
+  const focusGraphOnEntity = async (entityId: string) => {
+    const requestId = focusRequestRef.current + 1;
+    focusRequestRef.current = requestId;
+    setFocusGraphLoading(true);
+    setFocusGraphError(null);
+    setFocusedNodeDetails(null);
+    setFocusGraph(null);
+    setFocusCenterNodeId(entityId);
+    try {
+      const response = await fetchJson<NodeDetailsResponse>(
+        `/api/graph/node?entityId=${encodeURIComponent(entityId)}`,
+        {
+          credentials: 'include',
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+        },
+      );
+
+      if (focusRequestRef.current !== requestId) {
+        return;
+      }
+
+      setFocusedNodeDetails(response);
+      setFocusGraphError(null);
+    } catch (error) {
+      if (focusRequestRef.current !== requestId) {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : 'Unable to load node';
+      setFocusGraphError(message);
+      setFocusedNodeDetails(null);
+    } finally {
+      if (focusRequestRef.current === requestId) {
+        setFocusGraphLoading(false);
+      }
+    }
+  };
+
+  const focusViewActive =
+    graphSearchSelection !== null ||
+    focusGraphLoading ||
+    focusGraphError !== null ||
+    focusedNodeDetails !== null;
+  const graphDataSource = focusViewActive ? (focusGraph ?? null) : (searchGraphData ?? filteredGraph);
+  const graphCenterId = focusViewActive
+    ? focusCenterNodeId
+    : searchGraphData
+      ? searchGraphCenterId
+      : userEntityId;
+  const graphIsLoading = focusViewActive ? focusGraphLoading : graphLoading;
+  const graphErrorMessage = focusViewActive ? focusGraphError : graphError;
+  const searchViewActive = focusViewActive || !!searchGraphData;
+
+  const graphContextDescription = focusedNodeDetails
+    ? `Connections around ${focusedNodeDetails.node.name ?? focusedNodeDetails.node.entityType}`
+    : searchGraphData
+      ? 'Search results'
+      : currentUser
+        ? `Connections around ${currentUser.name}`
+        : 'Connections around your profile';
+
+  const isEntityTypeMissing = createNodeForm.entityType.trim() === '';
+
   const graphSummary = useMemo<GraphSummary>(() => {
     const fallback: GraphSummary = { nodeCount: 0, linkCount: 0, topTypes: [] };
 
-    if (!subgraph) {
+    if (!graphDataSource) {
       return fallback;
     }
 
     const typeCounts = new Map<string, number>();
-    for (const node of subgraph.nodes) {
+    for (const node of graphDataSource.nodes) {
       typeCounts.set(node.entity_type, (typeCounts.get(node.entity_type) ?? 0) + 1);
     }
 
@@ -262,11 +739,11 @@ export function KnowledgePage() {
       .map(([type, count]) => ({ type, count }));
 
     return {
-      nodeCount: subgraph.nodes.length,
-      linkCount: subgraph.links.length,
+      nodeCount: graphDataSource.nodes.length,
+      linkCount: graphDataSource.links.length,
       topTypes,
     };
-  }, [subgraph]);
+  }, [graphDataSource]);
 
   if (authLoading) {
     return <div className="p-6">Loading analytics…</div>;
@@ -297,30 +774,106 @@ export function KnowledgePage() {
       </Portal.Slot>
 
       <PageContent>
+        <Card className="mb-4">
+          <Card.Header>
+            <Card.Title>Find a node</Card.Title>
+            <Card.Description>Select any entity to focus the graph on its relationships.</Card.Description>
+          </Card.Header>
+          <Card.Content className="space-y-3">
+            <EntitySearchInput
+              label="Search nodes"
+              placeholder="Search entities…"
+              authToken={authToken}
+              selected={graphSearchSelection}
+              onSelect={handleGraphSearchSelect}
+              onClear={handleGraphSearchClear}
+              disabled={focusGraphLoading}
+              localOptions={localEntities}
+              onRemoteResponse={handleGraphSearchResponse}
+              resultLimit={nodeLimit}
+            />
+            {graphSearchSelection && (
+              <div className="text-right">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleGraphSearchClear}
+                  disabled={focusGraphLoading}
+                >
+                  Clear selection
+                </Button>
+              </div>
+            )}
+            {focusGraphLoading && <p className="text-xs text-muted-foreground">Loading node neighborhood…</p>}
+            {focusGraphError && <p className="text-xs text-red-600">{focusGraphError}</p>}
+            {graphSearchSelection && !focusGraphLoading && !focusGraphError && (
+              <p className="text-xs text-muted-foreground">
+                Showing connections for {graphSearchSelection.name ?? graphSearchSelection.entityType}.
+              </p>
+            )}
+          </Card.Content>
+        </Card>
+
         <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
           <Card className="lg:col-span-2 overflow-hidden">
-            <Card.Header>
-              <Card.Title className="flex items-center gap-2">Knowledge Graph</Card.Title>
-              <Card.Description>
-                {currentUser ? `Connections around ${currentUser.name}` : 'Connections around your profile'}
-              </Card.Description>
+            <Card.Header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <Card.Title className="flex items-center gap-2">Knowledge Graph</Card.Title>
+                <Card.Description>{graphContextDescription}</Card.Description>
+              </div>
+              <DropdownMenu modal={false}>
+                <DropdownMenu.Trigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    aria-label="Add to graph"
+                    className="self-start"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end" className="w-48 p-2" sideOffset={8}>
+                  <DropdownMenu.Item
+                    className="cursor-pointer rounded-md px-2 py-1.5 text-sm"
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setCreateNodeOpen(true);
+                    }}
+                  >
+                    Add node…
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="cursor-pointer rounded-md px-2 py-1.5 text-sm"
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setCreateRelationshipOpen(true);
+                    }}
+                  >
+                    Add relationship…
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu>
             </Card.Header>
             <Card.Content className="overflow-hidden">
-              {graphLoading ? (
+              {graphIsLoading ? (
                 <Skeleton className="h-[420px] w-full" />
-              ) : graphError ? (
-                <p className="text-sm text-red-600">{graphError}</p>
-              ) : filteredGraph && userEntityId ? (
+              ) : graphErrorMessage ? (
+                <p className="text-sm text-red-600">{graphErrorMessage}</p>
+              ) : graphDataSource && graphCenterId ? (
                 <div className="w-full overflow-hidden">
                   <ForceGraph
-                    nodes={filteredGraph.nodes}
-                    links={filteredGraph.links}
-                    highlightedNodeId={userEntityId}
-                    centerNodeId={userEntityId}
+                    nodes={graphDataSource.nodes}
+                    links={graphDataSource.links}
+                    highlightedNodeId={graphCenterId}
+                    centerNodeId={graphCenterId}
                     selectedNodeId={selectedNodeId}
                     onNodeSelect={handleNodeSelect}
                   />
                 </div>
+              ) : searchViewActive ? (
+                <p className="text-sm text-muted-foreground">Select a node to view its relationships.</p>
               ) : (
                 <p className="text-sm text-muted-foreground">No graph data available yet.</p>
               )}
@@ -678,8 +1231,296 @@ export function KnowledgePage() {
           </div>
         </Drawer.Content>
       </Drawer>
+
+      <Dialog open={createNodeOpen} onOpenChange={setCreateNodeOpen}>
+        <Dialog.Content className="sm:max-w-[520px]">
+          <form className="space-y-4" onSubmit={handleCreateNodeSubmit}>
+            <Dialog.Header>
+              <Dialog.Title>Add node</Dialog.Title>
+              <Dialog.Description>Create a new entity for your personal knowledge graph.</Dialog.Description>
+            </Dialog.Header>
+
+            {createNodeError && <p className="text-sm text-red-600">{createNodeError}</p>}
+            {createNodeSuccess && <p className="text-sm text-emerald-600">{createNodeSuccess}</p>}
+
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="new-node-type">Entity type</Label>
+                  {useCustomEntityType && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setUseCustomEntityType(false);
+                        updateCreateNodeForm('entityType', BASE_ENTITY_TYPES[0] ?? '');
+                      }}
+                      disabled={creatingNode}
+                    >
+                      Use preset
+                    </Button>
+                  )}
+                </div>
+                {useCustomEntityType ? (
+                  <Input
+                    id="new-node-type"
+                    placeholder="Custom entity type"
+                    value={createNodeForm.entityType}
+                    onChange={(event) => updateCreateNodeForm('entityType', event.target.value)}
+                    disabled={creatingNode}
+                  />
+                ) : (
+                  <Select
+                    value={createNodeForm.entityType || undefined}
+                    onValueChange={(value) => {
+                      if (value === '__custom') {
+                        setUseCustomEntityType(true);
+                        updateCreateNodeForm('entityType', '');
+
+                        return;
+                      }
+
+                      updateCreateNodeForm('entityType', value);
+                    }}
+                    disabled={creatingNode}
+                  >
+                    <Select.Trigger>
+                      <Select.Value placeholder="Select entity type" />
+                    </Select.Trigger>
+                    <Select.Content>
+                      {entityTypeOptions.map((type) => (
+                        <Select.Item key={type} value={type}>
+                          {type}
+                        </Select.Item>
+                      ))}
+                      <Select.Item value="__custom">Custom…</Select.Item>
+                    </Select.Content>
+                  </Select>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="new-node-name">Name</Label>
+                <Input
+                  id="new-node-name"
+                  placeholder="Optional display name"
+                  value={createNodeForm.name}
+                  onChange={(event) => updateCreateNodeForm('name', event.target.value)}
+                  disabled={creatingNode}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="new-node-description">Description</Label>
+                <Textarea
+                  id="new-node-description"
+                  rows={3}
+                  placeholder="Give additional context"
+                  value={createNodeForm.description}
+                  onChange={(event) => updateCreateNodeForm('description', event.target.value)}
+                  disabled={creatingNode}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="new-node-properties">Properties (JSON)</Label>
+                <Textarea
+                  id="new-node-properties"
+                  rows={4}
+                  placeholder='{"age": 32, "hobbies": ["skiing"]}'
+                  value={createNodeForm.properties}
+                  onChange={(event) => updateCreateNodeForm('properties', event.target.value)}
+                  disabled={creatingNode}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Provide a JSON object to seed the node&apos;s properties.
+                </p>
+              </div>
+            </div>
+
+            <Dialog.Footer>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setCreateNodeOpen(false)}
+                disabled={creatingNode}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingNode || isEntityTypeMissing}>
+                {creatingNode ? 'Creating…' : 'Create node'}
+              </Button>
+            </Dialog.Footer>
+          </form>
+        </Dialog.Content>
+      </Dialog>
+
+      <Dialog open={createRelationshipOpen} onOpenChange={setCreateRelationshipOpen}>
+        <Dialog.Content className="sm:max-w-[620px]">
+          <form className="space-y-4" onSubmit={handleCreateRelationshipSubmit}>
+            <Dialog.Header>
+              <Dialog.Title>Add relationship</Dialog.Title>
+              <Dialog.Description>Link any two entities with a typed relationship.</Dialog.Description>
+            </Dialog.Header>
+
+            {createRelationshipError && <p className="text-sm text-red-600">{createRelationshipError}</p>}
+            {createRelationshipSuccess && (
+              <p className="text-sm text-emerald-600">{createRelationshipSuccess}</p>
+            )}
+
+            <div className="space-y-4">
+              <EntitySearchInput
+                label="From node"
+                placeholder="Search by name"
+                authToken={authToken}
+                selected={relationshipForm.fromEntity}
+                onSelect={(entity) => updateRelationshipForm('fromEntity', entity)}
+                onClear={() => updateRelationshipForm('fromEntity', null)}
+                disabled={creatingRelationship}
+                localOptions={localEntities}
+              />
+
+              <EntitySearchInput
+                label="To node"
+                placeholder="Search by name"
+                authToken={authToken}
+                selected={relationshipForm.toEntity}
+                onSelect={(entity) => updateRelationshipForm('toEntity', entity)}
+                onClear={() => updateRelationshipForm('toEntity', null)}
+                disabled={creatingRelationship}
+                localOptions={localEntities}
+              />
+
+              <div>
+                <Label htmlFor="relationship-type">Relationship type</Label>
+                <Input
+                  id="relationship-type"
+                  placeholder="PREFERS, LIVES_IN, WORKS_WITH…"
+                  value={relationshipForm.relationshipType}
+                  onChange={(event) => updateRelationshipForm('relationshipType', event.target.value)}
+                  disabled={creatingRelationship}
+                  required
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="relationship-strength">Strength (0-1)</Label>
+                  <Input
+                    id="relationship-strength"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="1"
+                    placeholder="Optional"
+                    value={relationshipForm.strength}
+                    onChange={(event) => updateRelationshipForm('strength', event.target.value)}
+                    disabled={creatingRelationship}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={relationshipForm.isBidirectional}
+                    onCheckedChange={(value) => updateRelationshipForm('isBidirectional', Boolean(value))}
+                    disabled={creatingRelationship}
+                  />
+                  Treat as bidirectional
+                </label>
+              </div>
+
+              <div>
+                <Label htmlFor="relationship-properties">Properties (JSON)</Label>
+                <Textarea
+                  id="relationship-properties"
+                  rows={4}
+                  placeholder='{"context": "Met in college"}'
+                  value={relationshipForm.properties}
+                  onChange={(event) => updateRelationshipForm('properties', event.target.value)}
+                  disabled={creatingRelationship}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional JSON payload describing the relationship metadata.
+                </p>
+              </div>
+            </div>
+
+            <Dialog.Footer>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setCreateRelationshipOpen(false)}
+                disabled={creatingRelationship}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creatingRelationship}>
+                {creatingRelationship ? 'Linking…' : 'Create relationship'}
+              </Button>
+            </Dialog.Footer>
+          </form>
+        </Dialog.Content>
+      </Dialog>
     </>
   );
+}
+
+function buildNeighborhoodGraph(details: NodeDetailsResponse, nodeLimit: number): Subgraph {
+  const centerNode: GraphNode = {
+    id: details.node.entityId,
+    entity_id: details.node.entityId,
+    entity_type: details.node.entityType,
+    name: details.node.name,
+    description: details.node.description,
+    properties: details.node.properties ?? {},
+  };
+
+  const nodes: GraphNode[] = [centerNode];
+  const links: GraphLink[] = [];
+
+  const neighborSlots = Math.max(0, nodeLimit - 1);
+  if (neighborSlots > 0) {
+    const included = new Set<string>();
+    for (const rel of details.relationships) {
+      const other = rel.otherEntity;
+      if (!other) {
+        continue;
+      }
+
+      if (included.has(other.entityId)) {
+        continue;
+      }
+
+      included.add(other.entityId);
+      nodes.push({
+        id: other.entityId,
+        entity_id: other.entityId,
+        entity_type: other.entityType,
+        name: other.name,
+        description: other.description,
+        properties: other.properties ?? {},
+      });
+
+      const source = rel.direction === 'outbound' ? details.node.entityId : other.entityId;
+      const target = rel.direction === 'outbound' ? other.entityId : details.node.entityId;
+      links.push({
+        id: rel.relationshipId,
+        relationship_id: rel.relationshipId,
+        source,
+        target,
+        relationship_type: rel.relationshipType,
+        strength: rel.strength ?? 0.5,
+        properties: rel.properties ?? {},
+      });
+
+      if (included.size >= neighborSlots) {
+        break;
+      }
+    }
+  }
+
+  return { nodes, links };
 }
 
 function StatLine({ label, value }: { label: string; value: number | string }) {
@@ -730,6 +1571,24 @@ function parsePropertyValueForUpdate(value: string): unknown {
     return JSON.parse(trimmed);
   } catch {
     return value;
+  }
+}
+
+function parseJsonObjectInput(value: string): Record<string, unknown> | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Properties must be a JSON object');
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new Error('Properties must be a valid JSON object');
   }
 }
 
