@@ -5,7 +5,6 @@ CREATE TABLE users (
     name TEXT,
     email TEXT UNIQUE,
     password TEXT,
-    some_field TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
