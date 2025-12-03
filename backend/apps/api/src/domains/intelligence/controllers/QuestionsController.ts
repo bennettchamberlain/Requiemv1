@@ -1,18 +1,40 @@
-import { Controller, Get, HttpStatus, Param, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  HttpStatus,
+  Param,
+  Res,
+  UseGuards,
+  HttpCode,
+  NotFoundException,
+  Patch,
+  Delete,
+  Body,
+} from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 import type { Response } from 'express';
 
 import { Context, Cron } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
-import type { RequestContext } from '@ci/common/types';
+import { type RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import config from '@ci/configuration';
 import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
 import { OllamaService } from '@ci/domains/llm';
 import { EmbeddingService } from '@ci/domains/search';
 
+import { Question } from '../entities/QuestionEntity';
 import { AnswerService } from '../services/AnswerService';
 import { QuestionService } from '../services/QuestionService';
+import {
+  type CreateQuestionDto,
+  type UpdateQuestionDto,
+  createQuestionSchema,
+  updateQuestionSchema,
+} from '../types';
 
 @Controller('questions')
 export class QuestionsController {
@@ -27,15 +49,30 @@ export class QuestionsController {
   ) {}
 
   @UseGuards(JwtAuthGuard)
+  @Post()
+  async create(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(createQuestionSchema)) input: CreateQuestionDto,
+  ): Promise<Question> {
+    const serviceContext = toServiceContext(context);
+
+    return await this.questionService.create(serviceContext, input);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Context() context: RequestContext) {
-    return this.questionService.findAll(context);
+  findAll(@Context() context: RequestContext): Promise<Question[]> {
+    const serviceContext = toServiceContext(context);
+
+    return this.questionService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('unanswered')
   async findOneUnanswered(@Context() context: RequestContext, @Res() res: Response) {
-    const question = await this.questionService.findOneUnanswered(context);
+    const serviceContext = toServiceContext(context);
+
+    const question = await this.questionService.findOneUnanswered(serviceContext);
     if (!question) {
       return res.status(HttpStatus.NO_CONTENT).send();
     }
@@ -45,8 +82,47 @@ export class QuestionsController {
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.questionService.findOne(context, id);
+  findById(@Context() context: RequestContext, @Param('id') id: string): Promise<Question | null> {
+    const serviceContext = toServiceContext(context);
+
+    return this.questionService.findById(serviceContext, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async update(
+    @Context() context: RequestContext,
+    @Param('id') questionId: string,
+    @Body(new ValidationPipe(updateQuestionSchema)) data: UpdateQuestionDto,
+  ): Promise<Question | null> {
+    const serviceContext = toServiceContext(context);
+
+    const question = await this.questionService.update(serviceContext, questionId, data);
+
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    return question;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Context() context: RequestContext, @Param('id') questionId: string): Promise<void> {
+    const serviceContext = toServiceContext(context);
+
+    const question = await this.questionService.findById(serviceContext, questionId);
+
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    const removal = this.questionService.remove(serviceContext, questionId);
+
+    if (!removal) {
+      throw new NotFoundException();
+    }
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -80,7 +156,9 @@ export class QuestionsController {
       questionId: payload.questionId,
     });
 
-    const question = await this.questionService.findOne(context, payload.questionId);
+    const serviceContext = toServiceContext(context);
+
+    const question = await this.questionService.findById(serviceContext, payload.questionId);
 
     if (question) {
       const associatedAnswers = await this.embeddingService.findNearest(
@@ -91,7 +169,7 @@ export class QuestionsController {
       );
 
       const resolvedAnswers = await this.answerService.findSome(
-        context,
+        serviceContext,
         associatedAnswers.map((embedding) => embedding.id),
       );
 
@@ -156,13 +234,13 @@ export class QuestionsController {
         response: llmResponse.message.content,
       });
 
-      const userAnswer = await this.answerService.findByQuestionId(context, payload.questionId);
+      const userAnswer = await this.answerService.findByQuestionId(serviceContext, payload.questionId);
 
       if (userAnswer) {
         this.logger.log('Answer exists, updating existing with RAG response');
 
-        await this.answerService.update(context, userAnswer.id, {
-          answer_text: llmResponse.message.content,
+        await this.answerService.update(serviceContext, userAnswer.id, {
+          text: llmResponse.message.content,
         });
       } else {
         this.logger.log('Answer does not exist, creating a new one with a RAG response');

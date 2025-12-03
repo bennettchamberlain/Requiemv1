@@ -60,6 +60,3 @@ export { ActionEntity, AnswerEntity, QuestionEntity };
 
 // Services
 export { ActionService, AnswerService, QuestionService };
-
-// Types
-export type { Answer, Question } from './types';
