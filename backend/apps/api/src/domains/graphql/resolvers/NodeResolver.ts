@@ -1,9 +1,10 @@
-import { UseGuards } from '@nestjs/common';
+import { NotFoundException, UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { PersonService } from '@ci/domains/memory';
 
@@ -27,13 +28,16 @@ export class NodeResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<Node | null> {
+    const serviceContext = toServiceContext(context);
     const { type, id } = GlobalUID.decode(gid);
 
     switch (type) {
       case 'message': {
-        const message = await this.messageService.findOne(context, id);
+        const message = await this.messageService.findById(serviceContext, id);
 
-        // TODO: This should throw if message is null, but message will not be null as currently implemented
+        if (message == null) {
+          throw new NotFoundException('Message not found');
+        }
 
         return MessageType.fromEntity(message);
       }
@@ -42,16 +46,18 @@ export class NodeResolver {
         const person = await this.personService.findOne(context, id);
 
         if (person == null) {
-          throw new Error('Person not found');
+          throw new NotFoundException('Person not found');
         }
 
         return PersonType.fromEntity(person);
       }
 
       case 'thread': {
-        const thread = await this.threadService.findOne(context, id);
+        const thread = await this.threadService.findById(serviceContext, id);
 
-        // TODO: This should throw if thread is null, but thread will not be null as currently implemented
+        if (thread == null) {
+          throw new NotFoundException('Thread not found');
+        }
 
         return ThreadType.fromEntity(thread);
       }

@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, Inject, Post, Res, UseGuards, forwardRef } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  NotFoundException,
+  Post,
+  Res,
+  UseGuards,
+  forwardRef,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { ToolCall, Message as OllamaMessage } from 'ollama';
 import { z } from 'zod';
@@ -9,6 +20,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import config from '@ci/configuration';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';
@@ -63,6 +75,8 @@ export class OllamaController {
     @Body(new ValidationPipe(promptSchema)) input: PromptInput,
     @Res() res: Response,
   ) {
+    const serviceContext = toServiceContext(context);
+
     const { model: initialModel } = await this.ollamaService.resolveModel(context, {
       requestedModel: input.model,
     });
@@ -70,9 +84,15 @@ export class OllamaController {
     let thread: Thread;
 
     if (input.threadId != null) {
-      thread = await this.threadService.findOne(context, input.threadId);
+      const maybeThread = await this.threadService.findById(serviceContext, input.threadId);
+
+      if (maybeThread == null) {
+        throw new NotFoundException();
+      }
+
+      thread = maybeThread;
     } else {
-      thread = await this.threadService.create(context, {
+      thread = await this.threadService.create(serviceContext, {
         model: initialModel,
       });
 
@@ -83,7 +103,7 @@ export class OllamaController {
     }
 
     // Create a message for the user prompt
-    const promptMessage = await this.messageService.create(context, {
+    const promptMessage = await this.messageService.create(serviceContext, {
       model: initialModel,
       role: 'user',
       content: input.prompt,
@@ -93,7 +113,7 @@ export class OllamaController {
       fileIds: input.fileIds, // Link files to this message
     });
 
-    const messages = await this.messageService.findByThread(context, thread.id);
+    const messages = await this.messageService.findByThreadId(serviceContext, thread.id);
     const seededMessages = await this.ensureActionPrompt(context, thread, messages);
 
     // Build input messages with files attached to their respective messages
@@ -190,7 +210,7 @@ export class OllamaController {
       for (let i = 0; i < stream.messages.length; i++) {
         const message = stream.messages[i];
 
-        await this.messageService.create(context, {
+        await this.messageService.create(serviceContext, {
           model,
           role: message.role,
           content: message.content,
@@ -263,41 +283,44 @@ export class OllamaController {
 
   @OnEvent(Events.CHAT_SUMMARIZATION)
   async handleChatSummarizationEvent(payload: EventPayloads[Events.CHAT_SUMMARIZATION]) {
-    const context: RequestContext = {
+    const context = toServiceContext({
       userId: payload.ownerId,
-    };
-
-    const thread = await this.threadService.findOne(context, payload.threadId);
-    const messages = await this.messageService.findByThread(context, thread.id);
-
-    const messagesInput = [
-      {
-        role: 'system',
-        content:
-          'Please summarize all of the following messages I will send you in 10 words or less. Please ONLY give me your summary. Please do not use punctuation.',
-      },
-      ...messages
-        .filter((message) => message.role !== 'tool' && message.content)
-        .map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-    ];
-
-    const result = await this.ollamaService.chat(context, messagesInput, {
-      model: 'gemma3:1b',
     });
 
-    const summary = result.message.content;
+    const thread = await this.threadService.findById(context, payload.threadId);
 
-    await this.threadService.update(context, thread.id, {
-      name: summary,
-    });
+    if (thread) {
+      const messages = await this.messageService.findByThreadId(context, thread.id);
 
-    this.logger.log('Processed chat summarization event', {
-      payload,
-      summary: result.message.content,
-    });
+      const messagesInput = [
+        {
+          role: 'system',
+          content:
+            'Please summarize all of the following messages I will send you in 10 words or less. Please ONLY give me your summary. Please do not use punctuation.',
+        },
+        ...messages
+          .filter((message) => message.role !== 'tool' && message.content)
+          .map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+      ];
+
+      const result = await this.ollamaService.chat(context, messagesInput, {
+        model: 'gemma3:1b',
+      });
+
+      const summary = result.message.content;
+
+      await this.threadService.update(context, thread.id, {
+        name: summary,
+      });
+
+      this.logger.log('Processed chat summarization event', {
+        payload,
+        summary: result.message.content,
+      });
+    }
   }
 
   /**

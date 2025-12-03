@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import type { RequestContext } from '@ci/common/types';
+import type { UserServiceContext } from '@ci/common/types';
 import { MessageService, type Message } from '@ci/domains/conversations';
 
 import { Loader } from './Loader';
@@ -12,10 +12,10 @@ export class ThreadMessagesLoader extends Loader<Message[]> {
   }
 
   protected async batchLoad(
-    context: RequestContext,
+    context: UserServiceContext,
     threadIds: readonly string[],
   ): Promise<readonly Message[][]> {
-    const messagesMap = await this.messageService.findByThreads(context, [...threadIds]);
+    const messagesMap = await this.messageService.findByThreadIds(context, [...threadIds]);
 
     return threadIds.map((threadId) => messagesMap.get(threadId) ?? []);
   }

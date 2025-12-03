@@ -4,6 +4,7 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import { ThreadService } from '@ci/domains/conversations';
 import { PersonService } from '@ci/domains/memory';
 
@@ -23,12 +24,13 @@ export class SearchResolver {
   @Query(() => SearchConnection)
   async search(
     @Context() context: RequestContext,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     @Args('query', { type: () => String }) query: string,
   ): Promise<SearchConnection> {
-    console.log('Executing query', query);
+    const serviceContext = toServiceContext(context);
 
     const [threads, people] = await Promise.all([
-      this.threadService.findAll(context),
+      this.threadService.findAll(serviceContext),
       this.personService.findAll(context),
     ]);
 

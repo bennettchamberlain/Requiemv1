@@ -4,6 +4,7 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { OnboardingService } from '../services/OnboardingService';
 import { type OnboardingInput, OnboardingInputSchema } from '../types';
@@ -18,6 +19,8 @@ export class OnboardingController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(OnboardingInputSchema)) input: OnboardingInput,
   ) {
-    return this.onboardingService.onboard(context, input);
+    const serviceContext = toServiceContext(context);
+
+    return this.onboardingService.onboard(serviceContext, input);
   }
 }
