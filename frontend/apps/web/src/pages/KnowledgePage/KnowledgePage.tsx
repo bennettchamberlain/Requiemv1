@@ -13,6 +13,7 @@ import {
   DropdownMenu,
   Input,
   Label,
+  Select,
   Skeleton,
   Textarea,
 } from '@ci/shadcn';
@@ -27,6 +28,8 @@ import { useAuth } from '@/hooks';
 import type { EntitySearchResult, GraphSearchResponse } from './EntitySearchInput';
 import { EntitySearchInput } from './EntitySearchInput';
 import { useNodeDetails, type NodeDetailsResponse } from './use-node-details';
+
+const BASE_ENTITY_TYPES = ['Concept', 'Event', 'Goal', 'Location', 'Object', 'Person'];
 
 type GraphSummary = {
   nodeCount: number;
@@ -45,6 +48,18 @@ type CreateNodeFormState = {
   name: string;
   description: string;
   properties: string;
+};
+
+type CreateNodeResponse = {
+  success: boolean;
+  entityId: string;
+  entity?: {
+    entityId: string;
+    entityType: string;
+    name: string | null;
+    description: string | null;
+    properties: Record<string, unknown>;
+  };
 };
 
 type RelationshipFormState = {
@@ -93,7 +108,7 @@ export function KnowledgePage() {
   const [createNodeError, setCreateNodeError] = useState<string | null>(null);
   const [createNodeSuccess, setCreateNodeSuccess] = useState<string | null>(null);
   const [createNodeForm, setCreateNodeForm] = useState<CreateNodeFormState>({
-    entityType: '',
+    entityType: BASE_ENTITY_TYPES[0] ?? '',
     name: '',
     description: '',
     properties: '',
@@ -111,6 +126,7 @@ export function KnowledgePage() {
     isBidirectional: false,
   });
   const [localEntities, setLocalEntities] = useState<EntitySearchResult[]>([]);
+  const [useCustomEntityType, setUseCustomEntityType] = useState(false);
   const [graphSearchSelection, setGraphSearchSelection] = useState<EntitySearchResult | null>(null);
   const [focusGraph, setFocusGraph] = useState<Subgraph | null>(null);
   const [focusCenterNodeId, setFocusCenterNodeId] = useState<string | null>(null);
@@ -162,9 +178,15 @@ export function KnowledgePage() {
 
   useEffect(() => {
     if (!createNodeOpen) {
-      setCreateNodeForm({ entityType: '', name: '', description: '', properties: '' });
+      setCreateNodeForm({
+        entityType: BASE_ENTITY_TYPES[0] ?? '',
+        name: '',
+        description: '',
+        properties: '',
+      });
       setCreateNodeError(null);
       setCreateNodeSuccess(null);
+      setUseCustomEntityType(false);
     }
   }, [createNodeOpen]);
 
@@ -234,6 +256,12 @@ export function KnowledgePage() {
 
     return types;
   }, [subgraph]);
+
+  const entityTypeOptions = useMemo(() => {
+    const dynamicTypes = Array.from(availableTypes).filter((type): type is string => Boolean(type));
+
+    return Array.from(new Set([...BASE_ENTITY_TYPES, ...dynamicTypes])).sort((a, b) => a.localeCompare(b));
+  }, [availableTypes]);
 
   const filteredGraph = useMemo(() => {
     if (!subgraph || !userEntityId) {
@@ -416,7 +444,7 @@ export function KnowledgePage() {
 
     setCreatingNode(true);
     try {
-      const response = await fetchJson<{ success: boolean; entityId: string }>('/api/graph/node', {
+      const response = await fetchJson<CreateNodeResponse>('/api/graph/node', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -426,15 +454,37 @@ export function KnowledgePage() {
         body: JSON.stringify(payload),
       });
 
-      setCreateNodeSuccess('Node creation requested. The graph updates once processing completes.');
-      setCreateNodeForm({ entityType: '', name: '', description: '', properties: '' });
+      const createdEntity:
+        | CreateNodeResponse['entity']
+        | {
+            entityId: string;
+            entityType: string;
+            name: string | null;
+            description: string | null;
+            properties: Record<string, unknown>;
+          }
+        | undefined = response.entity ?? {
+        entityId: response.entityId,
+        entityType,
+        name: name || null,
+        description: description || null,
+        properties: (payload.properties as Record<string, unknown>) ?? {},
+      };
+
+      setCreateNodeSuccess('Node created. Updating graph…');
+      setCreateNodeForm({
+        entityType: BASE_ENTITY_TYPES[0] ?? '',
+        name: '',
+        description: '',
+        properties: '',
+      });
       setGraphRefreshKey((prev) => prev + 1);
-      if (response?.entityId) {
+      if (createdEntity) {
         const pendingEntity: EntitySearchResult = {
-          entityId: response.entityId,
-          entityType,
-          name: name || null,
-          description: description || null,
+          entityId: createdEntity.entityId,
+          entityType: createdEntity.entityType,
+          name: createdEntity.name,
+          description: createdEntity.description,
           isLocal: true,
         };
         setLocalEntities((current) => {
@@ -552,6 +602,8 @@ export function KnowledgePage() {
 
   const handleGraphSearchSelect = (entity: EntitySearchResult) => {
     setGraphSearchSelection(entity);
+    setSearchGraphData(null);
+    setSearchGraphCenterId(null);
     focusGraphOnEntity(entity.entityId);
   };
 
@@ -577,6 +629,10 @@ export function KnowledgePage() {
         setFocusCenterNodeId(null);
       }
 
+      return;
+    }
+
+    if (graphSearchSelection) {
       return;
     }
 
@@ -663,6 +719,8 @@ export function KnowledgePage() {
         ? `Connections around ${currentUser.name}`
         : 'Connections around your profile';
 
+  const isEntityTypeMissing = createNodeForm.entityType.trim() === '';
+
   const graphSummary = useMemo<GraphSummary>(() => {
     const fallback: GraphSummary = { nodeCount: 0, linkCount: 0, topTypes: [] };
 
@@ -732,7 +790,21 @@ export function KnowledgePage() {
               disabled={focusGraphLoading}
               localOptions={localEntities}
               onRemoteResponse={handleGraphSearchResponse}
+              resultLimit={nodeLimit}
             />
+            {graphSearchSelection && (
+              <div className="text-right">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleGraphSearchClear}
+                  disabled={focusGraphLoading}
+                >
+                  Clear selection
+                </Button>
+              </div>
+            )}
             {focusGraphLoading && <p className="text-xs text-muted-foreground">Loading node neighborhood…</p>}
             {focusGraphError && <p className="text-xs text-red-600">{focusGraphError}</p>}
             {graphSearchSelection && !focusGraphLoading && !focusGraphError && (
@@ -1172,16 +1244,60 @@ export function KnowledgePage() {
             {createNodeSuccess && <p className="text-sm text-emerald-600">{createNodeSuccess}</p>}
 
             <div className="space-y-3">
-              <div>
-                <Label htmlFor="new-node-type">Entity type</Label>
-                <Input
-                  id="new-node-type"
-                  placeholder="Person, Concept, Location…"
-                  value={createNodeForm.entityType}
-                  onChange={(event) => updateCreateNodeForm('entityType', event.target.value)}
-                  required
-                  disabled={creatingNode}
-                />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="new-node-type">Entity type</Label>
+                  {useCustomEntityType && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setUseCustomEntityType(false);
+                        updateCreateNodeForm('entityType', BASE_ENTITY_TYPES[0] ?? '');
+                      }}
+                      disabled={creatingNode}
+                    >
+                      Use preset
+                    </Button>
+                  )}
+                </div>
+                {useCustomEntityType ? (
+                  <Input
+                    id="new-node-type"
+                    placeholder="Custom entity type"
+                    value={createNodeForm.entityType}
+                    onChange={(event) => updateCreateNodeForm('entityType', event.target.value)}
+                    disabled={creatingNode}
+                  />
+                ) : (
+                  <Select
+                    value={createNodeForm.entityType || undefined}
+                    onValueChange={(value) => {
+                      if (value === '__custom') {
+                        setUseCustomEntityType(true);
+                        updateCreateNodeForm('entityType', '');
+
+                        return;
+                      }
+
+                      updateCreateNodeForm('entityType', value);
+                    }}
+                    disabled={creatingNode}
+                  >
+                    <Select.Trigger>
+                      <Select.Value placeholder="Select entity type" />
+                    </Select.Trigger>
+                    <Select.Content>
+                      {entityTypeOptions.map((type) => (
+                        <Select.Item key={type} value={type}>
+                          {type}
+                        </Select.Item>
+                      ))}
+                      <Select.Item value="__custom">Custom…</Select.Item>
+                    </Select.Content>
+                  </Select>
+                )}
               </div>
 
               <div>
@@ -1232,7 +1348,7 @@ export function KnowledgePage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={creatingNode}>
+              <Button type="submit" disabled={creatingNode || isEntityTypeMissing}>
                 {creatingNode ? 'Creating…' : 'Create node'}
               </Button>
             </Dialog.Footer>

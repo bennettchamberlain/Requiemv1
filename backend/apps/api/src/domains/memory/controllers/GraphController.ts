@@ -1,4 +1,13 @@
-import { Body, Controller, Get, NotFoundException, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -9,6 +18,7 @@ import { RequestContext } from '@ci/common/types';
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { GraphEventService } from '../services/GraphEventService';
 import { GraphQueryService } from '../services/GraphQueryService';
+import { GraphUtilityService } from '../services/GraphUtilityService';
 import { UserContextService } from '../services/UserContextService';
 
 const propertiesSchema = z.record(z.unknown());
@@ -166,6 +176,7 @@ export class GraphController {
   constructor(
     private readonly graphEvents: GraphEventService,
     private readonly graphQuery: GraphQueryService,
+    private readonly graphUtility: GraphUtilityService,
     private readonly userContext: UserContextService,
   ) {}
 
@@ -516,19 +527,40 @@ export class GraphController {
     @Body(new ValidationPipe(createNodeSchema)) body: CreateNodeDto,
   ) {
     const ownerId = this.ensureUserId(ctx);
-    const { entityId } = await this.graphEvents.upsertNode(ownerId, {
-      entityType: body.entityType,
-      name: body.name ?? null,
-      description: body.description ?? null,
-      properties: body.properties ?? {},
-      searchContent: body.searchContent ?? null,
-      mergeProperties: false,
-    });
+    try {
+      const { node } = await this.graphUtility.createOrUpdateNode(ownerId, {
+        entityType: body.entityType,
+        name: body.name ?? null,
+        description: body.description ?? null,
+        properties: body.properties ?? {},
+        searchContent: body.searchContent ?? null,
+        mergeProperties: false,
+      });
 
-    return {
-      success: true,
-      entityId,
-    };
+      await this.graphEvents.upsertNode(ownerId, {
+        entityId: node.entity_id,
+        entityType: node.entity_type,
+        name: node.name,
+        description: node.description,
+        properties: node.properties ?? {},
+        searchContent: node.search_content ?? null,
+        mergeProperties: false,
+      });
+
+      return {
+        success: true,
+        entityId: node.entity_id,
+        entity: {
+          entityId: node.entity_id,
+          entityType: node.entity_type,
+          name: node.name,
+          description: node.description,
+          properties: node.properties ?? {},
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Failed to create node');
+    }
   }
 
   @Post('node/update')

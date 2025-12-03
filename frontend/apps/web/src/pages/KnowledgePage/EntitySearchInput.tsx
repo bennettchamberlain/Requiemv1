@@ -44,6 +44,7 @@ interface EntitySearchInputProps {
   minQueryLength?: number;
   localOptions?: EntitySearchResult[];
   onRemoteResponse?(response: GraphSearchResponse | null): void;
+  resultLimit?: number;
 }
 
 const DEFAULT_MIN_QUERY = 1;
@@ -59,6 +60,7 @@ export function EntitySearchInput({
   minQueryLength = DEFAULT_MIN_QUERY,
   localOptions,
   onRemoteResponse,
+  resultLimit,
 }: EntitySearchInputProps) {
   const inputId = useId();
   const [query, setQuery] = useState('');
@@ -91,7 +93,7 @@ export function EntitySearchInput({
 
         const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
         const response = await fetchJson<GraphSearchResponse>(
-          `/api/graph/search?query=${encodeURIComponent(trimmedQuery)}`,
+          `/api/graph/search?query=${encodeURIComponent(trimmedQuery)}${resultLimit ? `&limit=${resultLimit}` : ''}`,
           {
             method: 'GET',
             headers,
@@ -141,7 +143,7 @@ export function EntitySearchInput({
       cancelled = true;
       controller.abort();
     };
-  }, [trimmedQuery, meetsLength, authToken, minQueryLength]);
+  }, [trimmedQuery, meetsLength, authToken, minQueryLength, resultLimit]);
 
   useEffect(() => {
     if (!meetsLength) {
