@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { RequestContext } from '@ci/common/types';
+import { UserServiceContext } from '@ci/common/types';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { GraphEventService, GraphQueryService } from '@ci/domains/memory';
@@ -75,42 +75,33 @@ export class OnboardingService {
     private readonly graphQuery: GraphQueryService,
   ) {}
 
-  async onboard(context: RequestContext, input: OnboardingInput) {
-    const userId = this.ensureUserId(context);
-    const user = await this.userService.findOne(userId);
+  async onboard(context: UserServiceContext, input: OnboardingInput) {
+    const user = await this.userService.findOne(context.userId);
 
     if (!user) {
       throw new NotFoundException();
     }
 
-    const userEntityId = await this.ensureUserEntity(userId, user.name, user.email);
+    const userEntityId = await this.ensureUserEntity(context.userId, user.name, user.email);
 
     if (!user.onboarded) {
       await this.bootstrapUserExperience(context);
     }
 
     await Promise.all([
-      this.captureFocusAreas(userId, userEntityId, input.focus_areas),
-      this.captureConnections(userId, userEntityId, input.people),
-      this.capturePreferences(userId, userEntityId, input),
+      this.captureFocusAreas(context.userId, userEntityId, input.focus_areas),
+      this.captureConnections(context.userId, userEntityId, input.people),
+      this.capturePreferences(context.userId, userEntityId, input),
       this.captureSurveyResponses(context, input),
     ]);
 
     if (!user.onboarded) {
-      await this.userService.onboard(userId);
+      await this.userService.onboard(context.userId);
     }
 
     return {
       onboarded: true,
     };
-  }
-
-  private ensureUserId(context: RequestContext): string {
-    if (!context.userId) {
-      throw new NotFoundException();
-    }
-
-    return context.userId;
   }
 
   private async ensureUserEntity(userId: string, name: string | null, email: string) {
@@ -277,7 +268,7 @@ export class OnboardingService {
     await Promise.all(tasks);
   }
 
-  private async captureSurveyResponses(context: RequestContext, input: OnboardingInput) {
+  private async captureSurveyResponses(context: UserServiceContext, input: OnboardingInput) {
     await Promise.all([
       this.createPreferenceAnswer(context, input.food_preference, {
         question: 'Choosing a food between pasta, burgers, salads, or tacos, which would be your favorite?',
@@ -297,7 +288,7 @@ export class OnboardingService {
   }
 
   private async createPreferenceAnswer(
-    context: RequestContext,
+    context: UserServiceContext,
     value: string | null,
     options: { question: string; subcategory: string },
   ) {
@@ -317,7 +308,7 @@ export class OnboardingService {
     });
   }
 
-  private async bootstrapUserExperience(context: RequestContext) {
+  private async bootstrapUserExperience(context: UserServiceContext) {
     const [mealThread, movieThread, activityThread] = await Promise.all([
       this.threadService.create(context, { name: 'Plan a meal' }),
       this.threadService.create(context, { name: 'Plan a movie' }),

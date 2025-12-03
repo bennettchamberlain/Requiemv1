@@ -1,9 +1,10 @@
-import { UseGuards } from '@nestjs/common';
+import { NotFoundException, UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, Parent, ResolveField, ID } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import { ThreadService } from '@ci/domains/conversations';
 
 import { ThreadMessagesLoader } from '../loaders/ThreadMessagesLoader';
@@ -30,7 +31,9 @@ export class ThreadResolver {
     @Context() context: RequestContext,
     @Args() pagination: PaginationArgs,
   ): Promise<ThreadConnection> {
-    const threads = await this.threadService.findAll(context);
+    const serviceContext = toServiceContext(context);
+
+    const threads = await this.threadService.findAll(serviceContext);
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(threads, {
       ...pagination,
@@ -58,9 +61,15 @@ export class ThreadResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) id: string,
   ): Promise<ThreadType> {
+    const serviceContext = toServiceContext(context);
+
     const threadId = GlobalUID.parse('thread', id);
 
-    const thread = await this.threadService.findOne(context, threadId);
+    const thread = await this.threadService.findById(serviceContext, threadId);
+
+    if (thread == null) {
+      throw new NotFoundException();
+    }
 
     return ThreadType.fromEntity(thread);
   }
@@ -71,9 +80,11 @@ export class ThreadResolver {
     @Parent() thread: ThreadType,
     @Args() pagination: PaginationArgs,
   ): Promise<MessageConnection> {
+    const serviceContext = toServiceContext(context);
+
     const threadId = GlobalUID.parse('thread', thread.id);
 
-    const messages = await this.threadMessagesLoader.load(context, threadId);
+    const messages = await this.threadMessagesLoader.load(serviceContext, threadId);
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(messages, {
       ...pagination,

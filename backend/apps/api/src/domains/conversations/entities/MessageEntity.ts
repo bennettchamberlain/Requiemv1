@@ -10,12 +10,10 @@ import {
   JoinTable,
 } from 'typeorm';
 
-import { FileEntity } from '@ci/domains/files';
-import { UserEntity } from '@ci/domains/user';
+import { FileEntity, type File } from '@ci/domains/files';
+import { UserEntity, type User } from '@ci/domains/user';
 
-import type { Message } from '../types';
-
-import { ThreadEntity } from './ThreadEntity';
+import { ThreadEntity, type Thread } from './ThreadEntity';
 
 @Entity({ name: 'messages' })
 export class MessageEntity {
@@ -34,8 +32,8 @@ export class MessageEntity {
   @Column({ type: 'text', nullable: true, name: 'content_type' })
   mimetype!: string | null;
 
-  @Column({ type: 'jsonb', nullable: true, default: '[]' })
-  tool_calls!: Record<string, unknown>[] | null;
+  @Column({ type: 'jsonb', nullable: true, name: 'tool_calls', default: '[]' })
+  toolCalls!: Record<string, unknown>[] | null;
 
   // Direct boolean field for canceled - maps to is_deleted in database
   @Column({ type: 'boolean', default: false, name: 'is_deleted' })
@@ -64,27 +62,37 @@ export class MessageEntity {
   })
   files?: FileEntity[];
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
 
-  toMessage(): Message {
+  static toEgressType(entity: MessageEntity): Message {
     return {
-      id: this.id,
-      model: this.model ?? null,
-      role: this.role,
-      content: this.content ?? '',
-      mimetype: this.mimetype ?? null,
-      toolCalls: this.tool_calls ?? null,
-      canceled: this.canceled ?? null,
+      id: entity.id,
+      model: entity.model ?? null,
+      role: entity.role,
+      content: entity.content ?? '',
+      mimetype: entity.mimetype ?? null,
+      toolCalls: entity.toolCalls ?? null,
+      canceled: entity.canceled ?? null,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
 
-      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
-      thread: this.thread?.toThread(),
-      threadId: this.threadId,
-      promptMessage: this.promptMessage?.toMessage() ?? null,
-      files: this.files?.map((file) => file.toFile()),
-    } satisfies Message;
+      threadId: entity.threadId,
+
+      user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
+      thread: entity.thread ? ThreadEntity.toEgressType(entity.thread) : undefined,
+      promptMessage: entity.promptMessage ? MessageEntity.toEgressType(entity.promptMessage) : undefined,
+      files: entity.files?.map((file) => file.toFile()),
+    };
   }
 }
+
+export type Message = Readonly<Omit<MessageEntity, 'user' | 'thread' | 'files' | 'promptMessage'>> & {
+  user?: User;
+  thread?: Thread;
+  promptMessage?: Message;
+  files?: File[];
+};
