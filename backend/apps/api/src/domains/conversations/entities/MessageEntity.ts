@@ -32,7 +32,7 @@ export class MessageEntity {
   @Column({ type: 'text', nullable: true, name: 'content_type' })
   mimetype!: string | null;
 
-  @Column({ type: 'jsonb', nullable: true, default: '[]' })
+  @Column({ type: 'jsonb', nullable: true, name: 'tool_calls', default: '[]' })
   toolCalls!: Record<string, unknown>[] | null;
 
   // Direct boolean field for canceled - maps to is_deleted in database

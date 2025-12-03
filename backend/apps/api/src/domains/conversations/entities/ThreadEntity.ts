@@ -25,7 +25,7 @@ export class ThreadEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
-  @CreateDateColumn({ type: 'timestamptz', name: 'createdAt' })
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
