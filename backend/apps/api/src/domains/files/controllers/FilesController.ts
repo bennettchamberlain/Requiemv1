@@ -13,7 +13,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
-import type { RequestContext } from '@ci/common/types';
+import type {RequestContext, ServiceContext, UserServiceContext} from '@ci/common/types';
 
 import { FileService } from '../services/FileService';
 
@@ -23,20 +23,20 @@ export class FilesController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Context() context: RequestContext) {
+  findAll(@Context() context: ServiceContext) {
     return this.fileService.findAll(context);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.fileService.findOne(context, id);
+  findOne(@Context() context: ServiceContext, @Param('id') id: string) {
+    return this.fileService.findById(context, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/presign')
   @HttpCode(200)
-  async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
+  async getPresignedLink(@Context() context: ServiceContext, @Param('id') id: string) {
     const url = await this.fileService.generatePresignedLink(context, id);
 
     return {
@@ -47,7 +47,7 @@ export class FilesController {
   @UseGuards(JwtAuthGuard)
   @Post('upload')
   @UseInterceptors(FilesInterceptor('files', undefined, { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
-  async upload(@Context() context: RequestContext, @UploadedFiles() files: Express.Multer.File[]) {
+  async upload(@Context() context: UserServiceContext, @UploadedFiles() files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }

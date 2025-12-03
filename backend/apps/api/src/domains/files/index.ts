@@ -39,6 +39,3 @@ export { FileEntity };
 
 // Services
 export { FileService };
-
-// Types
-export type { File } from './types';

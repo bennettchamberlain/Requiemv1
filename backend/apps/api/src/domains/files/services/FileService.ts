@@ -8,18 +8,21 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, NotImplementedException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
+import {SYSTEM_USER, type ServiceContext, UserServiceContext} from '@ci/common/types';
+
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
-import { EventService, Events } from '@ci/domains/events';
+import { EventService } from '@ci/domains/events';
+import { FileUploadedEvent } from "@ci/domains/files/events";
 
-import { FileEntity } from '../entities/FileEntity';
-import type { File, FileQuery } from '../types';
+import { SignedFile, FileEntity } from '../entities/FileEntity';
+import type {FileQuery} from '../types';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -82,25 +85,32 @@ export class FileService implements OnModuleInit {
     }
   }
 
-  async findAll(context: RequestContext): Promise<File[]> {
+  async findAll(context: ServiceContext): Promise<SignedFile[]> {
     const result = await this.fileRepository.find({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+      order: {
+        created_at: 'DESC',
       },
     });
 
     return this.signFiles(result);
   }
 
-  async findOne(context: RequestContext, id: string): Promise<File> {
+  async findById(context: ServiceContext, id: string): Promise<SignedFile> {
     const result = await this.fileRepository.findOne({
       where: {
         id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
     });
 
@@ -111,7 +121,7 @@ export class FileService implements OnModuleInit {
     return this.signFile(result);
   }
 
-  async findByIds(context: RequestContext, ids: string[]): Promise<File[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<SignedFile[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -119,16 +129,26 @@ export class FileService implements OnModuleInit {
     const entities = await this.fileRepository.find({
       where: {
         id: In(ids),
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
     });
 
     return this.signFiles(entities);
   }
 
-  async upload(context: RequestContext, file: Express.Multer.File): Promise<File> {
+  async update(context: ServiceContext, fileId: string, data: any): Promise<void> {
+    throw new NotImplementedException();
+  }
+
+  async remove(context: ServiceContext, fileId: string): Promise<void> {
+    throw new NotImplementedException();
+  }
+
+  async upload(context: UserServiceContext, file: Express.Multer.File): Promise<SignedFile> {
     const fileId = uuidv7();
     const fileKey = uuidv4();
     const bucket = config.staticfiles.bucket;
@@ -165,7 +185,7 @@ export class FileService implements OnModuleInit {
       }),
     );
 
-    await this.eventService.send(Events.FILE_UPLOAD, {
+    await this.eventService.send(FileUploadedEvent, {
       fileId: result.id,
       userId: context.userId,
     });
@@ -188,13 +208,15 @@ export class FileService implements OnModuleInit {
     throw new Error(`S3 object body was empty for key: ${key}`);
   }
 
-  async generatePresignedLink(context: RequestContext, id: string): Promise<string> {
+  async generatePresignedLink(context: ServiceContext, id: string): Promise<string> {
     const result = await this.fileRepository.findOne({
       where: {
         id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
     });
 
@@ -231,7 +253,7 @@ export class FileService implements OnModuleInit {
       modifiedAt?: string | Date | null;
       storageAccount?: string | null;
     },
-  ): Promise<File> {
+  ): Promise<SignedFile> {
     const userId = context.userId;
 
     if (!userId) {
@@ -320,28 +342,30 @@ export class FileService implements OnModuleInit {
     return this.signFile(saved);
   }
 
-  async search(context: RequestContext, query: FileQuery): Promise<FileEntity[]> {
+  async search(context: ServiceContext, query: FileQuery): Promise<FileEntity[]> {
     return this.fileRepository.find({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
         ...query,
       },
     });
   }
 
-  private async signFiles(files: FileEntity[]): Promise<File[]> {
+  private async signFiles(files: FileEntity[]): Promise<SignedFile[]> {
     return Promise.all(files.map(this.signFile.bind(this)));
   }
 
-  private async signFile(file: FileEntity): Promise<File> {
+  private async signFile(file: FileEntity): Promise<SignedFile> {
     const bucket = file.bucket;
     const key = file.key;
 
     if (!bucket || !key) {
       return {
-        ...file.toFile(),
+        ...FileEntity.toEgressType(file),
         url: file.file_path,
       };
     }
@@ -357,7 +381,7 @@ export class FileService implements OnModuleInit {
     });
 
     return {
-      ...file.toFile(),
+      ...FileEntity.toEgressType(file),
       url: this.getKeyAndQuery(url),
     };
   }

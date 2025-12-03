@@ -10,8 +10,6 @@ import {
 
 import { UserEntity } from '@ci/domains/user';
 
-import type { File } from '../types';
-
 @Entity({ name: 'files' })
 export class FileEntity {
   @PrimaryColumn({ type: 'uuid', name: 'file_id' })
@@ -66,14 +64,28 @@ export class FileEntity {
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
 
-  toFile(): File {
+  static toEgressType(entity: FileEntity): File {
     return {
-      id: this.id,
-      name: this.original_name,
-      fileHash: this.file_hash || undefined,
-      key: this.key,
-      contentType: this.content_type,
-      size: this.size,
+      id: entity.id,
+      original_name: entity.original_name,
+      file_hash: entity.file_hash,
+      key: entity.key,
+      file_path: entity.file_path,
+      filename: entity.filename,
+      storage_type: entity.storage_type,
+      storage_provider: entity.storage_provider,
+      storage_account: entity.storage_account,
+      cloud_file_id: entity.cloud_file_id,
+      modified_at_source: entity.modified_at_source,
+      bucket: entity.bucket,
+      content_type: entity.content_type,
+      size: entity.size,
+      created_at: entity.created_at,
+      updated_at: entity.updated_at,
     };
   }
 }
+
+export type File = Readonly<FileEntity>;
+
+export type SignedFile = File & { readonly url: string };

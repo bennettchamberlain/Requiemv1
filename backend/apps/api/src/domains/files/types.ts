@@ -1,12 +1,4 @@
-export interface File {
-  id: string;
-  name: string;
-  key: string | null;
-  contentType: string;
-  size: number;
-  fileHash?: string;
-  url?: string;
-}
+
 
 export interface FileQuery {
   file_path?: string;

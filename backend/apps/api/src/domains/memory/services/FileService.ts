@@ -4,11 +4,12 @@ import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
-import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
+import { OnEvent } from '@ci/domains/events';
 import { FileService as FileStorageService } from '@ci/domains/files';
 import { CreateFileDto } from '@ci/domains/memory/types';
 
 import { FileEntity } from '../entities/FileEntity';
+import {FileUploadedEvent, FileUploadedPayload} from "@ci/domains/files/events";
 
 @Injectable()
 export class FileService {
@@ -46,8 +47,8 @@ export class FileService {
     return { entity };
   }
 
-  @OnEvent(Events.FILE_UPLOAD)
-  async handleFileUploaded(payload: EventPayloads[Events.FILE_UPLOAD]) {
+  @OnEvent(FileUploadedEvent)
+  async handleFileUploaded(payload: FileUploadedPayload) {
     const file = await this.fileService.findOne({ userId: payload.userId }, payload.fileId);
 
     const existingEntity = await this.fileRepository
