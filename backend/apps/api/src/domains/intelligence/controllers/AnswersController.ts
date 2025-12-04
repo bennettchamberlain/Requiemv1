@@ -1,32 +1,29 @@
-import { Body, Controller, Get, NotFoundException, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { z } from 'zod';
+import {
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+  Delete,
+  HttpStatus,
+  HttpCode,
+} from '@nestjs/common';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import type { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { AnswerService } from '../services/AnswerService';
-import type { CreateAnswerDto, UpdateAnswerDto } from '../types';
-
-const createAnswerSchema = z.object({
-  text: z.string().min(1, 'Answer text is required').max(5000, 'Answer text must be 5000 characters or less'),
-  question: z.object({
-    id: z.string().uuid('Invalid question ID'),
-  }),
-});
-
-const updateAnswerSchema = z.object({
-  answer_text: z
-    .string()
-    .min(1, 'Answer text is required')
-    .max(5000, 'Answer text must be 5000 characters or less')
-    .optional(),
-});
+import { type CreateAnswerDto, type UpdateAnswerDto, createAnswerSchema, updateAnswerSchema } from '../types';
 
 @Controller('answers')
 export class AnswersController {
-  constructor(private readonly questionService: AnswerService) {}
+  constructor(private readonly answerService: AnswerService) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -34,19 +31,25 @@ export class AnswersController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createAnswerSchema)) data: CreateAnswerDto,
   ) {
-    return this.questionService.create(context, data);
+    const serviceContext = toServiceContext(context);
+
+    return this.answerService.create(serviceContext, data);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
-    return this.questionService.findAll(context);
+    const serviceContext = toServiceContext(context);
+
+    return this.answerService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.questionService.findOne(context, id);
+    const serviceContext = toServiceContext(context);
+
+    return this.answerService.findById(serviceContext, id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -56,12 +59,33 @@ export class AnswersController {
     @Param('id') id: string,
     @Body(new ValidationPipe(updateAnswerSchema)) data: UpdateAnswerDto,
   ) {
-    const result = await this.questionService.update(context, id, data);
+    const serviceContext = toServiceContext(context);
+
+    const result = await this.answerService.update(serviceContext, id, data);
 
     if (!result) {
       throw new NotFoundException();
     }
 
     return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Context() context: RequestContext, @Param('id') answerId: string): Promise<void> {
+    const serviceContext = toServiceContext(context);
+
+    const answer = await this.answerService.findById(serviceContext, answerId);
+
+    if (!answer) {
+      throw new NotFoundException('Answer not found');
+    }
+
+    const removal = this.answerService.remove(serviceContext, answerId);
+
+    if (!removal) {
+      throw new NotFoundException();
+    }
   }
 }

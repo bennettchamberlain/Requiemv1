@@ -1,26 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { RequestContext } from '@ci/common/types';
+import type { ServiceContext, UserServiceContext } from '@ci/common/types';
+import { SYSTEM_USER } from '@ci/common/types';
+import { EventService } from '@ci/domains/events';
+import { AnswerCreatedEvent, AnswerUpdatedEvent, AnswerRemovedEvent } from '@ci/domains/intelligence/events';
 
-import { AnswerEntity } from '../entities/AnswerEntity';
-import type { Answer, CreateAnswerDto, UpdateAnswerDto } from '../types';
+import { Answer, AnswerEntity } from '../entities/AnswerEntity';
+import type { CreateAnswerDto, UpdateAnswerDto } from '../types';
 
 @Injectable()
 export class AnswerService {
   constructor(
     @InjectRepository(AnswerEntity)
     private readonly answerRepository: Repository<AnswerEntity>,
+    private readonly eventService: EventService,
   ) {}
 
-  async create(context: RequestContext, data: CreateAnswerDto): Promise<Answer> {
+  async create(context: UserServiceContext, data: CreateAnswerDto): Promise<Answer> {
     const instance = this.answerRepository.create({
-      answer_id: data.id ?? uuidv7(),
-      answer_text: data.text,
+      id: data.id ?? uuidv7(),
+      answer: data.text,
       question: {
-        question_id: data.question.id,
+        id: data.question.id,
       },
       user: {
         id: context.userId,
@@ -29,10 +33,14 @@ export class AnswerService {
 
     const entity = await this.answerRepository.save(instance);
 
-    return entity.toAnswer();
+    await this.eventService.send(AnswerCreatedEvent, {
+      answerId: entity.id,
+    });
+
+    return AnswerEntity.toEgressType(entity);
   }
 
-  async findAll(context: RequestContext): Promise<Answer[]> {
+  async findAll(context: UserServiceContext): Promise<Answer[]> {
     const result = await this.answerRepository.find({
       where: {
         user: {
@@ -42,10 +50,10 @@ export class AnswerService {
       relations: ['user', 'question'],
     });
 
-    return result.map((entity) => entity.toAnswer());
+    return result.map((entity) => AnswerEntity.toEgressType(entity));
   }
 
-  async findSome(context: RequestContext, ids: string[]): Promise<Answer[]> {
+  async findSome(context: UserServiceContext, ids: string[]): Promise<Answer[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -55,59 +63,166 @@ export class AnswerService {
         user: {
           id: context.userId,
         },
-        answer_id: In(ids),
+        id: In(ids),
       },
       relations: ['user', 'question'],
     });
 
-    return result.map((entity) => entity.toAnswer());
+    return result.map((entity) => AnswerEntity.toEgressType(entity));
   }
 
-  async findOne(context: RequestContext, id: string): Promise<Answer | null> {
+  async findById(context: UserServiceContext, id: string): Promise<Answer | null> {
     const result = await this.answerRepository.findOne({
       where: {
         user: {
           id: context.userId,
         },
-        answer_id: id,
+        id: id,
       },
       relations: ['user', 'question'],
     });
 
-    return result?.toAnswer() ?? null;
+    return result ? AnswerEntity.toEgressType(result) : null;
   }
 
-  async findByQuestionId(context: RequestContext, questionId: string): Promise<Answer | null> {
+  async findByIds(context: UserServiceContext, ids: string[]): Promise<Answer[]> {
+    const result = await this.answerRepository.find({
+      where: {
+        user: {
+          id: context.userId,
+        },
+        id: In(ids),
+      },
+      relations: ['user', 'question'],
+    });
+
+    return result.map((entity) => AnswerEntity.toEgressType(entity));
+  }
+
+  async findByQuestionId(context: UserServiceContext, questionId: string): Promise<Answer | null> {
     const result = await this.answerRepository.findOne({
       where: {
         user: {
           id: context.userId,
         },
         question: {
-          question_id: questionId,
+          id: questionId,
         },
       },
       relations: ['user', 'question'],
     });
 
-    return result?.toAnswer() ?? null;
+    return result ? AnswerEntity.toEgressType(result) : null;
   }
 
-  async update(context: RequestContext, id: string, data: UpdateAnswerDto): Promise<Answer | null> {
-    const result = await this.answerRepository.update(
-      {
-        answer_id: id,
+  async update(context: UserServiceContext, id: string, data: UpdateAnswerDto): Promise<Answer | null> {
+    console.log('data', data);
+
+    const updateData: Partial<AnswerEntity> = {};
+
+    if (data.text !== undefined) {
+      updateData.answer = data.text;
+    }
+
+    if (data.answerConfidence !== undefined) {
+      updateData.answerConfidence = data.answerConfidence;
+    }
+
+    if (data.answerSource !== undefined) {
+      updateData.answerSource = data.answerSource;
+    }
+
+    if (data.answerMethod !== undefined) {
+      updateData.answerMethod = data.answerMethod;
+    }
+
+    if (data.answeredAt !== undefined) {
+      updateData.answeredAt = data.answeredAt;
+    }
+
+    if (data.sessionContext !== undefined) {
+      updateData.sessionContext = data.sessionContext;
+    }
+
+    if (data.emotionalState !== undefined) {
+      updateData.emotionalState = data.emotionalState;
+    }
+
+    if (data.locationContext !== undefined) {
+      updateData.locationContext = data.locationContext;
+    }
+
+    if (data.extractedEntities !== undefined) {
+      updateData.extractedEntities = data.extractedEntities;
+    }
+
+    if (data.sentimentScore !== undefined) {
+      updateData.sentimentScore = data.sentimentScore;
+    }
+
+    if (data.complexityScore !== undefined) {
+      updateData.complexityScore = data.complexityScore;
+    }
+
+    if (data.isSensitive !== undefined) {
+      updateData.isSensitive = data.isSensitive;
+    }
+
+    if (data.sharingLevel !== undefined) {
+      updateData.sharingLevel = data.sharingLevel;
+    }
+
+    const answer = await this.answerRepository.findOne({
+      where: {
+        id: id,
         user: {
           id: context.userId,
         },
       },
-      data,
-    );
+    });
 
-    if (result.affected === 0) {
-      throw new NotFoundException();
+    if (answer) {
+      Object.assign(answer, updateData);
+      await this.answerRepository.save(answer);
+    } else {
+      return null;
     }
 
-    return this.findOne(context, id);
+    await this.eventService.send(AnswerUpdatedEvent, {
+      answerId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    console.log('remove answer', id, context.userId);
+    const answer = await this.answerRepository.findOne({
+      where: {
+        id: id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
+      },
+    });
+
+    console.log('answer to remove', answer);
+
+    if (!answer) {
+      return false;
+    }
+
+    await this.answerRepository.delete({
+      id,
+      ...(context.userId !== SYSTEM_USER && {
+        user: { id: context.userId },
+      }),
+    });
+
+    await this.eventService.send(AnswerRemovedEvent, {
+      answerId: id,
+    });
+
+    return true;
   }
 }

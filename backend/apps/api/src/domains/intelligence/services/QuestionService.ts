@@ -1,12 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository, type FindOptionsWhere } from 'typeorm';
+import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { RequestContext } from '@ci/common/types';
+import type { ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER } from '@ci/common/types';
+import { EventService } from '@ci/domains/events';
+import {
+  QuestionCreatedEvent,
+  QuestionUpdatedEvent,
+  QuestionRemovedEvent,
+} from '@ci/domains/intelligence/events';
 
-import { QuestionEntity } from '../entities/QuestionEntity';
-import type { CreateQuestionDto, Question } from '../types';
+import { Question, QuestionEntity } from '../entities/QuestionEntity';
+import type { CreateQuestionDto, UpdateQuestionDto } from '../types';
 
 @Injectable()
 export class QuestionService {
@@ -14,32 +21,42 @@ export class QuestionService {
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(QuestionEntity)
     private readonly questionRepository: Repository<QuestionEntity>,
+    private readonly eventService: EventService,
   ) {}
 
-  async create(context: RequestContext, data: CreateQuestionDto): Promise<Question> {
-    const isPrivateTo = data.isPrivateTo !== undefined ? data.isPrivateTo : (context.userId ?? null);
+  async create(context: ServiceContext, data: CreateQuestionDto): Promise<Question> {
+    const isPrivateTo =
+      data.isPrivateTo !== undefined
+        ? data.isPrivateTo
+        : context.userId && context.userId !== SYSTEM_USER
+          ? context.userId
+          : null;
     const instance = this.questionRepository.create({
-      question_id: data.id ?? uuidv7(),
-      question_text: data.text,
-      question_category: data.subcategory,
-      is_private_to: isPrivateTo,
+      id: data.id ?? uuidv7(),
+      text: data.text,
+      category: data.subcategory,
+      isPrivateTo: isPrivateTo,
     });
 
     const entity = await this.questionRepository.save(instance);
 
-    return entity.toQuestion();
+    await this.eventService.send(QuestionCreatedEvent, {
+      questionId: entity.id,
+    });
+
+    return QuestionEntity.toEgressType(entity);
   }
 
-  async findAll(context: RequestContext): Promise<Question[]> {
+  async findAll(context: ServiceContext): Promise<Question[]> {
     const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
       {
-        is_active: true,
-        is_private_to: IsNull(),
+        isActive: true,
+        isPrivateTo: IsNull(),
       },
     ];
 
-    if (context.userId) {
-      whereClauses.push({ is_active: true, is_private_to: context.userId });
+    if (context?.userId !== SYSTEM_USER) {
+      whereClauses.push({ isActive: true, isPrivateTo: context.userId });
     }
 
     const result = await this.questionRepository.find({
@@ -49,38 +66,156 @@ export class QuestionService {
     const unique = new Map<string, QuestionEntity>();
 
     for (const entity of result) {
-      unique.set(entity.question_id, entity);
+      unique.set(entity.id, entity);
     }
 
-    return Array.from(unique.values()).map((entity) => entity.toQuestion());
+    return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
   }
 
-  async findOne(context: RequestContext | null, id: string): Promise<Question | null> {
-    // TODO: This is a footgun that we shouldn't leave here for long.
-    //
-    // What we're actually interested in doing is returning questions owned by the user in
-    // addition to those that are unowned (user_id IS NULL). There isn't a clean way to
-    // do this with the TypeORM query API, so we'd have to write raw SQL. Not inherently
-    // a problem, but out of scope when this change was made.
-    //
-    // In the short term we're assuming that `findUnansweredByUserId` is sufficiently
-    // secure and that no events are spawned manually that would undermine that security.
+  async findById(context: ServiceContext, id: string): Promise<Question | null> {
     const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
       {
-        question_id: id,
-        is_private_to: IsNull(),
+        id: id,
+        isPrivateTo: IsNull(),
       },
     ];
 
-    if (context?.userId) {
-      whereClauses.push({ question_id: id, is_private_to: context.userId });
+    if (context?.userId && context.userId !== SYSTEM_USER) {
+      whereClauses.push({ id: id, isPrivateTo: context.userId });
     }
 
     const result = await this.questionRepository.findOne({
       where: whereClauses,
     });
 
-    return result?.toQuestion() ?? null;
+    return result ? QuestionEntity.toEgressType(result) : null;
+  }
+
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Question[]> {
+    const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
+      {
+        id: In(ids),
+        isPrivateTo: IsNull(),
+      },
+    ];
+
+    if (context?.userId && context.userId !== SYSTEM_USER) {
+      whereClauses.push({ id: In(ids), isPrivateTo: context.userId });
+    }
+
+    const results = await this.questionRepository.find({
+      where: whereClauses,
+    });
+
+    const unique = new Map<string, QuestionEntity>();
+
+    for (const entity of results) {
+      unique.set(entity.id, entity);
+    }
+
+    return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
+  }
+
+  async update(
+    context: ServiceContext,
+    questionId: string,
+    data: UpdateQuestionDto,
+  ): Promise<Question | null> {
+    const updateData: Partial<QuestionEntity> = {};
+
+    if (data.subcategory !== undefined) {
+      updateData.category = data.subcategory;
+    }
+
+    if (data.text !== undefined) {
+      updateData.text = data.text;
+    }
+
+    if (data.contextTags !== undefined) {
+      updateData.contextTags = data.contextTags;
+    }
+
+    if (data.questionType !== undefined) {
+      updateData.questionType = data.questionType;
+    }
+
+    if (data.isSeedQuestion !== undefined) {
+      updateData.isSeedQuestion = data.isSeedQuestion;
+    }
+
+    if (data.isActive !== undefined) {
+      updateData.isActive = data.isActive;
+    }
+
+    if (data.createdByLlm !== undefined) {
+      updateData.createdByLlm = data.createdByLlm;
+    }
+
+    if (data.frequencyRecommendation !== undefined) {
+      updateData.frequencyRecommendation = data.frequencyRecommendation;
+    }
+
+    if (data.timesAsked !== undefined) {
+      updateData.timesAsked = data.timesAsked;
+    }
+
+    if (data.timesAnswered !== undefined) {
+      updateData.timesAnswered = data.timesAnswered;
+    }
+
+    if (data.isPrivateTo !== undefined) {
+      updateData.isPrivateTo = data.isPrivateTo;
+    }
+
+    const question = await this.questionRepository.findOne({
+      where: {
+        id: questionId,
+        ...(context.userId !== SYSTEM_USER && {
+          isPrivateTo: context.userId,
+        }),
+      },
+    });
+
+    if (question) {
+      Object.assign(question, updateData);
+      await this.questionRepository.save(question);
+    } else {
+      return null;
+    }
+
+    await this.eventService.send(QuestionUpdatedEvent, {
+      questionId: questionId,
+    });
+
+    return this.findById(context, questionId);
+  }
+
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const question = await this.questionRepository.findOne({
+      where: {
+        id: id,
+        ...(context.userId !== SYSTEM_USER && {
+          isPrivateTo: context.userId,
+        }),
+      },
+    });
+
+    if (!question) {
+      return false;
+    }
+
+    await this.questionRepository.delete({
+      id,
+      ...(context.userId !== SYSTEM_USER && {
+        isPrivateTo: context.userId,
+      }),
+    });
+
+    await this.eventService.send(QuestionRemovedEvent, {
+      questionId: id,
+    });
+
+    return true;
   }
 
   async findUnansweredByUserId(): Promise<Map<string | null, string[]>> {
@@ -139,7 +274,7 @@ export class QuestionService {
     return groupedByUserId;
   }
 
-  async findOneUnanswered(context: RequestContext): Promise<Question | null> {
+  async findOneUnanswered(context: ServiceContext): Promise<Question | null> {
     if (!context.userId) {
       return null;
     }
@@ -171,6 +306,6 @@ export class QuestionService {
       return null;
     }
 
-    return this.findOne(context, rows[0].id);
+    return this.findById(context, rows[0].id);
   }
 }
