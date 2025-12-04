@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { UserServiceContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { GraphEventService, GraphQueryService } from '@ci/domains/memory';
@@ -296,13 +297,15 @@ export class OnboardingService {
       return;
     }
 
-    const question = await this.questionService.create(context, {
+    const serviceContext = toServiceContext(context);
+
+    const question = await this.questionService.create(serviceContext, {
       text: options.question,
       subcategory: options.subcategory,
       isPrivateTo: context.userId ?? null,
     });
 
-    await this.answerService.create(context, {
+    await this.answerService.create(serviceContext, {
       text: value,
       question,
     });

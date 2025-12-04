@@ -171,7 +171,7 @@ export function InsightsPage() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        answer_text: answerText,
+        text: answerText,
       }),
     });
 
