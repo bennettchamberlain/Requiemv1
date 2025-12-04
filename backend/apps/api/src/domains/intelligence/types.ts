@@ -85,29 +85,11 @@ export interface UpdateQuestionDto {
 export const createQuestionSchema = z.object({
   subcategory: z.string().optional(),
   text: z.string(),
-  contextTags: z.array(z.string()).optional(),
-  questionType: z.string().optional(),
-  isSeedQuestion: z.boolean().optional(),
-  isActive: z.boolean().optional(),
-  createdByLlm: z.boolean().optional(),
-  frequencyRecommendation: z.string().optional(),
-  timesAsked: z.number().optional(),
-  timesAnswered: z.number().optional(),
-  isPrivateTo: z.string().nullable().optional(),
 });
 
 export const updateQuestionSchema = z.object({
   subcategory: z.string().optional(),
   text: z.string(),
-  contextTags: z.array(z.string()).optional(),
-  questionType: z.string().optional(),
-  isSeedQuestion: z.boolean().optional(),
-  isActive: z.boolean().optional(),
-  createdByLlm: z.boolean().optional(),
-  frequencyRecommendation: z.string().optional(),
-  timesAsked: z.number().optional(),
-  timesAnswered: z.number().optional(),
-  isPrivateTo: z.string().nullable().optional(),
 });
 
 export const createAnswerSchema = z.object({
@@ -115,18 +97,6 @@ export const createAnswerSchema = z.object({
   question: z.object({
     id: z.string().uuid('Invalid question ID'),
   }),
-  answerConfidence: z.number().min(0).max(1).optional(),
-  answerSource: z.string().optional(),
-  answerMethod: z.string().optional(),
-  answeredAt: z.date().optional(),
-  sessionContext: z.record(z.unknown()).optional(),
-  emotionalState: z.string().optional(),
-  locationContext: z.string().optional(),
-  extractedEntities: z.array(z.string()).optional(),
-  sentimentScore: z.number().min(-1).max(1).optional(),
-  complexityScore: z.number().min(0).optional(),
-  isSensitive: z.boolean().optional(),
-  sharingLevel: z.string().optional(),
 });
 
 export const updateAnswerSchema = z.object({
@@ -135,16 +105,4 @@ export const updateAnswerSchema = z.object({
     .min(1, 'Answer text is required')
     .max(5000, 'Answer text must be 5000 characters or less')
     .optional(),
-  answerConfidence: z.number().min(0).max(1).optional(),
-  answerSource: z.string().optional(),
-  answerMethod: z.string().optional(),
-  answeredAt: z.date().optional(),
-  sessionContext: z.record(z.unknown()).optional(),
-  emotionalState: z.string().optional(),
-  locationContext: z.string().optional(),
-  extractedEntities: z.array(z.string()).optional(),
-  sentimentScore: z.number().min(-1).max(1).optional(),
-  complexityScore: z.number().min(0).optional(),
-  isSensitive: z.boolean().optional(),
-  sharingLevel: z.string().optional(),
 });
