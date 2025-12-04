@@ -53,16 +53,16 @@ export class AnswerService {
     return result.map((entity) => AnswerEntity.toEgressType(entity));
   }
 
-  async findSome(context: UserServiceContext, ids: string[]): Promise<Answer[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Answer[]> {
     if (ids.length === 0) {
       return [];
     }
 
     const result = await this.answerRepository.find({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
         id: In(ids),
       },
       relations: ['user', 'question'],
@@ -71,12 +71,12 @@ export class AnswerService {
     return result.map((entity) => AnswerEntity.toEgressType(entity));
   }
 
-  async findById(context: UserServiceContext, id: string): Promise<Answer | null> {
+  async findById(context: ServiceContext, id: string): Promise<Answer | null> {
     const result = await this.answerRepository.findOne({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
         id: id,
       },
       relations: ['user', 'question'],
@@ -85,26 +85,12 @@ export class AnswerService {
     return result ? AnswerEntity.toEgressType(result) : null;
   }
 
-  async findByIds(context: UserServiceContext, ids: string[]): Promise<Answer[]> {
-    const result = await this.answerRepository.find({
-      where: {
-        user: {
-          id: context.userId,
-        },
-        id: In(ids),
-      },
-      relations: ['user', 'question'],
-    });
-
-    return result.map((entity) => AnswerEntity.toEgressType(entity));
-  }
-
-  async findByQuestionId(context: UserServiceContext, questionId: string): Promise<Answer | null> {
+  async findByQuestionId(context: ServiceContext, questionId: string): Promise<Answer | null> {
     const result = await this.answerRepository.findOne({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
         question: {
           id: questionId,
         },
@@ -115,9 +101,7 @@ export class AnswerService {
     return result ? AnswerEntity.toEgressType(result) : null;
   }
 
-  async update(context: UserServiceContext, id: string, data: UpdateAnswerDto): Promise<Answer | null> {
-    console.log('data', data);
-
+  async update(context: ServiceContext, id: string, data: UpdateAnswerDto): Promise<Answer | null> {
     const updateData: Partial<AnswerEntity> = {};
 
     if (data.text !== undefined) {
@@ -175,9 +159,9 @@ export class AnswerService {
     const answer = await this.answerRepository.findOne({
       where: {
         id: id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
       },
     });
 
