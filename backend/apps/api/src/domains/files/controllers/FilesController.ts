@@ -13,7 +13,8 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
-import type { ServiceContext, UserServiceContext } from '@ci/common/types';
+import type { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { FileService } from '../services/FileService';
 
@@ -23,21 +24,27 @@ export class FilesController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Context() context: ServiceContext) {
-    return this.fileService.findAll(context);
+  findAll(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    return this.fileService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Context() context: ServiceContext, @Param('id') id: string) {
-    return this.fileService.findById(context, id);
+  findOne(@Context() context: RequestContext, @Param('id') id: string) {
+    const serviceContext = toServiceContext(context);
+
+    return this.fileService.findById(serviceContext, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/presign')
   @HttpCode(200)
-  async getPresignedLink(@Context() context: ServiceContext, @Param('id') id: string) {
-    const url = await this.fileService.generatePresignedLink(context, id);
+  async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
+    const serviceContext = toServiceContext(context);
+
+    const url = await this.fileService.generatePresignedLink(serviceContext, id);
 
     return {
       url,
@@ -47,13 +54,13 @@ export class FilesController {
   @UseGuards(JwtAuthGuard)
   @Post('upload')
   @UseInterceptors(FilesInterceptor('files', undefined, { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
-  async upload(@Context() context: UserServiceContext, @UploadedFiles() files: Express.Multer.File[]) {
+  async upload(@Context() context: RequestContext, @UploadedFiles() files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
 
-    const results = await Promise.all(files.map((file) => this.fileService.upload(context, file)));
+    const serviceContext = toServiceContext(context);
 
-    return results;
+    return await Promise.all(files.map((file) => this.fileService.upload(serviceContext, file)));
   }
 }
