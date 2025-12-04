@@ -21,6 +21,7 @@ import { RequestContext } from '@ci/common/types';
 
 import { ContentService } from '../services/ContentService';
 import { CreateContentDto, UpdateContentDto } from '../types';
+import {toServiceContext} from "@ci/common/utils";
 
 export const createContentSchema = z.object({
   type: z.string().optional(),
@@ -57,6 +58,8 @@ export class ContentController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createContentSchema)) input: CreateContentDto | CreateContentDto[],
   ) {
+    const serviceContext = toServiceContext(context);
+
     try {
       if (context.userId) {
         if (Array.isArray(input)) {
@@ -80,7 +83,7 @@ export class ContentController {
         input.event = { id: input.event_id! };
       }
 
-      return await this.contentService.create(context, input);
+      return await this.contentService.create(serviceContext, input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
         // TODO: Obfuscate this error message? We're revealing DB details here.
@@ -94,13 +97,17 @@ export class ContentController {
   @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
-    return this.contentService.findAll(context);
+    const serviceContext = toServiceContext(context);
+
+    return this.contentService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string, @Context() context: RequestContext) {
-    return this.contentService.findOne(context, id);
+  findById(@Param('id') id: string, @Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    return this.contentService.findById(serviceContext, id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -110,8 +117,10 @@ export class ContentController {
     @Body(new ValidationPipe(updateContentSchema)) input: UpdateContentDto,
     @Context() context: RequestContext,
   ) {
+    const serviceContext = toServiceContext(context);
+
     try {
-      return await this.contentService.update(context, id, input);
+      return await this.contentService.update(serviceContext, id, input);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
         // TODO: Obfuscate this error message? We're revealing DB details here.
@@ -124,7 +133,9 @@ export class ContentController {
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.contentService.remove(id);
+  remove(@Param('id') id: string, @Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    return this.contentService.remove(serviceContext, id);
   }
 }

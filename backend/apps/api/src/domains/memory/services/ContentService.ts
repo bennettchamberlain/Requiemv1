@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeleteResult, Repository } from 'typeorm';
+import { DeleteResult, Repository, In } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { RequestContext } from '@ci/common/types';
+import type { ServiceContext, UserServiceContext } from '@ci/common/types';
 
-import { ContentEntity } from '../entities/ContentEntity';
-import { CreateContentDto, UpdateContentDto, Content } from '../types';
+import { ContentEntity, Content } from '../entities/ContentEntity';
+import { CreateContentDto, UpdateContentDto } from '../types';
+import {SYSTEM_USER} from "@ci/common/types";
 
 @Injectable()
 export class ContentService {
@@ -15,7 +16,7 @@ export class ContentService {
     private readonly contentRepository: Repository<ContentEntity>,
   ) {}
 
-  async create(context: RequestContext, data: CreateContentDto | CreateContentDto[]): Promise<Content[]> {
+  async create(context: UserServiceContext, data: CreateContentDto | CreateContentDto[]): Promise<Content[]> {
     const isSingle = !Array.isArray(data);
     const dataArray: CreateContentDto[] = isSingle ? [data] : data;
 
@@ -33,19 +34,15 @@ export class ContentService {
         const contentResult = await this.contentRepository.save(content);
 
         await this.contentRepository.update(contentResult.id, {
-          external_id: `content_${contentResult.id}`,
+          externalId: `content_${contentResult.id}`,
         });
 
-        return (await this.contentRepository.findOne({
-          where: {
-            id: contentResult.id,
-          },
-        }))!.toContent();
+        return ContentEntity.toEgressType(contentResult);
       }),
     );
   }
 
-  async findAll(context: RequestContext): Promise<Content[]> {
+  async findAll(context: UserServiceContext): Promise<Content[]> {
     const result = await this.contentRepository.find({
       where: {
         user: {
@@ -54,34 +51,42 @@ export class ContentService {
       },
     });
 
-    return result.map((entity) => entity.toContent());
+    return result.map((entity) => ContentEntity.toEgressType(entity));
   }
 
-  async findOne(context: RequestContext, id: string): Promise<Content | null> {
+  async findById(context: ServiceContext, id: string): Promise<Content | null> {
     const result = await this.contentRepository.findOne({
       where: {
         id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user_id: context.userId,
+        }),
       },
     });
 
-    return result?.toContent() ?? null;
+    return result ? ContentEntity.toEgressType(result) : null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  findSomeById(context: RequestContext, ids: string[]) {
-    throw new Error('Not implemented');
+  async findByIds(context: ServiceContext, ids: string[]) {
+    const result = await this.contentRepository.find({
+      where: {
+        id: In(ids),
+        ...(context.userId !== SYSTEM_USER && {
+          user_id: context.userId,
+        }),
+      },
+    });
+
+    return result.map(content => ContentEntity.toEgressType(content));
   }
 
-  async update(context: RequestContext, id: string, data: UpdateContentDto): Promise<Content | null> {
+  async update(context: ServiceContext, id: string, data: UpdateContentDto): Promise<Content | null> {
     await this.contentRepository.update(id, data);
 
-    return this.findOne(context, id);
+    return this.findById(context, id);
   }
 
-  remove(id: string): Promise<DeleteResult> {
+  remove(context: ServiceContext, id: string): Promise<DeleteResult> {
     return this.contentRepository.delete(id);
   }
 }
