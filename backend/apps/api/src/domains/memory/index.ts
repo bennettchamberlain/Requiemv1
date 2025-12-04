@@ -48,6 +48,7 @@ import { GraphEventListener } from './listeners/GraphEventListener';
 import { CommunicationService } from './services/CommunicationService';
 import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
+import { FactService } from './services/FactService';
 import { FileService } from './services/FileService';
 import { GraphEventService } from './services/GraphEventService';
 import { GraphQueryService } from './services/GraphQueryService';
@@ -89,6 +90,7 @@ import { UserContextService } from './services/UserContextService';
     CommunicationService,
     ContentService,
     EventService,
+    FactService,
     GraphEventService,
     GraphUtilityService,
     GraphQueryService,
@@ -105,6 +107,7 @@ import { UserContextService } from './services/UserContextService';
     CommunicationService,
     ContentService,
     EventService,
+    FactService,
     GraphEventService,
     PersonService,
     UserContextService,
@@ -134,6 +137,7 @@ export {
   ContentService,
   EventService,
   CommunicationService,
+  FactService,
   GraphEventService,
   PersonService,
   UserContextService,
