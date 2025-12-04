@@ -13,16 +13,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
-import {SYSTEM_USER, type ServiceContext, UserServiceContext} from '@ci/common/types';
-
 import { LoggerService } from '@ci/common/services';
+import { SYSTEM_USER, type ServiceContext, UserServiceContext } from '@ci/common/types';
 import { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
-import { FileUploadedEvent } from "@ci/domains/files/events";
+import { FileUploadedEvent } from '@ci/domains/files/events';
 
 import { SignedFile, FileEntity } from '../entities/FileEntity';
-import type {FileQuery} from '../types';
+import type { FileQuery } from '../types';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -95,7 +94,7 @@ export class FileService implements OnModuleInit {
         }),
       },
       order: {
-        created_at: 'DESC',
+        createdAt: 'DESC',
       },
     });
 
@@ -140,10 +139,12 @@ export class FileService implements OnModuleInit {
     return this.signFiles(entities);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
   async update(context: ServiceContext, fileId: string, data: any): Promise<void> {
     throw new NotImplementedException();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async remove(context: ServiceContext, fileId: string): Promise<void> {
     throw new NotImplementedException();
   }
@@ -158,17 +159,17 @@ export class FileService implements OnModuleInit {
 
     const entity = this.fileRepository.create({
       id: fileId,
-      file_path: filePath,
+      filePath: filePath,
       filename: file.originalname,
-      storage_type: 'cloud', // S3/Minio is cloud storage
-      storage_provider: 's3',
-      modified_at_source: new Date(), // Upload time as modification time
+      storageType: 'cloud', // S3/Minio is cloud storage
+      storageProvider: 's3',
+      modifiedAtSource: new Date(), // Upload time as modification time
       bucket,
       key: fileKey,
-      original_name: file.originalname,
-      content_type: file.mimetype,
+      originalName: file.originalname,
+      contentType: file.mimetype,
       size: file.size,
-      file_hash: createHmac('sha256', config.auth.session.fieldPepper).update(file.buffer).digest('hex'),
+      fileHash: createHmac('sha256', config.auth.session.fieldPepper).update(file.buffer).digest('hex'),
       user: {
         id: context.userId,
       },
@@ -181,7 +182,7 @@ export class FileService implements OnModuleInit {
         Bucket: result.bucket ?? config.staticfiles.bucket,
         Key: result.key!,
         Body: file.buffer,
-        ContentType: result.content_type,
+        ContentType: result.contentType,
       }),
     );
 
@@ -225,13 +226,13 @@ export class FileService implements OnModuleInit {
     }
 
     if (!result.bucket || !result.key) {
-      return result.file_path;
+      return result.filePath;
     }
 
     const command = new GetObjectCommand({
       Bucket: result.bucket ?? config.staticfiles.bucket,
       Key: result.key!,
-      ResponseContentType: result.content_type,
+      ResponseContentType: result.contentType,
     });
 
     const url = await getSignedUrl(this.signatureS3, command, {
@@ -278,7 +279,7 @@ export class FileService implements OnModuleInit {
 
     let entity = await this.fileRepository.findOne({
       where: {
-        cloud_file_id: input.externalId,
+        cloudFileId: input.externalId,
         user: { id: userId },
       },
     });
@@ -286,7 +287,7 @@ export class FileService implements OnModuleInit {
     if (!entity) {
       entity = await this.fileRepository.findOne({
         where: {
-          file_path: filePath,
+          filePath: filePath,
           user: { id: userId },
         },
       });
@@ -300,17 +301,17 @@ export class FileService implements OnModuleInit {
         filePath,
       });
       entity.filename = input.filename;
-      entity.original_name = input.filename;
-      entity.content_type = input.mimeType;
+      entity.originalName = input.filename;
+      entity.contentType = input.mimeType;
       entity.size = normalizedSize;
-      entity.modified_at_source = modifiedAt;
-      entity.storage_type = 'cloud';
-      entity.storage_provider = provider;
-      entity.cloud_file_id = input.externalId;
-      entity.storage_account = input.storageAccount ?? entity.storage_account ?? null;
+      entity.modifiedAtSource = modifiedAt;
+      entity.storageType = 'cloud';
+      entity.storageProvider = provider;
+      entity.cloudFileId = input.externalId;
+      entity.storageAccount = input.storageAccount ?? entity.storageAccount ?? null;
       entity.bucket = null;
       entity.key = entity.key ?? uuidv7();
-      entity.file_path = filePath;
+      entity.filePath = filePath;
     } else {
       this.logger.debug('Creating external file record', {
         userId,
@@ -320,17 +321,17 @@ export class FileService implements OnModuleInit {
       });
       entity = this.fileRepository.create({
         id: uuidv7(),
-        file_path: filePath,
+        filePath: filePath,
         filename: input.filename,
-        storage_type: 'cloud',
-        storage_provider: provider,
-        cloud_file_id: input.externalId,
-        storage_account: input.storageAccount ?? null,
-        modified_at_source: modifiedAt,
+        storageType: 'cloud',
+        storageProvider: provider,
+        cloudFileId: input.externalId,
+        storageAccount: input.storageAccount ?? null,
+        modifiedAtSource: modifiedAt,
         bucket: null,
         key: uuidv7(),
-        original_name: input.filename,
-        content_type: input.mimeType,
+        originalName: input.filename,
+        contentType: input.mimeType,
         size: normalizedSize,
         user: { id: userId },
       });
@@ -366,14 +367,14 @@ export class FileService implements OnModuleInit {
     if (!bucket || !key) {
       return {
         ...FileEntity.toEgressType(file),
-        url: file.file_path,
+        url: file.filePath,
       };
     }
 
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: key,
-      ResponseContentType: file.content_type,
+      ResponseContentType: file.contentType,
     });
 
     const url = await getSignedUrl(this.signatureS3, command, {

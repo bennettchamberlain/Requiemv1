@@ -1,7 +1,5 @@
 import { defineEvent } from '@ci/domains/events';
 
-
-
 /**
  * Event emitted when creating a new user.
  *

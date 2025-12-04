@@ -1,19 +1,17 @@
-
-
 export interface FileQuery {
-  file_path?: string;
-  mime_type?: string;
+  filePath?: string;
+  mimeType?: string;
   filename?: string;
-  storage_type?: string;
-  storage_provider?: string;
-  cloud_file_id?: string;
-  storage_account?: string;
-  modified_at_source?: Date | undefined;
+  storageType?: string;
+  storageProvider?: string;
+  cloudFileId?: string;
+  storageAccount?: string;
+  modifiedAtSource?: Date | undefined;
   bucket?: string;
   key?: string;
-  original_name?: string;
-  content_type?: string;
-  file_hash?: string;
+  originalName?: string;
+  contentType?: string;
+  fileHash?: string;
   size?: number;
   user?: { id: string };
 }

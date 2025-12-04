@@ -16,25 +16,25 @@ export class FileEntity {
   id!: string;
 
   @Column({ type: 'text', name: 'file_path' })
-  file_path!: string;
+  filePath!: string;
 
   @Column({ type: 'text', name: 'filename' })
   filename!: string;
 
   @Column({ type: 'text', name: 'storage_type' })
-  storage_type!: string;
+  storageType!: string;
 
   @Column({ type: 'text', name: 'storage_provider', nullable: true })
-  storage_provider!: string | null;
+  storageProvider!: string | null;
 
   @Column({ type: 'text', name: 'cloud_file_id', nullable: true })
-  cloud_file_id!: string | null;
+  cloudFileId!: string | null;
 
   @Column({ type: 'text', name: 'storage_account', nullable: true })
-  storage_account!: string | null;
+  storageAccount!: string | null;
 
   @Column({ type: 'timestamptz', name: 'modified_at_source' })
-  modified_at_source!: Date;
+  modifiedAtSource!: Date;
 
   @Column({ type: 'text', nullable: true })
   bucket!: string | null;
@@ -43,13 +43,13 @@ export class FileEntity {
   key!: string | null;
 
   @Column({ type: 'text', name: 'original_filename' })
-  original_name!: string;
+  originalName!: string;
 
   @Column({ type: 'text', name: 'mime_type' })
-  content_type!: string;
+  contentType!: string;
 
   @Column({ type: 'text', name: 'file_hash' })
-  file_hash!: string | null;
+  fileHash!: string | null;
 
   @Column({ type: 'bigint', name: 'file_size_bytes' })
   size!: number;
@@ -58,30 +58,30 @@ export class FileEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
 
   static toEgressType(entity: FileEntity): File {
     return {
       id: entity.id,
-      original_name: entity.original_name,
-      file_hash: entity.file_hash,
+      originalName: entity.originalName,
+      fileHash: entity.fileHash,
       key: entity.key,
-      file_path: entity.file_path,
+      filePath: entity.filePath,
       filename: entity.filename,
-      storage_type: entity.storage_type,
-      storage_provider: entity.storage_provider,
-      storage_account: entity.storage_account,
-      cloud_file_id: entity.cloud_file_id,
-      modified_at_source: entity.modified_at_source,
+      storageType: entity.storageType,
+      storageProvider: entity.storageProvider,
+      storageAccount: entity.storageAccount,
+      cloudFileId: entity.cloudFileId,
+      modifiedAtSource: entity.modifiedAtSource,
       bucket: entity.bucket,
-      content_type: entity.content_type,
+      contentType: entity.contentType,
       size: entity.size,
-      created_at: entity.created_at,
-      updated_at: entity.updated_at,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
     };
   }
 }

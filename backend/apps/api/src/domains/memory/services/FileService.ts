@@ -6,10 +6,10 @@ import { v7 as uuidv7 } from 'uuid';
 import { RequestContext } from '@ci/common/types';
 import { OnEvent } from '@ci/domains/events';
 import { FileService as FileStorageService } from '@ci/domains/files';
+import { FileUploadedEvent, FileUploadedPayload } from '@ci/domains/files/events';
 import { CreateFileDto } from '@ci/domains/memory/types';
 
 import { FileEntity } from '../entities/FileEntity';
-import {FileUploadedEvent, FileUploadedPayload} from "@ci/domains/files/events";
 
 @Injectable()
 export class FileService {
@@ -49,7 +49,7 @@ export class FileService {
 
   @OnEvent(FileUploadedEvent)
   async handleFileUploaded(payload: FileUploadedPayload) {
-    const file = await this.fileService.findOne({ userId: payload.userId }, payload.fileId);
+    const file = await this.fileService.findById({ userId: payload.userId }, payload.fileId);
 
     const existingEntity = await this.fileRepository
       .createQueryBuilder('entity')
@@ -60,7 +60,7 @@ export class FileService {
     const entity = !existingEntity
       ? await this.fileRepository.create({
           id: uuidv7(),
-          name: file.name,
+          name: file.filename,
           entity_type: 'File',
           description: 'File',
           linked_table: 'files',

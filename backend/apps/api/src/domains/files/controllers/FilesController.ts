@@ -13,7 +13,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
-import type {RequestContext, ServiceContext, UserServiceContext} from '@ci/common/types';
+import type { ServiceContext, UserServiceContext } from '@ci/common/types';
 
 import { FileService } from '../services/FileService';
 
