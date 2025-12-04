@@ -37,7 +37,7 @@ import { MemoryController } from './controllers/MemoryController';
 import { CommunicationEntity } from './entities/CommunicationEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
-import { FactEntity } from './entities/FactEntity';
+import { type Fact, FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { PersonEntity } from './entities/PersonEntity';
@@ -164,3 +164,5 @@ export type {
   SearchResultItem,
   DatabaseSearchResults,
 } from './services/SearchService';
+
+export type { Fact };

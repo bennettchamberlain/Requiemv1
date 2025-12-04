@@ -1,9 +1,9 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity({ name: 'facts' })
 export class FactEntity {
   @PrimaryColumn('uuid', { name: 'fact_id' })
-  fact_id!: string;
+  id!: string;
 
   @Column({ type: 'uuid', name: 'fact_owner_id' })
   fact_owner_id!: string;
@@ -32,15 +32,28 @@ export class FactEntity {
   @Column({ type: 'timestamptz', name: 'archived_at', nullable: true })
   archived_at!: Date | null;
 
-  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
-  created_at!: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
-  updated_at!: Date;
-
   @Column({ type: 'boolean', name: 'is_current', default: true })
   is_current!: boolean;
 
   @Column({ type: 'text', name: 'access_level', default: 'private' })
   access_level!: string;
+
+  static toEgressType(entity: FactEntity): Fact {
+    return {
+      id: entity.id,
+      fact_owner_id: entity.fact_owner_id,
+      fact_statement: entity.fact_statement,
+      fact_type: entity.fact_type,
+      original_entity_id: entity.original_entity_id,
+      preserved_relationships: entity.preserved_relationships,
+      source: entity.source,
+      confidence_score: entity.confidence_score,
+      learned_at: entity.learned_at,
+      archived_at: entity.archived_at,
+      is_current: entity.is_current,
+      access_level: entity.access_level,
+    };
+  }
 }
+
+export type Fact = Readonly<FactEntity>;

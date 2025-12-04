@@ -716,7 +716,7 @@ export class GraphUtilityService {
     const now = new Date();
     const facts = entries.map((entry) =>
       this.factRepo.create({
-        fact_id: uuidv7(),
+        id: uuidv7(),
         fact_owner_id: ownerUserId,
         fact_type: 'entity',
         fact_statement: {
@@ -735,7 +735,7 @@ export class GraphUtilityService {
 
     const saved = await this.factRepo.save(facts);
 
-    return saved.map((fact) => fact.fact_id);
+    return saved.map((fact) => fact.id);
   }
 
   async archiveRelationships(
@@ -750,7 +750,7 @@ export class GraphUtilityService {
     const now = new Date();
     const facts = relationships.map((relationship) =>
       this.factRepo.create({
-        fact_id: uuidv7(),
+        id: uuidv7(),
         fact_owner_id: ownerUserId,
         fact_type: 'relationship',
         fact_statement: this.serializeRelationshipForArchive(relationship),
@@ -764,7 +764,7 @@ export class GraphUtilityService {
 
     const saved = await this.factRepo.save(facts);
 
-    return saved.map((fact) => fact.fact_id);
+    return saved.map((fact) => fact.id);
   }
 
   /**
