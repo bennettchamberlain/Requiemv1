@@ -19,7 +19,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
 import { LoggerService } from '@ci/common/services';
-import type { RequestContext } from '@ci/common/types';
+import type { RequestContext, ServiceContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import config from '@ci/configuration';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
@@ -114,7 +114,7 @@ export class OllamaController {
     });
 
     const messages = await this.messageService.findByThreadId(serviceContext, thread.id);
-    const seededMessages = await this.ensureActionPrompt(context, thread, messages);
+    const seededMessages = await this.ensureActionPrompt(serviceContext, thread, messages);
 
     // Build input messages with files attached to their respective messages
     const inputMessages: OllamaMessage[] = await Promise.all(
@@ -249,7 +249,7 @@ export class OllamaController {
   }
 
   private async ensureActionPrompt(
-    context: RequestContext,
+    context: ServiceContext,
     thread: Thread,
     messages: Message[],
   ): Promise<Message[]> {

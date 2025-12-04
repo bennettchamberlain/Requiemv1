@@ -11,11 +11,9 @@ import {
   OneToOne,
 } from 'typeorm';
 
-import { ThreadEntity } from '@ci/domains/conversations';
+import { type Thread, ThreadEntity } from '@ci/domains/conversations';
 import { TagEntity } from '@ci/domains/search';
-import { UserEntity } from '@ci/domains/user';
-
-import { Action } from '../types';
+import { type User, UserEntity } from '@ci/domains/user';
 
 @Entity({ name: 'actions' })
 export class ActionEntity {
@@ -53,22 +51,31 @@ export class ActionEntity {
   })
   tags?: TagEntity[];
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
 
-  toAction(): Action {
+  static toEgressType(entity: ActionEntity): Action {
     return {
-      id: this.id,
-      title: this.title,
-      text: this.text,
-      imageUrl: this.imageUrl,
-      threadId: this.threadId,
-      thread: this.thread ? ThreadEntity.toEgressType(this.thread) : undefined,
-      user: this.user ? UserEntity.toEgressType(this.user) : undefined,
-      tags: this.tags?.map((tag) => tag.toTag()).filter((tag) => !!tag) as string[],
-    } satisfies Action;
+      id: entity.id,
+      title: entity.title,
+      text: entity.text,
+      imageUrl: entity.imageUrl,
+      priority: entity.priority,
+      threadId: entity.threadId,
+      thread: entity.thread ? ThreadEntity.toEgressType(entity.thread) : undefined,
+      user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
+      tags: entity.tags?.map((tag) => tag.toTag()).filter((tag) => !!tag) as string[],
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    };
   }
 }
+
+export type Action = Readonly<Omit<ActionEntity, 'user' | 'thread' | 'tags'>> & {
+  user?: User;
+  thread?: Thread;
+  tags?: string[];
+};
