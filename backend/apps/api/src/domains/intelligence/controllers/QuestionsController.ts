@@ -19,7 +19,7 @@ import { Context, Cron } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
-import { type RequestContext } from '@ci/common/types';
+import { type RequestContext, type ServiceContext, SYSTEM_USER } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import config from '@ci/configuration';
 import { EventService, Events, EventPayloads, OnEvent } from '@ci/domains/events';
@@ -156,7 +156,9 @@ export class QuestionsController {
       questionId: payload.questionId,
     });
 
-    const serviceContext = toServiceContext(context);
+    const serviceContext = {
+      userId: payload.ownerId ?? SYSTEM_USER,
+    } as ServiceContext;
 
     const question = await this.questionService.findById(serviceContext, payload.questionId);
 
@@ -168,7 +170,7 @@ export class QuestionsController {
         10,
       );
 
-      const resolvedAnswers = await this.answerService.findSome(
+      const resolvedAnswers = await this.answerService.findByIds(
         serviceContext,
         associatedAnswers.map((embedding) => embedding.id),
       );
