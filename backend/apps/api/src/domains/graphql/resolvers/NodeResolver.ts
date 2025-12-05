@@ -6,8 +6,10 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
+import { FileService } from '@ci/domains/files';
 import { ItemService, PersonService } from '@ci/domains/memory';
 
+import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
 import { MessageType } from '../types/MessageType';
@@ -19,6 +21,7 @@ import { ThreadType } from '../types/ThreadType';
 @Resolver(() => Node)
 export class NodeResolver {
   constructor(
+    private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
     private readonly personService: PersonService,
@@ -34,6 +37,16 @@ export class NodeResolver {
     const { type, id } = GlobalUID.decode(gid);
 
     switch (type) {
+      case 'file': {
+        const file = await this.fileService.findById(serviceContext, id);
+
+        if (file == null) {
+          throw new NotFoundException('File not found');
+        }
+
+        return FileType.toType(file);
+      }
+
       case 'item': {
         const item = await this.itemService.findById(serviceContext, id);
 

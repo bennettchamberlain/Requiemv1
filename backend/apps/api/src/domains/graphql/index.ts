@@ -5,12 +5,14 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
 import { ConversationModule } from '@ci/domains/conversations';
+import { FilesModule } from '@ci/domains/files';
 import { MemoryModule } from '@ci/domains/memory';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { FactResolver } from './resolvers/FactResolver';
+import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
@@ -29,12 +31,14 @@ import { UserResolver } from './resolvers/UserResolver';
       graphiql: false,
     }),
     ConversationModule,
+    FilesModule,
     MemoryModule,
     UserModule,
   ],
   providers: [
     NodeResolver,
     FactResolver,
+    FileResolver,
     ItemResolver,
     PersonResolver,
     SearchResolver,
