@@ -2696,6 +2696,7 @@ __metadata:
     google-auth-library: "npm:^10.1.0"
     googleapis: "npm:^153.0.0"
     graphql: "npm:^16.12.0"
+    graphql-type-json: "npm:^0.3.2"
     jest: "npm:^30.0.4"
     jest-util: "npm:^30.0.2"
     knip: "npm:^5.66.0"
@@ -13916,6 +13917,15 @@ __metadata:
   peerDependencies:
     graphql: ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
   checksum: 10c0/7763a72011bda454ed8ff1a0d82325f43ca6478e4ce4ab8b7910c4c651dd00db553132171c04d80af5d5aebf1ef6a8a9fd53ccfa33b90ddc00aa3d4be6114419
+  languageName: node
+  linkType: hard
+
+"graphql-type-json@npm:^0.3.2":
+  version: 0.3.2
+  resolution: "graphql-type-json@npm:0.3.2"
+  peerDependencies:
+    graphql: ">=0.8.0"
+  checksum: 10c0/1ee7efff7f451cf2db6844430f4b19f8915175af11c1eeca31c8972685194669199cc542060d15cc9e169bb4d5a3cd16a6cf99081b9d802d8470048022a2924a
   languageName: node
   linkType: hard
 
