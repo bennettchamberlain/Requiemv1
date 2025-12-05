@@ -19,14 +19,14 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
+import { Content } from '../entities/ContentEntity';
 import { ContentService } from '../services/ContentService';
 import { EventService } from '../services/EventService';
 import { CreateEventDto, UpdateEventDto } from '../types';
-import { Content } from '../entities/ContentEntity'
 
 import { createContentSchema } from './ContentController';
-import {toServiceContext} from "@ci/common/utils";
 
 const createEventSchemaRoot = z.object({
   title: z.string(),

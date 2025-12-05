@@ -13,8 +13,9 @@ import {
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity, type User } from '@ci/domains/user';
 
-import { EventEntity } from './EventEntity';
 import type { Event } from '../types';
+
+import { EventEntity } from './EventEntity';
 
 @Entity({ name: 'content' })
 export class ContentEntity {
@@ -93,4 +94,4 @@ export type Content = Readonly<Omit<ContentEntity, 'user' | 'event' | 'tags'>> &
   user?: User;
   event?: Event;
   tags?: string[];
-}
+};

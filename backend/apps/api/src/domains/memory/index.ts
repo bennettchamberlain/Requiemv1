@@ -144,9 +144,7 @@ export {
   SearchService,
 };
 
-export type {
-  Content
-} from './entities/ContentEntity'
+export type { Content } from './entities/ContentEntity';
 
 // Types
 export type {

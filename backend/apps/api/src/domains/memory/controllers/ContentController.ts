@@ -9,6 +9,9 @@ import {
   Body,
   Req,
   UseGuards,
+  NotFoundException,
+  HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { z } from 'zod';
@@ -18,10 +21,10 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { ContentService } from '../services/ContentService';
 import { CreateContentDto, UpdateContentDto } from '../types';
-import {toServiceContext} from "@ci/common/utils";
 
 export const createContentSchema = z.object({
   type: z.string().optional(),
@@ -119,23 +122,29 @@ export class ContentController {
   ) {
     const serviceContext = toServiceContext(context);
 
-    try {
-      return await this.contentService.update(serviceContext, id, input);
-    } catch (error) {
-      if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
-        // TODO: Obfuscate this error message? We're revealing DB details here.
-        throw new ConflictException(error.message);
-      }
+    const result = await this.contentService.update(serviceContext, id, input);
 
-      throw error;
+    if (!result) {
+      throw new NotFoundException();
     }
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  remove(@Param('id') id: string, @Context() context: RequestContext) {
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Context() context: RequestContext, @Param('id') id: string): Promise<void> {
     const serviceContext = toServiceContext(context);
 
-    return this.contentService.remove(serviceContext, id);
+    const content = await this.contentService.findById(serviceContext, id);
+
+    if (!content) {
+      throw new NotFoundException('Content not found');
+    }
+
+    const removal = this.contentService.remove(serviceContext, id);
+
+    if (!removal) {
+      throw new NotFoundException('Content not found');
+    }
   }
 }
