@@ -47,7 +47,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
     threadId,
   });
 
-  const [isInventoryMode, setIsInventoryMode] = useState(false);
+  const [isInventoryMode, setIsInventoryMode] = useState(true);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
