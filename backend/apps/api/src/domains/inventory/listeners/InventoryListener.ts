@@ -72,19 +72,25 @@ export class InventoryListener {
 
       // 3. Prompt LLM
       const prompt = `
-        Analyze this image and identify the main object. 
+        Analyze this image and identify all distinct objects visible.
         You are a JSON generator. Output ONLY valid JSON.
         Do not include any conversational text, markdown formatting, or explanations.
         
+        If the image is too dark, blurry, or contains no distinct objects, return an empty array for "items".
+        
         Return a JSON object with the following schema:
         {
-            "name": "Short name of the item",
-            "description": "Brief description",
-            "category": "General category (e.g., Electronics, Furniture, Tools)",
-            "brand": "Brand name if visible, or null",
-            "model": "Model if visible, or null",
-            "condition": "Estimated condition (new, good, fair, poor)",
-            "estimated_value": 0
+          "items": [
+            {
+              "name": "Short name of the item",
+              "description": "Brief description",
+              "category": "General category (e.g., Electronics, Furniture, Tools)",
+              "brand": "Brand name if visible, or null",
+              "model": "Model if visible, or null",
+              "condition": "Estimated condition (new, good, fair, poor)",
+              "estimated_value": 0
+            }
+          ]
         }
 
         For estimated_value, provide a rough number in USD based on visual condition. If unknown, use 0.
@@ -120,33 +126,37 @@ export class InventoryListener {
       }
 
       const data = JSON.parse(jsonStr);
+      const items = Array.isArray(data.items) ? data.items : [];
+
+      this.logger.log('Parsed items', { count: items.length });
 
       // 4. Save to Inventory
-      const item = this.itemRepository.create({
-        id: uuidv7(),
-        userId: payload.userId,
-        name: data.name || 'Unknown Item',
-        description: data.description,
-        category: data.category,
-        brand: data.brand,
-        model: data.model,
-        condition: ['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a'].includes(data.condition)
-          ? data.condition
-          : 'good',
-        currentValue: data.estimated_value,
-        images: [file.url], // Use the signed URL or path
-        metadata: {
-          original_analysis: data,
-          is_near_home: isNearHome,
-          captured_at: new Date(),
-        },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      for (const itemData of items) {
+        const item = this.itemRepository.create({
+          id: uuidv7(),
+          userId: payload.userId,
+          name: itemData.name || 'Unknown Item',
+          description: itemData.description,
+          category: itemData.category,
+          brand: itemData.brand,
+          model: itemData.model,
+          condition: ['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a'].includes(itemData.condition)
+            ? itemData.condition
+            : 'good',
+          currentValue: itemData.estimated_value,
+          images: [file.url], // Use the signed URL or path
+          metadata: {
+            original_analysis: itemData,
+            is_near_home: isNearHome,
+            captured_at: new Date(),
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
 
-      await this.itemRepository.save(item);
-
-      this.logger.log('Inventory item created', { itemId: item.id, name: item.name });
+        await this.itemRepository.save(item);
+        this.logger.log('Inventory item created', { itemId: item.id, name: item.name });
+      }
     } catch (error) {
       this.logger.error('Failed to process inventory upload', {
         error: error instanceof Error ? error.message : String(error),
