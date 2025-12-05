@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
 import { fetchJson, useDeviceLayout } from '@ci/common';
-import { Dialog, cn, Button, Popover } from '@ci/shadcn';
+import { Dialog, cn, Button, Popover, Switch } from '@ci/shadcn';
 import { Send, Settings, X } from '@ci/shadcn/icons';
 
 import { useUploadFile } from '@/api';
@@ -17,6 +17,16 @@ import { getMediaType } from '@/lib/utils';
 interface Props {
   open?: boolean;
   onClose?: () => void;
+}
+
+interface InventoryItem {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  brand: string;
+  model: string;
+  currentValue: number;
 }
 
 export function CaptureModal({ open = false, onClose }: Props) {
@@ -37,6 +47,17 @@ export function CaptureModal({ open = false, onClose }: Props) {
     threadId,
   });
 
+  const [isInventoryMode, setIsInventoryMode] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const handleInventoryToggle = useCallback(() => {
+    setIsInventoryMode((prev) => !prev);
+    setFiles([]);
+    setInventoryItems([]);
+    setIsAnalyzing(false);
+  }, []);
+
   const handleClose = useCallback(() => {
     setFiles([]);
     setThreadId(null);
@@ -55,9 +76,13 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
   const handleMediaCaptured = useCallback(
     async (file: File) => {
-      upload([file]);
+      console.log('handleMediaCaptured called', { isInventoryMode, selectedModel });
+      upload([file], isInventoryMode, selectedModel ?? undefined);
+      if (isInventoryMode) {
+        setIsAnalyzing(true);
+      }
     },
-    [upload],
+    [upload, isInventoryMode, selectedModel],
   );
 
   const createFileThread = useCallback(async () => {
@@ -98,11 +123,37 @@ export function CaptureModal({ open = false, onClose }: Props) {
       });
 
       // Only create thread if we don't have one yet
-      if (threadId == null) {
+      if (threadId == null && !isInventoryMode) {
         await createFileThread();
       }
     })();
-  }, [fileData, isMobile, createFileThread, threadId]);
+  }, [fileData, isMobile, createFileThread, threadId, isInventoryMode]);
+
+  useEffect(() => {
+    if (!isInventoryMode || !isAnalyzing) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const items = await fetchJson<InventoryItem[]>('/api/memory/items', {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+        if (items && items.length > 0) {
+          // Check if the most recent item is newer than our start time
+          // For simplicity, just showing the latest items
+          setInventoryItems(items);
+          setIsAnalyzing(false);
+        }
+      } catch (e) {
+        console.error('Failed to poll inventory', e);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isInventoryMode, isAnalyzing, authToken]);
 
   const handleSelectLastCapture = useCallback(async () => {
     if (fileData.length === 0) {
@@ -220,7 +271,13 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
           <ModelSelector withToggles />
 
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2">
+            <div className="flex items-center gap-2 mr-2">
+              <Switch id="inventory-mode" checked={isInventoryMode} onCheckedChange={handleInventoryToggle} />
+              <label htmlFor="inventory-mode" className="text-sm font-medium cursor-pointer">
+                Inventory Mode
+              </label>
+            </div>
             <Button variant="ghost" size="icon" onClick={handleClose}>
               <X />
             </Button>
@@ -249,28 +306,58 @@ export function CaptureModal({ open = false, onClose }: Props) {
             </div>
 
             <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
-              <VoiceModeProvider>
-                <Chat
-                  loading={loading}
-                  streaming={streaming}
-                  hasStartedReceiving={hasStartedReceiving}
-                  readable={stream ?? undefined}
-                  onSubmit={handleSubmit}
-                  onStop={stopChatRequest}
-                  placeholder="Ask about this content..."
-                  emptyState={
-                    <div className="text-center text-gray-500 mt-8">
-                      <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
-                        <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
-                      </div>
-                      <p className="text-sm">Start a conversation about this content</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Ask questions, get recommendations, or explore ideas
-                      </p>
+              {isInventoryMode ? (
+                <div className="p-4 h-full overflow-y-auto">
+                  <h3 className="font-bold mb-4">Inventory Results</h3>
+                  {isAnalyzing && (
+                    <div className="flex items-center justify-center p-8 text-gray-500">
+                      Analyzing image...
                     </div>
-                  }
-                />
-              </VoiceModeProvider>
+                  )}
+                  <div className="grid grid-cols-1 gap-4">
+                    {inventoryItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="border rounded-lg p-4 bg-white dark:bg-zinc-900 shadow-sm"
+                      >
+                        <div className="font-bold text-lg">{item.name}</div>
+                        <div className="text-sm text-gray-500 mb-2">{item.category}</div>
+                        <p className="text-sm mb-2">{item.description}</p>
+                        <div className="flex gap-2 text-xs text-gray-400">
+                          <span>{item.brand}</span>
+                          <span>•</span>
+                          <span>{item.model}</span>
+                          <span>•</span>
+                          <span>${item.currentValue}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <VoiceModeProvider>
+                  <Chat
+                    loading={loading}
+                    streaming={streaming}
+                    hasStartedReceiving={hasStartedReceiving}
+                    readable={stream ?? undefined}
+                    onSubmit={handleSubmit}
+                    onStop={stopChatRequest}
+                    placeholder="Ask about this content..."
+                    emptyState={
+                      <div className="text-center text-gray-500 mt-8">
+                        <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
+                          <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
+                        </div>
+                        <p className="text-sm">Start a conversation about this content</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Ask questions, get recommendations, or explore ideas
+                        </p>
+                      </div>
+                    }
+                  />
+                </VoiceModeProvider>
+              )}
             </div>
           </div>
         )}

@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
@@ -54,13 +55,23 @@ export class FilesController {
   @UseGuards(JwtAuthGuard)
   @Post('upload')
   @UseInterceptors(FilesInterceptor('files', undefined, { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
-  async upload(@Context() context: RequestContext, @UploadedFiles() files: Express.Multer.File[]) {
+  async upload(
+    @Context() context: RequestContext,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Query('inventory') isInventory?: string,
+    @Query('model') model?: string,
+  ) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
 
     const serviceContext = toServiceContext(context);
+    const isInventoryBool = isInventory === 'true';
 
-    return await Promise.all(files.map((file) => this.fileService.upload(serviceContext, file)));
+    console.log('FilesController.upload called', { isInventory, isInventoryBool, model });
+
+    return await Promise.all(
+      files.map((file) => this.fileService.upload(serviceContext, file, isInventoryBool, model)),
+    );
   }
 }

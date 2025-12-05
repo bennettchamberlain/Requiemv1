@@ -20,6 +20,9 @@ export class ItemService {
           userId: context.userId,
         }),
       },
+      order: {
+        createdAt: 'DESC',
+      },
     });
 
     return entities.map((entity) => ItemEntity.toEgressType(entity));

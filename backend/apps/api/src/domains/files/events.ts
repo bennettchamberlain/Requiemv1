@@ -25,6 +25,8 @@ export type FileUploadedPayload = {
   /** The identifier of the newly created user */
   fileId: string;
   userId: string;
+  isInventory?: boolean;
+  model?: string;
 };
 
 /**

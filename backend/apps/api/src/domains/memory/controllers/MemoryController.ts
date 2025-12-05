@@ -6,7 +6,9 @@ import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
+import { ItemService } from '../services/ItemService';
 import { MemoryService } from '../services/MemoryService';
 import { MemorySearchParams } from '../types';
 
@@ -73,7 +75,10 @@ const memorySearchSchema = z.object({
 export class MemoryController {
   private logger = new LoggerService(MemoryController.name);
 
-  constructor(private readonly memoryService: MemoryService) {}
+  constructor(
+    private readonly memoryService: MemoryService,
+    private readonly itemService: ItemService,
+  ) {}
 
   @Get()
   async findAll(
@@ -81,6 +86,11 @@ export class MemoryController {
     @Query(new ValidationPipe(memorySearchSchema)) params: MemorySearchParams,
   ) {
     return this.memoryService.findAll(context, params);
+  }
+
+  @Get('items')
+  async getItems(@Context() context: RequestContext) {
+    return this.itemService.findAll(toServiceContext(context));
   }
 
   @Get(':id')

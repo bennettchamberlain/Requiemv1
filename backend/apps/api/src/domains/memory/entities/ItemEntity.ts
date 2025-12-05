@@ -99,6 +99,9 @@ export class ItemEntity {
   @Column('jsonb', { name: 'metadata', default: {} })
   metadata!: Record<string, unknown>;
 
+  @Column('jsonb', { name: 'images', default: [] })
+  images!: string[];
+
   @Column('text', { name: 'user_id' })
   userId!: string;
 
@@ -147,6 +150,7 @@ export class ItemEntity {
       isSubscription: entity.isSubscription,
       subscriptionExpirationDate: entity.subscriptionExpirationDate,
       metadata: entity.metadata,
+      images: entity.images,
 
       userId: entity.userId,
       sourceFileId: entity.sourceFileId,

@@ -149,7 +149,12 @@ export class FileService implements OnModuleInit {
     throw new NotImplementedException();
   }
 
-  async upload(context: UserServiceContext, file: Express.Multer.File): Promise<SignedFile> {
+  async upload(
+    context: UserServiceContext,
+    file: Express.Multer.File,
+    isInventory = false,
+    model?: string,
+  ): Promise<SignedFile> {
     const fileId = uuidv7();
     const fileKey = uuidv4();
     const bucket = config.staticfiles.bucket;
@@ -189,6 +194,8 @@ export class FileService implements OnModuleInit {
     await this.eventService.send(FileUploadedEvent, {
       fileId: result.id,
       userId: context.userId,
+      isInventory,
+      model,
     });
 
     return this.signFile(entity);
