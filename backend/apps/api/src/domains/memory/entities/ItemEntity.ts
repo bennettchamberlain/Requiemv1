@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Point } from 'typeorm';
+import { AfterLoad, Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Point } from 'typeorm';
 
 export type InventoryCondition = 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a';
 
@@ -108,6 +108,13 @@ export class ItemEntity {
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date;
 
+  sourceFileId!: string | null;
+
+  @AfterLoad()
+  loadMetadataProperties() {
+    this.sourceFileId = (this.metadata?.sourceFileId as string) || null;
+  }
+
   static toEgressType(entity: ItemEntity): Item {
     return {
       id: entity.id,
@@ -142,6 +149,7 @@ export class ItemEntity {
       metadata: entity.metadata,
 
       userId: entity.userId,
+      sourceFileId: entity.sourceFileId,
 
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
@@ -149,4 +157,4 @@ export class ItemEntity {
   }
 }
 
-export type Item = Readonly<ItemEntity>;
+export type Item = Readonly<Omit<ItemEntity, 'loadMetadataProperties'>>;
