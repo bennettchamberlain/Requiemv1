@@ -10,6 +10,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
+import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
@@ -39,6 +40,7 @@ import { UserResolver } from './resolvers/UserResolver';
     NodeResolver,
     FactResolver,
     FileResolver,
+    ItemFileLoader,
     ItemResolver,
     PersonResolver,
     SearchResolver,
