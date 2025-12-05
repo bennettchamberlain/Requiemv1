@@ -24,6 +24,8 @@ registerEnumType(ItemCondition, {
 export class ItemType implements Node {
   __typename = ItemType.name;
 
+  __source: Item | null = null;
+
   @Field(() => ID)
   id!: string;
 
@@ -69,6 +71,7 @@ export class ItemType implements Node {
   static toType(item: Item): ItemType {
     return {
       __typename: ItemType.name,
+      __source: item,
       id: GlobalUID.encode('item', item.id),
       name: item.name,
       description: item.description,
