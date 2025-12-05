@@ -3,6 +3,7 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Item } from '@ci/domains/memory';
 
+import { FileType } from './FileType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
 
@@ -61,6 +62,9 @@ export class ItemType implements Node {
 
   @Field(() => GraphQLJSONObject)
   metadata!: Record<string, unknown>;
+
+  @Field(() => FileType, { nullable: true })
+  file?: FileType | null;
 
   @Field(() => Date)
   createdAt!: Date;

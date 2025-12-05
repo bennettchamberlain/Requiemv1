@@ -85,6 +85,7 @@ type ItemType implements Node {
   currency: String!
   currentValue: Float
   description: String
+  file: FileType
   id: ID!
   metadata: JSON!
   model: String
