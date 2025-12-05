@@ -13,7 +13,7 @@ type ReturnType = [
     error: unknown | null;
   },
   {
-    upload: (file: File[], isInventory?: boolean, model?: string) => void;
+    upload: (file: File[], isInventory?: boolean, model?: string) => Promise<FileData[]>;
     reset: () => void;
   },
 ];
@@ -37,8 +37,6 @@ export function useUploadFile(): ReturnType {
         formData.append('files', file);
       });
 
-      let success = false;
-
       try {
         const queryParams = new URLSearchParams();
         if (isInventory) {
@@ -61,16 +59,14 @@ export function useUploadFile(): ReturnType {
 
         setFiles(data);
 
-        success = true;
+        return data;
       } catch (err) {
         setError(err);
 
-        success = false;
+        throw err;
       } finally {
         setLoading(false);
       }
-
-      return success;
     },
     [authToken],
   );

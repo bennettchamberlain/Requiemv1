@@ -149,6 +149,7 @@ export class InventoryListener {
             original_analysis: itemData,
             is_near_home: isNearHome,
             captured_at: new Date(),
+            source_file_id: payload.fileId,
           },
           createdAt: new Date(),
           updatedAt: new Date(),

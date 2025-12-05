@@ -74,17 +74,6 @@ export function CaptureModal({ open = false, onClose }: Props) {
     }
   }, [open]);
 
-  const handleMediaCaptured = useCallback(
-    async (file: File) => {
-      console.log('handleMediaCaptured called', { isInventoryMode, selectedModel });
-      upload([file], isInventoryMode, selectedModel ?? undefined);
-      if (isInventoryMode) {
-        setIsAnalyzing(true);
-      }
-    },
-    [upload, isInventoryMode, selectedModel],
-  );
-
   const createFileThread = useCallback(async () => {
     const thread = await fetchJson<Thread>('/api/threads', {
       method: 'POST',
@@ -129,31 +118,52 @@ export function CaptureModal({ open = false, onClose }: Props) {
     })();
   }, [fileData, isMobile, createFileThread, threadId, isInventoryMode]);
 
+  const [currentFileId, setCurrentFileId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!isInventoryMode || !isAnalyzing) {
-      return;
+    let interval: NodeJS.Timeout;
+
+    if (isInventoryMode && isAnalyzing && currentFileId) {
+      interval = setInterval(async () => {
+        try {
+          const items = await fetchJson<InventoryItem[]>(`/api/memory/items?fileId=${currentFileId}`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+          if (items && items.length > 0) {
+            setInventoryItems(items);
+            setIsAnalyzing(false);
+          }
+        } catch (e) {
+          console.error('Failed to poll inventory', e);
+        }
+      }, 2000);
     }
 
-    const interval = setInterval(async () => {
-      try {
-        const items = await fetchJson<InventoryItem[]>('/api/memory/items', {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        });
-        if (items && items.length > 0) {
-          // Check if the most recent item is newer than our start time
-          // For simplicity, just showing the latest items
-          setInventoryItems(items);
-          setIsAnalyzing(false);
-        }
-      } catch (e) {
-        console.error('Failed to poll inventory', e);
+    return () => {
+      if (interval) {
+        clearInterval(interval);
       }
-    }, 2000);
+    };
+  }, [isInventoryMode, isAnalyzing, authToken, currentFileId]);
 
-    return () => clearInterval(interval);
-  }, [isInventoryMode, isAnalyzing, authToken]);
+  const handleMediaCaptured = useCallback(
+    async (file: File) => {
+      console.log('handleMediaCaptured called', { isInventoryMode, selectedModel });
+      try {
+        const uploadedFiles = await upload([file], isInventoryMode, selectedModel ?? undefined);
+        if (isInventoryMode && uploadedFiles && uploadedFiles.length > 0) {
+          setCurrentFileId(uploadedFiles[0].id);
+          setIsAnalyzing(true);
+          setInventoryItems([]); // Clear previous items
+        }
+      } catch (error) {
+        console.error('Upload failed', error);
+      }
+    },
+    [upload, isInventoryMode, selectedModel],
+  );
 
   const handleSelectLastCapture = useCallback(async () => {
     if (fileData.length === 0) {

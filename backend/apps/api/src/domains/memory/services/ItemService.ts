@@ -13,17 +13,20 @@ export class ItemService {
     private readonly itemRepository: Repository<ItemEntity>,
   ) {}
 
-  async findAll(context: ServiceContext): Promise<Item[]> {
-    const entities = await this.itemRepository.find({
-      where: {
-        ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
-        }),
-      },
-      order: {
-        createdAt: 'DESC',
-      },
-    });
+  async findAll(context: ServiceContext, fileId?: string): Promise<Item[]> {
+    const queryBuilder = this.itemRepository.createQueryBuilder('item');
+
+    if (context.userId !== SYSTEM_USER) {
+      queryBuilder.andWhere('item.userId = :userId', { userId: context.userId });
+    }
+
+    if (fileId) {
+      queryBuilder.andWhere(`item.metadata->>'source_file_id' = :fileId`, { fileId });
+    }
+
+    queryBuilder.orderBy('item.createdAt', 'DESC');
+
+    const entities = await queryBuilder.getMany();
 
     return entities.map((entity) => ItemEntity.toEgressType(entity));
   }

@@ -89,8 +89,8 @@ export class MemoryController {
   }
 
   @Get('items')
-  async getItems(@Context() context: RequestContext) {
-    return this.itemService.findAll(toServiceContext(context));
+  async getItems(@Context() context: RequestContext, @Query('fileId') fileId?: string) {
+    return this.itemService.findAll(toServiceContext(context), fileId);
   }
 
   @Get(':id')
