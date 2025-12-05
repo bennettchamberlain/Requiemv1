@@ -8,6 +8,11 @@ interface Connection {
   totalCount: Int!
 }
 
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
 interface Edge {
   cursor: String!
   node: Node!
@@ -27,6 +32,71 @@ type FactEdge implements Edge {
 type FactType implements Node {
   id: ID!
 }
+
+type FileConnection implements Connection {
+  edges: [FileEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type FileEdge implements Edge {
+  cursor: String!
+  node: FileType!
+}
+
+type FileType implements Node {
+  contentType: String!
+  createdAt: DateTime!
+  filename: String!
+  id: ID!
+  originalName: String!
+  size: Float!
+  updatedAt: DateTime!
+  url: String!
+}
+
+enum ItemCondition {
+  BROKEN
+  FAIR
+  GOOD
+  LIKE_NEW
+  NA
+  NEW
+  POOR
+}
+
+type ItemConnection implements Connection {
+  edges: [ItemEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ItemEdge implements Edge {
+  cursor: String!
+  node: ItemType!
+}
+
+type ItemType implements Node {
+  acquiredAt: DateTime
+  brand: String
+  category: String
+  condition: ItemCondition
+  createdAt: DateTime!
+  currency: String!
+  currentValue: Float
+  description: String
+  id: ID!
+  metadata: JSON!
+  model: String
+  name: String!
+  subcategory: String
+  updatedAt: DateTime!
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSON
 
 type MessageConnection implements Connection {
   edges: [MessageEdge!]!
@@ -88,6 +158,10 @@ type PersonType implements Node {
 type Query {
   fact(id: ID!): FactType
   facts(after: String, before: String, first: Int, last: Int): FactConnection!
+  file(id: ID!): FileType
+  files(after: String, before: String, first: Int, last: Int): FileConnection!
+  item(id: ID!): ItemType
+  items(after: String, before: String, first: Int, last: Int): ItemConnection!
   me: UserType
   node(id: ID!): Node
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
