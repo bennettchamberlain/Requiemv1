@@ -10,33 +10,31 @@ import {
 
 import { UserEntity } from '@ci/domains/user';
 
-import type { File } from '../types';
-
 @Entity({ name: 'files' })
 export class FileEntity {
   @PrimaryColumn({ type: 'uuid', name: 'file_id' })
   id!: string;
 
   @Column({ type: 'text', name: 'file_path' })
-  file_path!: string;
+  filePath!: string;
 
   @Column({ type: 'text', name: 'filename' })
   filename!: string;
 
   @Column({ type: 'text', name: 'storage_type' })
-  storage_type!: string;
+  storageType!: string;
 
   @Column({ type: 'text', name: 'storage_provider', nullable: true })
-  storage_provider!: string | null;
+  storageProvider!: string | null;
 
   @Column({ type: 'text', name: 'cloud_file_id', nullable: true })
-  cloud_file_id!: string | null;
+  cloudFileId!: string | null;
 
   @Column({ type: 'text', name: 'storage_account', nullable: true })
-  storage_account!: string | null;
+  storageAccount!: string | null;
 
   @Column({ type: 'timestamptz', name: 'modified_at_source' })
-  modified_at_source!: Date;
+  modifiedAtSource!: Date;
 
   @Column({ type: 'text', nullable: true })
   bucket!: string | null;
@@ -45,13 +43,13 @@ export class FileEntity {
   key!: string | null;
 
   @Column({ type: 'text', name: 'original_filename' })
-  original_name!: string;
+  originalName!: string;
 
   @Column({ type: 'text', name: 'mime_type' })
-  content_type!: string;
+  contentType!: string;
 
   @Column({ type: 'text', name: 'file_hash' })
-  file_hash!: string | null;
+  fileHash!: string | null;
 
   @Column({ type: 'bigint', name: 'file_size_bytes' })
   size!: number;
@@ -60,20 +58,34 @@ export class FileEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
 
-  toFile(): File {
+  static toEgressType(entity: FileEntity): File {
     return {
-      id: this.id,
-      name: this.original_name,
-      fileHash: this.file_hash || undefined,
-      key: this.key,
-      contentType: this.content_type,
-      size: this.size,
+      id: entity.id,
+      originalName: entity.originalName,
+      fileHash: entity.fileHash,
+      key: entity.key,
+      filePath: entity.filePath,
+      filename: entity.filename,
+      storageType: entity.storageType,
+      storageProvider: entity.storageProvider,
+      storageAccount: entity.storageAccount,
+      cloudFileId: entity.cloudFileId,
+      modifiedAtSource: entity.modifiedAtSource,
+      bucket: entity.bucket,
+      contentType: entity.contentType,
+      size: entity.size,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
     };
   }
 }
+
+export type File = Readonly<FileEntity>;
+
+export type SignedFile = File & { readonly url: string };

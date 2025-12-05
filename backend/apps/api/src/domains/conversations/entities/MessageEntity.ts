@@ -85,7 +85,7 @@ export class MessageEntity {
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
       thread: entity.thread ? ThreadEntity.toEgressType(entity.thread) : undefined,
       promptMessage: entity.promptMessage ? MessageEntity.toEgressType(entity.promptMessage) : undefined,
-      files: entity.files?.map((file) => file.toFile()),
+      files: entity.files?.map((file) => FileEntity.toEgressType(file)),
     };
   }
 }

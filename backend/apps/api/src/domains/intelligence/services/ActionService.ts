@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { RequestContext } from '@ci/common/types';
+import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/types';
 
-import { ActionEntity } from '../entities/ActionEntity';
-import type { CreateActionDto, Action } from '../types';
+import { type Action, ActionEntity } from '../entities/ActionEntity';
+import type { CreateActionDto } from '../types';
 
 @Injectable()
 export class ActionService {
@@ -15,7 +15,7 @@ export class ActionService {
     private readonly actionRepository: Repository<ActionEntity>,
   ) {}
 
-  async create(context: RequestContext, data: CreateActionDto): Promise<Action> {
+  async create(context: UserServiceContext, data: CreateActionDto): Promise<Action> {
     const instance = await this.actionRepository.create({
       id: uuidv7(),
       title: data.title,
@@ -32,15 +32,17 @@ export class ActionService {
 
     const entity = await this.actionRepository.save(instance);
 
-    return entity.toAction();
+    return ActionEntity.toEgressType(entity);
   }
 
-  async findAll(context: RequestContext): Promise<Action[]> {
-    const result = await this.actionRepository.find({
+  async findAll(context: ServiceContext): Promise<Action[]> {
+    const entities = await this.actionRepository.find({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
       },
       order: {
         priority: 'asc',
@@ -48,34 +50,62 @@ export class ActionService {
       relations: ['tags'],
     });
 
-    return result.map((entity) => entity.toAction());
+    return entities.map((entity) => ActionEntity.toEgressType(entity));
   }
 
-  async findOne(context: RequestContext, id: string): Promise<Action | null> {
-    const result = await this.actionRepository.findOne({
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Action[]> {
+    const entities = await this.actionRepository.find({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+        id: In(ids),
+      },
+      relations: ['tags'],
+    });
+
+    return entities.map((entity) => ActionEntity.toEgressType(entity));
+  }
+
+  async findById(context: ServiceContext, id: string): Promise<Action | null> {
+    const entity = await this.actionRepository.findOne({
+      where: {
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
         id,
       },
       relations: ['tags'],
     });
 
-    return result?.toAction() ?? null;
+    if (entity == null) {
+      return null;
+    }
+
+    return ActionEntity.toEgressType(entity);
   }
 
-  async findByThreadId(context: RequestContext, threadId: string): Promise<Action | null> {
-    const result = await this.actionRepository.findOne({
+  async findByThreadId(context: ServiceContext, threadId: string): Promise<Action | null> {
+    const entity = await this.actionRepository.findOne({
       where: {
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
         threadId,
       },
       relations: ['tags'],
     });
 
-    return result?.toAction() ?? null;
+    if (entity == null) {
+      return null;
+    }
+
+    return ActionEntity.toEgressType(entity);
   }
 }

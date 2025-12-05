@@ -40,6 +40,7 @@ import { EventEntity } from './entities/EventEntity';
 import { type Fact, FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
+import { type Item, ItemEntity } from './entities/ItemEntity';
 import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
@@ -54,6 +55,7 @@ import { GraphEventService } from './services/GraphEventService';
 import { GraphQueryService } from './services/GraphQueryService';
 import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
+import { ItemService } from './services/ItemService';
 import { MemoryService } from './services/MemoryService';
 import { PersonService } from './services/PersonService';
 import { SearchService } from './services/SearchService';
@@ -72,6 +74,7 @@ import { UserContextService } from './services/UserContextService';
       PlaceEntity,
       ThingEntity,
       GraphNodeEntity,
+      ItemEntity,
       RelationshipEntity,
       FileEntity,
       BrowserActivityEntity,
@@ -95,6 +98,7 @@ import { UserContextService } from './services/UserContextService';
     GraphUtilityService,
     GraphQueryService,
     GraphReadService,
+    ItemService,
     UserContextService,
     GraphEventListener,
     PersonService,
@@ -109,6 +113,7 @@ import { UserContextService } from './services/UserContextService';
     EventService,
     FactService,
     GraphEventService,
+    ItemService,
     PersonService,
     UserContextService,
     GraphUtilityService,
@@ -139,6 +144,7 @@ export {
   CommunicationService,
   FactService,
   GraphEventService,
+  ItemService,
   PersonService,
   UserContextService,
   GraphUtilityService,
@@ -170,3 +176,4 @@ export type {
 } from './services/SearchService';
 
 export type { Fact };
+export type { Item };

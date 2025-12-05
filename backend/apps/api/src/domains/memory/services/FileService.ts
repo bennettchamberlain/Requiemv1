@@ -4,8 +4,12 @@ import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
-import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
-import { FileService as FileStorageService } from '@ci/domains/files';
+import { OnEvent } from '@ci/domains/events';
+import {
+  FileService as FileStorageService,
+  FileUploadedEvent,
+  type FileUploadedPayload,
+} from '@ci/domains/files';
 import { CreateFileDto } from '@ci/domains/memory/types';
 
 import { FileEntity } from '../entities/FileEntity';
@@ -46,9 +50,9 @@ export class FileService {
     return { entity };
   }
 
-  @OnEvent(Events.FILE_UPLOAD)
-  async handleFileUploaded(payload: EventPayloads[Events.FILE_UPLOAD]) {
-    const file = await this.fileService.findOne({ userId: payload.userId }, payload.fileId);
+  @OnEvent(FileUploadedEvent)
+  async handleFileUploaded(payload: FileUploadedPayload) {
+    const file = await this.fileService.findById({ userId: payload.userId }, payload.fileId);
 
     const existingEntity = await this.fileRepository
       .createQueryBuilder('entity')
@@ -59,7 +63,7 @@ export class FileService {
     const entity = !existingEntity
       ? await this.fileRepository.create({
           id: uuidv7(),
-          name: file.name,
+          name: file.filename,
           entity_type: 'File',
           description: 'File',
           linked_table: 'files',

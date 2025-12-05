@@ -15,7 +15,6 @@ interface EventPayload {
 }
 
 export const enum Events {
-  FILE_UPLOAD = 'file.upload',
   CHAT_SUMMARIZATION = 'chat.summarization',
   INFER_QUESTION_ANSWER = 'infer.question.answer',
   SYNC_CONNECTION = 'sync.connection',
@@ -50,11 +49,6 @@ export const enum Events {
   PROMOTE_FACEBOOK_VIDEOS = 'PROMOTE_FACEBOOK_VIDEOS',
   PROMOTE_FACEBOOK_FRIENDS = 'PROMOTE_FACEBOOK_FRIENDS',
   PROMOTE_FACEBOOK_LIKES = 'PROMOTE_FACEBOOK_LIKES',
-}
-
-interface FileUploadPayload extends EventPayload {
-  fileId: string;
-  userId?: string;
 }
 
 interface ChatSummarizationPayload extends EventPayload {
@@ -320,7 +314,6 @@ interface PromoteFacebookLikesPayload extends EventPayload {
 }
 
 export type EventPayloads = {
-  [Events.FILE_UPLOAD]: FileUploadPayload;
   [Events.CHAT_SUMMARIZATION]: ChatSummarizationPayload;
   [Events.INFER_QUESTION_ANSWER]: InferQuestionAnswerPayload;
   [Events.SYNC_CONNECTION]: SyncConnectionPayload;

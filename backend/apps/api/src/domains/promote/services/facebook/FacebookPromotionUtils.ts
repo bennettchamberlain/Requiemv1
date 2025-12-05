@@ -49,23 +49,23 @@ export class FacebookPromotionUtils {
       const contentType =
         response.headers.get('content-type') || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4');
 
-      // Check if file already exists by hash or cloud_file_id
+      // Check if file already exists by hash or cloudFileId
       const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
       const existingFiles = await this.fileService.search(
         { userId },
         {
-          file_hash: fileHash,
-          content_type: contentType,
+          fileHash: fileHash,
+          contentType: contentType,
         },
       );
 
-      // Also check by cloud_file_id (Facebook ID)
+      // Also check by cloudFileId (Facebook ID)
       if (existingFiles.length === 0) {
         const existingByCloudId = await this.fileService.search(
           { userId },
           {
-            cloud_file_id: externalId,
-            storage_provider: 'facebook',
+            cloudFileId: externalId,
+            storageProvider: 'facebook',
           },
         );
         if (existingByCloudId.length > 0) {
@@ -81,7 +81,7 @@ export class FacebookPromotionUtils {
 
         return {
           id: existingFiles[0].id,
-          contentType: existingFiles[0].content_type,
+          contentType: existingFiles[0].contentType,
         };
       }
 
@@ -108,14 +108,14 @@ export class FacebookPromotionUtils {
       // Upload to S3/MinIO
       const fileRecord = await this.fileService.upload({ userId }, multerFile);
 
-      // Update file record with Facebook metadata (cloud_file_id and storage_provider)
+      // Update file record with Facebook metadata (cloudFileId and storageProvider)
       const fileEntity = await this.fileRepository.findOne({
         where: { id: fileRecord.id },
       });
 
       if (fileEntity) {
-        fileEntity.cloud_file_id = externalId;
-        fileEntity.storage_provider = 'facebook';
+        fileEntity.cloudFileId = externalId;
+        fileEntity.storageProvider = 'facebook';
         await this.fileRepository.save(fileEntity);
         this.logger.debug('Updated file record with Facebook metadata', {
           fileId: fileRecord.id,
