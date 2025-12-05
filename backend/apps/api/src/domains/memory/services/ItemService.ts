@@ -103,4 +103,24 @@ export class ItemService {
 
     return itemsMap;
   }
+
+  async update(context: ServiceContext, id: string, data: Partial<Item>): Promise<Item | null> {
+    const entity = await this.itemRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    if (entity == null) {
+      return null;
+    }
+
+    Object.assign(entity, data);
+    await this.itemRepository.save(entity);
+
+    return ItemEntity.toEgressType(entity);
+  }
 }

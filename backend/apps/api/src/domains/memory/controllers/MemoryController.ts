@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
@@ -8,6 +8,7 @@ import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 
+import { type Item } from '../entities/ItemEntity';
 import { ItemService } from '../services/ItemService';
 import { MemoryService } from '../services/MemoryService';
 import { MemorySearchParams } from '../types';
@@ -91,6 +92,15 @@ export class MemoryController {
   @Get('items')
   async getItems(@Context() context: RequestContext, @Query('fileId') fileId?: string) {
     return this.itemService.findAll(toServiceContext(context), fileId);
+  }
+
+  @Patch('items/:id')
+  async updateItem(
+    @Context() context: RequestContext,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.itemService.update(toServiceContext(context), id, body as Partial<Item>);
   }
 
   @Get(':id')

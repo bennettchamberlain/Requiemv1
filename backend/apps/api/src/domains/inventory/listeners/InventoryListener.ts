@@ -144,7 +144,7 @@ export class InventoryListener {
             ? itemData.condition
             : 'good',
           currentValue: itemData.estimated_value,
-          images: [file.url], // Use the signed URL or path
+          images: [`/${file.key}`], // Use the file key as path
           metadata: {
             original_analysis: itemData,
             is_near_home: isNearHome,
