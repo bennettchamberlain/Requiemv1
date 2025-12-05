@@ -14,6 +14,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import type { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
 import { FileService } from '../services/FileService';
 
@@ -24,20 +25,26 @@ export class FilesController {
   @UseGuards(JwtAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
-    return this.fileService.findAll(context);
+    const serviceContext = toServiceContext(context);
+
+    return this.fileService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.fileService.findOne(context, id);
+    const serviceContext = toServiceContext(context);
+
+    return this.fileService.findById(serviceContext, id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/presign')
   @HttpCode(200)
   async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
-    const url = await this.fileService.generatePresignedLink(context, id);
+    const serviceContext = toServiceContext(context);
+
+    const url = await this.fileService.generatePresignedLink(serviceContext, id);
 
     return {
       url,
@@ -52,8 +59,8 @@ export class FilesController {
       throw new BadRequestException('At least one file is required');
     }
 
-    const results = await Promise.all(files.map((file) => this.fileService.upload(context, file)));
+    const serviceContext = toServiceContext(context);
 
-    return results;
+    return await Promise.all(files.map((file) => this.fileService.upload(serviceContext, file)));
   }
 }

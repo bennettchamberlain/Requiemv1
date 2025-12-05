@@ -2,17 +2,18 @@ import { UnauthorizedException, type INestApplication } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { type Request, type Response, type NextFunction } from 'express';
 import request from 'supertest';
 
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
-import { RequestContextMiddleware } from '@ci/common/middleware';
+import { ContextService } from '@ci/common/services';
 import { EventService } from '@ci/domains/events';
 
 import { FilesModule } from '..';
 import { FileEntity } from '../entities/FileEntity';
 import { FileService } from '../services/FileService';
 
-const mockCanActivate = jest.fn(() => true);
+const mockCanActivate = jest.fn();
 
 class MockJwtAuthGuard {
   canActivate = mockCanActivate;
@@ -22,6 +23,8 @@ describe('File routes', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    mockCanActivate.mockImplementation(() => true);
+
     const repositoryTokensToMock = [
       getRepositoryToken(FileEntity),
       'PgBossJobEntityRepository',
@@ -43,7 +46,7 @@ describe('File routes', () => {
       .useClass(MockJwtAuthGuard)
       .overrideProvider(FileService)
       .useValue({
-        findOne: jest.fn().mockResolvedValue(null),
+        findById: jest.fn().mockResolvedValue(null),
         findAll: jest.fn().mockResolvedValue([]),
         generatePresignedLink: jest.fn().mockResolvedValue('/foo'),
         upload: jest.fn(),
@@ -60,7 +63,19 @@ describe('File routes', () => {
 
     app = module.createNestApplication();
 
-    app.use(new RequestContextMiddleware().use);
+    // Manually set up the context middleware to inject the user into AsyncLocalStorage
+    // This replaces the standard RequestContextMiddleware for testing purposes
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      ContextService.run(
+        {
+          traceId: 'test-trace-id',
+          userId: 'test-user-id', // Inject the user ID into the async storage
+        },
+        () => {
+          next();
+        },
+      );
+    });
 
     await app.init();
   });
@@ -70,6 +85,10 @@ describe('File routes', () => {
   });
 
   describe('with valid auth credentials', () => {
+    beforeEach(() => {
+      mockCanActivate.mockImplementation(() => true);
+    });
+
     it(`should return a 404 for GET → /files/foo`, () => {
       return request(app.getHttpServer()).get('/files/foo').expect(404);
     });
@@ -99,7 +118,7 @@ describe('File routes', () => {
   });
 
   describe('without valid auth credentials', () => {
-    beforeAll(() => {
+    beforeEach(() => {
       mockCanActivate.mockImplementation(() => {
         throw new UnauthorizedException();
       });

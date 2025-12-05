@@ -203,9 +203,9 @@ export class OneDrivePromotionService {
       const existingFiles = await this.fileStorageService.search(
         { userId },
         {
-          content_type: fileDetails.content.file?.mimeType,
+          contentType: fileDetails.content.file?.mimeType,
           size: fileDetails.content.size,
-          file_hash: fileHash,
+          fileHash: fileHash,
           filename: fileDetails.content.name,
         },
       );

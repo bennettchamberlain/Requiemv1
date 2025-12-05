@@ -20,7 +20,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventsModule } from '@ci/domains/events';
 
 import { FilesController } from './controllers/FilesController';
-import { FileEntity } from './entities/FileEntity';
+import { FileEntity, type File } from './entities/FileEntity';
 import { FileService } from './services/FileService';
 
 /**
@@ -40,5 +40,15 @@ export { FileEntity };
 // Services
 export { FileService };
 
-// Types
-export type { File } from './types';
+//Types
+export type { File };
+export {
+  FileCreatedEvent,
+  FileUpdatedEvent,
+  FileUploadedEvent,
+  FileRemovedEvent,
+  type FileCreatedPayload,
+  type FileUpdatedPayload,
+  type FileUploadedPayload,
+  type FileDeletedPayload,
+} from './events';

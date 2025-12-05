@@ -231,9 +231,9 @@ export class OutlookCalendarPromotionService {
           : Buffer.from('');
         const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
         const fileSearch = {
-          content_type: attachment.contentType,
+          contentType: attachment.contentType,
           size: attachment.size,
-          file_hash: fileHash,
+          fileHash: fileHash,
           filename: attachment.name,
         };
         const existingFile = await this.fileService.search({ userId }, fileSearch);
