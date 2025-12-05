@@ -289,8 +289,8 @@ export class MemoryService {
         id: c.id,
         type: c.type,
         title: c.title,
-        external_id: c.external_id,
-        created_at: c.created_at,
+        external_id: c.externalId,
+        created_at: c.createdAt,
       })),
       allContentInDb: {
         total: allContentForUser.length,
@@ -299,7 +299,7 @@ export class MemoryService {
           id: c.id,
           type: c.type,
           title: c.title?.substring(0, 50),
-          external_id: c.external_id,
+          external_id: c.externalId,
         })),
       },
     });
@@ -798,12 +798,12 @@ export class MemoryService {
    */
   private contentToMemory(content: ContentEntity): Memory {
     // Extract file_id or file_ids from source_data if it exists
-    const sourceData = content.source_data as Record<string, unknown> | null;
-    const fileId = sourceData?.file_id as string | undefined;
-    const fileIds = sourceData?.file_ids as string[] | undefined;
+    const sourceData = content.sourceData as Record<string, unknown> | null;
+    const fileId = sourceData?.fileId as string | undefined;
+    const fileIds = sourceData?.fileIds as string[] | undefined;
 
     // Use created_time from source_data if available, otherwise use content.created_at
-    let timestamp = content.created_at;
+    let timestamp = content.createdAt;
     if (sourceData?.created_time) {
       const createdTime = sourceData.created_time as string;
       try {
@@ -818,7 +818,7 @@ export class MemoryService {
     }
 
     // Extract link from url or source_url (should be set during promotion)
-    const sourceLink: string | undefined = content.url || content.source_url || undefined;
+    const sourceLink: string | undefined = content.url || content.sourceUrl || undefined;
 
     const category = content.type || 'Content';
 
@@ -835,8 +835,8 @@ export class MemoryService {
       metadata: {
         contentType: content.type,
         mimetype: content.mimetype,
-        externalId: content.external_id,
-        sourceData: content.source_data,
+        externalId: content.externalId,
+        sourceData: content.sourceData,
         eventId: content.event?.id,
         // Set linkedId so frontend can display file previews (use first file_id if multiple)
         linkedId: fileId || (fileIds && fileIds.length > 0 ? fileIds[0] : undefined),

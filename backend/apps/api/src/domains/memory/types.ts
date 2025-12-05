@@ -238,19 +238,6 @@ export interface SearchEventDto {
   user_id?: string;
 }
 
-export interface Content {
-  readonly id: string;
-  readonly type: string;
-  readonly title: string | null;
-  readonly text: string | null;
-  readonly url: string | null;
-  readonly mimetype: string | null;
-  readonly external_id: string | null;
-  readonly source_url: string | null;
-  readonly user_id: string | null;
-  readonly event_id: string | null;
-}
-
 export interface CreateContentDto {
   id: string;
   type: string;

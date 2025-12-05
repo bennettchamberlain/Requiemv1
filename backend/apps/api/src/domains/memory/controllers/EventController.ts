@@ -19,10 +19,12 @@ import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 
+import { Content } from '../entities/ContentEntity';
 import { ContentService } from '../services/ContentService';
 import { EventService } from '../services/EventService';
-import { CreateEventDto, UpdateEventDto, Content } from '../types';
+import { CreateEventDto, UpdateEventDto } from '../types';
 
 import { createContentSchema } from './ContentController';
 
@@ -136,6 +138,8 @@ export class EventController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(createEventSchema)) input: CreateEventDto | CreateEventDto[],
   ) {
+    const serviceContext = toServiceContext(context);
+
     if (!context.userId) {
       throw new UnauthorizedException();
     }
@@ -162,7 +166,7 @@ export class EventController {
             }));
 
             const contentArray = (await this.contentService.create(
-              context,
+              serviceContext,
               contentInputForEvent,
             )) as Content[];
 

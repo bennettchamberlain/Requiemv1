@@ -270,7 +270,7 @@ export class FacebookPostsPromotionService {
         const existingContent = await this.contentRepository.findOne({
           where: {
             user: { id: userId },
-            external_id: post.id,
+            externalId: post.id,
           },
         });
 
