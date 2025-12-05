@@ -37,7 +37,7 @@ import { MemoryController } from './controllers/MemoryController';
 import { CommunicationEntity } from './entities/CommunicationEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
-import { FactEntity } from './entities/FactEntity';
+import { type Fact, FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { type Item, ItemEntity } from './entities/ItemEntity';
@@ -49,6 +49,7 @@ import { GraphEventListener } from './listeners/GraphEventListener';
 import { CommunicationService } from './services/CommunicationService';
 import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
+import { FactService } from './services/FactService';
 import { FileService } from './services/FileService';
 import { GraphEventService } from './services/GraphEventService';
 import { GraphQueryService } from './services/GraphQueryService';
@@ -92,6 +93,7 @@ import { UserContextService } from './services/UserContextService';
     CommunicationService,
     ContentService,
     EventService,
+    FactService,
     GraphEventService,
     GraphUtilityService,
     GraphQueryService,
@@ -109,6 +111,7 @@ import { UserContextService } from './services/UserContextService';
     CommunicationService,
     ContentService,
     EventService,
+    FactService,
     GraphEventService,
     ItemService,
     PersonService,
@@ -139,6 +142,7 @@ export {
   ContentService,
   EventService,
   CommunicationService,
+  FactService,
   GraphEventService,
   ItemService,
   PersonService,
@@ -171,4 +175,5 @@ export type {
   DatabaseSearchResults,
 } from './services/SearchService';
 
+export type { Fact };
 export type { Item };

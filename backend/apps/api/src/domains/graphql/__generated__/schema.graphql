@@ -13,6 +13,21 @@ interface Edge {
   node: Node!
 }
 
+type FactConnection implements Connection {
+  edges: [FactEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type FactEdge implements Edge {
+  cursor: String!
+  node: FactType!
+}
+
+type FactType implements Node {
+  id: ID!
+}
+
 type MessageConnection implements Connection {
   edges: [MessageEdge!]!
   pageInfo: PageInfo!
@@ -71,6 +86,8 @@ type PersonType implements Node {
 }
 
 type Query {
+  fact(id: ID!): FactType
+  facts(after: String, before: String, first: Int, last: Int): FactConnection!
   me: UserType
   node(id: ID!): Node
   people(after: String, before: String, first: Int, last: Int): PersonConnection!

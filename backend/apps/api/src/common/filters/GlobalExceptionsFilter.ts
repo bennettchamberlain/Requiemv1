@@ -20,6 +20,7 @@ export class GlobalExceptionsFilter extends BaseExceptionFilter {
   private readonly logger = new LoggerService('exceptions');
 
   catch(exception: unknown, host: ArgumentsHost) {
+    const contextType = host.getType<string>();
     const isHttpException = exception instanceof HttpException;
     const status = isHttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const isExpectedError = EXPECTED_HTTP_STATUSES.has(status);
@@ -30,6 +31,10 @@ export class GlobalExceptionsFilter extends BaseExceptionFilter {
       this.logger.warn(error);
     } else {
       this.logger.error(error);
+    }
+
+    if (contextType === 'graphql') {
+      throw exception;
     }
 
     super.catch(exception, host);
