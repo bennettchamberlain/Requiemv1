@@ -11,6 +11,7 @@ import { UserModule } from '@ci/domains/user';
 import { GraphQLController } from './controllers/GraphQLController';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { FactResolver } from './resolvers/FactResolver';
+import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
@@ -34,6 +35,7 @@ import { UserResolver } from './resolvers/UserResolver';
   providers: [
     NodeResolver,
     FactResolver,
+    ItemResolver,
     PersonResolver,
     SearchResolver,
     ThreadMessagesLoader,
