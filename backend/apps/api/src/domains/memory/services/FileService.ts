@@ -5,8 +5,11 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { RequestContext } from '@ci/common/types';
 import { OnEvent } from '@ci/domains/events';
-import { FileService as FileStorageService } from '@ci/domains/files';
-import { FileUploadedEvent, FileUploadedPayload } from '@ci/domains/files/events';
+import {
+  FileService as FileStorageService,
+  FileUploadedEvent,
+  type FileUploadedPayload,
+} from '@ci/domains/files';
 import { CreateFileDto } from '@ci/domains/memory/types';
 
 import { FileEntity } from '../entities/FileEntity';
