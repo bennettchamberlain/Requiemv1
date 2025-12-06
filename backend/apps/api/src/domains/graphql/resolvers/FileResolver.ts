@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Query, Resolver, Args, ID } from '@nestjs/graphql';
+import { Query, ResolveField, Resolver, Args, ID, Parent } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -7,17 +7,24 @@ import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import { FileService } from '@ci/domains/files';
 
+import { FileItemsLoader } from '../loaders/FileItemsLoader';
 import { FileConnection } from '../types/FileConnection';
 import { FileEdge } from '../types/FileEdge';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
+import { ItemConnection } from '../types/ItemConnection';
+import { ItemEdge } from '../types/ItemEdge';
+import { ItemType } from '../types/ItemType';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
 @Resolver(() => FileType)
 export class FileResolver {
-  constructor(private readonly fileService: FileService) {}
+  constructor(
+    private readonly fileService: FileService,
+    private readonly fileItemsLoader: FileItemsLoader,
+  ) {}
 
   @Query(() => FileConnection)
   async files(
@@ -61,5 +68,48 @@ export class FileResolver {
     const entity = await this.fileService.findById(serviceContext, id);
 
     return entity ? FileType.toType(entity) : null;
+  }
+
+  @ResolveField(() => ItemConnection, { nullable: true })
+  async items(
+    @Context() context: RequestContext,
+    @Parent() parent: FileType,
+    @Args() pagination: PaginationArgs,
+  ): Promise<ItemConnection | null> {
+    const serviceContext = toServiceContext(context);
+
+    const file = parent.__source;
+
+    if (file == null) {
+      return null;
+    }
+
+    const fileId = file.id;
+
+    const entities = await this.fileItemsLoader.load(serviceContext, fileId);
+
+    if (entities.length === 0) {
+      return null;
+    }
+
+    const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
+      ...pagination,
+      getId: (entity) => GlobalUID.encode('item', entity.id),
+    });
+
+    const edges: ItemEdge[] = slice.map((entity) => {
+      const node = ItemType.toType(entity);
+
+      return {
+        node,
+        cursor: node.id,
+      };
+    });
+
+    return {
+      edges,
+      pageInfo,
+      totalCount,
+    };
   }
 }

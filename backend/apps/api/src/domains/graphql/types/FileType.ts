@@ -3,11 +3,14 @@ import { Field, ID, ObjectType, Float, Directive } from '@nestjs/graphql';
 import { type SignedFile } from '@ci/domains/files';
 
 import { GlobalUID } from './GlobalUID';
+import { ItemConnection } from './ItemConnection';
 import { Node } from './Node';
 
 @ObjectType({ implements: () => [Node] })
 export class FileType implements Node {
   __typename = FileType.name;
+
+  __source: SignedFile | null = null;
 
   @Field(() => ID)
   id!: string;
@@ -30,6 +33,9 @@ export class FileType implements Node {
   @Field(() => String)
   url!: string;
 
+  @Field(() => ItemConnection, { nullable: true })
+  items?: ItemConnection | null;
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -39,6 +45,7 @@ export class FileType implements Node {
   static toType(file: SignedFile): FileType {
     return {
       __typename: FileType.name,
+      __source: file,
       id: GlobalUID.encode('file', file.id),
       filename: file.filename,
       originalName: file.originalName,

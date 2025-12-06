@@ -49,6 +49,7 @@ type FileType implements Node {
   createdAt: DateTime!
   filename: String!
   id: ID!
+  items(after: String, before: String, first: Int, last: Int): ItemConnection
   originalName: String!
   size: Float!
   updatedAt: DateTime!
