@@ -1,34 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { type RequestContext } from '@ci/common/types';
+import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/types';
+import { EventService } from '@ci/domains/events';
 
-import { CommunicationEntity } from '../entities/CommunicationEntity';
-
-export interface CreateCommunicationDto {
-  time: Date;
-  communication_type: 'email' | 'sms' | 'call';
-  direction: 'inbound' | 'outbound';
-  thread_id?: string;
-  from_entity_id?: string;
-  to_entity_ids?: string[];
-  participants_metadata?: Record<string, unknown>;
-  subject?: string;
-  content: string;
-  attachments?: unknown[];
-  duration_seconds?: number;
-  sentiment_score?: number;
-  importance_score?: number;
-  urgency_score?: number;
-  category?: string;
-  summary?: string;
-  tags?: string[];
-  connection_id?: string;
-  is_encrypted?: boolean;
-  is_archived?: boolean;
-}
+import { CommunicationEntity, Communication } from '../entities/CommunicationEntity';
+import { CommunicationCreatedEvent, CommunicationUpdatedEvent, CommunicationRemovedEvent } from '../events';
+import { CreateCommunicationDto, UpdateCommunicationDto } from '../types';
 
 @Injectable()
 export class CommunicationService {
@@ -37,47 +18,242 @@ export class CommunicationService {
   constructor(
     @InjectRepository(CommunicationEntity)
     private readonly communicationRepository: Repository<CommunicationEntity>,
+    private readonly eventService: EventService,
   ) {}
 
-  async create(context: RequestContext, data: CreateCommunicationDto): Promise<CommunicationEntity> {
+  async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<CommunicationEntity> {
     const communication = this.communicationRepository.create({
-      ...data,
-      user_id: context.userId,
-      participants_metadata: data.participants_metadata || {},
+      id: uuidv7(),
+      time: data.time,
+      communicationType: data.communication_type,
+      userId: context.userId,
+      deviceId: data.device_id,
+      direction: data.direction,
+      threadId: data.thread_id,
+      fromEntityId: data.from_entity_id,
+      toEntityIds: data.to_entity_ids || [],
+      participantsMetadata: data.participants_metadata || {},
+      subject: data.subject,
+      content: data.content,
+      durationSeconds: data.duration_seconds,
+      sentimentScore: data.sentiment_score,
+      importanceScore: data.importance_score,
+      urgencyScore: data.urgency_score,
+      category: data.category,
+      summary: data.summary,
+      tags: data.tags,
+      connectionId: data.connection_id,
       attachments: data.attachments || [],
-      is_encrypted: data.is_encrypted || false,
-      is_archived: data.is_archived || false,
+      isEncrypted: data.is_encrypted || false,
+      isArchived: data.is_archived || false,
     });
 
     // TODO: Build relationships using from_entity_id and to_entity_ids
 
-    return this.communicationRepository.save(communication);
+    const communicationResult = await this.communicationRepository.save(communication);
+
+    await this.eventService.send(CommunicationCreatedEvent, {
+      communicationId: communicationResult.id,
+    });
+
+    return CommunicationEntity.toEgressType(communicationResult);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  findById(context: RequestContext, id: string) {
-    throw new Error('Not implemented');
+  async findAll(context: UserServiceContext): Promise<Communication[]> {
+    const result = await this.communicationRepository.find({
+      where: {
+        userId: context.userId,
+      },
+    });
+
+    return result.map((entity) => CommunicationEntity.toEgressType(entity));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  findByIds(context: RequestContext, ids: string[]): Promise<CommunicationEntity[]> {
-    throw new Error('Not implemented');
+  async findById(context: ServiceContext, id: string): Promise<Communication | null> {
+    const result = await this.communicationRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    return result ? CommunicationEntity.toEgressType(result) : null;
   }
 
-  async findByThreadId(context: RequestContext, threadId: string): Promise<CommunicationEntity[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Communication[]> {
+    const result = await this.communicationRepository.find({
+      where: {
+        id: In(ids),
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    return result.map((entity) => CommunicationEntity.toEgressType(entity));
+  }
+
+  async update(
+    context: ServiceContext,
+    id: string,
+    data: UpdateCommunicationDto,
+  ): Promise<Communication | null> {
+    const updateData: Partial<CommunicationEntity> = {};
+
+    console.log('update', data);
+
+    if (data.device_id) {
+      updateData.deviceId = data.device_id;
+    }
+
+    if (data.direction) {
+      updateData.direction = data.direction;
+    }
+
+    if (data.thread_id) {
+      updateData.threadId = data.thread_id;
+    }
+
+    if (data.from_entity_id) {
+      updateData.fromEntityId = data.from_entity_id;
+    }
+
+    if (data.to_entity_ids) {
+      updateData.toEntityIds = data.to_entity_ids;
+    }
+
+    if (data.participants_metadata) {
+      updateData.participantsMetadata = data.participants_metadata;
+    }
+
+    if (data.subject) {
+      updateData.subject = data.subject;
+    }
+
+    if (data.content) {
+      updateData.content = data.content;
+    }
+
+    if (data.attachments) {
+      updateData.attachments = data.attachments;
+    }
+
+    if (data.duration_seconds) {
+      updateData.durationSeconds = data.duration_seconds;
+    }
+
+    if (data.sentiment_score) {
+      updateData.sentimentScore = data.sentiment_score;
+    }
+
+    if (data.importance_score) {
+      updateData.importanceScore = data.importance_score;
+    }
+
+    if (data.urgency_score) {
+      updateData.urgencyScore = data.urgency_score;
+    }
+
+    if (data.content_embedding) {
+      updateData.contentEmbedding = data.content_embedding;
+    }
+
+    if (data.category) {
+      updateData.category = data.category;
+    }
+
+    if (data.summary) {
+      updateData.summary = data.summary;
+    }
+
+    if (data.tags) {
+      updateData.tags = data.tags;
+    }
+
+    if (data.connection_id) {
+      updateData.connectionId = data.connection_id;
+    }
+
+    if (data.is_encrypted) {
+      updateData.isEncrypted = data.is_encrypted;
+    }
+
+    if (data.is_archived) {
+      updateData.isArchived = data.is_archived;
+    }
+
+    const communication = await this.communicationRepository.findOne({
+      where: {
+        id: id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    console.log('existing communnication', communication);
+
+    if (communication) {
+      Object.assign(communication, updateData);
+      console.log('communication update', communication);
+      await this.communicationRepository.save(communication);
+    } else {
+      return null;
+    }
+
+    await this.eventService.send(CommunicationUpdatedEvent, {
+      communicationId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const communication = await this.communicationRepository.findOne({
+      where: {
+        id: id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    if (!communication) {
+      return false;
+    }
+
+    await this.communicationRepository.delete({
+      id,
+      ...(context.userId !== SYSTEM_USER && {
+        userId: context.userId,
+      }),
+    });
+
+    await this.eventService.send(CommunicationRemovedEvent, {
+      communicationId: id,
+    });
+
+    return true;
+  }
+
+  async findByThreadId(context: ServiceContext, threadId: string): Promise<CommunicationEntity[]> {
     return this.communicationRepository.find({
       where: {
-        user_id: context.userId,
-        thread_id: threadId,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+        threadId: threadId,
       },
       order: { time: 'ASC' },
     });
   }
 
-  async findByUserId(context: RequestContext, limit = 100): Promise<CommunicationEntity[]> {
+  async findByUserId(context: UserServiceContext, limit = 100): Promise<CommunicationEntity[]> {
     return this.communicationRepository.find({
       where: {
-        user_id: context.userId,
+        userId: context.userId,
       },
       order: { time: 'DESC' },
       take: limit,

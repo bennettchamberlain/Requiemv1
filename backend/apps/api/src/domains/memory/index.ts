@@ -30,6 +30,7 @@ import { FilesModule } from '@ci/domains/files';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
+import { CommunicationController } from './controllers/CommunicationController';
 import { ContentController } from './controllers/ContentController';
 import { EventController } from './controllers/EventController';
 import { GraphController } from './controllers/GraphController';
@@ -105,7 +106,13 @@ import { UserContextService } from './services/UserContextService';
     FileService,
     SearchService,
   ],
-  controllers: [MemoryController, ContentController, EventController, GraphController],
+  controllers: [
+    MemoryController,
+    CommunicationController,
+    ContentController,
+    EventController,
+    GraphController,
+  ],
   exports: [
     MemoryService,
     CommunicationService,
