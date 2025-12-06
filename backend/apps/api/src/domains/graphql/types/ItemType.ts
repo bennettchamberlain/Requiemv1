@@ -3,6 +3,7 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Item } from '@ci/domains/memory';
 
+import { FileType } from './FileType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
 
@@ -23,6 +24,8 @@ registerEnumType(ItemCondition, {
 @ObjectType({ implements: () => [Node] })
 export class ItemType implements Node {
   __typename = ItemType.name;
+
+  __source: Item | null = null;
 
   @Field(() => ID)
   id!: string;
@@ -60,6 +63,9 @@ export class ItemType implements Node {
   @Field(() => GraphQLJSONObject)
   metadata!: Record<string, unknown>;
 
+  @Field(() => FileType, { nullable: true, complexity: 5 })
+  file?: FileType | null;
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -69,6 +75,7 @@ export class ItemType implements Node {
   static toType(item: Item): ItemType {
     return {
       __typename: ItemType.name,
+      __source: item,
       id: GlobalUID.encode('item', item.id),
       name: item.name,
       description: item.description,

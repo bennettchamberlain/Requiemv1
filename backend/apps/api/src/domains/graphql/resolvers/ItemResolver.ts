@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Query, Resolver, Args, ID } from '@nestjs/graphql';
+import { Parent, Query, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -7,6 +7,8 @@ import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import { ItemService } from '@ci/domains/memory';
 
+import { ItemFileLoader } from '../loaders/ItemFileLoader';
+import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemConnection } from '../types/ItemConnection';
 import { ItemEdge } from '../types/ItemEdge';
@@ -17,7 +19,10 @@ import { Paginator } from '../utils/Paginator';
 @UseGuards(JwtAuthGuard)
 @Resolver(() => ItemType)
 export class ItemResolver {
-  constructor(private readonly itemService: ItemService) {}
+  constructor(
+    private readonly itemFileLoader: ItemFileLoader,
+    private readonly itemService: ItemService,
+  ) {}
 
   @Query(() => ItemConnection)
   async items(
@@ -61,5 +66,22 @@ export class ItemResolver {
     const entity = await this.itemService.findById(serviceContext, id);
 
     return entity ? ItemType.toType(entity) : null;
+  }
+
+  @ResolveField(() => FileType, { nullable: true })
+  async file(@Context() context: RequestContext, @Parent() parent: ItemType): Promise<FileType | null> {
+    const serviceContext = toServiceContext(context);
+
+    if (parent.__source?.sourceFileId == null) {
+      return null;
+    }
+
+    const file = await this.itemFileLoader.load(serviceContext, parent.__source.sourceFileId);
+
+    if (file == null) {
+      return null;
+    }
+
+    return FileType.toType(file);
   }
 }

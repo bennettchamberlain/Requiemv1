@@ -49,6 +49,7 @@ type FileType implements Node {
   createdAt: DateTime!
   filename: String!
   id: ID!
+  items(after: String, before: String, first: Int, last: Int): ItemConnection
   originalName: String!
   size: Float!
   updatedAt: DateTime!
@@ -85,6 +86,7 @@ type ItemType implements Node {
   currency: String!
   currentValue: Float
   description: String
+  file: FileType
   id: ID!
   metadata: JSON!
   model: String

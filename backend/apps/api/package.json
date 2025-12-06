@@ -57,6 +57,7 @@
     "google-auth-library": "^10.1.0",
     "googleapis": "^153.0.0",
     "graphql": "^16.12.0",
+    "graphql-query-complexity": "^1.1.0",
     "graphql-type-json": "^0.3.2",
     "ollama": "^0.5.17",
     "p-limit": "^7.1.1",
