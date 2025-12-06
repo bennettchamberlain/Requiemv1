@@ -63,7 +63,7 @@ export class ItemType implements Node {
   @Field(() => GraphQLJSONObject)
   metadata!: Record<string, unknown>;
 
-  @Field(() => FileType, { nullable: true })
+  @Field(() => FileType, { nullable: true, complexity: 5 })
   file?: FileType | null;
 
   @Field(() => Date)

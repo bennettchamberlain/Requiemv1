@@ -33,7 +33,7 @@ export class FileType implements Node {
   @Field(() => String)
   url!: string;
 
-  @Field(() => ItemConnection, { nullable: true })
+  @Field(() => ItemConnection, { nullable: true, complexity: 5 })
   items?: ItemConnection | null;
 
   @Field(() => Date)
