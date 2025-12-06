@@ -1218,6 +1218,45 @@
   },
   {
     "type": "cycle",
+    "from": "src/domains/graphql/types/FileType.ts",
+    "to": "src/domains/graphql/types/ItemConnection.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "src/domains/graphql/types/ItemConnection.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "src/domains/graphql/types/ItemEdge.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "src/domains/graphql/types/ItemType.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "src/domains/graphql/types/FileType.ts",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
     "from": "src/domains/intelligence/controllers/QuestionsController.ts",
     "to": "src/domains/llm/index.ts",
     "rule": {
