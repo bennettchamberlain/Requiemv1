@@ -13,6 +13,7 @@ import { GraphQLController } from './controllers/GraphQLController';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
+import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
@@ -38,6 +39,7 @@ import { UserResolver } from './resolvers/UserResolver';
     UserModule,
   ],
   providers: [
+    ComplexityPlugin,
     NodeResolver,
     FactResolver,
     FileItemsLoader,
