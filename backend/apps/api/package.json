@@ -86,6 +86,7 @@
     "@types/config": "^3.3.5",
     "@types/dlv": "^1",
     "@types/express": "^5.0.0",
+    "@types/graphql-query-complexity": "^0.2.1",
     "@types/jest": "^30.0.0",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.15.21",

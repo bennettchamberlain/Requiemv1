@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { fetchJson } from '@ci/common';
+import { useQuery, gql } from '@apollo/client';
 
 import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
-import { useAuth } from '@/hooks';
 
 interface InventoryItem {
   id: string;
@@ -13,35 +12,37 @@ interface InventoryItem {
   brand: string;
   model: string;
   currentValue: number;
-  images: string[];
+  file: {
+    url: string;
+  } | null;
 }
 
+const GET_INVENTORY_ITEMS = gql`
+  query GetInventoryItems {
+    items {
+      edges {
+        node {
+          id
+          name
+          category
+          description
+          brand
+          model
+          currentValue
+          file {
+            url
+          }
+        }
+      }
+    }
+  }
+`;
+
 export default function InventoryPage() {
-  const [{ authToken }] = useAuth();
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refetch } = useQuery(GET_INVENTORY_ITEMS);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
-  const fetchItems = async () => {
-    try {
-      const data = await fetchJson<InventoryItem[]>('/api/memory/items', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-      setItems(data);
-    } catch (error) {
-      console.error('Failed to fetch inventory', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (authToken) {
-      fetchItems();
-    }
-  }, [authToken]);
+  const items: InventoryItem[] = data?.items?.edges?.map((edge: { node: InventoryItem }) => edge.node) || [];
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">Loading inventory...</div>;
@@ -59,12 +60,8 @@ export default function InventoryPage() {
             onClick={() => setSelectedItem(item)}
           >
             <div className="aspect-square bg-stone-100 dark:bg-zinc-800 relative overflow-hidden">
-              {item.images && item.images.length > 0 ? (
-                <img
-                  src={`/static${item.images[0].split('?')[0]}`}
-                  alt={item.name}
-                  className="w-full h-full object-cover"
-                />
+              {item.file?.url ? (
+                <img src={item.file.url} alt={item.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-400">No Image</div>
               )}
@@ -94,7 +91,7 @@ export default function InventoryPage() {
         open={!!selectedItem}
         onClose={() => setSelectedItem(null)}
         item={selectedItem}
-        onUpdate={fetchItems}
+        onUpdate={() => refetch()}
       />
     </div>
   );

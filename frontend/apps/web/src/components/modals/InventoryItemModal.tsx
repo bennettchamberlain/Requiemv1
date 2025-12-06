@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import { fetchJson } from '@ci/common';
+import { useMutation, gql } from '@apollo/client';
 import { Button, Dialog, Input, Label, Textarea } from '@ci/shadcn';
-
-import { useAuth } from '@/hooks';
 
 interface InventoryItem {
   id: string;
@@ -13,7 +11,9 @@ interface InventoryItem {
   brand: string;
   model: string;
   currentValue: number;
-  images: string[];
+  file: {
+    url: string;
+  } | null;
 }
 
 interface Props {
@@ -23,10 +23,27 @@ interface Props {
   onUpdate: () => void;
 }
 
+const UPDATE_INVENTORY_ITEM = gql`
+  mutation UpdateInventoryItem($id: ID!, $input: UpdateItemInput!) {
+    updateItem(id: $id, input: $input) {
+      id
+      name
+      category
+      description
+      brand
+      model
+      currentValue
+      file {
+        url
+      }
+    }
+  }
+`;
+
 export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
-  const [{ authToken }] = useAuth();
   const [formData, setFormData] = useState<Partial<InventoryItem>>({});
   const [saving, setSaving] = useState(false);
+  const [updateItem] = useMutation(UPDATE_INVENTORY_ITEM);
 
   useEffect(() => {
     if (item) {
@@ -52,13 +69,19 @@ export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
 
     setSaving(true);
     try {
-      await fetchJson(`/api/memory/items/${item.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
+      const { name, category, description, brand, model, currentValue } = formData;
+      await updateItem({
+        variables: {
+          id: item.id,
+          input: {
+            name,
+            category,
+            description,
+            brand,
+            model,
+            currentValue,
+          },
         },
-        body: JSON.stringify(formData),
       });
       onUpdate();
       onClose();
@@ -73,7 +96,7 @@ export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
     return null;
   }
 
-  const imageUrl = item.images && item.images.length > 0 ? `/static${item.images[0].split('?')[0]}` : null;
+  const imageUrl = item.file?.url;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
