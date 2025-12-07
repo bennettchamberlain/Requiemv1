@@ -41,3 +41,10 @@ export interface UserServiceContext {
    */
   userId: string;
 }
+
+/**
+ * Minimal interface for GraphNodeEntity to avoid circular dependencies.
+ */
+export interface GraphNode {
+  id: string;
+}
