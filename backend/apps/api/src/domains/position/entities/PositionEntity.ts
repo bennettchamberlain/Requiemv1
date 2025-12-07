@@ -1,9 +1,8 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn, Point } from 'typeorm';
 
 import { DeviceEntity, type Device } from '@ci/domains/devices';
+import type { GraphNodeEntity } from '@ci/domains/memory';
 import { UserEntity, type User } from '@ci/domains/user';
-
-import { GraphNodeEntity } from '../../memory/entities/GraphNodeEntity';
 
 export type LocationSource = 'gps' | 'wifi' | 'cell_tower' | 'manual' | 'inferred' | 'other';
 
@@ -119,11 +118,11 @@ export class PositionEntity {
   @JoinColumn({ name: 'device_id' })
   device?: DeviceEntity | null;
 
-  @ManyToOne(() => GraphNodeEntity)
+  @ManyToOne('GraphNodeEntity')
   @JoinColumn({ name: 'location_entity_id' })
   location_entity?: GraphNodeEntity | null;
 
-  @ManyToOne(() => GraphNodeEntity)
+  @ManyToOne('GraphNodeEntity')
   @JoinColumn({ name: 'reference_entity_id' })
   reference_entity?: GraphNodeEntity | null;
 
