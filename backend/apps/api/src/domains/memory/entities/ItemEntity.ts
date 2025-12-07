@@ -115,7 +115,7 @@ export class ItemEntity {
 
   @AfterLoad()
   loadMetadataProperties() {
-    this.sourceFileId = (this.metadata?.sourceFileId as string) || null;
+    this.sourceFileId = (this.metadata?.source_file_id as string) || null;
   }
 
   static toEgressType(entity: ItemEntity): Item {

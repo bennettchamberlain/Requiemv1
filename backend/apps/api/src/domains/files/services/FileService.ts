@@ -378,19 +378,9 @@ export class FileService implements OnModuleInit {
       };
     }
 
-    const command = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ResponseContentType: file.contentType,
-    });
-
-    const url = await getSignedUrl(this.signatureS3, command, {
-      expiresIn: config.staticfiles.auth.signatureTTL,
-    });
-
     return {
       ...FileEntity.toEgressType(file),
-      url: this.getKeyAndQuery(url),
+      url: `/static/${bucket}/${key}`,
     };
   }
 

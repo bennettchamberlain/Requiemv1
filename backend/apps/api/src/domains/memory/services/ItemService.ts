@@ -64,7 +64,7 @@ export class ItemService {
   async findByFileId(context: ServiceContext, fileId: string): Promise<Item[]> {
     const queryBuilder = this.itemRepository.createQueryBuilder('inventory');
 
-    queryBuilder.where("inventory.metadata->>'sourceFileId' = :fileId", { fileId });
+    queryBuilder.where("inventory.metadata->>'source_file_id' = :fileId", { fileId });
 
     if (context.userId !== SYSTEM_USER) {
       queryBuilder.andWhere('inventory.userId = :userId', { userId: context.userId });
@@ -78,7 +78,7 @@ export class ItemService {
   async findByFileIds(context: ServiceContext, fileIds: string[]): Promise<Map<string, Item[]>> {
     const queryBuilder = this.itemRepository.createQueryBuilder('inventory');
 
-    queryBuilder.where("inventory.metadata->>'sourceFileId' IN (:...fileIds)", { fileIds });
+    queryBuilder.where("inventory.metadata->>'source_file_id' IN (:...fileIds)", { fileIds });
 
     if (context.userId !== SYSTEM_USER) {
       queryBuilder.andWhere('inventory.userId = :userId', { userId: context.userId });
