@@ -1,8 +1,9 @@
 import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn, Point } from 'typeorm';
 
 import { DeviceEntity, type Device } from '@ci/domains/devices';
-import { GraphNodeEntity } from '@ci/domains/memory';
 import { UserEntity, type User } from '@ci/domains/user';
+
+import { GraphNodeEntity } from '../../memory/entities/GraphNodeEntity';
 
 export type LocationSource = 'gps' | 'wifi' | 'cell_tower' | 'manual' | 'inferred' | 'other';
 
