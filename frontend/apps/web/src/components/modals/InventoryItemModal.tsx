@@ -96,7 +96,7 @@ export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
     return null;
   }
 
-  const imageUrl = item.file?.url;
+  const imageUrl = item.file?.url ? `/static${item.file.url}` : null;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>

@@ -61,7 +61,7 @@ export default function InventoryPage() {
           >
             <div className="aspect-square bg-stone-100 dark:bg-zinc-800 relative overflow-hidden">
               {item.file?.url ? (
-                <img src={item.file.url} alt={item.name} className="w-full h-full object-cover" />
+                <img src={`/static${item.file.url}`} alt={item.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-400">No Image</div>
               )}
