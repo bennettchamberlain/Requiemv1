@@ -1,5 +1,5 @@
 import { Tooltip } from '@ci/shadcn';
-import { Brain, ChartPie, Inbox, Lightbulb, MessagesSquare } from '@ci/shadcn/icons';
+import { Brain, ChartPie, Inbox, Lightbulb, MessagesSquare, Package } from '@ci/shadcn/icons';
 
 import { NavLink } from './NavLink';
 
@@ -25,6 +25,10 @@ export function SecondaryNavigation() {
 
         <NavLink to="/knowledge" label="Knowledge">
           <ChartPie className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/inventory" label="Inventory">
+          <Package className="h-6 w-6" strokeWidth={1.25} />
         </NavLink>
       </Tooltip.Provider>
     </nav>

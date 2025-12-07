@@ -49,7 +49,7 @@ export function Main() {
           <Toaster />
           <div className="flex flex-row h-full min-h-0">
             <Portal id="tertiary-navigation" className="h-full" />
-            <main className="flex-1 min-w-0 relative">
+            <main className="flex-1 min-w-0 relative overflow-y-auto">
               <Outlet />
               <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
             </main>
