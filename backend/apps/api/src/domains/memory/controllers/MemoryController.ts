@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Context } from '@ci/common/decorators';
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
+import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 
 import { MemoryService } from '../services/MemoryService';
@@ -70,6 +71,8 @@ const memorySearchSchema = z.object({
 @Controller('memory')
 @UseGuards(JwtAuthGuard)
 export class MemoryController {
+  private logger = new LoggerService(MemoryController.name);
+
   constructor(private readonly memoryService: MemoryService) {}
 
   @Get()
