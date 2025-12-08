@@ -33,6 +33,9 @@ export class FileType implements Node {
   @Field(() => String)
   url!: string;
 
+  @Field(() => Boolean)
+  analysisCompleted!: boolean;
+
   @Field(() => ItemConnection, { nullable: true, complexity: 5 })
   items?: ItemConnection | null;
 
@@ -52,6 +55,7 @@ export class FileType implements Node {
       contentType: file.contentType,
       size: Number(file.size),
       url: file.url,
+      analysisCompleted: file.analysisCompleted,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
