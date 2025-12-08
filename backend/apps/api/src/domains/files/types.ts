@@ -15,3 +15,7 @@ export interface FileQuery {
   size?: number;
   user?: { id: string };
 }
+
+export interface UpdateFileDto {
+  analysisCompleted?: boolean;
+}

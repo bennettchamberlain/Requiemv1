@@ -21,7 +21,7 @@ import { EventService } from '@ci/domains/events';
 import { FileUploadedEvent } from '@ci/domains/files/events';
 
 import { SignedFile, FileEntity } from '../entities/FileEntity';
-import type { FileQuery } from '../types';
+import type { FileQuery, UpdateFileDto } from '../types';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -139,9 +139,24 @@ export class FileService implements OnModuleInit {
     return this.signFiles(entities);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-  async update(context: ServiceContext, fileId: string, data: any): Promise<void> {
-    throw new NotImplementedException();
+  async update(context: ServiceContext, id: string, data: UpdateFileDto): Promise<SignedFile | null> {
+    const result = await this.fileRepository.update(
+      {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+      data,
+    );
+
+    if (result.affected === 0) {
+      return null;
+    }
+
+    return this.findById(context, id);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
