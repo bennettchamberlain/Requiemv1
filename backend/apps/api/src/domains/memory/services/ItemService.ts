@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { v7 as uuid7 } from 'uuid';
 
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 
 import { type Item, ItemEntity } from '../entities/ItemEntity';
+import type { CreateItemDto } from '../types';
 
 @Injectable()
 export class ItemService {
@@ -12,6 +14,28 @@ export class ItemService {
     @InjectRepository(ItemEntity)
     private readonly itemRepository: Repository<ItemEntity>,
   ) {}
+
+  async create(context: UserServiceContext, data: CreateItemDto): Promise<Item> {
+    const entity = this.itemRepository.create({
+      id: uuid7(),
+      userId: context.userId,
+      name: data.name,
+      description: data.description ?? null,
+      category: data.category ?? null,
+      subcategory: data.subcategory ?? null,
+      brand: data.brand ?? null,
+      model: data.model ?? null,
+      currentValue: data.currentValue ?? null,
+      currency: data.currency ?? 'USD',
+      condition: data.condition ?? null,
+      images: data.images ?? [],
+      metadata: data.metadata ?? {},
+    });
+
+    await this.itemRepository.save(entity);
+
+    return ItemEntity.toEgressType(entity);
+  }
 
   async findAll(context: ServiceContext, fileId?: string): Promise<Item[]> {
     const queryBuilder = this.itemRepository.createQueryBuilder('item');
