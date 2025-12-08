@@ -27,7 +27,6 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphQLModule } from '@ci/domains/graphql';
 import { IntelligenceModule } from '@ci/domains/intelligence';
-import { InventoryModule } from '@ci/domains/inventory/InventoryModule';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 import { OnboardingModule } from '@ci/domains/onboarding';
@@ -67,7 +66,6 @@ import { UserModule } from '@ci/domains/user';
     PositionModule,
     ToolsModule,
     MemoryModule,
-    InventoryModule,
     PromoteModule,
     SpeechModule,
     UserModule,

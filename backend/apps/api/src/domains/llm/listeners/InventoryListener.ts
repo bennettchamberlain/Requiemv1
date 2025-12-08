@@ -4,9 +4,10 @@ import { LoggerService } from '@ci/common/services';
 import { toServiceContext } from '@ci/common/utils';
 import { OnEvent } from '@ci/domains/events';
 import { FileService, FileUploadedEvent, type FileUploadedPayload } from '@ci/domains/files';
-import { OllamaService } from '@ci/domains/llm';
 import { ItemService } from '@ci/domains/memory';
 import { PositionService } from '@ci/domains/position';
+
+import { OllamaService } from '../services/OllamaService';
 
 @Injectable()
 export class InventoryListener {
@@ -92,7 +93,7 @@ export class InventoryListener {
         For estimated_value, provide a rough number in USD based on visual condition. If unknown, use 0.
       `;
 
-      const model = payload.model || 'llama3.2-vision';
+      const model = payload.model || 'gemma3:4b';
       this.logger.log('Starting LLM chat', { model });
 
       const response = await this.ollamaService.chat(
