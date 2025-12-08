@@ -1,15 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import { OnEvent } from '@ci/domains/events';
 import { FileService, FileUploadedEvent, type FileUploadedPayload } from '@ci/domains/files';
 import { OllamaService } from '@ci/domains/llm';
-import { ItemEntity } from '@ci/domains/memory';
+import { ItemService } from '@ci/domains/memory';
 import { PositionService } from '@ci/domains/position';
 
 @Injectable()
@@ -20,8 +16,7 @@ export class InventoryListener {
     private readonly fileService: FileService,
     private readonly ollamaService: OllamaService,
     private readonly positionService: PositionService,
-    @InjectRepository(ItemEntity)
-    private readonly itemRepository: Repository<ItemEntity>,
+    private readonly itemService: ItemService,
   ) {}
 
   @OnEvent(FileUploadedEvent, { queue: 'inventory' })
@@ -35,14 +30,15 @@ export class InventoryListener {
 
     this.logger.log('Processing inventory upload', { fileId: payload.fileId, userId: payload.userId });
 
-    const context = { userId: payload.userId } as unknown as RequestContext;
-    const serviceContext = toServiceContext(context);
+    const serviceContext = toServiceContext({
+      userId: payload.userId,
+    });
 
     try {
       // 1. Get File Content
       this.logger.log('Getting file content', { fileId: payload.fileId });
       const file = await this.fileService.findById(serviceContext, payload.fileId);
-      const fileContent = await this.fileService.getFileContent(context, file.key!);
+      const fileContent = await this.fileService.getFileContent(serviceContext, file.key!);
       const base64Image = Buffer.from(fileContent).toString('base64');
       this.logger.log('Got file content', { size: base64Image.length });
 
@@ -75,9 +71,9 @@ export class InventoryListener {
         Analyze this image and identify all distinct objects visible.
         You are a JSON generator. Output ONLY valid JSON.
         Do not include any conversational text, markdown formatting, or explanations.
-        
+
         If the image is too dark, blurry, or contains no distinct objects, return an empty array for "items".
-        
+
         Return a JSON object with the following schema:
         {
           "items": [
@@ -100,7 +96,7 @@ export class InventoryListener {
       this.logger.log('Starting LLM chat', { model });
 
       const response = await this.ollamaService.chat(
-        context,
+        serviceContext,
         [
           {
             role: 'user',
@@ -130,11 +126,8 @@ export class InventoryListener {
 
       this.logger.log('Parsed items', { count: items.length });
 
-      // 4. Save to Inventory
       for (const itemData of items) {
-        const item = this.itemRepository.create({
-          id: uuidv7(),
-          userId: payload.userId,
+        const item = await this.itemService.create(serviceContext, {
           name: itemData.name || 'Unknown Item',
           description: itemData.description,
           category: itemData.category,
@@ -151,11 +144,8 @@ export class InventoryListener {
             captured_at: new Date(),
             source_file_id: payload.fileId,
           },
-          createdAt: new Date(),
-          updatedAt: new Date(),
         });
 
-        await this.itemRepository.save(item);
         this.logger.log('Inventory item created', { itemId: item.id, name: item.name });
       }
     } catch (error) {
