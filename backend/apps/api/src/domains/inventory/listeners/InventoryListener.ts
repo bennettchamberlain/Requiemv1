@@ -148,6 +148,12 @@ export class InventoryListener {
 
         this.logger.log('Inventory item created', { itemId: item.id, name: item.name });
       }
+
+      await this.fileService.update(serviceContext, payload.fileId, {
+        analysisCompleted: true,
+      });
+
+      this.logger.log('Inventory processing completed');
     } catch (error) {
       this.logger.error('Failed to process inventory upload', {
         error: error instanceof Error ? error.message : String(error),
