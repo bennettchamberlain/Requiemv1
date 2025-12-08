@@ -54,6 +54,9 @@ export class FileEntity {
   @Column({ type: 'bigint', name: 'file_size_bytes' })
   size!: number;
 
+  @Column({ type: 'boolean', name: 'analysis_completed', default: false })
+  analysisCompleted!: boolean;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -80,6 +83,7 @@ export class FileEntity {
       bucket: entity.bucket,
       contentType: entity.contentType,
       size: entity.size,
+      analysisCompleted: entity.analysisCompleted,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
