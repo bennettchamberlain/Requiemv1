@@ -5,7 +5,8 @@ import { Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
-import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
+
+import { InventoryItemModal } from './InventoryItemModal';
 
 interface InventoryItem {
   id: string;
@@ -41,7 +42,7 @@ const GET_INVENTORY_ITEMS = gql`
   }
 `;
 
-export default function InventoryPage() {
+export function InventoryPage() {
   usePageTitle('Inventory - Companion Intelligence');
 
   const { data, loading, refetch } = useQuery(GET_INVENTORY_ITEMS);
