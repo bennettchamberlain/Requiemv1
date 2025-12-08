@@ -89,7 +89,6 @@ import { UserContextService } from './services/UserContextService';
     FilesModule,
     FilesModule,
     PositionModule,
-    PositionModule,
     BrowserActivityModule,
   ],
   providers: [
