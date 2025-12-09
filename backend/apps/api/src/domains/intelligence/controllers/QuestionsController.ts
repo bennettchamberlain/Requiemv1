@@ -12,17 +12,15 @@ import {
   Delete,
   Body,
 } from '@nestjs/common';
-import { CronExpression } from '@nestjs/schedule';
 import type { Response } from 'express';
 
-import { Context, Cron } from '@ci/common/decorators';
+import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { LoggerService } from '@ci/common/services';
 import { type RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
-import config from '@ci/configuration';
-import { EventService, Events } from '@ci/domains/events';
+import { EventService } from '@ci/domains/events';
 
 import { Question } from '../entities/QuestionEntity';
 import { QuestionService } from '../services/QuestionService';
@@ -116,26 +114,6 @@ export class QuestionsController {
 
     if (!removal) {
       throw new NotFoundException();
-    }
-  }
-
-  @Cron(CronExpression.EVERY_MINUTE)
-  async cronProcessQuestions() {
-    if (!config.features['scheduled.answer.inferencing']) {
-      return;
-    }
-
-    this.logger.log('Processing question answer inference cron');
-
-    const unansweredQuestions = await this.questionService.findUnansweredByUserId();
-
-    for (const [userId, questionIds] of unansweredQuestions) {
-      for (const questionId of questionIds) {
-        this.eventService.send(Events.INFER_QUESTION_ANSWER, {
-          ownerId: userId,
-          questionId: questionId,
-        });
-      }
     }
   }
 }
