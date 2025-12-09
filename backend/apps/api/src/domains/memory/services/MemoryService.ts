@@ -270,40 +270,6 @@ export class MemoryService {
 
     const contents = await query.getMany();
 
-    // Also query ALL content for this user to see what's actually in the database
-    const allContentForUser = await this.contentRepository
-      .createQueryBuilder('content')
-      .leftJoin('content.user', 'user')
-      .where('content.user_id = :userId', { userId })
-      .orderBy('content.created_at', 'DESC')
-      .take(50)
-      .getMany();
-
-    this.logger.debug('getContentMemories query results', {
-      userId,
-      paramsCategories: params.categories,
-      paramsExcludeCategories: params.excludeCategories,
-      contentCount: contents.length,
-      contentTypes: [...new Set(contents.map((c) => c.type))],
-      contentDetails: contents.slice(0, 10).map((c) => ({
-        id: c.id,
-        type: c.type,
-        title: c.title,
-        external_id: c.externalId,
-        created_at: c.createdAt,
-      })),
-      allContentInDb: {
-        total: allContentForUser.length,
-        types: [...new Set(allContentForUser.map((c) => c.type))],
-        sample: allContentForUser.slice(0, 20).map((c) => ({
-          id: c.id,
-          type: c.type,
-          title: c.title?.substring(0, 50),
-          external_id: c.externalId,
-        })),
-      },
-    });
-
     return contents.map((content) => this.contentToMemory(content));
   }
 
