@@ -1,13 +1,27 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Point, In } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
+import { EventService } from '@ci/domains/events';
+import {
+  PositionCreatedEvent,
+  PositionUpdatedEvent,
+  PositionRemovedEvent,
+} from '@ci/domains/position/events';
 
 import { PositionEntity, LocationSource } from '../entities/PositionEntity';
-import type { CreatePositionDto, Position, Geofence, GeofenceRadius, GeofencePolygon } from '../types';
+import type {
+  CreatePositionDto,
+  Position,
+  Geofence,
+  GeofenceRadius,
+  GeofencePolygon,
+  UpdatePositionDto,
+} from '../types';
 
 @Injectable()
 export class PositionService {
@@ -17,6 +31,7 @@ export class PositionService {
     @InjectRepository(PositionEntity)
     private readonly positionRepository: Repository<PositionEntity>,
     private readonly deviceService: DeviceService,
+    private readonly eventService: EventService,
   ) {}
 
   async create(context: UserServiceContext, data: CreatePositionDto[]): Promise<Position[]> {
@@ -57,7 +72,7 @@ export class PositionService {
 
         const normalizedItem = {
           ...item,
-          heading_degrees: this.normalizeHeading(item.heading_degrees),
+          headingDegrees: this.normalizeHeading(item.heading_degrees),
         };
 
         newPositions.push(normalizedItem);
@@ -69,12 +84,18 @@ export class PositionService {
     if (newPositions.length > 0) {
       const entitiesToSave = newPositions.map((item) => this.createPositionEntity(context, item));
       const saved = await this.positionRepository.save(entitiesToSave);
+      for (const position of saved) {
+        await this.eventService.send(PositionCreatedEvent, {
+          positionId: position.id,
+        });
+      }
+
       createdEntities.push(...saved);
     }
 
     const allPositions = [...existingPositions, ...createdEntities]
       .sort((a, b) => b.time.getTime() - a.time.getTime())
-      .map((entity) => entity.toPosition());
+      .map((entity) => PositionEntity.toEgressType(entity));
 
     this.logger.log('Successfully processed position records', {
       userId: context.userId,
@@ -84,6 +105,175 @@ export class PositionService {
     });
 
     return allPositions;
+  }
+
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Position[]> {
+    const entities = await this.positionRepository.find({
+      where: {
+        id: In(ids),
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+    });
+
+    return entities.map((entity) => PositionEntity.toEgressType(entity));
+  }
+
+  async findById(context: ServiceContext, id: string): Promise<Position | null> {
+    const result = await this.positionRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+    });
+
+    if (result == null) {
+      return null;
+    }
+
+    return PositionEntity.toEgressType(result);
+  }
+
+  async update(context: ServiceContext, id: string, data: UpdatePositionDto): Promise<Position | null> {
+    const updateData: Partial<PositionEntity> = {};
+
+    if (data.time !== undefined) {
+      updateData.time = new Date(data.time);
+    }
+
+    if (data.location !== undefined) {
+      updateData.location = data.location
+        ? {
+            type: 'Point' as const,
+            coordinates: [data.location.x, data.location.y],
+          }
+        : null;
+    }
+
+    if (data.altitude_meters !== undefined) {
+      updateData.altitudeMeters = data.altitude_meters;
+    }
+
+    if (data.accuracy_meters !== undefined) {
+      updateData.accuracyMeters = data.accuracy_meters;
+    }
+
+    if (data.hdop !== undefined) {
+      updateData.hdop = data.hdop;
+    }
+
+    if (data.vdop !== undefined) {
+      updateData.vdop = data.vdop;
+    }
+
+    if (data.heading_degrees !== undefined) {
+      updateData.headingDegrees = data.heading_degrees;
+    }
+
+    if (data.speed_meters_per_second !== undefined) {
+      updateData.speedMetersPerSecond = data.speed_meters_per_second;
+    }
+
+    if (data.address !== undefined) {
+      updateData.address = data.address;
+    }
+
+    if (data.city !== undefined) {
+      updateData.city = data.city;
+    }
+
+    if (data.region !== undefined) {
+      updateData.region = data.region;
+    }
+
+    if (data.country !== undefined) {
+      updateData.country = data.country;
+    }
+
+    if (data.postal_code !== undefined) {
+      updateData.postalCode = data.postal_code;
+    }
+
+    if (data.name !== undefined) {
+      updateData.name = data.name;
+    }
+
+    if (data.description !== undefined) {
+      updateData.description = data.description;
+    }
+
+    if (data.provider !== undefined) {
+      updateData.provider = data.provider;
+    }
+
+    if (data.source !== undefined) {
+      updateData.source = data.source;
+    }
+
+    if (data.activity_type !== undefined) {
+      updateData.activityType = data.activity_type;
+    }
+
+    const position = await this.positionRepository.findOne({
+      where: {
+        id: id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: { id: context.userId },
+        }),
+      },
+    });
+
+    if (position) {
+      Object.assign(position, updateData);
+      await this.positionRepository.save(position);
+    } else {
+      return null;
+    }
+
+    await this.eventService.send(PositionUpdatedEvent, {
+      positionId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const position = await this.positionRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+    });
+
+    if (!position) {
+      return false;
+    }
+
+    await this.positionRepository.delete({
+      id,
+      ...(context.userId !== SYSTEM_USER && {
+        user: {
+          id: context.userId,
+        },
+      }),
+    });
+
+    await this.eventService.send(PositionRemovedEvent, {
+      positionId: id,
+    });
+
+    return true;
   }
 
   async findByDateRange(context: ServiceContext, start: Date, end: Date): Promise<Position[]> {
@@ -105,7 +295,7 @@ export class PositionService {
       order: { time: 'DESC' },
     });
 
-    return results.map((entity) => entity.toPosition());
+    return results.map((entity) => PositionEntity.toEgressType(entity));
   }
 
   async findByGeofence(
@@ -195,30 +385,31 @@ export class PositionService {
       : null;
 
     return this.positionRepository.create({
+      id: uuidv7(),
       time: new Date(item.time),
-      user_id: context.userId,
-      device_id: item.device_id ?? null,
+      userId: context.userId,
+      deviceId: item.device_id ?? null,
       location,
-      altitude_meters: item.altitude_meters ?? null,
-      accuracy_meters: item.accuracy_meters ?? null,
+      altitudeMeters: item.altitude_meters ?? null,
+      accuracyMeters: item.accuracy_meters ?? null,
       hdop: item.hdop ?? null,
       vdop: item.vdop ?? null,
-      heading_degrees: item.heading_degrees ?? null,
-      speed_meters_per_second: item.speed_meters_per_second ?? null,
+      headingDegrees: item.heading_degrees ?? null,
+      speedMetersPerSecond: item.speed_meters_per_second ?? null,
       address: item.address ?? null,
       city: item.city ?? null,
       region: item.region ?? null,
       country: item.country ?? null,
-      postal_code: item.postal_code ?? null,
+      postalCode: item.postal_code ?? null,
       name: item.name ?? null,
       description: item.description ?? null,
       provider: item.provider ?? null,
       source: item.source,
-      activity_type: item.activity_type ?? null,
-      location_entity_id: item.location_entity_id ?? null,
-      reference_entity_id: item.reference_entity_id ?? null,
-      relative_coordinates: item.relative_coordinates ?? {},
-      relative_orientation: item.relative_orientation ?? {},
+      activityType: item.activity_type ?? null,
+      locationEntityId: item.location_entity_id ?? null,
+      referenceEntityId: item.reference_entity_id ?? null,
+      relativeCoordinates: item.relative_coordinates ?? {},
+      relativeOrientation: item.relative_orientation ?? {},
     });
   }
 
@@ -229,7 +420,7 @@ export class PositionService {
 
     return this.positionRepository.find({
       where: {
-        user_id: context.userId,
+        userId: context.userId,
         time: In(times),
       },
     });
@@ -256,33 +447,33 @@ export class PositionService {
     return rawResults.map((row) => {
       const entity = new PositionEntity();
       entity.time = new Date(row.time as string);
-      entity.user_id = row.user_id as string;
-      entity.device_id = row.device_id as string | null;
+      entity.userId = row.user_id as string;
+      entity.deviceId = row.device_id as string | null;
       entity.location = this.parseLocation(row.location);
-      entity.altitude_meters = row.altitude_meters as number | null;
-      entity.accuracy_meters = row.accuracy_meters as number | null;
+      entity.altitudeMeters = row.altitude_meters as number | null;
+      entity.accuracyMeters = row.accuracy_meters as number | null;
       entity.hdop = row.hdop as number | null;
       entity.vdop = row.vdop as number | null;
-      entity.heading_degrees = row.heading_degrees as number | null;
-      entity.speed_meters_per_second = row.speed_meters_per_second as number | null;
+      entity.headingDegrees = row.heading_degrees as number | null;
+      entity.speedMetersPerSecond = row.speed_meters_per_second as number | null;
       entity.address = row.address as string | null;
       entity.city = row.city as string | null;
       entity.region = row.region as string | null;
       entity.country = row.country as string | null;
-      entity.postal_code = row.postal_code as string | null;
+      entity.postalCode = row.postal_code as string | null;
       entity.name = row.name as string | null;
       entity.description = row.description as string | null;
       entity.provider = row.provider as string | null;
       entity.source = row.source as LocationSource;
-      entity.activity_type = row.activity_type as string | null;
-      entity.location_entity_id = row.location_entity_id as string | null;
-      entity.reference_entity_id = row.reference_entity_id as string | null;
-      entity.relative_coordinates = (row.relative_coordinates as Record<string, unknown>) || {};
-      entity.relative_orientation = (row.relative_orientation as Record<string, unknown>) || {};
-      entity.location_embedding = this.parseLocationEmbedding(row.location_embedding);
-      entity.is_private = (row.is_private as boolean) ?? false;
+      entity.activityType = row.activity_type as string | null;
+      entity.locationEntityId = row.location_entity_id as string | null;
+      entity.referenceEntityId = row.reference_entity_id as string | null;
+      entity.relativeCoordinates = (row.relative_coordinates as Record<string, unknown>) || {};
+      entity.relativeOrientation = (row.relative_orientation as Record<string, unknown>) || {};
+      entity.locationEmbedding = this.parseLocationEmbedding(row.location_embedding);
+      entity.isPrivate = (row.is_private as boolean) ?? false;
 
-      return entity.toPosition();
+      return PositionEntity.toEgressType(entity);
     });
   }
 

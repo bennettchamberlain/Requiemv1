@@ -2,11 +2,17 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Query,
   Body,
   UseGuards,
+  Param,
   ConflictException,
   BadRequestException,
+  HttpStatus,
+  HttpCode,
+  NotFoundException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 
@@ -20,8 +26,10 @@ import { toServiceContext } from '@ci/common/utils';
 import { PositionService } from '../services/PositionService';
 import {
   CreatePositionDto,
+  UpdatePositionDto,
   Position,
   createPositionSchema,
+  updatePositionSchema,
   Geofence,
   GeofenceRadius,
   GeofencePolygon,
@@ -50,6 +58,57 @@ export class PositionController {
       }
 
       throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findById(@Context() context: RequestContext, @Param('id') id: string) {
+    const serviceContext = toServiceContext(context);
+
+    const position = await this.positionService.findById(serviceContext, id);
+
+    if (!position) {
+      throw new NotFoundException('Position not found');
+    }
+
+    return position;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  async update(
+    @Context() context: RequestContext,
+    @Param('id') id: string,
+    @Body(new ValidationPipe(updatePositionSchema)) data: UpdatePositionDto,
+  ) {
+    const serviceContext = toServiceContext(context);
+
+    const result = await this.positionService.update(serviceContext, id, data);
+
+    if (!result) {
+      throw new NotFoundException();
+    }
+
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Context() context: RequestContext, @Param('id') positionId: string): Promise<void> {
+    const serviceContext = toServiceContext(context);
+
+    const question = await this.positionService.findById(serviceContext, positionId);
+
+    if (!question) {
+      throw new NotFoundException('Position not found');
+    }
+
+    const removal = this.positionService.remove(serviceContext, positionId);
+
+    if (!removal) {
+      throw new NotFoundException();
     }
   }
 
