@@ -1,6 +1,8 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
+import { createContentSchema } from './controllers/ContentController';
+
 export interface Memory {
   id: string;
   type: string;
@@ -62,52 +64,6 @@ export interface MemoryResponse {
   offset: number;
 }
 
-export interface Event {
-  readonly id: string;
-  readonly title: string;
-  readonly description: string | null;
-  readonly event_type: string | null;
-  readonly category: string | null;
-  readonly start_time: Date;
-  readonly end_time: Date | null;
-  readonly duration_minutes: number | null;
-  readonly location_name: string | null;
-  readonly location_coordinates: Point | null;
-  readonly event_entity_id: string | null;
-  readonly location_entity_id: string | null;
-  readonly participant_entity_ids: string[] | null;
-  readonly organizer_entity_id: string | null;
-  readonly source_type: string | null;
-  readonly source_system: string | null;
-  readonly source_id: string | null;
-  readonly confidence_score: number;
-  readonly is_recurring: boolean;
-  readonly recurrence_pattern: object | null;
-  readonly is_all_day: boolean;
-  readonly is_private: boolean;
-  readonly priority: number;
-  readonly metadata: object;
-  readonly is_predicted: boolean;
-  readonly is_inferred: boolean;
-  readonly prediction_model: string | null;
-  readonly inference_sources: object;
-  readonly tags: string[] | null;
-  readonly sentiment_score: number | null;
-  readonly energy_level: number | null;
-  readonly productivity_impact: number | null;
-  readonly status: string;
-  readonly is_deleted: boolean;
-  readonly external_sync_status: string | null;
-  readonly last_synced_at: Date | null;
-  readonly parent_event_id: string | null;
-  readonly related_event_ids: string[] | null;
-  readonly supersedes_event_id: string | null;
-  readonly created_by: string | null;
-  readonly user_id: string | undefined;
-  readonly created_at: Date;
-  readonly updated_at: Date;
-}
-
 export interface CreateEventDto {
   id: string;
   title: string;
@@ -127,15 +83,15 @@ export interface CreateEventDto {
   source_id?: string;
   confidence_score?: number;
   is_recurring?: boolean;
-  recurrence_pattern?: object;
+  recurrence_pattern?: Record<string, unknown>;
   is_all_day?: boolean;
   is_private?: boolean;
   priority?: number;
-  metadata?: object;
+  metadata?: Record<string, unknown>;
   is_predicted?: boolean;
   is_inferred?: boolean;
   prediction_model?: string;
-  inference_sources?: object;
+  inference_sources?: Record<string, unknown>;
   tags?: string[];
   sentiment_score?: number;
   energy_level?: number;
@@ -149,6 +105,7 @@ export interface CreateEventDto {
   supersedes_event_id?: string;
   created_by?: string;
   user_id?: string;
+  duration_minutes?: number;
   user?: {
     id: string;
   };
@@ -174,15 +131,15 @@ export interface UpdateEventDto {
   source_id?: string;
   confidence_score?: number;
   is_recurring?: boolean;
-  recurrence_pattern?: object;
+  recurrence_pattern?: Record<string, unknown>;
   is_all_day?: boolean;
   is_private?: boolean;
   priority?: number;
-  metadata?: object;
+  metadata?: Record<string, unknown>;
   is_predicted?: boolean;
   is_inferred?: boolean;
   prediction_model?: string;
-  inference_sources?: object;
+  inference_sources?: Record<string, unknown>;
   tags?: string[];
   sentiment_score?: number;
   energy_level?: number;
@@ -196,6 +153,7 @@ export interface UpdateEventDto {
   supersedes_event_id?: string;
   created_by?: string;
   user_id?: string;
+  duration_minutes?: number;
   content?: CreateContentDto[];
 }
 
@@ -460,4 +418,100 @@ export const updateCommunicationSchema = z.object({
   connection_id: z.string().optional(),
   is_encrypted: z.boolean().optional(),
   is_archived: z.boolean().optional(),
+});
+
+const createEventSchemaRoot = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  event_type: z.string().optional(),
+  category: z.string().optional(),
+  start_time: z.string().datetime(),
+  end_time: z.string().datetime().optional(),
+  location_name: z.string().optional(),
+  location_coordinates: z
+    .object({
+      type: z.string(),
+      coordinates: z.array(z.number()),
+    })
+    .optional(),
+  event_entity_id: z.string().optional(),
+  location_entity_id: z.string().optional(),
+  participant_entity_ids: z.array(z.string()).optional(),
+  organizer_entity_id: z.string().optional(),
+  source_type: z.string().optional(),
+  source_system: z.string().optional(),
+  source_id: z.string().optional(),
+  confidence_score: z.number().optional(),
+  is_recurring: z.boolean().optional(),
+  recurrence_pattern: z.record(z.unknown()).optional(),
+  is_all_day: z.boolean().optional(),
+  is_private: z.boolean().optional(),
+  priority: z.number().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  is_predicted: z.boolean().optional(),
+  is_inferred: z.boolean().optional(),
+  prediction_model: z.string().optional(),
+  inference_sources: z.record(z.unknown()).optional(),
+  tags: z.array(z.string()).optional(),
+  sentiment_score: z.number().optional(),
+  energy_level: z.number().optional(),
+  productivity_impact: z.number().optional(),
+  status: z.string().optional(),
+  is_deleted: z.boolean().optional(),
+  external_sync_status: z.string().optional(),
+  last_synced_at: z.string().datetime().optional(),
+  parent_event_id: z.string().optional(),
+  related_event_ids: z.array(z.string()).optional(),
+  supersedes_event_id: z.string().optional(),
+  created_by: z.string().optional(),
+  content: z.array(createContentSchema).optional(),
+});
+
+export const createEventSchema = z.union([createEventSchemaRoot, z.array(createEventSchemaRoot)]);
+
+export const updateEventSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  event_type: z.string().optional(),
+  category: z.string().optional(),
+  start_time: z.string().datetime().optional(),
+  end_time: z.string().datetime().optional(),
+  location_name: z.string().optional(),
+  event_entity_id: z.string().optional(),
+  location_entity_id: z.string().optional(),
+  location_coordinates: z
+    .object({
+      type: z.string(),
+      coordinates: z.array(z.number()),
+    })
+    .optional(),
+  participant_entity_ids: z.array(z.string()).optional(),
+  organizer_entity_id: z.string().optional(),
+  source_type: z.string().optional(),
+  source_system: z.string().optional(),
+  source_id: z.string().optional(),
+  confidence_score: z.number().optional(),
+  is_recurring: z.boolean().optional(),
+  recurrence_pattern: z.record(z.unknown()).optional(),
+  is_all_day: z.boolean().optional(),
+  is_private: z.boolean().optional(),
+  priority: z.number().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  is_predicted: z.boolean().optional(),
+  is_inferred: z.boolean().optional(),
+  prediction_model: z.string().optional(),
+  inference_sources: z.record(z.unknown()).optional(),
+  tags: z.array(z.string()).optional(),
+  sentiment_score: z.number().optional(),
+  energy_level: z.number().optional(),
+  productivity_impact: z.number().optional(),
+  status: z.string().optional(),
+  is_deleted: z.boolean().optional(),
+  external_sync_status: z.string().optional(),
+  last_synced_at: z.string().datetime().optional(),
+  parent_event_id: z.string().optional(),
+  related_event_ids: z.array(z.string()).optional(),
+  supersedes_event_id: z.string().optional(),
+  created_by: z.string().optional(),
+  content: z.array(createContentSchema).optional(),
 });

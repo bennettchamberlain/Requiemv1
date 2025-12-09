@@ -139,12 +139,6 @@ export class MemoryService {
       query = query.andWhere('event.category IN (:...categories)', { categories: params.categories });
     }
 
-    if (params.excludeCategories && params.excludeCategories.length > 0) {
-      query = query.andWhere('event.category NOT IN (:...excludeCategories)', {
-        excludeCategories: params.excludeCategories,
-      });
-    }
-
     // Apply location filter
     if (params.hasLocation) {
       query = query.andWhere('event.location_coordinates IS NOT NULL');
@@ -153,9 +147,8 @@ export class MemoryService {
     query = query.orderBy('event.start_time', 'DESC');
 
     const events = await query.getMany();
-    const memories = events.map((event) => this.eventToMemory(event));
 
-    return memories;
+    return events.map((event) => this.eventToMemory(event));
   }
 
   /**
@@ -190,12 +183,6 @@ export class MemoryService {
       if (params.categories && params.categories.length > 0) {
         query = query.andWhere('communication.category IN (:...categories)', {
           categories: params.categories,
-        });
-      }
-
-      if (params.excludeCategories && params.excludeCategories.length > 0) {
-        query = query.andWhere('communication.category NOT IN (:...excludeCategories)', {
-          excludeCategories: params.excludeCategories,
         });
       }
 
@@ -254,12 +241,6 @@ export class MemoryService {
       query = query.andWhere('content.type IN (:...categories)', { categories: params.categories });
     } else {
       this.logger.debug('No category filter applied - returning all content types for user');
-    }
-
-    if (params.excludeCategories && params.excludeCategories.length > 0) {
-      query = query.andWhere('content.type NOT IN (:...excludeCategories)', {
-        excludeCategories: params.excludeCategories,
-      });
     }
 
     query = query.orderBy('content.created_at', 'DESC');
@@ -670,13 +651,13 @@ export class MemoryService {
    * Convert EventEntity to Memory
    */
   private eventToMemory(event: EventEntity): Memory {
-    const location: MemoryLocation | undefined = event.location_coordinates
+    const location: MemoryLocation | undefined = event.locationCoordinates
       ? {
-          id: event.location_entity_id || event.id,
-          name: event.location_name,
-          lat: (event.location_coordinates as Point).coordinates[1], // PostGIS format: [lng, lat]
-          lng: (event.location_coordinates as Point).coordinates[0],
-          address: event.location_name || undefined,
+          id: event.locationEntityId || event.id,
+          name: event.locationName,
+          lat: (event.locationCoordinates as Point).coordinates[1], // PostGIS format: [lng, lat]
+          lng: (event.locationCoordinates as Point).coordinates[0],
+          address: event.locationName || undefined,
         }
       : undefined;
 
@@ -685,29 +666,29 @@ export class MemoryService {
       type: 'event',
       title: event.title,
       description: event.description,
-      timestamp: event.start_time,
-      category: event.category || event.event_type || 'Event',
+      timestamp: event.startTime,
+      category: event.category || event.eventType || 'Event',
       location,
       tags: event.tags || [],
-      userId: event.user?.id || '',
-      sourceLink: event.source_id ? `${event.source_system}/${event.source_id}` : undefined,
+      userId: event.user?.id || event.userId || '',
+      sourceLink: event.sourceId ? `${event.sourceSystem}/${event.sourceId}` : undefined,
       metadata: {
         eventId: event.id,
-        eventType: event.event_type || undefined,
+        eventType: event.eventType || undefined,
         eventName: event.title || undefined,
-        synthetic: event.is_predicted || event.is_inferred,
-        confidenceScore: event.confidence_score,
-        isRecurring: event.is_recurring,
-        isAllDay: event.is_all_day,
+        synthetic: event.isPredicted || event.isInferred,
+        confidenceScore: event.confidenceScore,
+        isRecurring: event.isRecurring,
+        isAllDay: event.isAllDay,
         priority: event.priority,
         status: event.status,
-        sourceType: event.source_type,
-        sourceSystem: event.source_system,
-        sourceId: event.source_id,
-        durationMinutes: event.duration_minutes,
-        endTime: event.end_time,
-        organizerEntityId: event.organizer_entity_id,
-        participantEntityIds: event.participant_entity_ids,
+        sourceType: event.sourceType,
+        sourceSystem: event.sourceSystem,
+        sourceId: event.sourceId,
+        durationMinutes: event.durationMinutes,
+        endTime: event.endTime,
+        organizerEntityId: event.organizerEntityId,
+        participantEntityIds: event.participantEntityIds,
         ...event.metadata,
       },
     };

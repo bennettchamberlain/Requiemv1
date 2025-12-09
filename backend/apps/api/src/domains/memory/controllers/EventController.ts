@@ -10,9 +10,11 @@ import {
   Req,
   UseGuards,
   UnauthorizedException,
+  NotFoundException,
+  HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
-import { z } from 'zod';
 
 import { PgErrorCode } from '@ci/common/constants';
 import { Context } from '@ci/common/decorators';
@@ -24,105 +26,7 @@ import { toServiceContext } from '@ci/common/utils';
 import { Content } from '../entities/ContentEntity';
 import { ContentService } from '../services/ContentService';
 import { EventService } from '../services/EventService';
-import { CreateEventDto, UpdateEventDto } from '../types';
-
-import { createContentSchema } from './ContentController';
-
-const createEventSchemaRoot = z.object({
-  title: z.string(),
-  description: z.string().optional(),
-  event_type: z.string().optional(),
-  category: z.string().optional(),
-  start_time: z.string().datetime(),
-  end_time: z.string().datetime().optional(),
-  location_name: z.string().optional(),
-  location_coordinates: z
-    .object({
-      type: z.string(),
-      coordinates: z.array(z.number()),
-    })
-    .optional(),
-  event_entity_id: z.string().optional(),
-  location_entity_id: z.string().optional(),
-  participant_entity_ids: z.array(z.string()).optional(),
-  organizer_entity_id: z.string().optional(),
-  source_type: z.string().optional(),
-  source_system: z.string().optional(),
-  source_id: z.string().optional(),
-  confidence_score: z.number().optional(),
-  is_recurring: z.boolean().optional(),
-  recurrence_pattern: z.record(z.unknown()).optional(),
-  is_all_day: z.boolean().optional(),
-  is_private: z.boolean().optional(),
-  priority: z.number().optional(),
-  metadata: z.record(z.unknown()).optional(),
-  is_predicted: z.boolean().optional(),
-  is_inferred: z.boolean().optional(),
-  prediction_model: z.string().optional(),
-  inference_sources: z.record(z.unknown()).optional(),
-  tags: z.array(z.string()).optional(),
-  sentiment_score: z.number().optional(),
-  energy_level: z.number().optional(),
-  productivity_impact: z.number().optional(),
-  status: z.string().optional(),
-  is_deleted: z.boolean().optional(),
-  external_sync_status: z.string().optional(),
-  last_synced_at: z.string().datetime().optional(),
-  parent_event_id: z.string().optional(),
-  related_event_ids: z.array(z.string()).optional(),
-  supersedes_event_id: z.string().optional(),
-  created_by: z.string().optional(),
-  content: z.array(createContentSchema).optional(),
-});
-
-const createEventSchema = z.union([createEventSchemaRoot, z.array(createEventSchemaRoot)]);
-
-const updateEventSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
-  event_type: z.string().optional(),
-  category: z.string().optional(),
-  start_time: z.string().datetime().optional(),
-  end_time: z.string().datetime().optional(),
-  location_name: z.string().optional(),
-  event_entity_id: z.string().optional(),
-  location_entity_id: z.string().optional(),
-  location_coordinates: z
-    .object({
-      type: z.string(),
-      coordinates: z.array(z.number()),
-    })
-    .optional(),
-  participant_entity_ids: z.array(z.string()).optional(),
-  organizer_entity_id: z.string().optional(),
-  source_type: z.string().optional(),
-  source_system: z.string().optional(),
-  source_id: z.string().optional(),
-  confidence_score: z.number().optional(),
-  is_recurring: z.boolean().optional(),
-  recurrence_pattern: z.record(z.unknown()).optional(),
-  is_all_day: z.boolean().optional(),
-  is_private: z.boolean().optional(),
-  priority: z.number().optional(),
-  metadata: z.record(z.unknown()).optional(),
-  is_predicted: z.boolean().optional(),
-  is_inferred: z.boolean().optional(),
-  prediction_model: z.string().optional(),
-  inference_sources: z.record(z.unknown()).optional(),
-  tags: z.array(z.string()).optional(),
-  sentiment_score: z.number().optional(),
-  energy_level: z.number().optional(),
-  productivity_impact: z.number().optional(),
-  status: z.string().optional(),
-  is_deleted: z.boolean().optional(),
-  external_sync_status: z.string().optional(),
-  last_synced_at: z.string().datetime().optional(),
-  parent_event_id: z.string().optional(),
-  related_event_ids: z.array(z.string()).optional(),
-  supersedes_event_id: z.string().optional(),
-  created_by: z.string().optional(),
-  content: z.array(createContentSchema).optional(),
-});
+import { CreateEventDto, UpdateEventDto, createEventSchema, updateEventSchema } from '../types';
 
 @Controller('events')
 export class EventController {
@@ -157,7 +61,7 @@ export class EventController {
       const returned = await Promise.all(
         dataArray.map(async (item) => {
           const { content: contentInput, ...event } = item;
-          const newEvent = (await this.eventService.create(context, event))[0];
+          const newEvent = (await this.eventService.create(serviceContext, event))[0];
 
           if (contentInput) {
             const contentInputForEvent = contentInput.map((input) => ({
@@ -170,7 +74,7 @@ export class EventController {
               contentInputForEvent,
             )) as Content[];
 
-            return this.eventService.update(context, newEvent.id, {
+            return this.eventService.update(serviceContext, newEvent.id, {
               metadata: {
                 ...newEvent.metadata,
                 related_objects: contentArray.map((content) => `content_${content.id}`),
@@ -195,14 +99,24 @@ export class EventController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Context() context: RequestContext) {
-    return this.eventService.findAll(context);
+  async findAll(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    return this.eventService.findAll(serviceContext);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string, @Context() context: RequestContext) {
-    return this.eventService.findOne(context, id);
+  async findById(@Param('id') id: string, @Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    const result = await this.eventService.findById(serviceContext, id);
+
+    if (!result) {
+      throw new NotFoundException('Event not found');
+    }
+
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -212,21 +126,33 @@ export class EventController {
     @Body(new ValidationPipe(updateEventSchema)) input: UpdateEventDto,
     @Context() context: RequestContext,
   ) {
-    try {
-      return await this.eventService.update(context, id, input);
-    } catch (error) {
-      if (error instanceof QueryFailedError && error.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
-        // TODO: Obfuscate this error message? We're revealing DB details here.
-        throw new ConflictException(error.message);
-      }
+    const serviceContext = toServiceContext(context);
 
-      throw error;
+    const result = await this.eventService.update(serviceContext, id, input);
+
+    if (!result) {
+      throw new NotFoundException('Event not found');
     }
+
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.eventService.remove(id);
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Context() context: RequestContext, @Param('id') id: string) {
+    const serviceContext = toServiceContext(context);
+
+    const event = await this.eventService.findById(serviceContext, id);
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    const removal = await this.eventService.remove(serviceContext, id);
+
+    if (!removal) {
+      throw new NotFoundException('Event not found');
+    }
   }
 }
