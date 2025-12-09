@@ -5,7 +5,7 @@ import { LoggerService } from '@ci/common/services';
 import { toServiceContext } from '@ci/common/utils';
 import { OnEvent } from '@ci/domains/events';
 import { FileService, FileUploadedEvent, type FileUploadedPayload } from '@ci/domains/files';
-import { ItemService } from '@ci/domains/memory';
+import { ItemService, type InventoryCondition } from '@ci/domains/memory';
 
 import { OllamaService } from '../services/OllamaService';
 
@@ -15,7 +15,7 @@ const ItemAnalysisSchema = z.object({
   category: z.string().nullable(),
   brand: z.string().nullable(),
   model: z.string().nullable(),
-  condition: z.enum(['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a']),
+  condition: z.string().nullable(),
   estimated_value: z.number(),
 });
 
@@ -133,14 +133,16 @@ export class InventoryListener {
     }
 
     for (const itemData of items) {
+      const condition = itemData.condition?.toLowerCase() ?? 'good';
+
       const item = await this.itemService.create(serviceContext, {
         name: itemData.name || 'Unknown Item',
         description: itemData.description ?? undefined,
         category: itemData.category ?? undefined,
         brand: itemData.brand ?? undefined,
         model: itemData.model ?? undefined,
-        condition: ['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a'].includes(itemData.condition)
-          ? itemData.condition
+        condition: ['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a'].includes(condition)
+          ? (condition as InventoryCondition)
           : 'good',
         currentValue: itemData.estimated_value,
         metadata: {
