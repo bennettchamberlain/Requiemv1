@@ -341,7 +341,7 @@ export class PromoteService {
   ): Promise<string> {
     try {
       // Get user entity and user entity ID
-      const user = await this.userService.findOne(userId);
+      const user = await this.userService.findById({ userId }, userId);
       if (!user) {
         throw new Error(`User not found: ${userId}`);
       }
@@ -499,7 +499,7 @@ export class PromoteService {
    * Handles user lookup and entity creation in one call
    */
   async getUserEntityId(userId: string): Promise<string> {
-    const user = await this.userService.findOne(userId);
+    const user = await this.userService.findById({ userId }, userId);
     if (!user) {
       throw new Error(`User not found: ${userId}`);
     }
@@ -574,7 +574,7 @@ export class PromoteService {
       await this.enqueuePersonEmbedding(user.id, entityId, searchContent);
 
       // Update the user record with the new entity ID
-      await this.userService.update(user.id, { entityId });
+      await this.userService.update({ userId: user.id }, user.id, { entityId });
 
       this.logger.log('Created entity for user', {
         userId: user.id,
@@ -586,7 +586,7 @@ export class PromoteService {
       entityId = existingEntity.id;
 
       if (!user.entityId || user.entityId !== entityId) {
-        await this.userService.update(user.id, { entityId });
+        await this.userService.update({ userId: user.id }, user.id, { entityId });
         this.logger.log('Updated user with existing entity ID', {
           userId: user.id,
           entityId,

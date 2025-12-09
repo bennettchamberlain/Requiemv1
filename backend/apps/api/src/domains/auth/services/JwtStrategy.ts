@@ -5,6 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { z } from 'zod';
 
 import { ContextService } from '@ci/common/services';
+import { SYSTEM_USER } from '@ci/common/types';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
@@ -35,7 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       });
     }
 
-    const user = await this.userService.findOne(payload.sub);
+    const user = await this.userService.findById({ userId: SYSTEM_USER }, payload.sub);
 
     if (!user) {
       throw new UnauthorizedException('User not found');

@@ -4,6 +4,7 @@ import { Query, Resolver } from '@nestjs/graphql';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import { UserService } from '@ci/domains/user';
 
 import { UserType } from '../types/UserType';
@@ -15,7 +16,9 @@ export class UserResolver {
 
   @Query(() => UserType, { nullable: true })
   async me(@Context() context: RequestContext): Promise<UserType> {
-    const user = await this.userService.findOne(context.userId!);
+    const serviceContext = toServiceContext(context);
+
+    const user = await this.userService.findById(serviceContext, context.userId!);
 
     if (user == null) {
       throw new NotFoundException();

@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Get, NotFoundException, UseGuards } from '@nestjs/common';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -19,6 +19,6 @@ export class UserController {
       throw new NotFoundException();
     }
 
-    return this.userService.findOne(userId);
+    return this.userService.findById({ userId }, userId);
   }
 }
