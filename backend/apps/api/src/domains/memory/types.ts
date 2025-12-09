@@ -1,8 +1,6 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
-import { createContentSchema } from './controllers/ContentController';
-
 export interface Memory {
   id: string;
   type: string;
@@ -63,6 +61,30 @@ export interface MemoryResponse {
   limit: number;
   offset: number;
 }
+
+export const createContentSchema = z.object({
+  type: z.string().optional(),
+  title: z.string().optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+  mimetype: z.string().optional(),
+  external_id: z.string().optional(),
+  source_url: z.string().optional(),
+  user_id: z.string().optional(),
+  event_id: z.string().optional(),
+});
+
+export const updateContentSchema = z.object({
+  type: z.string().optional(),
+  title: z.string().optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+  mimetype: z.string().optional(),
+  external_id: z.string().optional(),
+  source_url: z.string().optional(),
+  user_id: z.string().optional(),
+  event_id: z.string().optional(),
+});
 
 export interface CreateEventDto {
   id: string;
