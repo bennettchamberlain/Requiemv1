@@ -45,7 +45,7 @@ const GET_INVENTORY_ITEMS = gql`
 export function InventoryPage() {
   usePageTitle('Inventory - Companion Intelligence');
 
-  const { data, loading, refetch } = useQuery(GET_INVENTORY_ITEMS);
+  const { data, loading } = useQuery(GET_INVENTORY_ITEMS);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   const items: InventoryItem[] = data?.items?.edges?.map((edge: { node: InventoryItem }) => edge.node) || [];
@@ -112,12 +112,7 @@ export function InventoryPage() {
           </div>
         )}
 
-        <InventoryItemModal
-          open={!!selectedItem}
-          onClose={() => setSelectedItem(null)}
-          item={selectedItem}
-          onUpdate={() => refetch()}
-        />
+        <InventoryItemModal open={!!selectedItem} onClose={() => setSelectedItem(null)} item={selectedItem} />
       </PageContent>
     </>
   );

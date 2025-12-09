@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { useMutation, gql } from '@apollo/client';
-import { Button, Dialog, Input, Label, Textarea } from '@ci/shadcn';
+import { Dialog, Input, Label, Textarea } from '@ci/shadcn';
 
 interface InventoryItem {
   id: string;
@@ -20,30 +19,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   item: InventoryItem | null;
-  onUpdate: () => void;
 }
 
-const UPDATE_INVENTORY_ITEM = gql`
-  mutation UpdateInventoryItem($id: ID!, $input: UpdateItemInput!) {
-    updateItem(id: $id, input: $input) {
-      id
-      name
-      category
-      description
-      brand
-      model
-      currentValue
-      file {
-        url
-      }
-    }
-  }
-`;
-
-export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
+export function InventoryItemModal({ open, onClose, item }: Props) {
   const [formData, setFormData] = useState<Partial<InventoryItem>>({});
-  const [saving, setSaving] = useState(false);
-  const [updateItem] = useMutation(UPDATE_INVENTORY_ITEM);
 
   useEffect(() => {
     if (item) {
@@ -57,40 +36,6 @@ export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
       });
     }
   }, [item]);
-
-  const handleChange = (field: keyof InventoryItem, value: string | number) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleSave = async () => {
-    if (!item) {
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const { name, category, description, brand, model, currentValue } = formData;
-      await updateItem({
-        variables: {
-          id: item.id,
-          input: {
-            name,
-            category,
-            description,
-            brand,
-            model,
-            currentValue,
-          },
-        },
-      });
-      onUpdate();
-      onClose();
-    } catch (error) {
-      console.error('Failed to update item', error);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   if (!item) {
     return null;
@@ -107,33 +52,25 @@ export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
             {imageUrl ? (
               <img src={imageUrl} alt={item.name} className="w-full h-full object-contain" />
             ) : (
-              <div className="text-gray-400">No Image Available</div>
+              <div className="text-gray-400">No image available</div>
             )}
           </div>
 
           {/* Form Section */}
           <div className="w-full md:w-1/2 p-6 flex flex-col gap-4 overflow-y-auto">
             <Dialog.Header>
-              <Dialog.Title>Edit Item Details</Dialog.Title>
+              <Dialog.Title>Item details</Dialog.Title>
             </Dialog.Header>
 
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name || ''}
-                  onChange={(e) => handleChange('name', e.target.value)}
-                />
+                <Input id="name" value={formData.name || ''} readOnly />
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="category">Category</Label>
-                <Input
-                  id="category"
-                  value={formData.category || ''}
-                  onChange={(e) => handleChange('category', e.target.value)}
-                />
+                <Input id="category" value={formData.category || ''} readOnly />
               </div>
 
               <div className="grid gap-2">
@@ -141,48 +78,26 @@ export function InventoryItemModal({ open, onClose, item, onUpdate }: Props) {
                 <Textarea
                   id="description"
                   value={formData.description || ''}
-                  onChange={(e) => handleChange('description', e.target.value)}
                   className="min-h-[100px]"
+                  readOnly
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="brand">Brand</Label>
-                  <Input
-                    id="brand"
-                    value={formData.brand || ''}
-                    onChange={(e) => handleChange('brand', e.target.value)}
-                  />
+                  <Input id="brand" value={formData.brand || ''} readOnly />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="model">Model</Label>
-                  <Input
-                    id="model"
-                    value={formData.model || ''}
-                    onChange={(e) => handleChange('model', e.target.value)}
-                  />
+                  <Input id="model" value={formData.model || ''} readOnly />
                 </div>
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="value">Estimated Value ($)</Label>
-                <Input
-                  id="value"
-                  type="number"
-                  value={formData.currentValue || 0}
-                  onChange={(e) => handleChange('currentValue', parseFloat(e.target.value))}
-                />
+                <Input id="value" type="number" value={formData.currentValue || 0} readOnly />
               </div>
-            </div>
-
-            <div className="mt-auto flex justify-end gap-2">
-              <Button variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
             </div>
           </div>
         </div>
