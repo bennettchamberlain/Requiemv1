@@ -127,6 +127,8 @@ export class ContentController {
     if (!result) {
       throw new NotFoundException();
     }
+
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
