@@ -21,7 +21,7 @@ export class MessageType implements Node {
   @Field(() => String, { nullable: true })
   role!: string | null;
 
-  static fromEntity(message: Message): MessageType {
+  static toType(message: Message): MessageType {
     return {
       __typename: MessageType.name,
       id: GlobalUID.encode('message', message.id),
