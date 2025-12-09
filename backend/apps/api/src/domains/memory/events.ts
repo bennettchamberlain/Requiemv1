@@ -53,3 +53,57 @@ declare module '@ci/domains/events/registry' {
     [ContentRemovedEvent]: ContentDeletedPayload;
   }
 }
+
+/**
+ * Event emitted when creating a new communication.
+ *
+ * @see {@link CommunicationService.create} - The method that emits this event
+ */
+export const CommunicationCreatedEvent = 'communication.created';
+export const CommunicationUpdatedEvent = 'communication.updated';
+export const CommunicationRemovedEvent = 'communication.deleted';
+
+/**
+ * Event payload of the event {@link CommunicationCreatedEvent}.
+ *
+ * @see {@link CommunicationCreatedEvent} - The event this payload is associated with
+ * @see {@link CommunicationService.create} - The method that emits this event payload
+ */
+export type CommunicationCreatedPayload = {
+  /** The identifier of the newly created communication */
+  communicationId: string;
+};
+
+/**
+ * Event payload of the event {@link CommunicationUpdatedEvent}.
+ *
+ * @see {@link CommunicationUpdatedEvent} - The event this payload is associated with
+ * @see {@link CommunicationService.update} - The method that emits this event payload
+ */
+export type CommunicationUpdatedPayload = {
+  /** The identifier of the newly created communication */
+  communicationId: string;
+};
+
+/**
+ * Event payload of the event {@link CommunicationRemovedEvent}.
+ *
+ * @see {@link CommunicationRemovedEvent} - The event this payload is associated with
+ * @see {@link CommunicationService.remove} - The method that emits this event payload
+ */
+export type CommunicationDeletedPayload = {
+  /** The identifier of the newly created communication */
+  communicationId: string;
+};
+
+defineEvent<CommunicationCreatedPayload>(CommunicationCreatedEvent);
+defineEvent<CommunicationUpdatedPayload>(CommunicationUpdatedEvent);
+defineEvent<CommunicationDeletedPayload>(CommunicationRemovedEvent);
+
+declare module '@ci/domains/events/registry' {
+  interface EventRegistry {
+    [CommunicationCreatedEvent]: CommunicationCreatedPayload;
+    [CommunicationUpdatedEvent]: CommunicationUpdatedPayload;
+    [CommunicationRemovedEvent]: CommunicationDeletedPayload;
+  }
+}

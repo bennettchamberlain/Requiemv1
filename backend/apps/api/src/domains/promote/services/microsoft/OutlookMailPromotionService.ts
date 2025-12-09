@@ -310,7 +310,7 @@ export class OutlookMailPromotionService {
         ownerId: userId,
         communication: {
           userId,
-          communicationType: communication.communication_type,
+          communicationType: communication.communicationType,
           occurredAt: communication.time.toISOString(),
           subject: communication.subject,
           content: searchContent,

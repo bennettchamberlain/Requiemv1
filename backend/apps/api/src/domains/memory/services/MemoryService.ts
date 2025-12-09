@@ -6,7 +6,7 @@ import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 import { BrowserActivityEntity } from '@ci/domains/browser-activity';
 
-import { CommunicationEntity } from '../entities/CommunicationEntity';
+import { CommunicationEntity, Communication } from '../entities/CommunicationEntity';
 import { ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
 import { GraphQueryService } from '../services/GraphQueryService';
@@ -202,7 +202,7 @@ export class MemoryService {
       query = query.orderBy('communication.time', 'DESC').limit(100);
 
       const communications = await query.getMany();
-      const memories = communications.map((comm: CommunicationEntity) => this.communicationToMemory(comm));
+      const memories = communications.map((comm: Communication) => this.communicationToMemory(comm));
 
       return memories;
     } catch (error) {
@@ -750,42 +750,42 @@ export class MemoryService {
   /**
    * Convert CommunicationEntity to Memory
    */
-  private communicationToMemory(comm: CommunicationEntity): Memory {
+  private communicationToMemory(comm: Communication): Memory {
     try {
       // Create a unique ID from the composite primary key components
-      const id = `${comm.user_id}-${comm.time.getTime()}-${comm.communication_type}`;
+      const id = `${comm.userId}-${comm.time.getTime()}-${comm.communicationType}`;
 
       return {
         id,
         type: 'communication',
-        title: comm.subject || `${comm.communication_type} Communication`,
+        title: comm.subject || `${comm.communicationType} Communication`,
         description: comm.content,
         timestamp: comm.time,
-        category: comm.category || comm.communication_type,
+        category: comm.category || comm.communicationType,
         tags: comm.tags || [],
-        userId: comm.user_id,
+        userId: comm.userId,
         metadata: {
-          communicationType: comm.communication_type,
+          communicationType: comm.communicationType,
           direction: comm.direction,
-          threadId: comm.thread_id,
-          fromEntityId: comm.from_entity_id,
-          toEntityIds: comm.to_entity_ids,
-          participantsMetadata: comm.participants_metadata,
-          durationSeconds: comm.duration_seconds,
-          sentimentScore: comm.sentiment_score,
-          importanceScore: comm.importance_score,
-          urgencyScore: comm.urgency_score,
-          isEncrypted: comm.is_encrypted,
-          connectionId: comm.connection_id,
+          threadId: comm.threadId,
+          fromEntityId: comm.fromEntityId,
+          toEntityIds: comm.toEntityIds,
+          participantsMetadata: comm.participantsMetadata,
+          durationSeconds: comm.durationSeconds,
+          sentimentScore: comm.sentimentScore,
+          importanceScore: comm.importanceScore,
+          urgencyScore: comm.urgencyScore,
+          isEncrypted: comm.isEncrypted,
+          connectionId: comm.connectionId,
         },
       };
     } catch (error) {
       this.logger.error('Error converting communication to memory', {
         error: error instanceof Error ? error.message : error,
         communication: {
-          userId: comm.user_id,
+          userId: comm.userId,
           time: comm.time,
-          communicationType: comm.communication_type,
+          communicationType: comm.communicationType,
           subject: comm.subject,
         },
       });

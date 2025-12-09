@@ -1,4 +1,5 @@
 import type { Point } from 'typeorm';
+import { z } from 'zod';
 
 export interface Memory {
   id: string;
@@ -358,3 +359,105 @@ export interface UpdatePersonDto {
     [key: string]: unknown;
   };
 }
+
+export interface CreateCommunicationDto {
+  time: Date;
+  communication_type: 'email' | 'sms' | 'call';
+  direction: 'inbound' | 'outbound';
+  thread_id?: string;
+  user_id?: string;
+  event_id?: string;
+  device_id?: string;
+  from_entity_id?: string;
+  to_entity_ids?: string[];
+  participants_metadata?: Record<string, unknown>;
+  subject?: string;
+  content: string;
+  content_embedding?: number[];
+  attachments?: unknown[];
+  duration_seconds?: number;
+  sentiment_score?: number;
+  importance_score?: number;
+  urgency_score?: number;
+  category?: string;
+  summary?: string;
+  tags?: string[];
+  connection_id?: string;
+  is_encrypted?: boolean;
+  is_archived?: boolean;
+}
+
+export const createCommunicationSchema = z.object({
+  time: z.string(),
+  communication_type: z.enum(['email', 'sms', 'call']),
+  direction: z.enum(['inbound', 'outbound']),
+  thread_id: z.string().optional(),
+  device_id: z.string().optional(),
+  from_entity_id: z.string().optional(),
+  to_entity_ids: z.array(z.string()).optional(),
+  participants_metadata: z.record(z.unknown()).optional(),
+  subject: z.string().optional(),
+  content: z.string(),
+  content_embedding: z.array(z.number()).optional(),
+  attachments: z.array(z.unknown()).optional(),
+  duration_seconds: z.number().optional(),
+  sentiment_score: z.number().optional(),
+  importance_score: z.number().optional(),
+  urgency_score: z.number().optional(),
+  category: z.string().optional(),
+  summary: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  connection_id: z.string().optional(),
+  is_encrypted: z.boolean().optional(),
+  is_archived: z.boolean().optional(),
+});
+
+export interface UpdateCommunicationDto {
+  time?: Date;
+  communication_type?: 'email' | 'sms' | 'call';
+  direction?: 'inbound' | 'outbound';
+  thread_id?: string;
+  device_id?: string;
+  from_entity_id?: string;
+  to_entity_ids?: string[];
+  participants_metadata?: Record<string, unknown>;
+  subject?: string;
+  content: string;
+  content_embedding?: number[];
+  attachments?: unknown[];
+  duration_seconds?: number;
+  sentiment_score?: number;
+  importance_score?: number;
+  urgency_score?: number;
+  category?: string;
+  summary?: string;
+  tags?: string[];
+  connection_id?: string;
+  is_encrypted?: boolean;
+  is_archived?: boolean;
+}
+
+export const updateCommunicationSchema = z.object({
+  time: z.string().optional(),
+  communication_type: z.enum(['email', 'sms', 'call']).optional(),
+  direction: z.enum(['inbound', 'outbound']).optional(),
+  thread_id: z.string().optional(),
+  device_id: z.string().optional(),
+  from_entity_id: z.string().optional(),
+  to_entity_ids: z.array(z.string()).optional(),
+  participants_metadata: z.record(z.unknown()).optional(),
+  subject: z.string().optional(),
+  content: z.string().optional(),
+  content_embedding: z.array(z.number()).optional(),
+  attachments: z.array(z.unknown()).optional(),
+  duration_seconds: z.number().optional(),
+  sentiment_score: z.number().optional(),
+  importance_score: z.number().optional(),
+  urgency_score: z.number().optional(),
+  category: z.string().optional(),
+  summary: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  connection_id: z.string().optional(),
+  is_encrypted: z.boolean().optional(),
+  is_archived: z.boolean().optional(),
+});
