@@ -22,12 +22,10 @@
  * @module IntelligenceModule
  */
 
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
-import { LLMModule } from '@ci/domains/llm';
-import { EmbeddingModule } from '@ci/domains/search';
 
 import { ActionsController } from './controllers/ActionsController';
 import { AnswersController } from './controllers/AnswersController';
@@ -43,12 +41,7 @@ import { QuestionService } from './services/QuestionService';
  * @internal
  */
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([ActionEntity, AnswerEntity, QuestionEntity]),
-    EventsModule,
-    forwardRef(() => LLMModule),
-    EmbeddingModule,
-  ],
+  imports: [TypeOrmModule.forFeature([ActionEntity, AnswerEntity, QuestionEntity]), EventsModule],
   providers: [ActionService, AnswerService, QuestionService],
   controllers: [ActionsController, AnswersController, QuestionsController],
   exports: [ActionService, AnswerService, QuestionService],

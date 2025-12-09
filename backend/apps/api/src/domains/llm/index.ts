@@ -17,7 +17,7 @@
  * @module LLMModule
  */
 
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
@@ -27,6 +27,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { ToolsModule } from '@ci/domains/tools';
 
 import { OllamaController } from './controllers/OllamaController';
+import { AnswerInferenceCron } from './cron/AnswerInferenceCron';
 import { InventoryListener } from './listeners/InventoryListener';
 import { OllamaService } from './services/OllamaService';
 
@@ -34,22 +35,9 @@ import { OllamaService } from './services/OllamaService';
  * @internal
  */
 @Module({
-  imports: [
-    ConversationModule,
-    EventsModule,
-    FilesModule,
-    MemoryModule,
-    ToolsModule,
-    forwardRef(() => IntelligenceModule),
-  ],
-  providers: [InventoryListener, OllamaService],
+  imports: [ConversationModule, EventsModule, FilesModule, IntelligenceModule, MemoryModule, ToolsModule],
+  providers: [AnswerInferenceCron, AnswerInferenceCron, InventoryListener, OllamaService],
   controllers: [OllamaController],
-  exports: [OllamaService],
+  exports: [],
 })
 export class LLMModule {}
-
-// Services
-export { OllamaService };
-
-// Types
-export type {} from './types';
