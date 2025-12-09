@@ -48,10 +48,8 @@ export function PrimaryNavigation() {
     };
   }, []);
 
-  const handleUpload = async (files: FileList) => {
-    await upload(Array.from(files));
-
-    return true;
+  const handleUpload = (files: FileList) => {
+    return upload(Array.from(files));
   };
 
   return (

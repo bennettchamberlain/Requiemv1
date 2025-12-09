@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
 import { fetchJson, useDeviceLayout } from '@ci/common';
-import { Dialog, cn, Button, Popover, Switch } from '@ci/shadcn';
+import { Dialog, cn, Button, Popover } from '@ci/shadcn';
 import { Send, Settings, X } from '@ci/shadcn/icons';
 
 import { useUploadFile } from '@/api';
@@ -17,16 +17,6 @@ import { getMediaType } from '@/lib/utils';
 interface Props {
   open?: boolean;
   onClose?: () => void;
-}
-
-interface InventoryItem {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  brand: string;
-  model: string;
-  currentValue: number;
 }
 
 export function CaptureModal({ open = false, onClose }: Props) {
@@ -47,17 +37,6 @@ export function CaptureModal({ open = false, onClose }: Props) {
     threadId,
   });
 
-  const [isInventoryMode, setIsInventoryMode] = useState(true);
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  const handleInventoryToggle = useCallback(() => {
-    setIsInventoryMode((prev) => !prev);
-    setFiles([]);
-    setInventoryItems([]);
-    setIsAnalyzing(false);
-  }, []);
-
   const handleClose = useCallback(() => {
     setFiles([]);
     setThreadId(null);
@@ -73,6 +52,13 @@ export function CaptureModal({ open = false, onClose }: Props) {
       setThreadId(null);
     }
   }, [open]);
+
+  const handleMediaCaptured = useCallback(
+    async (file: File) => {
+      upload([file]);
+    },
+    [upload],
+  );
 
   const createFileThread = useCallback(async () => {
     const thread = await fetchJson<Thread>('/api/threads', {
@@ -112,58 +98,11 @@ export function CaptureModal({ open = false, onClose }: Props) {
       });
 
       // Only create thread if we don't have one yet
-      if (threadId == null && !isInventoryMode) {
+      if (threadId == null) {
         await createFileThread();
       }
     })();
-  }, [fileData, isMobile, createFileThread, threadId, isInventoryMode]);
-
-  const [currentFileId, setCurrentFileId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-
-    if (isInventoryMode && isAnalyzing && currentFileId) {
-      interval = setInterval(async () => {
-        try {
-          const items = await fetchJson<InventoryItem[]>(`/api/memory/items?fileId=${currentFileId}`, {
-            headers: {
-              Authorization: `Bearer ${authToken}`,
-            },
-          });
-          if (items && items.length > 0) {
-            setInventoryItems(items);
-            setIsAnalyzing(false);
-          }
-        } catch (e) {
-          console.error('Failed to poll inventory', e);
-        }
-      }, 2000);
-    }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [isInventoryMode, isAnalyzing, authToken, currentFileId]);
-
-  const handleMediaCaptured = useCallback(
-    async (file: File) => {
-      console.log('handleMediaCaptured called', { isInventoryMode, selectedModel });
-      try {
-        const uploadedFiles = await upload([file], isInventoryMode, selectedModel ?? undefined);
-        if (isInventoryMode && uploadedFiles && uploadedFiles.length > 0) {
-          setCurrentFileId(uploadedFiles[0].id);
-          setIsAnalyzing(true);
-          setInventoryItems([]); // Clear previous items
-        }
-      } catch (error) {
-        console.error('Upload failed', error);
-      }
-    },
-    [upload, isInventoryMode, selectedModel],
-  );
+  }, [fileData, isMobile, createFileThread, threadId]);
 
   const handleSelectLastCapture = useCallback(async () => {
     if (fileData.length === 0) {
@@ -281,13 +220,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
           <ModelSelector withToggles />
 
-          <div className="flex items-center justify-end gap-2">
-            <div className="flex items-center gap-2 mr-2">
-              <Switch id="inventory-mode" checked={isInventoryMode} onCheckedChange={handleInventoryToggle} />
-              <label htmlFor="inventory-mode" className="text-sm font-medium cursor-pointer">
-                Inventory Mode
-              </label>
-            </div>
+          <div className="flex items-center justify-end">
             <Button variant="ghost" size="icon" onClick={handleClose}>
               <X />
             </Button>
@@ -316,58 +249,28 @@ export function CaptureModal({ open = false, onClose }: Props) {
             </div>
 
             <div className="flex-1 margin-4 min-w-0 max-[900px]:max-h-1/2 max-[900px]:border-t max-[900px]:pt-1">
-              {isInventoryMode ? (
-                <div className="p-4 h-full overflow-y-auto">
-                  <h3 className="font-bold mb-4">Inventory Results</h3>
-                  {isAnalyzing && (
-                    <div className="flex items-center justify-center p-8 text-gray-500">
-                      Analyzing image...
+              <VoiceModeProvider>
+                <Chat
+                  loading={loading}
+                  streaming={streaming}
+                  hasStartedReceiving={hasStartedReceiving}
+                  readable={stream ?? undefined}
+                  onSubmit={handleSubmit}
+                  onStop={stopChatRequest}
+                  placeholder="Ask about this content..."
+                  emptyState={
+                    <div className="text-center text-gray-500 mt-8">
+                      <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
+                        <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
+                      </div>
+                      <p className="text-sm">Start a conversation about this content</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Ask questions, get recommendations, or explore ideas
+                      </p>
                     </div>
-                  )}
-                  <div className="grid grid-cols-1 gap-4">
-                    {inventoryItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="border rounded-lg p-4 bg-white dark:bg-zinc-900 shadow-sm"
-                      >
-                        <div className="font-bold text-lg">{item.name}</div>
-                        <div className="text-sm text-gray-500 mb-2">{item.category}</div>
-                        <p className="text-sm mb-2">{item.description}</p>
-                        <div className="flex gap-2 text-xs text-gray-400">
-                          <span>{item.brand}</span>
-                          <span>•</span>
-                          <span>{item.model}</span>
-                          <span>•</span>
-                          <span>${item.currentValue}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <VoiceModeProvider>
-                  <Chat
-                    loading={loading}
-                    streaming={streaming}
-                    hasStartedReceiving={hasStartedReceiving}
-                    readable={stream ?? undefined}
-                    onSubmit={handleSubmit}
-                    onStop={stopChatRequest}
-                    placeholder="Ask about this content..."
-                    emptyState={
-                      <div className="text-center text-gray-500 mt-8">
-                        <div className="w-16 h-16 mx-auto mb-4 bg-stone-100 rounded-full flex items-center justify-center">
-                          <Send className="w-8 h-8 text-zinc-400 relative top-0.5 -left-0.5" />
-                        </div>
-                        <p className="text-sm">Start a conversation about this content</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Ask questions, get recommendations, or explore ideas
-                        </p>
-                      </div>
-                    }
-                  />
-                </VoiceModeProvider>
-              )}
+                  }
+                />
+              </VoiceModeProvider>
             </div>
           </div>
         )}

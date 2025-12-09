@@ -13,7 +13,7 @@ type ReturnType = [
     error: unknown | null;
   },
   {
-    upload: (file: File[], isInventory?: boolean, model?: string) => Promise<FileData[]>;
+    upload: (file: File[]) => void;
     reset: () => void;
   },
 ];
@@ -26,7 +26,7 @@ export function useUploadFile(): ReturnType {
   const [error, setError] = useState<unknown | null>(null);
 
   const upload = useCallback(
-    async (files: File[], isInventory = false, model?: string) => {
+    async (files: File[]) => {
       setFiles([]);
       setError(null);
       setLoading(true);
@@ -37,19 +37,10 @@ export function useUploadFile(): ReturnType {
         formData.append('files', file);
       });
 
+      let success = false;
+
       try {
-        const queryParams = new URLSearchParams();
-        if (isInventory) {
-          queryParams.append('inventory', 'true');
-        }
-
-        if (model) {
-          queryParams.append('model', model);
-        }
-
-        const url = `/api/files/upload?${queryParams.toString()}`;
-
-        const data = await fetchJson<FileData[]>(url, {
+        const data = await fetchJson<FileData[]>('/api/files/upload', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${authToken}`,
@@ -59,14 +50,16 @@ export function useUploadFile(): ReturnType {
 
         setFiles(data);
 
-        return data;
+        success = true;
       } catch (err) {
         setError(err);
 
-        throw err;
+        success = false;
       } finally {
         setLoading(false);
       }
+
+      return success;
     },
     [authToken],
   );
