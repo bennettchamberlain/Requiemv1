@@ -41,8 +41,8 @@ import { EventEntity } from './entities/EventEntity';
 import { type Fact, FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
-import { type Item, ItemEntity, type InventoryCondition } from './entities/ItemEntity';
-import { PersonEntity } from './entities/PersonEntity';
+import { type Item, type InventoryCondition, ItemEntity } from './entities/ItemEntity';
+import { type Person, PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
 import { ThingEntity } from './entities/ThingEntity';
@@ -184,5 +184,4 @@ export type {
   DatabaseSearchResults,
 } from './services/SearchService';
 
-export type { Fact };
-export type { Item, InventoryCondition };
+export type { Fact, Item, InventoryCondition, Person };

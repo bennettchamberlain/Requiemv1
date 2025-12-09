@@ -9,8 +9,6 @@ import {
   JoinTable,
   JoinColumn,
   AfterLoad,
-  Repository,
-  SelectQueryBuilder,
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
@@ -96,16 +94,6 @@ export class PersonEntity {
     this.source_data = (this.properties?.source_data as Record<string, unknown>) || null;
   }
 
-  // Helper method for creating filtered queries
-  static createPersonQuery(
-    repository: Repository<PersonEntity>,
-    alias: string = 'person',
-  ): SelectQueryBuilder<PersonEntity> {
-    return repository
-      .createQueryBuilder(alias)
-      .where(`${alias}.entity_type = :entityType`, { entityType: 'Person' });
-  }
-
   @ManyToMany(() => TagEntity, { nullable: true })
   @JoinTable({
     name: 'person_tag',
@@ -122,4 +110,37 @@ export class PersonEntity {
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   last_accessed!: Date;
+
+  static toEgressType(entity: PersonEntity): Person {
+    return {
+      id: entity.id,
+      entity_type: entity.entity_type,
+      name: entity.name,
+      description: entity.description,
+      properties: entity.properties,
+      first_name: entity.first_name,
+      last_name: entity.last_name,
+      type: entity.type,
+      gender: entity.gender,
+      address: entity.address,
+      street_address: entity.street_address,
+      street_address_2: entity.street_address_2,
+      city: entity.city,
+      region: entity.region,
+      country: entity.country,
+      postal_code: entity.postal_code,
+      avatar_url: entity.avatar_url,
+      external_id: entity.external_id,
+      source_url: entity.source_url,
+      source_data: entity.source_data,
+      search_content: entity.search_content,
+      linked_id: entity.linked_id,
+      linked_table: entity.linked_table,
+      created_at: entity.created_at,
+      updated_at: entity.updated_at,
+      last_accessed: entity.last_accessed,
+    };
+  }
 }
+
+export type Person = Readonly<Omit<PersonEntity, 'user' | 'tags' | 'loadPropertiesFromJsonb'>>;
