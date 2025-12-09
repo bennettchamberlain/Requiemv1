@@ -1,9 +1,9 @@
 import { type ReactNode, lazy } from 'react';
 
-import { ApolloProvider } from '@apollo/client';
 import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
+import { ApolloProvider } from '@/api/ApolloProvider';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
@@ -12,11 +12,9 @@ import {
   CaptureModalProvider,
   ModelProvider,
   ThemeProvider,
-  useAuth,
   usePreventOverscroll,
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
-import { createClient } from '@/lib/graphql';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
@@ -37,13 +35,6 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
 
-function AuthorizedApolloProvider({ children }: { children: ReactNode }) {
-  const [{ authToken }] = useAuth();
-  const client = createClient(authToken ?? null);
-
-  return <ApolloProvider client={client}>{children}</ApolloProvider>;
-}
-
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
@@ -52,7 +43,7 @@ function Providers({ children }: { children: ReactNode }) {
           <AuthProvider args={[]}>
             <ModelProvider args={[]}>
               <CaptureModalProvider args={[]}>
-                <AuthorizedApolloProvider>{children}</AuthorizedApolloProvider>
+                <ApolloProvider>{children}</ApolloProvider>
               </CaptureModalProvider>
             </ModelProvider>
           </AuthProvider>
