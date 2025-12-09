@@ -11,6 +11,7 @@ import { Request } from 'express';
 import { z } from 'zod';
 
 import { ValidationPipe } from '@ci/common/pipes';
+import { SYSTEM_USER } from '@ci/common/types';
 import { SignupCodeService, type SignupDto, UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
@@ -75,11 +76,14 @@ export class SessionController {
       throw new BadRequestException('Email already in use');
     }
 
-    const user = await this.userService.create({
-      name,
-      email,
-      password,
-    });
+    const user = await this.userService.create(
+      { userId: SYSTEM_USER },
+      {
+        name,
+        email,
+        password,
+      },
+    );
 
     await this.signupCodeService.update(signup_code, {
       used: true,
@@ -101,7 +105,7 @@ export class SessionController {
     const token = this.getSessionToken(req);
     const payload = this.validateSessionToken(token);
     const userId = payload.sub;
-    const user = await this.userService.findOne(userId);
+    const user = await this.userService.findById({ userId }, userId);
 
     if (!user) {
       throw new UnauthorizedException('Invalid or expired token');
@@ -128,7 +132,7 @@ export class SessionController {
     const token = this.getSessionToken(req);
     const payload = this.validateSessionToken(token);
     const userId = payload.sub;
-    const user = await this.userService.findOne(userId);
+    const user = await this.userService.findById({ userId }, userId);
 
     if (!user) {
       throw new UnauthorizedException('Invalid or expired token');

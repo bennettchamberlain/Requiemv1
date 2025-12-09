@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/services';
-import { EventService, Events, type EventPayloads, OnEvent } from '@ci/domains/events';
-import { UserService, UserCreatedEvent, type UserCreatedPayload } from '@ci/domains/user';
+import { SYSTEM_USER } from '@ci/common/types';
+import { type EventPayloads, Events, EventService, OnEvent } from '@ci/domains/events';
+import { UserCreatedEvent, type UserCreatedPayload, UserService } from '@ci/domains/user';
 
 import { GraphUtilityService } from '../services/GraphUtilityService';
 
@@ -304,7 +305,7 @@ export class GraphEventListener {
 
   @OnEvent(UserCreatedEvent)
   async handleUserCreated(payload: UserCreatedPayload) {
-    const user = await this.userService.findOne(payload.userId);
+    const user = await this.userService.findById({ userId: payload.userId }, payload.userId);
 
     if (!user) {
       this.logger.warn('User not found when handling user created event', {
@@ -342,7 +343,7 @@ export class GraphEventListener {
         linkedId: user.id,
       });
 
-      await this.userService.update(user.id, { entityId });
+      await this.userService.update({ userId: SYSTEM_USER }, user.id, { entityId });
     } catch (error) {
       this.logger.error('Failed to create graph node for new user', {
         userId: user.id,

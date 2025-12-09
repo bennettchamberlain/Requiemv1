@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { UserServiceContext } from '@ci/common/types';
+import { UserServiceContext, SYSTEM_USER } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
@@ -77,7 +77,7 @@ export class OnboardingService {
   ) {}
 
   async onboard(context: UserServiceContext, input: OnboardingInput) {
-    const user = await this.userService.findOne(context.userId);
+    const user = await this.userService.findById(context, context.userId);
 
     if (!user) {
       throw new NotFoundException();
@@ -138,7 +138,7 @@ export class OnboardingService {
       mergeProperties: true,
     });
 
-    await this.userService.update(userId, { entityId });
+    await this.userService.update({ userId: SYSTEM_USER }, userId, { entityId });
 
     return entityId;
   }
