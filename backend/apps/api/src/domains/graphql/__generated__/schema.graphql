@@ -45,6 +45,7 @@ type FileEdge implements Edge {
 }
 
 type FileType implements Node {
+  analysisCompleted: Boolean!
   contentType: String!
   createdAt: DateTime!
   filename: String!

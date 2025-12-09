@@ -3,6 +3,7 @@ import { type ReactNode, lazy } from 'react';
 import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
+import { ApolloProvider } from '@/api/ApolloProvider';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
@@ -25,6 +26,7 @@ const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const KnowledgePage = lazy(() => import('@/pages/KnowledgePage'));
+const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
@@ -40,7 +42,9 @@ function Providers({ children }: { children: ReactNode }) {
         <DeviceLayoutProvider args={[]}>
           <AuthProvider args={[]}>
             <ModelProvider args={[]}>
-              <CaptureModalProvider args={[]}>{children}</CaptureModalProvider>
+              <CaptureModalProvider args={[]}>
+                <ApolloProvider>{children}</ApolloProvider>
+              </CaptureModalProvider>
             </ModelProvider>
           </AuthProvider>
         </DeviceLayoutProvider>
@@ -115,6 +119,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <MemoryPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/inventory"
+          element={
+            <ProtectedRoute>
+              <InventoryPage />
             </ProtectedRoute>
           }
         />

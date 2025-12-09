@@ -25,6 +25,7 @@ interface PromptOptions {
   signal?: AbortSignal;
   enableTools?: boolean;
   enableThinking?: boolean;
+  format?: string;
 }
 
 interface ValidateModelOptions {
@@ -245,7 +246,7 @@ export class OllamaService {
   async chat(
     context: RequestContext,
     messages: OllamaMessage[],
-    { model, enableTools = false }: Omit<PromptOptions, 'signal'>,
+    { model, enableTools = false, format }: Omit<PromptOptions, 'signal'>,
   ): Promise<ChatResponse> {
     await this.validateModel(context, model);
 
@@ -258,6 +259,7 @@ export class OllamaService {
     const response = await this.ollama.chat({
       model: model,
       messages: inputMessages,
+      ...(format && { format }),
       ...(enableTools && ollamaTools.length > 0 && { tools: ollamaTools }),
     });
 

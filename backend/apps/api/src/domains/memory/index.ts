@@ -40,7 +40,7 @@ import { EventEntity } from './entities/EventEntity';
 import { type Fact, FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
-import { type Item, ItemEntity } from './entities/ItemEntity';
+import { type Item, ItemEntity, type InventoryCondition } from './entities/ItemEntity';
 import { PersonEntity } from './entities/PersonEntity';
 import { PlaceEntity } from './entities/PlaceEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
@@ -178,4 +178,4 @@ export type {
 } from './services/SearchService';
 
 export type { Fact };
-export type { Item };
+export type { Item, InventoryCondition };

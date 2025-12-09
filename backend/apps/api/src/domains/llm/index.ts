@@ -27,6 +27,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { ToolsModule } from '@ci/domains/tools';
 
 import { OllamaController } from './controllers/OllamaController';
+import { InventoryListener } from './listeners/InventoryListener';
 import { OllamaService } from './services/OllamaService';
 
 /**
@@ -41,7 +42,7 @@ import { OllamaService } from './services/OllamaService';
     ToolsModule,
     forwardRef(() => IntelligenceModule),
   ],
-  providers: [OllamaService],
+  providers: [InventoryListener, OllamaService],
   controllers: [OllamaController],
   exports: [OllamaService],
 })
