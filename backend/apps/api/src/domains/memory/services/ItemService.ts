@@ -28,7 +28,6 @@ export class ItemService {
       currentValue: data.currentValue ?? null,
       currency: data.currency ?? 'USD',
       condition: data.condition ?? null,
-      images: data.images ?? [],
       metadata: data.metadata ?? {},
     });
 
