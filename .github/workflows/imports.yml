@@ -25,4 +25,4 @@ jobs:
         run: yarn install --immutable
 
       - name: Check backend imports
-        run: yarn workspace @ci/be-api depcheck -- "src/**/*.ts"
+        run: yarn workspace @ci/be-api depcheck
