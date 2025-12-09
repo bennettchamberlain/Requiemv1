@@ -24,7 +24,6 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
-import { PositionModule } from '@ci/domains/position';
 import { ToolsModule } from '@ci/domains/tools';
 
 import { OllamaController } from './controllers/OllamaController';
@@ -40,7 +39,6 @@ import { OllamaService } from './services/OllamaService';
     EventsModule,
     FilesModule,
     MemoryModule,
-    PositionModule,
     ToolsModule,
     forwardRef(() => IntelligenceModule),
   ],
