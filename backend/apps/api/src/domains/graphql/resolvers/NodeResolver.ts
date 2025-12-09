@@ -64,17 +64,17 @@ export class NodeResolver {
           throw new NotFoundException('Message not found');
         }
 
-        return MessageType.fromEntity(message);
+        return MessageType.toType(message);
       }
 
       case 'person': {
-        const person = await this.personService.findOne(context, id);
+        const person = await this.personService.findById(serviceContext, id);
 
         if (person == null) {
           throw new NotFoundException('Person not found');
         }
 
-        return PersonType.fromEntity(person);
+        return PersonType.toType(person);
       }
 
       case 'thread': {
@@ -84,7 +84,7 @@ export class NodeResolver {
           throw new NotFoundException('Thread not found');
         }
 
-        return ThreadType.fromEntity(thread);
+        return ThreadType.toType(thread);
       }
 
       default:

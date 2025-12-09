@@ -24,6 +24,6 @@ export class UserResolver {
       throw new NotFoundException();
     }
 
-    return UserType.fromEntity(user);
+    return UserType.toType(user);
   }
 }
