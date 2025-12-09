@@ -1,6 +1,6 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 
-import { PersonEntity } from '@ci/domains/memory';
+import { type Person } from '@ci/domains/memory';
 
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
@@ -51,7 +51,7 @@ export class PersonType implements Node {
   @Field(() => String, { nullable: true })
   avatarUrl!: string | null;
 
-  static fromEntity(person: PersonEntity): PersonType {
+  static toType(person: Person): PersonType {
     return {
       __typename: PersonType.name,
       id: GlobalUID.encode('person', person.id),
