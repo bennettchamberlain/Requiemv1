@@ -8,6 +8,7 @@ import { toServiceContext } from '@ci/common/utils';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ItemService, PersonService } from '@ci/domains/memory';
+import { UserService } from '@ci/domains/user';
 
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
@@ -16,6 +17,7 @@ import { MessageType } from '../types/MessageType';
 import { Node } from '../types/Node';
 import { PersonType } from '../types/PersonType';
 import { ThreadType } from '../types/ThreadType';
+import { UserType } from '../types/UserType';
 
 @UseGuards(JwtAuthGuard)
 @Resolver(() => Node)
@@ -26,6 +28,7 @@ export class NodeResolver {
     private readonly messageService: MessageService,
     private readonly personService: PersonService,
     private readonly threadService: ThreadService,
+    private readonly userService: UserService,
   ) {}
 
   @Query(() => Node, { nullable: true })
@@ -85,6 +88,16 @@ export class NodeResolver {
         }
 
         return ThreadType.toType(thread);
+      }
+
+      case 'user': {
+        const user = await this.userService.findById(serviceContext, id);
+
+        if (user == null) {
+          throw new NotFoundException('User not found');
+        }
+
+        return UserType.toType(user);
       }
 
       default:
