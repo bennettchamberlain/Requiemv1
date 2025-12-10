@@ -1,5 +1,5 @@
 import type { LoggerService as NestLoggerService } from '@nestjs/common';
-import type { Logger as PinoLogger, LoggerOptions } from 'pino';
+import type { Logger as PinoLogger, ChildLoggerOptions } from 'pino';
 import pino from 'pino';
 
 import config from '@ci/configuration';
@@ -25,8 +25,8 @@ const NEST_CONTEXT_DOWNGRADES = new Set([
 export class LoggerService implements NestLoggerService {
   private logger: PinoLogger;
 
-  constructor(name?: string, options?: LoggerOptions) {
-    this.logger = pino({
+  private static rootLogger: PinoLogger = (() => {
+    return pino({
       level: config.logging.level ?? 'debug',
       serializers: {
         err: pino.stdSerializers.err,
@@ -37,8 +37,11 @@ export class LoggerService implements NestLoggerService {
 
         return traceId ? { traceId } : {};
       },
-      ...options,
-    }).child(name ? { name } : {});
+    });
+  })();
+
+  constructor(name?: string, options?: ChildLoggerOptions) {
+    this.logger = LoggerService.rootLogger.child(name ? { name } : {}, options);
   }
 
   log(message: LogData, context: LogData = {}) {
