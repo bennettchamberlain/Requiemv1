@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import type { RequestContext } from '@ci/common/types';
 
 import type { ToolSchema } from '../core/types';
@@ -48,9 +48,12 @@ export interface McpExecuteResult {
 
 @Injectable()
 export class McpToolsService {
-  private readonly logger = new LoggerService(McpToolsService.name);
-
-  constructor(private readonly mcpProvider: McpToolProvider) {}
+  constructor(
+    private readonly mcpProvider: McpToolProvider,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(McpToolsService.name);
+  }
 
   async listServers(context?: RequestContext): Promise<McpServerDto[]> {
     this.logger.debug('Fetching MCP server configurations', {

@@ -1,5 +1,8 @@
 import type { Buffer } from 'node:buffer';
 
+import { Injectable } from '@nestjs/common';
+
+import { LoggerService } from '@ci/common/logging';
 import type {
   OutlookCalendarSyncState,
   OutlookCalendarsSyncState,
@@ -83,7 +86,13 @@ export interface OneDriveFileEntity {
   raw?: Buffer;
 }
 
+@Injectable()
 export class MicrosoftClient extends BaseOAuth2Client {
+  constructor(protected readonly logger: LoggerService) {
+    super();
+    this.logger.setContext(MicrosoftClient.name);
+  }
+
   protected readonly baseUrl = 'https://graph.microsoft.com';
 
   protected readonly authorizationEndpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';

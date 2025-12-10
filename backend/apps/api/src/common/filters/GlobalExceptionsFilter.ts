@@ -1,7 +1,7 @@
 import { Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 
-import { LoggerService } from '../services/LoggerService';
+import { LoggerService } from '@ci/common/logging';
 
 // HTTP status codes that represent expected application flow, not errors
 const EXPECTED_HTTP_STATUSES = new Set([
@@ -17,7 +17,10 @@ const EXPECTED_HTTP_STATUSES = new Set([
 
 @Catch()
 export class GlobalExceptionsFilter extends BaseExceptionFilter {
-  private readonly logger = new LoggerService('exceptions');
+  constructor(private readonly logger: LoggerService) {
+    super();
+    this.logger.setContext(GlobalExceptionsFilter.name);
+  }
 
   catch(exception: unknown, host: ArgumentsHost) {
     const contextType = host.getType<string>();

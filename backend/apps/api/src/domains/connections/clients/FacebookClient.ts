@@ -1,3 +1,6 @@
+import { Injectable } from '@nestjs/common';
+
+import { LoggerService } from '@ci/common/logging';
 import type { FacebookSyncState } from '@ci/domains/etl';
 
 import type { Connection } from '../entities/ConnectionEntity';
@@ -5,7 +8,13 @@ import type { Connection } from '../entities/ConnectionEntity';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResponse } from './types';
 
+@Injectable()
 export class FacebookClient extends BaseOAuth2Client {
+  constructor(protected readonly logger: LoggerService) {
+    super();
+    this.logger.setContext(FacebookClient.name);
+  }
+
   protected readonly baseUrl = 'https://graph.facebook.com';
 
   protected readonly authorizationEndpoint = 'https://www.facebook.com/v21.0/dialog/oauth';

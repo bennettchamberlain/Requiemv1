@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import { FacebookPromotionUtils } from './FacebookPromotionUtils';
 
@@ -15,9 +15,12 @@ interface FacebookPhoto {
 
 @Injectable()
 export class FacebookPhotosPromotionService {
-  private logger = new LoggerService(FacebookPhotosPromotionService.name);
-
-  constructor(private readonly utils: FacebookPromotionUtils) {}
+  constructor(
+    private readonly utils: FacebookPromotionUtils,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(FacebookPhotosPromotionService.name);
+  }
 
   /**
    * Promote Facebook photos: create files AND content records

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Point } from 'typeorm';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
 
@@ -67,15 +67,16 @@ interface Participant {
 
 @Injectable()
 export class GoogleCalendarEventPromotionService {
-  private logger = new LoggerService(GoogleCalendarEventPromotionService.name);
-
   private readonly googleMapsApiKey = process.env.GOOGLE_MAPS_KEY;
 
   constructor(
     private readonly eventService: MemoryEventService,
     private readonly domainEventService: DomainEventService,
     private readonly promoteService: PromoteService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(GoogleCalendarEventPromotionService.name);
+  }
 
   private async geocodeLocation(location: string | null): Promise<Point | null> {
     if (!location || location.trim().length === 0) {

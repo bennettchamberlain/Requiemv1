@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { type RequestContext, type ServiceContext, SYSTEM_USER } from '@ci/common/types';
 import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
 import { AnswerService, QuestionService } from '@ci/domains/intelligence';
@@ -10,14 +10,15 @@ import { OllamaService } from '../services/OllamaService';
 
 @Injectable()
 export class AnswerInferenceListener {
-  private readonly logger = new LoggerService(AnswerInferenceListener.name);
-
   constructor(
     private readonly answerService: AnswerService,
     private readonly embeddingService: EmbeddingService,
     private readonly questionService: QuestionService,
     private readonly ollamaService: OllamaService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(AnswerInferenceListener.name);
+  }
 
   @OnEvent(Events.INFER_QUESTION_ANSWER)
   async inferQuestionAnswer(payload: EventPayloads[Events.INFER_QUESTION_ANSWER]) {

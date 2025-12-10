@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
+import { LoggerService } from '@ci/common/logging';
 import { GraphUtilityService, GraphNodeEntity, RelationshipEntity } from '@ci/domains/memory';
 
 import { BaseTool } from '../../core/BaseTool';
@@ -83,8 +84,12 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
     ],
   };
 
-  constructor(private readonly graphUtility: GraphUtilityService) {
+  constructor(
+    private readonly graphUtility: GraphUtilityService,
+    protected readonly logger: LoggerService,
+  ) {
     super();
+    this.logger.setContext(ForgetKnowledgeTool.name);
   }
 
   protected validateInput(input: unknown): ForgetKnowledgeInput {

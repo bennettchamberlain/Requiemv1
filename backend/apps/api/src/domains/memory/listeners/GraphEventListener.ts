@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { SYSTEM_USER } from '@ci/common/types';
 import { type EventPayloads, Events, EventService, OnEvent } from '@ci/domains/events';
 import { UserCreatedEvent, type UserCreatedPayload, UserService } from '@ci/domains/user';
@@ -10,13 +10,14 @@ import { GraphUtilityService } from '../services/GraphUtilityService';
 
 @Injectable()
 export class GraphEventListener {
-  private readonly logger = new LoggerService(GraphEventListener.name);
-
   constructor(
     private readonly graphUtility: GraphUtilityService,
     private readonly userService: UserService,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(GraphEventListener.name);
+  }
 
   @OnEvent(Events.GRAPH_PERSON_CREATED)
   async handlePersonCreated(payload: EventPayloads[Events.GRAPH_PERSON_CREATED]) {

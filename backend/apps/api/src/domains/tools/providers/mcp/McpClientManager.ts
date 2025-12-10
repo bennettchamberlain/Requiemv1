@@ -4,7 +4,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import type { McpServerConfig } from './types';
 
@@ -14,7 +14,9 @@ import type { McpServerConfig } from './types';
  */
 @Injectable()
 export class McpClientManager {
-  private readonly logger = new LoggerService(McpClientManager.name);
+  constructor(private readonly logger: LoggerService) {
+    this.logger.setContext(McpClientManager.name);
+  }
 
   /**
    * Create and connect to an MCP server

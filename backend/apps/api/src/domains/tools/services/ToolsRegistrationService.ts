@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import { McpToolProvider } from '../providers/mcp/McpToolProvider';
 import { NativeToolProvider } from '../providers/native/NativeToolProvider';
@@ -11,13 +11,14 @@ import { ToolRegistry } from '../registry/ToolRegistry';
  */
 @Injectable()
 export class ToolsRegistrationService implements OnModuleInit {
-  private readonly logger = new LoggerService(ToolsRegistrationService.name);
-
   constructor(
     private readonly toolRegistry: ToolRegistry,
     private readonly nativeProvider: NativeToolProvider,
     private readonly mcpProvider: McpToolProvider,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ToolsRegistrationService.name);
+  }
 
   async onModuleInit() {
     this.logger.log('Registering tool providers');

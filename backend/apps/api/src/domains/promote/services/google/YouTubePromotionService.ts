@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { EventService, Events } from '@ci/domains/events';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
 
@@ -47,12 +47,13 @@ interface YouTubePlaylist {
 
 @Injectable()
 export class YouTubePromotionService {
-  private logger = new LoggerService(YouTubePromotionService.name);
-
   constructor(
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(YouTubePromotionService.name);
+  }
 
   async promoteYouTubeData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting YouTube data promotion', {

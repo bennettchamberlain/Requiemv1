@@ -1,15 +1,18 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 
 import { EmbeddingService } from '../services/EmbeddingService';
 
 @Injectable()
 export class EmbeddingEventListener {
-  private readonly logger = new LoggerService(EmbeddingEventListener.name);
-
-  constructor(private readonly embeddingService: EmbeddingService) {}
+  constructor(
+    private readonly embeddingService: EmbeddingService,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(EmbeddingEventListener.name);
+  }
 
   @OnEvent(Events.SEARCH_EMBED_ENTITY)
   async handleEntityEmbedding(payload: EventPayloads[Events.SEARCH_EMBED_ENTITY]) {

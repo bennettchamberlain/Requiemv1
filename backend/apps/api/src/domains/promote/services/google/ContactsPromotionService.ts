@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { v7 as uuid7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { EventService, Events } from '@ci/domains/events';
 import { PersonService, PersonEntity } from '@ci/domains/memory';
 
@@ -57,13 +57,14 @@ interface GoogleContact {
 
 @Injectable()
 export class ContactsPromotionService {
-  private logger = new LoggerService(ContactsPromotionService.name);
-
   constructor(
     private readonly personService: PersonService,
     private readonly eventService: EventService,
     private readonly promoteService: PromoteService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ContactsPromotionService.name);
+  }
 
   async promoteContacts(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting Contacts promotion', {

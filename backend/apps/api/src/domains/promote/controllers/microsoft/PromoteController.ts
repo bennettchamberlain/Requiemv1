@@ -2,7 +2,7 @@ import { Controller } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
 import { OneDrivePromotionService } from '@ci/domains/promote/services/microsoft/OneDrivePromotionService';
@@ -13,8 +13,6 @@ import { PromoteService } from '../../services/PromoteService';
 
 @Controller('promote')
 export class PromoteController {
-  private logger = new LoggerService(PromoteController.name);
-
   constructor(
     private readonly promoteService: PromoteService,
     private readonly outlookMailPromotionService: OutlookMailPromotionService,
@@ -22,7 +20,10 @@ export class PromoteController {
     private readonly oneDrivePromotionService: OneDrivePromotionService,
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PromoteController.name);
+  }
 
   /**
    * Handle Outlook Mail message promotion event

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import { FactEntity } from '../entities/FactEntity';
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
@@ -24,8 +24,6 @@ import { RelationshipEntity } from '../entities/RelationshipEntity';
  */
 @Injectable()
 export class GraphUtilityService {
-  private logger = new LoggerService(GraphUtilityService.name);
-
   constructor(
     @InjectRepository(GraphNodeEntity)
     private readonly entityRepo: Repository<GraphNodeEntity>,
@@ -33,7 +31,10 @@ export class GraphUtilityService {
     private readonly relationshipRepo: Repository<RelationshipEntity>,
     @InjectRepository(FactEntity)
     private readonly factRepo: Repository<FactEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(GraphUtilityService.name);
+  }
 
   /**
    * ========================================================================

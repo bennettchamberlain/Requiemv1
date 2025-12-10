@@ -2,7 +2,7 @@ import { Controller } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 
 import { Cron } from '@ci/common/decorators';
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
@@ -11,12 +11,13 @@ import { EtlService } from '../services/EtlService';
 
 @Controller('etl')
 export class EtlController {
-  private logger = new LoggerService(EtlController.name);
-
   constructor(
     private readonly connectionService: ConnectionService,
     private readonly etlService: EtlService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(EtlController.name);
+  }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async syncConnections(): Promise<void> {

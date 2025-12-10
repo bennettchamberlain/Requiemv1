@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { EventService, Events } from '@ci/domains/events';
 import { FileService, FileEntity } from '@ci/domains/files';
@@ -14,15 +14,16 @@ import { PersonService } from '@ci/domains/memory';
 
 @Injectable()
 export class FacebookPromotionUtils {
-  private logger = new LoggerService(FacebookPromotionUtils.name);
-
   constructor(
     private readonly fileService: FileService,
     @InjectRepository(FileEntity)
     private readonly fileRepository: Repository<FileEntity>,
     private readonly personService: PersonService,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(FacebookPromotionUtils.name);
+  }
 
   async downloadAndSaveFile(
     url: string,

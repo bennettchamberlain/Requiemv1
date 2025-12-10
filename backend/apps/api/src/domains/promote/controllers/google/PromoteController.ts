@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 
 import { Cron } from '@ci/common/decorators';
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
@@ -18,8 +18,6 @@ import { PromoteService } from '../../services/PromoteService';
 
 @Controller('promote')
 export class PromoteController {
-  private logger = new LoggerService(PromoteController.name);
-
   constructor(
     private readonly promoteService: PromoteService,
     private readonly gmailPromotionService: GmailPromotionService,
@@ -29,7 +27,10 @@ export class PromoteController {
     private readonly contactsPromotionService: ContactsPromotionService,
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PromoteController.name);
+  }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async promoteApiLogs(): Promise<void> {

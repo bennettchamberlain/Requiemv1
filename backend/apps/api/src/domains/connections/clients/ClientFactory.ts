@@ -11,10 +11,14 @@ import { MicrosoftClient } from './MicrosoftClient';
 export class ClientFactory {
   private readonly providers = new Map<string, Client>();
 
-  constructor() {
-    this.providers.set(config.auth.providers.google.id, new GoogleClient());
-    this.providers.set(config.auth.providers.microsoft.id, new MicrosoftClient());
-    this.providers.set(config.auth.providers.facebook.id, new FacebookClient());
+  constructor(
+    private readonly googleClient: GoogleClient,
+    private readonly microsoftClient: MicrosoftClient,
+    private readonly facebookClient: FacebookClient,
+  ) {
+    this.providers.set(config.auth.providers.google.id, this.googleClient);
+    this.providers.set(config.auth.providers.microsoft.id, this.microsoftClient);
+    this.providers.set(config.auth.providers.facebook.id, this.facebookClient);
   }
 
   getClientByProviderId(providerId: string | null | undefined): Client {

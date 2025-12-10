@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { EventService as DomainEventService, Events } from '@ci/domains/events';
@@ -100,15 +100,16 @@ interface EventParticipant {
 
 @Injectable()
 export class OutlookCalendarPromotionService {
-  private logger = new LoggerService(OutlookCalendarPromotionService.name);
-
   constructor(
     private readonly fileService: FileService,
     private readonly eventService: MemoryEventService,
     private readonly promoteService: PromoteService,
     private readonly connectionService: ConnectionService,
     private readonly domainEventService: DomainEventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(OutlookCalendarPromotionService.name);
+  }
 
   async promoteOutlookCalendarEvents(
     apiLogContent: unknown,

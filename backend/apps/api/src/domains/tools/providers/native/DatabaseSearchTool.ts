@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
+import { LoggerService } from '@ci/common/logging';
 import { SearchService, type DatabaseSearchResults } from '@ci/domains/memory';
 
 import { BaseTool } from '../../core/BaseTool';
@@ -160,8 +161,12 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
     ],
   };
 
-  constructor(private readonly searchService: SearchService) {
+  constructor(
+    private readonly searchService: SearchService,
+    protected readonly logger: LoggerService,
+  ) {
     super();
+    this.logger.setContext(DatabaseSearchTool.name);
   }
 
   protected validateInput(input: unknown): DatabaseSearchInput {

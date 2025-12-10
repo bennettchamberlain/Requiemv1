@@ -22,6 +22,7 @@
 
 import { Module } from '@nestjs/common';
 
+import { LoggerService } from '@ci/common/logging';
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
@@ -70,8 +71,12 @@ const nativeToolInstances = [
     // Native tool provider with injected tools
     {
       provide: NativeToolProvider,
-      useFactory: (...tools) => new NativeToolProvider(tools),
-      inject: nativeToolInstances,
+      inject: [LoggerService, ...nativeToolInstances],
+      useFactory: (...args) => {
+        const [logger, ...tools] = args;
+
+        return new NativeToolProvider(tools, logger);
+      },
     },
     // Registration service to wire everything together
     ToolsRegistrationService,

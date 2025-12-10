@@ -10,7 +10,7 @@ import {
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 
@@ -20,13 +20,14 @@ import { ProviderService } from '../services/ProviderService';
 
 @Controller('providers')
 export class ProvidersController {
-  private readonly logger = new LoggerService(this.constructor.name);
-
   constructor(
     private readonly clientFactory: ClientFactory,
     private readonly connectionService: ConnectionService,
     private readonly providerService: ProviderService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ProvidersController.name);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get()
