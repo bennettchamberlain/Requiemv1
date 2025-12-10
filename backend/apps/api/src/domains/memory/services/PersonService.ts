@@ -85,15 +85,9 @@ export class PersonService {
   }
 
   async update(context: ServiceContext, id: string, data: UpdatePersonDto): Promise<Person | null> {
-    const existingEntity = await this.findById(context, id);
-
-    if (!existingEntity) {
-      return null;
-    }
-
     const { properties, ...rest } = data;
 
-    await this.personRepository.update(
+    const result = await this.personRepository.update(
       {
         id,
         ...(context.userId !== SYSTEM_USER && {
@@ -108,6 +102,10 @@ export class PersonService {
         properties: properties as any, // TypeORM will handle JSON serialization
       },
     );
+
+    if (result.affected === 0) {
+      return null;
+    }
 
     return this.findById(context, id);
   }
