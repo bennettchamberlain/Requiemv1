@@ -26,12 +26,22 @@ export class LoggerService implements NestLoggerService {
   private logger: PinoLogger;
 
   private static rootLogger: PinoLogger = (() => {
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+
     return pino({
       level: config.logging.level ?? 'debug',
       serializers: {
         err: pino.stdSerializers.err,
         error: pino.stdSerializers.err,
       },
+      transport: isDevelopment
+        ? {
+            target: 'pino-pretty',
+            options: {
+              ignore: 'pid,hostname',
+            },
+          }
+        : undefined, // undefined means standard JSON output
       mixin: () => {
         const traceId = ContextService.getTraceId();
 

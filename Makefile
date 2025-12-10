@@ -109,7 +109,7 @@ dev: ## Boot the application
 	\
 	printf "🚀 Starting new tmux session: $$SESSION\n\n"; \
 	tmux new-session -d -s $$SESSION -c $$BACKEND_DIR; \
-	tmux send-keys -t $$SESSION "yarn dev:pretty" C-m; \
+	tmux send-keys -t $$SESSION "yarn dev" C-m; \
 	\
 	tmux split-window -h -t $$SESSION -c $$FRONTEND_DIR; \
 	tmux send-keys -t $$SESSION "yarn dev" C-m; \

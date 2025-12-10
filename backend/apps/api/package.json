@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "DOTENV_CONFIG_PATH=../../../.env nodemon --exec ts-node -r tsconfig-paths/register -r @swc/register src/main.ts",
-    "dev:pretty": "yarn dev | yarn pino-pretty",
     "build": "yarn tsc --build --verbose && yarn tsc-alias --verbose",
     "clean": "rimraf dist",
     "exec": "DOTENV_CONFIG_PATH=../../../.env ts-node -r tsconfig-paths/register -r @swc/register",

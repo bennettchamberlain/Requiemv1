@@ -211,7 +211,6 @@ Navigate to `backend/apps/api` and run:
 ```bash
 # Development
 yarn dev                    # Start development server with nodemon
-yarn dev:pretty             # Start development server with nodemon and pretty-printed logs
 
 # Database operations
 yarn migrate:make <name>    # Create a new migration file
