@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
@@ -23,11 +23,11 @@ export class PersonService {
       id: data.id || uuid7(),
       name: data.name,
       description: data.description,
-      linked_table: data.linkedTable,
-      linked_id: data.linkedId,
-      entity_type: 'Person',
-      search_content: data.searchContent,
-      last_accessed: data.lastAccessed,
+      linkedTable: data.linkedTable,
+      linkedId: data.linkedId,
+      entityType: 'Person',
+      searchContent: data.searchContent,
+      lastAccessed: data.lastAccessed,
       user: {
         id: context.userId,
       },
@@ -42,7 +42,7 @@ export class PersonService {
   async findAll(context: ServiceContext): Promise<Person[]> {
     const entities = await this.personRepository.find({
       where: {
-        entity_type: 'Person',
+        entityType: 'Person',
         ...(context.userId !== SYSTEM_USER && {
           user: {
             id: context.userId,
@@ -88,26 +88,26 @@ export class PersonService {
     const existingEntity = await this.findById(context, id);
 
     if (!existingEntity) {
-      throw new NotFoundException();
+      return null;
     }
 
-    const updatedEntity = {
-      ...existingEntity,
-      name: data.name,
-      description: data.description,
-      search_content: data.searchContent,
-      linked_id: data.linkedId,
-      linked_table: data.linkedTable,
-      last_accessed: data.lastAccessed,
-      properties: data.properties,
-      ...(context.userId !== SYSTEM_USER && {
-        user: {
-          id: context.userId,
-        },
-      }),
-    };
+    const { properties, ...rest } = data;
 
-    await this.personRepository.save(updatedEntity);
+    await this.personRepository.update(
+      {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+      {
+        ...rest,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        properties: properties as any, // TypeORM will handle JSON serialization
+      },
+    );
 
     return this.findById(context, id);
   }

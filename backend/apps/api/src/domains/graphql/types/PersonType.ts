@@ -57,17 +57,17 @@ export class PersonType implements Node {
       id: GlobalUID.encode('person', person.id),
       name: person.name,
       description: person.description,
-      firstName: person.first_name,
-      lastName: person.last_name,
+      firstName: person.firstName,
+      lastName: person.lastName,
       gender: person.gender,
       address: person.address,
-      streetAddress: person.street_address,
-      streetAddress2: person.street_address_2,
+      streetAddress: person.streetAddress,
+      streetAddress2: person.streetAddress2,
       city: person.city,
       region: person.region,
       country: person.country,
-      postalCode: person.postal_code,
-      avatarUrl: person.avatar_url,
+      postalCode: person.postalCode,
+      avatarUrl: person.avatarUrl,
     };
   }
 }
