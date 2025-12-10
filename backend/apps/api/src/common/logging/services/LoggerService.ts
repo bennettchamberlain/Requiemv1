@@ -1,10 +1,9 @@
-import type { LoggerService as NestLoggerService } from '@nestjs/common';
-import type { Logger as PinoLogger, ChildLoggerOptions } from 'pino';
+import { Injectable, Scope, type LoggerService as NestLoggerService } from '@nestjs/common';
+import type { Logger as PinoLogger } from 'pino';
 import pino from 'pino';
 
+import { ContextService } from '@ci/common/services';
 import config from '@ci/configuration';
-
-import { ContextService } from './ContextService';
 
 type LogData = string | Record<string, unknown>;
 type ErrorableLogData = Error | LogData;
@@ -22,6 +21,7 @@ const NEST_CONTEXT_DOWNGRADES = new Set([
   'RoutesResolver',
 ]);
 
+@Injectable({ scope: Scope.TRANSIENT })
 export class LoggerService implements NestLoggerService {
   private logger: PinoLogger;
 
@@ -50,8 +50,15 @@ export class LoggerService implements NestLoggerService {
     });
   })();
 
-  constructor(name?: string, options?: ChildLoggerOptions) {
-    this.logger = LoggerService.rootLogger.child(name ? { name } : {}, options);
+  // DI requires a constructor with resolvable dependencies.
+  // We remove arguments here and use setContext instead.
+  constructor() {
+    this.logger = LoggerService.rootLogger;
+  }
+
+  // This is the standard NestJS method to name a transient logger
+  setContext(context: string) {
+    this.logger = LoggerService.rootLogger.child({ context });
   }
 
   log(message: LogData, context: LogData = {}) {
