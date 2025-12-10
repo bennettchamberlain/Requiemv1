@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import type { RequestContext, ServiceContext } from '@ci/common/types';
 import {
   ClientFactory,
@@ -17,14 +17,15 @@ import { ApiLogEntity } from '../entities/ApiLogEntity';
 
 @Injectable()
 export class EtlService {
-  private logger = new LoggerService(EtlService.name);
-
   constructor(
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
     private readonly clientFactory: ClientFactory,
     private readonly connectionService: ConnectionService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(EtlService.name);
+  }
 
   /**
    * Main entry point for ETL sync - handles sync for any connection type

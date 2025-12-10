@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import type { BaseTool } from '../../core/BaseTool';
 import type { ToolSchema } from '../../core/types';
@@ -13,13 +13,16 @@ import type { ToolProvider, ProviderHealthStatus } from '../ToolProvider';
 export class NativeToolProvider implements ToolProvider {
   readonly name = 'native';
 
-  private readonly logger = new LoggerService(NativeToolProvider.name);
-
   private readonly tools = new Map<string, BaseTool>();
 
   private isInitialized = false;
 
-  constructor(private readonly nativeTools: BaseTool[]) {}
+  constructor(
+    private readonly nativeTools: BaseTool[],
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(NativeToolProvider.name);
+  }
 
   async initialize(): Promise<void> {
     if (this.isInitialized) {

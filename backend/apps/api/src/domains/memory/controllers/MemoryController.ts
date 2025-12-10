@@ -3,8 +3,8 @@ import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
+import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
-import { LoggerService } from '@ci/common/services';
 import { RequestContext } from '@ci/common/types';
 
 import { MemoryService } from '../services/MemoryService';
@@ -71,9 +71,12 @@ const memorySearchSchema = z.object({
 @Controller('memory')
 @UseGuards(JwtAuthGuard)
 export class MemoryController {
-  private logger = new LoggerService(MemoryController.name);
-
-  constructor(private readonly memoryService: MemoryService) {}
+  constructor(
+    private readonly memoryService: MemoryService,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(MemoryController.name);
+  }
 
   @Get()
   async findAll(

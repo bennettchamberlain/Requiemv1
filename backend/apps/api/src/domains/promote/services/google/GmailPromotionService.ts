@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { ConnectionService, type Connection } from '@ci/domains/connections';
 import { EventService, Events } from '@ci/domains/events';
 import { CommunicationEntity, CommunicationService } from '@ci/domains/memory';
@@ -42,14 +42,15 @@ interface EmailParticipant {
 
 @Injectable()
 export class GmailPromotionService {
-  private logger = new LoggerService(GmailPromotionService.name);
-
   constructor(
     private readonly communicationService: CommunicationService,
     private readonly connectionService: ConnectionService,
     private readonly eventService: EventService,
     private readonly promoteService: PromoteService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(GmailPromotionService.name);
+  }
 
   async promoteGmailMessages(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting Gmail message promotion', {

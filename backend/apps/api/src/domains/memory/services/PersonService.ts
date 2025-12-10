@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/types';
 
 import { type Person, PersonEntity } from '../entities/PersonEntity';
@@ -11,12 +11,13 @@ import { CreatePersonDto, UpdatePersonDto } from '../types';
 
 @Injectable()
 export class PersonService {
-  private logger = new LoggerService(PersonService.name);
-
   constructor(
     @InjectRepository(PersonEntity)
     private readonly personRepository: Repository<PersonEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PersonService.name);
+  }
 
   async create(context: UserServiceContext, data: CreatePersonDto): Promise<Person> {
     const instance = await this.personRepository.create({

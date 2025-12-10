@@ -1,15 +1,11 @@
-import { LoggerService } from '@ci/common/services';
+import type { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
 import type { SyncResponse, TokenExchange } from './types';
 
 export abstract class BaseClient {
-  protected logger: LoggerService;
-
-  constructor() {
-    this.logger = new LoggerService(this.constructor.name);
-  }
+  protected abstract readonly logger: LoggerService;
 
   abstract getAuthorizationUrl(connection: Connection): Promise<string>;
 

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 import { EventService } from '@ci/domains/events';
@@ -17,14 +17,15 @@ import type { CreateBrowserActivityDto, UpdateBrowserActivityDto } from '../type
 
 @Injectable()
 export class BrowserActivityService {
-  private logger = new LoggerService(BrowserActivityService.name);
-
   constructor(
     @InjectRepository(BrowserActivityEntity)
     private readonly browserActivityRepository: Repository<BrowserActivityEntity>,
     private readonly eventService: EventService,
     private readonly deviceService: DeviceService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(BrowserActivityService.name);
+  }
 
   async create(
     context: UserServiceContext,

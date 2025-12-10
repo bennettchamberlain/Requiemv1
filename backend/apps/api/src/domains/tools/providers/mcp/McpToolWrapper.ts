@@ -1,3 +1,5 @@
+import type { LoggerService } from '@ci/common/logging';
+
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolSchema, ToolExecutionContext } from '../../core/types';
 
@@ -14,6 +16,7 @@ export class McpToolWrapper extends BaseTool {
     private readonly mcpProvider: McpToolProvider,
     private readonly serverName: string,
     private readonly originalToolName: string,
+    protected readonly logger: LoggerService,
   ) {
     super();
     this.schema = schema;

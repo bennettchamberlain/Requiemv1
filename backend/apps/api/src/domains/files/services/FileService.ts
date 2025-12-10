@@ -13,7 +13,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { SYSTEM_USER, type ServiceContext, UserServiceContext } from '@ci/common/types';
 import { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
@@ -28,8 +28,6 @@ const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles
 
 @Injectable()
 export class FileService implements OnModuleInit {
-  private logger = new LoggerService(FileService.name);
-
   private s3 = new S3Client({
     endpoint: config.staticfiles.storageUrl,
     // Minio doesn't care about the region, but we're specifying this default just to make S3 happy. May not be needed.
@@ -57,7 +55,10 @@ export class FileService implements OnModuleInit {
     @InjectRepository(FileEntity)
     private readonly fileRepository: Repository<FileEntity>,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(FileService.name);
+  }
 
   async onModuleInit() {
     try {

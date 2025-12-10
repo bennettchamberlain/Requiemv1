@@ -1,10 +1,10 @@
 import DataLoader from 'dataloader';
 
-import { LoggerService } from '@ci/common/services';
+import type { LoggerService } from '@ci/common/logging';
 import type { UserServiceContext } from '@ci/common/types';
 
 export abstract class Loader<V, K = string> {
-  private readonly logger = new LoggerService(Loader.name);
+  protected abstract readonly logger: LoggerService;
 
   private readonly loaders = new WeakMap<UserServiceContext, DataLoader<K, V>>();
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import { FacebookPromotionUtils } from './FacebookPromotionUtils';
 
@@ -15,9 +15,12 @@ interface FacebookVideo {
 
 @Injectable()
 export class FacebookVideosPromotionService {
-  private logger = new LoggerService(FacebookVideosPromotionService.name);
-
-  constructor(private readonly utils: FacebookPromotionUtils) {}
+  constructor(
+    private readonly utils: FacebookPromotionUtils,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(FacebookVideosPromotionService.name);
+  }
 
   /**
    * Promote Facebook videos: create files AND content records

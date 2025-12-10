@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, IsNull, MoreThan, Not, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import type { RequestContext } from '@ci/common/types';
 import { ConnectionEntity } from '@ci/domains/connections';
 import { ApiLogEntity } from '@ci/domains/etl';
@@ -22,8 +22,6 @@ interface ParticipantInfo {
 
 @Injectable()
 export class PromoteService {
-  private logger = new LoggerService(PromoteService.name);
-
   constructor(
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
@@ -32,7 +30,10 @@ export class PromoteService {
     private readonly eventService: EventService,
     private readonly personService: PersonService,
     private readonly userService: UserService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PromoteService.name);
+  }
 
   /**
    * Promote API logs for a specific user

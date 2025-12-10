@@ -15,8 +15,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
+import { LoggingModule, LoggerService } from '@ci/common/logging';
 import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
-import { LoggerService } from '@ci/common/services';
 import config from '@ci/configuration';
 import { AuthModule } from '@ci/domains/auth';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
@@ -49,6 +49,7 @@ import { UserModule } from '@ci/domains/user';
       entities: [path.join(__dirname, 'domains/**/*Entity.{ts,js}')],
       logging: ['error', ...(config.environment['database.query.logging'] ? (['query'] as const) : [])],
     }),
+    LoggingModule,
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     AuthModule,
@@ -83,7 +84,9 @@ import { UserModule } from '@ci/domains/user';
   ],
 })
 export class App implements NestModule, OnApplicationBootstrap, OnApplicationShutdown {
-  private logger = new LoggerService('application');
+  constructor(private readonly logger: LoggerService) {
+    this.logger.setContext('application');
+  }
 
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(RequestContextMiddleware).forRoutes('*');
@@ -120,14 +123,14 @@ export class App implements NestModule, OnApplicationBootstrap, OnApplicationShu
       bindings = [`http://${config.host}:${config.port}`];
     }
 
-    this.logger.log('Application listening', {
+    this.logger.log('Application started', {
       bindings,
     });
   }
 
   onApplicationShutdown(signal?: string) {
     this.logger.log('Application stopped', {
-      signal,
+      signal: signal ?? 'EXIT',
     });
   }
 }

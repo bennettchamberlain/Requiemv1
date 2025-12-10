@@ -2,19 +2,20 @@ import { Injectable } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 
 import { Cron } from '@ci/common/decorators';
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { EventService, Events } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';
 
 @Injectable()
 export class AnswerInferenceCron {
-  private logger = new LoggerService(AnswerInferenceCron.name);
-
   constructor(
     private readonly eventService: EventService,
     private readonly questionService: QuestionService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(AnswerInferenceCron.name);
+  }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async cronInferAnswers() {

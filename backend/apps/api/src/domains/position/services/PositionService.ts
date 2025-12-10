@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Point, In } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 import { EventService } from '@ci/domains/events';
@@ -25,14 +25,15 @@ import type {
 
 @Injectable()
 export class PositionService {
-  private logger = new LoggerService(PositionService.name);
-
   constructor(
     @InjectRepository(PositionEntity)
     private readonly positionRepository: Repository<PositionEntity>,
     private readonly deviceService: DeviceService,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PositionService.name);
+  }
 
   async create(context: UserServiceContext, data: CreatePositionDto[]): Promise<Position[]> {
     this.logger.log('Creating position records', {

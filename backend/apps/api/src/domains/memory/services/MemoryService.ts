@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/co
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Point } from 'typeorm';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { RequestContext } from '@ci/common/types';
 import { BrowserActivityEntity } from '@ci/domains/browser-activity';
 
@@ -27,8 +27,6 @@ type GraphNodeLike = {
 
 @Injectable()
 export class MemoryService {
-  private readonly logger = new LoggerService(MemoryService.name);
-
   private static readonly DEFAULT_ENTITY_TYPES = [
     'Person',
     'Event',
@@ -55,7 +53,10 @@ export class MemoryService {
     private readonly contentRepository: Repository<ContentEntity>,
     @InjectRepository(BrowserActivityEntity)
     private readonly browserActivityRepository: Repository<BrowserActivityEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(MemoryService.name);
+  }
 
   /**
    * Get memories from specific entity tables based on entity type

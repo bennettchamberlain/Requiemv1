@@ -3,7 +3,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import plimit from 'p-limit';
 import PgBoss, { JobWithMetadata } from 'pg-boss';
 
-import { LoggerService, ContextService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
+import { ContextService } from '@ci/common/services';
 import config from '@ci/configuration';
 
 import { DEFAULT_QUEUE } from '../constants';
@@ -17,8 +18,6 @@ interface EventData {
 
 @Injectable()
 export class EventService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new LoggerService(EventService.name);
-
   private semaphore = plimit(10);
 
   private running = false;
@@ -44,7 +43,12 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     max: 10,
   });
 
-  constructor(private eventEmitter: EventEmitter2) {}
+  constructor(
+    private eventEmitter: EventEmitter2,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(EventService.name);
+  }
 
   async onModuleInit() {
     const listeners = EventListenerRegistry.getListeners();

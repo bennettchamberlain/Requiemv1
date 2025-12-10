@@ -1,3 +1,6 @@
+import { Injectable } from '@nestjs/common';
+
+import { LoggerService } from '@ci/common/logging';
 import type {
   CalendarSyncState,
   GmailSyncState,
@@ -13,7 +16,13 @@ import type { Connection } from '../entities/ConnectionEntity';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResponse } from './types';
 
+@Injectable()
 export class GoogleClient extends BaseOAuth2Client {
+  constructor(protected readonly logger: LoggerService) {
+    super();
+    this.logger.setContext(GoogleClient.name);
+  }
+
   protected readonly baseUrl = 'https://www.googleapis.com';
 
   protected readonly authorizationEndpoint = 'https://accounts.google.com/o/oauth2/v2/auth';

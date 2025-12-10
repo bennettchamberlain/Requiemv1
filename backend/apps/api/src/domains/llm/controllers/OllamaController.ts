@@ -16,9 +16,9 @@ import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
-import { LoggerService } from '@ci/common/services';
 import type { RequestContext, ServiceContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import config from '@ci/configuration';
@@ -46,8 +46,6 @@ interface SystemPromptOptions {
 
 @Controller('llm')
 export class OllamaController {
-  private readonly logger = new LoggerService(OllamaController.name);
-
   private readonly frameEncoder = new FrameEncoder();
 
   constructor(
@@ -59,7 +57,10 @@ export class OllamaController {
     private readonly threadService: ThreadService,
     private readonly fileService: FileService,
     private readonly userContextService: UserContextService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(OllamaController.name);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('models')

@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { EventService, Events } from '@ci/domains/events';
@@ -78,15 +78,16 @@ interface EmailParticipant {
 
 @Injectable()
 export class OutlookMailPromotionService {
-  private logger = new LoggerService(OutlookMailPromotionService.name);
-
   constructor(
     private readonly fileService: FileService,
     private readonly communicationService: CommunicationService,
     private readonly promoteService: PromoteService,
     private readonly connectionService: ConnectionService,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(OutlookMailPromotionService.name);
+  }
 
   async promoteOutlookMailMessages(
     apiLogContent: unknown,

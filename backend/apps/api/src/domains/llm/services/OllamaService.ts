@@ -8,7 +8,7 @@ import {
   Ollama,
 } from 'ollama';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 import { ToolRegistry, type ToolSchema } from '@ci/domains/tools';
@@ -43,13 +43,16 @@ interface ValidateModelResult {
 
 @Injectable()
 export class OllamaService {
-  private readonly logger = new LoggerService(OllamaService.name);
-
   private readonly ollama = new Ollama({
     host: config.services.ollama.host,
   });
 
-  constructor(private readonly toolRegistry: ToolRegistry) {}
+  constructor(
+    private readonly toolRegistry: ToolRegistry,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(OllamaService.name);
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getAvailableModels(context: RequestContext): Promise<OllamaModel[]> {

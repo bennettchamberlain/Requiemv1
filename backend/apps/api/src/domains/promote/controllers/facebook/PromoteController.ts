@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
 
 import { FacebookFriendsPromotionService } from '../../services/facebook/FacebookFriendsPromotionService';
@@ -12,8 +12,6 @@ import { FacebookVideosPromotionService } from '../../services/facebook/Facebook
 
 @Controller('promote')
 export class PromoteController {
-  private logger = new LoggerService(PromoteController.name);
-
   constructor(
     private readonly facebookProfilePromotionService: FacebookProfilePromotionService,
     private readonly facebookPostsPromotionService: FacebookPostsPromotionService,
@@ -21,7 +19,10 @@ export class PromoteController {
     private readonly facebookVideosPromotionService: FacebookVideosPromotionService,
     private readonly facebookFriendsPromotionService: FacebookFriendsPromotionService,
     private readonly facebookLikesPromotionService: FacebookLikesPromotionService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PromoteController.name);
+  }
 
   /**
    * Handle Facebook profile promotion event

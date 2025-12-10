@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { toServiceContext } from '@ci/common/utils';
 import { OnEvent } from '@ci/domains/events';
 import { FileService, FileUploadedEvent, type FileUploadedPayload } from '@ci/domains/files';
@@ -54,13 +54,14 @@ const MODEL = 'llama3.2-vision:latest';
 
 @Injectable()
 export class InventoryListener {
-  private readonly logger = new LoggerService(InventoryListener.name);
-
   constructor(
     private readonly fileService: FileService,
     private readonly ollamaService: OllamaService,
     private readonly itemService: ItemService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(InventoryListener.name);
+  }
 
   @OnEvent(FileUploadedEvent, { queue: 'inventory' })
   async handleFileUploaded(payload: FileUploadedPayload) {

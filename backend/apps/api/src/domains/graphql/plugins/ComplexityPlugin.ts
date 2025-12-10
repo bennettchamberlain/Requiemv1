@@ -5,13 +5,16 @@ import { GraphQLSchemaHost } from '@nestjs/graphql';
 import { GraphQLError } from 'graphql';
 import { fieldExtensionsEstimator, getComplexity, simpleEstimator } from 'graphql-query-complexity';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 @Plugin()
 export class ComplexityPlugin implements ApolloServerPlugin {
-  private readonly logger = new LoggerService(ComplexityPlugin.name);
-
-  constructor(private readonly gqlSchemaHost: GraphQLSchemaHost) {}
+  constructor(
+    private readonly gqlSchemaHost: GraphQLSchemaHost,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ComplexityPlugin.name);
+  }
 
   async requestDidStart(): Promise<GraphQLRequestListener<BaseContext>> {
     const { schema } = this.gqlSchemaHost;

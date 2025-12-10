@@ -15,8 +15,8 @@ import { z } from 'zod';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
-import { LoggerService } from '@ci/common/services';
 import type { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import { EventService, Events } from '@ci/domains/events';
@@ -60,13 +60,14 @@ const completeConnectionSchema = z.object({
 
 @Controller('connections')
 export class ConnectionsController {
-  private logger = new LoggerService(ConnectionsController.name);
-
   constructor(
     private readonly clientFactory: ClientFactory,
     private readonly connectionService: ConnectionService,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ConnectionsController.name);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post()

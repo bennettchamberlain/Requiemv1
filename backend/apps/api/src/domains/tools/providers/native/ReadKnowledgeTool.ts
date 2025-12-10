@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
+import { LoggerService } from '@ci/common/logging';
 import { GraphQueryService, GraphNodeEntity, RelationshipEntity } from '@ci/domains/memory';
 
 import { BaseTool } from '../../core/BaseTool';
@@ -362,8 +363,10 @@ export class ReadKnowledgeTool extends BaseTool<ReadKnowledgeInput, ReadKnowledg
     private readonly graphQuery: GraphQueryService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    protected readonly logger: LoggerService,
   ) {
     super();
+    this.logger.setContext(ReadKnowledgeTool.name);
   }
 
   protected validateInput(input: unknown): ReadKnowledgeInput {

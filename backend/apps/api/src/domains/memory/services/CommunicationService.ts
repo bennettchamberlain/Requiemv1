@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/types';
 import { EventService } from '@ci/domains/events';
 
@@ -13,13 +13,14 @@ import { CreateCommunicationDto, UpdateCommunicationDto } from '../types';
 
 @Injectable()
 export class CommunicationService {
-  private logger = new LoggerService(CommunicationService.name);
-
   constructor(
     @InjectRepository(CommunicationEntity)
     private readonly communicationRepository: Repository<CommunicationEntity>,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(CommunicationService.name);
+  }
 
   async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<CommunicationEntity> {
     const communication = this.communicationRepository.create({

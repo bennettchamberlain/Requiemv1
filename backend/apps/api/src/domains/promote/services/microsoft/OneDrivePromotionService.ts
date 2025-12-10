@@ -5,7 +5,7 @@ import { buffer } from 'node:stream/consumers';
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
@@ -34,8 +34,6 @@ interface ExtractedFile {
 
 @Injectable()
 export class OneDrivePromotionService {
-  private logger = new LoggerService(OneDrivePromotionService.name);
-
   constructor(
     private readonly eventService: MemoryEventService,
     private readonly connectionService: ConnectionService,
@@ -43,7 +41,10 @@ export class OneDrivePromotionService {
     private readonly fileService: FileService,
     private readonly domainEventService: DomainEventService,
     private readonly promoteService: PromoteService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(OneDrivePromotionService.name);
+  }
 
   async promoteOneDriveFiles(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting OneDrive file promotion', {

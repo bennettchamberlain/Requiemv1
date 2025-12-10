@@ -1,11 +1,15 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 
-import { ContextService, LoggerService } from '../services';
+import { LoggerService } from '@ci/common/logging';
+
+import { ContextService } from '../services';
 
 @Injectable()
 export class RequestLoggerMiddleware implements NestMiddleware {
-  private readonly logger = new LoggerService('request');
+  constructor(private readonly logger: LoggerService) {
+    this.logger.setContext('request');
+  }
 
   use(req: Request, res: Response, next: NextFunction) {
     const start = process.hrtime.bigint();

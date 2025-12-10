@@ -2,13 +2,17 @@ import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 
 import { App } from '@ci/application';
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
 (async function () {
   const app = await NestFactory.create(App, {
-    logger: new LoggerService('application'),
+    bufferLogs: true,
   });
+
+  const logger = await app.resolve(LoggerService);
+
+  app.useLogger(logger);
 
   const express = app.getHttpAdapter().getInstance();
 

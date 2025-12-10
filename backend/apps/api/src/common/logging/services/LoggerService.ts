@@ -1,10 +1,9 @@
-import type { LoggerService as NestLoggerService } from '@nestjs/common';
-import type { Logger as PinoLogger, LoggerOptions } from 'pino';
+import { Injectable, Scope, type LoggerService as NestLoggerService } from '@nestjs/common';
+import type { Logger as PinoLogger } from 'pino';
 import pino from 'pino';
 
+import { ContextService } from '@ci/common/services';
 import config from '@ci/configuration';
-
-import { ContextService } from './ContextService';
 
 type LogData = string | Record<string, unknown>;
 type ErrorableLogData = Error | LogData;
@@ -22,23 +21,41 @@ const NEST_CONTEXT_DOWNGRADES = new Set([
   'RoutesResolver',
 ]);
 
+@Injectable({ scope: Scope.TRANSIENT })
 export class LoggerService implements NestLoggerService {
   private logger: PinoLogger;
 
-  constructor(name?: string, options?: LoggerOptions) {
-    this.logger = pino({
+  private static rootLogger: PinoLogger = (() => {
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+
+    return pino({
       level: config.logging.level ?? 'debug',
       serializers: {
         err: pino.stdSerializers.err,
         error: pino.stdSerializers.err,
       },
+      transport: isDevelopment
+        ? {
+            target: 'pino-pretty',
+            options: {
+              ignore: 'pid,hostname',
+            },
+          }
+        : undefined, // Default to JSON output
       mixin: () => {
         const traceId = ContextService.getTraceId();
 
         return traceId ? { traceId } : {};
       },
-      ...options,
-    }).child(name ? { name } : {});
+    });
+  })();
+
+  constructor() {
+    this.logger = LoggerService.rootLogger;
+  }
+
+  setContext(context: string) {
+    this.logger = LoggerService.rootLogger.child({ context });
   }
 
   log(message: LogData, context: LogData = {}) {

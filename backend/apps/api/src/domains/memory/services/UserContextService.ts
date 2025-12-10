@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 
@@ -62,13 +62,14 @@ type PreferenceRelationshipResult = {
  */
 @Injectable()
 export class UserContextService {
-  private logger = new LoggerService(UserContextService.name);
-
   constructor(
     private readonly graphQuery: GraphQueryService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(UserContextService.name);
+  }
 
   /**
    * Get comprehensive user context for LLM system prompt injection

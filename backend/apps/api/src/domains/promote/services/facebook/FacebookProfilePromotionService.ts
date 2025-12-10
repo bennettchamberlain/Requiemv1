@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { EventService, Events } from '@ci/domains/events';
 import { PersonService } from '@ci/domains/memory';
 
@@ -23,14 +23,15 @@ interface FacebookProfile {
 
 @Injectable()
 export class FacebookProfilePromotionService {
-  private logger = new LoggerService(FacebookProfilePromotionService.name);
-
   constructor(
     private readonly personService: PersonService,
     private readonly eventService: EventService,
     private readonly promoteService: PromoteService,
     private readonly utils: FacebookPromotionUtils,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(FacebookProfilePromotionService.name);
+  }
 
   async promoteProfile(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Promoting Facebook profile', { userId, connectionId });

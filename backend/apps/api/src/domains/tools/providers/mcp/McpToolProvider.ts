@@ -4,7 +4,7 @@ import * as path from 'path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 
 import type { BaseTool } from '../../core/BaseTool';
 import type { ToolSchema } from '../../core/types';
@@ -21,8 +21,6 @@ import type { McpServerConfig, McpServersConfig, McpSession, McpToolResult, McpH
 export class McpToolProvider implements ToolProvider {
   readonly name = 'mcp';
 
-  private readonly logger = new LoggerService(McpToolProvider.name);
-
   private readonly activeSessions = new Map<string, McpSession>();
 
   private readonly tools = new Map<string, BaseTool>();
@@ -38,7 +36,12 @@ export class McpToolProvider implements ToolProvider {
 
   private readonly DEFAULT_MAX_FAILURES = 3; // Max consecutive failures before restart
 
-  constructor(private readonly clientManager: McpClientManager) {}
+  constructor(
+    private readonly clientManager: McpClientManager,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(McpToolProvider.name);
+  }
 
   async initialize(): Promise<void> {
     await this.loadConfiguration();
@@ -314,7 +317,7 @@ export class McpToolProvider implements ToolProvider {
         };
 
         // Create and register the tool wrapper with prefixed name
-        const toolWrapper = new McpToolWrapper(toolSchema, this, serverName, tool.name);
+        const toolWrapper = new McpToolWrapper(toolSchema, this, serverName, tool.name, this.logger);
         this.tools.set(prefixedToolName, toolWrapper);
       }
 

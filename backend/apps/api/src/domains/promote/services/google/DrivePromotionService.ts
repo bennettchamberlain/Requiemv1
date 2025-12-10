@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { EventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
@@ -21,13 +21,14 @@ interface DriveFile {
 
 @Injectable()
 export class DrivePromotionService {
-  private logger = new LoggerService(DrivePromotionService.name);
-
   constructor(
     private readonly contentService: ContentService,
     private readonly fileService: FileService,
     private readonly eventService: EventService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(DrivePromotionService.name);
+  }
 
   async promoteDriveData(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Starting Drive data promotion', {

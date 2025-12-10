@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
 
 import { FacebookPromotionUtils } from './FacebookPromotionUtils';
@@ -14,12 +14,13 @@ interface FacebookLike {
 
 @Injectable()
 export class FacebookLikesPromotionService {
-  private logger = new LoggerService(FacebookLikesPromotionService.name);
-
   constructor(
     private readonly contentService: ContentService,
     private readonly utils: FacebookPromotionUtils,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(FacebookLikesPromotionService.name);
+  }
 
   async promoteLikes(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Promoting Facebook likes', { userId, connectionId });
