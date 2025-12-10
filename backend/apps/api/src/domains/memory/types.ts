@@ -277,6 +277,27 @@ export interface CreatePlaceDto {
   };
 }
 
+export interface UpdatePlaceDto {
+  entity_type?: string;
+  name?: string;
+  description?: string;
+  properties: {
+    type?: string;
+    geoformat?: string;
+    geolocation?: Record<string, unknown>;
+    locationBoundary?: Record<string, unknown>;
+    estimated?: boolean;
+    tracked?: boolean;
+    uploaded?: boolean;
+    [key: string]: unknown;
+  };
+  user_id?: string;
+  parent_id?: string;
+  parent?: {
+    id: string;
+  };
+}
+
 export interface CreateFileDto {
   name?: string;
   description?: string;

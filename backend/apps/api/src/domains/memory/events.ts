@@ -161,3 +161,57 @@ declare module '@ci/domains/events/registry' {
     [EventRemovedEvent]: EventDeletedPayload;
   }
 }
+
+/**
+ * Event emitted when creating a new place.
+ *
+ * @see {@link PlaceService.create} - The method that emits this event
+ */
+export const PlaceCreatedEvent = 'place.created';
+export const PlaceUpdatedEvent = 'place.updated';
+export const PlaceRemovedEvent = 'place.deleted';
+
+/**
+ * Event payload of the event {@link PlaceCreatedEvent}.
+ *
+ * @see {@link PlaceCreatedEvent} - The event this payload is associated with
+ * @see {@link PlaceService.create} - The method that emits this event payload
+ */
+export type PlaceCreatedPayload = {
+  /** The identifier of the newly created place */
+  placeId: string;
+};
+
+/**
+ * Event payload of the event {@link PlaceUpdatedEvent}.
+ *
+ * @see {@link PlaceUpdatedEvent} - The event this payload is associated with
+ * @see {@link PlaceService.update} - The method that emits this event payload
+ */
+export type PlaceUpdatedPayload = {
+  /** The identifier of the newly created place */
+  placeId: string;
+};
+
+/**
+ * Event payload of the event {@link PlaceRemovedEvent}.
+ *
+ * @see {@link PlaceRemovedEvent} - The event this payload is associated with
+ * @see {@link PlaceService.remove} - The method that emits this event payload
+ */
+export type PlaceDeletedPayload = {
+  /** The identifier of the newly created place */
+  placeId: string;
+};
+
+defineEvent<PlaceCreatedPayload>(PlaceCreatedEvent);
+defineEvent<PlaceUpdatedPayload>(PlaceUpdatedEvent);
+defineEvent<PlaceDeletedPayload>(PlaceRemovedEvent);
+
+declare module '@ci/domains/events/registry' {
+  interface EventRegistry {
+    [PlaceCreatedEvent]: PlaceCreatedPayload;
+    [PlaceUpdatedEvent]: PlaceUpdatedPayload;
+    [PlaceRemovedEvent]: PlaceDeletedPayload;
+  }
+}
