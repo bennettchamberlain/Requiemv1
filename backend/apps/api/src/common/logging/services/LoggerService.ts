@@ -41,7 +41,7 @@ export class LoggerService implements NestLoggerService {
               ignore: 'pid,hostname',
             },
           }
-        : undefined, // undefined means standard JSON output
+        : undefined, // Default to JSON output
       mixin: () => {
         const traceId = ContextService.getTraceId();
 
@@ -50,13 +50,10 @@ export class LoggerService implements NestLoggerService {
     });
   })();
 
-  // DI requires a constructor with resolvable dependencies.
-  // We remove arguments here and use setContext instead.
   constructor() {
     this.logger = LoggerService.rootLogger;
   }
 
-  // This is the standard NestJS method to name a transient logger
   setContext(context: string) {
     this.logger = LoggerService.rootLogger.child({ context });
   }
