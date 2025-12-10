@@ -4,6 +4,7 @@ import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { RequestContext } from '@ci/common/types';
+import { toServiceContext } from '@ci/common/utils';
 import { PersonService } from '@ci/domains/memory';
 
 import { GlobalUID } from '../types/GlobalUID';
@@ -23,7 +24,9 @@ export class PersonResolver {
     @Context() context: RequestContext,
     @Args() pagination: PaginationArgs,
   ): Promise<PersonConnection> {
-    const entities = await this.personService.findAll(context);
+    const serviceContext = toServiceContext(context);
+
+    const entities = await this.personService.findAll(serviceContext);
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
       ...pagination,
@@ -31,7 +34,7 @@ export class PersonResolver {
     });
 
     const edges: PersonEdge[] = slice.map((entity) => {
-      const node = PersonType.fromEntity(entity);
+      const node = PersonType.toType(entity);
 
       return {
         node,
@@ -51,10 +54,12 @@ export class PersonResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<PersonType | null> {
+    const serviceContext = toServiceContext(context);
+
     const id = GlobalUID.parse('person', gid);
 
-    const entity = await this.personService.findOne(context, id);
+    const entity = await this.personService.findById(serviceContext, id);
 
-    return entity ? PersonType.fromEntity(entity) : null;
+    return entity ? PersonType.toType(entity) : null;
   }
 }

@@ -31,11 +31,11 @@ export class SearchResolver {
 
     const [threads, people] = await Promise.all([
       this.threadService.findAll(serviceContext),
-      this.personService.findAll(context),
+      this.personService.findAll(serviceContext),
     ]);
 
-    const threadResults = threads.map((entity) => ThreadType.fromEntity(entity));
-    const personResults = people.map((entity) => PersonType.fromEntity(entity));
+    const threadResults = threads.map((entity) => ThreadType.toType(entity));
+    const personResults = people.map((entity) => PersonType.toType(entity));
 
     // Interleave results
     const results: (ThreadType | PersonType)[] = [];

@@ -41,7 +41,7 @@ export class ThreadResolver {
     });
 
     const edges: ThreadEdge[] = slice.map((thread) => {
-      const node = ThreadType.fromEntity(thread);
+      const node = ThreadType.toType(thread);
 
       return {
         node,
@@ -71,7 +71,7 @@ export class ThreadResolver {
       throw new NotFoundException();
     }
 
-    return ThreadType.fromEntity(thread);
+    return ThreadType.toType(thread);
   }
 
   @ResolveField(() => MessageConnection)
@@ -92,7 +92,7 @@ export class ThreadResolver {
     });
 
     const edges: MessageEdge[] = slice.map((message) => {
-      const node = MessageType.fromEntity(message);
+      const node = MessageType.toType(message);
 
       return {
         node,

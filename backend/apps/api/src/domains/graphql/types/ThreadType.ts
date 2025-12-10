@@ -18,7 +18,7 @@ export class ThreadType implements Node {
   @Field(() => String, { nullable: true })
   description!: string | null;
 
-  static fromEntity(thread: Thread): ThreadType {
+  static toType(thread: Thread): ThreadType {
     return {
       __typename: ThreadType.name,
       id: GlobalUID.encode('thread', thread.id),

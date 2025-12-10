@@ -507,7 +507,8 @@ export class PromoteService {
     // Check if user already has an entity ID
     if (user.entityId) {
       // Verify the entity exists in the entities table
-      const existingEntity = await this.personService.findOne({ userId }, user.entityId);
+      const existingEntity = await this.personService.findById({ userId }, user.entityId);
+
       if (existingEntity) {
         return user.entityId;
       }

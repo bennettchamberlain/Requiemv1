@@ -21,7 +21,7 @@ export class UserType implements Node {
   @Field(() => Boolean)
   onboarded!: boolean;
 
-  static fromEntity(user: User): UserType {
+  static toType(user: User): UserType {
     return {
       __typename: UserType.name,
       id: GlobalUID.encode('user', user.id),
