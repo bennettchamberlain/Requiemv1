@@ -13,9 +13,7 @@ import {
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity, type User } from '@ci/domains/user';
 
-import type { Event } from '../types';
-
-import { EventEntity } from './EventEntity';
+import { EventEntity, Event } from './EventEntity';
 
 @Entity({ name: 'content' })
 export class ContentEntity {
@@ -82,7 +80,7 @@ export class ContentEntity {
       userId: entity.user?.id || null,
       eventId: entity.event?.id || null,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
-      event: entity.event ? entity.event.toEvent() : undefined,
+      event: entity.event ? EventEntity.toEgressType(entity.event) : undefined,
       tags: entity.tags?.map((tag) => tag.id) || [],
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,

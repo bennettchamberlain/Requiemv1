@@ -82,7 +82,7 @@ export class AnswersController {
       throw new NotFoundException('Answer not found');
     }
 
-    const removal = this.answerService.remove(serviceContext, answerId);
+    const removal = await this.answerService.remove(serviceContext, answerId);
 
     if (!removal) {
       throw new NotFoundException();

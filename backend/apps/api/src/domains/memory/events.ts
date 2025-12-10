@@ -107,3 +107,57 @@ declare module '@ci/domains/events/registry' {
     [CommunicationRemovedEvent]: CommunicationDeletedPayload;
   }
 }
+
+/**
+ * Event emitted when creating a new event.
+ *
+ * @see {@link EventService.create} - The method that emits this event
+ */
+export const EventCreatedEvent = 'event.created';
+export const EventUpdatedEvent = 'event.updated';
+export const EventRemovedEvent = 'event.deleted';
+
+/**
+ * Event payload of the event {@link EventCreatedEvent}.
+ *
+ * @see {@link EventCreatedEvent} - The event this payload is associated with
+ * @see {@link EventService.create} - The method that emits this event payload
+ */
+export type EventCreatedPayload = {
+  /** The identifier of the newly created event */
+  eventId: string;
+};
+
+/**
+ * Event payload of the event {@link EventUpdatedEvent}.
+ *
+ * @see {@link EventUpdatedEvent} - The event this payload is associated with
+ * @see {@link EventService.update} - The method that emits this event payload
+ */
+export type EventUpdatedPayload = {
+  /** The identifier of the newly created event */
+  eventId: string;
+};
+
+/**
+ * Event payload of the event {@link EventRemovedEvent}.
+ *
+ * @see {@link EventRemovedEvent} - The event this payload is associated with
+ * @see {@link EventService.remove} - The method that emits this event payload
+ */
+export type EventDeletedPayload = {
+  /** The identifier of the newly created event */
+  eventId: string;
+};
+
+defineEvent<EventCreatedPayload>(EventCreatedEvent);
+defineEvent<EventUpdatedPayload>(EventUpdatedEvent);
+defineEvent<EventDeletedPayload>(EventRemovedEvent);
+
+declare module '@ci/domains/events/registry' {
+  interface EventRegistry {
+    [EventCreatedEvent]: EventCreatedPayload;
+    [EventUpdatedEvent]: EventUpdatedPayload;
+    [EventRemovedEvent]: EventDeletedPayload;
+  }
+}

@@ -180,7 +180,6 @@ export class AnswerService {
   }
 
   async remove(context: ServiceContext, id: string): Promise<boolean> {
-    console.log('remove answer', id, context.userId);
     const answer = await this.answerRepository.findOne({
       where: {
         id: id,
@@ -189,8 +188,6 @@ export class AnswerService {
         }),
       },
     });
-
-    console.log('answer to remove', answer);
 
     if (!answer) {
       return false;

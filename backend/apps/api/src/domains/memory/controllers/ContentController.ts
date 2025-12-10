@@ -14,7 +14,6 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
-import { z } from 'zod';
 
 import { PgErrorCode } from '@ci/common/constants';
 import { Context } from '@ci/common/decorators';
@@ -24,31 +23,7 @@ import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 
 import { ContentService } from '../services/ContentService';
-import { CreateContentDto, UpdateContentDto } from '../types';
-
-export const createContentSchema = z.object({
-  type: z.string().optional(),
-  title: z.string().optional(),
-  text: z.string().optional(),
-  url: z.string().optional(),
-  mimetype: z.string().optional(),
-  external_id: z.string().optional(),
-  source_url: z.string().optional(),
-  user_id: z.string().optional(),
-  event_id: z.string().optional(),
-});
-
-const updateContentSchema = z.object({
-  type: z.string().optional(),
-  title: z.string().optional(),
-  text: z.string().optional(),
-  url: z.string().optional(),
-  mimetype: z.string().optional(),
-  external_id: z.string().optional(),
-  source_url: z.string().optional(),
-  user_id: z.string().optional(),
-  event_id: z.string().optional(),
-});
+import { CreateContentDto, UpdateContentDto, createContentSchema, updateContentSchema } from '../types';
 
 @Controller('contents')
 export class ContentController {
