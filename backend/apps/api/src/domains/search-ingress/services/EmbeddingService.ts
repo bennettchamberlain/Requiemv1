@@ -3,10 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { type UserServiceContext } from '@ci/common/types';
+import { type ServiceContext, type UserServiceContext } from '@ci/common/types';
 
 import { type Embedding, EmbeddingEntity } from '../entities/EmbeddingEntity';
-import { CreateEmbeddingDto } from '../types';
+import { UpsertEmbeddingDto, RemoveEmbeddingDto } from '../types';
 
 @Injectable()
 export class EmbeddingService {
@@ -15,7 +15,7 @@ export class EmbeddingService {
     private readonly embeddingRepo: Repository<EmbeddingEntity>,
   ) {}
 
-  async upsert(context: UserServiceContext, data: CreateEmbeddingDto): Promise<Embedding | null> {
+  async upsert(context: UserServiceContext, data: UpsertEmbeddingDto): Promise<Embedding | null> {
     return this.embeddingRepo.manager.transaction(async (manager) => {
       const repo = manager.getRepository(EmbeddingEntity);
 
@@ -58,5 +58,14 @@ export class EmbeddingService {
 
       return updated ? EmbeddingEntity.toEgressType(updated) : null;
     });
+  }
+
+  async remove(context: ServiceContext, data: RemoveEmbeddingDto): Promise<boolean> {
+    const result = await this.embeddingRepo.delete({
+      entityType: data.entityType,
+      entityId: data.entityId,
+    });
+
+    return result.affected ? result.affected > 0 : false;
   }
 }

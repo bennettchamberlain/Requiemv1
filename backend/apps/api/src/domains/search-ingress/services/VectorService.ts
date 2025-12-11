@@ -3,10 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { type UserServiceContext } from '@ci/common/types';
+import { type ServiceContext, type UserServiceContext } from '@ci/common/types';
 
 import { type Vector, VectorEntity } from '../entities/VectorEntity';
-import { CreateVectorDto } from '../types';
+import { UpsertVectorDto, RemoveVectorDto } from '../types';
 
 @Injectable()
 export class VectorService {
@@ -15,7 +15,7 @@ export class VectorService {
     private readonly vectorRepo: Repository<VectorEntity>,
   ) {}
 
-  async upsert(context: UserServiceContext, data: CreateVectorDto): Promise<Vector | null> {
+  async upsert(context: UserServiceContext, data: UpsertVectorDto): Promise<Vector | null> {
     const rawSearchText = data.searchableText.join(' ');
 
     return this.vectorRepo.manager.transaction(async (manager) => {
@@ -77,5 +77,14 @@ export class VectorService {
 
       return entity ? VectorEntity.toEgressType(entity) : null;
     });
+  }
+
+  async remove(context: ServiceContext, data: RemoveVectorDto): Promise<boolean> {
+    const result = await this.vectorRepo.delete({
+      entityType: data.entityType,
+      entityId: data.entityId,
+    });
+
+    return result.affected ? result.affected > 0 : false;
   }
 }

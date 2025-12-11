@@ -13,6 +13,8 @@ import { PaginationArgs } from '../types/PaginationArgs';
 import { PersonConnection } from '../types/PersonConnection';
 import { PersonEdge } from '../types/PersonEdge';
 import { PersonType } from '../types/PersonType';
+import { RemovePersonInput } from '../types/RemovePersonInput';
+import { UpdatePersonInput } from '../types/UpdatePersonInput';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
@@ -33,6 +35,31 @@ export class PersonResolver {
     });
 
     return PersonType.toType(entity);
+  }
+
+  @Mutation(() => PersonType, { nullable: true })
+  async updatePerson(
+    @Context() context: RequestContext,
+    @Args('input') input: UpdatePersonInput,
+  ): Promise<PersonType | null> {
+    const serviceContext = toServiceContext(context);
+
+    const entity = await this.personService.update(serviceContext, input.id, {
+      name: input.name,
+      description: input.description,
+    });
+
+    return entity ? PersonType.toType(entity) : entity;
+  }
+
+  @Mutation(() => Boolean)
+  async removePerson(
+    @Context() context: RequestContext,
+    @Args('input') input: RemovePersonInput,
+  ): Promise<boolean> {
+    const serviceContext = toServiceContext(context);
+
+    return this.personService.remove(serviceContext, input.id);
   }
 
   @Query(() => PersonConnection)
