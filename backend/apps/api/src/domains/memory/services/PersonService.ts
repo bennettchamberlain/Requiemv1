@@ -4,7 +4,9 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
-import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/types';
+import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/types';
+import { EventService } from '@ci/domains/events';
+import { PersonCreatedEvent, PersonUpdatedEvent, PersonRemovedEvent } from '@ci/domains/memory/events';
 
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 import { CreatePersonDto, UpdatePersonDto } from '../types';
@@ -15,6 +17,7 @@ export class PersonService {
     @InjectRepository(PersonEntity)
     private readonly personRepository: Repository<PersonEntity>,
     private readonly logger: LoggerService,
+    private readonly eventService: EventService,
   ) {
     this.logger.setContext(PersonService.name);
   }
@@ -36,6 +39,10 @@ export class PersonService {
     });
 
     const entity = await this.personRepository.save(instance);
+
+    await this.eventService.send(PersonCreatedEvent, {
+      personId: instance.id,
+    });
 
     return PersonEntity.toEgressType(entity);
   }
@@ -108,6 +115,10 @@ export class PersonService {
       return null;
     }
 
+    await this.eventService.send(PersonUpdatedEvent, {
+      personId: id,
+    });
+
     return this.findById(context, id);
   }
 
@@ -124,6 +135,10 @@ export class PersonService {
     if (result.affected === 0) {
       return false;
     }
+
+    await this.eventService.send(PersonRemovedEvent, {
+      personId: id,
+    });
 
     return true;
   }
