@@ -8,6 +8,11 @@ interface Connection {
   totalCount: Int!
 }
 
+input CreatePersonInput {
+  description: String
+  name: String!
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
@@ -117,6 +122,10 @@ type MessageType implements Node {
   id: ID!
   role: String
   threadId: ID!
+}
+
+type Mutation {
+  createPerson(input: CreatePersonInput!): PersonType!
 }
 
 interface Node {
