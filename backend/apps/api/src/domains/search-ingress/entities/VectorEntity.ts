@@ -15,7 +15,7 @@ export class VectorEntity {
   vector!: string;
 
   @Column({ type: 'uuid', name: 'user_id' })
-  user_id!: string;
+  userId!: string;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
@@ -29,7 +29,7 @@ export class VectorEntity {
       entityType: entity.entityType,
       entityId: entity.entityId,
       vector: entity.vector,
-      user_id: entity.user_id,
+      userId: entity.userId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
