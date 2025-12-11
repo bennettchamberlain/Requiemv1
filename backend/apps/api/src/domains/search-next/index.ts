@@ -7,8 +7,9 @@
 
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { type Tag, TagEntity } from './entities/TagEntity';
+
 import { type EntityTag, EntityTagEntity } from './entities/EntityTagEntity';
+import { type Tag, TagEntity } from './entities/TagEntity';
 
 /**
  * @internal
