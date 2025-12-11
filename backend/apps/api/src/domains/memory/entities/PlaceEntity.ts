@@ -14,7 +14,7 @@ import {
 } from 'typeorm';
 
 import { TagEntity } from '@ci/domains/search';
-import { UserEntity } from '@ci/domains/user';
+import { UserEntity, type User } from '@ci/domains/user';
 
 @Entity({ name: 'entities' })
 export class PlaceEntity {
@@ -22,7 +22,7 @@ export class PlaceEntity {
   id!: string;
 
   @Column({ type: 'text', name: 'entity_type', default: 'Location' })
-  entity_type!: string;
+  entityType!: string;
 
   @Column({ type: 'text', nullable: true })
   name!: string | null;
@@ -36,11 +36,11 @@ export class PlaceEntity {
   // Backward compatibility fields - populated from properties JSONB after load
   type!: string | null;
 
-  geo_format!: string | null;
+  geoFormat!: string | null;
 
   geolocation!: Record<string, unknown> | null;
 
-  location_boundary!: Record<string, unknown> | null;
+  locationBoundary!: Record<string, unknown> | null;
 
   estimated!: boolean | null;
 
@@ -51,9 +51,9 @@ export class PlaceEntity {
   @AfterLoad()
   loadPropertiesFromJsonb() {
     this.type = (this.properties?.type as string) || null;
-    this.geo_format = (this.properties?.geo_format as string) || null;
+    this.geoFormat = (this.properties?.geo_format as string) || null;
     this.geolocation = (this.properties?.geolocation as Record<string, unknown>) || null;
-    this.location_boundary = (this.properties?.location_boundary as Record<string, unknown>) || null;
+    this.locationBoundary = (this.properties?.location_boundary as Record<string, unknown>) || null;
     this.estimated = (this.properties?.estimated as boolean) || null;
     this.tracked = (this.properties?.tracked as boolean) || null;
     this.uploaded = (this.properties?.uploaded as boolean) || null;
@@ -85,9 +85,34 @@ export class PlaceEntity {
   })
   tags?: TagEntity[];
 
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at!: Date;
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at!: Date;
+  @UpdateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  updatedAt!: Date;
+
+  static toEgressType(entity: PlaceEntity) {
+    return {
+      id: entity.id,
+      name: entity.name || null,
+      entityType: entity.entityType,
+      description: entity.description || null,
+      type: entity.type || null,
+      geoFormat: entity.geoFormat || null,
+      geolocation: entity.geolocation || null,
+      locationBoundary: entity.locationBoundary || null,
+      estimated: entity.estimated || null,
+      tracked: entity.tracked || null,
+      properties: entity.properties || {},
+      uploaded: entity.uploaded || null,
+      userId: entity.user?.id || null,
+      parentId: entity.parent?.id || null,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    };
+  }
 }
+
+export type Place = Readonly<Omit<PlaceEntity, 'user' | 'loadPropertiesFromJsonb'>> & {
+  user?: User;
+};

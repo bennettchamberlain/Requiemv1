@@ -1,25 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { RequestContext } from '@ci/common/types';
+import { ServiceContext, SYSTEM_USER, UserServiceContext } from '@ci/common/types';
+import { EventService } from '@ci/domains/events';
 
-import { PlaceEntity } from '../entities/PlaceEntity';
-import { type CreatePlaceDto } from '../types';
+import { PlaceEntity, type Place } from '../entities/PlaceEntity';
+import { PlaceCreatedEvent, PlaceUpdatedEvent, PlaceRemovedEvent } from '../events';
+import type { CreatePlaceDto, UpdatePlaceDto } from '../types';
 
 @Injectable()
 export class PlaceService {
   constructor(
     @InjectRepository(PlaceEntity)
     private readonly placeRepository: Repository<PlaceEntity>,
+    private readonly eventService: EventService,
   ) {}
 
-  async create(context: RequestContext, data: CreatePlaceDto | CreatePlaceDto[]): Promise<PlaceEntity[]> {
+  async create(context: UserServiceContext, data: CreatePlaceDto | CreatePlaceDto[]): Promise<Place[]> {
     const isSingle = !Array.isArray(data);
     const dataArray: CreatePlaceDto[] = isSingle ? [data] : data;
 
-    const returned = await Promise.all(
+    return Promise.all(
       dataArray.map(async (item) => {
         const place = await this.placeRepository.create({
           ...item,
@@ -31,35 +34,104 @@ export class PlaceService {
 
         const placeResult = await this.placeRepository.save(place);
 
-        return placeResult;
+        await this.eventService.send(PlaceCreatedEvent, {
+          placeId: place.id,
+        });
+
+        return PlaceEntity.toEgressType(placeResult);
       }),
     );
-
-    return returned;
   }
 
-  async findAll(context: RequestContext): Promise<PlaceEntity[]> {
-    const result = await this.placeRepository.find({
+  async findAll(context: UserServiceContext): Promise<Place[]> {
+    return this.placeRepository.find({
       where: {
         user: {
           id: context.userId,
         },
       },
     });
-
-    return result;
   }
 
-  async findOne(context: RequestContext, id: string): Promise<PlaceEntity | null> {
+  async findById(context: ServiceContext, id: string): Promise<Place | null> {
     const result = await this.placeRepository.findOne({
       where: {
         id,
-        user: {
-          id: context.userId,
-        },
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
       },
     });
 
-    return result ?? null;
+    return result ? PlaceEntity.toEgressType(result) : null;
+  }
+
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Place[]> {
+    const result = await this.placeRepository.find({
+      where: {
+        id: In(ids),
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    return result.map((entity) => PlaceEntity.toEgressType(entity));
+  }
+
+  async update(context: ServiceContext, id: string, data: UpdatePlaceDto): Promise<Place | null> {
+    const { properties, ...rest } = data;
+
+    const result = await this.placeRepository.update(
+      {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+      {
+        ...rest,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        properties: properties as any, // TypeORM will handle JSON serialization
+      },
+    );
+
+    if (result.affected === 0) {
+      return null;
+    }
+
+    await this.eventService.send(PlaceUpdatedEvent, {
+      placeId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const place = await this.placeRepository.findOne({
+      where: {
+        id: id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    if (!place) {
+      return false;
+    }
+
+    await this.placeRepository.delete({
+      id,
+      ...(context.userId !== SYSTEM_USER && {
+        userId: context.userId,
+      }),
+    });
+
+    await this.eventService.send(PlaceRemovedEvent, {
+      placeId: id,
+    });
+
+    return true;
   }
 }
