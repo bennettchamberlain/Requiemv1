@@ -47,7 +47,7 @@ export default {
       },
       to: {
         path: '^src/domains/',
-        pathNot: ['^src/domains/$1/', '^src/domains/[^/]+/index\\.ts$'],
+        pathNot: ['^src/domains/$1/', '^src/domains/[^/]+/index\\.ts$', '^src/domains/[^/]+/events\\.ts$'],
       },
     },
 
