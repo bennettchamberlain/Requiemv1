@@ -24,7 +24,7 @@ export class PersonSearchIndexListener {
 
   @OnEvent(PersonCreatedEvent, { queue: 'search-index' })
   async indexPerson(payload: PersonCreatedPayload) {
-    this.logger.log('Generating vector embedding for new person', {
+    this.logger.log('Adding new person to search index', {
       personId: payload.personId,
     });
 
@@ -49,40 +49,42 @@ export class PersonSearchIndexListener {
     const searchDocument = this.getSearchDocument(person);
 
     if (searchDocument == null) {
-      this.logger.log('Person has no search content, skipping indexing');
+      this.logger.log('Person has no search document, skipping embedding');
+    } else {
+      const embedding = await this.embeddingGenerationService.generateEmbedding(searchDocument);
 
-      return;
+      await this.embeddingService.upsert(
+        {
+          userId: person.userId,
+        },
+        {
+          entityType: 'person',
+          entityId: person.id,
+          embedding,
+        },
+      );
+
+      this.logger.log('Generated embedding for person');
     }
-
-    const embedding = await this.embeddingGenerationService.generateEmbedding(searchDocument);
-
-    await this.embeddingService.upsert(
-      {
-        userId: person.userId,
-      },
-      {
-        entityType: 'person',
-        entityId: person.id,
-        embedding,
-      },
-    );
-
-    this.logger.log('Generated embedding for person');
 
     const searchContent = this.getSearchContent(person);
 
-    await this.vectorService.upsert(
-      {
-        userId: person.userId,
-      },
-      {
-        entityType: 'person',
-        entityId: person.id,
-        searchableText: searchContent,
-      },
-    );
+    if (searchContent.length === 0) {
+      this.logger.log('Person has no search content, skipping vectorization');
+    } else {
+      await this.vectorService.upsert(
+        {
+          userId: person.userId,
+        },
+        {
+          entityType: 'person',
+          entityId: person.id,
+          searchableText: searchContent,
+        },
+      );
 
-    this.logger.log('Generated tsvector for person');
+      this.logger.log('Generated tsvector for person');
+    }
   }
 
   private getSearchContent(person: Person): string[] {
