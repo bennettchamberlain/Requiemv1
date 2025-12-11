@@ -28,7 +28,6 @@ export class VectorEntity {
       id: entity.id,
       entityType: entity.entityType,
       entityId: entity.entityId,
-      vector: entity.vector,
       userId: entity.userId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
@@ -36,4 +35,4 @@ export class VectorEntity {
   }
 }
 
-export type Vector = Readonly<VectorEntity>;
+export type Vector = Readonly<Omit<VectorEntity, 'vector'>>;

@@ -17,6 +17,7 @@ export class EmbeddingEntity {
       to: (v: number[]) => `[${v.join(',')}]`,
       from: (v: string) => v.slice(1, -1).split(',').map(Number),
     },
+    select: false,
   })
   embedding!: number[];
 
@@ -34,7 +35,6 @@ export class EmbeddingEntity {
       id: entity.id,
       entityType: entity.entityType,
       entityId: entity.entityId,
-      embedding: entity.embedding,
       userId: entity.userId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
@@ -42,4 +42,4 @@ export class EmbeddingEntity {
   }
 }
 
-export type Embedding = Readonly<EmbeddingEntity>;
+export type Embedding = Readonly<Omit<EmbeddingEntity, 'embedding'>>;
