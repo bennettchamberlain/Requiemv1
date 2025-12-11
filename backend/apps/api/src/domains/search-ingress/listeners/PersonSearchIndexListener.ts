@@ -8,6 +8,7 @@ import { type Person, PersonService } from '@ci/domains/memory';
 import { PersonCreatedEvent, type PersonCreatedPayload } from '@ci/domains/memory/events';
 
 import { EmbeddingService } from '../services/EmbeddingService';
+import { VectorService } from '../services/VectorService';
 
 @Injectable()
 export class PersonSearchIndexListener {
@@ -15,6 +16,7 @@ export class PersonSearchIndexListener {
     private readonly personService: PersonService,
     private readonly embeddingGenerationService: EmbeddingGenerationService,
     private readonly embeddingService: EmbeddingService,
+    private readonly vectorService: VectorService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PersonSearchIndexListener.name);
@@ -66,6 +68,31 @@ export class PersonSearchIndexListener {
     );
 
     this.logger.log('Generated embedding for person');
+
+    const searchContent = this.getSearchContent(person);
+
+    await this.vectorService.upsert(
+      {
+        userId: person.userId,
+      },
+      {
+        entityType: 'person',
+        entityId: person.id,
+        searchableText: searchContent,
+      },
+    );
+
+    this.logger.log('Generated tsvector for person');
+  }
+
+  private getSearchContent(person: Person): string[] {
+    const parts = [
+      person.name,
+      person.description,
+      person.properties ? JSON.stringify(person.properties) : null,
+    ];
+
+    return parts.filter((part): part is string => typeof part === 'string' && part.length > 0);
   }
 
   private getSearchDocument(person: Person): string | null {
