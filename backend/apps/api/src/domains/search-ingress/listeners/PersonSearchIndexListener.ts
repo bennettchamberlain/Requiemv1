@@ -44,17 +44,17 @@ export class PersonSearchIndexListener {
       return;
     }
 
-    const searchContent = this.getPersonSearchContent(person);
+    const searchDocument = this.getSearchDocument(person);
 
-    if (searchContent == null) {
+    if (searchDocument == null) {
       this.logger.log('Person has no search content, skipping indexing');
 
       return;
     }
 
-    const embedding = await this.embeddingGenerationService.generateEmbedding(searchContent);
+    const embedding = await this.embeddingGenerationService.generateEmbedding(searchDocument);
 
-    await this.embeddingService.embedEntity(
+    await this.embeddingService.upsert(
       {
         userId: person.userId,
       },
@@ -68,7 +68,7 @@ export class PersonSearchIndexListener {
     this.logger.log('Generated embedding for person');
   }
 
-  private getPersonSearchContent(person: Person): string | null {
+  private getSearchDocument(person: Person): string | null {
     const parts = new Set<string>();
 
     const push = (value: unknown) => {

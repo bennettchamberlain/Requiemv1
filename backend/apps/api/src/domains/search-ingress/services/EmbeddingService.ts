@@ -15,7 +15,7 @@ export class EmbeddingService {
     private readonly embeddingRepo: Repository<EmbeddingEntity>,
   ) {}
 
-  async embedEntity(context: UserServiceContext, data: CreateEmbeddingDto): Promise<Embedding | null> {
+  async upsert(context: UserServiceContext, data: CreateEmbeddingDto): Promise<Embedding | null> {
     return this.embeddingRepo.manager.transaction(async (manager) => {
       const repo = manager.getRepository(EmbeddingEntity);
 
