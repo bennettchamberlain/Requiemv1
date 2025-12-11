@@ -6,7 +6,7 @@ import config from '@ci/configuration';
 const EMBEDDING_MODEL = 'nomic-embed-text';
 
 @Injectable()
-export class EmbeddingService {
+export class EmbeddingGenerationService {
   private readonly ollama = new Ollama({
     host: config.services.ollama.host,
   });

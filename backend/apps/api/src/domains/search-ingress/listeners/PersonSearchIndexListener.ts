@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { EmbeddingService as EmbeddingGenerationService } from '@ci/common/embeddings';
+import { EmbeddingGenerationService } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
 import { OnEvent } from '@ci/domains/events';

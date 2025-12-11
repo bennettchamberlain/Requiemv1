@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 
-import { EmbeddingService } from './services/EmbeddingService';
+import { EmbeddingGenerationService } from './services/EmbeddingGenerationService';
 
 @Module({
-  providers: [EmbeddingService],
-  exports: [EmbeddingService],
+  providers: [EmbeddingGenerationService],
+  exports: [EmbeddingGenerationService],
 })
 export class EmbeddingModule {}
 
-export { EmbeddingService };
+export { EmbeddingGenerationService };
