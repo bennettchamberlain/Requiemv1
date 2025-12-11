@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Query, Resolver, Args, ID } from '@nestjs/graphql';
+import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -7,6 +7,7 @@ import { RequestContext } from '@ci/common/types';
 import { toServiceContext } from '@ci/common/utils';
 import { PersonService } from '@ci/domains/memory';
 
+import { CreatePersonInput } from '../types/CreatePersonInput';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { PersonConnection } from '../types/PersonConnection';
@@ -18,6 +19,21 @@ import { Paginator } from '../utils/Paginator';
 @Resolver(() => PersonType)
 export class PersonResolver {
   constructor(private readonly personService: PersonService) {}
+
+  @Mutation(() => PersonType)
+  async createPerson(
+    @Context() context: RequestContext,
+    @Args('input') input: CreatePersonInput,
+  ): Promise<PersonType> {
+    const serviceContext = toServiceContext(context);
+
+    const entity = await this.personService.create(serviceContext, {
+      name: input.name,
+      description: input.description,
+    });
+
+    return PersonType.toType(entity);
+  }
 
   @Query(() => PersonConnection)
   async people(

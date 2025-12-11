@@ -330,7 +330,7 @@ export interface CreatePersonDto {
   linkedId?: string;
   linkedTable?: string;
   lastAccessed?: Date;
-  properties: {
+  properties?: {
     email?: string;
     firstName?: string;
     lastName?: string;
