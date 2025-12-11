@@ -1,0 +1,110 @@
+import { Injectable } from '@nestjs/common';
+
+import { EmbeddingService as EmbeddingGenerationService } from '@ci/common/embeddings';
+import { LoggerService } from '@ci/common/logging';
+import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
+import { OnEvent } from '@ci/domains/events';
+import { type Person, PersonService } from '@ci/domains/memory';
+import { PersonCreatedEvent, type PersonCreatedPayload } from '@ci/domains/memory/events';
+
+import { EmbeddingService } from '../services/EmbeddingService';
+
+@Injectable()
+export class PersonSearchIndexListener {
+  constructor(
+    private readonly personService: PersonService,
+    private readonly embeddingGenerationService: EmbeddingGenerationService,
+    private readonly embeddingService: EmbeddingService,
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(PersonSearchIndexListener.name);
+  }
+
+  @OnEvent(PersonCreatedEvent, { queue: 'search-index' })
+  async handleFileUploaded(payload: PersonCreatedPayload) {
+    this.logger.log('Generating vector embedding for new person', {
+      personId: payload.personId,
+    });
+
+    const context = {
+      userId: SYSTEM_USER,
+    } satisfies ServiceContext;
+
+    const person = await this.personService.findById(context, payload.personId);
+
+    if (person == null) {
+      this.logger.warn('Person not found, skipping indexing');
+
+      return;
+    }
+
+    if (person.userId == null) {
+      this.logger.warn('Person has no associated user, cannot index');
+
+      return;
+    }
+
+    const searchContent = this.getPersonSearchContent(person);
+
+    if (searchContent == null) {
+      this.logger.log('Person has no search content, skipping indexing');
+
+      return;
+    }
+
+    const embedding = await this.embeddingGenerationService.generateEmbedding(searchContent);
+
+    await this.embeddingService.embedEntity(
+      {
+        userId: person.userId,
+      },
+      {
+        entityType: 'person',
+        entityId: person.id,
+        embedding,
+      },
+    );
+
+    this.logger.log('Generated embedding for person');
+  }
+
+  private getPersonSearchContent(person: Person): string | null {
+    const parts = new Set<string>();
+
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') {
+        return;
+      }
+
+      const normalized = value.trim();
+
+      if (normalized.length === 0) {
+        return;
+      }
+
+      parts.add(normalized);
+    };
+
+    push(person.name ?? null);
+    push(person.description ?? null);
+
+    const properties = (person.properties ?? {}) as Record<string, unknown>;
+    const candidateKeys = ['first_name', 'last_name', 'email', 'occupation', 'bio'];
+
+    for (const key of candidateKeys) {
+      push(properties[key]);
+    }
+
+    const aliases = properties['aliases'];
+
+    if (Array.isArray(aliases)) {
+      for (const alias of aliases) {
+        push(alias);
+      }
+    }
+
+    const result = Array.from(parts).join(' ');
+
+    return result.length > 0 ? result : null;
+  }
+}
