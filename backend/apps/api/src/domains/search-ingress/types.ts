@@ -5,3 +5,9 @@ export interface CreateEmbeddingDto {
   entityId: string;
   embedding: number[];
 }
+
+export interface CreateVectorDto {
+  entityType: EmbeddableEntityType;
+  entityId: string;
+  searchableText: string[];
+}

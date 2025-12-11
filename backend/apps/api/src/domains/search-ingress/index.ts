@@ -15,12 +15,13 @@ import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { VectorEntity } from './entities/VectorEntity';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
+import { VectorService } from './services/VectorService';
 
 /**
  * @internal
  */
 @Module({
   imports: [TypeOrmModule.forFeature([EmbeddingEntity, VectorEntity]), EmbeddingModule, MemoryModule],
-  providers: [EmbeddingService, PersonSearchIndexListener],
+  providers: [EmbeddingService, PersonSearchIndexListener, VectorService],
 })
 export class SearchIngressModule {}
