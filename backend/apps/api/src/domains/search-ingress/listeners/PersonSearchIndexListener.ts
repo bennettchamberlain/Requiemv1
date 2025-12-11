@@ -23,7 +23,7 @@ export class PersonSearchIndexListener {
   }
 
   @OnEvent(PersonCreatedEvent, { queue: 'search-index' })
-  async handleFileUploaded(payload: PersonCreatedPayload) {
+  async indexPerson(payload: PersonCreatedPayload) {
     this.logger.log('Generating vector embedding for new person', {
       personId: payload.personId,
     });
