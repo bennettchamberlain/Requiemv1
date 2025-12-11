@@ -21,7 +21,7 @@ export class EmbeddingEntity {
   embedding!: number[];
 
   @Column({ type: 'uuid', name: 'user_id' })
-  user_id!: string;
+  userId!: string;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
@@ -35,7 +35,7 @@ export class EmbeddingEntity {
       entityType: entity.entityType,
       entityId: entity.entityId,
       embedding: entity.embedding,
-      user_id: entity.user_id,
+      userId: entity.userId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
