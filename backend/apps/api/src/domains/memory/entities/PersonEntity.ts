@@ -40,6 +40,9 @@ export class PersonEntity {
   @Column({ type: 'text', name: 'linked_table', nullable: false })
   linkedTable!: string;
 
+  @Column({ type: 'uuid', name: 'owner_user_id', nullable: true })
+  userId?: string | null;
+
   @ManyToOne(() => UserEntity, { nullable: true })
   @JoinColumn({ name: 'owner_user_id' })
   user?: UserEntity;
@@ -136,6 +139,7 @@ export class PersonEntity {
       searchContent: entity.searchContent,
       linkedId: entity.linkedId,
       linkedTable: entity.linkedTable,
+      userId: entity.userId || null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       lastAccessed: entity.lastAccessed,
