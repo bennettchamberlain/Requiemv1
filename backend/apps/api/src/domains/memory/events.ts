@@ -163,6 +163,60 @@ declare module '@ci/domains/events/registry' {
 }
 
 /**
+ * Event emitted when creating a new person.
+ *
+ * @see {@link PersonService.create} - The method that emits this person
+ */
+export const PersonCreatedEvent = 'person.created';
+export const PersonUpdatedEvent = 'person.updated';
+export const PersonRemovedEvent = 'person.deleted';
+
+/**
+ * Person payload of the event {@link PersonCreatedEvent}.
+ *
+ * @see {@link PersonCreatedEvent} - The person this payload is associated with
+ * @see {@link PersonService.create} - The method that emits this person payload
+ */
+export type PersonCreatedPayload = {
+  /** The identifier of the newly created person */
+  personId: string;
+};
+
+/**
+ * Person payload of the event {@link PersonUpdatedEvent}.
+ *
+ * @see {@link PersonUpdatedEvent} - The person this payload is associated with
+ * @see {@link PersonService.update} - The method that emits this person payload
+ */
+export type PersonUpdatedPayload = {
+  /** The identifier of the newly created person */
+  personId: string;
+};
+
+/**
+ * Person payload of the event {@link PersonRemovedEvent}.
+ *
+ * @see {@link PersonRemovedEvent} - The person this payload is associated with
+ * @see {@link PersonService.remove} - The method that emits this person payload
+ */
+export type PersonDeletedPayload = {
+  /** The identifier of the newly created person */
+  personId: string;
+};
+
+defineEvent<PersonCreatedPayload>(PersonCreatedEvent);
+defineEvent<PersonUpdatedPayload>(PersonUpdatedEvent);
+defineEvent<PersonDeletedPayload>(PersonRemovedEvent);
+
+declare module '@ci/domains/events/registry' {
+  interface EventRegistry {
+    [PersonCreatedEvent]: PersonCreatedPayload;
+    [PersonUpdatedEvent]: PersonUpdatedPayload;
+    [PersonRemovedEvent]: PersonDeletedPayload;
+  }
+}
+
+/**
  * Event emitted when creating a new place.
  *
  * @see {@link PlaceService.create} - The method that emits this event
