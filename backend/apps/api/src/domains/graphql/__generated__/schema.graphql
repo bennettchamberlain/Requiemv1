@@ -126,6 +126,8 @@ type MessageType implements Node {
 
 type Mutation {
   createPerson(input: CreatePersonInput!): PersonType!
+  removePerson(input: RemovePersonInput!): Boolean!
+  updatePerson(input: UpdatePersonInput!): PersonType
 }
 
 interface Node {
@@ -183,6 +185,10 @@ type Query {
   threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
 }
 
+input RemovePersonInput {
+  id: String!
+}
+
 type SearchConnection {
   edges: [SearchEdge!]!
   pageInfo: PageInfo!
@@ -212,6 +218,12 @@ type ThreadType implements Node {
   id: ID!
   messages(after: String, before: String, first: Int, last: Int): MessageConnection!
   name: String
+}
+
+input UpdatePersonInput {
+  description: String
+  id: String!
+  name: String!
 }
 
 type UserType implements Node {

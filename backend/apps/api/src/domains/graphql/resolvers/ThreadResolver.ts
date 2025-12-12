@@ -1,4 +1,4 @@
-import { NotFoundException, UseGuards } from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, Parent, ResolveField, ID } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
@@ -60,18 +60,14 @@ export class ThreadResolver {
   async thread(
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) id: string,
-  ): Promise<ThreadType> {
+  ): Promise<ThreadType | null> {
     const serviceContext = toServiceContext(context);
 
     const threadId = GlobalUID.parse('thread', id);
 
     const thread = await this.threadService.findById(serviceContext, threadId);
 
-    if (thread == null) {
-      throw new NotFoundException();
-    }
-
-    return ThreadType.toType(thread);
+    return thread ? ThreadType.toType(thread) : null;
   }
 
   @ResolveField(() => MessageConnection)

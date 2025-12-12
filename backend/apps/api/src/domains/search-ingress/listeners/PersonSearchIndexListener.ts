@@ -5,7 +5,14 @@ import { LoggerService } from '@ci/common/logging';
 import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
 import { OnEvent } from '@ci/domains/events';
 import { type Person, PersonService } from '@ci/domains/memory';
-import { PersonCreatedEvent, type PersonCreatedPayload } from '@ci/domains/memory/events';
+import {
+  PersonCreatedEvent,
+  PersonUpdatedEvent,
+  PersonRemovedEvent,
+  type PersonCreatedPayload,
+  type PersonUpdatedPayload,
+  type PersonDeletedPayload,
+} from '@ci/domains/memory/events';
 
 import { EmbeddingService } from '../services/EmbeddingService';
 import { VectorService } from '../services/VectorService';
@@ -23,11 +30,49 @@ export class PersonSearchIndexListener {
   }
 
   @OnEvent(PersonCreatedEvent, { queue: 'search-index' })
-  async indexPerson(payload: PersonCreatedPayload) {
+  async indexPerson(payload: PersonCreatedPayload | PersonUpdatedPayload) {
     this.logger.log('Adding new person to search index', {
       personId: payload.personId,
     });
 
+    await this.upsertPerson(payload);
+  }
+
+  @OnEvent(PersonUpdatedEvent, { queue: 'search-index' })
+  async updatePerson(payload: PersonCreatedPayload | PersonUpdatedPayload) {
+    this.logger.log('Updating person in search index', {
+      personId: payload.personId,
+    });
+
+    await this.upsertPerson(payload);
+  }
+
+  @OnEvent(PersonRemovedEvent, { queue: 'search-index' })
+  async unindexPerson(payload: PersonDeletedPayload) {
+    this.logger.log('Removing person in search index', {
+      personId: payload.personId,
+    });
+
+    const context = {
+      userId: SYSTEM_USER,
+    } satisfies ServiceContext;
+
+    await this.embeddingService.remove(context, {
+      entityType: 'person',
+      entityId: payload.personId,
+    });
+
+    this.logger.log('Removed embedding for person');
+
+    await this.vectorService.remove(context, {
+      entityType: 'person',
+      entityId: payload.personId,
+    });
+
+    this.logger.log('Removed tsvector for person');
+  }
+
+  private async upsertPerson(payload: PersonCreatedPayload | PersonUpdatedPayload) {
     const context = {
       userId: SYSTEM_USER,
     } satisfies ServiceContext;

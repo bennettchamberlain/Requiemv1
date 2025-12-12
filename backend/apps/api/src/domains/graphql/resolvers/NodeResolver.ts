@@ -1,4 +1,4 @@
-import { NotFoundException, UseGuards } from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
@@ -43,61 +43,37 @@ export class NodeResolver {
       case 'file': {
         const file = await this.fileService.findById(serviceContext, id);
 
-        if (file == null) {
-          throw new NotFoundException('File not found');
-        }
-
-        return FileType.toType(file);
+        return file ? FileType.toType(file) : null;
       }
 
       case 'item': {
         const item = await this.itemService.findById(serviceContext, id);
 
-        if (item == null) {
-          throw new NotFoundException('Item not found');
-        }
-
-        return ItemType.toType(item);
+        return item ? ItemType.toType(item) : null;
       }
 
       case 'message': {
         const message = await this.messageService.findById(serviceContext, id);
 
-        if (message == null) {
-          throw new NotFoundException('Message not found');
-        }
-
-        return MessageType.toType(message);
+        return message ? MessageType.toType(message) : null;
       }
 
       case 'person': {
         const person = await this.personService.findById(serviceContext, id);
 
-        if (person == null) {
-          throw new NotFoundException('Person not found');
-        }
-
-        return PersonType.toType(person);
+        return person ? PersonType.toType(person) : null;
       }
 
       case 'thread': {
         const thread = await this.threadService.findById(serviceContext, id);
 
-        if (thread == null) {
-          throw new NotFoundException('Thread not found');
-        }
-
-        return ThreadType.toType(thread);
+        return thread ? ThreadType.toType(thread) : null;
       }
 
       case 'user': {
         const user = await this.userService.findById(serviceContext, id);
 
-        if (user == null) {
-          throw new NotFoundException('User not found');
-        }
-
-        return UserType.toType(user);
+        return user ? UserType.toType(user) : null;
       }
 
       default:

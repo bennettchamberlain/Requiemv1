@@ -1,4 +1,4 @@
-import { NotFoundException, UseGuards } from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
 import { Query, Resolver } from '@nestjs/graphql';
 
 import { Context } from '@ci/common/decorators';
@@ -15,15 +15,11 @@ export class UserResolver {
   constructor(private readonly userService: UserService) {}
 
   @Query(() => UserType, { nullable: true })
-  async me(@Context() context: RequestContext): Promise<UserType> {
+  async me(@Context() context: RequestContext): Promise<UserType | null> {
     const serviceContext = toServiceContext(context);
 
     const user = await this.userService.findById(serviceContext, context.userId!);
 
-    if (user == null) {
-      throw new NotFoundException();
-    }
-
-    return UserType.toType(user);
+    return user ? UserType.toType(user) : null;
   }
 }
