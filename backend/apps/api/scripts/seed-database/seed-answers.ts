@@ -22,7 +22,7 @@ export async function seedAnswers(db: DataSource, filePath: string) {
       // Map old CSV structure to new comprehensive answers table
       await manager.query(
         `
-        INSERT INTO answers (
+        INSERT INTO ci.answers (
           answer_id,
           question_id,
           user_id,

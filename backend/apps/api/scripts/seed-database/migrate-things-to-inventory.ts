@@ -66,7 +66,7 @@ export async function migrateThingsToInventory(db: DataSource, filePath: string)
     for (const record of records) {
       // Check if inventory item already exists (by original_thing_id)
       const existing = await manager.query(
-        `SELECT object_id FROM inventory 
+        `SELECT object_id FROM ci.inventory
          WHERE metadata->>'original_thing_id' = $1`,
         [record.id],
       );
@@ -102,7 +102,7 @@ export async function migrateThingsToInventory(db: DataSource, filePath: string)
 
       // Insert into inventory table
       await manager.query(
-        `INSERT INTO inventory (
+        `INSERT INTO ci.inventory (
           object_id, user_id, name, description, category, subcategory,
           is_digital, metadata, tags, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,

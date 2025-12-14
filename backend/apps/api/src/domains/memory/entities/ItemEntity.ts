@@ -2,7 +2,7 @@ import { AfterLoad, Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateC
 
 export type InventoryCondition = 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a';
 
-@Entity({ name: 'inventory' })
+@Entity({ schema: 'ci', name: 'inventory' })
 export class ItemEntity {
   @PrimaryColumn('uuid', { name: 'object_id' })
   id!: string;

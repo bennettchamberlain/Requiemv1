@@ -18,7 +18,7 @@ export interface RelativeOrientation {
   [key: string]: number | undefined;
 }
 
-@Entity('position')
+@Entity({ schema: 'ci', name: 'positions' })
 export class PositionEntity {
   @Column({ type: 'uuid' })
   id!: string;

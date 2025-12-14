@@ -194,7 +194,7 @@ export class SearchService {
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
 
     const query = `
-      SELECT 
+      SELECT
         entity_id as id,
         'entity' as type,
         entity_type,
@@ -202,7 +202,7 @@ export class SearchService {
         description,
         properties,
         1 - (embedding <=> $1::vector) as score
-      FROM entities
+      FROM ci.entities
       WHERE owner_user_id = $2
         AND embedding IS NOT NULL
         ${entityTypeFilter}
@@ -243,14 +243,14 @@ export class SearchService {
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
 
     const query = `
-      SELECT 
+      SELECT
         fact_id as id,
         'fact' as type,
         fact_statement,
         fact_type,
         source,
         1 - (fact_embedding <=> $1::vector) as score
-      FROM facts
+      FROM ci.facts
       WHERE fact_owner_id = $2
         AND fact_embedding IS NOT NULL
         AND is_current = TRUE
@@ -280,7 +280,7 @@ export class SearchService {
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
 
     const query = `
-      SELECT 
+      SELECT
         dc.chunk_id as id,
         'document_chunk' as type,
         dc.content,
@@ -288,8 +288,8 @@ export class SearchService {
         d.document_id,
         d.title as document_title,
         1 - (dc.chunk_embedding <=> $1::vector) as score
-      FROM document_chunks dc
-      JOIN documents d ON d.document_id = dc.document_id
+      FROM ci.document_chunks dc
+      JOIN ci.documents d ON d.document_id = dc.document_id
       WHERE d.user_id = $2
         AND dc.chunk_embedding IS NOT NULL
       ORDER BY dc.chunk_embedding <=> $1::vector
@@ -319,7 +319,7 @@ export class SearchService {
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
 
     const query = `
-      SELECT 
+      SELECT
         m.message_id as id,
         'message' as type,
         m.content,
@@ -328,8 +328,8 @@ export class SearchService {
         t.thread_id,
         t.title as thread_title,
         1 - (m.message_embedding <=> $1::vector) as score
-      FROM messages m
-      JOIN threads t ON t.thread_id = m.thread_id
+      FROM ci.messages m
+      JOIN ci.threads t ON t.thread_id = m.thread_id
       WHERE m.user_id = $2
         AND m.message_embedding IS NOT NULL
         AND m.is_deleted = FALSE
@@ -397,7 +397,7 @@ export class SearchService {
     const entityTypeFilter = options.entityTypes?.length ? `AND entity_type = ANY($3::text[])` : '';
 
     const query = `
-      SELECT 
+      SELECT
         entity_id as id,
         'entity' as type,
         entity_type,
@@ -405,7 +405,7 @@ export class SearchService {
         description,
         properties,
         ts_rank(search_vector, websearch_to_tsquery('english', $1)) as score
-      FROM entities
+      FROM ci.entities
       WHERE owner_user_id = $2
         AND search_vector @@ websearch_to_tsquery('english', $1)
         ${entityTypeFilter}
@@ -444,14 +444,14 @@ export class SearchService {
     maxResults: number,
   ): Promise<SearchResultItem[]> {
     const query = `
-      SELECT 
+      SELECT
         fact_id as id,
         'fact' as type,
         fact_statement,
         fact_type,
         source,
         ts_rank(fact_search_vector, websearch_to_tsquery('english', $1)) as score
-      FROM facts
+      FROM ci.facts
       WHERE fact_owner_id = $2
         AND fact_search_vector @@ websearch_to_tsquery('english', $1)
         AND is_current = TRUE
@@ -479,7 +479,7 @@ export class SearchService {
     maxResults: number,
   ): Promise<SearchResultItem[]> {
     const query = `
-      SELECT 
+      SELECT
         dc.chunk_id as id,
         'document_chunk' as type,
         dc.content,
@@ -487,8 +487,8 @@ export class SearchService {
         d.document_id,
         d.title as document_title,
         ts_rank(dc.content_search_vector, websearch_to_tsquery('english', $1)) as score
-      FROM document_chunks dc
-      JOIN documents d ON d.document_id = dc.document_id
+      FROM ci.document_chunks dc
+      JOIN ci.documents d ON d.document_id = dc.document_id
       WHERE d.user_id = $2
         AND dc.content_search_vector @@ websearch_to_tsquery('english', $1)
       ORDER BY score DESC
@@ -516,7 +516,7 @@ export class SearchService {
     maxResults: number,
   ): Promise<SearchResultItem[]> {
     const query = `
-      SELECT 
+      SELECT
         m.message_id as id,
         'message' as type,
         m.content,
@@ -525,8 +525,8 @@ export class SearchService {
         t.thread_id,
         t.title as thread_title,
         ts_rank(m.search_vector, websearch_to_tsquery('english', $1)) as score
-      FROM messages m
-      JOIN threads t ON t.thread_id = m.thread_id
+      FROM ci.messages m
+      JOIN ci.threads t ON t.thread_id = m.thread_id
       WHERE m.user_id = $2
         AND m.search_vector @@ websearch_to_tsquery('english', $1)
         AND m.is_deleted = FALSE
@@ -574,7 +574,7 @@ export class SearchService {
             rel.to_entity_id AS other_entity_id,
             'outbound'::text AS direction,
             rel.updated_at
-          FROM relationships rel
+          FROM ci.relationships rel
           WHERE rel.owner_user_id = $1
             AND rel.is_active = TRUE
             AND rel.from_entity_id = ANY($2::uuid[])
@@ -589,7 +589,7 @@ export class SearchService {
             rel.from_entity_id AS other_entity_id,
             'inbound'::text AS direction,
             rel.updated_at
-          FROM relationships rel
+          FROM ci.relationships rel
           WHERE rel.owner_user_id = $1
             AND rel.is_active = TRUE
             AND rel.to_entity_id = ANY($2::uuid[])
@@ -633,7 +633,7 @@ export class SearchService {
       const neighborRows: NeighborEntityRow[] = await this.dataSource.query(
         `
           SELECT entity_id, entity_type, name
-          FROM entities
+          FROM ci.entities
           WHERE entity_id = ANY($1::uuid[])
         `,
         [Array.from(neighborIds)],

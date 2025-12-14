@@ -15,7 +15,7 @@ import { UserEntity, type User } from '@ci/domains/user';
 
 import { EventEntity, Event } from './EventEntity';
 
-@Entity({ name: 'content' })
+@Entity({ schema: 'ci', name: 'content' })
 export class ContentEntity {
   @PrimaryColumn('uuid')
   id!: string;

@@ -10,7 +10,7 @@ import {
 
 import { UserEntity } from '@ci/domains/user';
 
-@Entity('devices')
+@Entity({ schema: 'ci', name: 'devices' })
 export class DeviceEntity {
   @PrimaryColumn({ type: 'uuid' })
   device_id!: string;

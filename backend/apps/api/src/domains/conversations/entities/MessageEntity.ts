@@ -15,7 +15,7 @@ import { UserEntity, type User } from '@ci/domains/user';
 
 import { ThreadEntity, type Thread } from './ThreadEntity';
 
-@Entity({ name: 'messages' })
+@Entity({ schema: 'ci', name: 'messages' })
 export class MessageEntity {
   @PrimaryColumn({ type: 'uuid', name: 'message_id' })
   id!: string;

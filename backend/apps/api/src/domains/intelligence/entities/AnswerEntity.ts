@@ -12,7 +12,7 @@ import { UserEntity, type User } from '@ci/domains/user';
 
 import { QuestionEntity, type Question } from './QuestionEntity';
 
-@Entity('answers')
+@Entity({ schema: 'ci', name: 'answers' })
 export class AnswerEntity {
   @PrimaryColumn({ type: 'uuid', name: 'answer_id' })
   id!: string;

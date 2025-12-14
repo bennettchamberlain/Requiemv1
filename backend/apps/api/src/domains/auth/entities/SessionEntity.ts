@@ -10,7 +10,7 @@ import {
 
 import { UserEntity } from '@ci/domains/user';
 
-@Entity({ schema: 'ci_core', name: 'sessions' })
+@Entity({ schema: 'ci', name: 'sessions' })
 export class SessionEntity {
   @PrimaryColumn('uuid')
   id!: string;

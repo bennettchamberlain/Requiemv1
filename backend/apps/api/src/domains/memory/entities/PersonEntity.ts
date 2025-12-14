@@ -14,7 +14,7 @@ import {
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
-@Entity({ name: 'entities' })
+@Entity({ schema: 'ci', name: 'entities' })
 export class PersonEntity {
   @PrimaryColumn('uuid', { name: 'entity_id' })
   id!: string;

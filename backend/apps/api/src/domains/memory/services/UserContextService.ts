@@ -200,7 +200,7 @@ export class UserContextService {
     // Try to get entity_id from users table first
     const userQuery = `
       SELECT entity_id
-      FROM ci_core.users
+      FROM ci.users
       WHERE id = $1
     `;
     const userResult = await this.dataSource.query(userQuery, [userId]);
@@ -218,7 +218,7 @@ export class UserContextService {
     if (nodes.length > 0) {
       const [node] = nodes;
       if (userResult.length > 0 && !userResult[0].entity_id) {
-        await this.dataSource.query(`UPDATE ci_core.users SET entity_id = $2 WHERE id = $1`, [
+        await this.dataSource.query(`UPDATE ci.users SET entity_id = $2 WHERE id = $1`, [
           userId,
           node.entity_id,
         ]);
@@ -234,7 +234,7 @@ export class UserContextService {
    * Get username from users table
    */
   private async getUsernameFromUsersTable(userId: string): Promise<string | null> {
-    const query = `SELECT username, name FROM ci_core.users WHERE id = $1`;
+    const query = `SELECT username, name FROM ci.users WHERE id = $1`;
     const result = await this.dataSource.query(query, [userId]);
 
     if (result.length > 0) {
@@ -396,7 +396,7 @@ export class UserContextService {
   }> {
     const query = `
       SELECT COUNT(*) as count
-      FROM entities
+      FROM ci.entities
       WHERE owner_user_id = $1
         AND is_active = TRUE
     `;

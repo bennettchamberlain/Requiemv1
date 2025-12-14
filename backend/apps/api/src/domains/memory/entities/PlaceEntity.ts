@@ -16,7 +16,7 @@ import {
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity, type User } from '@ci/domains/user';
 
-@Entity({ name: 'entities' })
+@Entity({ schema: 'ci', name: 'entities' })
 export class PlaceEntity {
   @PrimaryColumn('uuid', { name: 'entity_id' })
   id!: string;

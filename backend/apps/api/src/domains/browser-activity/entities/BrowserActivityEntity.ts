@@ -6,7 +6,7 @@ export interface Device {
   device_id: string;
 }
 
-@Entity('browser_activity')
+@Entity({ schema: 'ci', name: 'browser_activity' })
 export class BrowserActivityEntity {
   @Column({ type: 'uuid' })
   id!: string;

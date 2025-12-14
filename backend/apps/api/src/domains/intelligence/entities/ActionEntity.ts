@@ -15,7 +15,7 @@ import { type Thread, ThreadEntity } from '@ci/domains/conversations';
 import { TagEntity } from '@ci/domains/search';
 import { type User, UserEntity } from '@ci/domains/user';
 
-@Entity({ name: 'actions' })
+@Entity({ schema: 'ci', name: 'actions' })
 export class ActionEntity {
   @PrimaryColumn('uuid')
   id!: string;

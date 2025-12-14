@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column } from 'typeorm';
 
-@Entity({ name: 'communications' })
+@Entity({ schema: 'ci', name: 'communications' })
 export class CommunicationEntity {
   @Column({ type: 'uuid' })
   id!: string;

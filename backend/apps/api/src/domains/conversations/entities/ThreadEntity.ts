@@ -10,7 +10,7 @@ import {
 
 import { UserEntity, type User } from '@ci/domains/user';
 
-@Entity({ name: 'threads' })
+@Entity({ schema: 'ci', name: 'threads' })
 export class ThreadEntity {
   @PrimaryColumn({ type: 'uuid', name: 'thread_id' })
   id!: string;
