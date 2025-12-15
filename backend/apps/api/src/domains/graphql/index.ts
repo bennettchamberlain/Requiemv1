@@ -7,11 +7,13 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
 import { MemoryModule } from '@ci/domains/memory';
+import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
+import { TagLoader } from './loaders/TagLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { FactResolver } from './resolvers/FactResolver';
@@ -20,6 +22,7 @@ import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
+import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
 
@@ -36,6 +39,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ConversationModule,
     FilesModule,
     MemoryModule,
+    SearchNextModule,
     UserModule,
   ],
   providers: [
@@ -48,6 +52,8 @@ import { UserResolver } from './resolvers/UserResolver';
     ItemResolver,
     PersonResolver,
     SearchResolver,
+    TagLoader,
+    TagResolver,
     ThreadMessagesLoader,
     ThreadResolver,
     UserResolver,
