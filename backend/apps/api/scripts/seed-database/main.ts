@@ -15,8 +15,6 @@ import { UserEntity } from '@ci/domains/user';
 import { seedActions } from './seed-actions';
 import { seedAnswers } from './seed-answers';
 import { seedMessages } from './seed-messages';
-import { seedProviders } from './seed-providers';
-import { seedQuestions } from './seed-questions';
 import { seedThreads } from './seed-threads';
 import { seedUsers } from './seed-users';
 /*
@@ -72,12 +70,9 @@ const logger = new Logger(path.basename(__filename));
   try {
     await db.initialize();
 
-    // Providers Data
-    await seedProviders(db, path.resolve(dataDir, './providers-data/providers.csv'));
     // John Smith
     await seedUsers(db, path.resolve(dataDir, './js1-data/js1-users.csv'));
     // Intelligence Data
-    await seedQuestions(db, path.resolve(dataDir, './intelligence-data/questions.csv'));
     await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
     await seedThreads(db, path.resolve(dataDir, './js1-data/js1-threads.csv'));
     await seedActions(db, path.resolve(dataDir, './js1-data/js1-actions.csv'));
