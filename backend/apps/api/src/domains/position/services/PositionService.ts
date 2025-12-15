@@ -370,7 +370,7 @@ export class PositionService {
     }
 
     const rawResults = await this.positionRepository.query(
-      `SELECT * FROM position WHERE ${whereClause} ORDER BY time DESC`,
+      `SELECT * FROM ci.position WHERE ${whereClause} ORDER BY time DESC`,
       params,
     );
 

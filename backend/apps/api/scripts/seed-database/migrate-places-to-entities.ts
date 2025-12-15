@@ -39,7 +39,7 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
 
   await db.transaction(async (manager) => {
     const ownerUserRows: Array<{ id: string }> = await manager.query(
-      `SELECT id FROM ci_core.users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      `SELECT id FROM ci.users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
       [JOHN_SMITH_EMAIL],
     );
 
@@ -58,7 +58,7 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
 
       // Check if entity already exists (by original_place_id)
       const existing = await manager.query(
-        `SELECT entity_id FROM entities
+        `SELECT entity_id FROM ci.entities
          WHERE entity_type = 'Location'
            AND properties->>'original_place_id' = $1`,
         [record.id],
@@ -116,7 +116,7 @@ export async function migratePlacesToEntities(db: DataSource, filePath: string) 
       const ownerUserId = record.user_id && record.user_id !== 'NULL' ? record.user_id : defaultOwnerUserId;
 
       await manager.query(
-        `INSERT INTO entities (
+        `INSERT INTO ci.entities (
           entity_id, entity_type, name, description, properties,
           search_content, is_active, is_archived, owner_user_id,
           created_at, updated_at, last_accessed

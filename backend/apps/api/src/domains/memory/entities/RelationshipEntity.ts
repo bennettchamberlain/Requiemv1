@@ -10,7 +10,7 @@ import {
 
 import { GraphNodeEntity } from './GraphNodeEntity';
 
-@Entity({ name: 'relationships' })
+@Entity({ schema: 'ci', name: 'relationships' })
 export class RelationshipEntity {
   @PrimaryColumn('uuid')
   relationship_id!: string;

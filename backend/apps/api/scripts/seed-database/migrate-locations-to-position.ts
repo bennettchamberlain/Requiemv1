@@ -52,7 +52,7 @@ export async function migrateLocationsToPosition(db: DataSource, filePath: strin
   await db.transaction(async (manager) => {
     for (const record of uniqueRecords) {
       // Check if position already exists
-      const existing = await manager.query(`SELECT 1 FROM position WHERE time = $1 AND user_id = $2`, [
+      const existing = await manager.query(`SELECT 1 FROM ci.position WHERE time = $1 AND user_id = $2`, [
         record.datetime,
         record.user_id,
       ]);
@@ -86,9 +86,9 @@ export async function migrateLocationsToPosition(db: DataSource, filePath: strin
       // Try to find matching location entity from places
       // Match based on spatial intersection with place boundaries
       const matchingEntities = await manager.query(
-        `SELECT entity_id, properties 
-         FROM entities 
-         WHERE entity_type = 'Location' 
+        `SELECT entity_id, properties
+         FROM ci.entities
+         WHERE entity_type = 'Location'
            AND properties->>'original_place_id' IS NOT NULL
          LIMIT 1000`, // Get all location entities for matching
       );
@@ -110,13 +110,13 @@ export async function migrateLocationsToPosition(db: DataSource, filePath: strin
 
       // Insert into position table
       await manager.query(
-        `INSERT INTO position (
-          time, user_id, location, altitude_meters, 
-          accuracy_meters, heading_degrees, source, 
+        `INSERT INTO ci.position (
+          time, user_id, location, altitude_meters,
+          accuracy_meters, heading_degrees, source,
           location_entity_id, is_private
         ) VALUES (
           $1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5,
-          $6, $7, $8::location_source, $9, $10
+          $6, $7, $8::ci.location_source, $9, $10
         )`,
         [
           record.datetime,

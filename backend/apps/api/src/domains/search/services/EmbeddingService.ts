@@ -37,35 +37,35 @@ const ENTITY_CONFIG: Record<
   }
 > = {
   graph_node: {
-    table: 'entities',
+    table: 'ci.entities',
     idColumn: 'entity_id',
     textColumn: 'search_content',
     embeddingColumn: 'embedding',
     userColumn: 'owner_user_id',
   },
   question: {
-    table: 'questions',
+    table: 'ci.questions',
     idColumn: 'question_id',
     textColumn: 'question_text',
     embeddingColumn: 'question_embedding',
     userColumn: undefined,
   },
   answer: {
-    table: 'answers',
+    table: 'ci.answers',
     idColumn: 'answer_id',
     textColumn: 'answer_text',
     embeddingColumn: 'answer_embedding',
     userColumn: 'user_id',
   },
   event: {
-    table: 'events',
+    table: 'ci.events',
     idColumn: 'event_id',
     textColumn: 'title',
     embeddingColumn: 'event_embedding',
     userColumn: 'user_id',
   },
   entity: {
-    table: 'entities',
+    table: 'ci.entities',
     idColumn: 'entity_id',
     textColumn: 'name',
     embeddingColumn: 'embedding',
@@ -103,7 +103,7 @@ export class EmbeddingService {
   async embedQuestion(questionId: string, questionText: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(questionText);
-      await this.dataSource.query(`UPDATE questions SET question_embedding = $1 WHERE question_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.questions SET question_embedding = $1 WHERE question_id = $2`, [
         embeddingString,
         questionId,
       ]);
@@ -123,7 +123,7 @@ export class EmbeddingService {
   async embedAnswer(answerId: string, answerText: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(answerText);
-      await this.dataSource.query(`UPDATE answers SET answer_embedding = $1 WHERE answer_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.answers SET answer_embedding = $1 WHERE answer_id = $2`, [
         embeddingString,
         answerId,
       ]);
@@ -143,7 +143,7 @@ export class EmbeddingService {
   async embedContent(contentId: string, text: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(text);
-      await this.dataSource.query(`UPDATE content SET embedding = $1 WHERE id = $2`, [
+      await this.dataSource.query(`UPDATE ci.content SET embedding = $1 WHERE id = $2`, [
         embeddingString,
         contentId,
       ]);
@@ -163,7 +163,7 @@ export class EmbeddingService {
   async embedEntity(entityId: string, searchContent: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(searchContent);
-      await this.dataSource.query(`UPDATE entities SET embedding = $1 WHERE entity_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.entities SET embedding = $1 WHERE entity_id = $2`, [
         embeddingString,
         entityId,
       ]);
@@ -183,7 +183,7 @@ export class EmbeddingService {
   async embedEvent(eventId: string, searchContent: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(searchContent);
-      await this.dataSource.query(`UPDATE events SET event_embedding = $1 WHERE event_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.events SET event_embedding = $1 WHERE event_id = $2`, [
         embeddingString,
         eventId,
       ]);
@@ -209,7 +209,7 @@ export class EmbeddingService {
     try {
       const embeddingString = await this.generateEmbeddingString(searchContent);
       await this.dataSource.query(
-        `UPDATE communications SET content_embedding = $1 WHERE time = $2 AND user_id = $3 AND communication_type = $4`,
+        `UPDATE ci.communications SET content_embedding = $1 WHERE time = $2 AND user_id = $3 AND communication_type = $4`,
         [embeddingString, new Date(occurredAt), userId, communicationType],
       );
 
@@ -233,7 +233,7 @@ export class EmbeddingService {
     try {
       const text = [objectName, objectDescription].filter(Boolean).join(' ');
       const embeddingString = await this.generateEmbeddingString(text);
-      await this.dataSource.query(`UPDATE inventory SET object_embedding = $1 WHERE object_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.inventory SET object_embedding = $1 WHERE object_id = $2`, [
         embeddingString,
         objectId,
       ]);
@@ -253,7 +253,7 @@ export class EmbeddingService {
   async embedFact(factId: string, factText: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(factText);
-      await this.dataSource.query(`UPDATE facts SET fact_embedding = $1 WHERE fact_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.facts SET fact_embedding = $1 WHERE fact_id = $2`, [
         embeddingString,
         factId,
       ]);
@@ -279,7 +279,7 @@ export class EmbeddingService {
     try {
       if (title) {
         const titleEmbedding = await this.generateEmbeddingString(title);
-        await this.dataSource.query(`UPDATE documents SET title_embedding = $1 WHERE document_id = $2`, [
+        await this.dataSource.query(`UPDATE ci.documents SET title_embedding = $1 WHERE document_id = $2`, [
           titleEmbedding,
           documentId,
         ]);
@@ -287,7 +287,7 @@ export class EmbeddingService {
 
       if (content) {
         const contentEmbedding = await this.generateEmbeddingString(content);
-        await this.dataSource.query(`UPDATE documents SET content_embedding = $1 WHERE document_id = $2`, [
+        await this.dataSource.query(`UPDATE ci.documents SET content_embedding = $1 WHERE document_id = $2`, [
           contentEmbedding,
           documentId,
         ]);
@@ -295,7 +295,7 @@ export class EmbeddingService {
 
       if (summary) {
         const summaryEmbedding = await this.generateEmbeddingString(summary);
-        await this.dataSource.query(`UPDATE documents SET summary_embedding = $1 WHERE document_id = $2`, [
+        await this.dataSource.query(`UPDATE ci.documents SET summary_embedding = $1 WHERE document_id = $2`, [
           summaryEmbedding,
           documentId,
         ]);
@@ -316,7 +316,7 @@ export class EmbeddingService {
   async embedDocumentChunk(chunkId: string, chunkContent: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(chunkContent);
-      await this.dataSource.query(`UPDATE document_chunks SET chunk_embedding = $1 WHERE chunk_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.document_chunks SET chunk_embedding = $1 WHERE chunk_id = $2`, [
         embeddingString,
         chunkId,
       ]);
@@ -336,7 +336,7 @@ export class EmbeddingService {
   async embedMessage(messageId: string, content: string): Promise<boolean> {
     try {
       const embeddingString = await this.generateEmbeddingString(content);
-      await this.dataSource.query(`UPDATE messages SET message_embedding = $1 WHERE message_id = $2`, [
+      await this.dataSource.query(`UPDATE ci.messages SET message_embedding = $1 WHERE message_id = $2`, [
         embeddingString,
         messageId,
       ]);
@@ -358,7 +358,7 @@ export class EmbeddingService {
   async embedAllQuestions(): Promise<number> {
     const questions = await this.dataSource.query(`
       SELECT question_id, question_text
-      FROM questions
+      FROM ci.questions
       WHERE question_embedding IS NULL
       AND question_text IS NOT NULL
     `);
@@ -388,7 +388,7 @@ export class EmbeddingService {
   async embedAllAnswers(): Promise<number> {
     const answers = await this.dataSource.query(`
       SELECT answer_id, answer_text
-      FROM answers
+      FROM ci.answers
       WHERE answer_embedding IS NULL
       AND answer_text IS NOT NULL
     `);
@@ -418,7 +418,7 @@ export class EmbeddingService {
   async embedAllContent(): Promise<number> {
     const content = await this.dataSource.query(`
       SELECT id, text
-      FROM content
+      FROM ci.content
       WHERE embedding IS NULL
       AND text IS NOT NULL
     `);
@@ -448,7 +448,7 @@ export class EmbeddingService {
   async embedAllEntities(): Promise<number> {
     const entities = await this.dataSource.query(`
       SELECT entity_id, search_content
-      FROM entities
+      FROM ci.entities
       WHERE embedding IS NULL
       AND search_content IS NOT NULL
     `);
@@ -478,7 +478,7 @@ export class EmbeddingService {
   async embedAllInventoryItems(): Promise<number> {
     const inventory = await this.dataSource.query(`
       SELECT object_id, name, description
-      FROM inventory
+      FROM ci.inventory
       WHERE object_embedding IS NULL
       AND (name IS NOT NULL OR description IS NOT NULL)
     `);
@@ -508,7 +508,7 @@ export class EmbeddingService {
   async embedAllFacts(): Promise<number> {
     const facts = await this.dataSource.query(`
       SELECT fact_id, fact_statement
-      FROM facts
+      FROM ci.facts
       WHERE fact_embedding IS NULL
       AND fact_statement IS NOT NULL
     `);
@@ -538,7 +538,7 @@ export class EmbeddingService {
   async embedAllDocuments(): Promise<number> {
     const documents = await this.dataSource.query(`
       SELECT document_id, title, content, summary
-      FROM documents
+      FROM ci.documents
       WHERE (title_embedding IS NULL OR content_embedding IS NULL OR summary_embedding IS NULL)
       AND (title IS NOT NULL OR content IS NOT NULL OR summary IS NOT NULL)
     `);
@@ -568,7 +568,7 @@ export class EmbeddingService {
   async embedAllDocumentChunks(): Promise<number> {
     const chunks = await this.dataSource.query(`
       SELECT chunk_id, content
-      FROM document_chunks
+      FROM ci.document_chunks
       WHERE chunk_embedding IS NULL
       AND content IS NOT NULL
     `);
@@ -598,7 +598,7 @@ export class EmbeddingService {
   async embedAllMessages(): Promise<number> {
     const messages = await this.dataSource.query(`
       SELECT message_id, content
-      FROM messages
+      FROM ci.messages
       WHERE message_embedding IS NULL
       AND content IS NOT NULL
     `);

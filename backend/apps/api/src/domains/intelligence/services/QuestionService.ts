@@ -247,14 +247,14 @@ export class QuestionService {
         questions.question_id as id,
         COALESCE(questions.is_private_to, answers.user_id) as user_id
       FROM
-        questions
-      LEFT JOIN answers ON answers.question_id = questions.question_id
-      WHERE questions.is_active = TRUE
-        AND (answers.answer_id IS NULL OR answers.answer_text IS NULL)
+        ci.questions as q
+      LEFT JOIN ci.answers as a ON a.question_id = q.question_id
+      WHERE q.is_active = TRUE
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL)
         AND (
-          questions.is_private_to IS NULL
-          OR answers.user_id IS NULL
-          OR answers.user_id = questions.is_private_to
+          q.is_private_to IS NULL
+          OR a.user_id IS NULL
+          OR a.user_id = q.is_private_to
         )
       LIMIT 5;
     `)) satisfies Array<Row>;
@@ -286,16 +286,16 @@ export class QuestionService {
     const rows = (await this.dataSource.query(
       `
       SELECT
-        questions.question_id as id
+        q.question_id as id
       FROM
-        questions
-      LEFT JOIN answers ON answers.question_id = questions.question_id
-        AND answers.user_id = $1
-      WHERE questions.is_active = TRUE
-        AND (answers.answer_id IS NULL OR answers.answer_text IS NULL)
+        ci.questions as q
+      LEFT JOIN ci.answers as a ON a.question_id = q.question_id
+        AND a.user_id = $1
+      WHERE q.is_active = TRUE
+        AND (a.answer_id IS NULL OR a.answer_text IS NULL)
         AND (
-          questions.is_private_to IS NULL
-          OR questions.is_private_to = $1
+          q.is_private_to IS NULL
+          OR q.is_private_to = $1
         )
       LIMIT 1;
     `,

@@ -233,7 +233,7 @@ class GraphDataGenerator:
             return self.owner_user_id
 
         cur.execute(
-            "SELECT id FROM ci_core.users WHERE LOWER(email) = LOWER(%s) LIMIT 1",
+            "SELECT id FROM ci.users WHERE LOWER(email) = LOWER(%s) LIMIT 1",
             (JOHN_SMITH_EMAIL,),
         )
         row = cur.fetchone()
@@ -954,7 +954,7 @@ class GraphDataGenerator:
                 print(f"Inserting {len(self.entities)} entities...")
                 for entity in self.entities:
                     cur.execute("""
-                        INSERT INTO entities (
+                        INSERT INTO ci.entities (
                             entity_id, entity_type, name, description, properties,
                             search_content, linked_table, linked_id,
                             is_active, is_archived, owner_user_id,
@@ -977,7 +977,7 @@ class GraphDataGenerator:
                 print(f"Inserting {len(self.relationships)} relationships...")
                 for rel in self.relationships:
                     cur.execute("""
-                        INSERT INTO relationships (
+                        INSERT INTO ci.relationships (
                             relationship_id, from_entity_id, to_entity_id, relationship_type,
                             strength, properties, is_bidirectional, is_active,
                             owner_user_id, created_at, updated_at
@@ -997,7 +997,7 @@ class GraphDataGenerator:
                     for user_id, entity_id in self._user_entity_links:
                         cur.execute(
                             """
-                                UPDATE ci_core.users
+                                UPDATE ci.users
                                 SET entity_id = %s
                                 WHERE id = %s AND (entity_id IS NULL OR entity_id <> %s)
                             """,
@@ -1006,9 +1006,9 @@ class GraphDataGenerator:
 
                 cur.execute(
                     """
-                        UPDATE ci_core.users u
+                        UPDATE ci.users u
                         SET entity_id = e.entity_id
-                        FROM entities e
+                        FROM ci.entities e
                         WHERE e.linked_table = 'users'
                           AND e.linked_id = u.id
                           AND (u.entity_id IS NULL OR u.entity_id <> e.entity_id)

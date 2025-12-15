@@ -35,7 +35,7 @@ export async function seedQuestions(db: DataSource, filePath: string) {
 
       await manager.query(
         `
-        INSERT INTO questions (
+        INSERT INTO ci.questions (
           question_id,
           question_text,
           question_category,

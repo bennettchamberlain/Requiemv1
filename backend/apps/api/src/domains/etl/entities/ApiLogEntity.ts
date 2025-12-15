@@ -5,7 +5,7 @@ import { UserEntity } from '@ci/domains/user';
 
 import type { ApiLog } from '../types';
 
-@Entity('api_logs')
+@Entity({ schema: 'ci', name: 'api_logs' })
 export class ApiLogEntity {
   @PrimaryColumn({ type: 'uuid' })
   id!: string;

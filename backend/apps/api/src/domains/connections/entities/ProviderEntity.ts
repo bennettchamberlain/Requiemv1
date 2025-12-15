@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-@Entity({ schema: 'ci_core', name: 'providers' })
+@Entity({ schema: 'ci', name: 'providers' })
 export class ProviderEntity {
   @PrimaryColumn({ type: 'uuid' })
   id!: string;

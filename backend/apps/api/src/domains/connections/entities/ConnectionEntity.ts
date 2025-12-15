@@ -12,7 +12,7 @@ import { UserEntity, type User } from '@ci/domains/user';
 
 import { ProviderEntity, type Provider } from './ProviderEntity';
 
-@Entity({ schema: 'ci_core', name: 'connections' })
+@Entity({ schema: 'ci', name: 'connections' })
 export class ConnectionEntity {
   @PrimaryColumn({ type: 'uuid' })
   id!: string;

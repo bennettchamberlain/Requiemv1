@@ -11,7 +11,7 @@ import {
 
 import { UserEntity, User } from '@ci/domains/user';
 
-@Entity({ name: 'events' })
+@Entity({ schema: 'ci', name: 'events' })
 export class EventEntity {
   @PrimaryColumn('uuid', { name: 'event_id' })
   id!: string;

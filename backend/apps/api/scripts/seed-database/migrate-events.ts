@@ -89,7 +89,7 @@ export async function migrateEvents(db: DataSource, filePath: string) {
     for (const record of records) {
       // Check if event already exists (by original_event_id)
       const existing = await manager.query(
-        `SELECT event_id FROM events 
+        `SELECT event_id FROM ci.events
          WHERE metadata->>'original_event_id' = $1`,
         [record.id],
       );
@@ -153,7 +153,7 @@ export async function migrateEvents(db: DataSource, filePath: string) {
 
       // Insert into events table
       await manager.query(
-        `INSERT INTO events (
+        `INSERT INTO ci.events (
           event_id, user_id, start_time, end_time, title, description,
           event_type, category, source_type, source_system, source_id,
           confidence_score, is_recurring, is_all_day, is_private,

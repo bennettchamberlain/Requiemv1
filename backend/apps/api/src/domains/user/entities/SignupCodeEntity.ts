@@ -1,6 +1,6 @@
 import { Entity, Column, PrimaryColumn, CreateDateColumn } from 'typeorm';
 
-@Entity({ schema: 'ci_core', name: 'signup_code' })
+@Entity({ schema: 'ci', name: 'signup_code' })
 export class SignupCodeEntity {
   @PrimaryColumn()
   id!: string;

@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
 
-@Entity({ name: 'facts' })
+@Entity({ schema: 'ci', name: 'facts' })
 export class FactEntity {
   @PrimaryColumn('uuid', { name: 'fact_id' })
   id!: string;

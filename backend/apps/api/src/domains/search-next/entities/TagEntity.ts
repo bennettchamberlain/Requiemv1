@@ -12,7 +12,7 @@ import {
 
 import { type EntityTag, EntityTagEntity } from './EntityTagEntity';
 
-@Entity({ name: 'tags', schema: 'ci_search' })
+@Entity({ schema: 'ci_search', name: 'tags' })
 @Unique(['label', 'userId'])
 export class TagEntity {
   @PrimaryColumn({ type: 'uuid' })
