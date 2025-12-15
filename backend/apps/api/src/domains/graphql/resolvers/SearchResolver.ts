@@ -19,7 +19,7 @@ export class SearchResolver {
   constructor(
     private readonly threadService: ThreadService,
     private readonly personService: PersonService,
-    private readonly searchEgressServiceService: SearchService,
+    private readonly searchService: SearchService,
   ) {}
 
   @Query(() => SearchConnection)
@@ -30,13 +30,13 @@ export class SearchResolver {
   ): Promise<SearchConnection> {
     const serviceContext = toServiceContext(context);
 
-    const queryResult = await this.searchEgressServiceService.searchByQuery(serviceContext, query);
+    const queryResult = await this.searchService.search(serviceContext, { query });
 
     const hydrated = await Promise.all(
       queryResult.map(async (result) => {
         console.log('person to hydrate', result);
 
-        return this.personService.findById(serviceContext, result.entityId);
+        return this.personService.findById(serviceContext, result.id);
       }),
     );
 
