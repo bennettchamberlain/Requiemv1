@@ -32,25 +32,29 @@ class UserDossierBuilder:
     ) -> Optional[Dict[str, Any]]:
         lookback_days = max(1, lookback_override or self._lookback_days)
         window_end = period_end
-        window_start = window_end - timedelta(days=lookback_days)
+        daily_window_start = window_end - timedelta(days=lookback_days)
+        hourly_window_start = window_end - timedelta(days=1)
 
-        daily_summaries = storage.get_daily_summaries(user_id, window_start, window_end)
-        if not daily_summaries:
+        daily_summaries = storage.get_daily_summaries(user_id, daily_window_start, window_end)
+        hourly_summaries = storage.get_hourly_summaries(user_id, hourly_window_start, window_end)
+
+        if not daily_summaries and not hourly_summaries:
             logger.info(
                 "dossier_builder_skipped_no_summaries",
                 user_id=str(user_id),
-                window_start=window_start.isoformat(),
+                window_start=daily_window_start.isoformat(),
                 window_end=window_end.isoformat(),
             )
             return None
 
-        context_payload = daily_summaries[-10:]
+        context_payload = daily_summaries[-30:]
         dossier = summarizer.generate_user_dossier(
             user_id=str(user_id),
-            lookback_start=window_start,
+            lookback_start=daily_window_start,
             lookback_end=window_end,
             timezone=timezone,
             daily_summaries=context_payload,
+            hourly_summaries=hourly_summaries[-24:],
             max_chars=self._max_chars,
             previous_dossier=previous_dossier,
         )
@@ -63,7 +67,7 @@ class UserDossierBuilder:
         dossier.setdefault(
             "sourceWindow",
             {
-                "start": window_start.isoformat(),
+                "start": daily_window_start.isoformat(),
                 "end": window_end.isoformat(),
                 "timezone": timezone,
             },

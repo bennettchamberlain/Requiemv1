@@ -615,10 +615,11 @@ Deliver a concise, reflective narrative.""",
         lookback_end: datetime,
         timezone: str,
         daily_summaries: List[Dict[str, Any]],
+        hourly_summaries: List[Dict[str, Any]],
         max_chars: int,
         previous_dossier: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        if not daily_summaries:
+        if not daily_summaries and not hourly_summaries:
             logger.info("dossier_generation_skipped_no_summaries", user_id=user_id)
             return None
 
@@ -630,20 +631,24 @@ Deliver a concise, reflective narrative.""",
             lookback_end=lookback_end,
             timezone=timezone,
             daily_summaries=daily_summaries,
+            hourly_summaries=hourly_summaries,
             previous_dossier=previous_dossier,
         )
 
         messages = [
             {
                 "role": "system",
-                "content": """You are drafting a concise user dossier for another AI assistant. The dossier should summarize personality, conversational preferences, challenges, and best practices for interacting with the user. Keep the response factual, grounded in the supplied summaries (and prior dossier if provided), and under 4000 characters. Prefer incremental updates: reuse existing guidance unless the new data clearly requires a change. Respond with valid JSON matching:
+                "content": """You are drafting a concise user dossier for another AI assistant. 
+                The dossier should summarize the user's tone and personality, conversational preferences, any challenges they are facing or topics they are interested in, and best practices for interacting with the user. 
+                Keep the response factual, grounded in the supplied summaries (and prior dossier if provided), and under 4000 characters. Prefer incremental updates: reuse existing guidance unless the new data clearly requires a change. Respond with valid JSON matching:
 {
   \"summary\": string,
   \"tone\": string | null,
   \"personalityTraits\": string[] | null,
   \"interactionGuidelines\": string[] | null,
   \"preferences\": string[] | null,
-  \"challenges\": string[] | null
+  \"challenges\": string[] | null,
+  \"interests\": string[] | null
 }
 Avoid markdown or additional prose.""",
             },
@@ -688,15 +693,18 @@ Avoid markdown or additional prose.""",
         lookback_end: datetime,
         timezone: str,
         daily_summaries: List[Dict[str, Any]],
+        hourly_summaries: List[Dict[str, Any]],
         previous_dossier: Optional[Dict[str, Any]],
     ) -> str:
         lines: List[str] = [
             f"User: {user_id}",
             f"Window: {lookback_start.isoformat()} to {lookback_end.isoformat()} ({timezone})",
             "",
-            "Daily Summaries:",
+            "Daily Summaries (last month):",
         ]
 
+        if not daily_summaries:
+            lines.append("- No daily summaries available in lookback window.")
         for record in daily_summaries:
             start_val = record.get('period_start') or record.get('periodStart')
             start_label = start_val.strftime('%Y-%m-%d') if isinstance(start_val, datetime) else str(start_val)
@@ -724,6 +732,28 @@ Avoid markdown or additional prose.""",
                 for insight in insights:
                     lines.append(f"    - {insight}")
 
+        if hourly_summaries:
+            lines.append("")
+            lines.append("Hourly Snapshots (last 24h):")
+            for record in hourly_summaries[-24:]:
+                start_val = record.get('period_start') or record.get('periodStart')
+                start_label = start_val.strftime('%Y-%m-%d %H:%M') if isinstance(start_val, datetime) else str(start_val)
+                summary_text = self._coerce_optional_string(record.get('summary_text')) or ''
+                lines.append(f"- {start_label}:")
+                if summary_text:
+                    lines.append(f"  Summary: {summary_text}")
+                counts = record.get('activity_counts') or {}
+                highlights = [
+                    f"{key}={value}"
+                    for key, value in counts.items()
+                    if key != 'total' and isinstance(value, (int, float)) and value
+                ][:5]
+                if highlights:
+                    lines.append(f"  Signals: {', '.join(highlights)}")
+        else:
+            lines.append("")
+            lines.append("Hourly Snapshots (last 24h): none recorded")
+
         if previous_dossier:
             lines.append("")
             lines.append("Previous Dossier Snapshot (use as baseline):")
@@ -739,6 +769,7 @@ Avoid markdown or additional prose.""",
                 ("Interaction Guidelines", previous_dossier.get('interactionGuidelines')),
                 ("Preferences", previous_dossier.get('preferences')),
                 ("Challenges", previous_dossier.get('challenges')),
+                ("Interests", previous_dossier.get('interests')),
             ):
                 normalized_values = self._normalize_string_list(raw_values, limit=5)
                 if normalized_values:
@@ -802,6 +833,7 @@ Avoid markdown or additional prose.""",
             'interactionGuidelines': self._normalize_string_list(payload.get('interactionGuidelines'), item_limit=300),
             'preferences': self._normalize_string_list(payload.get('preferences')),
             'challenges': self._normalize_string_list(payload.get('challenges'), item_limit=300),
+            'interests': self._normalize_string_list(payload.get('interests')),
             'metadata': payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
             'lastUpdatedAt': self._coerce_optional_string(payload.get('lastUpdatedAt')) or datetime.utcnow().isoformat(),
             'version': payload.get('version', 1),
@@ -870,6 +902,7 @@ Avoid markdown or additional prose.""",
             'interactionGuidelines': guidelines,
             'preferences': None,
             'challenges': None,
+            'interests': None,
         }
 
     def _aggregate_counts(self, summaries: List[Dict[str, Any]]) -> Dict[str, int]:

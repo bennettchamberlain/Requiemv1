@@ -41,7 +41,7 @@
     "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",
     "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION",
     "scheduled.memory.summaries": "ENABLE_SCHEDULED_MEMORY_SUMMARIES",
-    "pinned.demo.models": "ENABLE_PINNED_DEMO_MODELS"
+    "pinned.demo.models": "ENABLE_PINNED_DEMO_MODELS",
     "enable.system.prompt": "ENABLE_SYSTEM_PROMPT"
   },
   "environment": {
