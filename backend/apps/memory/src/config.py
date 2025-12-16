@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     queue_error_backoff_seconds: int = Field(
         default_factory=lambda: int(os.getenv("MEMORY_QUEUE_ERROR_BACKOFF_SECONDS", 5))
     )
+    schema_detection_max_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("MEMORY_SCHEMA_DETECTION_MAX_ATTEMPTS", 0))
+    )
+    schema_detection_retry_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("MEMORY_SCHEMA_DETECTION_RETRY_SECONDS", 2))
+    )
     
     # Summarization Configuration
     summary_overlap_minutes: int = Field(

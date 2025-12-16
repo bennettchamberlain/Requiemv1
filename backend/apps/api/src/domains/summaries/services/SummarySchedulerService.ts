@@ -3,7 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { LoggerService } from '@ci/common/services';
+import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { EventService, Events, SummaryPeriodType } from '@ci/domains/events';
 import { UserEntity } from '@ci/domains/user';
@@ -15,8 +15,6 @@ interface DateWindow {
 
 @Injectable()
 export class SummarySchedulerService {
-  private readonly logger = new LoggerService(SummarySchedulerService.name);
-
   private readonly timezone = 'UTC';
 
   /** Queue name for memory summaries (mirrors memory service default). */
@@ -26,7 +24,10 @@ export class SummarySchedulerService {
     private readonly eventService: EventService,
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(SummarySchedulerService.name);
+  }
 
   @Cron('5 * * * *', { timeZone: 'UTC' })
   async enqueueHourlySummaries(): Promise<void> {

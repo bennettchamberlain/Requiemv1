@@ -534,7 +534,7 @@ def _resolve_user_entity_id(user_id: uuid.UUID) -> Optional[str]:
     rows = db.execute_query(
         """
         SELECT entity_id
-        FROM ci_core.users
+        FROM ci.users
         WHERE id = :user_id
         LIMIT 1
         """,
@@ -566,7 +566,7 @@ def _resolve_user_entity_id(user_id: uuid.UUID) -> Optional[str]:
     if rows and not rows[0].get('entity_id'):
         db.execute_write(
             """
-            UPDATE ci_core.users
+            UPDATE ci.users
             SET entity_id = :entity_id,
                 updated_at = NOW()
             WHERE id = :user_id

@@ -38,7 +38,7 @@ class SummaryWorker:
 
     def __init__(self):
         self.running = False
-        self.job_schema = self._detect_job_schema()
+        self.job_schema = self._wait_for_job_schema()
 
     def start(self):
         self.running = True
@@ -575,6 +575,42 @@ class SummaryWorker:
             output=pick(['output', 'output_data'], default=None, required=False),
         )
 
+    def _wait_for_job_schema(self) -> JobSchema:
+        attempts_config = settings.schema_detection_max_attempts
+        retry_delay = max(settings.schema_detection_retry_seconds, 0.5)
+        attempt = 0
+        last_error: Optional[Exception] = None
+
+        while attempts_config <= 0 or attempt < attempts_config:
+            attempt += 1
+            try:
+                schema = self._detect_job_schema()
+                if attempt > 1:
+                    logger.info(
+                        "job_schema_ready",
+                        attempts=attempt,
+                    )
+                return schema
+            except RuntimeError as exc:
+                last_error = exc
+                logger.warning(
+                    "job_schema_unavailable",
+                    attempt=attempt,
+                    max_attempts=attempts_config if attempts_config > 0 else None,
+                    error=str(exc),
+                )
+                time.sleep(retry_delay)
+
+        logger.error(
+            "job_schema_unavailable_fatal",
+            attempts=attempt,
+            error=str(last_error) if last_error else "unknown",
+        )
+        if last_error:
+            raise last_error
+
+        raise RuntimeError("Unable to detect PgBoss job schema")
+
     def _build_fetch_sql(self) -> str:
         schema = self.job_schema
         return f"""
@@ -697,7 +733,7 @@ class SummaryWorker:
         records = db.execute_query(
             """
             SELECT entity_id
-            FROM ci_core.users
+            FROM ci.users
             WHERE id = :user_id
             LIMIT 1
             """,
@@ -729,7 +765,7 @@ class SummaryWorker:
         if records and not records[0].get('entity_id'):
             db.execute_write(
                 """
-                UPDATE ci_core.users
+                UPDATE ci.users
                 SET entity_id = :entity_id,
                     updated_at = NOW()
                 WHERE id = :user_id
