@@ -24,3 +24,8 @@ export interface TagEntitiesDto {
   forUserId?: string;
   entities: EntityIdentifier<TaggableEntity>[];
 }
+
+export type SearchResult = {
+  type: IndexableEntity;
+  id: string;
+};
