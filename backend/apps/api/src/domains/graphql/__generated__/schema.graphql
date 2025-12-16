@@ -2,6 +2,28 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type ActionConnection implements Connection {
+  edges: [ActionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ActionEdge implements Edge {
+  cursor: String!
+  node: ActionType!
+}
+
+type ActionType implements Node & Taggable {
+  createdAt: DateTime!
+  id: ID!
+  imageUrl: String!
+  tags: [EntityTagType!]!
+  text: String!
+  thread: ThreadType
+  title: String!
+  updatedAt: DateTime!
+}
+
 interface Connection {
   edges: [Edge!]!
   pageInfo: PageInfo!
@@ -178,6 +200,8 @@ type PersonType implements Node & Taggable {
 }
 
 type Query {
+  action(id: ID!): ActionType
+  actions(after: String, before: String, first: Int, last: Int): ActionConnection!
   fact(id: ID!): FactType
   facts(after: String, before: String, first: Int, last: Int): FactConnection!
   file(id: ID!): FileType
