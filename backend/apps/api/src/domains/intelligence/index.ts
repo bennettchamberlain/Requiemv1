@@ -30,7 +30,7 @@ import { EventsModule } from '@ci/domains/events';
 import { ActionsController } from './controllers/ActionsController';
 import { AnswersController } from './controllers/AnswersController';
 import { QuestionsController } from './controllers/QuestionsController';
-import { ActionEntity } from './entities/ActionEntity';
+import { type Action, ActionEntity } from './entities/ActionEntity';
 import { AnswerEntity } from './entities/AnswerEntity';
 import { QuestionEntity } from './entities/QuestionEntity';
 import { ActionService } from './services/ActionService';
@@ -53,3 +53,5 @@ export { ActionEntity, AnswerEntity, QuestionEntity };
 
 // Services
 export { ActionService, AnswerService, QuestionService };
+
+export type { Action };
