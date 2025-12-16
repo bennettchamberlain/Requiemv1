@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { type UserServiceContext } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
-import { UserServiceContext } from '@ci/common/types';
 
 import { EmbeddingEntity } from '../entities/EmbeddingEntity';
 import { VectorEntity } from '../entities/VectorEntity';

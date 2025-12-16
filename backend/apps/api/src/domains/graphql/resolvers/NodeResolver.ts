@@ -1,10 +1,8 @@
 import { UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ItemService, PersonService } from '@ci/domains/memory';

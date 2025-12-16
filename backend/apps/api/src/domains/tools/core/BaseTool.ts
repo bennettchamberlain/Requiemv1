@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { v4 as uuidv4 } from 'uuid';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { RequestContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
-import type { RequestContext } from '@ci/common/types';
 
 import type { ToolSchema, ToolResult, ToolExecutionContext, ToolError } from './types';
 

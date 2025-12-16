@@ -3,8 +3,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import plimit from 'p-limit';
 import PgBoss, { JobWithMetadata } from 'pg-boss';
 
+import { ContextService } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { ContextService } from '@ci/common/services';
 import config from '@ci/configuration';
 
 import { DEFAULT_QUEUE } from '../constants';

@@ -8,8 +8,8 @@ import {
   Ollama,
 } from 'ollama';
 
+import type { RequestContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 import { ToolRegistry, type ToolSchema } from '@ci/domains/tools';
 

@@ -8,11 +8,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
-import { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 
 import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';

@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { UserServiceContext, SYSTEM_USER } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
+import { type UserServiceContext, SYSTEM_USER, toServiceContext } from '@ci/common/context';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { GraphEventService, GraphQueryService } from '@ci/domains/memory';

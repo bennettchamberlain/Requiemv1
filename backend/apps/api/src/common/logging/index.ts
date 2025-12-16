@@ -10,3 +10,4 @@ import { LoggerService } from './services/LoggerService';
 export class LoggingModule {}
 
 export { LoggerService };
+export { RequestLoggerMiddleware } from './middleware/RequestLoggerMiddleware';

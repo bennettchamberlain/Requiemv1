@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 import { EventService } from '@ci/domains/events';
 

@@ -1,10 +1,9 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import type { RequestContext } from '@ci/common/types';
 
 import { McpToolsService, type McpExecuteResult } from '../services/McpToolsService';
 

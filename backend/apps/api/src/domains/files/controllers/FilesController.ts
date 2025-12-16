@@ -11,10 +11,8 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import type { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 
 import { FileService } from '../services/FileService';
 

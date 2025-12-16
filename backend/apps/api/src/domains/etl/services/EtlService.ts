@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
+import type { RequestContext, ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import type { RequestContext, ServiceContext } from '@ci/common/types';
 import {
   ClientFactory,
   ConnectionService,

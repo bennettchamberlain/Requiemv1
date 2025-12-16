@@ -4,8 +4,7 @@ import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { z } from 'zod';
 
-import { ContextService } from '@ci/common/services';
-import { SYSTEM_USER } from '@ci/common/types';
+import { ContextService, SYSTEM_USER } from '@ci/common/context';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 

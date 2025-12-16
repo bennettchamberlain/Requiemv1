@@ -10,8 +10,8 @@ import {
 import { Request } from 'express';
 import { z } from 'zod';
 
+import { SYSTEM_USER } from '@ci/common/context';
 import { ValidationPipe } from '@ci/common/pipes';
-import { SYSTEM_USER } from '@ci/common/types';
 import { SignupCodeService, type SignupDto, UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';

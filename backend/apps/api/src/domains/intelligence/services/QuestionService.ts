@@ -3,8 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { ServiceContext } from '@ci/common/types';
-import { SYSTEM_USER } from '@ci/common/types';
+import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { EventService } from '@ci/domains/events';
 import {
   QuestionCreatedEvent,

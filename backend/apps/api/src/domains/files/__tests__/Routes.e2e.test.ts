@@ -5,8 +5,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { type Request, type Response, type NextFunction } from 'express';
 import request from 'supertest';
 
+import { ContextService } from '@ci/common/context';
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
-import { ContextService } from '@ci/common/services';
 import { EventService } from '@ci/domains/events';
 
 import { FilesModule } from '..';

@@ -13,9 +13,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
+import {
+  SYSTEM_USER,
+  type RequestContext,
+  type ServiceContext,
+  type UserServiceContext,
+} from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { SYSTEM_USER, type ServiceContext, UserServiceContext } from '@ci/common/types';
-import { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 import { FileUploadedEvent } from '@ci/domains/files/events';

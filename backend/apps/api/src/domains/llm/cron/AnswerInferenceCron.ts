@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 
-import { Cron } from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/logging';
+import { Cron } from '@ci/common/schedule';
 import config from '@ci/configuration';
 import { EventService, Events } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';

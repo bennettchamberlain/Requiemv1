@@ -1,8 +1,7 @@
 import { Controller, Get, NotFoundException, UseGuards } from '@nestjs/common';
 
-import { Context } from '@ci/common/decorators';
+import { Context, RequestContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { RequestContext } from '@ci/common/types';
 
 import { UserService } from '../services/UserService';
 

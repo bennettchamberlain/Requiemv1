@@ -3,8 +3,8 @@ import { CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 
-import { Cron } from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/logging';
+import { Cron } from '@ci/common/schedule';
 import config from '@ci/configuration';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';

@@ -1,11 +1,10 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext } from '@ci/common/context';
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
-import { RequestContext } from '@ci/common/types';
 
 import { MemoryService } from '../services/MemoryService';
 import { MemorySearchParams } from '../types';

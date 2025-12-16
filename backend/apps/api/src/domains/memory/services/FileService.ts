@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { RequestContext } from '@ci/common/types';
+import { type RequestContext } from '@ci/common/context';
 import { OnEvent } from '@ci/domains/events';
 import {
   FileService as FileStorageService,
