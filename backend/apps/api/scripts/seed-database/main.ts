@@ -4,11 +4,9 @@ import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import config from '@ci/configuration';
-import { ConnectionEntity, ProviderEntity } from '@ci/domains/connections';
 import { MessageEntity, ThreadEntity } from '@ci/domains/conversations';
 import { FileEntity } from '@ci/domains/files';
 import { ActionEntity, AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
-import { ContentEntity, EventEntity, PersonEntity, PlaceEntity, ThingEntity } from '@ci/domains/memory';
 import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
@@ -17,13 +15,6 @@ import { seedAnswers } from './seed-answers';
 import { seedMessages } from './seed-messages';
 import { seedThreads } from './seed-threads';
 import { seedUsers } from './seed-users';
-/*
-import { seedContent } from './seed-content';
-import { seedEvents } from './seed-events';
-import { seedPeople } from './seed-people';
-import { seedPlaces } from './seed-places';
-import { seedThings } from './seed-things';
-*/
 
 const logger = new Logger(path.basename(__filename));
 
@@ -43,19 +34,10 @@ const logger = new Logger(path.basename(__filename));
       ThreadEntity,
       // Files
       FileEntity,
-      // Memory
-      ContentEntity,
-      EventEntity,
-      PersonEntity,
-      PlaceEntity,
-      ThingEntity,
       // Intelligence
       ActionEntity,
       AnswerEntity,
       QuestionEntity,
-      // Providers
-      ConnectionEntity,
-      ProviderEntity,
       // Search,
       TagEntity,
       // Users
@@ -70,22 +52,12 @@ const logger = new Logger(path.basename(__filename));
   try {
     await db.initialize();
 
-    // John Smith
     await seedUsers(db, path.resolve(dataDir, './js1-data/js1-users.csv'));
-    // Intelligence Data
     await seedAnswers(db, path.resolve(dataDir, './js1-data/js1-answers.csv'));
     await seedThreads(db, path.resolve(dataDir, './js1-data/js1-threads.csv'));
     await seedActions(db, path.resolve(dataDir, './js1-data/js1-actions.csv'));
     await seedMessages(db, path.resolve(dataDir, './js1-data/js1-messages.csv'));
-    /*
-    await seedEvents(db, path.resolve(dataDir, './js1-data/js1-events.csv'));
-    await seedPeople(db, path.resolve(dataDir, './js1-data/js1-people.csv'));
-    await seedContacts(db, path.resolve(dataDir, './js1-data/js1-contacts.csv'));
-    await seedContent(db, path.resolve(dataDir, './js1-data/js1-content.csv'));
-    await seedThings(db, path.resolve(dataDir, './js1-data/js1-things.csv'));
-    await seedPlaces(db, path.resolve(dataDir, './js1-data/js1-places.csv'));
-    await seedLocations(db, path.resolve(dataDir, './js1-data/js1-locations.csv'));
-*/
+
     process.exit(0);
   } catch (err) {
     error = err as Error;
