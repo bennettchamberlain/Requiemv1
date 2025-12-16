@@ -7,8 +7,8 @@ import { ContextService } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
-import { EventListenerRegistry } from '../event-registration';
 import { DEFAULT_QUEUE, WRITER_ONLY_QUEUES } from '../constants';
+import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
 import { EventRegistry } from '../registry';
 

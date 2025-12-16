@@ -55,11 +55,6 @@ export const enum Events {
 
 export type SummaryPeriodType = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'seasonal' | 'yearly';
 
-interface FileUploadPayload extends EventPayload {
-  fileId: string;
-  userId?: string;
-}
-
 interface ChatSummarizationPayload extends EventPayload {
   ownerId: string;
   threadId: string;
