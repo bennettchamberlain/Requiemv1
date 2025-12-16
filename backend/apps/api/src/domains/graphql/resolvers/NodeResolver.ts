@@ -5,10 +5,12 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtAuthGuard } from '@ci/common/guards';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
+import { ActionService } from '@ci/domains/intelligence';
 import { ItemService, PersonService } from '@ci/domains/memory';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
 
+import { ActionType } from '../types/ActionType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
@@ -23,6 +25,7 @@ import { UserType } from '../types/UserType';
 @Resolver(() => Node)
 export class NodeResolver {
   constructor(
+    private readonly actionService: ActionService,
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
@@ -41,6 +44,12 @@ export class NodeResolver {
     const { type, id } = GlobalUID.decode(gid);
 
     switch (type) {
+      case 'action': {
+        const action = await this.actionService.findById(serviceContext, id);
+
+        return action ? ActionType.toType(action) : null;
+      }
+
       case 'file': {
         const file = await this.fileService.findById(serviceContext, id);
 
