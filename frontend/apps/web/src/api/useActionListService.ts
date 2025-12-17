@@ -1,41 +1,59 @@
-import { useCallback, useEffect, useState } from 'react';
-
-import { fetchJson } from '@ci/common';
-
-import { useAuth } from '@/hooks';
+import { gql, useQuery } from '@apollo/client';
 
 import { type Action } from './types';
 
-export function useActionListService() {
-  const [{ authToken }] = useAuth();
-
-  const [actions, setActions] = useState<Action[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown | null>(null);
-
-  const fetchAnswers = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const data = await fetchJson<Action[]>('/api/actions', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      setActions(data);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
+const GET_ACTIONS = gql`
+  query GetActions {
+    actions {
+      edges {
+        node {
+          id
+          title
+          text
+          imageUrl
+          thread {
+            id
+          }
+          tags {
+            label
+          }
+        }
+      }
     }
-  }, [authToken]);
+  }
+`;
 
-  useEffect(() => {
-    fetchAnswers();
-  }, []);
+interface GetActionsResponse {
+  actions: {
+    edges: {
+      node: {
+        id: string;
+        title: string;
+        text: string;
+        imageUrl?: string;
+        thread: {
+          id: string;
+        };
+        tags: {
+          label: string;
+        }[];
+      };
+    }[];
+  };
+}
+
+export function useActionListService() {
+  const { data, loading, error } = useQuery<GetActionsResponse>(GET_ACTIONS);
+
+  const actions: Action[] =
+    data?.actions.edges.map(({ node }) => ({
+      id: atob(node.id).split(':')[1],
+      title: node.title,
+      text: node.text,
+      imageUrl: node.imageUrl,
+      threadId: atob(node.thread.id).split(':')[1],
+      tags: node.tags.map((t) => t.label),
+    })) || [];
 
   return [
     {

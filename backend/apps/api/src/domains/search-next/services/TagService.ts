@@ -353,7 +353,8 @@ export class TagService {
     context: UserServiceContext,
     labels: string[],
   ): Promise<EntityIdentifier<TaggableEntity>[]> {
-    const uniqueLabels = [...new Set(labels)];
+    const validatedLabels = labels.map((label) => this.validateLabel(label));
+    const uniqueLabels = [...new Set(validatedLabels)];
 
     if (uniqueLabels.length === 0) {
       return [];
@@ -381,12 +382,12 @@ export class TagService {
   }
 
   private validateLabel(label?: string): string {
-    const trimmedLabel = label?.trim() || '';
+    const validatedLabel = (label?.trim() || '').toLowerCase();
 
-    if (trimmedLabel.length === 0) {
+    if (validatedLabel.length === 0) {
       throw new Error('Tag label cannot be empty');
     }
 
-    return trimmedLabel;
+    return validatedLabel;
   }
 }
