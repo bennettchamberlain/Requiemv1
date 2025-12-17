@@ -168,10 +168,6 @@ export class CommunicationService {
       updateData.summary = data.summary;
     }
 
-    if (data.tags) {
-      updateData.tags = data.tags;
-    }
-
     if (data.connection_id) {
       updateData.connectionId = data.connection_id;
     }
