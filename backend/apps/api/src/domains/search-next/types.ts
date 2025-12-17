@@ -20,7 +20,7 @@ export interface UpdateTagDto {
 }
 
 export interface TagEntitiesDto {
-  label: string;
+  labels: string[];
   forUserId?: string;
   entities: EntityIdentifier<TaggableEntity>[];
 }

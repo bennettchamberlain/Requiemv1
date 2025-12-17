@@ -80,7 +80,7 @@ export class TagResolver {
     });
 
     return this.tagService.tagEntities(serviceContext, {
-      label: input.label,
+      labels: input.labels,
       entities,
     });
   }
@@ -106,7 +106,7 @@ export class TagResolver {
     });
 
     return this.tagService.untagEntities(serviceContext, {
-      label: input.label,
+      labels: input.labels,
       entities,
     });
   }

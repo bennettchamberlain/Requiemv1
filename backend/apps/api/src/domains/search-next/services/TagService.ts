@@ -160,7 +160,7 @@ export class TagService {
   }
 
   async tagEntities(context: ServiceContext, data: TagEntitiesDto): Promise<boolean> {
-    const label = this.validateLabel(data.label);
+    const labels = data.labels.map((label) => this.validateLabel(label));
 
     if (context.userId === SYSTEM_USER && data.forUserId == null) {
       throw new Error('System user cannot tag entities without a forUserId specified');
@@ -176,34 +176,36 @@ export class TagService {
       const tagRepository = manager.getRepository(TagEntity);
       const entityTagRepository = manager.getRepository(EntityTagEntity);
 
-      let tagEntity = await tagRepository.findOne({
-        where: {
-          label,
-          userId: userId,
-        },
-      });
-
-      if (tagEntity == null) {
-        const instance = tagRepository.create({
-          id: uuid7(),
-          label,
-          userId,
+      for (const label of labels) {
+        let tagEntity = await tagRepository.findOne({
+          where: {
+            label,
+            userId: userId,
+          },
         });
 
-        tagEntity = await tagRepository.save(instance);
-      }
+        if (tagEntity == null) {
+          const instance = tagRepository.create({
+            id: uuid7(),
+            label,
+            userId,
+          });
 
-      for (const entity of data.entities) {
-        await entityTagRepository
-          .createQueryBuilder()
-          .insert()
-          .values({
-            tagId: tagEntity.id,
-            entityType: entity.type,
-            entityId: entity.id,
-          })
-          .orIgnore()
-          .execute();
+          tagEntity = await tagRepository.save(instance);
+        }
+
+        for (const entity of data.entities) {
+          await entityTagRepository
+            .createQueryBuilder()
+            .insert()
+            .values({
+              tagId: tagEntity.id,
+              entityType: entity.type,
+              entityId: entity.id,
+            })
+            .orIgnore()
+            .execute();
+        }
       }
 
       return true;
@@ -211,7 +213,7 @@ export class TagService {
   }
 
   async untagEntities(context: ServiceContext, data: TagEntitiesDto): Promise<boolean> {
-    const label = this.validateLabel(data.label);
+    const labels = data.labels.map((label) => this.validateLabel(label));
 
     if (context.userId === SYSTEM_USER && data.forUserId == null) {
       throw new Error('System user cannot untag entities without a forUserId specified');
@@ -227,23 +229,25 @@ export class TagService {
       const tagRepository = manager.getRepository(TagEntity);
       const entityTagRepository = manager.getRepository(EntityTagEntity);
 
-      const tagEntity = await tagRepository.findOne({
-        where: {
-          label,
-          userId: userId,
-        },
-      });
-
-      if (tagEntity == null) {
-        return true;
-      }
-
-      for (const entity of data.entities) {
-        await entityTagRepository.delete({
-          tagId: tagEntity.id,
-          entityId: entity.id,
-          entityType: entity.type,
+      for (const label of labels) {
+        const tagEntity = await tagRepository.findOne({
+          where: {
+            label,
+            userId: userId,
+          },
         });
+
+        if (tagEntity == null) {
+          continue;
+        }
+
+        for (const entity of data.entities) {
+          await entityTagRepository.delete({
+            tagId: tagEntity.id,
+            entityId: entity.id,
+            entityType: entity.type,
+          });
+        }
       }
 
       return true;
