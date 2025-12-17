@@ -14,11 +14,13 @@ import { UserModule } from '@ci/domains/user';
 import { GraphQLController } from './controllers/GraphQLController';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
+import { PersonLoader } from './loaders/PersonLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
+import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
@@ -48,6 +50,7 @@ import { UserResolver } from './resolvers/UserResolver';
   ],
   providers: [
     ActionResolver,
+    CommunicationResolver,
     ComplexityPlugin,
     NodeResolver,
     FactResolver,
@@ -55,6 +58,7 @@ import { UserResolver } from './resolvers/UserResolver';
     FileResolver,
     ItemFileLoader,
     ItemResolver,
+    PersonLoader,
     PersonResolver,
     SearchResolver,
     TagLoader,
