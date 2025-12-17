@@ -13,10 +13,10 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { RequestContextMiddleware } from '@ci/common/context';
 import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
-import { LoggingModule, LoggerService } from '@ci/common/logging';
-import { RequestContextMiddleware, RequestLoggerMiddleware } from '@ci/common/middleware';
+import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { AuthModule } from '@ci/domains/auth';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';

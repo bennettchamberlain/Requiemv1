@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, IsNull, MoreThan, Not, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
+import type { RequestContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import type { RequestContext } from '@ci/common/types';
 import { ConnectionEntity } from '@ci/domains/connections';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { Events, EventService } from '@ci/domains/events';

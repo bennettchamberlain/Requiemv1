@@ -1,7 +1,7 @@
 import { Cron as NestCron, type CronOptions } from '@nestjs/schedule';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ContextService } from '../services/ContextService';
+import { ContextService } from '@ci/common/context';
 
 export function Cron(expression: string, options?: CronOptions) {
   return function (target: object, propertyName: string, descriptor: PropertyDescriptor) {

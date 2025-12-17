@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Scope } from '@nestjs/common';
 
 import type { RequestContext } from '../types';
 
@@ -8,7 +8,7 @@ type RequestContextRequiredTrace = RequestContext & {
   traceId: string;
 };
 
-@Injectable()
+@Injectable({ scope: Scope.DEFAULT })
 export class ContextService {
   private static storage = new AsyncLocalStorage<RequestContext>();
 

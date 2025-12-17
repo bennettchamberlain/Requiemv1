@@ -13,11 +13,9 @@ import {
   HttpCode,
 } from '@nestjs/common';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 
 import { CommunicationService } from '../services/CommunicationService';
 import {

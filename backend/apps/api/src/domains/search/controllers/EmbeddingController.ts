@@ -1,10 +1,9 @@
 import { Controller, Get, HttpCode, Post, Body, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import { RequestContext } from '@ci/common/types';
 
 import { EmbeddingService } from '../services/EmbeddingService';
 

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
 
 import { type Fact, FactEntity } from '../entities/FactEntity';
 

@@ -12,11 +12,9 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import type { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 import { CreateThreadDto } from '@ci/domains/conversations/types';
 
 import { MessageService } from '../services/MessageService';

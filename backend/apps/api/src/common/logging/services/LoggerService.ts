@@ -2,7 +2,7 @@ import { Injectable, Scope, type LoggerService as NestLoggerService } from '@nes
 import type { Logger as PinoLogger } from 'pino';
 import pino from 'pino';
 
-import { ContextService } from '@ci/common/services';
+import { ContextService } from '@ci/common/context';
 import config from '@ci/configuration';
 
 type LogData = string | Record<string, unknown>;

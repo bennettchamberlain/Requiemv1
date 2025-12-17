@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository, type DeleteResult, type UpdateResult } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/types';
+import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 
 import { type EntityTag, EntityTagEntity } from '../entities/EntityTagEntity';
 import { type Tag, TagEntity, TimestampedTag } from '../entities/TagEntity';

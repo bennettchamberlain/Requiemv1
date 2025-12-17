@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { type RequestContext, type ServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { type RequestContext, type ServiceContext, SYSTEM_USER } from '@ci/common/types';
 import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
 import { AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { EmbeddingService } from '@ci/domains/search';

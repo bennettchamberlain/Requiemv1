@@ -1,10 +1,8 @@
 import { BadRequestException, UseGuards } from '@nestjs/common';
 import { Args, Query, Resolver } from '@nestjs/graphql';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { RequestContext, UserServiceContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 import { ThreadService } from '@ci/domains/conversations';
 import { PersonService } from '@ci/domains/memory';
 import {

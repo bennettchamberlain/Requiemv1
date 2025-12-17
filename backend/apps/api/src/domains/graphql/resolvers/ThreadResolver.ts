@@ -1,10 +1,8 @@
 import { UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, Parent, ResolveField, ID } from '@nestjs/graphql';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 import { ThreadService } from '@ci/domains/conversations';
 
 import { TagLoader } from '../loaders/TagLoader';

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
+import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { toServiceContext } from '@ci/common/utils';
 import { OnEvent } from '@ci/domains/events';
 import { FileService, FileUploadedEvent, type FileUploadedPayload } from '@ci/domains/files';
 import { ItemService, type InventoryCondition } from '@ci/domains/memory';

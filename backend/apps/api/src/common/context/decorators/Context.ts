@@ -1,6 +1,6 @@
 import { createParamDecorator, InternalServerErrorException } from '@nestjs/common';
 
-import { ContextService } from '../services';
+import { ContextService } from '../services/ContextService';
 import type { RequestContext } from '../types';
 
 export const Context = createParamDecorator((): RequestContext => {

@@ -2,8 +2,8 @@ import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/co
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Point } from 'typeorm';
 
+import { type RequestContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { RequestContext } from '@ci/common/types';
 import { BrowserActivityEntity } from '@ci/domains/browser-activity';
 
 import { CommunicationEntity, Communication } from '../entities/CommunicationEntity';

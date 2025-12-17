@@ -1,10 +1,8 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 
 import { OnboardingService } from '../services/OnboardingService';
 import { type OnboardingInput, OnboardingInputSchema } from '../types';

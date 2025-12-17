@@ -1,10 +1,9 @@
 import { Controller, Post, Req, Res, UnauthorizedException, UseGuards, Body } from '@nestjs/common';
 import { Request, Response } from 'express';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ProxyService } from '@ci/common/services/ProxyService';
-import type { RequestContext } from '@ci/common/types';
 import config from '@ci/configuration';
 
 import type { TTSConvertRequest } from '../types';

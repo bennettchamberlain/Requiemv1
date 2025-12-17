@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { ServiceContext } from '@ci/common/types';
+import { type ServiceContext } from '@ci/common/context';
 
 import { ProviderEntity, type Provider } from '../entities/ProviderEntity';
 

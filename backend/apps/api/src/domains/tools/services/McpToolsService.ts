@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 
+import type { RequestContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import type { RequestContext } from '@ci/common/types';
 
 import type { ToolSchema } from '../core/types';
 import { McpToolProvider } from '../providers/mcp/McpToolProvider';

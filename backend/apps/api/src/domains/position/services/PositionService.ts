@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Point, In } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
 import { DeviceService } from '@ci/domains/devices';
 import { EventService } from '@ci/domains/events';
 import {

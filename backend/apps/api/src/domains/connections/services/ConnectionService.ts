@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, IsNull, MoreThan, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/types';
+import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 
 import { ConnectionEntity, type Connection } from '../entities/ConnectionEntity';
 import type { CreateConnectionDto, UpdateConnectionDto } from '../types';

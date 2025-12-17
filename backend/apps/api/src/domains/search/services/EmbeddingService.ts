@@ -1,22 +1,13 @@
 import crypto from 'crypto';
 
 import { Injectable } from '@nestjs/common';
-import dlv from 'dlv';
 import { Ollama } from 'ollama';
 import { DataSource } from 'typeorm';
 
-import { getIndexableMetadata } from '@ci/common/decorators';
-import type { RequestContext } from '@ci/common/types';
+import type { RequestContext } from '@ci/common/context';
 import config from '@ci/configuration';
 
 const EMBEDDING_MODEL = 'nomic-embed-text';
-
-interface Entity {
-  id: string;
-  user?: {
-    id: string;
-  };
-}
 
 export interface SearchResult {
   text: string;
@@ -626,40 +617,6 @@ export class EmbeddingService {
 
   async indexText(context: RequestContext, input: string) {
     return this.calculateVector(input);
-  }
-
-  async indexEntity(entity: Entity, dataPath: string): Promise<number[]> {
-    const metadata = getIndexableMetadata(entity);
-
-    if (!metadata) {
-      throw new Error(`Entity is not indexable: ${entity.constructor.name}`);
-    }
-
-    const { type, validPaths } = metadata;
-
-    if (!validPaths.has(dataPath)) {
-      throw new Error(`Invalid data path: ${dataPath}`);
-    }
-
-    if (!type) {
-      throw new Error(`Entity type is not defined for: ${entity.constructor.name}`);
-    }
-
-    const input = String(dlv(entity, dataPath) ?? '');
-    const vector = await this.calculateVector(input);
-    const config = ENTITY_CONFIG[type];
-
-    if (!config) {
-      throw new Error(`Unknown entity type: ${type}`);
-    }
-
-    const vectorString = `[${vector.join(',')}]`;
-    await this.dataSource.query(
-      `UPDATE ${config.table} SET ${config.embeddingColumn} = $1 WHERE ${config.idColumn} = $2`,
-      [vectorString, entity.id],
-    );
-
-    return vector;
   }
 
   async findAll(context: RequestContext): Promise<SearchResult[]> {

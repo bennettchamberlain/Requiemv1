@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { type ServiceContext, type UserServiceContext } from '@ci/common/types';
+import { type ServiceContext, type UserServiceContext } from '@ci/common/context';
 
 import { type Embedding, EmbeddingEntity } from '../entities/EmbeddingEntity';
 import { UpsertEmbeddingDto, RemoveEmbeddingDto } from '../types';

@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { ServiceContext, SYSTEM_USER } from '@ci/common/types';
+import { ServiceContext, SYSTEM_USER } from '@ci/common/context';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 

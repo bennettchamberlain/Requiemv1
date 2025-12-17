@@ -14,13 +14,11 @@ import type { Response } from 'express';
 import { ToolCall, Message as OllamaMessage } from 'ollama';
 import { z } from 'zod';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
-import type { RequestContext, ServiceContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 import config from '@ci/configuration';
 import { MessageService, ThreadService, type Thread, type Message } from '@ci/domains/conversations';
 import { Events, type EventPayloads, EventService, OnEvent } from '@ci/domains/events';

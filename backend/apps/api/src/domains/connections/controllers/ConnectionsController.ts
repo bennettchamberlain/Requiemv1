@@ -13,12 +13,10 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
-import type { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 import { EventService, Events } from '@ci/domains/events';
 
 import { ClientFactory } from '../clients';

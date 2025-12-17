@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
+import { SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { SYSTEM_USER } from '@ci/common/types';
 import { type EventPayloads, Events, EventService, OnEvent } from '@ci/domains/events';
 import { UserCreatedEvent, type UserCreatedPayload, UserService } from '@ci/domains/user';
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import type { UserServiceContext } from '@ci/common/types';
 import { MessageService, type Message } from '@ci/domains/conversations';
 
 import { Loader } from './Loader';

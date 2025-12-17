@@ -1,7 +1,7 @@
 import DataLoader from 'dataloader';
 
+import type { UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
-import type { UserServiceContext } from '@ci/common/types';
 
 export abstract class Loader<V, K = string> {
   protected abstract readonly logger: LoggerService;

@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 
+import type { RequestContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import type { RequestContext } from '@ci/common/types';
 
 import type { BaseTool } from '../core/BaseTool';
 import type { ToolSchema, ToolResult } from '../core/types';

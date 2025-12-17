@@ -12,11 +12,9 @@ import {
   HttpCode,
 } from '@nestjs/common';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import type { RequestContext } from '@ci/common/types';
-import { toServiceContext } from '@ci/common/utils';
 
 import { AnswerService } from '../services/AnswerService';
 import { type CreateAnswerDto, type UpdateAnswerDto, createAnswerSchema, updateAnswerSchema } from '../types';

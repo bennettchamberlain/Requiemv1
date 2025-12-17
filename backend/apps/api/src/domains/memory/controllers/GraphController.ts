@@ -10,10 +10,9 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context } from '@ci/common/decorators';
+import { Context, type RequestContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
-import { RequestContext } from '@ci/common/types';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { GraphEventService } from '../services/GraphEventService';
