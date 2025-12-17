@@ -22,7 +22,7 @@ export class CommunicationService {
     this.logger.setContext(CommunicationService.name);
   }
 
-  async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<CommunicationEntity> {
+  async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<Communication> {
     const communication = this.communicationRepository.create({
       id: uuidv7(),
       time: data.time,
