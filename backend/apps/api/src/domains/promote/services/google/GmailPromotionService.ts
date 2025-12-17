@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 import { ConnectionService, type Connection } from '@ci/domains/connections';
 import { EventService, Events } from '@ci/domains/events';
 import { CommunicationEntity, CommunicationService } from '@ci/domains/memory';
+import { TagService } from '@ci/domains/search-next';
 
 import { PromoteService } from '../PromoteService';
 
@@ -47,6 +48,7 @@ export class GmailPromotionService {
     private readonly connectionService: ConnectionService,
     private readonly eventService: EventService,
     private readonly promoteService: PromoteService,
+    private readonly tagService: TagService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(GmailPromotionService.name);
@@ -322,8 +324,20 @@ export class GmailPromotionService {
           subject: messageDetails.subject,
           content: messageDetails.body || messageDetails.snippet || '',
           category: 'personal', // TODO: Classify emails
-          tags: messageDetails.labels,
           connection_id: connectionId,
+        },
+      );
+
+      await this.tagService.tagEntities(
+        { userId },
+        {
+          labels: messageDetails.labels,
+          entities: [
+            {
+              type: 'communication',
+              id: communication.id,
+            },
+          ],
         },
       );
 
