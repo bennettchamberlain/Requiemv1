@@ -8,7 +8,7 @@ from uuid import UUID
 import structlog
 
 from .config import settings
-from .storage import storage
+from .database import db
 from .summarizer import summarizer
 
 logger = structlog.get_logger()
@@ -35,8 +35,8 @@ class UserDossierBuilder:
         daily_window_start = window_end - timedelta(days=lookback_days)
         hourly_window_start = window_end - timedelta(days=1)
 
-        daily_summaries = storage.get_daily_summaries(user_id, daily_window_start, window_end)
-        hourly_summaries = storage.get_hourly_summaries(user_id, hourly_window_start, window_end)
+        daily_summaries = self._get_summaries(user_id, daily_window_start, window_end, "daily")
+        hourly_summaries = self._get_summaries(user_id, hourly_window_start, window_end, "hourly")
 
         if not daily_summaries and not hourly_summaries:
             logger.info(
@@ -74,6 +74,33 @@ class UserDossierBuilder:
         )
 
         return dossier
+
+    def _get_summaries(self, user_id: UUID, start: datetime, end: datetime, period_type: str) -> list:
+        """Get summaries from database."""
+        import json
+        rows = db.execute_query(
+            """
+            SELECT summary_id, content, period_start, period_end
+            FROM summaries
+            WHERE user_id = :user_id
+              AND period_type = :period_type
+              AND period_start >= :start
+              AND period_start < :end
+            ORDER BY period_start
+            """,
+            {"user_id": str(user_id), "period_type": period_type, "start": start, "end": end},
+        )
+        # Parse content
+        for row in rows:
+            content = row.get("content")
+            if isinstance(content, str):
+                try:
+                    row["content"] = json.loads(content)
+                except json.JSONDecodeError:
+                    row["content"] = {}
+            row["summary_text"] = row.get("content", {}).get("summary_text", "")
+            row["activity_counts"] = row.get("content", {}).get("activity_counts", {})
+        return rows
 
 
 dossier_builder = UserDossierBuilder(

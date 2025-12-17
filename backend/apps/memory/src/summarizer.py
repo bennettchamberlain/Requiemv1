@@ -1,9 +1,13 @@
-"""LLM-based summarization using OpenAI-compatible API."""
+"""
+LLM-based summarization - calls OpenAI-compatible API and generates embeddings.
+
+Simplified: Just call LLM, parse JSON, or fail gracefully.
+"""
 import json
 import re
-from datetime import datetime
 import structlog
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
+from datetime import datetime
 from openai import OpenAI
 
 from .config import settings
@@ -12,604 +16,80 @@ logger = structlog.get_logger()
 
 
 class Summarizer:
-    """Generates summaries using local LLM and embeddings."""
+    """Generates summaries using local LLM."""
 
     def __init__(self):
-        self.client = None
-        self._init_error: Optional[Exception] = None
-        try:
-            self.client = OpenAI(
-                base_url=settings.llm_api_base,
-                api_key=settings.llm_api_key,
-            )
-            logger.info(
-                "llm_client_initialized",
-                base_url=settings.llm_api_base,
-                model=settings.llm_model,
-            )
-        except Exception as exc:
-            self._init_error = exc
-            logger.error("llm_client_initialization_failed", error=str(exc))
+        self.client = OpenAI(base_url=settings.llm_api_base, api_key=settings.llm_api_key)
+        logger.info("llm_client_initialized", model=settings.llm_model)
 
     def generate_hourly_summary(self, aggregated_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Generate an hourly summary from aggregated data.
-
-        Args:
-            aggregated_data: Dictionary with all data sources for the hour
-
-        Returns:
-            Dictionary with summary text, insights, and statistics
-        """
-        self._ensure_client()
-
-        logger.info(
-            "generating_hourly_summary",
-            user_id=aggregated_data.get("user_id"),
-            start=aggregated_data.get("start_time"),
-        )
-
+        """Generate hourly summary from aggregated data."""
         activity_counts = self._count_activities(aggregated_data)
-        logger.info("hourly_activity_counts", counts=activity_counts)
 
         if activity_counts.get("total", 0) == 0:
-            logger.info(
-                "skipping_hourly_summary_no_data",
-                user_id=aggregated_data.get("user_id"),
-                start=aggregated_data.get("start_time"),
-                end=aggregated_data.get("end_time"),
-            )
-            structured = {
-                "summary": {
-                    "narrative": "No activity recorded during this window.",
-                    "insights": [],
-                    "notable_events": [],
-                    "anomalies": [],
-                    "tags": [],
-                }
-            }
-            summary_text = json.dumps(structured, ensure_ascii=False)
-            embedding = self.generate_embedding(summary_text)
             return {
-                "summary_text": summary_text,
+                "summary_text": "No activity recorded during this window.",
                 "summary_type": "hourly",
                 "key_insights": [],
-                "notable_events": [],
-                "anomalies": [],
-                "embedding": embedding,
+                "embedding": self.generate_embedding("No activity"),
                 "activity_counts": activity_counts,
                 "tokens_used": 0,
-                "structured_summary": structured,
             }
 
-        # Build structured prompt
-        prompt = self._build_hourly_prompt(aggregated_data, activity_counts)
+        # Build prompt
+        prompt = self._build_data_prompt(aggregated_data, activity_counts)
 
-        messages = [
-            {
-                "role": "system",
-                "content": """You are an AI summarizer that creates concise, insightful hourly summaries of user activity.
-You infer behavior and describe without opinion or bias. You will be given incomplete data and you must infer what the user is doing.
-Analyze the provided data and generate:
-1. A narrative summary (2-3 sentences) describing the hour
-2. 3-5 key insights and/or patterns
-3. Notable events and/or activities
-4. Any anomalies or interesting observations
-5. A list of tags that describe the events, content, and activities.
-
-Be factual and concise. Focus on what's meaningful and actionable.
-Response must be valid JSON (no markdown/code fences) with nested sections.
-If there is no data to summarize, return an empty JSON object."""
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-
-        if settings.debug_prompts:
-            self._log_prompt("hourly", messages)
-
-        chat_kwargs = {
-            "model": settings.llm_model,
-            "messages": messages,
-            "temperature": settings.llm_temperature,
-            "max_tokens": settings.llm_max_tokens,
-        }
-
+        # Call LLM
         try:
-            self._log_llm_request("chat.completions.create", chat_kwargs)
-            response = self.client.chat.completions.create(**chat_kwargs)
+            response = self.client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an AI that creates concise hourly summaries. "
+                        "Return valid JSON with: {summary_text, key_insights: [], notable_events: []}",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
+            )
 
-            raw_response = response.choices[0].message.content
+            raw = response.choices[0].message.content
+            parsed = self._parse_json(raw) or {"summary_text": raw}
 
-            summary_text, structured = self._coerce_json_summary(raw_response)
-
-            # Parse the response to extract structured information
-            parsed = self._parse_structured_or_text(structured, raw_response)
-
-            # Generate embedding for the summary
+            summary_text = parsed.get("summary_text", raw)
             embedding = self.generate_embedding(summary_text)
 
             return {
                 "summary_text": summary_text,
                 "summary_type": "hourly",
-                "key_insights": parsed.get("insights", []),
-                "events": parsed.get("events", parsed.get("notable_events", [])),
+                "key_insights": parsed.get("key_insights", parsed.get("insights", [])),
+                "events": parsed.get("notable_events", parsed.get("events", [])),
                 "anomalies": parsed.get("anomalies", []),
                 "embedding": embedding,
                 "activity_counts": activity_counts,
                 "tokens_used": response.usage.total_tokens if response.usage else 0,
-                "structured_summary": structured,
             }
 
-        except Exception as e:
-            logger.error("summary_generation_failed", error=str(e))
-            raise
-
-    def _build_hourly_prompt(self, data: Dict[str, Any], activity_counts: Dict[str, int]) -> str:
-        """Build the prompt for hourly summarization."""
-        parts = [
-            f"Time Period: {data['start_time']} to {data['end_time']}",
-            f"User ID: {data['user_id']}",
-            "",
-        ]
-
-        non_zero_counts = [
-            f"- {key.replace('_', ' ')}: {count}"
-            for key, count in activity_counts.items()
-            if key != "total" and count
-        ]
-        if non_zero_counts:
-            parts.append("DATA COUNTS:")
-            parts.extend(non_zero_counts)
-            parts.append("")
-
-        # Add measurements summary
-        if data.get('measurements'):
-            parts.append("SENSOR MEASUREMENTS:")
-            for m in data['measurements'][:10]:  # Top 10
-                parts.append(f"- {m['measurement_type']}: avg={m['avg_value']:.2f} {m['units']} (count={m['count']})")
-            parts.append("")
-
-        # Add location data
-        if data.get('positions'):
-            parts.append("LOCATIONS:")
-            for p in data['positions'][:5]:  # Top 5
-                activity = p['activity_type'] or 'unknown'
-                parts.append(f"- {activity} activity (count={p['count']})")
-            parts.append("")
-
-        # Add communications
-        if data.get('communications'):
-            parts.append("COMMUNICATIONS:")
-            for c in data['communications'][:10]:
-                comm_type = c['communication_type']
-                direction = c['direction']
-                subject = c.get('subject', 'No subject')[:50]
-                parts.append(f"- {comm_type} ({direction}): {subject}")
-            parts.append("")
-
-        # Add activities
-        if data.get('activities'):
-            parts.append("ACTIVITIES:")
-            for a in data['activities'][:10]:
-                name = a['activity_name']
-                duration = a.get('duration_minutes', 'unknown')
-                parts.append(f"- {name} ({duration} min)")
-            parts.append("")
-
-        # Add events
-        if data.get('events'):
-            parts.append("CALENDAR EVENTS:")
-            for e in data['events'][:10]:
-                title = e['title']
-                event_type = e.get('event_type', 'event')
-                parts.append(f"- {title} ({event_type})")
-            parts.append("")
-
-        # Add messages
-        if data.get('messages'):
-            parts.append("CHAT MESSAGES:")
-            msg_count = len(data['messages'])
-            parts.append(f"- {msg_count} messages exchanged")
-            parts.append("")
-
-        # Add file activity
-        if data.get('files'):
-            parts.append("FILE ACTIVITY:")
-            for f in data['files'][:10]:
-                filename = f['filename']
-                parts.append(f"- {filename}")
-            parts.append("")
-
-        # Add browser activity
-        if data.get('browser_activity'):
-            parts.append("BROWSER ACTIVITY:")
-            for entry in data['browser_activity'][:10]:
-                domain = entry.get('domain') or 'unknown'
-                title = entry.get('title') or entry.get('url') or domain
-                action = entry.get('action_type') or 'visit'
-                duration = entry.get('duration_seconds')
-                category = entry.get('category') or 'uncategorized'
-                duration_text = f", {duration}s" if duration is not None else ""
-                parts.append(
-                    f"- {title} ({domain}) [{action}{duration_text}, category={category}]"
-                )
-                summary = (entry.get('page_summary') or '').strip()
-                if summary:
-                    parts.append(f"  ↳ {summary[:200]}")
-            parts.append("")
-
-        # Add screen captures
-        if data.get('screen_captures'):
-            parts.append("SCREEN CAPTURES:")
-            for capture in data['screen_captures'][:5]:
-                timestamp = capture.get('time')
-                timestamp_text = timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp)
-                primary_app = capture.get('primary_application') or 'unknown app'
-                category = capture.get('activity_category') or 'uncategorized'
-                flags = []
-                if capture.get('contains_sensitive'):
-                    flags.append('sensitive')
-                if capture.get('contains_pii'):
-                    flags.append('pii')
-                if capture.get('redacted'):
-                    flags.append('redacted')
-                flag_text = f" ({', '.join(flags)})" if flags else ''
-                parts.append(f"- {timestamp_text}: {primary_app} [{category}]{flag_text}")
-                summary = (capture.get('activity_summary') or capture.get('ocr_text') or '').strip()
-                if summary:
-                    parts.append(f"  ↳ {summary[:200]}")
-            parts.append("")
-
-        return "\n".join(parts)
-
-    def _parse_summary_response(self, summary_text: str) -> Dict[str, Any]:
-        """
-        Parse the LLM response to extract structured information.
-        This is a simple parser - could be enhanced with structured output.
-        """
-        # Simple extraction based on common patterns
-        lines = summary_text.split('\n')
-
-        insights = []
-        events = []
-        anomalies = []
-
-        current_section = None
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Detect sections
-            if 'insight' in line.lower() or 'key point' in line.lower():
-                current_section = 'insights'
-            elif 'event' in line.lower() or 'notable' in line.lower():
-                current_section = 'events'
-            elif 'anomal' in line.lower() or 'unusual' in line.lower():
-                current_section = 'anomalies'
-            elif line.startswith('-') or line.startswith('•'):
-                # Bullet point
-                item = line.lstrip('-•').strip()
-                if current_section == 'insights':
-                    insights.append(item)
-                elif current_section == 'events':
-                    events.append(item)
-                elif current_section == 'anomalies':
-                    anomalies.append(item)
-
-        return {
-            "insights": insights,
-            "events": events,
-            "anomalies": anomalies,
-        }
-
-    def _parse_structured_or_text(
-        self,
-        structured_summary: Optional[Dict[str, Any]],
-        fallback_text: str,
-    ) -> Dict[str, Any]:
-        if isinstance(structured_summary, str):
-            try:
-                structured_summary = json.loads(structured_summary)
-            except json.JSONDecodeError:
-                structured_summary = None
-
-        if structured_summary:
-            return self._parse_structured_summary(structured_summary)
-        return self._parse_summary_response(fallback_text)
-
-    def _parse_structured_summary(self, structured_summary: Dict[str, Any]) -> Dict[str, Any]:
-        summary_block = structured_summary.get("summary", structured_summary)
-        insights = summary_block.get("insights") or []
-        anomalies = summary_block.get("anomalies") or summary_block.get("risks") or []
-
-        events: List[str] = []
-        for key in ("events", "notable_events", "activities"):
-            events.extend(self._normalize_entries(summary_block.get(key)))
-
-        return {
-            "insights": insights if isinstance(insights, list) else [str(insights)],
-            "events": events,
-            "anomalies": anomalies if isinstance(anomalies, list) else [str(anomalies)],
-        }
-
-    def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text using the embedding model."""
-        self._ensure_client()
-        try:
-            self._log_llm_request(
-                "embeddings.create",
-                {"model": settings.embedding_model, "input": text},
-            )
-            response = self.client.embeddings.create(
-                model=settings.embedding_model,
-                input=text
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            logger.error("embedding_generation_failed", error=str(e))
-            # Return zero vector on failure
-            return [0.0] * settings.embedding_dimensions
-
-    def _count_activities(self, data: Dict[str, Any]) -> Dict[str, int]:
-        """Count activities by type."""
-        counts = {
-            "measurements": len(data.get('measurements', [])),
-            "positions": len(data.get('positions', [])),
-            "communications": len(data.get('communications', [])),
-            "activities": len(data.get('activities', [])),
-            "events": len(data.get('events', [])),
-            "messages": len(data.get('messages', [])),
-            "files": len(data.get('files', [])),
-            "api_logs": len(data.get('api_logs', [])),
-            "browser_activity": len(data.get('browser_activity', [])),
-            "screen_captures": len(data.get('screen_captures', [])),
-        }
-        counts["total"] = sum(counts.values())
-        return counts
-
-    def _ensure_client(self):
-        if self.client is None:
-            error_msg = "LLM client is not initialized"
-            if self._init_error:
-                error_msg += f": {self._init_error}"
-            raise RuntimeError(error_msg)
-
-    def generate_history_summary(
-        self,
-        level: str,
-        start_time: datetime,
-        end_time: datetime,
-        stats: Dict[str, Any],
-        sample_entries: List[Dict[str, Any]],
-    ) -> str:
-        """Generate a browser-history specific inference."""
-        logger.info(
-            "generating_history_summary",
-            level=level,
-            start=start_time.isoformat(),
-            end=end_time.isoformat(),
-        )
-
-        self._ensure_client()
-
-        prompt = self._build_history_prompt(level, start_time, end_time, stats, sample_entries)
-
-        messages = [
-            {
-                "role": "system",
-                "content": """You are a personal intelligence analyst. Given browser history data, infer what the user is likely working on, learning, or planning. Highlight intents, research threads, and context in 2-3 sentences.""",
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ]
-
-        chat_kwargs = {
-            "model": settings.llm_model,
-            "messages": messages,
-            "temperature": settings.llm_temperature,
-            "max_tokens": min(settings.llm_max_tokens, 400),
-        }
-
-        try:
-            if settings.debug_prompts:
-                self._log_prompt(f"browser-history-{level}", messages)
-            self._log_llm_request("chat.completions.create", chat_kwargs)
-            response = self.client.chat.completions.create(**chat_kwargs)
-            return response.choices[0].message.content.strip()
         except Exception as exc:
-            logger.error("history_summary_generation_failed", error=str(exc))
-            return ""
-
-    def _build_history_prompt(
-        self,
-        level: str,
-        start_time: datetime,
-        end_time: datetime,
-        stats: Dict[str, Any],
-        sample_entries: List[Dict[str, Any]],
-    ) -> str:
-        lines = [
-            f"Level: {level}",
-            f"Window: {start_time.isoformat()} → {end_time.isoformat()}",
-            f"Total Entries: {stats['total_entries']}",
-            f"Unique Domains: {stats['unique_domains']}",
-            f"Top Domains: {stats['top_domains'] or 'n/a'}",
-            f"Top Titles: {stats['top_titles'] or 'n/a'}",
-            f"Top Transitions: {stats['top_transitions'] or 'n/a'}",
-            f"Typed Visits: {stats['typed_visits']}",
-            "Sample Activity:",
-        ]
-
-        for entry in sample_entries[:5]:
-            title = entry.get("title") or entry.get("url")
-            domain = entry.get("domain", "unknown")
-            timestamp = entry.get("timestamp")
-            timestamp_str = timestamp.isoformat() if isinstance(timestamp, datetime) else str(timestamp)
-            lines.append(f"- {timestamp_str} :: {title} ({domain})")
-
-        lines.append("\nProvide a concise narrative of what the user is likely doing.")
-        return "\n".join(lines)
+            logger.error("hourly_summary_failed", error=str(exc))
+            raise
 
     def generate_daily_summary(self, hourly_summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Generate a daily summary from hourly summaries.
-
-        Args:
-            hourly_summaries: List of hourly summary dictionaries
-
-        Returns:
-            Dictionary with daily summary
-        """
-        logger.info("generating_daily_summary", num_hours=len(hourly_summaries))
-
-        # Aggregate all hourly summaries
-        all_text = "\n\n".join([
-            f"Hour {i+1}: {s['summary_text']}"
-            for i, s in enumerate(hourly_summaries)
-        ])
-
-        messages = [
-            {
-                "role": "system",
-                "content": """You are an AI assistant that synthesizes multiple hourly summaries into a coherent daily summary.
-Create a concise daily narrative that:
-1. Highlights the main themes and patterns of the day
-2. Identifies the most significant activities and events
-3. Notes any trends or changes throughout the day
-4. Provides actionable insights
-
-Be factual and insightful. Focus on what's most meaningful."""
-            },
-            {
-                "role": "user",
-                "content": f"Synthesize these hourly summaries into a daily summary:\n\n{all_text}"
-            }
-        ]
-
-        chat_kwargs = {
-            "model": settings.llm_model,
-            "messages": messages,
-            "temperature": settings.llm_temperature,
-            "max_tokens": settings.llm_max_tokens,
-        }
-
-        try:
-            if settings.debug_prompts:
-                self._log_prompt("daily", messages)
-            self._log_llm_request("chat.completions.create", chat_kwargs)
-            response = self.client.chat.completions.create(**chat_kwargs)
-
-            summary_text = response.choices[0].message.content
-            embedding = self.generate_embedding(summary_text)
-
-            # Aggregate activity counts
-            total_counts = {
-                "measurements": sum(s['activity_counts'].get('measurements', 0) for s in hourly_summaries),
-                "positions": sum(s['activity_counts'].get('positions', 0) for s in hourly_summaries),
-                "communications": sum(s['activity_counts'].get('communications', 0) for s in hourly_summaries),
-                "activities": sum(s['activity_counts'].get('activities', 0) for s in hourly_summaries),
-                "events": sum(s['activity_counts'].get('events', 0) for s in hourly_summaries),
-                "messages": sum(s['activity_counts'].get('messages', 0) for s in hourly_summaries),
-                "files": sum(s['activity_counts'].get('files', 0) for s in hourly_summaries),
-                "api_logs": sum(s['activity_counts'].get('api_logs', 0) for s in hourly_summaries),
-                "browser_activity": sum(s['activity_counts'].get('browser_activity', 0) for s in hourly_summaries),
-                "screen_captures": sum(s['activity_counts'].get('screen_captures', 0) for s in hourly_summaries),
-            }
-            total_counts["total"] = sum(total_counts.values())
-
-            return {
-                "summary_text": summary_text,
-                "summary_type": "daily",
-                "embedding": embedding,
-                "activity_counts": total_counts,
-                "num_hourly_summaries": len(hourly_summaries),
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-            }
-
-        except Exception as e:
-            logger.error("daily_summary_generation_failed", error=str(e))
-            raise
-
-    def generate_weekly_summary(self, daily_summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return self.generate_period_rollup('weekly', 'daily', daily_summaries)
+        """Generate daily summary from hourly summaries."""
+        return self._generate_rollup("daily", hourly_summaries)
 
     def generate_period_rollup(
         self,
-        period_label: str,
-        child_label: str,
+        period_type: str,
         child_summaries: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Generic rollup summary for weekly/monthly/seasonal/yearly."""
-        logger.info(
-            "generating_period_summary",
-            period=period_label,
-            child_count=len(child_summaries),
-        )
-
-        all_text = "\n\n".join([
-            f"{child_label.title()} {i+1}: {s['summary_text']}"
-            for i, s in enumerate(child_summaries)
-        ])
-
-        if settings.debug_prompts:
-            self._log_prompt(
-                f"{period_label}-from-{child_label}",
-                [{"role": "user", "content": all_text}],
-            )
-
-        messages = [
-            {
-                "role": "system",
-                "content": f"""You are an AI assistant that synthesizes {child_label} summaries into a coherent {period_label} overview. Provide:
-1. Dominant themes and highlights for the {period_label}
-2. Key accomplishments or risks
-3. Trends or shifts observed across the {child_label}s
-4. Actionable insights or next steps
-
-Deliver a concise, reflective narrative.""",
-            },
-            {
-                "role": "user",
-                "content": f"Synthesize these {child_label} summaries into a {period_label} summary:\n\n{all_text}",
-            },
-        ]
-
-        chat_kwargs = {
-            "model": settings.llm_model,
-            "messages": messages,
-            "temperature": settings.llm_temperature,
-            "max_tokens": settings.llm_max_tokens,
-        }
-
-        try:
-            self._log_llm_request("chat.completions.create", chat_kwargs)
-            response = self.client.chat.completions.create(**chat_kwargs)
-
-            summary_text = response.choices[0].message.content
-            embedding = self.generate_embedding(summary_text)
-            total_counts = self._aggregate_counts(child_summaries)
-
-            return {
-                "summary_text": summary_text,
-                "summary_type": period_label,
-                "embedding": embedding,
-                "activity_counts": total_counts,
-                "num_child_summaries": len(child_summaries),
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-            }
-        except Exception as exc:
-            logger.error("period_summary_generation_failed", period=period_label, error=str(exc))
-            raise
+        """Generate rollup summary (weekly/monthly/etc) from child summaries."""
+        return self._generate_rollup(period_type, child_summaries)
 
     def generate_user_dossier(
         self,
-        *,
         user_id: str,
         lookback_start: datetime,
         lookback_end: datetime,
@@ -619,407 +99,274 @@ Deliver a concise, reflective narrative.""",
         max_chars: int,
         previous_dossier: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
+        """Generate user dossier from recent summaries."""
         if not daily_summaries and not hourly_summaries:
-            logger.info("dossier_generation_skipped_no_summaries", user_id=user_id)
             return None
 
-        self._ensure_client()
-
         prompt = self._build_dossier_prompt(
-            user_id=user_id,
-            lookback_start=lookback_start,
-            lookback_end=lookback_end,
-            timezone=timezone,
-            daily_summaries=daily_summaries,
-            hourly_summaries=hourly_summaries,
-            previous_dossier=previous_dossier,
+            daily_summaries, hourly_summaries, previous_dossier
         )
 
-        messages = [
-            {
-                "role": "system",
-                "content": """You are drafting a concise user dossier for another AI assistant. 
-                The dossier should summarize the user's tone and personality, conversational preferences, any challenges they are facing or topics they are interested in, and best practices for interacting with the user. 
-                Keep the response factual, grounded in the supplied summaries (and prior dossier if provided), and under 4000 characters. Prefer incremental updates: reuse existing guidance unless the new data clearly requires a change. Respond with valid JSON matching:
-{
-  \"summary\": string,
-  \"tone\": string | null,
-  \"personalityTraits\": string[] | null,
-  \"interactionGuidelines\": string[] | null,
-  \"preferences\": string[] | null,
-  \"challenges\": string[] | null,
-  \"interests\": string[] | null
-}
-Avoid markdown or additional prose.""",
-            },
-            {"role": "user", "content": prompt},
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Create a user dossier with: {summary, tone, personalityTraits: [], interactionGuidelines: [], preferences: [], challenges: [], interests: []}",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=1200,
+            )
+
+            raw = response.choices[0].message.content
+            parsed = self._parse_json(raw)
+
+            if not parsed:
+                # Fallback
+                summary_text = " ".join(
+                    [s.get("summary_text", "") for s in daily_summaries[-3:]]
+                )
+                parsed = {"summary": summary_text or "Limited data available."}
+
+            # Normalize
+            parsed.setdefault("summary", "No significant activity.")
+            parsed.setdefault("tone", None)
+            parsed.setdefault("personalityTraits", None)
+            parsed.setdefault("interactionGuidelines", None)
+            parsed.setdefault("preferences", None)
+            parsed.setdefault("challenges", None)
+            parsed.setdefault("interests", None)
+            parsed.setdefault("lastUpdatedAt", datetime.utcnow().isoformat())
+            parsed.setdefault("version", 1)
+            parsed.setdefault(
+                "sourceWindow",
+                {
+                    "start": lookback_start.isoformat(),
+                    "end": lookback_end.isoformat(),
+                    "timezone": timezone,
+                },
+            )
+
+            # Truncate if needed
+            if len(parsed["summary"]) > max_chars:
+                parsed["summary"] = parsed["summary"][: max_chars - 3] + "..."
+
+            return parsed
+
+        except Exception as exc:
+            logger.error("dossier_generation_failed", error=str(exc))
+            return None
+
+    def generate_history_summary(
+        self,
+        level: str,
+        start_time: datetime,
+        end_time: datetime,
+        stats: Dict[str, Any],
+        sample_entries: List[Dict[str, Any]],
+    ) -> str:
+        """Generate browser history summary."""
+        prompt = f"""
+Browser activity: {start_time} to {end_time}
+Total entries: {stats['total_entries']}
+Unique domains: {stats['unique_domains']}
+Top domains: {stats.get('top_domains', 'n/a')}
+
+Sample activity:
+{chr(10).join([f"- {e.get('title', e.get('url'))}" for e in sample_entries[:5]])}
+
+What was the user likely doing? (2-3 sentences)
+"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Infer user intent from browser history. Be concise.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=settings.llm_temperature,
+                max_tokens=400,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as exc:
+            logger.error("history_summary_failed", error=str(exc))
+            return ""
+
+    def generate_embedding(self, text: str) -> List[float]:
+        """Generate embedding for text."""
+        try:
+            response = self.client.embeddings.create(
+                model=settings.embedding_model, input=text
+            )
+            return response.data[0].embedding
+        except Exception as exc:
+            logger.error("embedding_generation_failed", error=str(exc))
+            return [0.0] * settings.embedding_dimensions
+
+    # ========================================================================
+    # Internal helpers
+    # ========================================================================
+
+    def _generate_rollup(self, period_type: str, child_summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generic rollup for daily/weekly/monthly/etc."""
+        # Combine child summaries
+        combined_text = "\n\n".join(
+            [f"Summary {i + 1}: {s.get('summary_text', '')}" for i, s in enumerate(child_summaries)]
+        )
+
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"Synthesize these summaries into a {period_type} overview. Focus on themes, patterns, and insights.",
+                    },
+                    {"role": "user", "content": combined_text},
+                ],
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
+            )
+
+            summary_text = response.choices[0].message.content
+            embedding = self.generate_embedding(summary_text)
+
+            # Aggregate counts
+            total_counts = {}
+            for summary in child_summaries:
+                counts = summary.get("activity_counts", {})
+                for key, value in counts.items():
+                    total_counts[key] = total_counts.get(key, 0) + value
+
+            return {
+                "summary_text": summary_text,
+                "summary_type": period_type,
+                "embedding": embedding,
+                "activity_counts": total_counts,
+                "num_child_summaries": len(child_summaries),
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
+            }
+
+        except Exception as exc:
+            logger.error("rollup_summary_failed", period=period_type, error=str(exc))
+            raise
+
+    def _build_data_prompt(self, data: Dict[str, Any], counts: Dict[str, int]) -> str:
+        """Build prompt from aggregated data."""
+        parts = [
+            f"Time: {data['start_time']} to {data['end_time']}",
+            f"User: {data['user_id']}",
+            "",
+            "Activity counts:",
         ]
 
-        chat_kwargs = {
-            "model": settings.llm_model,
-            "messages": messages,
-            "temperature": 0.2,
-            "max_tokens": min(settings.llm_max_tokens, 1200),
-        }
+        for key, count in counts.items():
+            if key != "total" and count > 0:
+                parts.append(f"- {key}: {count}")
 
-        parsed: Optional[Dict[str, Any]] = None
-        try:
-            if settings.debug_prompts:
-                self._log_prompt("user_dossier", messages)
-            self._log_llm_request("chat.completions.create", chat_kwargs)
-            response = self.client.chat.completions.create(**chat_kwargs)
-            raw = response.choices[0].message.content or ""
-            parsed = self._parse_json_object(raw)
-        except Exception as exc:
-            logger.error("user_dossier_generation_failed", user_id=user_id, error=str(exc))
+        parts.append("")
 
-        if not parsed:
-            logger.warning("user_dossier_fallback", user_id=user_id)
-            parsed = self._fallback_dossier_summary(daily_summaries)
+        # Add sample data from each category
+        for category in ["measurements", "events", "communications", "activities", "messages", "files", "browser_activity"]:
+            items = data.get(category, [])
+            if items:
+                parts.append(f"{category.upper()}:")
+                for item in items[:5]:  # Top 5
+                    parts.append(f"- {self._format_item(item)}")
+                parts.append("")
 
-        return self._normalize_dossier_payload(
-            parsed,
-            max_chars=max_chars,
-            lookback_start=lookback_start,
-            lookback_end=lookback_end,
-            timezone=timezone,
-        )
+        parts.append("Provide a concise 2-3 sentence summary of the hour.")
+        return "\n".join(parts)
 
     def _build_dossier_prompt(
         self,
-        *,
-        user_id: str,
-        lookback_start: datetime,
-        lookback_end: datetime,
-        timezone: str,
         daily_summaries: List[Dict[str, Any]],
         hourly_summaries: List[Dict[str, Any]],
         previous_dossier: Optional[Dict[str, Any]],
     ) -> str:
-        lines: List[str] = [
-            f"User: {user_id}",
-            f"Window: {lookback_start.isoformat()} to {lookback_end.isoformat()} ({timezone})",
-            "",
-            "Daily Summaries (last month):",
-        ]
+        """Build dossier prompt."""
+        parts = ["Recent daily summaries:"]
 
-        if not daily_summaries:
-            lines.append("- No daily summaries available in lookback window.")
-        for record in daily_summaries:
-            start_val = record.get('period_start') or record.get('periodStart')
-            start_label = start_val.strftime('%Y-%m-%d') if isinstance(start_val, datetime) else str(start_val)
-            summary_text = self._coerce_optional_string(record.get('summary_text')) or ''
-            counts = record.get('activity_counts') or {}
-            highlights = [
-                f"{key}={value}"
-                for key, value in counts.items()
-                if key != 'total' and isinstance(value, (int, float)) and value
-            ][:4]
-
-            lines.append(f"- {start_label}:")
-            if summary_text:
-                lines.append(f"  Narrative: {summary_text}")
-            if highlights:
-                lines.append(f"  Activity: {', '.join(highlights)}")
-
-            insights = self._normalize_string_list(
-                self._extract_list_from_context(record, 'key_insights'),
-                limit=3,
-                item_limit=200,
-            )
-            if insights:
-                lines.append("  Insights:")
-                for insight in insights:
-                    lines.append(f"    - {insight}")
-
-        if hourly_summaries:
-            lines.append("")
-            lines.append("Hourly Snapshots (last 24h):")
-            for record in hourly_summaries[-24:]:
-                start_val = record.get('period_start') or record.get('periodStart')
-                start_label = start_val.strftime('%Y-%m-%d %H:%M') if isinstance(start_val, datetime) else str(start_val)
-                summary_text = self._coerce_optional_string(record.get('summary_text')) or ''
-                lines.append(f"- {start_label}:")
-                if summary_text:
-                    lines.append(f"  Summary: {summary_text}")
-                counts = record.get('activity_counts') or {}
-                highlights = [
-                    f"{key}={value}"
-                    for key, value in counts.items()
-                    if key != 'total' and isinstance(value, (int, float)) and value
-                ][:5]
-                if highlights:
-                    lines.append(f"  Signals: {', '.join(highlights)}")
-        else:
-            lines.append("")
-            lines.append("Hourly Snapshots (last 24h): none recorded")
+        for summary in daily_summaries[-7:]:  # Last 7 days
+            text = summary.get("summary_text", "")
+            if text:
+                parts.append(f"- {text[:200]}")
 
         if previous_dossier:
-            lines.append("")
-            lines.append("Previous Dossier Snapshot (use as baseline):")
-            prev_summary = self._coerce_optional_string(previous_dossier.get('summary'))
-            if prev_summary:
-                lines.append(f"- Summary: {prev_summary}")
-            prev_tone = self._coerce_optional_string(previous_dossier.get('tone'))
-            if prev_tone:
-                lines.append(f"- Tone: {prev_tone}")
+            parts.append("\nPrevious dossier (use as baseline):")
+            parts.append(f"Summary: {previous_dossier.get('summary', '')[:300]}")
 
-            for label, raw_values in (
-                ("Personality Traits", previous_dossier.get('personalityTraits')),
-                ("Interaction Guidelines", previous_dossier.get('interactionGuidelines')),
-                ("Preferences", previous_dossier.get('preferences')),
-                ("Challenges", previous_dossier.get('challenges')),
-                ("Interests", previous_dossier.get('interests')),
-            ):
-                normalized_values = self._normalize_string_list(raw_values, limit=5)
-                if normalized_values:
-                    lines.append(f"- {label}: {', '.join(normalized_values[:5])}")
+        parts.append("\nCreate an updated user dossier with personality, preferences, challenges, interests.")
+        return "\n".join(parts)
 
-        return "\n".join(lines)
+    def _format_item(self, item: Dict[str, Any]) -> str:
+        """Format a data item for prompt."""
+        if "title" in item:
+            return item["title"]
+        if "activity_name" in item:
+            return item["activity_name"]
+        if "subject" in item:
+            return item.get("subject", "")[:50]
+        if "filename" in item:
+            return item["filename"]
+        if "url" in item:
+            return item.get("url", "")[:50]
+        return str(item)[:50]
 
-    def _extract_list_from_context(self, record: Dict[str, Any], key: str) -> List[str]:
-        context = record.get('structured_context') or {}
-        if isinstance(context, str):
-            try:
-                context = json.loads(context)
-            except json.JSONDecodeError:
-                context = {}
-        values = context.get(key)
-        if isinstance(values, list):
-            return [str(item) for item in values]
-
-        content = record.get('content') or {}
-        if isinstance(content, dict):
-            direct_values = content.get(key)
-            if isinstance(direct_values, list):
-                return [str(item) for item in direct_values]
-            summary_block = content.get('summary')
-            if isinstance(summary_block, dict):
-                inner = summary_block.get(key)
-                if isinstance(inner, list):
-                    return [str(item) for item in inner]
-
-        return []
-
-    def _parse_json_object(self, raw_text: str) -> Optional[Dict[str, Any]]:
-        cleaned = self._strip_code_fences(raw_text.strip())
-        parsed = self._try_parse_json(cleaned)
-        if parsed:
-            return parsed
-
-        blob = self._extract_json_blob(cleaned)
-        if blob:
-            return self._try_parse_json(blob)
-
-        return None
-
-    def _normalize_dossier_payload(
-        self,
-        payload: Dict[str, Any],
-        *,
-        max_chars: int,
-        lookback_start: datetime,
-        lookback_end: datetime,
-        timezone: str,
-    ) -> Dict[str, Any]:
-        summary = self._coerce_optional_string(payload.get('summary')) or 'No significant activity recorded.'
-        if len(summary) > max_chars:
-            summary = summary[: max_chars - 3] + '...'
-
-        dossier: Dict[str, Any] = {
-            'summary': summary,
-            'tone': self._coerce_optional_string(payload.get('tone')),
-            'personalityTraits': self._normalize_string_list(payload.get('personalityTraits')),
-            'interactionGuidelines': self._normalize_string_list(payload.get('interactionGuidelines'), item_limit=300),
-            'preferences': self._normalize_string_list(payload.get('preferences')),
-            'challenges': self._normalize_string_list(payload.get('challenges'), item_limit=300),
-            'interests': self._normalize_string_list(payload.get('interests')),
-            'metadata': payload.get('metadata') if isinstance(payload.get('metadata'), dict) else None,
-            'lastUpdatedAt': self._coerce_optional_string(payload.get('lastUpdatedAt')) or datetime.utcnow().isoformat(),
-            'version': payload.get('version', 1),
+    def _count_activities(self, data: Dict[str, Any]) -> Dict[str, int]:
+        """Count activities by category."""
+        counts = {
+            key: len(data.get(key, []))
+            for key in [
+                "measurements",
+                "positions",
+                "communications",
+                "activities",
+                "events",
+                "messages",
+                "files",
+                "api_logs",
+                "browser_activity",
+                "screen_captures",
+            ]
         }
+        counts["total"] = sum(counts.values())
+        return counts
 
-        source_window = payload.get('sourceWindow')
-        if isinstance(source_window, dict) and source_window.get('start') and source_window.get('end'):
-            dossier['sourceWindow'] = source_window
-        else:
-            dossier['sourceWindow'] = {
-                'start': lookback_start.isoformat(),
-                'end': lookback_end.isoformat(),
-                'timezone': timezone,
-            }
-
-        return dossier
-
-    def _normalize_string_list(
-        self,
-        values: Any,
-        *,
-        limit: int = 20,
-        item_limit: int = 200,
-    ) -> Optional[List[str]]:
-        if not isinstance(values, list):
-            return None
-
-        cleaned: List[str] = []
-        for value in values:
-            if not isinstance(value, str):
-                continue
-            text = value.strip()
-            if not text:
-                continue
-            cleaned.append(text[:item_limit])
-            if len(cleaned) >= limit:
-                break
-
-        return cleaned or None
-
-    def _coerce_optional_string(self, value: Any) -> Optional[str]:
-        if isinstance(value, str):
-            text = value.strip()
-            return text or None
-        return None
-
-    def _fallback_dossier_summary(self, daily_summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        recent = daily_summaries[-3:]
-        narratives = [self._coerce_optional_string(record.get('summary_text')) for record in recent]
-        summary_text = ' '.join(filter(None, narratives)) or 'Limited summary data available.'
-
-        tags = []
-        if daily_summaries:
-            tags = self._extract_list_from_context(daily_summaries[-1], 'tags')
-
-        traits = self._normalize_string_list(tags, limit=3) or ['thoughtful']
-        guidelines = [
-            'Provide direct, respectful explanations.',
-            'Reference recent activities when offering help.',
-        ]
-
-        return {
-            'summary': summary_text,
-            'tone': 'supportive',
-            'personalityTraits': traits,
-            'interactionGuidelines': guidelines,
-            'preferences': None,
-            'challenges': None,
-            'interests': None,
-        }
-
-    def _aggregate_counts(self, summaries: List[Dict[str, Any]]) -> Dict[str, int]:
-        keys = [
-            "measurements",
-            "positions",
-            "communications",
-            "activities",
-            "events",
-            "messages",
-            "files",
-            "api_logs",
-            "browser_activity",
-            "screen_captures",
-        ]
-        totals = {key: 0 for key in keys}
-        for summary in summaries:
-            counts = summary.get('activity_counts', {})
-            for key in keys:
-                totals[key] += counts.get(key, 0)
-        totals['total'] = sum(totals.values())
-        return totals
-
-    def _coerce_json_summary(self, response_text: str) -> Tuple[str, Dict[str, Any]]:
-        """Ensure the LLM response is valid JSON, stripping markdown fences."""
-        cleaned = response_text.strip()
-        cleaned = self._strip_code_fences(cleaned)
-
-        parsed = self._try_parse_json(cleaned)
-        if not parsed:
-            blob = self._extract_json_blob(cleaned)
-            parsed = self._try_parse_json(blob) if blob else None
-
-        if not parsed:
-            logger.warning("llm_response_not_json", preview=cleaned[:200])
-            parsed = {
-                "summary": {
-                    "narrative": cleaned,
-                    "insights": [],
-                    "notable_events": [],
-                    "anomalies": [],
-                }
-            }
-
-        normalized = json.dumps(parsed, ensure_ascii=False, indent=2)
-        return normalized, parsed
-
-    def _strip_code_fences(self, text: str) -> str:
-        fence = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
-        if text.startswith("```"):
-            text = fence.sub("", text)
-        return text.strip()
-
-    def _extract_json_blob(self, text: str) -> Optional[str]:
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1 and end > start:
-            return text[start:end + 1]
-        return None
-
-    def _try_parse_json(self, text: Optional[str]) -> Optional[Dict[str, Any]]:
+    def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """Try to parse JSON from LLM response."""
         if not text:
             return None
+
+        # Remove markdown code fences
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
+
+        # Try direct parse
         try:
-            value = json.loads(text)
-            if isinstance(value, dict):
-                return value
+            return json.loads(text)
         except json.JSONDecodeError:
-            return None
+            pass
+
+        # Try extracting JSON blob
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+
         return None
-
-    def _log_llm_request(self, operation: str, payload: Dict[str, Any]) -> None:
-        """Emit the exact payload heading to the LLM for debugging."""
-        try:
-            logger.info(
-                "llm_request",
-                operation=operation,
-                payload=self._serialize_payload(payload),
-            )
-        except Exception as exc:
-            logger.warning("llm_request_logging_failed", error=str(exc), operation=operation)
-
-    def _serialize_payload(self, value: Any):
-        if isinstance(value, dict):
-            return {k: self._serialize_payload(v) for k, v in value.items()}
-        if isinstance(value, list):
-            return [self._serialize_payload(v) for v in value]
-        if isinstance(value, datetime):
-            return value.isoformat()
-        return value
-
-    def _log_prompt(self, summary_type: str, messages: List[Dict[str, Any]]) -> None:
-        try:
-            formatted = json.dumps(messages, ensure_ascii=False, indent=2)
-        except Exception:
-            formatted = str(messages)
-        print(f"[llm_prompt][{summary_type}]\n{formatted}\n", flush=True)
-
-    def _normalize_entries(self, entries: Any) -> List[str]:
-        normalized: List[str] = []
-        if not isinstance(entries, list):
-            return normalized
-        for item in entries:
-            if isinstance(item, str):
-                text = item.strip()
-                if text:
-                    normalized.append(text)
-            elif isinstance(item, dict):
-                descriptor = item.get('event') or item.get('description') or item.get('title')
-                if isinstance(descriptor, str) and descriptor.strip():
-                    text = descriptor.strip()
-                    timestamp = item.get('time')
-                    if isinstance(timestamp, str) and timestamp.strip():
-                        text = f"{text} ({timestamp.strip()})"
-                    normalized.append(text)
-        return normalized
 
 
 # Global summarizer instance
 summarizer = Summarizer()
+
+__all__ = ["summarizer", "Summarizer"]
