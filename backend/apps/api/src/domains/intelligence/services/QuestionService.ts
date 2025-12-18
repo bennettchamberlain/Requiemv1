@@ -90,7 +90,7 @@ export class QuestionService {
     return result ? QuestionEntity.toEgressType(result) : null;
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Question[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Question | null)[]> {
     const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
       {
         id: In(ids),
@@ -112,7 +112,11 @@ export class QuestionService {
       unique.set(entity.id, entity);
     }
 
-    return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
+    const map = new Map(
+      Array.from(unique.values()).map((entity) => [entity.id, QuestionEntity.toEgressType(entity)]),
+    );
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async update(

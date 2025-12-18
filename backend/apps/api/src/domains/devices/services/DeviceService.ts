@@ -78,7 +78,7 @@ export class DeviceService {
     return results.map((entity) => DeviceEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Device[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Device | null)[]> {
     const results = await this.deviceRepository.find({
       where: {
         device_id: In(ids),
@@ -88,7 +88,9 @@ export class DeviceService {
       },
     });
 
-    return results.map((entity) => DeviceEntity.toEgressType(entity));
+    const map = new Map(results.map((entity) => [entity.device_id, DeviceEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, deviceId: string): Promise<Device | null> {

@@ -52,7 +52,7 @@ export class AnswerService {
     return result.map((entity) => AnswerEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Answer[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Answer | null)[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -67,7 +67,9 @@ export class AnswerService {
       relations: ['user', 'question'],
     });
 
-    return result.map((entity) => AnswerEntity.toEgressType(entity));
+    const map = new Map(result.map((entity) => [entity.id, AnswerEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Answer | null> {

@@ -125,7 +125,7 @@ export class FileService implements OnModuleInit {
     return this.signFile(result);
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<SignedFile[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(SignedFile | null)[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -141,7 +141,11 @@ export class FileService implements OnModuleInit {
       },
     });
 
-    return this.signFiles(entities);
+    const signedFiles = await this.signFiles(entities);
+
+    const map = new Map(signedFiles.map((file) => [file.id, file]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async update(context: ServiceContext, id: string, data: UpdateFileDto): Promise<SignedFile | null> {

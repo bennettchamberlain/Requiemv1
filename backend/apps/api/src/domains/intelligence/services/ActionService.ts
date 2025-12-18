@@ -53,7 +53,7 @@ export class ActionService {
     return entities.map((entity) => ActionEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Action[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Action | null)[]> {
     const entities = await this.actionRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
@@ -66,7 +66,9 @@ export class ActionService {
       relations: ['tags'],
     });
 
-    return entities.map((entity) => ActionEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, ActionEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Action | null> {

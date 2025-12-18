@@ -62,7 +62,7 @@ export class PersonService {
     return entities.map((entity) => PersonEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Person[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Person | null)[]> {
     const entities = await this.personRepository.find({
       where: {
         id: In(ids),
@@ -74,7 +74,9 @@ export class PersonService {
       },
     });
 
-    return entities.map((entity) => PersonEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, PersonEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Person | null> {

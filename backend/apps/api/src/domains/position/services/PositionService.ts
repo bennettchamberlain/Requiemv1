@@ -108,7 +108,7 @@ export class PositionService {
     return allPositions;
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Position[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Position | null)[]> {
     const entities = await this.positionRepository.find({
       where: {
         id: In(ids),
@@ -120,7 +120,9 @@ export class PositionService {
       },
     });
 
-    return entities.map((entity) => PositionEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, PositionEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Position | null> {

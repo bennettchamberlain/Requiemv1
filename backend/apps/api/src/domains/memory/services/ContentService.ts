@@ -75,7 +75,7 @@ export class ContentService {
     return result ? ContentEntity.toEgressType(result) : null;
   }
 
-  async findByIds(context: ServiceContext, ids: string[]) {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Content | null)[]> {
     const result = await this.contentRepository.find({
       where: {
         id: In(ids),
@@ -87,7 +87,9 @@ export class ContentService {
       },
     });
 
-    return result.map((content) => ContentEntity.toEgressType(content));
+    const map = new Map(result.map((content) => [content.id, ContentEntity.toEgressType(content)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async update(context: ServiceContext, id: string, data: UpdateContentDto): Promise<Content | null> {

@@ -82,7 +82,7 @@ export class CommunicationService {
     return result ? CommunicationEntity.toEgressType(result) : null;
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Communication[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Communication | null)[]> {
     const result = await this.communicationRepository.find({
       where: {
         id: In(ids),
@@ -92,7 +92,9 @@ export class CommunicationService {
       },
     });
 
-    return result.map((entity) => CommunicationEntity.toEgressType(entity));
+    const map = new Map(result.map((entity) => [entity.id, CommunicationEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async update(

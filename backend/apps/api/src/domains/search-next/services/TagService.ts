@@ -64,7 +64,7 @@ export class TagService {
     return entities.map((entity) => TagEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Tag[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Tag | null)[]> {
     const entities = await this.tagRepository.find({
       where: {
         id: In(ids),
@@ -74,7 +74,9 @@ export class TagService {
       },
     });
 
-    return entities.map((entity) => TagEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, TagEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string, opts: FindOpts = {}): Promise<Tag | null> {

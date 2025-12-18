@@ -54,7 +54,7 @@ export class ThreadService {
     return entities.map((entity) => ThreadEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Thread[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Thread | null)[]> {
     const entities = await this.threadRepository.find({
       where: {
         id: In(ids),
@@ -67,7 +67,9 @@ export class ThreadService {
       },
     });
 
-    return entities.map((entity) => ThreadEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, ThreadEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Thread | null> {

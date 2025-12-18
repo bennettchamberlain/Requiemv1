@@ -98,7 +98,7 @@ export class BrowserActivityService {
     return results.map((entity) => BrowserActivityEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<BrowserActivity[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(BrowserActivity | null)[]> {
     const results = await this.browserActivityRepository.find({
       where: {
         id: In(ids),
@@ -109,7 +109,9 @@ export class BrowserActivityService {
       order: { time: 'DESC' },
     });
 
-    return results.map((entity) => BrowserActivityEntity.toEgressType(entity));
+    const map = new Map(results.map((entity) => [entity.id, BrowserActivityEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<BrowserActivity | null> {

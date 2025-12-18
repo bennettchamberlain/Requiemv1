@@ -25,7 +25,7 @@ export class FactService {
     return entities.map((entity) => FactEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Fact[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Fact | null)[]> {
     const entities = await this.factRepository.find({
       where: {
         id: In(ids),
@@ -35,7 +35,9 @@ export class FactService {
       },
     });
 
-    return entities.map((entity) => FactEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, FactEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Fact | null> {
