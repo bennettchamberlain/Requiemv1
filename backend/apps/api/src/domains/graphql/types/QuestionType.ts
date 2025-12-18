@@ -65,8 +65,6 @@ export class QuestionType implements Node {
       isPrivateTo: question.isPrivateTo || null,
     };
 
-    console.log('returning question toType', returned);
-
     return returned;
   }
 }
