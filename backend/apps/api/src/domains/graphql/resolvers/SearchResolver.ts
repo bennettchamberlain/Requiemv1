@@ -114,8 +114,13 @@ export class SearchResolver {
       this.threadService.findByIds(context, threadIds),
     ]);
 
-    const personResults = people.map((entity) => PersonType.toType(entity));
-    const threadResults = threads.map((entity) => ThreadType.toType(entity));
+    const personResults = people
+      .filter((entity) => entity != null)
+      .map((entity) => PersonType.toType(entity));
+
+    const threadResults = threads
+      .filter((entity) => entity != null)
+      .map((entity) => ThreadType.toType(entity));
 
     const resultMap = new Map<string, SearchResult>();
 

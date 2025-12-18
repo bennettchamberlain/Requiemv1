@@ -18,16 +18,8 @@ export class ThreadLoader extends Loader<Thread | null, string> {
 
   protected async batchLoad(
     context: UserServiceContext,
-    ids: readonly string[],
+    threadIds: readonly string[],
   ): Promise<readonly (Thread | null)[]> {
-    const threads = await this.threadService.findByIds(context, [...ids]);
-
-    const threadMap = new Map<string, Thread>();
-
-    for (const thread of threads) {
-      threadMap.set(thread.id, thread);
-    }
-
-    return ids.map((id) => threadMap.get(id) ?? null);
+    return this.threadService.findByIds(context, [...threadIds]);
   }
 }
