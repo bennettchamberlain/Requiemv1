@@ -18,16 +18,8 @@ export class QuestionLoader extends Loader<Question | null, string> {
 
   protected async batchLoad(
     context: UserServiceContext,
-    ids: readonly string[],
+    questionIds: readonly string[],
   ): Promise<readonly (Question | null)[]> {
-    const questions = await this.questionService.findByIds(context, [...ids]);
-
-    const questionMap = new Map<string, Question>();
-
-    for (const question of questions) {
-      questionMap.set(question.id, question);
-    }
-
-    return ids.map((id) => questionMap.get(id) ?? null);
+    return this.questionService.findByIds(context, [...questionIds]);
   }
 }
