@@ -11,7 +11,9 @@
     "lint:fix": "eslint --fix",
     "typecheck": "tsc --noEmit",
     "storybook": "storybook dev -p 6006",
-    "storybook:build": "storybook build"
+    "storybook:build": "storybook build",
+    "graphql:generate": "graphql-codegen",
+    "graphql:watch": "graphql-codegen --watch"
   },
   "packageManager": "yarn@4.9.1",
   "dependencies": {

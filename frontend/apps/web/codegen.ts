@@ -1,0 +1,29 @@
+import type { CodegenConfig } from '@graphql-codegen/cli';
+
+const config: CodegenConfig = {
+  schema: '../../../backend/apps/api/src/domains/graphql/__generated__/schema.graphql',
+
+  documents: ['src/**/*.tsx', 'src/**/*.ts'],
+
+  ignoreNoDocuments: true,
+
+  hooks: {
+    afterAllFileWrite: ['eslint --fix'],
+  },
+
+  generates: {
+    './src/graphql/': {
+      preset: 'client',
+      config: {
+        useTypeImports: true,
+        enumsAsTypes: true,
+        dedupeFragments: true,
+      },
+      presetConfig: {
+        gqlTagName: 'gql',
+      },
+    },
+  },
+};
+
+export default config;
