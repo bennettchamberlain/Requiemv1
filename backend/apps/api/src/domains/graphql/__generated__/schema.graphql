@@ -254,7 +254,7 @@ type TagEdge implements Edge {
 
 input TagEntitiesInput {
   ids: [ID!]!
-  label: String!
+  labels: [String!]!
 }
 
 type TagType implements Node {

@@ -34,6 +34,7 @@ import { FilesModule, FileEntity } from '@ci/domains/files';
 import { MemoryModule, GraphNodeEntity, RelationshipEntity, ContentEntity } from '@ci/domains/memory';
 import { OneDrivePromotionService } from '@ci/domains/promote/services/microsoft/OneDrivePromotionService';
 import { OutlookCalendarPromotionService } from '@ci/domains/promote/services/microsoft/OutlookCalendarPromotionService';
+import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule } from '@ci/domains/user';
 
 import { PromoteController as FacebookPromoteController } from './controllers/facebook/PromoteController';
@@ -72,6 +73,7 @@ import { PromoteService } from './services/PromoteService';
     EtlModule,
     EventsModule,
     MemoryModule,
+    SearchNextModule,
     UserModule,
   ],
   providers: [

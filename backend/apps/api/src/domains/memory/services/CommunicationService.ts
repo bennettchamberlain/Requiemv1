@@ -42,7 +42,6 @@ export class CommunicationService {
       urgencyScore: data.urgency_score,
       category: data.category,
       summary: data.summary,
-      tags: data.tags,
       connectionId: data.connection_id,
       attachments: data.attachments || [],
       isEncrypted: data.is_encrypted || false,
@@ -167,10 +166,6 @@ export class CommunicationService {
 
     if (data.summary) {
       updateData.summary = data.summary;
-    }
-
-    if (data.tags) {
-      updateData.tags = data.tags;
     }
 
     if (data.connection_id) {

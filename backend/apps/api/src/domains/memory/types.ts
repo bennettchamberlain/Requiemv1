@@ -382,7 +382,6 @@ export interface CreateCommunicationDto {
   urgency_score?: number;
   category?: string;
   summary?: string;
-  tags?: string[];
   connection_id?: string;
   is_encrypted?: boolean;
   is_archived?: boolean;
@@ -407,7 +406,6 @@ export const createCommunicationSchema = z.object({
   urgency_score: z.number().optional(),
   category: z.string().optional(),
   summary: z.string().optional(),
-  tags: z.array(z.string()).optional(),
   connection_id: z.string().optional(),
   is_encrypted: z.boolean().optional(),
   is_archived: z.boolean().optional(),
@@ -432,7 +430,6 @@ export interface UpdateCommunicationDto {
   urgency_score?: number;
   category?: string;
   summary?: string;
-  tags?: string[];
   connection_id?: string;
   is_encrypted?: boolean;
   is_archived?: boolean;
@@ -457,7 +454,6 @@ export const updateCommunicationSchema = z.object({
   urgency_score: z.number().optional(),
   category: z.string().optional(),
   summary: z.string().optional(),
-  tags: z.array(z.string()).optional(),
   connection_id: z.string().optional(),
   is_encrypted: z.boolean().optional(),
   is_archived: z.boolean().optional(),
