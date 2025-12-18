@@ -33,7 +33,7 @@ export class QuestionResolver {
 
     const entity = await this.questionService.create(serviceContext, {
       text: input.text,
-      subcategory: input.subcategory
+      subcategory: input.subcategory,
     });
 
     return QuestionType.toType(entity);
@@ -48,7 +48,7 @@ export class QuestionResolver {
 
     const entity = await this.questionService.update(serviceContext, input.id, {
       text: input.text,
-      subcategory: input.subcategory
+      subcategory: input.subcategory,
     });
 
     return entity ? QuestionType.toType(entity) : entity;

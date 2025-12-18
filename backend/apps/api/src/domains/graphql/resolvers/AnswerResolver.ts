@@ -5,19 +5,18 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtAuthGuard } from '@ci/common/guards';
 import { AnswerService } from '@ci/domains/intelligence';
 
-import { CreateAnswerInput } from '../types/CreateAnswerInput';
-import { GlobalUID } from '../types/GlobalUID';
-import { PaginationArgs } from '../types/PaginationArgs';
+import { QuestionLoader } from '../loaders/QuestionLoader';
 import { AnswerConnection } from '../types/AnswerConnection';
 import { AnswerEdge } from '../types/AnswerEdge';
 import { AnswerType } from '../types/AnswerType';
+import { CreateAnswerInput } from '../types/CreateAnswerInput';
+import { GlobalUID } from '../types/GlobalUID';
+import { PaginationArgs } from '../types/PaginationArgs';
+import { QuestionEdge } from '../types/QuestionEdge';
+import { QuestionType } from '../types/QuestionType';
 import { RemoveAnswerInput } from '../types/RemoveAnswerInput';
 import { UpdateAnswerInput } from '../types/UpdateAnswerInput';
 import { Paginator } from '../utils/Paginator';
-import { QuestionConnection } from '../types/QuestionConnection'
-import { QuestionLoader } from '../loaders/QuestionLoader'
-import { QuestionType } from '../types/QuestionType'
-import { QuestionEdge } from '../types/QuestionEdge'
 
 @UseGuards(JwtAuthGuard)
 @Resolver(() => AnswerType)
@@ -37,8 +36,8 @@ export class AnswerResolver {
     const entity = await this.answerService.create(serviceContext, {
       text: input.answer,
       question: {
-        id: input.questionId
-      }
+        id: input.questionId,
+      },
     });
 
     return AnswerType.toType(entity);
@@ -119,19 +118,17 @@ export class AnswerResolver {
   ): Promise<QuestionEdge | null> {
     const serviceContext = toServiceContext(context);
 
-    if (!answer.questionId) return null
+    if (!answer.questionId) {
+      return null;
+    }
 
     const question = await this.questionLoader.load(serviceContext, answer.questionId);
-
-    const { slice, pageInfo, totalCount } = Paginator.paginate([question], {
-      getId: (question) => GlobalUID.encode('question', question!.id),
-    });
 
     const node = QuestionType.toType(question!);
 
     return {
       node,
       cursor: node.id,
-    }
+    };
   }
 }

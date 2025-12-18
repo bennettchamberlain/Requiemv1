@@ -15,12 +15,13 @@ import { GraphQLController } from './controllers/GraphQLController';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { PersonLoader } from './loaders/PersonLoader';
+import { QuestionLoader } from './loaders/QuestionLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
-import { AnswerResolver } from './resolvers/AnswerResolver';
 import { ActionResolver } from './resolvers/ActionResolver';
+import { AnswerResolver } from './resolvers/AnswerResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
@@ -32,7 +33,6 @@ import { SearchResolver } from './resolvers/SearchResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
-import { QuestionLoader } from './loaders/QuestionLoader'
 
 @Module({
   imports: [

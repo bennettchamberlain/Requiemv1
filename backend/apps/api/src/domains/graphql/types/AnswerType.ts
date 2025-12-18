@@ -1,10 +1,9 @@
 import { Field, ID, ObjectType, Float } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
-import { type Answer, type Question } from '@ci/domains/intelligence';
+import { type Answer } from '@ci/domains/intelligence';
 
 import { GlobalUID } from './GlobalUID';
-import { QuestionType } from './QuestionType'
 import { Node } from './Node';
 
 @ObjectType({ implements: () => [Node] })

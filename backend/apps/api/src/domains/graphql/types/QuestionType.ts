@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType, Float, Directive } from '@nestjs/graphql';
+import { Field, ID, ObjectType, Float } from '@nestjs/graphql';
 
 import { type Question } from '@ci/domains/intelligence';
 
@@ -36,7 +36,7 @@ export class QuestionType implements Node {
   createdByLlm!: boolean | null;
 
   @Field(() => String, { nullable: true })
-  frequencyRecommendation!: string | null
+  frequencyRecommendation!: string | null;
 
   @Field(() => Float)
   timesAsked!: number | null;
@@ -65,8 +65,8 @@ export class QuestionType implements Node {
       isPrivateTo: question.isPrivateTo || null,
     };
 
-    console.log('returning question toType', returned)
+    console.log('returning question toType', returned);
 
-    return returned
+    return returned;
   }
 }

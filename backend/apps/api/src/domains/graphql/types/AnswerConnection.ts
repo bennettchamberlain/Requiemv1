@@ -1,7 +1,7 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
 
-import { Connection } from './Connection';
 import { AnswerEdge } from './AnswerEdge';
+import { Connection } from './Connection';
 import { PageInfo } from './PageInfo';
 
 @ObjectType({ implements: () => [Connection] })
