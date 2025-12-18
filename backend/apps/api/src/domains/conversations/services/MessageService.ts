@@ -43,7 +43,7 @@ export class MessageService {
 
     // Link files to this message if provided
     if (fileIds && fileIds.length > 0) {
-      const files = await this.fileService.findByIds(context, fileIds);
+      const files = (await this.fileService.findByIds(context, fileIds)).filter((entity) => entity != null);
 
       if (files.length > 0) {
         await this.messsageRepository
@@ -77,7 +77,7 @@ export class MessageService {
     return entities.map((entity) => MessageEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Message[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Message | null)[]> {
     const entities = await this.messsageRepository.find({
       where: {
         id: In(ids),
@@ -91,7 +91,9 @@ export class MessageService {
       relations: ['files'],
     });
 
-    return entities.map((entity) => MessageEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, MessageEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Message | null> {
@@ -129,6 +131,12 @@ export class MessageService {
     });
   }
 
+  /**
+   * Yields a collection of Messages associated with a given Thread id.
+   *
+   * This method assumes the context user has access to the corresponding
+   * Thread. This access must be ensured before safely calling this method.
+   */
   async findByThreadId(context: ServiceContext, threadId: string): Promise<Message[]> {
     const entities = await this.messsageRepository.find({
       where: {
@@ -151,6 +159,13 @@ export class MessageService {
     return entities.map((entity) => MessageEntity.toEgressType(entity));
   }
 
+  /**
+   * Yields a collection of Message arrays each associated with a provided
+   * Thread id.
+   *
+   * This method assumes the context user has access to the corresponding
+   * Threads. This access must be ensured before safely calling this method.
+   */
   async findByThreadIds(context: ServiceContext, threadIds: string[]): Promise<Map<string, Message[]>> {
     if (threadIds.length === 0) {
       return new Map();

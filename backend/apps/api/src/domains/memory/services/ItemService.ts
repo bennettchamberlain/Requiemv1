@@ -48,7 +48,7 @@ export class ItemService {
     return entities.map((entity) => ItemEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Item[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Item | null)[]> {
     const entities = await this.itemRepository.find({
       where: {
         id: In(ids),
@@ -58,7 +58,9 @@ export class ItemService {
       },
     });
 
-    return entities.map((entity) => ItemEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, ItemEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Item | null> {
@@ -78,21 +80,17 @@ export class ItemService {
     return ItemEntity.toEgressType(entity);
   }
 
-  async findByFileId(context: ServiceContext, fileId: string): Promise<Item[]> {
-    const queryBuilder = this.itemRepository.createQueryBuilder('inventory');
-
-    queryBuilder.where("inventory.metadata->>'source_file_id' = :fileId", { fileId });
-
-    if (context.userId !== SYSTEM_USER) {
-      queryBuilder.andWhere('inventory.userId = :userId', { userId: context.userId });
+  /**
+   * Yields an collection of Items each associated with a given File id.
+   *
+   * This method assumes the context user has access to the corresponding Files.
+   * This access must be ensured before safely calling this method.
+   */
+  async findByFileIds(context: ServiceContext, fileIds: string[]): Promise<Item[][]> {
+    if (fileIds.length === 0) {
+      return [];
     }
 
-    const entities = await queryBuilder.getMany();
-
-    return entities.map((entity) => ItemEntity.toEgressType(entity));
-  }
-
-  async findByFileIds(context: ServiceContext, fileIds: string[]): Promise<Map<string, Item[]>> {
     const queryBuilder = this.itemRepository.createQueryBuilder('inventory');
 
     queryBuilder.where("inventory.metadata->>'source_file_id' IN (:...fileIds)", { fileIds });
@@ -118,6 +116,6 @@ export class ItemService {
       }
     }
 
-    return itemsMap;
+    return fileIds.map((id) => itemsMap.get(id) ?? []);
   }
 }

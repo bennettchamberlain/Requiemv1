@@ -45,10 +45,12 @@ export class AnswerInferenceListener {
         10,
       );
 
-      const resolvedAnswers = await this.answerService.findByIds(
-        serviceContext,
-        associatedAnswers.map((embedding) => embedding.id),
-      );
+      const resolvedAnswers = (
+        await this.answerService.findByIds(
+          serviceContext,
+          associatedAnswers.map((embedding) => embedding.id),
+        )
+      ).filter((answer) => answer != null);
 
       const ragThread = [
         {

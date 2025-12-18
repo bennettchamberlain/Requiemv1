@@ -20,8 +20,6 @@ export class FileItemsLoader extends Loader<Item[]> {
     context: UserServiceContext,
     fileIds: readonly string[],
   ): Promise<readonly Item[][]> {
-    const itemsMap = await this.itemService.findByFileIds(context, [...fileIds]);
-
-    return fileIds.map((fileId) => itemsMap.get(fileId) ?? []);
+    return this.itemService.findByFileIds(context, [...fileIds]);
   }
 }

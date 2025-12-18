@@ -18,16 +18,8 @@ export class ItemFileLoader extends Loader<SignedFile | null, string> {
 
   protected async batchLoad(
     context: UserServiceContext,
-    ids: readonly string[],
+    fileIds: readonly string[],
   ): Promise<readonly (SignedFile | null)[]> {
-    const files = await this.fileService.findByIds(context, [...ids]);
-
-    const fileMap = new Map<string, SignedFile>();
-
-    for (const file of files) {
-      fileMap.set(file.id, file);
-    }
-
-    return ids.map((id) => fileMap.get(id) ?? null);
+    return this.fileService.findByIds(context, [...fileIds]);
   }
 }

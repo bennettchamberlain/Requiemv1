@@ -18,14 +18,10 @@ export class PersonLoader extends Loader<Person | null> {
 
   protected async batchLoad(
     context: UserServiceContext,
-    entityIds: readonly string[],
+    personIds: readonly string[],
   ): Promise<readonly (Person | null)[]> {
-    this.logger.log(`Loading a batch of ${entityIds.length} people`);
+    this.logger.log(`Loading a batch of ${personIds.length} people`);
 
-    const results = await this.personService.findByIds(context, [...entityIds]);
-
-    const map = new Map(results.map((person) => [person.id, person]));
-
-    return entityIds.map((entityId) => map.get(entityId) ?? null);
+    return this.personService.findByIds(context, [...personIds]);
   }
 }

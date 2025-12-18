@@ -57,7 +57,7 @@ export class ConnectionService {
     return entities.map((entity) => ConnectionEntity.toEgressType(entity));
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Connection[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Connection | null)[]> {
     const entities = await this.connectionRepository.find({
       where: {
         id: In(ids),
@@ -70,7 +70,9 @@ export class ConnectionService {
       relations: ['provider'],
     });
 
-    return entities.map((entity) => ConnectionEntity.toEgressType(entity));
+    const map = new Map(entities.map((entity) => [entity.id, ConnectionEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Connection | null> {

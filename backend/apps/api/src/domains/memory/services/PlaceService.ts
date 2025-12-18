@@ -66,7 +66,7 @@ export class PlaceService {
     return result ? PlaceEntity.toEgressType(result) : null;
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<Place[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Place | null)[]> {
     const result = await this.placeRepository.find({
       where: {
         id: In(ids),
@@ -76,7 +76,9 @@ export class PlaceService {
       },
     });
 
-    return result.map((entity) => PlaceEntity.toEgressType(entity));
+    const map = new Map(result.map((entity) => [entity.id, PlaceEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async update(context: ServiceContext, id: string, data: UpdatePlaceDto): Promise<Place | null> {
