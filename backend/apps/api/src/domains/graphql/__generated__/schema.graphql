@@ -24,6 +24,28 @@ type ActionType implements Node & Taggable {
   updatedAt: DateTime!
 }
 
+type CommunicationConnection implements Connection {
+  edges: [CommunicationEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type CommunicationEdge implements Edge {
+  cursor: String!
+  node: CommunicationType!
+}
+
+type CommunicationType implements Node {
+  content: String!
+  direction: String!
+  from: PersonType
+  id: ID!
+  subject: String
+  time: DateTime!
+  to(after: String, before: String, first: Int, last: Int): PersonConnection!
+  type: String!
+}
+
 interface Connection {
   edges: [Edge!]!
   pageInfo: PageInfo!
@@ -202,6 +224,8 @@ type PersonType implements Node & Taggable {
 type Query {
   action(id: ID!): ActionType
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
+  communication(id: ID!): CommunicationType
+  communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
   fact(id: ID!): FactType
   facts(after: String, before: String, first: Int, last: Int): FactConnection!
   file(id: ID!): FileType

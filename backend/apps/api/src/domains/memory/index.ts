@@ -35,7 +35,7 @@ import { ContentController } from './controllers/ContentController';
 import { EventController } from './controllers/EventController';
 import { GraphController } from './controllers/GraphController';
 import { MemoryController } from './controllers/MemoryController';
-import { CommunicationEntity } from './entities/CommunicationEntity';
+import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { EventEntity } from './entities/EventEntity';
 import { type Fact, FactEntity } from './entities/FactEntity';
@@ -184,4 +184,4 @@ export type {
   DatabaseSearchResults,
 } from './services/SearchService';
 
-export type { Fact, Item, InventoryCondition, Person };
+export type { Fact, Item, InventoryCondition, Person, Communication };
