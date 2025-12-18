@@ -36,7 +36,6 @@ import { EmbeddingModule } from '@ci/domains/search';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SpeechModule } from '@ci/domains/speech';
-import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
 
@@ -75,7 +74,6 @@ import { UserModule } from '@ci/domains/user';
     SearchNextModule,
     SpeechModule,
     UserModule,
-    SummariesModule,
   ],
   controllers: [],
   providers: [

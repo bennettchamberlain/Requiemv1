@@ -9,7 +9,7 @@ import structlog
 from .config import settings
 from .database import db
 from .agent_registration import agent_registration
-from .summary_worker import worker
+from .scheduler import scheduler
 
 # Configure structured logging
 structlog.configure(
@@ -42,7 +42,7 @@ def signal_handler(sig, frame):
 def cleanup():
     """Cleanup resources on shutdown."""
     logger.info("cleaning_up")
-    worker.stop()
+    scheduler.stop()
     agent_registration.deregister()
     db.close()
 
@@ -61,10 +61,16 @@ def main():
         # Register agent
         agent_id = agent_registration.register()
         logger.info("agent_registered_successfully", agent_id=str(agent_id))
-        
-        # Start listening for summary jobs
-        worker.start()
-        
+
+        # Start cron scheduler for automatic summary generation
+        scheduler.start()
+        logger.info("scheduler_started")
+
+        # Keep service running
+        import time
+        while True:
+            time.sleep(60)
+
     except Exception as e:
         logger.error("startup_failed", error=str(e))
         cleanup()

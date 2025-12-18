@@ -10,7 +10,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from .config import settings
 
@@ -57,16 +58,23 @@ class Summarizer:
 
     def __init__(self):
         # Create model pointing to your self-hosted endpoint
-        self.model = OpenAIModel(
+        # Use httpx async client with longer timeout for LLM calls
+        import httpx
+        http_client = httpx.AsyncClient(timeout=180.0)  # 3 minutes
+
+        self.model = OpenAIChatModel(
             settings.llm_model,
-            base_url=settings.llm_api_base,
-            api_key=settings.llm_api_key,
+            provider=OpenAIProvider(
+                base_url=settings.llm_api_base,
+                api_key=settings.llm_api_key,
+                http_client=http_client,
+            ),
         )
 
         # Create agents for each summary type
         self.hourly_agent = Agent(
             self.model,
-            result_type=HourlySummaryResponse,
+            output_type=HourlySummaryResponse,
             system_prompt=(
                 "You are an AI that creates concise hourly summaries of user activity. "
                 "Analyze the data and provide insights, patterns, and notable events."
@@ -75,7 +83,7 @@ class Summarizer:
 
         self.rollup_agent = Agent(
             self.model,
-            result_type=RollupSummaryResponse,
+            output_type=RollupSummaryResponse,
             system_prompt=(
                 "Synthesize summaries into a cohesive overview. "
                 "Focus on themes, patterns, and significant events."
@@ -84,7 +92,7 @@ class Summarizer:
 
         self.dossier_agent = Agent(
             self.model,
-            result_type=UserDossierResponse,
+            output_type=UserDossierResponse,
             system_prompt=(
                 "Create a concise user dossier summarizing personality, preferences, "
                 "challenges, and interests based on their activity. Keep summary under 500 characters."
@@ -111,18 +119,28 @@ class Summarizer:
 
         # Build prompt
         prompt = self._build_data_prompt(aggregated_data, activity_counts)
+        logger.info("calling_llm_for_summary",
+                   model=settings.llm_model,
+                   base_url=settings.llm_api_base,
+                   prompt_length=len(prompt))
 
         # Run agent (automatically retries and validates)
-        result = self.hourly_agent.run_sync(
-            prompt,
-            model_settings={
-                "temperature": settings.llm_temperature,
-                "max_tokens": settings.llm_max_tokens,
-            },
-        )
+        try:
+            result = self.hourly_agent.run_sync(
+                prompt,
+                model_settings={
+                    "temperature": settings.llm_temperature,
+                    "max_tokens": settings.llm_max_tokens,
+                },
+            )
+            logger.info("llm_response_received",
+                       tokens=result.usage().total_tokens if result.usage() else 0)
+        except Exception as exc:
+            logger.error("llm_call_failed", error=str(exc), error_type=type(exc).__name__)
+            raise
 
         # Extract validated response
-        response = result.data
+        response = result.output
         embedding = self.generate_embedding(response.summary_text)
 
         return {
@@ -173,7 +191,7 @@ class Summarizer:
             },
         )
 
-        response = result.data
+        response = result.output
 
         # Truncate if needed
         summary = response.summary
@@ -232,7 +250,7 @@ What was the user likely doing? (2-3 sentences)
             },
         )
 
-        return result.data if isinstance(result.data, str) else str(result.data)
+        return result.output if isinstance(result.output, str) else str(result.output)
 
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding using OpenAI-compatible embedding endpoint."""
@@ -279,7 +297,7 @@ What was the user likely doing? (2-3 sentences)
             },
         )
 
-        response = result.data
+        response = result.output
         embedding = self.generate_embedding(response.summary_text)
 
         # Aggregate counts

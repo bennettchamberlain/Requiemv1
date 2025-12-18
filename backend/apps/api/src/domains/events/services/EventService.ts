@@ -7,7 +7,7 @@ import { ContextService } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
-import { DEFAULT_QUEUE, WRITER_ONLY_QUEUES } from '../constants';
+import { DEFAULT_QUEUE } from '../constants';
 import { EventListenerRegistry } from '../event-registration';
 import { type EventPayloads } from '../event-registry';
 import { EventRegistry } from '../registry';
@@ -27,8 +27,6 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
   private readonly backoffWhenFull = 150;
 
   private readonly backoffWhenEmpty = 5000;
-
-  private readonly writerOnlyQueues = new Set<string>(WRITER_ONLY_QUEUES);
 
   private boss = new PgBoss({
     host: config.db.host,
@@ -82,16 +80,12 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       this.logger.error('PgBoss error', err);
     });
 
-    const workerQueues = this.getWorkerQueues();
-    const allQueues = new Set<string>([...workerQueues, ...this.writerOnlyQueues]);
+    const registeredQueues = this.getRegisteredQueues();
 
-    this.logger.log(`Discovered worker queues: ${Array.from(workerQueues).join(', ')}`);
-    if (this.writerOnlyQueues.size > 0) {
-      this.logger.log(`Discovered writer-only queues: ${Array.from(this.writerOnlyQueues).join(', ')}`);
-    }
+    this.logger.log(`Discovered queues: ${Array.from(registeredQueues).join(', ')}`);
 
-    // Create queues whether or not they have workers on this service
-    for (const queue of allQueues) {
+    // Create queues for registered listeners
+    for (const queue of registeredQueues) {
       await this.boss.createQueue(queue);
       this.logger.debug(`Created queue: ${queue}`);
     }
@@ -99,12 +93,12 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     try {
       this.logger.log('Initializing work queues...');
 
-      // Start workers for all discovered queues
-      for (const queue of workerQueues) {
+      // Start workers for all registered queues
+      for (const queue of registeredQueues) {
         this.stopTasks.push(this.work(queue));
       }
 
-      this.logger.log(`Initialized ${workerQueues.size} work queues`);
+      this.logger.log(`Initialized ${registeredQueues.size} work queues`);
     } catch (err: unknown) {
       this.logger.error(
         'Failed to initialize work queue client',
@@ -162,12 +156,11 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       name,
     } satisfies EventData;
 
-    const workerQueues = this.getWorkerQueues();
-    const allQueues = new Set<string>([...workerQueues, ...this.writerOnlyQueues]);
+    const registeredQueues = this.getRegisteredQueues();
 
     // If a specific queue is provided and that queue exists, send only to that queue.
     if (options?.queue) {
-      if (!allQueues.has(options.queue)) {
+      if (!registeredQueues.has(options.queue)) {
         this.logger.warn(`Requested queue ${options.queue} does not exist. Event ${name} will not be sent.`);
 
         return [];
@@ -181,7 +174,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     // Otherwise, send to all registered queues.
     const jobIds: string[] = [];
 
-    for (const queue of workerQueues) {
+    for (const queue of registeredQueues) {
       try {
         const jobId = await this.boss.send(queue, resolvedData);
 
@@ -201,7 +194,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     return jobIds;
   }
 
-  private getWorkerQueues(): Set<string> {
+  private getRegisteredQueues(): Set<string> {
     const listeners = EventListenerRegistry.getListeners();
     const queues = new Set<string>();
 

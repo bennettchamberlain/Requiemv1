@@ -48,6 +48,10 @@ class UserDossierBuilder:
             return None
 
         context_payload = daily_summaries[-30:]
+        logger.info("generating_dossier_from_llm",
+                   daily_count=len(context_payload),
+                   hourly_count=len(hourly_summaries[-24:]))
+
         dossier = summarizer.generate_user_dossier(
             user_id=str(user_id),
             lookback_start=daily_window_start,
@@ -58,6 +62,7 @@ class UserDossierBuilder:
             max_chars=self._max_chars,
             previous_dossier=previous_dossier,
         )
+        logger.info("dossier_generated_from_llm")
 
         if not dossier:
             return None

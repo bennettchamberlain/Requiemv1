@@ -43,8 +43,6 @@ export const enum Events {
   PROMOTE_OUTLOOK_MAIL_MESSAGES = 'PROMOTE_OUTLOOK_MAIL_MESSAGES',
   PROMOTE_OUTLOOK_CALENDAR_EVENTS = 'PROMOTE_OUTLOOK_CALENDAR_EVENTS',
   PROMOTE_ONEDRIVE_FILES = 'PROMOTE_ONEDRIVE_FILES',
-  MEMORY_SUMMARY_GENERATION = 'memory.summary.generate',
-  MEMORY_DOSSIER_REFRESH = 'memory.dossier.refresh',
   PROMOTE_FACEBOOK_PROFILE = 'PROMOTE_FACEBOOK_PROFILE',
   PROMOTE_FACEBOOK_POSTS = 'PROMOTE_FACEBOOK_POSTS',
   PROMOTE_FACEBOOK_PHOTOS = 'PROMOTE_FACEBOOK_PHOTOS',
@@ -52,8 +50,6 @@ export const enum Events {
   PROMOTE_FACEBOOK_FRIENDS = 'PROMOTE_FACEBOOK_FRIENDS',
   PROMOTE_FACEBOOK_LIKES = 'PROMOTE_FACEBOOK_LIKES',
 }
-
-export type SummaryPeriodType = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'seasonal' | 'yearly';
 
 interface ChatSummarizationPayload extends EventPayload {
   ownerId: string;
@@ -275,34 +271,6 @@ interface PromoteOneDriveFilePayload extends EventPayload {
   content: unknown;
 }
 
-interface SummaryGenerationPayload extends EventPayload {
-  userId: string;
-  periodType: SummaryPeriodType;
-  periodStart: string;
-  periodEnd: string;
-  timezone?: string;
-  sourceTypes?: string[];
-}
-
-interface MemoryDossierRefreshPayload extends EventPayload {
-  userId: string;
-  periodType?: 'dossier';
-  periodStart: string;
-  periodEnd: string;
-  timezone?: string;
-  trigger?: 'auto' | 'manual';
-  lookbackDays?: number;
-}
-
-interface SummaryGenerationPayload extends EventPayload {
-  userId: string;
-  periodType: SummaryPeriodType;
-  periodStart: string;
-  periodEnd: string;
-  timezone?: string;
-  sourceTypes?: string[];
-}
-
 interface PromoteFacebookProfilePayload extends EventPayload {
   apiLogId: string;
   userId: string;
@@ -374,9 +342,6 @@ export type EventPayloads = {
   [Events.PROMOTE_OUTLOOK_MAIL_MESSAGES]: PromoteOutlookMessagesPayload;
   [Events.PROMOTE_OUTLOOK_CALENDAR_EVENTS]: PromoteOutlookCalendarEventsPayload;
   [Events.PROMOTE_ONEDRIVE_FILES]: PromoteOneDriveFilePayload;
-  [Events.MEMORY_SUMMARY_GENERATION]: SummaryGenerationPayload;
-  [Events.MEMORY_DOSSIER_REFRESH]: MemoryDossierRefreshPayload;
-  [Events.MEMORY_SUMMARY_GENERATION]: SummaryGenerationPayload;
   [Events.PROMOTE_FACEBOOK_PROFILE]: PromoteFacebookProfilePayload;
   [Events.PROMOTE_FACEBOOK_POSTS]: PromoteFacebookPostsPayload;
   [Events.PROMOTE_FACEBOOK_PHOTOS]: PromoteFacebookPhotosPayload;

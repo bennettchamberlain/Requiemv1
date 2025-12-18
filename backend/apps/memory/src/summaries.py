@@ -31,9 +31,16 @@ def execute_hourly_summary(
 
     # Aggregate data
     aggregated_data = aggregator.aggregate_hour(user_id, adjusted_start, adjusted_end)
+    logger.info("data_aggregated",
+                user_id=str(user_id),
+                measurements=len(aggregated_data.get("measurements", [])),
+                events=len(aggregated_data.get("events", [])),
+                communications=len(aggregated_data.get("communications", [])),
+                browser_activity=len(aggregated_data.get("browser_activity", [])))
 
     # Generate summary
     summary_data = summarizer.generate_hourly_summary(aggregated_data)
+    logger.info("summary_generated", has_activity=summary_data.get("activity_counts", {}).get("total", 0) > 0)
 
     # Store summary
     summary_id = _store_summary(user_id, summary_data, start_time, end_time, timezone)
@@ -103,14 +110,20 @@ def execute_dossier_refresh(
     """Refresh user dossier from recent summaries."""
     from .dossier_builder import dossier_builder
 
+    logger.info("dossier_refresh_started", user_id=str(user_id))
+
     # Get entity and previous dossier
     entity_id = _get_user_entity_id(user_id)
     if not entity_id:
         raise ValueError(f"No entity found for user {user_id}")
 
+    logger.info("entity_found", entity_id=entity_id)
+
     previous_dossier = _get_entity_dossier(entity_id)
+    logger.info("previous_dossier_fetched", has_dossier=bool(previous_dossier))
 
     # Build new dossier
+    logger.info("building_new_dossier", lookback_days=lookback_days)
     dossier_payload = dossier_builder.build(
         user_id,
         end_time,
@@ -118,6 +131,7 @@ def execute_dossier_refresh(
         lookback_override=lookback_days,
         previous_dossier=previous_dossier,
     )
+    logger.info("dossier_built_successfully")
 
     if not dossier_payload:
         raise ValueError("Unable to build dossier from available summaries")
@@ -187,15 +201,22 @@ def _store_summary(
         "tokens_used": summary_data.get("tokens_used", 0),
     }
 
+    # Determine source types from activity counts
+    activity_counts = summary_data.get("activity_counts", {})
+    source_types = [
+        key for key, count in activity_counts.items()
+        if key != "total" and count > 0
+    ]
+
     # Insert
     db.execute_write(
         """
         INSERT INTO summaries (
             summary_id, user_id, period_start, period_end, period_type,
-            timezone, title, content, summary_embedding, created_at, updated_at
+            timezone, source_types, title, content, summary_embedding, created_at, updated_at
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, :period_type,
-            :timezone, :title, CAST(:content AS jsonb),
+            :timezone, :source_types, :title, CAST(:content AS jsonb),
             CAST(:embedding AS vector), NOW(), NOW()
         )
         """,
@@ -206,6 +227,7 @@ def _store_summary(
             "period_end": end_time,
             "period_type": summary_type,
             "timezone": timezone,
+            "source_types": source_types,
             "title": f"{summary_type.title()} Summary",
             "content": json.dumps(content),
             "embedding": json.dumps(summary_data.get("embedding", [])),

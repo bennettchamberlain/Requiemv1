@@ -4,6 +4,7 @@ FastAPI endpoints for manual triggers and browser history processing.
 Simple HTTP layer - delegates to summaries.py for execution logic.
 """
 import uuid
+import nest_asyncio
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,9 @@ from .browser_history_processor import history_processor
 from .data_aggregator import aggregator
 from . import summaries
 from . import __version__
+
+# Allow nested event loops (needed for run_sync() in async FastAPI context)
+nest_asyncio.apply()
 
 app = FastAPI(
     title="CI Memory API",

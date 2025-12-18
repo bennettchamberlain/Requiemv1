@@ -47,6 +47,6 @@ export { EventService };
 
 // Types
 export type { EventPayload, Acknowledgement } from './types';
-export { Events, type EventPayloads, type SummaryPeriodType } from './event-registry';
+export { Events, type EventPayloads } from './event-registry';
 export { OnEvent } from './decorators/OnEvent';
 export { defineEvent } from './event-registration';

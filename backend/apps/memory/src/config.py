@@ -45,14 +45,6 @@ class Settings(BaseSettings):
     agent_check_interval_seconds: int = Field(
         default_factory=lambda: int(os.getenv("MEMORY_AGENT_CHECK_INTERVAL_SECONDS", 30))
     )
-    summary_queue_name: str = os.getenv("SUMMARY_QUEUE_NAME", "memory-summaries")
-    queue_fetch_batch_size: int = Field(default_factory=lambda: int(os.getenv("MEMORY_QUEUE_BATCH_SIZE", 5)))
-    queue_empty_backoff_seconds: int = Field(
-        default_factory=lambda: int(os.getenv("MEMORY_QUEUE_EMPTY_BACKOFF_SECONDS", 5))
-    )
-    queue_error_backoff_seconds: int = Field(
-        default_factory=lambda: int(os.getenv("MEMORY_QUEUE_ERROR_BACKOFF_SECONDS", 5))
-    )
     schema_detection_max_attempts: int = Field(
         default_factory=lambda: int(os.getenv("MEMORY_SCHEMA_DETECTION_MAX_ATTEMPTS", 0))
     )

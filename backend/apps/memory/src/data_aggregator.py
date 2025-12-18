@@ -38,18 +38,17 @@ TABLES = {
         'time_col': 'time',
         'group_by': ['location_entity_id', 'source', 'activity_type'],
         'agg': 'COUNT(*) as count',
-        'select_extra': 'ST_AsText(location) as location_text',
         'where_extra': 'location IS NOT NULL',
-        'exclude': ['location'],  # Using location_text instead
+        'exclude': ['location'],
         'order': 'count DESC',
     },
 
     # Raw tables: just SELECT with time filter
     'communications': {'time_col': 'time', 'exclude': ['content', 'participants_metadata']},
-    'activities': {'time_col': 'start_time', 'where_extra': 'is_deleted = false'},
-    'events': {'time_col': 'start_time', 'where_extra': 'is_deleted = false'},
-    'messages': {'time_col': 'created_at', 'where_extra': 'is_deleted = false', 'exclude': ['tool_calls', 'edit_history']},
-    'files': {'time_col': 'created_at', 'where_extra': 'is_deleted = false', 'exclude': ['extracted_text', 'media_metadata']},
+    'activities': {'time_col': 'start_time'},
+    'events': {'time_col': 'start_time'},
+    'messages': {'time_col': 'created_at', 'exclude': ['tool_calls', 'edit_history']},
+    'files': {'time_col': 'created_at', 'exclude': ['extracted_text', 'media_metadata']},
     'api_logs': {'time_col': 'created_at', 'exclude': ['content']},
     'browser_activity': {'time_col': 'time', 'exclude': ['domain']},
     'screen_captures': {'time_col': 'time', 'exclude': ['ocr_text'], 'limit': 50},
