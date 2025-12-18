@@ -19,6 +19,7 @@ import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
+import { AnswerResolver } from './resolvers/AnswerResolver';
 import { ActionResolver } from './resolvers/ActionResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { FactResolver } from './resolvers/FactResolver';
@@ -26,10 +27,12 @@ import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
+import { QuestionResolver } from './resolvers/QuestionResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
+import { QuestionLoader } from './loaders/QuestionLoader'
 
 @Module({
   imports: [
@@ -53,6 +56,7 @@ import { UserResolver } from './resolvers/UserResolver';
     CommunicationResolver,
     ComplexityPlugin,
     NodeResolver,
+    AnswerResolver,
     FactResolver,
     FileItemsLoader,
     FileResolver,
@@ -60,6 +64,8 @@ import { UserResolver } from './resolvers/UserResolver';
     ItemResolver,
     PersonLoader,
     PersonResolver,
+    QuestionResolver,
+    QuestionLoader,
     SearchResolver,
     TagLoader,
     TagResolver,

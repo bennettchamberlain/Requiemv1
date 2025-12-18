@@ -1,11 +1,13 @@
 type ResourceType =
   | 'action'
+  | 'answer'
   | 'communication'
   | 'fact'
   | 'file'
   | 'item'
   | 'message'
   | 'person'
+  | 'question'
   | 'tag'
   | 'thread'
   | 'user';
