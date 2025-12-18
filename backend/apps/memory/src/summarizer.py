@@ -1,26 +1,97 @@
 """
-LLM-based summarization - calls OpenAI-compatible API and generates embeddings.
+LLM-based summarization using PydanticAI for structured outputs.
 
-Simplified: Just call LLM, parse JSON, or fail gracefully.
+Uses PydanticAI agents to guarantee valid responses from any OpenAI-compatible API.
+No OpenAI dependency, no manual JSON parsing, just type-safe responses.
 """
-import json
-import re
 import structlog
+import httpx
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-from openai import OpenAI
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
 
 from .config import settings
 
 logger = structlog.get_logger()
 
 
+# ============================================================================
+# Pydantic response models
+# ============================================================================
+
+class HourlySummaryResponse(BaseModel):
+    """Structured response for hourly summaries."""
+    summary_text: str = Field(description="2-3 sentence narrative summary of the hour")
+    key_insights: List[str] = Field(default_factory=list, description="3-5 key insights or patterns")
+    notable_events: List[str] = Field(default_factory=list, description="Notable activities or events")
+    anomalies: List[str] = Field(default_factory=list, description="Unusual observations or anomalies")
+    tags: List[str] = Field(default_factory=list, description="Tags describing activities and content")
+
+
+class RollupSummaryResponse(BaseModel):
+    """Structured response for daily/weekly/monthly rollups."""
+    summary_text: str = Field(description="Concise narrative synthesizing the period")
+    key_themes: List[str] = Field(default_factory=list, description="Main themes of the period")
+    notable_events: List[str] = Field(default_factory=list, description="Significant events")
+
+
+class UserDossierResponse(BaseModel):
+    """Structured response for user dossier."""
+    summary: str = Field(description="Concise user summary")
+    tone: Optional[str] = Field(default=None, description="User's communication tone")
+    personalityTraits: Optional[List[str]] = Field(default=None, description="Observed personality traits")
+    interactionGuidelines: Optional[List[str]] = Field(default=None, description="Best practices for interacting")
+    preferences: Optional[List[str]] = Field(default=None, description="User preferences")
+    challenges: Optional[List[str]] = Field(default=None, description="Challenges user is facing")
+    interests: Optional[List[str]] = Field(default=None, description="Topics of interest")
+
+
+# ============================================================================
+# Summarizer
+# ============================================================================
+
 class Summarizer:
-    """Generates summaries using local LLM."""
+    """Generates summaries using self-hosted LLM via PydanticAI."""
 
     def __init__(self):
-        self.client = OpenAI(base_url=settings.llm_api_base, api_key=settings.llm_api_key)
-        logger.info("llm_client_initialized", model=settings.llm_model)
+        # Create model pointing to your self-hosted endpoint
+        self.model = OpenAIModel(
+            settings.llm_model,
+            base_url=settings.llm_api_base,
+            api_key=settings.llm_api_key,
+        )
+
+        # Create agents for each summary type
+        self.hourly_agent = Agent(
+            self.model,
+            result_type=HourlySummaryResponse,
+            system_prompt=(
+                "You are an AI that creates concise hourly summaries of user activity. "
+                "Analyze the data and provide insights, patterns, and notable events."
+            ),
+        )
+
+        self.rollup_agent = Agent(
+            self.model,
+            result_type=RollupSummaryResponse,
+            system_prompt=(
+                "Synthesize summaries into a cohesive overview. "
+                "Focus on themes, patterns, and significant events."
+            ),
+        )
+
+        self.dossier_agent = Agent(
+            self.model,
+            result_type=UserDossierResponse,
+            system_prompt=(
+                "Create a concise user dossier summarizing personality, preferences, "
+                "challenges, and interests based on their activity. Keep summary under 500 characters."
+            ),
+        )
+
+        logger.info("pydantic_ai_initialized", model=settings.llm_model, base_url=settings.llm_api_base)
 
     def generate_hourly_summary(self, aggregated_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate hourly summary from aggregated data."""
@@ -31,6 +102,8 @@ class Summarizer:
                 "summary_text": "No activity recorded during this window.",
                 "summary_type": "hourly",
                 "key_insights": [],
+                "events": [],
+                "anomalies": [],
                 "embedding": self.generate_embedding("No activity"),
                 "activity_counts": activity_counts,
                 "tokens_used": 0,
@@ -39,42 +112,29 @@ class Summarizer:
         # Build prompt
         prompt = self._build_data_prompt(aggregated_data, activity_counts)
 
-        # Call LLM
-        try:
-            response = self.client.chat.completions.create(
-                model=settings.llm_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an AI that creates concise hourly summaries. "
-                        "Return valid JSON with: {summary_text, key_insights: [], notable_events: []}",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=settings.llm_temperature,
-                max_tokens=settings.llm_max_tokens,
-            )
+        # Run agent (automatically retries and validates)
+        result = self.hourly_agent.run_sync(
+            prompt,
+            model_settings={
+                "temperature": settings.llm_temperature,
+                "max_tokens": settings.llm_max_tokens,
+            },
+        )
 
-            raw = response.choices[0].message.content
-            parsed = self._parse_json(raw) or {"summary_text": raw}
+        # Extract validated response
+        response = result.data
+        embedding = self.generate_embedding(response.summary_text)
 
-            summary_text = parsed.get("summary_text", raw)
-            embedding = self.generate_embedding(summary_text)
-
-            return {
-                "summary_text": summary_text,
-                "summary_type": "hourly",
-                "key_insights": parsed.get("key_insights", parsed.get("insights", [])),
-                "events": parsed.get("notable_events", parsed.get("events", [])),
-                "anomalies": parsed.get("anomalies", []),
-                "embedding": embedding,
-                "activity_counts": activity_counts,
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-            }
-
-        except Exception as exc:
-            logger.error("hourly_summary_failed", error=str(exc))
-            raise
+        return {
+            "summary_text": response.summary_text,
+            "summary_type": "hourly",
+            "key_insights": response.key_insights,
+            "events": response.notable_events,
+            "anomalies": response.anomalies,
+            "embedding": embedding,
+            "activity_counts": activity_counts,
+            "tokens_used": result.usage().total_tokens if result.usage() else 0,
+        }
 
     def generate_daily_summary(self, hourly_summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Generate daily summary from hourly summaries."""
@@ -103,62 +163,39 @@ class Summarizer:
         if not daily_summaries and not hourly_summaries:
             return None
 
-        prompt = self._build_dossier_prompt(
-            daily_summaries, hourly_summaries, previous_dossier
+        prompt = self._build_dossier_prompt(daily_summaries, hourly_summaries, previous_dossier)
+
+        result = self.dossier_agent.run_sync(
+            prompt,
+            model_settings={
+                "temperature": 0.2,
+                "max_tokens": 1200,
+            },
         )
 
-        try:
-            response = self.client.chat.completions.create(
-                model=settings.llm_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Create a user dossier with: {summary, tone, personalityTraits: [], interactionGuidelines: [], preferences: [], challenges: [], interests: []}",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.2,
-                max_tokens=1200,
-            )
+        response = result.data
 
-            raw = response.choices[0].message.content
-            parsed = self._parse_json(raw)
+        # Truncate if needed
+        summary = response.summary
+        if len(summary) > max_chars:
+            summary = summary[: max_chars - 3] + "..."
 
-            if not parsed:
-                # Fallback
-                summary_text = " ".join(
-                    [s.get("summary_text", "") for s in daily_summaries[-3:]]
-                )
-                parsed = {"summary": summary_text or "Limited data available."}
-
-            # Normalize
-            parsed.setdefault("summary", "No significant activity.")
-            parsed.setdefault("tone", None)
-            parsed.setdefault("personalityTraits", None)
-            parsed.setdefault("interactionGuidelines", None)
-            parsed.setdefault("preferences", None)
-            parsed.setdefault("challenges", None)
-            parsed.setdefault("interests", None)
-            parsed.setdefault("lastUpdatedAt", datetime.utcnow().isoformat())
-            parsed.setdefault("version", 1)
-            parsed.setdefault(
-                "sourceWindow",
-                {
-                    "start": lookback_start.isoformat(),
-                    "end": lookback_end.isoformat(),
-                    "timezone": timezone,
-                },
-            )
-
-            # Truncate if needed
-            if len(parsed["summary"]) > max_chars:
-                parsed["summary"] = parsed["summary"][: max_chars - 3] + "..."
-
-            return parsed
-
-        except Exception as exc:
-            logger.error("dossier_generation_failed", error=str(exc))
-            return None
+        return {
+            "summary": summary,
+            "tone": response.tone,
+            "personalityTraits": response.personalityTraits,
+            "interactionGuidelines": response.interactionGuidelines,
+            "preferences": response.preferences,
+            "challenges": response.challenges,
+            "interests": response.interests,
+            "lastUpdatedAt": datetime.utcnow().isoformat(),
+            "version": 1,
+            "sourceWindow": {
+                "start": lookback_start.isoformat(),
+                "end": lookback_end.isoformat(),
+                "timezone": timezone,
+            },
+        }
 
     def generate_history_summary(
         self,
@@ -168,7 +205,7 @@ class Summarizer:
         stats: Dict[str, Any],
         sample_entries: List[Dict[str, Any]],
     ) -> str:
-        """Generate browser history summary."""
+        """Generate browser history summary (plain text, no structure)."""
         prompt = f"""
 Browser activity: {start_time} to {end_time}
 Total entries: {stats['total_entries']}
@@ -181,31 +218,38 @@ Sample activity:
 What was the user likely doing? (2-3 sentences)
 """
 
-        try:
-            response = self.client.chat.completions.create(
-                model=settings.llm_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Infer user intent from browser history. Be concise.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=settings.llm_temperature,
-                max_tokens=400,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as exc:
-            logger.error("history_summary_failed", error=str(exc))
-            return ""
+        # Simple agent for unstructured text
+        simple_agent = Agent(
+            self.model,
+            system_prompt="Infer user intent from browser history. Be concise.",
+        )
+
+        result = simple_agent.run_sync(
+            prompt,
+            model_settings={
+                "temperature": settings.llm_temperature,
+                "max_tokens": 400,
+            },
+        )
+
+        return result.data if isinstance(result.data, str) else str(result.data)
 
     def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text."""
+        """Generate embedding using OpenAI-compatible embedding endpoint."""
         try:
-            response = self.client.embeddings.create(
-                model=settings.embedding_model, input=text
-            )
-            return response.data[0].embedding
+            # Direct HTTP call to embedding endpoint (no openai dependency)
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    f"{settings.llm_api_base}/embeddings",
+                    headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                    json={
+                        "model": settings.embedding_model,
+                        "input": text,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["data"][0]["embedding"]
         except Exception as exc:
             logger.error("embedding_generation_failed", error=str(exc))
             return [0.0] * settings.embedding_dimensions
@@ -214,49 +258,45 @@ What was the user likely doing? (2-3 sentences)
     # Internal helpers
     # ========================================================================
 
-    def _generate_rollup(self, period_type: str, child_summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _generate_rollup(
+        self, period_type: str, child_summaries: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """Generic rollup for daily/weekly/monthly/etc."""
-        # Combine child summaries
         combined_text = "\n\n".join(
-            [f"Summary {i + 1}: {s.get('summary_text', '')}" for i, s in enumerate(child_summaries)]
+            [
+                f"Summary {i + 1}: {s.get('summary_text', '')}"
+                for i, s in enumerate(child_summaries)
+            ]
         )
 
-        try:
-            response = self.client.chat.completions.create(
-                model=settings.llm_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"Synthesize these summaries into a {period_type} overview. Focus on themes, patterns, and insights.",
-                    },
-                    {"role": "user", "content": combined_text},
-                ],
-                temperature=settings.llm_temperature,
-                max_tokens=settings.llm_max_tokens,
-            )
+        prompt = f"Synthesize these summaries into a {period_type} overview:\n\n{combined_text}"
 
-            summary_text = response.choices[0].message.content
-            embedding = self.generate_embedding(summary_text)
+        result = self.rollup_agent.run_sync(
+            prompt,
+            model_settings={
+                "temperature": settings.llm_temperature,
+                "max_tokens": settings.llm_max_tokens,
+            },
+        )
 
-            # Aggregate counts
-            total_counts = {}
-            for summary in child_summaries:
-                counts = summary.get("activity_counts", {})
-                for key, value in counts.items():
-                    total_counts[key] = total_counts.get(key, 0) + value
+        response = result.data
+        embedding = self.generate_embedding(response.summary_text)
 
-            return {
-                "summary_text": summary_text,
-                "summary_type": period_type,
-                "embedding": embedding,
-                "activity_counts": total_counts,
-                "num_child_summaries": len(child_summaries),
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-            }
+        # Aggregate counts
+        total_counts = {}
+        for summary in child_summaries:
+            counts = summary.get("activity_counts", {})
+            for key, value in counts.items():
+                total_counts[key] = total_counts.get(key, 0) + value
 
-        except Exception as exc:
-            logger.error("rollup_summary_failed", period=period_type, error=str(exc))
-            raise
+        return {
+            "summary_text": response.summary_text,
+            "summary_type": period_type,
+            "embedding": embedding,
+            "activity_counts": total_counts,
+            "num_child_summaries": len(child_summaries),
+            "tokens_used": result.usage().total_tokens if result.usage() else 0,
+        }
 
     def _build_data_prompt(self, data: Dict[str, Any], counts: Dict[str, int]) -> str:
         """Build prompt from aggregated data."""
@@ -274,7 +314,15 @@ What was the user likely doing? (2-3 sentences)
         parts.append("")
 
         # Add sample data from each category
-        for category in ["measurements", "events", "communications", "activities", "messages", "files", "browser_activity"]:
+        for category in [
+            "measurements",
+            "events",
+            "communications",
+            "activities",
+            "messages",
+            "files",
+            "browser_activity",
+        ]:
             items = data.get(category, [])
             if items:
                 parts.append(f"{category.upper()}:")
@@ -282,7 +330,6 @@ What was the user likely doing? (2-3 sentences)
                     parts.append(f"- {self._format_item(item)}")
                 parts.append("")
 
-        parts.append("Provide a concise 2-3 sentence summary of the hour.")
         return "\n".join(parts)
 
     def _build_dossier_prompt(
@@ -303,7 +350,9 @@ What was the user likely doing? (2-3 sentences)
             parts.append("\nPrevious dossier (use as baseline):")
             parts.append(f"Summary: {previous_dossier.get('summary', '')[:300]}")
 
-        parts.append("\nCreate an updated user dossier with personality, preferences, challenges, interests.")
+        parts.append(
+            "\nCreate an updated user dossier with personality, preferences, challenges, interests."
+        )
         return "\n".join(parts)
 
     def _format_item(self, item: Dict[str, Any]) -> str:
@@ -339,31 +388,6 @@ What was the user likely doing? (2-3 sentences)
         }
         counts["total"] = sum(counts.values())
         return counts
-
-    def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
-        """Try to parse JSON from LLM response."""
-        if not text:
-            return None
-
-        # Remove markdown code fences
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
-
-        # Try direct parse
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        # Try extracting JSON blob
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            try:
-                return json.loads(text[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-
-        return None
 
 
 # Global summarizer instance
