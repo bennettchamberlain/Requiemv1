@@ -44,6 +44,9 @@
     "zod": "^3.25.6"
   },
   "devDependencies": {
+    "@graphql-codegen/cli": "^6.1.0",
+    "@graphql-codegen/client-preset": "^5.2.1",
+    "@graphql-typed-document-node/core": "^3.2.0",
     "@storybook/addon-a11y": "^9.0.8",
     "@storybook/addon-docs": "^9.0.8",
     "@storybook/react": "^9.0.8",
