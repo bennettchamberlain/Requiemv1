@@ -9,5 +9,5 @@ export class UpdateQuestionInput {
   text!: string;
 
   @Field()
-  subcategory!: string;
+  category!: string;
 }

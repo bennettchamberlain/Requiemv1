@@ -5,24 +5,19 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtAuthGuard } from '@ci/common/guards';
 import { QuestionService } from '@ci/domains/intelligence';
 
-import { TagLoader } from '../loaders/TagLoader';
 import { CreateQuestionInput } from '../types/CreateQuestionInput';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { QuestionConnection } from '../types/QuestionConnection';
 import { QuestionEdge } from '../types/QuestionEdge';
 import { QuestionType } from '../types/QuestionType';
-import { RemoveQuestionInput } from '../types/RemoveQuestionInput';
 import { UpdateQuestionInput } from '../types/UpdateQuestionInput';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
 @Resolver(() => QuestionType)
 export class QuestionResolver {
-  constructor(
-    private readonly questionService: QuestionService,
-    private readonly tagLoader: TagLoader,
-  ) {}
+  constructor(private readonly questionService: QuestionService) {}
 
   @Mutation(() => QuestionType)
   async createQuestion(
@@ -33,7 +28,7 @@ export class QuestionResolver {
 
     const entity = await this.questionService.create(serviceContext, {
       text: input.text,
-      subcategory: input.subcategory,
+      subcategory: input.category,
     });
 
     return QuestionType.toType(entity);
@@ -48,20 +43,17 @@ export class QuestionResolver {
 
     const entity = await this.questionService.update(serviceContext, input.id, {
       text: input.text,
-      subcategory: input.subcategory,
+      subcategory: input.category,
     });
 
     return entity ? QuestionType.toType(entity) : entity;
   }
 
   @Mutation(() => Boolean)
-  async removeQuestion(
-    @Context() context: RequestContext,
-    @Args('input') input: RemoveQuestionInput,
-  ): Promise<boolean> {
+  async removeQuestion(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
     const serviceContext = toServiceContext(context);
 
-    return this.questionService.remove(serviceContext, input.id);
+    return this.questionService.remove(serviceContext, id);
   }
 
   @Query(() => QuestionConnection)

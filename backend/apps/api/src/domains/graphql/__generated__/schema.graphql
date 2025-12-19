@@ -37,21 +37,11 @@ type AnswerEdge implements Edge {
 
 type AnswerType implements Node {
   answer: String!
-  answerConfidence: Float
   answerMethod: String!
   answerSource: String
   answeredAt: DateTime!
-  complexityScore: Float!
-  emotionalState: String!
-  extractedEntities: [String!]!
   id: ID!
-  isSensitive: Boolean!
-  locationContext: String!
-  question: QuestionEdge!
-  questionId: ID!
-  sentimentScore: Float!
-  sessionContext: JSON!
-  sharingLevel: String!
+  question: QuestionType!
 }
 
 type CommunicationConnection implements Connection {
@@ -93,7 +83,7 @@ input CreatePersonInput {
 }
 
 input CreateQuestionInput {
-  subcategory: String!
+  category: String!
   text: String!
 }
 
@@ -217,9 +207,9 @@ type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createPerson(input: CreatePersonInput!): PersonType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
-  removeAnswer(input: RemoveAnswerInput!): Boolean!
+  removeAnswer(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
-  removeQuestion(input: RemoveQuestionInput!): Boolean!
+  removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
@@ -306,28 +296,14 @@ type QuestionEdge implements Edge {
 
 type QuestionType implements Node {
   category: String!
-  contextTags: [String!]
   createdByLlm: Boolean
-  frequencyRecommendation: String
   id: ID!
-  isActive: Boolean
-  isPrivateTo: String
   isSeedQuestion: Boolean
   questionType: String
   text: String!
-  timesAnswered: Float!
-  timesAsked: Float!
-}
-
-input RemoveAnswerInput {
-  id: String!
 }
 
 input RemovePersonInput {
-  id: String!
-}
-
-input RemoveQuestionInput {
   id: String!
 }
 
@@ -406,8 +382,8 @@ input UpdatePersonInput {
 }
 
 input UpdateQuestionInput {
+  category: String!
   id: String!
-  subcategory: String!
   text: String!
 }
 

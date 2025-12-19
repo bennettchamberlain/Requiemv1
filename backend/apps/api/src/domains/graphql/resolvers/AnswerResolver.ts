@@ -12,9 +12,7 @@ import { AnswerType } from '../types/AnswerType';
 import { CreateAnswerInput } from '../types/CreateAnswerInput';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
-import { QuestionEdge } from '../types/QuestionEdge';
 import { QuestionType } from '../types/QuestionType';
-import { RemoveAnswerInput } from '../types/RemoveAnswerInput';
 import { UpdateAnswerInput } from '../types/UpdateAnswerInput';
 import { Paginator } from '../utils/Paginator';
 
@@ -58,13 +56,10 @@ export class AnswerResolver {
   }
 
   @Mutation(() => Boolean)
-  async removeAnswer(
-    @Context() context: RequestContext,
-    @Args('input') input: RemoveAnswerInput,
-  ): Promise<boolean> {
+  async removeAnswer(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
     const serviceContext = toServiceContext(context);
 
-    return this.answerService.remove(serviceContext, input.id);
+    return this.answerService.remove(serviceContext, id);
   }
 
   @Query(() => AnswerConnection)
@@ -111,24 +106,19 @@ export class AnswerResolver {
     return entity ? AnswerType.toType(entity) : null;
   }
 
-  @ResolveField(() => QuestionEdge)
+  @ResolveField(() => QuestionType)
   async question(
     @Context() context: RequestContext,
     @Parent() answer: AnswerType,
-  ): Promise<QuestionEdge | null> {
+  ): Promise<QuestionType | null> {
     const serviceContext = toServiceContext(context);
 
-    if (!answer.questionId) {
+    if (!answer.__source.question?.id) {
       return null;
     }
 
-    const question = await this.questionLoader.load(serviceContext, answer.questionId);
+    const question = await this.questionLoader.load(serviceContext, answer.__source.question.id);
 
-    const node = QuestionType.toType(question!);
-
-    return {
-      node,
-      cursor: node.id,
-    };
+    return QuestionType.toType(question!);
   }
 }

@@ -6,5 +6,5 @@ export class CreateQuestionInput {
   text!: string;
 
   @Field()
-  subcategory!: string;
+  category!: string;
 }

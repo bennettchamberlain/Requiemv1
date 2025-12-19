@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType, Float } from '@nestjs/graphql';
+import { Field, ID, ObjectType } from '@nestjs/graphql';
 
 import { type Question } from '@ci/domains/intelligence';
 
@@ -20,8 +20,8 @@ export class QuestionType implements Node {
   @Field(() => String)
   text!: string;
 
-  @Field(() => [String], { nullable: true })
-  contextTags?: (string | null)[];
+  // @Field(() => [String], { nullable: true })
+  // contextTags?: (string | null)[];
 
   @Field(() => String, { nullable: true })
   questionType?: string | null;
@@ -29,42 +29,40 @@ export class QuestionType implements Node {
   @Field(() => Boolean, { nullable: true })
   isSeedQuestion?: boolean | null;
 
-  @Field(() => Boolean, { nullable: true })
-  isActive?: boolean | null;
+  // @Field(() => Boolean, { nullable: true })
+  // isActive?: boolean | null;
 
   @Field(() => Boolean, { nullable: true })
   createdByLlm!: boolean | null;
 
-  @Field(() => String, { nullable: true })
-  frequencyRecommendation!: string | null;
+  // @Field(() => String, { nullable: true })
+  // frequencyRecommendation!: string | null;
 
-  @Field(() => Float)
-  timesAsked!: number | null;
+  // @Field(() => Float)
+  // timesAsked!: number | null;
+  //
+  // @Field(() => Float)
+  // timesAnswered!: number | null;
 
-  @Field(() => Float)
-  timesAnswered!: number | null;
-
-  @Field(() => String, { nullable: true })
-  isPrivateTo!: string | null;
+  // @Field(() => String, { nullable: true })
+  // isPrivateTo!: string | null;
 
   static toType(question: Question): QuestionType {
-    const returned = {
+    return {
       __typename: QuestionType.name,
       __source: question,
       id: GlobalUID.encode('question', question.id),
       category: question.category,
       text: question.text,
-      contextTags: question.contextTags,
+      // contextTags: question.contextTags,
       questionType: question.questionType,
       isSeedQuestion: question.isSeedQuestion,
-      isActive: question.isActive,
+      // isActive: question.isActive,
       createdByLlm: question.createdByLlm,
-      frequencyRecommendation: question.frequencyRecommendation,
-      timesAsked: question.timesAsked,
-      timesAnswered: question.timesAnswered,
-      isPrivateTo: question.isPrivateTo || null,
+      // frequencyRecommendation: question.frequencyRecommendation,
+      // timesAsked: question.timesAsked,
+      // timesAnswered: question.timesAnswered,
+      // isPrivateTo: question.isPrivateTo || null,
     };
-
-    return returned;
   }
 }

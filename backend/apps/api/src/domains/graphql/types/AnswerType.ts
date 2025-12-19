@@ -1,5 +1,5 @@
-import { Field, ID, ObjectType, Float } from '@nestjs/graphql';
-import GraphQLJSONObject from 'graphql-type-json';
+import { Field, ID, ObjectType } from '@nestjs/graphql';
+// import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Answer } from '@ci/domains/intelligence';
 
@@ -18,8 +18,8 @@ export class AnswerType implements Node {
   @Field(() => String)
   answer!: string;
 
-  @Field(() => Float, { nullable: true })
-  answerConfidence?: number;
+  // @Field(() => Float, { nullable: true })
+  // answerConfidence?: number;
 
   @Field(() => String, { nullable: true })
   answerSource!: string;
@@ -30,32 +30,29 @@ export class AnswerType implements Node {
   @Field(() => Date)
   answeredAt!: Date;
 
-  @Field(() => GraphQLJSONObject)
-  sessionContext!: Record<string, unknown>;
+  // @Field(() => GraphQLJSONObject)
+  // sessionContext!: Record<string, unknown>;
 
-  @Field(() => String)
-  emotionalState!: string;
+  // @Field(() => String)
+  // emotionalState!: string;
 
-  @Field(() => String)
-  locationContext!: string;
+  // @Field(() => String)
+  // locationContext!: string;
+  //
+  // @Field(() => [String])
+  // extractedEntities!: string[];
 
-  @Field(() => [String])
-  extractedEntities!: string[];
+  // @Field(() => Float)
+  // sentimentScore!: number;
+  //
+  // @Field(() => Float)
+  // complexityScore!: number;
+  //
+  // @Field(() => Boolean)
+  // isSensitive!: boolean;
 
-  @Field(() => Float)
-  sentimentScore!: number;
-
-  @Field(() => Float)
-  complexityScore!: number;
-
-  @Field(() => Boolean)
-  isSensitive!: boolean;
-
-  @Field(() => String)
-  sharingLevel!: string;
-
-  @Field(() => ID)
-  questionId?: string;
+  // @Field(() => String)
+  // sharingLevel!: string;
 
   static toType(answer: Answer): AnswerType {
     return {
@@ -63,19 +60,18 @@ export class AnswerType implements Node {
       __source: answer,
       id: GlobalUID.encode('answer', answer.id),
       answer: answer.answer,
-      answerConfidence: answer.answerConfidence,
+      // answerConfidence: answer.answerConfidence,
       answerSource: answer.answerSource,
       answerMethod: answer.answerMethod,
       answeredAt: answer.answeredAt,
-      sessionContext: answer.sessionContext,
-      emotionalState: answer.emotionalState,
-      locationContext: answer.locationContext,
-      extractedEntities: answer.extractedEntities,
-      sentimentScore: answer.sentimentScore,
-      complexityScore: answer.complexityScore,
-      isSensitive: answer.isSensitive,
-      sharingLevel: answer.sharingLevel,
-      questionId: answer.question?.id,
+      // sessionContext: answer.sessionContext,
+      // emotionalState: answer.emotionalState,
+      // locationContext: answer.locationContext,
+      // extractedEntities: answer.extractedEntities,
+      // sentimentScore: answer.sentimentScore,
+      // complexityScore: answer.complexityScore,
+      // isSensitive: answer.isSensitive,
+      // sharingLevel: answer.sharingLevel,
     };
   }
 }
