@@ -24,8 +24,11 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Generate GraphQL schema and types
-        run: make graphql
+      - name: Generate GraphQL schema
+        run: yarn workspace @ci/be-api graphql:generate
+
+      - name: Generate GraphQL frontend types
+        run: yarn workspace @ci/fe-web graphql:generate
 
       - name: Check for changes
         run: |
