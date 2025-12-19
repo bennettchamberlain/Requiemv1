@@ -10,6 +10,7 @@ from .config import settings
 from .database import db
 from .agent_registration import agent_registration
 from .scheduler import scheduler
+from . import agent_messages
 
 # Configure structured logging
 structlog.configure(
@@ -61,6 +62,10 @@ def main():
         # Register agent
         agent_id = agent_registration.register()
         logger.info("agent_registered_successfully", agent_id=str(agent_id))
+
+        # Initialize agent message tracker for LLM bottleneck management
+        agent_messages.initialize_tracker(agent_registration)
+        logger.info("agent_message_tracker_initialized")
 
         # Start cron scheduler for automatic summary generation
         scheduler.start()

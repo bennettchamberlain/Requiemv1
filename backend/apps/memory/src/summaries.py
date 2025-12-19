@@ -13,6 +13,7 @@ from .config import settings
 from .data_aggregator import aggregator
 from .database import db
 from .summarizer import summarizer
+from . import agent_messages
 
 logger = structlog.get_logger()
 
@@ -24,34 +25,76 @@ def execute_hourly_summary(
     timezone: str = "UTC",
 ) -> Dict[str, Any]:
     """Execute hourly summary generation."""
-    # Add overlap for context
-    overlap = timedelta(minutes=settings.summary_overlap_minutes)
-    adjusted_start = start_time - overlap
-    adjusted_end = end_time + overlap
+    # Track agent message for LLM bottleneck management
+    message_id = None
+    if agent_messages.agent_message_tracker:
+        message_id = agent_messages.agent_message_tracker.create_message(
+            user_id=user_id,
+            task_type="hourly",
+            input_payload={
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "timezone": timezone,
+            },
+            priority=5,
+        )
 
-    # Aggregate data
-    aggregated_data = aggregator.aggregate_hour(user_id, adjusted_start, adjusted_end)
-    logger.info("data_aggregated",
-                user_id=str(user_id),
-                measurements=len(aggregated_data.get("measurements", [])),
-                events=len(aggregated_data.get("events", [])),
-                communications=len(aggregated_data.get("communications", [])),
-                browser_activity=len(aggregated_data.get("browser_activity", [])))
+    try:
+        # Add overlap for context
+        overlap = timedelta(minutes=settings.summary_overlap_minutes)
+        adjusted_start = start_time - overlap
+        adjusted_end = end_time + overlap
 
-    # Generate summary
-    summary_data = summarizer.generate_hourly_summary(aggregated_data)
-    logger.info("summary_generated", has_activity=summary_data.get("activity_counts", {}).get("total", 0) > 0)
+        # Aggregate data
+        aggregated_data = aggregator.aggregate_hour(user_id, adjusted_start, adjusted_end)
+        logger.info("data_aggregated",
+                    user_id=str(user_id),
+                    measurements=len(aggregated_data.get("measurements", [])),
+                    events=len(aggregated_data.get("events", [])),
+                    communications=len(aggregated_data.get("communications", [])),
+                    browser_activity=len(aggregated_data.get("browser_activity", [])))
 
-    # Store summary
-    summary_id = _store_summary(user_id, summary_data, start_time, end_time, timezone)
+        # Mark as running before calling LLM
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_running(
+                message_id,
+                execution_context={"data_sources": len(aggregated_data)}
+            )
 
-    return {
-        "summary_id": str(summary_id),
-        "summary_type": "hourly",
-        "summary_text": summary_data.get("summary_text", ""),
-        "key_insights": summary_data.get("key_insights", []),
-        "activity_counts": summary_data.get("activity_counts", {}),
-    }
+        # Generate summary (LLM call happens here)
+        summary_data = summarizer.generate_hourly_summary(aggregated_data)
+        logger.info("summary_generated", has_activity=summary_data.get("activity_counts", {}).get("total", 0) > 0)
+
+        # Store summary
+        summary_id = _store_summary(user_id, summary_data, start_time, end_time, timezone)
+
+        result = {
+            "summary_id": str(summary_id),
+            "summary_type": "hourly",
+            "summary_text": summary_data.get("summary_text", ""),
+            "key_insights": summary_data.get("key_insights", []),
+            "activity_counts": summary_data.get("activity_counts", {}),
+        }
+
+        # Mark as completed
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_completed(
+                message_id,
+                output_payload={"summary_id": str(summary_id)},
+                tokens_used=summary_data.get("tokens_used", 0),
+            )
+
+        return result
+
+    except Exception as exc:
+        # Mark as failed
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_failed(
+                message_id,
+                error_message=str(exc),
+                error_details={"error_type": type(exc).__name__},
+            )
+        raise
 
 
 def execute_daily_summary(
@@ -61,24 +104,65 @@ def execute_daily_summary(
     timezone: str = "UTC",
 ) -> Dict[str, Any]:
     """Execute daily summary from hourly summaries."""
-    # Get hourly summaries
-    hourly_summaries = _get_summaries(user_id, start_time, end_time, "hourly")
-    if not hourly_summaries:
-        raise ValueError("No hourly summaries found for daily aggregation")
+    # Track agent message
+    message_id = None
+    if agent_messages.agent_message_tracker:
+        message_id = agent_messages.agent_message_tracker.create_message(
+            user_id=user_id,
+            task_type="daily",
+            input_payload={
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "timezone": timezone,
+            },
+            priority=5,
+        )
 
-    # Generate daily summary from hourlies
-    summary_data = summarizer.generate_daily_summary(hourly_summaries)
+    try:
+        # Get hourly summaries
+        hourly_summaries = _get_summaries(user_id, start_time, end_time, "hourly")
+        if not hourly_summaries:
+            raise ValueError("No hourly summaries found for daily aggregation")
 
-    # Store
-    summary_id = _store_summary(user_id, summary_data, start_time, end_time, timezone)
+        # Mark as running before calling LLM
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_running(
+                message_id,
+                execution_context={"hourly_summaries_count": len(hourly_summaries)}
+            )
 
-    return {
-        "summary_id": str(summary_id),
-        "summary_type": "daily",
-        "summary_text": summary_data.get("summary_text", ""),
-        "activity_counts": summary_data.get("activity_counts", {}),
-        "num_hourly_summaries": len(hourly_summaries),
-    }
+        # Generate daily summary from hourlies (LLM call)
+        summary_data = summarizer.generate_daily_summary(hourly_summaries)
+
+        # Store
+        summary_id = _store_summary(user_id, summary_data, start_time, end_time, timezone)
+
+        result = {
+            "summary_id": str(summary_id),
+            "summary_type": "daily",
+            "summary_text": summary_data.get("summary_text", ""),
+            "activity_counts": summary_data.get("activity_counts", {}),
+            "num_hourly_summaries": len(hourly_summaries),
+        }
+
+        # Mark as completed
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_completed(
+                message_id,
+                output_payload={"summary_id": str(summary_id)},
+                tokens_used=summary_data.get("tokens_used", 0),
+            )
+
+        return result
+
+    except Exception as exc:
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_failed(
+                message_id,
+                error_message=str(exc),
+                error_details={"error_type": type(exc).__name__},
+            )
+        raise
 
 
 def execute_weekly_summary(
@@ -108,48 +192,92 @@ def execute_dossier_refresh(
     lookback_days: int = None,
 ) -> Dict[str, Any]:
     """Refresh user dossier from recent summaries."""
-    from .dossier_builder import dossier_builder
+    # Track agent message
+    message_id = None
+    if agent_messages.agent_message_tracker:
+        message_id = agent_messages.agent_message_tracker.create_message(
+            user_id=user_id,
+            task_type="dossier",
+            input_payload={
+                "end_time": end_time.isoformat(),
+                "timezone": timezone,
+                "lookback_days": lookback_days,
+            },
+            priority=6,  # Slightly higher priority for dossier
+        )
 
-    logger.info("dossier_refresh_started", user_id=str(user_id))
+    try:
+        from .dossier_builder import dossier_builder
 
-    # Get entity and previous dossier
-    entity_id = _get_user_entity_id(user_id)
-    if not entity_id:
-        raise ValueError(f"No entity found for user {user_id}")
+        logger.info("dossier_refresh_started", user_id=str(user_id))
 
-    logger.info("entity_found", entity_id=entity_id)
+        # Get entity and previous dossier
+        entity_id = _get_user_entity_id(user_id)
+        if not entity_id:
+            raise ValueError(f"No entity found for user {user_id}")
 
-    previous_dossier = _get_entity_dossier(entity_id)
-    logger.info("previous_dossier_fetched", has_dossier=bool(previous_dossier))
+        logger.info("entity_found", entity_id=entity_id)
 
-    # Build new dossier
-    logger.info("building_new_dossier", lookback_days=lookback_days)
-    dossier_payload = dossier_builder.build(
-        user_id,
-        end_time,
-        timezone,
-        lookback_override=lookback_days,
-        previous_dossier=previous_dossier,
-    )
-    logger.info("dossier_built_successfully")
+        previous_dossier = _get_entity_dossier(entity_id)
+        logger.info("previous_dossier_fetched", has_dossier=bool(previous_dossier))
 
-    if not dossier_payload:
-        raise ValueError("Unable to build dossier from available summaries")
+        # Mark as running before calling LLM
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_running(
+                message_id,
+                execution_context={
+                    "entity_id": entity_id,
+                    "has_previous_dossier": bool(previous_dossier),
+                }
+            )
 
-    # Persist
-    db.execute_write(
-        """
-        UPDATE entities
-        SET dossier = CAST(:dossier AS jsonb), updated_at = NOW()
-        WHERE entity_id = :entity_id
-        """,
-        {"entity_id": entity_id, "dossier": json.dumps(dossier_payload)},
-    )
+        # Build new dossier (LLM call)
+        logger.info("building_new_dossier", lookback_days=lookback_days)
+        dossier_payload = dossier_builder.build(
+            user_id,
+            end_time,
+            timezone,
+            lookback_override=lookback_days,
+            previous_dossier=previous_dossier,
+        )
+        logger.info("dossier_built_successfully")
 
-    return {
-        "entity_id": entity_id,
-        "dossier": dossier_payload,
-    }
+        if not dossier_payload:
+            raise ValueError("Unable to build dossier from available summaries")
+
+        # Persist
+        db.execute_write(
+            """
+            UPDATE entities
+            SET dossier = CAST(:dossier AS jsonb), updated_at = NOW()
+            WHERE entity_id = :entity_id
+            """,
+            {"entity_id": entity_id, "dossier": json.dumps(dossier_payload)},
+        )
+
+        result = {
+            "entity_id": entity_id,
+            "dossier": dossier_payload,
+        }
+
+        # Mark as completed
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_completed(
+                message_id,
+                output_payload={"entity_id": entity_id},
+                tokens_used=0,  # Dossier builder tracks this internally
+            )
+
+        return result
+
+    except Exception as exc:
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_failed(
+                message_id,
+                error_message=str(exc),
+                error_details={"error_type": type(exc).__name__},
+            )
+        raise
 
 
 # ============================================================================
@@ -164,20 +292,62 @@ def _execute_rollup(
     timezone: str,
 ) -> Dict[str, Any]:
     """Generic rollup (weekly/monthly/seasonal/yearly) from daily summaries."""
-    daily_summaries = _get_summaries(user_id, start_time, end_time, "daily")
-    if not daily_summaries:
-        raise ValueError(f"No daily summaries found for {period_type} aggregation")
+    # Track agent message
+    message_id = None
+    if agent_messages.agent_message_tracker:
+        message_id = agent_messages.agent_message_tracker.create_message(
+            user_id=user_id,
+            task_type=period_type,
+            input_payload={
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "timezone": timezone,
+            },
+            priority=5,
+        )
 
-    summary_data = summarizer.generate_period_rollup(period_type, daily_summaries)
-    summary_id = _store_summary(user_id, summary_data, start_time, end_time, timezone)
+    try:
+        daily_summaries = _get_summaries(user_id, start_time, end_time, "daily")
+        if not daily_summaries:
+            raise ValueError(f"No daily summaries found for {period_type} aggregation")
 
-    return {
-        "summary_id": str(summary_id),
-        "summary_type": period_type,
-        "summary_text": summary_data.get("summary_text", ""),
-        "activity_counts": summary_data.get("activity_counts", {}),
-        "num_daily_summaries": len(daily_summaries),
-    }
+        # Mark as running before calling LLM
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_running(
+                message_id,
+                execution_context={"daily_summaries_count": len(daily_summaries)}
+            )
+
+        # Generate rollup (LLM call)
+        summary_data = summarizer.generate_period_rollup(period_type, daily_summaries)
+        summary_id = _store_summary(user_id, summary_data, start_time, end_time, timezone)
+
+        result = {
+            "summary_id": str(summary_id),
+            "summary_type": period_type,
+            "summary_text": summary_data.get("summary_text", ""),
+            "activity_counts": summary_data.get("activity_counts", {}),
+            "num_daily_summaries": len(daily_summaries),
+        }
+
+        # Mark as completed
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_completed(
+                message_id,
+                output_payload={"summary_id": str(summary_id)},
+                tokens_used=summary_data.get("tokens_used", 0),
+            )
+
+        return result
+
+    except Exception as exc:
+        if message_id and agent_messages.agent_message_tracker:
+            agent_messages.agent_message_tracker.mark_failed(
+                message_id,
+                error_message=str(exc),
+                error_details={"error_type": type(exc).__name__},
+            )
+        raise
 
 
 def _store_summary(
