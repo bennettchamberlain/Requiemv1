@@ -74,7 +74,6 @@ dbdestroy: ## Clear the PostgreSQL database and start from scratch
 
 deploy: ## Deploy the application (staging)
 	@printf "🐳 Deploying Companion Intelligence application...\n\n"
-
 	$(MAKE) init
 	@printf "\n"
 	$(MAKE) build
@@ -82,8 +81,6 @@ deploy: ## Deploy the application (staging)
 	$(MAKE) staging
 
 dev: ## Boot the application
-	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
-
 	$(MAKE) init
 	@printf "\n"
 	$(MAKE) migrate
@@ -95,7 +92,11 @@ dev: ## Boot the application
 	$(MAKE) mcp
 	@printf "\n"
 	$(MAKE) local
+	@printf "\n"
+	$(MAKE) tmuxlogs
 
+tmuxlogs:
+    @which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
 	@SESSION="companion"; \
 	BACKEND_DIR="backend/apps/api"; \
 	FRONTEND_DIR="frontend/apps/web"; \
@@ -210,6 +211,12 @@ init: ## Initialize repository after checkout
 	fi
 
 	@printf "\nRepository initialized.\n"
+
+reset: ## Reset the local development environment
+	@printf "🧹 Resetting local development environment...\n\n"
+	@docker compose down --remove-orphans
+	@docker network prune --force
+	@printf "\nLocal development environment successfully reset.\n"
 
 install: ## Install project dependencies
 	@printf "📦 Installing dependencies...\n\n"
