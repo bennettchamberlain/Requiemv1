@@ -59,9 +59,9 @@ import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { MemoryService } from './services/MemoryService';
 import { PersonService } from './services/PersonService';
+import { PlaceService } from './services/PlaceService';
 import { SearchService } from './services/SearchService';
 import { UserContextService } from './services/UserContextService';
-import { PlaceService } from './services/PlaceService';
 /**
  * @internal
  */
@@ -105,7 +105,7 @@ import { PlaceService } from './services/PlaceService';
     PersonService,
     FileService,
     SearchService,
-    PlaceService
+    PlaceService,
   ],
   controllers: [
     MemoryController,
@@ -160,8 +160,8 @@ export {
   GraphQueryService,
   GraphReadService,
   FileService,
+  PlaceService,
   SearchService,
-  PlaceService
 };
 
 export type { Content } from './entities/ContentEntity';

@@ -1,7 +1,7 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 
-import { PlaceType } from './PlaceType';
 import { Edge } from './Edge';
+import { PlaceType } from './PlaceType';
 
 @ObjectType({ implements: () => [Edge] })
 export class PlaceEdge implements Edge {

@@ -25,7 +25,7 @@ export class PlaceType implements Node {
   description!: string | null;
 
   @Field(() => GraphQLJSONObject)
-  properties!: Record<string, unknown>
+  properties!: Record<string, unknown>;
 
   @Field(() => String, { nullable: true })
   type!: string | null;
@@ -49,7 +49,6 @@ export class PlaceType implements Node {
   uploaded!: boolean | null;
 
   static toType(place: Place): PlaceType {
-    console.log('estimated', place.estimated)
     return {
       __typename: PlaceType.name,
       __source: place,
@@ -64,7 +63,7 @@ export class PlaceType implements Node {
       estimated: place.estimated,
       tracked: place.tracked,
       properties: place.properties,
-      uploaded: place.uploaded
+      uploaded: place.uploaded,
     };
   }
 }

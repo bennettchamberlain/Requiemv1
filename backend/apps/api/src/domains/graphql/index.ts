@@ -28,12 +28,12 @@ import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
+import { PlaceResolver } from './resolvers/PlaceResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
-import { PlaceResolver } from './resolvers/PlaceResolver'
 
 @Module({
   imports: [
@@ -74,7 +74,7 @@ import { PlaceResolver } from './resolvers/PlaceResolver'
     ThreadMessagesLoader,
     ThreadResolver,
     UserResolver,
-    PlaceResolver
+    PlaceResolver,
   ],
   controllers: [GraphQLController],
   exports: [],

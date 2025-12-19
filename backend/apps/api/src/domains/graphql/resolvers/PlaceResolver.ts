@@ -11,16 +11,13 @@ import { PaginationArgs } from '../types/PaginationArgs';
 import { PlaceConnection } from '../types/PlaceConnection';
 import { PlaceEdge } from '../types/PlaceEdge';
 import { PlaceType } from '../types/PlaceType';
-import { RemovePlaceInput } from '../types/RemovePlaceInput';
 import { UpdatePlaceInput } from '../types/UpdatePlaceInput';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
 @Resolver(() => PlaceType)
 export class PlaceResolver {
-  constructor(
-    private readonly placeService: PlaceService,
-  ) {}
+  constructor(private readonly placeService: PlaceService) {}
 
   @Mutation(() => PlaceType)
   async createPlace(
@@ -29,15 +26,35 @@ export class PlaceResolver {
   ): Promise<PlaceType> {
     const serviceContext = toServiceContext(context);
 
-    let properties = input.properties || {}
+    const properties = input.properties || {};
 
-    if (input.type) properties.type = input.type
-    if (input.geoFormat) properties.geoFormat = input.geoFormat
-    if (input.geolocation) properties.geolocation = input.geolocation
-    if (input.locationBoundary) properties.locationBoundary = input.locationBoundary
-    if (input.estimated) properties.estimated = input.estimated
-    if (input.tracked) properties.tracked = input.tracked
-    if (input.uploaded) properties.uploaded = input.uploaded
+    if (input.type) {
+      properties.type = input.type;
+    }
+
+    if (input.geoFormat) {
+      properties.geoFormat = input.geoFormat;
+    }
+
+    if (input.geolocation) {
+      properties.geolocation = input.geolocation;
+    }
+
+    if (input.locationBoundary) {
+      properties.locationBoundary = input.locationBoundary;
+    }
+
+    if (input.estimated) {
+      properties.estimated = input.estimated;
+    }
+
+    if (input.tracked) {
+      properties.tracked = input.tracked;
+    }
+
+    if (input.uploaded) {
+      properties.uploaded = input.uploaded;
+    }
 
     const entity = await this.placeService.create(serviceContext, {
       name: input.name,
@@ -56,19 +73,38 @@ export class PlaceResolver {
   ): Promise<PlaceType | null> {
     const serviceContext = toServiceContext(context);
 
-    let properties = input.properties || {}
+    const properties = input.properties || {};
 
-    if (input.type) properties.type = input.type
-    if (input.geoFormat) properties.geoFormat = input.geoFormat
-    if (input.geolocation) properties.geolocation = input.geolocation
-    if (input.locationBoundary) properties.locationBoundary = input.locationBoundary
-    if (input.estimated) properties.estimated = input.estimated
-    if (input.tracked) properties.tracked = input.tracked
-    if (input.uploaded) properties.uploaded = input.uploaded
+    if (input.type) {
+      properties.type = input.type;
+    }
+
+    if (input.geoFormat) {
+      properties.geoFormat = input.geoFormat;
+    }
+
+    if (input.geolocation) {
+      properties.geolocation = input.geolocation;
+    }
+
+    if (input.locationBoundary) {
+      properties.locationBoundary = input.locationBoundary;
+    }
+
+    if (input.estimated) {
+      properties.estimated = input.estimated;
+    }
+
+    if (input.tracked) {
+      properties.tracked = input.tracked;
+    }
+
+    if (input.uploaded) {
+      properties.uploaded = input.uploaded;
+    }
 
     const entity = await this.placeService.update(serviceContext, input.id, {
       name: input.name,
-      entity_type: 'Location',
       properties,
       description: input.description,
     });
@@ -77,13 +113,10 @@ export class PlaceResolver {
   }
 
   @Mutation(() => Boolean)
-  async removePlace(
-    @Context() context: RequestContext,
-    @Args('input') input: RemovePlaceInput,
-  ): Promise<boolean> {
+  async removePlace(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
     const serviceContext = toServiceContext(context);
 
-    return this.placeService.remove(serviceContext, input.id);
+    return this.placeService.remove(serviceContext, id);
   }
 
   @Query(() => PlaceConnection)
@@ -100,7 +133,6 @@ export class PlaceResolver {
       getId: (entity) => GlobalUID.encode('place', entity.id),
     });
 
-    console.log('place entities', entities)
     const edges: PlaceEdge[] = slice.map((entity) => {
       const node = PlaceType.toType(entity);
 

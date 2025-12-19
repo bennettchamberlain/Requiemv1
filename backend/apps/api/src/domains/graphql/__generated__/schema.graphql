@@ -223,7 +223,7 @@ type Mutation {
   createQuestion(input: CreateQuestionInput!): QuestionType!
   removeAnswer(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
-  removePlace(input: RemovePlaceInput!): Boolean!
+  removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
@@ -348,10 +348,6 @@ type QuestionType implements Node {
 }
 
 input RemovePersonInput {
-  id: String!
-}
-
-input RemovePlaceInput {
   id: String!
 }
 

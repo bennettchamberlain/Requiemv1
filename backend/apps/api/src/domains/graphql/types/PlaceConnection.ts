@@ -1,8 +1,8 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
 
-import { PlaceEdge } from './PlaceEdge';
 import { Connection } from './Connection';
 import { PageInfo } from './PageInfo';
+import { PlaceEdge } from './PlaceEdge';
 
 @ObjectType({ implements: () => [Connection] })
 export class PlaceConnection implements Connection {

@@ -50,14 +50,32 @@ export class PlaceEntity {
 
   @AfterLoad()
   loadPropertiesFromJsonb() {
-    if (!this.properties) return
+    if (!this.properties) {
+      return;
+    }
+
     this.type = (this.properties.type as string) || null;
     this.geoFormat = (this.properties.geo_format as string) || null;
     this.geolocation = (this.properties.geolocation as Record<string, unknown>) || null;
     this.locationBoundary = (this.properties.location_boundary as Record<string, unknown>) || null;
-    this.estimated = typeof this.properties.estimated === 'boolean' ? this.properties.estimated : typeof this.properties.estimated === 'string' ? this.properties.estimated.toLowerCase() === 'true' : null;
-    this.tracked = typeof this.properties.tracked === 'boolean' ? this.properties.tracked : typeof this.properties.tracked === 'string' ? this.properties.tracked.toLowerCase() === 'true' : null;
-    this.uploaded = typeof this.properties.uploaded === 'boolean' ? this.properties.uploaded : typeof this.properties.uploaded === 'string' ? this.properties.uploaded.toLowerCase() === 'true' : null;
+    this.estimated =
+      typeof this.properties.estimated === 'boolean'
+        ? this.properties.estimated
+        : typeof this.properties.estimated === 'string'
+          ? this.properties.estimated.toLowerCase() === 'true'
+          : null;
+    this.tracked =
+      typeof this.properties.tracked === 'boolean'
+        ? this.properties.tracked
+        : typeof this.properties.tracked === 'string'
+          ? this.properties.tracked.toLowerCase() === 'true'
+          : null;
+    this.uploaded =
+      typeof this.properties.uploaded === 'boolean'
+        ? this.properties.uploaded
+        : typeof this.properties.uploaded === 'string'
+          ? this.properties.uploaded.toLowerCase() === 'true'
+          : null;
   }
 
   // Helper method for creating filtered queries
@@ -85,7 +103,7 @@ export class PlaceEntity {
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date;
 
   static toEgressType(entity: PlaceEntity) {
