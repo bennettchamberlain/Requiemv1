@@ -1,17 +1,16 @@
 """
-FastAPI endpoints for manual triggers and browser history processing.
+FastAPI endpoints for manual summary triggers.
 
 Simple HTTP layer - delegates to summaries.py for execution logic.
 """
 import uuid
 import nest_asyncio
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field, ConfigDict
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-from .browser_history_processor import history_processor
 from .data_aggregator import aggregator
 from . import summaries
 from . import __version__
@@ -22,62 +21,12 @@ nest_asyncio.apply()
 app = FastAPI(
     title="CI Memory API",
     version=__version__,
-    description="Browser history processing and manual summary triggers.",
+    description="Manual summary triggers and data aggregation.",
 )
 
 
 # ============================================================================
-# Browser history endpoints
-# ============================================================================
-
-class HistoryEntry(BaseModel):
-    date: str
-    time: str
-    title: str = ""
-    url: str = ""
-    visit_count: int = Field(default=1, alias="visitCount")
-    typed_count: int = Field(default=0, alias="typedCount")
-    transition: Optional[str] = None
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class HistoryPayload(BaseModel):
-    entries: List[HistoryEntry]
-    output_filename: Optional[str] = None
-
-
-@app.post("/history/process-file")
-async def process_history_file(
-    file: UploadFile = File(...),
-    output_filename: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Process uploaded browser history CSV."""
-    if file.content_type not in ("text/csv", "application/vnd.ms-excel", None):
-        raise HTTPException(status_code=400, detail="Only CSV uploads supported")
-
-    data = await file.read()
-    try:
-        return history_processor.process_csv_bytes(
-            data, output_path=output_filename, source_name=file.filename or "upload.csv"
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/history/process-entries")
-async def process_history_entries(payload: HistoryPayload) -> Dict[str, Any]:
-    """Process browser history from JSON payload."""
-    rows = [entry.model_dump(by_alias=True) for entry in payload.entries]
-    try:
-        return history_processor.process_entries(
-            rows, output_path=payload.output_filename, source_name="manual-payload"
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-# ============================================================================
-# Manual summary trigger
+# Manual summary triggers
 # ============================================================================
 
 class ManualSummaryRequest(BaseModel):

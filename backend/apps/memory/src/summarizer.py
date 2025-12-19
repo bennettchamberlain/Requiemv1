@@ -329,43 +329,6 @@ class Summarizer:
             },
         }
 
-    def generate_history_summary(
-        self,
-        level: str,
-        start_time: datetime,
-        end_time: datetime,
-        stats: Dict[str, Any],
-        sample_entries: List[Dict[str, Any]],
-    ) -> str:
-        """Generate browser history summary (plain text, no structure)."""
-        prompt = f"""
-Browser activity: {start_time} to {end_time}
-Total entries: {stats['total_entries']}
-Unique domains: {stats['unique_domains']}
-Top domains: {stats.get('top_domains', 'n/a')}
-
-Sample activity:
-{chr(10).join([f"- {e.get('title', e.get('url'))}" for e in sample_entries[:5]])}
-
-What was the user likely doing? (2-3 sentences)
-"""
-
-        # Simple agent for unstructured text
-        simple_agent = Agent(
-            self.model,
-            system_prompt="Infer user intent from browser history. Be concise.",
-        )
-
-        result = simple_agent.run_sync(
-            prompt,
-            model_settings={
-                "temperature": settings.llm_temperature,
-                "max_tokens": 400,
-            },
-        )
-
-        return result.output if isinstance(result.output, str) else str(result.output)
-
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding using OpenAI-compatible embedding endpoint."""
         try:
