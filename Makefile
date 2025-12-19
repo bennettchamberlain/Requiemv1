@@ -126,7 +126,7 @@ graphql: ## Generate GraphQL schema and frontend types
 
 	@yarn workspace @ci/fe-web graphql:generate
 
-	@printf "\nGraphQL successfully generated."
+	@printf "\nGraphQL successfully generated.\n"
 
 health: ## Check the repository for prerequisites
 	@printf "🩺 Checking health of prerequisites...\n\n"
