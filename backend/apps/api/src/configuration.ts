@@ -86,7 +86,6 @@ export const ConfigSchema = z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.sync': booleanStringSchema,
     'scheduled.entity.promotion': booleanStringSchema,
-    'scheduled.memory.summaries': booleanStringSchema,
     'pinned.demo.models': booleanStringSchema,
     'enable.system.prompt': booleanStringSchema,
   }),

@@ -80,12 +80,13 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       this.logger.error('PgBoss error', err);
     });
 
-    const registeredQueues = this.getRegisteredQueues();
+    // Discover all queues from registered listeners
+    const discoveredQueues = this.getRegisteredQueues();
 
-    this.logger.log(`Discovered queues: ${Array.from(registeredQueues).join(', ')}`);
+    this.logger.log(`Discovered queues: ${Array.from(discoveredQueues).join(', ')}`);
 
-    // Create queues for registered listeners
-    for (const queue of registeredQueues) {
+    // Create all discovered queues
+    for (const queue of discoveredQueues) {
       await this.boss.createQueue(queue);
       this.logger.debug(`Created queue: ${queue}`);
     }
@@ -93,12 +94,12 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     try {
       this.logger.log('Initializing work queues...');
 
-      // Start workers for all registered queues
-      for (const queue of registeredQueues) {
+      // Start workers for all discovered queues
+      for (const queue of discoveredQueues) {
         this.stopTasks.push(this.work(queue));
       }
 
-      this.logger.log(`Initialized ${registeredQueues.size} work queues`);
+      this.logger.log(`Initialized ${discoveredQueues.size} work queues`);
     } catch (err: unknown) {
       this.logger.error(
         'Failed to initialize work queue client',
@@ -156,11 +157,11 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
       name,
     } satisfies EventData;
 
-    const registeredQueues = this.getRegisteredQueues();
+    const allQueues = this.getRegisteredQueues();
 
     // If a specific queue is provided and that queue exists, send only to that queue.
     if (options?.queue) {
-      if (!registeredQueues.has(options.queue)) {
+      if (!allQueues.has(options.queue)) {
         this.logger.warn(`Requested queue ${options.queue} does not exist. Event ${name} will not be sent.`);
 
         return [];
@@ -174,7 +175,7 @@ export class EventService implements OnModuleInit, OnModuleDestroy {
     // Otherwise, send to all registered queues.
     const jobIds: string[] = [];
 
-    for (const queue of registeredQueues) {
+    for (const queue of allQueues) {
       try {
         const jobId = await this.boss.send(queue, resolvedData);
 

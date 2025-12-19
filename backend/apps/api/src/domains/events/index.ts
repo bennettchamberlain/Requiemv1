@@ -44,9 +44,6 @@ import { JobMonitorService } from './services/JobMonitorService';
 export class EventsModule {}
 
 export { EventService };
-
-// Types
-export type { EventPayload, Acknowledgement } from './types';
-export { Events, type EventPayloads } from './event-registry';
 export { OnEvent } from './decorators/OnEvent';
+export { Events, type EventPayloads } from './event-registry';
 export { defineEvent } from './event-registration';
