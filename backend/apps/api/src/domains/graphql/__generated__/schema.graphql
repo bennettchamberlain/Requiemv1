@@ -82,6 +82,19 @@ input CreatePersonInput {
   name: String!
 }
 
+input CreatePlaceInput {
+  description: String
+  estimated: Boolean
+  geoFormat: String
+  geolocation: JSON
+  locationBoundary: JSON
+  name: String!
+  properties: JSON
+  tracked: Boolean
+  type: String
+  uploaded: Boolean
+}
+
 input CreateQuestionInput {
   category: String!
   text: String!
@@ -206,14 +219,17 @@ type MessageType implements Node {
 type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createPerson(input: CreatePersonInput!): PersonType!
+  createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
   removeAnswer(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
+  removePlace(input: RemovePlaceInput!): Boolean!
   removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updatePerson(input: UpdatePersonInput!): PersonType
+  updatePlace(input: UpdatePlaceInput!): PlaceType
   updateQuestion(input: UpdateQuestionInput!): QuestionType
 }
 
@@ -257,6 +273,32 @@ type PersonType implements Node & Taggable {
   tags: [EntityTagType!]!
 }
 
+type PlaceConnection implements Connection {
+  edges: [PlaceEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type PlaceEdge implements Edge {
+  cursor: String!
+  node: PlaceType!
+}
+
+type PlaceType implements Node {
+  description: String
+  entityType: String!
+  estimated: Boolean
+  geoFormat: String
+  geolocation: JSON
+  id: ID!
+  locationBoundary: JSON
+  name: String!
+  properties: JSON!
+  tracked: Boolean
+  type: String
+  uploaded: Boolean
+}
+
 type Query {
   action(id: ID!): ActionType
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
@@ -274,6 +316,8 @@ type Query {
   node(id: ID!): Node
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
+  place(id: ID!): PlaceType
+  places(after: String, before: String, first: Int, last: Int): PlaceConnection!
   question(id: ID!): QuestionType
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
   search(input: SearchInput!): SearchConnection!
@@ -304,6 +348,10 @@ type QuestionType implements Node {
 }
 
 input RemovePersonInput {
+  id: String!
+}
+
+input RemovePlaceInput {
   id: String!
 }
 
@@ -379,6 +427,20 @@ input UpdatePersonInput {
   description: String
   id: String!
   name: String!
+}
+
+input UpdatePlaceInput {
+  description: String
+  estimated: Boolean
+  geoFormat: String
+  geolocation: JSON
+  id: String!
+  locationBoundary: JSON
+  name: String!
+  properties: JSON
+  tracked: Boolean
+  type: String
+  uploaded: Boolean
 }
 
 input UpdateQuestionInput {

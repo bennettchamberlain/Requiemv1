@@ -33,6 +33,7 @@ import { SearchResolver } from './resolvers/SearchResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
+import { PlaceResolver } from './resolvers/PlaceResolver'
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ThreadMessagesLoader,
     ThreadResolver,
     UserResolver,
+    PlaceResolver
   ],
   controllers: [GraphQLController],
   exports: [],

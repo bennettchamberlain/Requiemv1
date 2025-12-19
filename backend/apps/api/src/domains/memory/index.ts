@@ -43,7 +43,7 @@ import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { type Item, type InventoryCondition, ItemEntity } from './entities/ItemEntity';
 import { type Person, PersonEntity } from './entities/PersonEntity';
-import { PlaceEntity } from './entities/PlaceEntity';
+import { type Place, PlaceEntity } from './entities/PlaceEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
 import { ThingEntity } from './entities/ThingEntity';
 import { GraphEventListener } from './listeners/GraphEventListener';
@@ -61,7 +61,7 @@ import { MemoryService } from './services/MemoryService';
 import { PersonService } from './services/PersonService';
 import { SearchService } from './services/SearchService';
 import { UserContextService } from './services/UserContextService';
-
+import { PlaceService } from './services/PlaceService';
 /**
  * @internal
  */
@@ -105,6 +105,7 @@ import { UserContextService } from './services/UserContextService';
     PersonService,
     FileService,
     SearchService,
+    PlaceService
   ],
   controllers: [
     MemoryController,
@@ -128,6 +129,7 @@ import { UserContextService } from './services/UserContextService';
     GraphReadService,
     FileService,
     SearchService,
+    PlaceService,
   ],
 })
 export class MemoryModule {}
@@ -159,6 +161,7 @@ export {
   GraphReadService,
   FileService,
   SearchService,
+  PlaceService
 };
 
 export type { Content } from './entities/ContentEntity';
@@ -184,4 +187,4 @@ export type {
   DatabaseSearchResults,
 } from './services/SearchService';
 
-export type { Fact, Item, InventoryCondition, Person, Communication };
+export type { Fact, Item, InventoryCondition, Person, Communication, Place };

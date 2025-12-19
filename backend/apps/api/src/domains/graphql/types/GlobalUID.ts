@@ -7,6 +7,7 @@ type ResourceType =
   | 'item'
   | 'message'
   | 'person'
+  | 'place'
   | 'question'
   | 'tag'
   | 'thread'
