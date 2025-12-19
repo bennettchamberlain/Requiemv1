@@ -90,7 +90,7 @@ export class QuestionService {
     return result ? QuestionEntity.toEgressType(result) : null;
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<(Question | null)[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<Question[]> {
     const whereClauses: FindOptionsWhere<QuestionEntity>[] = [
       {
         id: In(ids),
@@ -112,11 +112,7 @@ export class QuestionService {
       unique.set(entity.id, entity);
     }
 
-    const map = new Map(
-      Array.from(unique.values()).map((entity) => [entity.id, QuestionEntity.toEgressType(entity)]),
-    );
-
-    return ids.map((id) => map.get(id) ?? null);
+    return Array.from(unique.values()).map((entity) => QuestionEntity.toEgressType(entity));
   }
 
   async update(
@@ -247,8 +243,8 @@ export class QuestionService {
 
     const rows = (await this.dataSource.query(`
       SELECT
-        q.question_id as id,
-        COALESCE(q.is_private_to, a.user_id) as user_id
+        questions.question_id as id,
+        COALESCE(questions.is_private_to, answers.user_id) as user_id
       FROM
         ci.questions as q
       LEFT JOIN ci.answers as a ON a.question_id = q.question_id
