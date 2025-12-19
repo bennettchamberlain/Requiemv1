@@ -1,3 +1,7 @@
+/* ------------------------------------------------------- */
+/*  THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)  */
+/* ------------------------------------------------------- */
+
 /* eslint-disable */
 import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
 export type Maybe<T> = T | null;
@@ -43,6 +47,39 @@ export type ActionType = Node & Taggable & {
   thread?: Maybe<ThreadType>;
   title: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
+};
+
+export type CommunicationConnection = Connection & {
+  __typename?: 'CommunicationConnection';
+  edges: Array<CommunicationEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type CommunicationEdge = Edge & {
+  __typename?: 'CommunicationEdge';
+  cursor: Scalars['String']['output'];
+  node: CommunicationType;
+};
+
+export type CommunicationType = Node & {
+  __typename?: 'CommunicationType';
+  content: Scalars['String']['output'];
+  direction: Scalars['String']['output'];
+  from?: Maybe<PersonType>;
+  id: Scalars['ID']['output'];
+  subject?: Maybe<Scalars['String']['output']>;
+  time: Scalars['DateTime']['output'];
+  to: PersonConnection;
+  type: Scalars['String']['output'];
+};
+
+
+export type CommunicationTypeToArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type Connection = {
@@ -264,6 +301,8 @@ export type Query = {
   __typename?: 'Query';
   action?: Maybe<ActionType>;
   actions: ActionConnection;
+  communication?: Maybe<CommunicationType>;
+  communications: CommunicationConnection;
   fact?: Maybe<FactType>;
   facts: FactConnection;
   file?: Maybe<FileType>;
@@ -288,6 +327,19 @@ export type QueryActionArgs = {
 
 
 export type QueryActionsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryCommunicationArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryCommunicationsArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
@@ -421,7 +473,7 @@ export type TagEdge = Edge & {
 
 export type TagEntitiesInput = {
   ids: Array<Scalars['ID']['input']>;
-  label: Scalars['String']['input'];
+  labels: Array<Scalars['String']['input']>;
 };
 
 export type TagType = Node & {
