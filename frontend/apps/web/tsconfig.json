@@ -27,6 +27,6 @@
     "resolveJsonModule": true,
     "types": ["vite/client", "google.maps"]
   },
-  "include": [".", ".storybook/**/*", "src"],
-  "exclude": ["node_modules", "dist"]
+  "include": [".", ".storybook/**/*", "src", "scripts"],
+  "exclude": ["node_modules", "dev-dist", "dist"]
 }
