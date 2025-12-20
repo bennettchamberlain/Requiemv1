@@ -259,6 +259,7 @@ export class GmailPromotionService {
           content: messageDetails.body || messageDetails.snippet || '',
           category: 'personal', // TODO: Classify emails
           connection_id: connectionId,
+          preview: messageDetails.snippet || null,
         },
       );
 
