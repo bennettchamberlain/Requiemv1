@@ -1,7 +1,7 @@
 [project]
-name = "ci-memory"
+name = "ci-summary"
 version = "0.1.0"
-description = "CI-Memory: Temporal Summarization Agent"
+description = "CI-Summary: Temporal Summarization Agent"
 requires-python = ">=3.10"
 dependencies = [
     # Database

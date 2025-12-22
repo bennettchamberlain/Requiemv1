@@ -1,10 +1,10 @@
-# CI-Memory: Temporal Summarization Agent
+# CI-Summary: Temporal Summarization Agent
 
 **Hierarchical temporal summarization system for CompInt personal intelligence platform**
 
 ## Overview
 
-CI-Memory is an autonomous agent that creates intelligent, multi-layered summaries of user activity across all CompInt data sources. It operates on three temporal scales:
+CI-Summary is an autonomous agent that creates intelligent, multi-layered summaries of user activity across all CompInt data sources. It operates on three temporal scales:
 
 - **Hourly Summaries**: Detailed hour-by-hour activity digests
 - **Daily Summaries**: Day-level synthesis from hourly summaries
@@ -15,7 +15,7 @@ All summaries are stored as entities in the knowledge graph with full vector emb
 ## Architecture
 
 ```
-CI-Server Backend → agent_messages table → CI-Memory Agent
+CI-Server Backend → agent_messages table → CI-Summary Agent
                                             ↓
                     [Data Aggregation] → Measurements, Position, Communications,
                                          Activities, Events, Messages, Files, API Logs
@@ -44,7 +44,7 @@ CI-Server Backend → agent_messages table → CI-Memory Agent
 
 All configuration now lives in the root `.env` / `.env.default` files at the
 repo root. Update those files (or export the same variables in your shell) so
-the memory service picks up values for `DATABASE_URL` (if running standalone)
+the summary service picks up values for `DATABASE_URL` (if running standalone)
 and the `LLM_*` settings. No separate `.env` file is required inside this app.
 
 ### 2. Configuration
@@ -68,8 +68,8 @@ AGENT_CHECK_INTERVAL_SECONDS=30  # Configurable via root .env if needed
 
 ```bash
 # Build and start the service
-docker-compose build memory-service
-docker-compose up memory-service
+docker-compose build summary-service
+docker-compose up summary-service
 
 # Or with full profile
 docker-compose --profile infra up
@@ -103,7 +103,7 @@ payload contains the owner, time window, and cadence:
 }
 ```
 
-The memory service polls this queue, runs the corresponding aggregation + LLM
+The summary service polls this queue, runs the corresponding aggregation + LLM
 routine, stores the results, and acknowledges the job. Monthly / seasonal / yearly
 cadences are scheduled but currently stubbed until their aggregation pipeline is in
 place.
@@ -255,7 +255,7 @@ Each `summary_text` is produced by the same OpenAI-compatible model that powers 
 
 ## Data Sources
 
-CI-Memory aggregates data from:
+CI-Summary aggregates data from:
 
 1. **measurements** - Sensor data (heart rate, steps, temperature, etc.)
 2. **position** - GPS/location tracking
@@ -336,7 +336,7 @@ $$);
 ### Project Structure
 
 ```
-CI-Memory/
+CI-Summary/
 ├── src/
 │   ├── main.py                 # Entry point
 │   ├── config.py               # Configuration management

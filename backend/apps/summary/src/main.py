@@ -1,6 +1,6 @@
 """
-CI-Memory: Temporal Summarization Agent
-Main entry point for the memory summarization service.
+CI-Summary: Temporal Summarization Service
+Main entry point for the summary service.
 """
 import sys
 import signal
@@ -50,7 +50,7 @@ def cleanup():
 
 def main():
     """Main entry point."""
-    logger.info("ci_memory_starting",
+    logger.info("ci_summary_starting",
                version=settings.agent_version,
                model=settings.llm_model)
     

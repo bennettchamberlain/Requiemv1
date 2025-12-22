@@ -3,7 +3,7 @@
 
 set -e
 
-echo "Starting CI-Memory services..."
+echo "Starting CI-Summary services..."
 
 # Activate the virtual environment
 source .venv/bin/activate

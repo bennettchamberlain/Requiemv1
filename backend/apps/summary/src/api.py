@@ -19,7 +19,7 @@ from . import __version__
 nest_asyncio.apply()
 
 app = FastAPI(
-    title="CI Memory API",
+    title="CI Summary API",
     version=__version__,
     description="Manual summary triggers and data aggregation.",
 )

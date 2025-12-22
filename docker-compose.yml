@@ -92,13 +92,13 @@ services:
     restart: unless-stopped
     profiles: [ "all", "local", "staging" ]
 
-  memory-service:
+  summary-service:
     build:
-      context: ./backend/apps/memory
+      context: ./backend/apps/summary
       dockerfile: Dockerfile
-    image: ci/memory-service
+    image: ci/summary-service
     pull_policy: build
-    container_name: memory-service
+    container_name: summary-service
     ports:
       - 8001:8001
     environment:
