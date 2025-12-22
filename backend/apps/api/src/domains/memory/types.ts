@@ -268,7 +268,6 @@ export interface CreatePlaceDto {
   tracked?: boolean;
   uploaded?: boolean;
   user_id?: string;
-  parent_id?: string;
   user?: {
     id: string;
   };
@@ -292,7 +291,6 @@ export interface UpdatePlaceDto {
     [key: string]: unknown;
   };
   user_id?: string;
-  parent_id?: string;
   parent?: {
     id: string;
   };

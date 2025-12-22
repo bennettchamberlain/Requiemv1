@@ -28,6 +28,7 @@ import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
+import { PlaceResolver } from './resolvers/PlaceResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { TagResolver } from './resolvers/TagResolver';
@@ -73,6 +74,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ThreadMessagesLoader,
     ThreadResolver,
     UserResolver,
+    PlaceResolver,
   ],
   controllers: [GraphQLController],
   exports: [],

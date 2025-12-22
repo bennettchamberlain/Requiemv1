@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { ItemService, PersonService } from '@ci/domains/memory';
+import { ItemService, PersonService, PlaceService } from '@ci/domains/memory';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
 
@@ -18,6 +18,7 @@ import { ItemType } from '../types/ItemType';
 import { MessageType } from '../types/MessageType';
 import { Node } from '../types/Node';
 import { PersonType } from '../types/PersonType';
+import { PlaceType } from '../types/PlaceType';
 import { QuestionType } from '../types/QuestionType';
 import { TagType } from '../types/TagType';
 import { ThreadType } from '../types/ThreadType';
@@ -33,6 +34,7 @@ export class NodeResolver {
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
     private readonly personService: PersonService,
+    private readonly placeService: PlaceService,
     private readonly questionService: QuestionService,
     private readonly tagService: TagService,
     private readonly threadService: ThreadService,
@@ -82,6 +84,12 @@ export class NodeResolver {
         const person = await this.personService.findById(serviceContext, id);
 
         return person ? PersonType.toType(person) : null;
+      }
+
+      case 'place': {
+        const place = await this.placeService.findById(serviceContext, id);
+
+        return place ? PlaceType.toType(place) : null;
       }
 
       case 'question': {
