@@ -96,7 +96,7 @@ dev: ## Boot the application
 	$(MAKE) tmuxlogs
 
 tmuxlogs:
-    @which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
+	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; }
 	@SESSION="companion"; \
 	BACKEND_DIR="backend/apps/api"; \
 	FRONTEND_DIR="frontend/apps/web"; \
@@ -213,9 +213,9 @@ init: ## Initialize repository after checkout
 	@printf "\nRepository initialized.\n"
 
 reset: ## Reset the local development environment
-	@printf "🧹 Resetting local development environment...\n\n"
-	@docker compose down --remove-orphans
-	@docker network prune --force
+	@printf "🧹 Resetting local development environment INCLUDING DATABASE DATA...\n\n"
+	docker compose down --rmi all --volumes
+	docker network prune --force
 	@printf "\nLocal development environment successfully reset.\n"
 
 install: ## Install project dependencies
