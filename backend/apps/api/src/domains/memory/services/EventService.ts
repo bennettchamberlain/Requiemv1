@@ -24,8 +24,45 @@ export class EventService {
 
     return await Promise.all(
       dataArray.map(async (item) => {
+        const toCreate = { ...item } as Partial<EventEntity>;
+        if (item.start_time) {
+          toCreate.startTime = item.start_time;
+        }
+
+        if (item.end_time) {
+          toCreate.endTime = item.end_time;
+        }
+
+        if (item.source_system) {
+          toCreate.sourceSystem = item.source_system;
+        }
+
+        if (item.event_type) {
+          toCreate.eventType = item.event_type;
+        }
+
+        if (item.source_type) {
+          toCreate.sourceType = item.source_type;
+        }
+
+        if (item.participant_entity_ids) {
+          toCreate.participantEntityIds = item.participant_entity_ids;
+        }
+
+        if (item.organizer_entity_id) {
+          toCreate.organizerEntityId = item.organizer_entity_id;
+        }
+
+        if (item.location_coordinates) {
+          toCreate.locationCoordinates = item.location_coordinates;
+        }
+
+        if (item.location_name) {
+          toCreate.locationName = item.location_name;
+        }
+
         const event = await this.eventRepository.create({
-          ...item,
+          ...toCreate,
           id: uuidv7(),
           user: {
             id: context.userId,

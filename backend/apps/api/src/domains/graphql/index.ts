@@ -23,6 +23,7 @@ import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
 import { AnswerResolver } from './resolvers/AnswerResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
+import { EventResolver } from './resolvers/EventResolver';
 import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
@@ -58,6 +59,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ComplexityPlugin,
     NodeResolver,
     AnswerResolver,
+    EventResolver,
     FactResolver,
     FileItemsLoader,
     FileResolver,

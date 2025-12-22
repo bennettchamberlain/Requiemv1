@@ -2,6 +2,7 @@ type ResourceType =
   | 'action'
   | 'answer'
   | 'communication'
+  | 'event'
   | 'fact'
   | 'file'
   | 'item'

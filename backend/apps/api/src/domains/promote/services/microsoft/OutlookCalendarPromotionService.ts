@@ -259,10 +259,10 @@ export class OutlookCalendarPromotionService {
     );
 
     const eventSearch = {
-      start_time: new Date(eventDetails.startTime),
+      startTime: new Date(eventDetails.startTime),
       title: eventDetails.subject,
-      source_system: 'Microsoft Outlook Calendar',
-      source_type: 'ETL',
+      sourceSystem: 'Microsoft Outlook Calendar',
+      sourceType: 'ETL',
     };
 
     const existingEvents = await this.eventService.search({ userId }, eventSearch);
@@ -288,7 +288,8 @@ export class OutlookCalendarPromotionService {
       } as CreateEventDto;
 
       const location = eventDetails.location;
-      if (location) {
+
+      if (location?.coordinates) {
         newEvent.location_name = location.displayName;
         newEvent.location_coordinates = {
           type: 'Point',
