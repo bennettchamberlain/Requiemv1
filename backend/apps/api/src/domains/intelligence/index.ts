@@ -31,8 +31,8 @@ import { ActionsController } from './controllers/ActionsController';
 import { AnswersController } from './controllers/AnswersController';
 import { QuestionsController } from './controllers/QuestionsController';
 import { type Action, ActionEntity } from './entities/ActionEntity';
-import { AnswerEntity } from './entities/AnswerEntity';
-import { QuestionEntity } from './entities/QuestionEntity';
+import { type Answer, AnswerEntity } from './entities/AnswerEntity';
+import { type Question, QuestionEntity } from './entities/QuestionEntity';
 import { ActionService } from './services/ActionService';
 import { AnswerService } from './services/AnswerService';
 import { QuestionService } from './services/QuestionService';
@@ -54,4 +54,4 @@ export { ActionEntity, AnswerEntity, QuestionEntity };
 // Services
 export { ActionService, AnswerService, QuestionService };
 
-export type { Action };
+export type { Action, Answer, Question };

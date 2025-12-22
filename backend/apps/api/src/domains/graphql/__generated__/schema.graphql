@@ -24,6 +24,26 @@ type ActionType implements Node & Taggable {
   updatedAt: DateTime!
 }
 
+type AnswerConnection implements Connection {
+  edges: [AnswerEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type AnswerEdge implements Edge {
+  cursor: String!
+  node: AnswerType!
+}
+
+type AnswerType implements Node {
+  answer: String!
+  answerMethod: String!
+  answerSource: String
+  answeredAt: DateTime!
+  id: ID!
+  question: QuestionType!
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -52,9 +72,19 @@ interface Connection {
   totalCount: Int!
 }
 
+input CreateAnswerInput {
+  answer: String!
+  questionId: String!
+}
+
 input CreatePersonInput {
   description: String
   name: String!
+}
+
+input CreateQuestionInput {
+  category: String!
+  text: String!
 }
 
 """
@@ -174,11 +204,17 @@ type MessageType implements Node {
 }
 
 type Mutation {
+  createAnswer(input: CreateAnswerInput!): AnswerType!
   createPerson(input: CreatePersonInput!): PersonType!
+  createQuestion(input: CreateQuestionInput!): QuestionType!
+  removeAnswer(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
+  removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
+  updateAnswer(input: UpdateAnswerInput!): AnswerType
   updatePerson(input: UpdatePersonInput!): PersonType
+  updateQuestion(input: UpdateQuestionInput!): QuestionType
 }
 
 interface Node {
@@ -224,6 +260,8 @@ type PersonType implements Node & Taggable {
 type Query {
   action(id: ID!): ActionType
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
+  answer(id: ID!): AnswerType
+  answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
   fact(id: ID!): FactType
@@ -236,11 +274,33 @@ type Query {
   node(id: ID!): Node
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
+  question(id: ID!): QuestionType
+  questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
   search(input: SearchInput!): SearchConnection!
   tag(id: ID!): TagType
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
   thread(id: ID!): ThreadType
   threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
+}
+
+type QuestionConnection implements Connection {
+  edges: [QuestionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type QuestionEdge implements Edge {
+  cursor: String!
+  node: QuestionType!
+}
+
+type QuestionType implements Node {
+  category: String!
+  createdByLlm: Boolean
+  id: ID!
+  isSeedQuestion: Boolean
+  questionType: String
+  text: String!
 }
 
 input RemovePersonInput {
@@ -310,10 +370,21 @@ type ThreadType implements Node & Taggable {
   tags: [EntityTagType!]!
 }
 
+input UpdateAnswerInput {
+  answer: String!
+  id: String!
+}
+
 input UpdatePersonInput {
   description: String
   id: String!
   name: String!
+}
+
+input UpdateQuestionInput {
+  category: String!
+  id: String!
+  text: String!
 }
 
 type UserType implements Node {
