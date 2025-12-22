@@ -117,51 +117,46 @@ ollama run nomic-embed-text "embed this"
 
 ### Hostfile
 
-You'll want to edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
+Edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
 
 ## Initialize Dev environment
 
 ```bash
-make init
+make setup-dev
 ```
 
-Which will:
+This runs a variety of commands to do setup, including:
+
 * Ensure you have NodeJS installed and that the version matches what's expected
 * Ensure you have Ollama installed, that it is running, and that you've downloaded the minimum required models
 * Ensure you have a hostfile entry for dev.companionintelligence.com
 * Set up Yarn PnP with the SDKs relevant to our project and configure VSCode to work with them
 * Install Yarn dependencies
+* boot local docker containers:
+    * A PostgreSQL server which we currently use as a primary database and job queue
+    * A Minio S3 static file bucket where we upload all static files
+    * An NGINX reverse proxy that publishes our backend (NodeJS) and frontend (Vite) processes to dev.companionintelligence.com
+* run data schema migrations
+* seed the database with dev data
+* index the database
 
-To then boot the local infrastructure.
-
-```bash
-make local
-```
-
-This should start:
-* A PostgreSQL server which we currently use as a primary database and job queue
-* A Minio S3 static file bucket where we upload all static files
-* An NGINX reverse proxy that publishes our backend (NodeJS) and frontend (Vite) processes to dev.companionintelligence.com
-
-To then idempotently execute any database migrations.
+If you run into problems with this, you can reset the docker environment using:
 
 ```bash
-make migrate
+make reset
 ```
 
-To then idempotently seed the database:
+## Run the app in dev mode
+
+To run the app in dev mode:
 
 ```bash
-make seed
+make run-dev
 ```
 
-To then idempotently index the database and enable searching:
+You should now be able to view the application at:
 
-```bash
-make index
-```
-
-Test by loading `http://dev.companionintelligence.com` in a browser and verifying that you can see the CI web app
+[dev.companionintelligence.com](http://dev.companionintelligence.com)
 
 If you have run `make seed`, you can login using the credentials:
 
@@ -169,22 +164,6 @@ If you have run `make seed`, you can login using the credentials:
 Username: jsmith@example.com
 Password: ]60.a6{CJ}lB*rHAp;w;
 ```
-
-## Run the app in dev mode
-
-Now that you have prerequisites installed you should be able to run a few Make commands to get everything booted.
-
-To build and run all of the docker containers for development:
-
-```bash
-make local
-make tmuxlogs
-```
-
-You should now be able to view the application at:
-
-[dev.companionintelligence.com](http://dev.companionintelligence.com)
-
 
 -----
 

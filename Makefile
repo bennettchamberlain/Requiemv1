@@ -101,7 +101,7 @@ deploy: ## Deploy the application (staging)
 	@printf "\n"
 	$(MAKE) staging
 
-dev: ## Boot the application
+dev: ## DEPRECATED
 	$(MAKE) init
 	@printf "\n"
 	$(MAKE) build
@@ -113,6 +113,24 @@ dev: ## Boot the application
 	$(MAKE) seed
 	@printf "\n"
 	$(MAKE) index
+	@printf "\n"
+	$(MAKE) run-dev-session
+
+setup-dev: ## Setup the development environment
+	$(MAKE) init
+	@printf "\n"
+	$(MAKE) build
+	@printf "\n"
+	$(MAKE) local
+	@printf "\n"
+	$(MAKE) migrate
+	@printf "\n"
+	$(MAKE) seed
+	@printf "\n"
+	$(MAKE) index
+
+run-dev: ## Run the development environment locally
+	$(MAKE) local
 	@printf "\n"
 	$(MAKE) run-dev-session
 
