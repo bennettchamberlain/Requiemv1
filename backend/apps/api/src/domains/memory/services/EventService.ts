@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
@@ -24,8 +24,45 @@ export class EventService {
 
     return await Promise.all(
       dataArray.map(async (item) => {
+        const toCreate = { ...item } as Partial<EventEntity>;
+        if (item.start_time) {
+          toCreate.startTime = item.start_time;
+        }
+
+        if (item.end_time) {
+          toCreate.endTime = item.end_time;
+        }
+
+        if (item.source_system) {
+          toCreate.sourceSystem = item.source_system;
+        }
+
+        if (item.event_type) {
+          toCreate.eventType = item.event_type;
+        }
+
+        if (item.source_type) {
+          toCreate.sourceType = item.source_type;
+        }
+
+        if (item.participant_entity_ids) {
+          toCreate.participantEntityIds = item.participant_entity_ids;
+        }
+
+        if (item.organizer_entity_id) {
+          toCreate.organizerEntityId = item.organizer_entity_id;
+        }
+
+        if (item.location_coordinates) {
+          toCreate.locationCoordinates = item.location_coordinates;
+        }
+
+        if (item.location_name) {
+          toCreate.locationName = item.location_name;
+        }
+
         const event = await this.eventRepository.create({
-          ...item,
+          ...toCreate,
           id: uuidv7(),
           user: {
             id: context.userId,
@@ -53,6 +90,23 @@ export class EventService {
     });
 
     return result.map((entity) => EventEntity.toEgressType(entity));
+  }
+
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Event | null)[]> {
+    const result = await this.eventRepository.find({
+      where: {
+        id: In(ids),
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+    });
+
+    const map = new Map(result.map((entity) => [entity.id, EventEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 
   async findById(context: ServiceContext, id: string): Promise<Event | null> {

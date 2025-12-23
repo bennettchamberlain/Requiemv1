@@ -87,7 +87,7 @@ export const updateContentSchema = z.object({
 });
 
 export interface CreateEventDto {
-  id: string;
+  id?: string;
   title: string;
   description?: string;
   event_type?: string;

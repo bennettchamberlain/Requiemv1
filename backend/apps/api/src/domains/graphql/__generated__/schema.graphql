@@ -77,6 +77,29 @@ input CreateAnswerInput {
   questionId: String!
 }
 
+input CreateEventInput {
+  category: String
+  confidenceScore: Float
+  description: String
+  durationMinutes: Int
+  endTime: DateTime
+  eventType: String
+  isAllDay: Boolean
+  isRecurring: Boolean
+  locationCoordinates: JSON
+  locationEntityId: ID
+  locationName: String
+  metadata: JSON
+  organizerEntityId: ID
+  participantEntityIds: [ID!]
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  startTime: DateTime!
+  status: String
+  title: String
+}
+
 input CreatePersonInput {
   description: String
   name: String!
@@ -113,6 +136,41 @@ interface Edge {
 type EntityTagType {
   label: String!
   taggedAt: DateTime!
+}
+
+type EventConnection implements Connection {
+  edges: [EventEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type EventEdge implements Edge {
+  cursor: String!
+  node: EventType!
+}
+
+type EventType implements Node {
+  category: String
+  confidenceScore: Float
+  description: String
+  durationMinutes: Int
+  endTime: DateTime
+  eventType: String
+  id: ID!
+  isAllDay: Boolean
+  isRecurring: Boolean
+  locationCoordinates: JSON
+  locationEntityId: ID
+  locationName: String
+  metadata: JSON
+  organizerEntityId: ID
+  participantEntityIds: [ID!]
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  startTime: DateTime!
+  status: String
+  title: String
 }
 
 type FactConnection implements Connection {
@@ -218,16 +276,19 @@ type MessageType implements Node {
 
 type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
+  createEvent(input: CreateEventInput!): EventType!
   createPerson(input: CreatePersonInput!): PersonType!
   createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
   removeAnswer(id: String!): Boolean!
+  removeEvent(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateEvent(input: UpdateEventInput!): EventType
   updatePerson(input: UpdatePersonInput!): PersonType
   updatePlace(input: UpdatePlaceInput!): PlaceType
   updateQuestion(input: UpdateQuestionInput!): QuestionType
@@ -306,6 +367,8 @@ type Query {
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
+  event(id: ID!): EventType
+  events(after: String, before: String, first: Int, last: Int): EventConnection!
   fact(id: ID!): FactType
   facts(after: String, before: String, first: Int, last: Int): FactConnection!
   file(id: ID!): FileType
@@ -417,6 +480,30 @@ type ThreadType implements Node & Taggable {
 input UpdateAnswerInput {
   answer: String!
   id: String!
+}
+
+input UpdateEventInput {
+  category: String
+  confidenceScore: Float
+  description: String
+  durationMinutes: Int
+  endTime: DateTime
+  eventType: String
+  id: ID!
+  isAllDay: Boolean
+  isRecurring: Boolean
+  locationCoordinates: JSON
+  locationEntityId: ID
+  locationName: String
+  metadata: JSON
+  organizerEntityId: ID
+  participantEntityIds: [ID!]
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  startTime: DateTime
+  status: String
+  title: String
 }
 
 input UpdatePersonInput {
