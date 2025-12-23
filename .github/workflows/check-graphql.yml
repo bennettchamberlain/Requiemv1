@@ -1,0 +1,40 @@
+name: GraphQL schema check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-graphql:
+    runs-on: ubuntu-latest
+    container:
+      image: node:22-slim
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Generate GraphQL schema
+        run: yarn workspace @ci/be-api graphql:generate
+
+      - name: Generate GraphQL frontend types
+        run: yarn workspace @ci/fe-web graphql:generate
+
+      - name: Check for changes
+        run: |
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Error: GraphQL schema or types are out of sync."
+            echo "Please run 'make graphql' locally and commit the changes."
+            git diff
+            exit 1
+          fi

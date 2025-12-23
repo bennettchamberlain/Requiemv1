@@ -1,4 +1,4 @@
-.PHONY: help build chatreset dbclear dev health index init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
+.PHONY: help build chatreset dbclear dev graphql health index init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -116,6 +116,17 @@ dev: ## Boot the application
 	\
 	tmux select-pane -t 0; \
 	tmux attach -t $$SESSION
+
+graphql: ## Generate GraphQL schema and frontend types
+	@printf "🏷️ Generating GraphQL...\n\n"
+
+	@yarn workspace @ci/be-api graphql:generate
+
+	@printf "\n"
+
+	@yarn workspace @ci/fe-web graphql:generate
+
+	@printf "\nGraphQL successfully generated.\n"
 
 health: ## Check the repository for prerequisites
 	@printf "🩺 Checking health of prerequisites...\n\n"
