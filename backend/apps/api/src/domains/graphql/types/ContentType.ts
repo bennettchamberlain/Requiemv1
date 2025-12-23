@@ -51,7 +51,7 @@ export class ContentType implements Node {
       mimetype: entity.mimetype,
       externalId: entity.externalId,
       sourceUrl: entity.sourceUrl,
-      sourceData: entity.sourceData
-    }
+      sourceData: entity.sourceData,
+    };
   }
 }

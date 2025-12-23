@@ -220,7 +220,7 @@ export interface SearchEventDto {
 }
 
 export interface CreateContentDto {
-  id: string;
+  id?: string;
   type: string;
   title?: string;
   text?: string;
@@ -228,6 +228,7 @@ export interface CreateContentDto {
   mimetype?: string;
   external_id?: string;
   source_url?: string;
+  source_data?: Record<string, unknown>;
   user_id?: string;
   event_id?: string;
   event?: {
@@ -246,6 +247,7 @@ export interface UpdateContentDto {
   mimetype?: string;
   external_id?: string;
   source_url?: string;
+  source_data?: Record<string, unknown>;
   event?: {
     id: string;
   };
