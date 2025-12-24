@@ -64,6 +64,7 @@ jobs:
         run: yarn workspace @ci/be-api test
 
   typecheck:
+    name: Type check ${{ matrix.name }}
     needs: install
     runs-on: ubuntu-latest
     container:
@@ -71,7 +72,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        workspace: ['@ci/be-api', '@ci/fe-web']
+        include:
+          - name: backend
+            command: yarn workspace @ci/be-api typecheck
+          - name: frontend
+            command: yarn workspace @ci/fe-web typecheck
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -92,10 +97,11 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Type check ${{ matrix.workspace }}
-        run: yarn workspace ${{ matrix.workspace }} typecheck
+      - name: Type check ${{ matrix.name }}
+        run: ${{ matrix.command }}
 
   lint:
+    name: Lint ${{ matrix.name }}
     needs: install
     runs-on: ubuntu-latest
     container:
