@@ -60,6 +60,7 @@ type CommunicationType implements Node {
   direction: String!
   from: PersonType
   id: ID!
+  preview: String
   subject: String
   time: DateTime!
   to(after: String, before: String, first: Int, last: Int): PersonConnection!
@@ -470,7 +471,7 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = PersonType | ThreadType
+union SearchResultType = CommunicationType | PersonType | ThreadType
 
 type TagConnection implements Connection {
   edges: [TagEdge!]!

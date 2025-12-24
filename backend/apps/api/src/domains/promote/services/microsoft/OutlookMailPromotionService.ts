@@ -301,6 +301,7 @@ export class OutlookMailPromotionService {
         category: 'personal', // TODO: Classify emails
         connection_id: connectionId,
         attachments: attachmentUploadIds,
+        preview: messageDetails.bodyPreview ?? null,
       },
     );
   }

@@ -12,7 +12,7 @@ jobs:
   check-graphql:
     runs-on: ubuntu-latest
     container:
-      image: node:22-slim
+      image: node:22
 
     steps:
       - name: Checkout repository
@@ -20,6 +20,16 @@ jobs:
 
       - name: Enable Corepack
         run: corepack enable
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/node_modules
+            .yarn/cache
+          key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-modules-
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -32,7 +42,8 @@ jobs:
 
       - name: Check for changes
         run: |
-          if [[ -n $(git status --porcelain) ]]; then
+          git config --global --add safe.directory '*'
+          if [ -n "$(git status --porcelain)" ]; then
             echo "Error: GraphQL schema or types are out of sync."
             echo "Please run 'make graphql' locally and commit the changes."
             git diff

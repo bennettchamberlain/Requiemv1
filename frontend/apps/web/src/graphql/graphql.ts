@@ -49,6 +49,29 @@ export type ActionType = Node & Taggable & {
   updatedAt: Scalars['DateTime']['output'];
 };
 
+export type AnswerConnection = Connection & {
+  __typename?: 'AnswerConnection';
+  edges: Array<AnswerEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type AnswerEdge = Edge & {
+  __typename?: 'AnswerEdge';
+  cursor: Scalars['String']['output'];
+  node: AnswerType;
+};
+
+export type AnswerType = Node & {
+  __typename?: 'AnswerType';
+  answer: Scalars['String']['output'];
+  answerMethod: Scalars['String']['output'];
+  answerSource?: Maybe<Scalars['String']['output']>;
+  answeredAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  question: QuestionType;
+};
+
 export type CommunicationConnection = Connection & {
   __typename?: 'CommunicationConnection';
   edges: Array<CommunicationEdge>;
@@ -68,6 +91,7 @@ export type CommunicationType = Node & {
   direction: Scalars['String']['output'];
   from?: Maybe<PersonType>;
   id: Scalars['ID']['output'];
+  preview?: Maybe<Scalars['String']['output']>;
   subject?: Maybe<Scalars['String']['output']>;
   time: Scalars['DateTime']['output'];
   to: PersonConnection;
@@ -88,9 +112,93 @@ export type Connection = {
   totalCount: Scalars['Int']['output'];
 };
 
+export type ContentConnection = Connection & {
+  __typename?: 'ContentConnection';
+  edges: Array<ContentEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type ContentEdge = Edge & {
+  __typename?: 'ContentEdge';
+  cursor: Scalars['String']['output'];
+  node: ContentType;
+};
+
+export type ContentType = Node & {
+  __typename?: 'ContentType';
+  event?: Maybe<EventType>;
+  externalId?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  mimetype?: Maybe<Scalars['String']['output']>;
+  sourceData?: Maybe<Scalars['JSON']['output']>;
+  sourceUrl?: Maybe<Scalars['String']['output']>;
+  text?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  type?: Maybe<Scalars['String']['output']>;
+  url?: Maybe<Scalars['String']['output']>;
+};
+
+export type CreateAnswerInput = {
+  answer: Scalars['String']['input'];
+  questionId: Scalars['String']['input'];
+};
+
+export type CreateContentInput = {
+  externalId?: InputMaybe<Scalars['String']['input']>;
+  mimetype?: InputMaybe<Scalars['String']['input']>;
+  sourceData?: InputMaybe<Scalars['JSON']['input']>;
+  sourceUrl?: InputMaybe<Scalars['String']['input']>;
+  text?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+  type?: InputMaybe<Scalars['String']['input']>;
+  url?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CreateEventInput = {
+  category?: InputMaybe<Scalars['String']['input']>;
+  confidenceScore?: InputMaybe<Scalars['Float']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  endTime?: InputMaybe<Scalars['DateTime']['input']>;
+  eventType?: InputMaybe<Scalars['String']['input']>;
+  isAllDay?: InputMaybe<Scalars['Boolean']['input']>;
+  isRecurring?: InputMaybe<Scalars['Boolean']['input']>;
+  locationCoordinates?: InputMaybe<Scalars['JSON']['input']>;
+  locationEntityId?: InputMaybe<Scalars['ID']['input']>;
+  locationName?: InputMaybe<Scalars['String']['input']>;
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
+  organizerEntityId?: InputMaybe<Scalars['ID']['input']>;
+  participantEntityIds?: InputMaybe<Array<Scalars['ID']['input']>>;
+  sourceId?: InputMaybe<Scalars['ID']['input']>;
+  sourceSystem?: InputMaybe<Scalars['String']['input']>;
+  sourceType?: InputMaybe<Scalars['String']['input']>;
+  startTime: Scalars['DateTime']['input'];
+  status?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type CreatePersonInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
+};
+
+export type CreatePlaceInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  estimated?: InputMaybe<Scalars['Boolean']['input']>;
+  geoFormat?: InputMaybe<Scalars['String']['input']>;
+  geolocation?: InputMaybe<Scalars['JSON']['input']>;
+  locationBoundary?: InputMaybe<Scalars['JSON']['input']>;
+  name: Scalars['String']['input'];
+  properties?: InputMaybe<Scalars['JSON']['input']>;
+  tracked?: InputMaybe<Scalars['Boolean']['input']>;
+  type?: InputMaybe<Scalars['String']['input']>;
+  uploaded?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+export type CreateQuestionInput = {
+  category: Scalars['String']['input'];
+  text: Scalars['String']['input'];
 };
 
 export type Edge = {
@@ -102,6 +210,44 @@ export type EntityTagType = {
   __typename?: 'EntityTagType';
   label: Scalars['String']['output'];
   taggedAt: Scalars['DateTime']['output'];
+};
+
+export type EventConnection = Connection & {
+  __typename?: 'EventConnection';
+  edges: Array<EventEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type EventEdge = Edge & {
+  __typename?: 'EventEdge';
+  cursor: Scalars['String']['output'];
+  node: EventType;
+};
+
+export type EventType = Node & {
+  __typename?: 'EventType';
+  category?: Maybe<Scalars['String']['output']>;
+  confidenceScore?: Maybe<Scalars['Float']['output']>;
+  description?: Maybe<Scalars['String']['output']>;
+  durationMinutes?: Maybe<Scalars['Int']['output']>;
+  endTime?: Maybe<Scalars['DateTime']['output']>;
+  eventType?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  isAllDay?: Maybe<Scalars['Boolean']['output']>;
+  isRecurring?: Maybe<Scalars['Boolean']['output']>;
+  locationCoordinates?: Maybe<Scalars['JSON']['output']>;
+  locationEntityId?: Maybe<Scalars['ID']['output']>;
+  locationName?: Maybe<Scalars['String']['output']>;
+  metadata?: Maybe<Scalars['JSON']['output']>;
+  organizerEntityId?: Maybe<Scalars['ID']['output']>;
+  participantEntityIds?: Maybe<Array<Scalars['ID']['output']>>;
+  sourceId?: Maybe<Scalars['ID']['output']>;
+  sourceSystem?: Maybe<Scalars['String']['output']>;
+  sourceType?: Maybe<Scalars['String']['output']>;
+  startTime: Scalars['DateTime']['output'];
+  status?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
 };
 
 export type FactConnection = Connection & {
@@ -221,11 +367,41 @@ export type MessageType = Node & {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  createAnswer: AnswerType;
+  createContent: ContentType;
+  createEvent: EventType;
   createPerson: PersonType;
+  createPlace: PlaceType;
+  createQuestion: QuestionType;
+  removeAnswer: Scalars['Boolean']['output'];
+  removeContent: Scalars['Boolean']['output'];
+  removeEvent: Scalars['Boolean']['output'];
   removePerson: Scalars['Boolean']['output'];
+  removePlace: Scalars['Boolean']['output'];
+  removeQuestion: Scalars['Boolean']['output'];
   tagEntities: Scalars['Boolean']['output'];
   untagEntities: Scalars['Boolean']['output'];
+  updateAnswer?: Maybe<AnswerType>;
+  updateContent?: Maybe<ContentType>;
+  updateEvent?: Maybe<EventType>;
   updatePerson?: Maybe<PersonType>;
+  updatePlace?: Maybe<PlaceType>;
+  updateQuestion?: Maybe<QuestionType>;
+};
+
+
+export type MutationCreateAnswerArgs = {
+  input: CreateAnswerInput;
+};
+
+
+export type MutationCreateContentArgs = {
+  input: CreateContentInput;
+};
+
+
+export type MutationCreateEventArgs = {
+  input: CreateEventInput;
 };
 
 
@@ -234,8 +410,43 @@ export type MutationCreatePersonArgs = {
 };
 
 
+export type MutationCreatePlaceArgs = {
+  input: CreatePlaceInput;
+};
+
+
+export type MutationCreateQuestionArgs = {
+  input: CreateQuestionInput;
+};
+
+
+export type MutationRemoveAnswerArgs = {
+  id: Scalars['String']['input'];
+};
+
+
+export type MutationRemoveContentArgs = {
+  id: Scalars['String']['input'];
+};
+
+
+export type MutationRemoveEventArgs = {
+  id: Scalars['String']['input'];
+};
+
+
 export type MutationRemovePersonArgs = {
   input: RemovePersonInput;
+};
+
+
+export type MutationRemovePlaceArgs = {
+  id: Scalars['String']['input'];
+};
+
+
+export type MutationRemoveQuestionArgs = {
+  id: Scalars['String']['input'];
 };
 
 
@@ -249,8 +460,33 @@ export type MutationUntagEntitiesArgs = {
 };
 
 
+export type MutationUpdateAnswerArgs = {
+  input: UpdateAnswerInput;
+};
+
+
+export type MutationUpdateContentArgs = {
+  input: UpdateContentInput;
+};
+
+
+export type MutationUpdateEventArgs = {
+  input: UpdateEventInput;
+};
+
+
 export type MutationUpdatePersonArgs = {
   input: UpdatePersonInput;
+};
+
+
+export type MutationUpdatePlaceArgs = {
+  input: UpdatePlaceInput;
+};
+
+
+export type MutationUpdateQuestionArgs = {
+  input: UpdateQuestionInput;
 };
 
 export type Node = {
@@ -297,12 +533,47 @@ export type PersonType = Node & Taggable & {
   tags: Array<EntityTagType>;
 };
 
+export type PlaceConnection = Connection & {
+  __typename?: 'PlaceConnection';
+  edges: Array<PlaceEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type PlaceEdge = Edge & {
+  __typename?: 'PlaceEdge';
+  cursor: Scalars['String']['output'];
+  node: PlaceType;
+};
+
+export type PlaceType = Node & {
+  __typename?: 'PlaceType';
+  description?: Maybe<Scalars['String']['output']>;
+  entityType: Scalars['String']['output'];
+  estimated?: Maybe<Scalars['Boolean']['output']>;
+  geoFormat?: Maybe<Scalars['String']['output']>;
+  geolocation?: Maybe<Scalars['JSON']['output']>;
+  id: Scalars['ID']['output'];
+  locationBoundary?: Maybe<Scalars['JSON']['output']>;
+  name: Scalars['String']['output'];
+  properties: Scalars['JSON']['output'];
+  tracked?: Maybe<Scalars['Boolean']['output']>;
+  type?: Maybe<Scalars['String']['output']>;
+  uploaded?: Maybe<Scalars['Boolean']['output']>;
+};
+
 export type Query = {
   __typename?: 'Query';
   action?: Maybe<ActionType>;
   actions: ActionConnection;
+  answer?: Maybe<AnswerType>;
+  answers: AnswerConnection;
   communication?: Maybe<CommunicationType>;
   communications: CommunicationConnection;
+  content?: Maybe<ContentType>;
+  contents: ContentConnection;
+  event?: Maybe<EventType>;
+  events: EventConnection;
   fact?: Maybe<FactType>;
   facts: FactConnection;
   file?: Maybe<FileType>;
@@ -313,6 +584,10 @@ export type Query = {
   node?: Maybe<Node>;
   people: PersonConnection;
   person?: Maybe<PersonType>;
+  place?: Maybe<PlaceType>;
+  places: PlaceConnection;
+  question?: Maybe<QuestionType>;
+  questions: QuestionConnection;
   search: SearchConnection;
   tag?: Maybe<TagType>;
   tags: TagConnection;
@@ -334,12 +609,51 @@ export type QueryActionsArgs = {
 };
 
 
+export type QueryAnswerArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryAnswersArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryCommunicationArgs = {
   id: Scalars['ID']['input'];
 };
 
 
 export type QueryCommunicationsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryContentArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryContentsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryEventArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryEventsArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
@@ -404,6 +718,32 @@ export type QueryPersonArgs = {
 };
 
 
+export type QueryPlaceArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryPlacesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryQuestionArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryQuestionsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QuerySearchArgs = {
   input: SearchInput;
 };
@@ -434,6 +774,29 @@ export type QueryThreadsArgs = {
   last?: InputMaybe<Scalars['Int']['input']>;
 };
 
+export type QuestionConnection = Connection & {
+  __typename?: 'QuestionConnection';
+  edges: Array<QuestionEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type QuestionEdge = Edge & {
+  __typename?: 'QuestionEdge';
+  cursor: Scalars['String']['output'];
+  node: QuestionType;
+};
+
+export type QuestionType = Node & {
+  __typename?: 'QuestionType';
+  category: Scalars['String']['output'];
+  createdByLlm?: Maybe<Scalars['Boolean']['output']>;
+  id: Scalars['ID']['output'];
+  isSeedQuestion?: Maybe<Scalars['Boolean']['output']>;
+  questionType?: Maybe<Scalars['String']['output']>;
+  text: Scalars['String']['output'];
+};
+
 export type RemovePersonInput = {
   id: Scalars['String']['input'];
 };
@@ -456,7 +819,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = PersonType | ThreadType;
+export type SearchResultType = CommunicationType | PersonType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';
@@ -517,10 +880,71 @@ export type ThreadTypeMessagesArgs = {
   last?: InputMaybe<Scalars['Int']['input']>;
 };
 
+export type UpdateAnswerInput = {
+  answer: Scalars['String']['input'];
+  id: Scalars['String']['input'];
+};
+
+export type UpdateContentInput = {
+  externalId?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  mimetype?: InputMaybe<Scalars['String']['input']>;
+  sourceData?: InputMaybe<Scalars['JSON']['input']>;
+  sourceUrl?: InputMaybe<Scalars['String']['input']>;
+  text?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+  type?: InputMaybe<Scalars['String']['input']>;
+  url?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateEventInput = {
+  category?: InputMaybe<Scalars['String']['input']>;
+  confidenceScore?: InputMaybe<Scalars['Float']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  durationMinutes?: InputMaybe<Scalars['Int']['input']>;
+  endTime?: InputMaybe<Scalars['DateTime']['input']>;
+  eventType?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  isAllDay?: InputMaybe<Scalars['Boolean']['input']>;
+  isRecurring?: InputMaybe<Scalars['Boolean']['input']>;
+  locationCoordinates?: InputMaybe<Scalars['JSON']['input']>;
+  locationEntityId?: InputMaybe<Scalars['ID']['input']>;
+  locationName?: InputMaybe<Scalars['String']['input']>;
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
+  organizerEntityId?: InputMaybe<Scalars['ID']['input']>;
+  participantEntityIds?: InputMaybe<Array<Scalars['ID']['input']>>;
+  sourceId?: InputMaybe<Scalars['ID']['input']>;
+  sourceSystem?: InputMaybe<Scalars['String']['input']>;
+  sourceType?: InputMaybe<Scalars['String']['input']>;
+  startTime?: InputMaybe<Scalars['DateTime']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type UpdatePersonInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   id: Scalars['String']['input'];
   name: Scalars['String']['input'];
+};
+
+export type UpdatePlaceInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  estimated?: InputMaybe<Scalars['Boolean']['input']>;
+  geoFormat?: InputMaybe<Scalars['String']['input']>;
+  geolocation?: InputMaybe<Scalars['JSON']['input']>;
+  id: Scalars['String']['input'];
+  locationBoundary?: InputMaybe<Scalars['JSON']['input']>;
+  name: Scalars['String']['input'];
+  properties?: InputMaybe<Scalars['JSON']['input']>;
+  tracked?: InputMaybe<Scalars['Boolean']['input']>;
+  type?: InputMaybe<Scalars['String']['input']>;
+  uploaded?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+export type UpdateQuestionInput = {
+  category: Scalars['String']['input'];
+  id: Scalars['String']['input'];
+  text: Scalars['String']['input'];
 };
 
 export type UserType = Node & {
