@@ -12,7 +12,6 @@ import { TagLoader } from '../loaders/TagLoader';
 import { ContentConnection } from '../types/ContentConnection';
 import { ContentEdge } from '../types/ContentEdge';
 import { ContentType } from '../types/ContentType';
-import { EntityTagType } from '../types/EntityTagType';
 import { EventType } from '../types/EventType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -131,17 +130,5 @@ export class ContentResolver {
     const event = await this.eventLoader.load(serviceContext, parent.__source.event.id);
 
     return event ? EventType.toType(event) : null;
-  }
-
-  @ResolveField(() => [EntityTagType])
-  async tags(@Context() context: RequestContext, @Parent() parent: ContentType): Promise<EntityTagType[]> {
-    const serviceContext = toServiceContext(context);
-
-    const tags = await this.tagLoader.load(serviceContext, {
-      type: 'action',
-      id: parent.__source.id,
-    });
-
-    return tags.map((tag) => EntityTagType.toType(tag));
   }
 }
