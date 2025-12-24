@@ -10,6 +10,7 @@ on:
 
 jobs:
   install:
+    name: Install dependencies
     runs-on: ubuntu-latest
     container:
       image: node:22
@@ -36,6 +37,7 @@ jobs:
         run: yarn install --immutable
 
   test:
+    name: Run backend tests
     needs: install
     runs-on: ubuntu-latest
     container:
@@ -140,6 +142,7 @@ jobs:
         run: ${{ matrix.command }}
 
   imports:
+    name: Check backend imports
     needs: install
     runs-on: ubuntu-latest
     container:
@@ -168,6 +171,7 @@ jobs:
         run: yarn workspace @ci/be-api depcheck
 
   graphql:
+    name: Check GraphQL schema and types
     needs: install
     runs-on: ubuntu-latest
     container:
