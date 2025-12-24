@@ -72,9 +72,45 @@ interface Connection {
   totalCount: Int!
 }
 
+type ContentConnection implements Connection {
+  edges: [ContentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ContentEdge implements Edge {
+  cursor: String!
+  node: ContentType!
+}
+
+type ContentType implements Node {
+  event: EventType
+  externalId: String
+  id: ID!
+  mimetype: String
+  sourceData: JSON
+  sourceUrl: String
+  tags: [EntityTagType!]!
+  text: String
+  title: String
+  type: String
+  url: String
+}
+
 input CreateAnswerInput {
   answer: String!
   questionId: String!
+}
+
+input CreateContentInput {
+  externalId: String
+  mimetype: String
+  sourceData: JSON
+  sourceUrl: String
+  text: String
+  title: String
+  type: String
+  url: String
 }
 
 input CreateEventInput {
@@ -276,11 +312,13 @@ type MessageType implements Node {
 
 type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
+  createContent(input: CreateContentInput!): ContentType!
   createEvent(input: CreateEventInput!): EventType!
   createPerson(input: CreatePersonInput!): PersonType!
   createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
   removeAnswer(id: String!): Boolean!
+  removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
   removePlace(id: String!): Boolean!
@@ -288,6 +326,7 @@ type Mutation {
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
   updatePerson(input: UpdatePersonInput!): PersonType
   updatePlace(input: UpdatePlaceInput!): PlaceType
@@ -367,6 +406,8 @@ type Query {
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
+  content(id: ID!): ContentType
+  contents(after: String, before: String, first: Int, last: Int): ContentConnection!
   event(id: ID!): EventType
   events(after: String, before: String, first: Int, last: Int): EventConnection!
   fact(id: ID!): FactType
@@ -480,6 +521,18 @@ type ThreadType implements Node & Taggable {
 input UpdateAnswerInput {
   answer: String!
   id: String!
+}
+
+input UpdateContentInput {
+  externalId: String
+  id: ID!
+  mimetype: String
+  sourceData: JSON
+  sourceUrl: String
+  text: String
+  title: String
+  type: String
+  url: String
 }
 
 input UpdateEventInput {
