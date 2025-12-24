@@ -111,6 +111,10 @@ export class OutlookMailPromotionService {
         return;
       }
 
+      console.log(
+        'all messages',
+        messages.filter((message) => message.subject != null),
+      );
       // Process each message individually
       for (const message of messages) {
         if (!message.id) {
@@ -154,11 +158,11 @@ export class OutlookMailPromotionService {
         });
 
         returned = returned.concat(dataObj.messages as OutlookMailMessage[]);
+      } else {
+        this.logger.warn('No messages found in content', {
+          contentKeys: Object.keys(dataObj),
+        });
       }
-
-      this.logger.warn('No messages found in content', {
-        contentKeys: Object.keys(dataObj),
-      });
     });
 
     return returned;
@@ -171,6 +175,16 @@ export class OutlookMailPromotionService {
   ): Promise<void> {
     // Extract message details
     const messageDetails = await this.extractMessageDetails(userId, message, connectionId);
+
+    // Outlook may return a lot of blank "emails" that just clutter up the database
+    // Ignore items that don't have a subject, body of any length, and no "from" field
+    if (
+      messageDetails.subject == null &&
+      messageDetails.body?.length === 0 &&
+      messageDetails.from == undefined
+    ) {
+      return;
+    }
 
     this.logger.log('Processing OutlookMail message', {
       messageId: messageDetails.id,
@@ -228,9 +242,9 @@ export class OutlookMailPromotionService {
           : Buffer.from('');
         const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
         const fileSearch = {
-          content_type: attachment.contentType,
+          contentType: attachment.contentType,
           size: attachment.size,
-          file_hash: fileHash,
+          fileHash: fileHash,
           filename: attachment.name,
         };
         const existingFiles = await this.fileService.search({ userId }, fileSearch);
