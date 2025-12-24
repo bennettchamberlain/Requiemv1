@@ -32,7 +32,8 @@ jobs:
 
       - name: Check for changes
         run: |
-          if [[ -n $(git status --porcelain) ]]; then
+          git config --global --add safe.directory '*'
+          if [ -n "$(git status --porcelain)" ]; then
             echo "Error: GraphQL schema or types are out of sync."
             echo "Please run 'make graphql' locally and commit the changes."
             git diff
