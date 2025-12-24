@@ -36,6 +36,27 @@ help: ## List make commands with their descriptions
 	@printf "\033[33mCommands:\033[0m\n"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+reset: ## Reset the local development environment
+	@printf "🧹 Resetting local development environment INCLUDING DATABASE DATA...\n\n"
+	@COMPOSE_CONTAINERS=$$(docker compose ps -aq 2>/dev/null); \
+	if [ -n "$$COMPOSE_CONTAINERS" ]; then \
+		docker stop $$COMPOSE_CONTAINERS 2>/dev/null || true; \
+		docker rm -f $$COMPOSE_CONTAINERS 2>/dev/null || true; \
+	fi
+	docker compose down -v --remove-orphans
+	@COMPOSE_CONTAINERS=$$(docker compose ps -aq 2>/dev/null); \
+	if [ -n "$$COMPOSE_CONTAINERS" ]; then \
+		printf "Removing remaining containers...\n"; \
+		docker rm -f $$COMPOSE_CONTAINERS 2>/dev/null || true; \
+	fi
+	@COMPOSE_VOLUMES="postgres-data minio-data stt-service-models stt-service-cache tts-service-models tts-service-cache"; \
+	for vol in $$COMPOSE_VOLUMES; do \
+		docker volume ls -q | grep "^ci-server_$$vol$$" | xargs -r docker volume rm -f 2>/dev/null || true; \
+	done
+	docker rmi -f ci/postgres ci/api:latest ci/stt-service ci/tts-service ci/nginx 2>/dev/null || true
+	docker network prune --force
+	@printf "\nLocal development environment successfully reset.\n"
+
 build: mcp ## Build the application
 	@printf "🧱 Building the application...\n\n"
 
@@ -74,17 +95,18 @@ dbdestroy: ## Clear the PostgreSQL database and start from scratch
 
 deploy: ## Deploy the application (staging)
 	@printf "🐳 Deploying Companion Intelligence application...\n\n"
-
 	$(MAKE) init
 	@printf "\n"
 	$(MAKE) build
 	@printf "\n"
 	$(MAKE) staging
 
-dev: ## Boot the application
-	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; };
-
+dev: ## DEPRECATED
 	$(MAKE) init
+	@printf "\n"
+	$(MAKE) build
+	@printf "\n"
+	$(MAKE) local
 	@printf "\n"
 	$(MAKE) migrate
 	@printf "\n"
@@ -92,10 +114,28 @@ dev: ## Boot the application
 	@printf "\n"
 	$(MAKE) index
 	@printf "\n"
-	$(MAKE) mcp
+	$(MAKE) run-dev-session
+
+setup-dev: ## Setup the development environment
+	$(MAKE) init
+	@printf "\n"
+	$(MAKE) build
 	@printf "\n"
 	$(MAKE) local
+	@printf "\n"
+	$(MAKE) migrate
+	@printf "\n"
+	$(MAKE) seed
+	@printf "\n"
+	$(MAKE) index
 
+run-dev: ## Run the development environment locally
+	$(MAKE) local
+	@printf "\n"
+	$(MAKE) run-dev-session
+
+run-dev-session:
+	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; }
 	@SESSION="companion"; \
 	BACKEND_DIR="backend/apps/api"; \
 	FRONTEND_DIR="frontend/apps/web"; \
@@ -103,8 +143,6 @@ dev: ## Boot the application
 	if tmux has-session -t $$SESSION 2>/dev/null; then \
 		printf "\n🔪 Killing existing tmux session: $$SESSION\n\n"; \
 		tmux kill-session -t $$SESSION; \
-		printf "You can now re-run: make dev\n"; \
-		exit 0; \
 	fi; \
 	\
 	printf "🚀 Starting new tmux session: $$SESSION\n\n"; \
