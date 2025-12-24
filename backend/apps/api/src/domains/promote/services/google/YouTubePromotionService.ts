@@ -76,13 +76,13 @@ export class YouTubePromotionService {
       });
 
       if (data.type === 'likes') {
-        await this.processLikes(data.items, userId);
+        await this.processLikes(data.items, userId, connectionId);
       } else if (data.type === 'playlists') {
-        await this.processPlaylists(data.items, userId);
+        await this.processPlaylists(data.items, userId, connectionId);
       } else if (data.type === 'subscriptions') {
-        await this.processSubscriptions(data.items, userId);
+        await this.processSubscriptions(data.items, userId, connectionId);
       } else if (data.type === 'activities') {
-        await this.processActivities(data.items, userId);
+        await this.processActivities(data.items, userId, connectionId);
       }
 
       this.logger.log('YouTube data promotion completed', {
@@ -122,10 +122,10 @@ export class YouTubePromotionService {
     return null;
   }
 
-  private async processLikes(items: unknown[], userId: string): Promise<void> {
+  private async processLikes(items: unknown[], userId: string, connectionId: string): Promise<void> {
     for (const item of items) {
       try {
-        await this.processLikedVideo(item as YouTubePlaylistItem, userId);
+        await this.processLikedVideo(item as YouTubePlaylistItem, userId, connectionId);
       } catch (error) {
         this.logger.error('Error processing liked video', {
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -134,7 +134,11 @@ export class YouTubePromotionService {
     }
   }
 
-  private async processLikedVideo(item: YouTubePlaylistItem, userId: string): Promise<void> {
+  private async processLikedVideo(
+    item: YouTubePlaylistItem,
+    userId: string,
+    connectionId: string,
+  ): Promise<void> {
     const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId;
     if (!videoId) {
       this.logger.debug('Skipping liked video without id');
@@ -157,6 +161,7 @@ export class YouTubePromotionService {
         mimetype: 'video/youtube',
         external_id: videoId,
         source_url: url,
+        source_data: { connectionId },
         user: { id: userId },
       },
     );
@@ -168,10 +173,10 @@ export class YouTubePromotionService {
     });
   }
 
-  private async processPlaylists(items: unknown[], userId: string): Promise<void> {
+  private async processPlaylists(items: unknown[], userId: string, connectionId: string): Promise<void> {
     for (const item of items) {
       try {
-        await this.processPlaylist(item as YouTubePlaylist, userId);
+        await this.processPlaylist(item as YouTubePlaylist, userId, connectionId);
       } catch (error) {
         this.logger.error('Error processing playlist', {
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -180,7 +185,7 @@ export class YouTubePromotionService {
     }
   }
 
-  private async processPlaylist(item: YouTubePlaylist, userId: string): Promise<void> {
+  private async processPlaylist(item: YouTubePlaylist, userId: string, connectionId: string): Promise<void> {
     const playlistId = item.id;
     if (!playlistId) {
       this.logger.debug('Skipping playlist without id');
@@ -202,6 +207,7 @@ export class YouTubePromotionService {
         url,
         external_id: playlistId,
         source_url: url,
+        source_data: { connectionId },
         user: { id: userId },
       },
     );
@@ -213,10 +219,10 @@ export class YouTubePromotionService {
     });
   }
 
-  private async processSubscriptions(items: unknown[], userId: string): Promise<void> {
+  private async processSubscriptions(items: unknown[], userId: string, connectionId: string): Promise<void> {
     for (const item of items) {
       try {
-        await this.processSubscription(item as Record<string, unknown>, userId);
+        await this.processSubscription(item as Record<string, unknown>, userId, connectionId);
       } catch (error) {
         this.logger.error('Error processing subscription', {
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -225,7 +231,11 @@ export class YouTubePromotionService {
     }
   }
 
-  private async processSubscription(item: Record<string, unknown>, userId: string): Promise<void> {
+  private async processSubscription(
+    item: Record<string, unknown>,
+    userId: string,
+    connectionId: string,
+  ): Promise<void> {
     const snippet = item.snippet as Record<string, unknown> | undefined;
     if (!snippet) {
       this.logger.debug('Skipping subscription without snippet');
@@ -249,6 +259,7 @@ export class YouTubePromotionService {
         url,
         external_id: channelId || undefined,
         source_url: url,
+        source_data: { connectionId },
         user: { id: userId },
       },
     );
@@ -259,10 +270,10 @@ export class YouTubePromotionService {
     });
   }
 
-  private async processActivities(items: unknown[], userId: string): Promise<void> {
+  private async processActivities(items: unknown[], userId: string, connectionId: string): Promise<void> {
     for (const item of items) {
       try {
-        await this.processActivity(item as Record<string, unknown>, userId);
+        await this.processActivity(item as Record<string, unknown>, userId, connectionId);
       } catch (error) {
         this.logger.error('Error processing activity', {
           error: error instanceof Error ? error.message : 'Unknown error',
@@ -271,7 +282,11 @@ export class YouTubePromotionService {
     }
   }
 
-  private async processActivity(item: Record<string, unknown>, userId: string): Promise<void> {
+  private async processActivity(
+    item: Record<string, unknown>,
+    userId: string,
+    connectionId: string,
+  ): Promise<void> {
     const snippet = item.snippet as Record<string, unknown> | undefined;
     const contentDetails = item.contentDetails as Record<string, unknown> | undefined;
 
@@ -299,7 +314,7 @@ export class YouTubePromotionService {
           url,
           external_id: videoId,
           source_url: url,
-
+          source_data: { connectionId },
           user: { id: userId },
         },
       );
