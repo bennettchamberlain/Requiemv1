@@ -4,7 +4,7 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ThreadService } from '@ci/domains/conversations';
-import { PersonService } from '@ci/domains/memory';
+import { CommunicationService, PersonService } from '@ci/domains/memory';
 import {
   SearchService,
   TagService,
@@ -13,6 +13,7 @@ import {
   type TaggableEntity,
 } from '@ci/domains/search-next';
 
+import { CommunicationType } from '../types/CommunicationType';
 import { PersonType } from '../types/PersonType';
 import { SearchConnection } from '../types/SearchConnection';
 import { SearchInput } from '../types/SearchInput';
@@ -24,6 +25,7 @@ import { Paginator } from '../utils/Paginator';
 @Resolver()
 export class SearchResolver {
   constructor(
+    private readonly communicationService: CommunicationService,
     private readonly personService: PersonService,
     private readonly searchService: SearchService,
     private readonly tagService: TagService,
@@ -106,13 +108,19 @@ export class SearchResolver {
       return acc;
     }, new Map());
 
+    const communicationIds = groupedByType.get('communication') || [];
     const peopleIds = groupedByType.get('person') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [people, threads] = await Promise.all([
+    const [communications, people, threads] = await Promise.all([
+      this.communicationService.findByIds(context, communicationIds),
       this.personService.findByIds(context, peopleIds),
       this.threadService.findByIds(context, threadIds),
     ]);
+
+    const communicationResults = communications
+      .filter((entity) => entity != null)
+      .map((entity) => CommunicationType.toType(entity));
 
     const personResults = people
       .filter((entity) => entity != null)
@@ -124,6 +132,9 @@ export class SearchResolver {
 
     const resultMap = new Map<string, SearchResult>();
 
+    communicationResults.forEach((communication) =>
+      resultMap.set(makeCompositeKey('communication', communication.__source.id), communication),
+    );
     personResults.forEach((person) => resultMap.set(makeCompositeKey('person', person.__source.id), person));
     threadResults.forEach((thread) => resultMap.set(makeCompositeKey('thread', thread.__source.id), thread));
 
