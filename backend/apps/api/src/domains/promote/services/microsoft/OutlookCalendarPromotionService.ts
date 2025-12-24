@@ -7,7 +7,6 @@ import { v7 as uuidv7 } from 'uuid';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
-import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
 
@@ -105,7 +104,6 @@ export class OutlookCalendarPromotionService {
     private readonly eventService: MemoryEventService,
     private readonly promoteService: PromoteService,
     private readonly connectionService: ConnectionService,
-    private readonly domainEventService: DomainEventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(OutlookCalendarPromotionService.name);
@@ -123,36 +121,26 @@ export class OutlookCalendarPromotionService {
       contentKeys: apiLogContent && typeof apiLogContent === 'object' ? Object.keys(apiLogContent) : [],
     });
 
-    try {
-      // Extract event ids from the API log content
-      const events = this.extractOutlookCalendarEvents(apiLogContent as RawData[]);
+    // Extract event ids from the API log content
+    const events = this.extractOutlookCalendarEvents(apiLogContent as RawData[]);
 
-      // Get the connection
-      const connection = await this.connectionService.findById({ userId }, connectionId);
-      if (!connection || !connection.accessToken) {
-        this.logger.error('Connection not found or missing access token', { connectionId });
+    // Get the connection
+    const connection = await this.connectionService.findById({ userId }, connectionId);
+    if (!connection || !connection.accessToken) {
+      this.logger.error('Connection not found or missing access token', { connectionId });
 
-        return;
+      return;
+    }
+
+    // Process each event individually
+    for (const event of events) {
+      if (!event.id) {
+        this.logger.warn('Skipping event without ID', { event });
+        continue;
       }
 
-      // Process each event individually
-      for (const event of events) {
-        if (!event.id) {
-          this.logger.warn('Skipping event without ID', { event });
-          continue;
-        }
-
-        // Process the event
-        await this.processOutlookCalendarEvent(event, userId, connectionId);
-      }
-    } catch (error) {
-      this.logger.error('Error promoting Outlook Calendar events', {
-        userId,
-        connectionId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      throw error;
+      // Process the event
+      await this.processOutlookCalendarEvent(event, userId, connectionId);
     }
   }
 
@@ -299,64 +287,6 @@ export class OutlookCalendarPromotionService {
 
       await this.eventService.create({ userId }, newEvent);
     }
-  }
-
-  private async enqueueEventEmbedding(ownerId: string, eventId: string, searchContent: string | null) {
-    if (!searchContent || searchContent.trim().length === 0) {
-      return;
-    }
-
-    try {
-      await this.domainEventService.send(Events.SEARCH_EMBED_EVENT, {
-        ownerId,
-        eventId,
-        searchContent,
-      });
-    } catch (error) {
-      this.logger.error('Failed to enqueue Outlook calendar event embedding', {
-        ownerId,
-        eventId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  private buildEventSearchContent(eventDetails: ExtractedEvent, newEvent: CreateEventDto): string | null {
-    const parts = new Set<string>();
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(eventDetails.subject);
-    push(eventDetails.bodyPreview);
-    push(eventDetails.body);
-    push(eventDetails.location?.displayName);
-
-    push(newEvent.category);
-    push(newEvent.event_type);
-
-    for (const participant of eventDetails.participants) {
-      push(participant.name);
-      push(participant.email);
-    }
-
-    push(eventDetails.organizer.name);
-    push(eventDetails.organizer.email);
-
-    if (parts.size === 0) {
-      return null;
-    }
-
-    return Array.from(parts).join(' ');
   }
 
   private async extractEventDetails(

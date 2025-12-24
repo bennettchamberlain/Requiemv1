@@ -3,13 +3,19 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, IsNull, MoreThan, Not, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import type { RequestContext } from '@ci/common/context';
+import {
+  type RequestContext,
+  toServiceContext,
+  type UserServiceContext,
+  type ServiceContext,
+} from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { ConnectionEntity } from '@ci/domains/connections';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { Events, EventService } from '@ci/domains/events';
-import { PersonService } from '@ci/domains/memory';
-import { UserService, User } from '@ci/domains/user';
+import { NodeService } from '@ci/domains/graph';
+import { Person, PersonService } from '@ci/domains/memory';
+import { UserService } from '@ci/domains/user';
 
 import { ApiLogScopes } from '../constants';
 
@@ -30,6 +36,7 @@ export class PromoteService {
     private readonly eventService: EventService,
     private readonly personService: PersonService,
     private readonly userService: UserService,
+    private readonly nodeService: NodeService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PromoteService.name);
@@ -284,6 +291,106 @@ export class PromoteService {
   }
 
   /**
+   * Transforms a list of participant data into a list of Person entity ids. The
+   * entity ids will correspond either to previously created Person entities
+   * retrieved by email address or new Person entities created from the provided
+   * participant data.
+   *
+   * Note that the returned list of entities can contain the user's
+   * corresponding Person entity. For the purposes of building relationships
+   * this method will return the list of entity ids and a filtered list
+   * excluding the user's Person entity.
+   *
+   * @param context
+   * @param participants
+   */
+  async upsertPeopleFromParticipants(
+    context: UserServiceContext,
+    {
+      connectionId,
+      source,
+      participants,
+    }: {
+      connectionId: string;
+      source: string;
+      participants: ParticipantInfo[];
+    },
+  ) {
+    const { user, userNode } = await this.getUserAndEntity(context, context.userId);
+
+    const taskMap = new Map<string, Promise<Person>>();
+
+    const tasks = participants.map(async (participant) => {
+      const email = participant.email.toLowerCase();
+
+      if (taskMap.has(email)) {
+        return taskMap.get(email) as Promise<Person>;
+      }
+
+      if (email === user.email.toLowerCase()) {
+        const person = await this.personService.findById(context, userNode.entityId);
+
+        if (person == null) {
+          throw new Error('User graph node could not be obtained');
+        }
+
+        const task = Promise.resolve(person);
+
+        taskMap.set(email, task);
+
+        return task;
+      }
+
+      const existingPeople = await this.personService.search(context, {
+        properties: {
+          email,
+          owner_user_id: context.userId,
+        },
+      });
+
+      if (existingPeople.length > 0) {
+        const task = Promise.resolve(existingPeople[0]);
+
+        taskMap.set(email, task);
+
+        return task;
+      }
+
+      const id = uuid7();
+      const [firstName, ...restName] = participant.name.trim().split(/\s+/).filter(Boolean);
+      const lastName = restName.length > 0 ? restName.join(' ') : null;
+
+      const properties: Record<string, unknown> = {
+        email,
+        first_name: firstName || participant.name,
+        last_name: lastName,
+        contact_type: source,
+        owner_user_id: context.userId,
+        connection_id: connectionId,
+      };
+
+      const task = this.personService.create(context, {
+        id,
+        name: participant.name,
+        description: `Contact from ${source}`,
+        properties,
+      });
+
+      taskMap.set(participant.email, task);
+
+      return task;
+    });
+
+    const entities = await Promise.all(tasks);
+    const relationships = entities.map((entity) => (entity.id === userNode.entityId ? null : entity));
+
+    return {
+      entities,
+      relationships,
+    };
+  }
+
+  /**
    * Process multiple participants and create entities with relationships
    */
   async processParticipants(
@@ -293,197 +400,39 @@ export class PromoteService {
     source: 'calendar' | 'email' | 'drive',
     relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH' | 'EDITED_WITH',
   ): Promise<string[]> {
-    this.logger.log(`Processing ${participants.length} participants from ${source}`, {
-      userId,
-      connectionId,
+    const context = toServiceContext({ userId });
+
+    const { entities } = await this.upsertPeopleFromParticipants(context, {
       source,
-    });
-
-    const entityIds: string[] = [];
-
-    for (const participant of participants) {
-      try {
-        const entityId = await this.createOrUpdatePersonFromParticipant(
-          participant,
-          userId,
-          connectionId,
-          source,
-          relationshipType,
-        );
-        entityIds.push(entityId);
-      } catch (error) {
-        // Log error but continue processing other participants
-        this.logger.error('Failed to process participant', {
-          participant,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-    }
-
-    this.logger.log(`Completed processing participants from ${source}`, {
-      userId,
       connectionId,
-      processedCount: entityIds.length,
+      participants,
     });
 
-    return entityIds;
-  }
+    // TODO: We still need to reimplement relationship creation.
+    this.logger.warn('Skipping relationship creation', { relationshipType });
+    // await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
+    //   ownerId: userId,
+    //   person: {
+    //     entityId,
+    //     entityType: 'Person',
+    //     name: participant.name,
+    //   },
+    //   relationships: [
+    //     {
+    //       fromEntityId: userEntityId,
+    //       toEntityId: entityId,
+    //       relationshipType,
+    //       properties: {
+    //         source,
+    //         connection_id: connectionId,
+    //         participant_type: participant.type,
+    //         last_interaction: new Date().toISOString(),
+    //       },
+    //     },
+    //   ],
+    // });
 
-  /**
-   * Create or update a person entity from a participant
-   * Every entity created will have at least one relationship to the user
-   */
-  async createOrUpdatePersonFromParticipant(
-    participant: ParticipantInfo,
-    userId: string,
-    connectionId: string,
-    source: 'calendar' | 'email' | 'drive',
-    relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH' | 'EDITED_WITH',
-  ): Promise<string> {
-    try {
-      // Get user entity and user entity ID
-      const user = await this.userService.findById({ userId }, userId);
-      if (!user) {
-        throw new Error(`User not found: ${userId}`);
-      }
-
-      // Skip if participant is the user themselves (avoid self-references)
-      if (participant.email.toLowerCase() === user.email.toLowerCase()) {
-        const userEntityId = await this.getUserEntityId(userId);
-        this.logger.log('Skipping self-reference participant', {
-          email: participant.email,
-          userId,
-        });
-
-        return userEntityId;
-      }
-
-      const userEntityId = await this.getUserEntityId(userId);
-
-      // Check if person entity already exists by email in properties
-      const existingEntities = await this.personService.search(
-        { userId },
-        {
-          properties: {
-            email: participant.email,
-            owner_user_id: userId,
-          },
-        },
-      );
-
-      let entityId: string;
-      let searchContent: string | null = null;
-
-      if (existingEntities.length === 0) {
-        // Create new person entity
-        entityId = uuid7();
-        const nameParts = participant.name.trim().split(/\s+/).filter(Boolean);
-        const [firstName, ...restName] = nameParts;
-        const lastName = restName.length > 0 ? restName.join(' ') : null;
-
-        const properties: Record<string, unknown> = {
-          email: participant.email,
-          first_name: firstName || participant.name,
-          last_name: lastName,
-          contact_type: source,
-          owner_user_id: userId,
-          connection_id: connectionId,
-          sources: [source],
-          [`${source}_data`]: {
-            participant_type: participant.type,
-            response_status: participant.responseStatus,
-            last_seen: new Date().toISOString(),
-          },
-        };
-
-        searchContent = this.buildPersonSearchContent(participant.name, properties);
-
-        await this.personService.create(
-          { userId },
-          {
-            id: entityId,
-            name: participant.name,
-            description: `Contact from ${source}`,
-            properties,
-            searchContent: searchContent || undefined,
-          },
-        );
-
-        this.logger.log('Created new person entity', {
-          entityId,
-          name: participant.name,
-          email: participant.email,
-          source,
-        });
-      } else {
-        const existingEntity = existingEntities[0];
-        // Update existing entity with new source data
-        entityId = existingEntity.id;
-        const currentProperties = (existingEntity.properties as Record<string, unknown>) ?? {};
-        const sources = (currentProperties.sources || []) as string[];
-        let propertiesForSearch = currentProperties;
-
-        if (!sources.includes(source)) {
-          sources.push(source);
-          propertiesForSearch = {
-            ...currentProperties,
-            sources,
-            [`${source}_data`]: {
-              participant_type: participant.type,
-              response_status: participant.responseStatus,
-              last_seen: new Date().toISOString(),
-            },
-          };
-
-          await this.personService.update({ userId }, existingEntity.id, {
-            properties: propertiesForSearch,
-            lastAccessed: new Date(),
-          });
-
-          this.logger.log('Updated existing person entity', {
-            entityId,
-            sources,
-          });
-        }
-
-        searchContent = this.buildPersonSearchContent(existingEntity.name, propertiesForSearch);
-      }
-
-      await this.enqueuePersonEmbedding(userId, entityId, searchContent);
-
-      // Create or update relationship between user and this person
-      // This ensures every entity has at least one relationship
-      await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
-        ownerId: userId,
-        person: {
-          entityId,
-          entityType: 'Person',
-          name: participant.name,
-        },
-        relationships: [
-          {
-            fromEntityId: userEntityId,
-            toEntityId: entityId,
-            relationshipType,
-            properties: {
-              source,
-              connection_id: connectionId,
-              participant_type: participant.type,
-              last_interaction: new Date().toISOString(),
-            },
-          },
-        ],
-      });
-
-      return entityId;
-    } catch (error) {
-      this.logger.error('Failed to create/update person entity', {
-        participant,
-        source,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      throw error;
-    }
+    return entities.map((entity) => entity.id);
   }
 
   /**
@@ -496,172 +445,29 @@ export class PromoteService {
   }
 
   /**
-   * Get or create a user's entity ID
-   * Handles user lookup and entity creation in one call
+   * Gets a user entity and their corresponding graph node entity. If either of
+   * these don't exist an error will be thrown.
    */
-  async getUserEntityId(userId: string): Promise<string> {
-    const user = await this.userService.findById({ userId }, userId);
-    if (!user) {
-      throw new Error(`User not found: ${userId}`);
+  async getUserAndEntity(context: ServiceContext, userId: string) {
+    const user = await this.userService.findById(context, userId);
+
+    if (user == null) {
+      throw new Error('User could not be obtained');
     }
 
-    // Check if user already has an entity ID
-    if (user.entityId) {
-      // Verify the entity exists in the entities table
-      const existingEntity = await this.personService.findById({ userId }, user.entityId);
+    const userNode = await this.nodeService.findNodeByUserId(context, userId);
 
-      if (existingEntity) {
-        return user.entityId;
-      }
-
-      // Entity doesn't exist, need to create a new one
-      this.logger.warn('User has entityId but entity does not exist, creating new entity', {
-        userId,
-        entityId: user.entityId,
-      });
+    // This is a degenerate case resulting from an unlikely race condition. When
+    // a user signs up we will asynchronously create a graph node for them. If
+    // this work hasn't processed we cannot build relationships to the current
+    // user so we should fail the job and retry.
+    if (userNode == null) {
+      throw new Error('User graph node could not be obtained');
     }
 
-    return this.ensureUserHasEntity(user);
-  }
-
-  /**
-   * Ensure a user has an entity in the graph
-   * Creates one if it doesn't exist (for legacy users)
-   */
-  private async ensureUserHasEntity(user: User): Promise<string> {
-    let entityId: string;
-    const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
-    const [firstName, ...restName] = nameParts;
-
-    const properties: Record<string, unknown> = {
-      email: user.email,
-      owner_user_id: user.id,
+    return {
+      user,
+      userNode,
     };
-
-    if (firstName) {
-      properties.first_name = firstName;
-    }
-
-    if (restName.length > 0) {
-      properties.last_name = restName.join(' ');
-    }
-
-    const searchContent = this.buildPersonSearchContent(user.name ?? user.email ?? null, properties);
-
-    const existingEntities = await this.personService.search(
-      { userId: user.id },
-      {
-        properties: {
-          email: properties.email as string,
-          owner_user_id: user.id,
-        },
-      },
-    );
-
-    if (existingEntities.length === 0) {
-      entityId = uuid7();
-      await this.personService.create(
-        { userId: user.id },
-        {
-          id: entityId,
-          name: user.name || user.email,
-          description: `User: ${user.name || user.email}`,
-          properties,
-          searchContent: searchContent || undefined,
-          linkedTable: 'users',
-          linkedId: user.id,
-        },
-      );
-
-      await this.enqueuePersonEmbedding(user.id, entityId, searchContent);
-
-      // Update the user record with the new entity ID
-      await this.userService.update({ userId: user.id }, user.id, { entityId });
-
-      this.logger.log('Created entity for user', {
-        userId: user.id,
-        entityId,
-      });
-    } else {
-      // Entity already exists, use it and update user record if needed
-      const existingEntity = existingEntities[0];
-      entityId = existingEntity.id;
-
-      if (!user.entityId || user.entityId !== entityId) {
-        await this.userService.update({ userId: user.id }, user.id, { entityId });
-        this.logger.log('Updated user with existing entity ID', {
-          userId: user.id,
-          entityId,
-        });
-      }
-    }
-
-    this.logger.log('Created entity for legacy user', {
-      userId: user.id,
-      entityId,
-    });
-
-    return entityId;
-  }
-
-  private async enqueuePersonEmbedding(ownerId: string, entityId: string, searchContent: string | null) {
-    if (!searchContent || searchContent.trim().length === 0) {
-      return;
-    }
-
-    try {
-      await this.eventService.send(Events.SEARCH_EMBED_ENTITY, {
-        ownerId,
-        entityId,
-        entityType: 'Person',
-        searchContent,
-      });
-    } catch (error) {
-      this.logger.error('Failed to enqueue person embedding', {
-        ownerId,
-        entityId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  private buildPersonSearchContent(
-    name: string | null | undefined,
-    properties?: Record<string, unknown>,
-  ): string | null {
-    const parts = new Set<string>();
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(name ?? null);
-
-    const props: Record<string, unknown> = properties ?? {};
-    const candidateKeys = ['first_name', 'last_name', 'email', 'occupation', 'bio', 'phone'];
-    for (const key of candidateKeys) {
-      push(props[key]);
-    }
-
-    const aliases = props['aliases'];
-    if (Array.isArray(aliases)) {
-      for (const alias of aliases) {
-        push(alias);
-      }
-    }
-
-    if (parts.size === 0) {
-      return null;
-    }
-
-    return Array.from(parts).join(' ');
   }
 }

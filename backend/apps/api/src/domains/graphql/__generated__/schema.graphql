@@ -90,7 +90,6 @@ type ContentType implements Node {
   mimetype: String
   sourceData: JSON
   sourceUrl: String
-  tags: [EntityTagType!]!
   text: String
   title: String
   type: String

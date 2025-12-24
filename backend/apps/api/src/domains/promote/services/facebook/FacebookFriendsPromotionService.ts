@@ -1,13 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { v7 as uuidv7 } from 'uuid';
 
+import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { EventService, Events } from '@ci/domains/events';
+import { RelationshipService } from '@ci/domains/graph';
 import { PersonService } from '@ci/domains/memory';
 
 import { PromoteService } from '../PromoteService';
-
-import { FacebookPromotionUtils } from './FacebookPromotionUtils';
 
 interface FacebookFriend {
   id: string;
@@ -23,9 +21,8 @@ interface FacebookFriend {
 export class FacebookFriendsPromotionService {
   constructor(
     private readonly personService: PersonService,
-    private readonly eventService: EventService,
     private readonly promoteService: PromoteService,
-    private readonly utils: FacebookPromotionUtils,
+    private readonly relationshipService: RelationshipService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(FacebookFriendsPromotionService.name);
@@ -34,14 +31,15 @@ export class FacebookFriendsPromotionService {
   async promoteFriends(apiLogContent: unknown, userId: string, connectionId: string): Promise<void> {
     this.logger.log('Promoting Facebook friends', { userId, connectionId });
 
+    const context = toServiceContext({ userId });
+    const { userNode } = await this.promoteService.getUserAndEntity(context, userId);
+
     const friends = this.extractFriends(apiLogContent);
     if (friends.length === 0) {
       this.logger.log('No Facebook friends found to promote', { userId, connectionId });
 
       return;
     }
-
-    const userEntityId = await this.promoteService.getUserEntityId(userId);
 
     for (const friend of friends) {
       try {
@@ -75,8 +73,6 @@ export class FacebookFriendsPromotionService {
           }
         }
 
-        const searchContent = this.utils.buildPersonSearchContent(friend.name, properties);
-
         if (existingEntities.length > 0) {
           // Update existing person
           const existingEntity = existingEntities[0];
@@ -87,44 +83,24 @@ export class FacebookFriendsPromotionService {
             properties: mergedProperties,
             lastAccessed: new Date(),
           });
-
-          await this.utils.enqueuePersonEmbedding(userId, existingEntity.id, searchContent);
         } else {
-          // Create new person
-          const entityId = uuidv7();
-          await this.personService.create(
+          const newPerson = await this.personService.create(
             { userId },
             {
-              id: entityId,
               name: friend.name,
               description: `Facebook friend: ${friend.name}`,
               properties,
-              searchContent: searchContent || undefined,
             },
           );
 
-          await this.utils.enqueuePersonEmbedding(userId, entityId, searchContent);
-
-          // Create relationship to user
-          await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
-            ownerId: userId,
-            person: {
-              entityId,
-              entityType: 'Person',
-              name: friend.name,
+          await this.relationshipService.create(context, {
+            fromNodeId: userNode.entityId,
+            toNodeId: newPerson.id,
+            type: 'FRIENDS_WITH',
+            properties: {
+              source: 'facebook',
+              connection_id: connectionId,
             },
-            relationships: [
-              {
-                fromEntityId: userEntityId,
-                toEntityId: entityId,
-                relationshipType: 'FRIEND',
-                properties: {
-                  source: 'facebook',
-                  connection_id: connectionId,
-                  last_interaction: new Date().toISOString(),
-                },
-              },
-            ],
           });
         }
       } catch (error) {

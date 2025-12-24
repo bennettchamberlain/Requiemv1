@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
-import { EventService, Events } from '@ci/domains/events';
-import { ContentService, type CreateContentDto } from '@ci/domains/memory';
+import { ContentService } from '@ci/domains/memory';
 
 interface YouTubePlaylistItem {
   id?: string;
@@ -49,7 +48,6 @@ interface YouTubePlaylist {
 export class YouTubePromotionService {
   constructor(
     private readonly contentService: ContentService,
-    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(YouTubePromotionService.name);
@@ -153,25 +151,20 @@ export class YouTubePromotionService {
     const channelTitle = item.snippet?.channelTitle || '';
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
-    const contentDto = {
-      type: 'youtube_video_like',
-      title,
-      text: description,
-      url,
-      mimetype: 'video/youtube',
-      external_id: videoId,
-      source_url: url,
-      source_data: { connectionId },
-      user: { id: userId },
-    };
-
-    const createdContent = await this.contentService.create(
+    await this.contentService.create(
       { userId },
-      contentDto as unknown as CreateContentDto,
+      {
+        type: 'youtube_video_like',
+        title,
+        text: description,
+        url,
+        mimetype: 'video/youtube',
+        external_id: videoId,
+        source_url: url,
+        source_data: { connectionId },
+        user: { id: userId },
+      },
     );
-    const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
-    const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
-    await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
     this.logger.log('Processed liked YouTube video', {
       videoId,
@@ -205,24 +198,19 @@ export class YouTubePromotionService {
     const url = `https://www.youtube.com/playlist?list=${playlistId}`;
     const itemCount = item.contentDetails?.itemCount ?? 0;
 
-    const contentDto = {
-      type: 'youtube_playlist',
-      title,
-      text: description,
-      url,
-      external_id: playlistId,
-      source_url: url,
-      source_data: { connectionId },
-      user: { id: userId },
-    };
-
-    const createdContent = await this.contentService.create(
+    await this.contentService.create(
       { userId },
-      contentDto as unknown as CreateContentDto,
+      {
+        type: 'youtube_playlist',
+        title,
+        text: description,
+        url,
+        external_id: playlistId,
+        source_url: url,
+        source_data: { connectionId },
+        user: { id: userId },
+      },
     );
-    const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
-    const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
-    await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
     this.logger.log('Processed YouTube playlist', {
       playlistId,
@@ -262,24 +250,19 @@ export class YouTubePromotionService {
     const description = (snippet.description as string) || '';
     const url = channelId ? `https://www.youtube.com/channel/${channelId}` : undefined;
 
-    const contentDto = {
-      type: 'youtube_subscription',
-      title: channelTitle,
-      text: description,
-      url,
-      external_id: channelId || undefined,
-      source_url: url,
-      source_data: { connectionId },
-      user: { id: userId },
-    };
-
-    const createdContent = await this.contentService.create(
+    await this.contentService.create(
       { userId },
-      contentDto as unknown as CreateContentDto,
+      {
+        type: 'youtube_subscription',
+        title: channelTitle,
+        text: description,
+        url,
+        external_id: channelId || undefined,
+        source_url: url,
+        source_data: { connectionId },
+        user: { id: userId },
+      },
     );
-    const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
-    const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
-    await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
     this.logger.log('Processed YouTube subscription', {
       channelId,
@@ -297,53 +280,6 @@ export class YouTubePromotionService {
         });
       }
     }
-  }
-
-  private async enqueueContentEmbedding(ownerId: string, contentId: string, searchContent: string | null) {
-    if (!searchContent || searchContent.trim().length === 0) {
-      return;
-    }
-
-    try {
-      await this.eventService.send(Events.SEARCH_EMBED_CONTENT, {
-        ownerId,
-        contentId,
-        text: searchContent,
-      });
-    } catch (error) {
-      this.logger.error('Failed to enqueue YouTube content embedding', {
-        ownerId,
-        contentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  private buildContentSearchText(contentDto: Partial<CreateContentDto>): string | null {
-    const parts = new Set<string>();
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(contentDto.title ?? null);
-    push((contentDto as { text?: string }).text ?? null);
-    push(contentDto.url ?? null);
-    push(contentDto.type ?? null);
-
-    if (parts.size === 0) {
-      return null;
-    }
-
-    return Array.from(parts).join(' ');
   }
 
   private async processActivity(
@@ -369,24 +305,19 @@ export class YouTubePromotionService {
       const description = (snippet.description as string) || '';
       const url = videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined;
 
-      const contentDto = {
-        type: 'youtube_activity_upload',
-        title,
-        text: description,
-        url,
-        external_id: videoId,
-        source_url: url,
-        source_data: { connectionId },
-        user: { id: userId },
-      };
-
-      const createdContent = await this.contentService.create(
+      await this.contentService.create(
         { userId },
-        contentDto as unknown as CreateContentDto,
+        {
+          type: 'youtube_activity_upload',
+          title,
+          text: description,
+          url,
+          external_id: videoId,
+          source_url: url,
+          source_data: { connectionId },
+          user: { id: userId },
+        },
       );
-      const contentRecord = Array.isArray(createdContent) ? createdContent[0] : createdContent;
-      const contentId = contentRecord?.id ?? String(contentDto.external_id ?? contentDto.type ?? '');
-      await this.enqueueContentEmbedding(userId, contentId, this.buildContentSearchText(contentDto));
 
       this.logger.log('Processed YouTube upload activity', {
         videoId,

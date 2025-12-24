@@ -6,9 +6,8 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
-import { EventService, Events } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
-import { CommunicationEntity, CommunicationService } from '@ci/domains/memory';
+import { CommunicationService } from '@ci/domains/memory';
 
 import { PromoteService } from '../PromoteService';
 
@@ -83,7 +82,6 @@ export class OutlookMailPromotionService {
     private readonly communicationService: CommunicationService,
     private readonly promoteService: PromoteService,
     private readonly connectionService: ConnectionService,
-    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(OutlookMailPromotionService.name);
@@ -113,6 +111,10 @@ export class OutlookMailPromotionService {
         return;
       }
 
+      console.log(
+        'all messages',
+        messages.filter((message) => message.subject != null),
+      );
       // Process each message individually
       for (const message of messages) {
         if (!message.id) {
@@ -156,11 +158,11 @@ export class OutlookMailPromotionService {
         });
 
         returned = returned.concat(dataObj.messages as OutlookMailMessage[]);
+      } else {
+        this.logger.warn('No messages found in content', {
+          contentKeys: Object.keys(dataObj),
+        });
       }
-
-      this.logger.warn('No messages found in content', {
-        contentKeys: Object.keys(dataObj),
-      });
     });
 
     return returned;
@@ -173,6 +175,16 @@ export class OutlookMailPromotionService {
   ): Promise<void> {
     // Extract message details
     const messageDetails = await this.extractMessageDetails(userId, message, connectionId);
+
+    // Outlook may return a lot of blank "emails" that just clutter up the database
+    // Ignore items that don't have a subject, body of any length, and no "from" field
+    if (
+      messageDetails.subject == null &&
+      messageDetails.body?.length === 0 &&
+      messageDetails.from == undefined
+    ) {
+      return;
+    }
 
     this.logger.log('Processing OutlookMail message', {
       messageId: messageDetails.id,
@@ -230,9 +242,9 @@ export class OutlookMailPromotionService {
           : Buffer.from('');
         const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
         const fileSearch = {
-          content_type: attachment.contentType,
+          contentType: attachment.contentType,
           size: attachment.size,
-          file_hash: fileHash,
+          fileHash: fileHash,
           filename: attachment.name,
         };
         const existingFiles = await this.fileService.search({ userId }, fileSearch);
@@ -269,10 +281,8 @@ export class OutlookMailPromotionService {
       toEntityIdsCombined = toEntityIdsCombined.concat(bccEntityIds);
     }
 
-    const searchContent = this.buildCommunicationSearchContent(messageDetails);
-
     // Save to communications table
-    const communication = await this.communicationService.create(
+    await this.communicationService.create(
       { userId },
       {
         time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
@@ -293,74 +303,6 @@ export class OutlookMailPromotionService {
         attachments: attachmentUploadIds,
       },
     );
-
-    await this.enqueueCommunicationEmbedding(userId, communication, searchContent);
-  }
-
-  private async enqueueCommunicationEmbedding(
-    userId: string,
-    communication: CommunicationEntity,
-    searchContent: string | null,
-  ) {
-    if (!searchContent || searchContent.trim().length === 0) {
-      return;
-    }
-
-    try {
-      await this.eventService.send(Events.SEARCH_EMBED_COMMUNICATION, {
-        ownerId: userId,
-        communication: {
-          userId,
-          communicationType: communication.communicationType,
-          occurredAt: communication.time.toISOString(),
-          subject: communication.subject,
-          content: searchContent,
-        },
-      });
-    } catch (error) {
-      this.logger.error('Failed to enqueue Outlook mail embedding', {
-        userId,
-        occurredAt: communication.time.toISOString(),
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  private buildCommunicationSearchContent(details: ExtractedMessage): string | null {
-    const parts = new Set<string>();
-
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(details.subject);
-    push(details.bodyPreview);
-    push(details.body);
-
-    if (details.from) {
-      push(details.from.name);
-      push(details.from.email);
-    }
-
-    for (const participant of details.participants) {
-      push(participant.name);
-      push(participant.email);
-    }
-
-    if (parts.size === 0) {
-      return null;
-    }
-
-    return Array.from(parts).join(' ');
   }
 
   private async extractMessageDetails(

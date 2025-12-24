@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { Point } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
-import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
 
 import { PromoteService } from '../PromoteService';
@@ -71,7 +70,6 @@ export class GoogleCalendarEventPromotionService {
 
   constructor(
     private readonly eventService: MemoryEventService,
-    private readonly domainEventService: DomainEventService,
     private readonly promoteService: PromoteService,
     private readonly logger: LoggerService,
   ) {
@@ -188,37 +186,40 @@ export class GoogleCalendarEventPromotionService {
       connectionId,
     });
 
-    try {
-      const events = this.extractCalendarEvents(apiLogContent);
+    const events = this.extractCalendarEvents(apiLogContent);
 
-      if (events.length === 0) {
-        this.logger.log('No calendar events found to promote', { userId, connectionId });
+    if (events.length === 0) {
+      this.logger.log('No calendar events found to promote', { userId, connectionId });
 
-        return;
-      }
-
-      this.logger.log(`Processing ${events.length} calendar events`, {
-        userId,
-        connectionId,
-        eventCount: events.length,
-      });
-
-      await this.processEvents(events, userId, connectionId);
-
-      this.logger.log('Calendar event promotion completed', {
-        userId,
-        connectionId,
-        processedCount: events.length,
-      });
-    } catch (error) {
-      this.logger.error('Error promoting calendar events', {
-        userId,
-        connectionId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      throw error;
+      return;
     }
+
+    this.logger.log(`Processing ${events.length} calendar events`, {
+      userId,
+      connectionId,
+      eventCount: events.length,
+    });
+
+    for (const event of events) {
+      try {
+        await this.processCalendarEvent(event, userId, connectionId);
+      } catch (error) {
+        this.logger.error('Error processing individual calendar event', {
+          userId,
+          connectionId,
+          eventId: event.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+
+        // Don't throw - continue processing other events
+      }
+    }
+
+    this.logger.log('Calendar event promotion completed', {
+      userId,
+      connectionId,
+      processedCount: events.length,
+    });
   }
 
   private extractCalendarEvents(content: unknown): CalendarEvent[] {
@@ -248,34 +249,6 @@ export class GoogleCalendarEventPromotionService {
     return [];
   }
 
-  private async processEvents(events: CalendarEvent[], userId: string, connectionId: string): Promise<void> {
-    let processedCount = 0;
-
-    for (const event of events) {
-      try {
-        await this.processCalendarEvent(event, userId, connectionId);
-        processedCount++;
-
-        if (processedCount % 10 === 0) {
-          this.logger.log('Calendar event promotion progress', {
-            userId,
-            connectionId,
-            processedCount,
-            totalEvents: events.length,
-          });
-        }
-      } catch (error) {
-        this.logger.error('Error processing individual calendar event', {
-          userId,
-          connectionId,
-          eventId: event.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-        // Don't throw - continue processing other events
-      }
-    }
-  }
-
   private async processCalendarEvent(
     event: CalendarEvent,
     userId: string,
@@ -283,14 +256,10 @@ export class GoogleCalendarEventPromotionService {
   ): Promise<void> {
     const eventDetails = this.extractEventDetails(event);
 
-    this.logEventDetails(eventDetails);
-
     // Transform and save event
     const eventDto = await this.transformToEventDto(eventDetails, event, userId, connectionId);
-    const created = await this.eventService.create({ userId }, eventDto);
-    const createdEvent = Array.isArray(created) ? created[0] : created;
-    const searchContent = this.buildEventSearchContent(eventDetails, eventDto);
-    await this.enqueueEventEmbedding(userId, createdEvent.id, searchContent);
+
+    await this.eventService.create({ userId }, eventDto);
 
     // Process participants
     await this.processParticipants(eventDetails.participants, userId, connectionId);
@@ -299,8 +268,6 @@ export class GoogleCalendarEventPromotionService {
       eventId: eventDetails.id,
       summary: eventDetails.summary,
     });
-
-    this.logFutureEventIfApplicable(eventDetails);
   }
 
   private extractEventDetails(event: CalendarEvent): EventDetails {
@@ -390,60 +357,6 @@ export class GoogleCalendarEventPromotionService {
     };
   }
 
-  private async enqueueEventEmbedding(ownerId: string, eventId: string, searchContent: string | null) {
-    if (!searchContent || searchContent.trim().length === 0) {
-      return;
-    }
-
-    try {
-      await this.domainEventService.send(Events.SEARCH_EMBED_EVENT, {
-        ownerId,
-        eventId,
-        searchContent,
-      });
-    } catch (error) {
-      this.logger.error('Failed to enqueue calendar event embedding', {
-        ownerId,
-        eventId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  private buildEventSearchContent(eventDetails: EventDetails, eventDto: CreateEventDto): string | null {
-    const parts = new Set<string>();
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(eventDetails.summary);
-    push(eventDetails.description);
-    push(eventDetails.location);
-
-    push(eventDto.category);
-    push(eventDto.event_type);
-
-    for (const participant of eventDetails.participants) {
-      push(participant.name);
-      push(participant.email);
-    }
-
-    if (parts.size === 0) {
-      return null;
-    }
-
-    return Array.from(parts).join(' ');
-  }
-
   private async processParticipants(
     participants: Participant[],
     userId: string,
@@ -506,38 +419,5 @@ export class GoogleCalendarEventPromotionService {
     };
 
     return statusMap[status.toLowerCase()] || 'confirmed';
-  }
-
-  private logEventDetails(eventDetails: EventDetails): void {
-    this.logger.log('Processing calendar event', {
-      eventId: eventDetails.id,
-      summary: eventDetails.summary,
-      startTime: eventDetails.startTime,
-      endTime: eventDetails.endTime,
-      location: eventDetails.location,
-      organizer: `${eventDetails.organizerName} (${eventDetails.organizerEmail})`,
-      status: eventDetails.status,
-      isRecurring: eventDetails.isRecurring,
-      participantCount: eventDetails.participants.length,
-    });
-  }
-
-  private logFutureEventIfApplicable(eventDetails: EventDetails): void {
-    if (!eventDetails.startTime) {
-      return;
-    }
-
-    const startDate = new Date(eventDetails.startTime);
-    const now = new Date();
-
-    if (startDate > now) {
-      const daysInFuture = Math.ceil((startDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      this.logger.log('Future event detected', {
-        eventId: eventDetails.id,
-        summary: eventDetails.summary,
-        daysInFuture,
-        startDate: startDate.toISOString(),
-      });
-    }
   }
 }
