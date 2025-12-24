@@ -16,7 +16,6 @@ import { Events, EventService } from '@ci/domains/events';
 import { NodeService } from '@ci/domains/graph';
 import { Person, PersonService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
-import {} from '@ci/common/context';
 
 import { ApiLogScopes } from '../constants';
 
