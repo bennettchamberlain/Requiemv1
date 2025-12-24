@@ -44,7 +44,7 @@ export class ContentEntity {
   @Column({ type: 'jsonb', nullable: true, name: 'source_data' })
   sourceData!: Record<string, unknown> | null;
 
-  @ManyToOne(() => UserEntity, { nullable: true })
+  @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
@@ -67,6 +67,8 @@ export class ContentEntity {
   updatedAt!: Date;
 
   static toEgressType(entity: ContentEntity) {
+    console.log('content toEgressType', entity);
+
     return {
       id: entity.id,
       type: entity.type,

@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import config from '@ci/configuration';
 import { ConnectionEntity, ProviderEntity } from '@ci/domains/connections';
 import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
-import { ContentEntity, EventEntity } from '@ci/domains/memory';
+import { EventEntity } from '@ci/domains/memory';
 import { EmbeddingService, TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
@@ -23,7 +23,6 @@ const logger = new Logger(path.basename(__filename));
     entities: [
       AnswerEntity,
       ConnectionEntity,
-      ContentEntity,
       EventEntity,
       ProviderEntity,
       QuestionEntity,
@@ -49,9 +48,6 @@ const logger = new Logger(path.basename(__filename));
     const answersCount = await embeddingService.embedAllAnswers();
     logger.log(`✅ Generated embeddings for ${answersCount} answers`);
 
-    const contentCount = await embeddingService.embedAllContent();
-    logger.log(`✅ Generated embeddings for ${contentCount} content records`);
-
     const entitiesCount = await embeddingService.embedAllEntities();
     logger.log(`✅ Generated embeddings for ${entitiesCount} entities`);
 
@@ -73,7 +69,6 @@ const logger = new Logger(path.basename(__filename));
     const totalCount =
       questionsCount +
       answersCount +
-      contentCount +
       entitiesCount +
       inventoryCount +
       factsCount +

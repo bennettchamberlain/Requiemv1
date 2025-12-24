@@ -55,6 +55,7 @@ export class ContentService {
           id: context.userId,
         },
       },
+      relations: ['user'],
     });
 
     return result.map((entity) => ContentEntity.toEgressType(entity));
@@ -70,6 +71,7 @@ export class ContentService {
           },
         }),
       },
+      relations: ['user'],
     });
 
     return result ? ContentEntity.toEgressType(result) : null;
@@ -85,6 +87,7 @@ export class ContentService {
           },
         }),
       },
+      relations: ['user'],
     });
 
     const map = new Map(result.map((content) => [content.id, ContentEntity.toEgressType(content)]));

@@ -129,26 +129,6 @@ export class EmbeddingService {
   }
 
   /**
-   * Generate and store embedding for content
-   */
-  async embedContent(contentId: string, text: string): Promise<boolean> {
-    try {
-      const embeddingString = await this.generateEmbeddingString(text);
-      await this.dataSource.query(`UPDATE ci.content SET embedding = $1 WHERE id = $2`, [
-        embeddingString,
-        contentId,
-      ]);
-
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to embed content ${contentId}: ${message}`);
-
-      return false;
-    }
-  }
-
-  /**
    * Generate and store embedding for an entity
    */
   async embedEntity(entityId: string, searchContent: string): Promise<boolean> {
@@ -373,36 +353,6 @@ export class EmbeddingService {
 
     if (failCount > 0) {
       console.warn(`Embedded ${successCount} answers, failed ${failCount}`);
-    }
-
-    return successCount;
-  }
-
-  /**
-   * Find and embed all content missing embeddings
-   */
-  async embedAllContent(): Promise<number> {
-    const content = await this.dataSource.query(`
-      SELECT id, text
-      FROM ci.content
-      WHERE embedding IS NULL
-      AND text IS NOT NULL
-    `);
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const item of content) {
-      const success = await this.embedContent(item.id, item.text);
-      if (success) {
-        successCount++;
-      } else {
-        failCount++;
-      }
-    }
-
-    if (failCount > 0) {
-      console.warn(`Embedded ${successCount} content records, failed ${failCount}`);
     }
 
     return successCount;
