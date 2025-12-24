@@ -410,6 +410,27 @@ export class PromoteService {
 
     // TODO: We still need to reimplement relationship creation.
     this.logger.warn('Skipping relationship creation', { relationshipType });
+    // await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
+    //   ownerId: userId,
+    //   person: {
+    //     entityId,
+    //     entityType: 'Person',
+    //     name: participant.name,
+    //   },
+    //   relationships: [
+    //     {
+    //       fromEntityId: userEntityId,
+    //       toEntityId: entityId,
+    //       relationshipType,
+    //       properties: {
+    //         source,
+    //         connection_id: connectionId,
+    //         participant_type: participant.type,
+    //         last_interaction: new Date().toISOString(),
+    //       },
+    //     },
+    //   ],
+    // });
 
     return entities.map((entity) => entity.id);
   }
