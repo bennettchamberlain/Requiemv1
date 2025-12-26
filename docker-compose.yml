@@ -18,7 +18,7 @@ services:
       - web
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -92,6 +92,42 @@ services:
     restart: unless-stopped
     profiles: [ "all", "local", "staging" ]
 
+  temporal:
+    image: temporalio/auto-setup:1.25.1
+    container_name: temporal
+    ports:
+      - 7233:7233
+    environment:
+      - DB=postgres12_pgx
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USERNAME}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD}
+      - POSTGRES_SEEDS=postgres
+    volumes:
+      - ./docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+    networks:
+      - web
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [ "all", "local", "infra" ]
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    container_name: temporal-ui
+    ports:
+      - 8080:8080
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    networks:
+      - web
+    depends_on:
+      - temporal
+    restart: unless-stopped
+    profiles: [ "all", "local", "infra" ]
+
   summary-service:
     build:
       context: ./backend/apps/summary
@@ -107,12 +143,15 @@ services:
       - LLM_API_KEY=${LLM_API_KEY:-ollama}
       - LLM_DEFAULT_CHAT_MODEL=${LLM_DEFAULT_CHAT_MODEL}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_NAMESPACE=default
     extra_hosts:
       - host.docker.internal:host-gateway
     networks:
       - web
     depends_on:
       - postgres
+      - temporal
     restart: unless-stopped
     profiles: [ "all", "local", "infra" ]
 

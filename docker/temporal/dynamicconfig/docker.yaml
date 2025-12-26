@@ -1,0 +1,3 @@
+# Minimal dynamic config for Temporal (docker environment)
+# This file can be empty or contain dynamic configuration overrides
+# See: https://docs.temporal.io/references/dynamic-configuration

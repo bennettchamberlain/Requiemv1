@@ -69,7 +69,11 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default_factory=lambda: os.getenv("SUMMARY_LOG_LEVEL", "INFO"))
     debug_prompts: bool = Field(default_factory=lambda: os.getenv("SUMMARY_DEBUG_PROMPTS", "false").lower() == "true")
-    
+
+    # Temporal Configuration
+    temporal_address: str = Field(default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "localhost:7233"))
+    temporal_namespace: str = Field(default_factory=lambda: os.getenv("TEMPORAL_NAMESPACE", "default"))
+
     model_config = SettingsConfigDict(
         extra="ignore",
         case_sensitive=False,

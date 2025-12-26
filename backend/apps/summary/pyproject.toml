@@ -1,7 +1,7 @@
 [project]
 name = "ci-summary"
 version = "0.1.0"
-description = "CI-Summary: Temporal Summarization Agent"
+description = "CI-Summary: Temporal Summarization Service with Durable Workflows"
 requires-python = ">=3.10"
 dependencies = [
     # Database
@@ -13,6 +13,9 @@ dependencies = [
     "pydantic-ai",
     "httpx",
 
+    # Workflow Orchestration
+    "temporalio",
+
     # Environment & Configuration
     "python-dotenv",
     "pydantic",
@@ -22,7 +25,6 @@ dependencies = [
     "python-dateutil",
     "pytz",
     "tenacity",
-    "apscheduler",
     "nest-asyncio",
 
     # Logging
