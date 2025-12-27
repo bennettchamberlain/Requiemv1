@@ -14,7 +14,7 @@ from temporalio import activity
 from .config import settings
 from .data_aggregator import aggregator
 from .database import db
-from .llm_config import LLMConfig
+from .llm_config import LLMConfig, create_llm_config
 from .summary_functions import (
     generate_hourly_summary,
     generate_rollup_summary,
@@ -74,7 +74,6 @@ async def aggregate_data_activity(
 
 @activity.defn
 async def generate_hourly_summary_activity(
-    llm_config: LLMConfig,
     aggregated_data: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
@@ -85,6 +84,9 @@ async def generate_hourly_summary_activity(
     """
     activity.logger.info("generating_hourly_summary")
     activity.heartbeat("Calling LLM for hourly summary")
+
+    # Create LLM config
+    llm_config = create_llm_config()
 
     # Call pure function
     summary_data = generate_hourly_summary(llm_config, aggregated_data)
@@ -101,7 +103,6 @@ async def generate_hourly_summary_activity(
 
 @activity.defn
 async def generate_rollup_summary_activity(
-    llm_config: LLMConfig,
     period_type: str,
     child_summaries: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -112,6 +113,9 @@ async def generate_rollup_summary_activity(
     """
     activity.logger.info("generating_rollup_summary", period_type=period_type, child_count=len(child_summaries))
     activity.heartbeat(f"Generating {period_type} summary")
+
+    # Create LLM config
+    llm_config = create_llm_config()
 
     # Call pure function
     summary_data = generate_rollup_summary(llm_config, period_type, child_summaries)
@@ -415,7 +419,6 @@ async def fetch_summaries_for_dossier_activity(
 
 @activity.defn
 async def generate_dossier_activity(
-    llm_config: LLMConfig,
     user_id: str,
     daily_summaries: List[Dict[str, Any]],
     hourly_summaries: List[Dict[str, Any]],
@@ -432,6 +435,9 @@ async def generate_dossier_activity(
         hourly_count=len(hourly_summaries)
     )
     activity.heartbeat("Calling LLM for dossier generation")
+
+    # Create LLM config
+    llm_config = create_llm_config()
 
     # Call pure function
     dossier = generate_user_dossier(

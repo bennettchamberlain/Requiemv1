@@ -81,7 +81,7 @@ class HourlySummaryWorkflow:
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute hourly summary workflow."""
-        workflow.logger.info("hourly_summary_workflow_started", user_id=user_id)
+        workflow.logger.info(f"hourly_summary_workflow_started user_id={user_id}")
 
         # Step 1: Aggregate data
         aggregated_data = await workflow.execute_activity(
@@ -95,12 +95,12 @@ class HourlySummaryWorkflow:
             len(v) for v in aggregated_data.values()
             if isinstance(v, list)
         )
-        workflow.logger.info("data_aggregated", total_items=total_activity)
+        workflow.logger.info(f"data_aggregated total_items={total_activity}")
 
         # Step 2: Generate summary (LLM call)
         summary_data = await workflow.execute_activity(
             generate_hourly_summary_activity,
-            args=[llm_config, aggregated_data],
+            args=[aggregated_data],
             **get_llm_activity_options(),
         )
 
@@ -111,7 +111,7 @@ class HourlySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("hourly_summary_workflow_completed", summary_id=summary_id)
+        workflow.logger.info(f"hourly_summary_workflow_completed summary_id={summary_id}")
 
         return {
             "summary_id": summary_id,
@@ -148,7 +148,7 @@ class DailySummaryWorkflow:
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute daily summary workflow."""
-        workflow.logger.info("daily_summary_workflow_started", user_id=user_id)
+        workflow.logger.info(f"daily_summary_workflow_started user_id={user_id}")
 
         # Step 1: Fetch hourly summaries
         hourly_summaries = await workflow.execute_activity(
@@ -160,12 +160,12 @@ class DailySummaryWorkflow:
         if not hourly_summaries:
             raise ValueError(f"No hourly summaries found for daily aggregation: {start_time} to {end_time}")
 
-        workflow.logger.info("hourly_summaries_fetched", count=len(hourly_summaries))
+        workflow.logger.info(f"hourly_summaries_fetched count={len(hourly_summaries)}")
 
         # Step 2: Generate daily summary (LLM call)
         summary_data = await workflow.execute_activity(
             generate_rollup_summary_activity,
-            args=[llm_config, "daily", hourly_summaries],
+            args=["daily", hourly_summaries],
             **get_llm_activity_options(),
         )
 
@@ -176,7 +176,7 @@ class DailySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("daily_summary_workflow_completed", summary_id=summary_id)
+        workflow.logger.info(f"daily_summary_workflow_completed summary_id={summary_id}")
 
         return {
             "summary_id": summary_id,
@@ -213,7 +213,7 @@ class WeeklySummaryWorkflow:
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute weekly summary workflow."""
-        workflow.logger.info("weekly_summary_workflow_started", user_id=user_id)
+        workflow.logger.info(f"weekly_summary_workflow_started user_id={user_id}")
 
         # Step 1: Fetch daily summaries
         daily_summaries = await workflow.execute_activity(
@@ -225,12 +225,12 @@ class WeeklySummaryWorkflow:
         if not daily_summaries:
             raise ValueError(f"No daily summaries found for weekly aggregation: {start_time} to {end_time}")
 
-        workflow.logger.info("daily_summaries_fetched", count=len(daily_summaries))
+        workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
         # Step 2: Generate weekly summary (LLM call)
         summary_data = await workflow.execute_activity(
             generate_rollup_summary_activity,
-            args=[llm_config, "weekly", daily_summaries],
+            args=["weekly", daily_summaries],
             **get_llm_activity_options(),
         )
 
@@ -241,7 +241,7 @@ class WeeklySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("weekly_summary_workflow_completed", summary_id=summary_id)
+        workflow.logger.info(f"weekly_summary_workflow_completed summary_id={summary_id}")
 
         return {
             "summary_id": summary_id,
@@ -278,7 +278,7 @@ class MonthlySummaryWorkflow:
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute monthly summary workflow."""
-        workflow.logger.info("monthly_summary_workflow_started", user_id=user_id)
+        workflow.logger.info(f"monthly_summary_workflow_started user_id={user_id}")
 
         # Step 1: Fetch daily summaries
         daily_summaries = await workflow.execute_activity(
@@ -290,12 +290,12 @@ class MonthlySummaryWorkflow:
         if not daily_summaries:
             raise ValueError(f"No daily summaries found for monthly aggregation: {start_time} to {end_time}")
 
-        workflow.logger.info("daily_summaries_fetched", count=len(daily_summaries))
+        workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
         # Step 2: Generate monthly summary (LLM call)
         summary_data = await workflow.execute_activity(
             generate_rollup_summary_activity,
-            args=[llm_config, "monthly", daily_summaries],
+            args=["monthly", daily_summaries],
             **get_llm_activity_options(),
         )
 
@@ -306,7 +306,7 @@ class MonthlySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("monthly_summary_workflow_completed", summary_id=summary_id)
+        workflow.logger.info(f"monthly_summary_workflow_completed summary_id={summary_id}")
 
         return {
             "summary_id": summary_id,
@@ -343,7 +343,7 @@ class SeasonalSummaryWorkflow:
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute seasonal summary workflow."""
-        workflow.logger.info("seasonal_summary_workflow_started", user_id=user_id)
+        workflow.logger.info(f"seasonal_summary_workflow_started user_id={user_id}")
 
         # Step 1: Fetch daily summaries
         daily_summaries = await workflow.execute_activity(
@@ -355,12 +355,12 @@ class SeasonalSummaryWorkflow:
         if not daily_summaries:
             raise ValueError(f"No daily summaries found for seasonal aggregation: {start_time} to {end_time}")
 
-        workflow.logger.info("daily_summaries_fetched", count=len(daily_summaries))
+        workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
         # Step 2: Generate seasonal summary (LLM call)
         summary_data = await workflow.execute_activity(
             generate_rollup_summary_activity,
-            args=[llm_config, "seasonal", daily_summaries],
+            args=["seasonal", daily_summaries],
             **get_llm_activity_options(),
         )
 
@@ -371,7 +371,7 @@ class SeasonalSummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("seasonal_summary_workflow_completed", summary_id=summary_id)
+        workflow.logger.info(f"seasonal_summary_workflow_completed summary_id={summary_id}")
 
         return {
             "summary_id": summary_id,
@@ -408,7 +408,7 @@ class YearlySummaryWorkflow:
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute yearly summary workflow."""
-        workflow.logger.info("yearly_summary_workflow_started", user_id=user_id)
+        workflow.logger.info(f"yearly_summary_workflow_started user_id={user_id}")
 
         # Step 1: Fetch daily summaries
         daily_summaries = await workflow.execute_activity(
@@ -420,12 +420,12 @@ class YearlySummaryWorkflow:
         if not daily_summaries:
             raise ValueError(f"No daily summaries found for yearly aggregation: {start_time} to {end_time}")
 
-        workflow.logger.info("daily_summaries_fetched", count=len(daily_summaries))
+        workflow.logger.info(f"daily_summaries_fetched count={len(daily_summaries)}")
 
         # Step 2: Generate yearly summary (LLM call)
         summary_data = await workflow.execute_activity(
             generate_rollup_summary_activity,
-            args=[llm_config, "yearly", daily_summaries],
+            args=["yearly", daily_summaries],
             **get_llm_activity_options(),
         )
 
@@ -436,7 +436,7 @@ class YearlySummaryWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("yearly_summary_workflow_completed", summary_id=summary_id)
+        workflow.logger.info(f"yearly_summary_workflow_completed summary_id={summary_id}")
 
         return {
             "summary_id": summary_id,
@@ -475,7 +475,7 @@ class DossierRefreshWorkflow:
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute dossier refresh workflow."""
-        workflow.logger.info("dossier_refresh_workflow_started", user_id=user_id)
+        workflow.logger.info(f"dossier_refresh_workflow_started user_id={user_id}")
 
         # Step 1: Get entity ID
         entity_id = await workflow.execute_activity(
@@ -487,7 +487,7 @@ class DossierRefreshWorkflow:
         if not entity_id:
             raise ValueError(f"No entity found for user {user_id}")
 
-        workflow.logger.info("entity_id_retrieved", entity_id=entity_id)
+        workflow.logger.info(f"entity_id_retrieved entity_id={entity_id}")
 
         # Step 2: Fetch previous dossier
         previous_dossier = await workflow.execute_activity(
@@ -496,7 +496,7 @@ class DossierRefreshWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("previous_dossier_fetched", has_dossier=bool(previous_dossier))
+        workflow.logger.info(f"previous_dossier_fetched has_dossier={bool(previous_dossier)}")
 
         # Step 3: Fetch summaries
         summaries = await workflow.execute_activity(
@@ -512,15 +512,13 @@ class DossierRefreshWorkflow:
             raise ValueError(f"No summaries found for dossier generation")
 
         workflow.logger.info(
-            "summaries_fetched",
-            daily_count=len(daily_summaries),
-            hourly_count=len(hourly_summaries)
+            f"summaries_fetched daily_count={len(daily_summaries)} hourly_count={len(hourly_summaries)}"
         )
 
         # Step 4: Generate dossier (LLM call)
         dossier = await workflow.execute_activity(
             generate_dossier_activity,
-            args=[llm_config, user_id, daily_summaries, hourly_summaries, previous_dossier],
+            args=[user_id, daily_summaries, hourly_summaries, previous_dossier],
             **get_llm_activity_options(),
         )
 
@@ -531,7 +529,7 @@ class DossierRefreshWorkflow:
             **get_data_activity_options(),
         )
 
-        workflow.logger.info("dossier_refresh_workflow_completed", entity_id=entity_id)
+        workflow.logger.info(f"dossier_refresh_workflow_completed entity_id={entity_id}")
 
         return {
             "entity_id": entity_id,

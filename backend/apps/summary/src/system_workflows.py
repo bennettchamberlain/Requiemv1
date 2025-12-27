@@ -53,7 +53,7 @@ class SystemHourlySummariesWorkflow:
 
         # Get all active users
         users = await self._get_active_users()
-        workflow.logger.info("active_users_fetched", count=len(users))
+        workflow.logger.info(f"active_users_fetched count={len(users)}")
 
         if not users:
             return {"users_processed": 0, "message": "No active users"}
@@ -76,10 +76,10 @@ class SystemHourlySummariesWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success", "result": result})
             except Exception as e:
-                workflow.logger.error("hourly_summary_failed", user_id=user_id, error=str(e))
+                workflow.logger.error(f"hourly_summary_failed user_id={user_id} error={str(e)}")
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
-        workflow.logger.info("system_hourly_summaries_completed", total=len(users))
+        workflow.logger.info(f"system_hourly_summaries_completed total={len(users)}")
 
         return {
             "users_processed": len(users),
@@ -130,7 +130,7 @@ class SystemDailySummariesWorkflow:
         start_time = end_time - timedelta(days=1)
 
         users = await self._get_active_users()
-        workflow.logger.info("active_users_fetched", count=len(users))
+        workflow.logger.info(f"active_users_fetched count={len(users)}")
 
         if not users:
             return {"users_processed": 0, "message": "No active users"}
@@ -146,10 +146,10 @@ class SystemDailySummariesWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success", "result": result})
             except Exception as e:
-                workflow.logger.error("daily_summary_failed", user_id=user_id, error=str(e))
+                workflow.logger.error(f"daily_summary_failed user_id={user_id} error={str(e)}")
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
-        workflow.logger.info("system_daily_summaries_completed", total=len(users))
+        workflow.logger.info(f"system_daily_summaries_completed total={len(users)}")
 
         return {
             "users_processed": len(users),
@@ -211,7 +211,7 @@ class SystemWeeklySummariesWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
-                workflow.logger.error("weekly_summary_failed", user_id=user_id, error=str(e))
+                workflow.logger.error(f"weekly_summary_failed user_id={user_id} error={str(e)}")
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         return {"users_processed": len(users), "results": results}
@@ -261,7 +261,7 @@ class SystemMonthlySummariesWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
-                workflow.logger.error("monthly_summary_failed", user_id=user_id, error=str(e))
+                workflow.logger.error(f"monthly_summary_failed user_id={user_id} error={str(e)}")
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         return {"users_processed": len(users), "results": results}
@@ -308,7 +308,7 @@ class SystemDossierRefreshWorkflow:
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
-                workflow.logger.error("dossier_refresh_failed", user_id=user_id, error=str(e))
+                workflow.logger.error(f"dossier_refresh_failed user_id={user_id} error={str(e)}")
                 results.append({"user_id": user_id, "status": "error", "error": str(e)})
 
         return {"users_processed": len(users), "results": results}
