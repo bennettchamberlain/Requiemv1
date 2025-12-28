@@ -91,7 +91,7 @@ def cleanup():
 
 
 async def run_worker():
-    """Run the Temporal worker."""
+    """Run the Temporal worker with multiple priority queues."""
     global _worker, _client
 
     logger.info("temporal_worker_starting",
@@ -112,47 +112,77 @@ async def run_worker():
         )
         logger.info("temporal_connected")
 
-        # Create worker with all workflows and activities
-        _worker = Worker(
+        # All workflows and activities
+        all_workflows = [
+            # Per-user workflows (can be triggered manually or by system workflows)
+            HourlySummaryWorkflow,
+            DailySummaryWorkflow,
+            WeeklySummaryWorkflow,
+            MonthlySummaryWorkflow,
+            SeasonalSummaryWorkflow,
+            YearlySummaryWorkflow,
+            DossierRefreshWorkflow,
+            # System workflows (process all users)
+            SystemHourlySummariesWorkflow,
+            SystemDailySummariesWorkflow,
+            SystemWeeklySummariesWorkflow,
+            SystemMonthlySummariesWorkflow,
+            SystemDossierRefreshWorkflow,
+        ]
+
+        all_activities = [
+            aggregate_data_activity,
+            generate_hourly_summary_activity,
+            generate_rollup_summary_activity,
+            store_summary_activity,
+            fetch_child_summaries_activity,
+            get_entity_id_activity,
+            fetch_previous_dossier_activity,
+            fetch_summaries_for_dossier_activity,
+            generate_dossier_activity,
+            store_dossier_activity,
+        ]
+
+        # Create workers for each priority level
+        # High priority: More concurrent activities, processes critical user-facing work
+        worker_high = Worker(
             _client,
-            task_queue="summary-tasks",
-            workflows=[
-                # Per-user workflows (can be triggered manually or by system workflows)
-                HourlySummaryWorkflow,
-                DailySummaryWorkflow,
-                WeeklySummaryWorkflow,
-                MonthlySummaryWorkflow,
-                SeasonalSummaryWorkflow,
-                YearlySummaryWorkflow,
-                DossierRefreshWorkflow,
-                # System workflows (process all users)
-                SystemHourlySummariesWorkflow,
-                SystemDailySummariesWorkflow,
-                SystemWeeklySummariesWorkflow,
-                SystemMonthlySummariesWorkflow,
-                SystemDossierRefreshWorkflow,
-            ],
-            activities=[
-                aggregate_data_activity,
-                generate_hourly_summary_activity,
-                generate_rollup_summary_activity,
-                store_summary_activity,
-                fetch_child_summaries_activity,
-                get_entity_id_activity,
-                fetch_previous_dossier_activity,
-                fetch_summaries_for_dossier_activity,
-                generate_dossier_activity,
-                store_dossier_activity,
-            ],
-            # Pass LLM config to activities via data_converter context
-            # Activities can access this via activity.info().workflow_run_id
-            activity_executor=None,  # Use default thread pool
+            task_queue=settings.task_queue_high,
+            workflows=all_workflows,
+            activities=all_activities,
+            max_concurrent_activities=settings.max_concurrent_activities_high,
+            activity_executor=None,
         )
 
-        logger.info("worker_configured",
-                   workflows=12,
-                   activities=10,
-                   task_queue="summary-tasks")
+        # Medium priority: Standard concurrency for all automated summaries
+        worker_medium = Worker(
+            _client,
+            task_queue=settings.task_queue_medium,
+            workflows=all_workflows,
+            activities=all_activities,
+            max_concurrent_activities=settings.max_concurrent_activities_medium,
+            activity_executor=None,
+        )
+
+        # Low priority: Limited concurrency for batch operations
+        worker_low = Worker(
+            _client,
+            task_queue=settings.task_queue_low,
+            workflows=all_workflows,
+            activities=all_activities,
+            max_concurrent_activities=settings.max_concurrent_activities_low,
+            activity_executor=None,
+        )
+
+        logger.info("workers_configured",
+                   workflows=len(all_workflows),
+                   activities=len(all_activities),
+                   high_queue=settings.task_queue_high,
+                   medium_queue=settings.task_queue_medium,
+                   low_queue=settings.task_queue_low,
+                   high_concurrency=settings.max_concurrent_activities_high,
+                   medium_concurrency=settings.max_concurrent_activities_medium,
+                   low_concurrency=settings.max_concurrent_activities_low)
 
         # Register agent with control plane
         try:
@@ -162,9 +192,14 @@ async def run_worker():
             logger.warning("agent_registration_failed", error=str(e))
             # Continue without registration - not critical for Temporal worker
 
-        # Run worker (blocking)
-        logger.info("worker_starting_polling")
-        await _worker.run()
+        # Run all workers concurrently
+        # Each worker polls its own task queue
+        logger.info("workers_starting_polling")
+        await asyncio.gather(
+            worker_high.run(),
+            worker_medium.run(),
+            worker_low.run(),
+        )
 
     except Exception as e:
         logger.error("worker_failed", error=str(e), exc_info=True)

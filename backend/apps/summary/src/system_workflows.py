@@ -11,6 +11,7 @@ from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from .database import db
+    from .priority import Priority, get_task_queue
     from .workflows import (
         HourlySummaryWorkflow,
         DailySummaryWorkflow,
@@ -72,7 +73,7 @@ class SystemHourlySummariesWorkflow:
                         None,  # LLM config created by worker
                     ],
                     id=f"hourly-{user_id}-{end_time.isoformat()}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success", "result": result})
             except Exception as e:
@@ -142,7 +143,7 @@ class SystemDailySummariesWorkflow:
                     DailySummaryWorkflow.run,
                     args=[user_id, start_time.isoformat(), end_time.isoformat(), "UTC", None],
                     id=f"daily-{user_id}-{end_time.isoformat()}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success", "result": result})
             except Exception as e:
@@ -207,7 +208,7 @@ class SystemWeeklySummariesWorkflow:
                     WeeklySummaryWorkflow.run,
                     args=[user_id, start_time.isoformat(), end_time.isoformat(), "UTC", None],
                     id=f"weekly-{user_id}-{end_time.isoformat()}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
@@ -257,7 +258,7 @@ class SystemMonthlySummariesWorkflow:
                     MonthlySummaryWorkflow.run,
                     args=[user_id, start_time.isoformat(), end_time.isoformat(), "UTC", None],
                     id=f"monthly-{user_id}-{end_time.isoformat()}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:
@@ -304,7 +305,7 @@ class SystemDossierRefreshWorkflow:
                     DossierRefreshWorkflow.run,
                     args=[user_id, now.isoformat(), "UTC", 30, None],
                     id=f"dossier-{user_id}-{now.isoformat()}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 )
                 results.append({"user_id": user_id, "status": "success"})
             except Exception as e:

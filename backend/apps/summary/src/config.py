@@ -74,6 +74,16 @@ class Settings(BaseSettings):
     temporal_address: str = Field(default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "localhost:7233"))
     temporal_namespace: str = Field(default_factory=lambda: os.getenv("TEMPORAL_NAMESPACE", "default"))
 
+    # Task Queue Configuration (shared across all systems)
+    task_queue_high: str = Field(default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE_HIGH", "high"))
+    task_queue_medium: str = Field(default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE_MEDIUM", "medium"))
+    task_queue_low: str = Field(default_factory=lambda: os.getenv("TEMPORAL_TASK_QUEUE_LOW", "low"))
+
+    # Worker Concurrency Configuration
+    max_concurrent_activities_high: int = Field(default_factory=lambda: int(os.getenv("TEMPORAL_MAX_CONCURRENT_ACTIVITIES_HIGH", 5)))
+    max_concurrent_activities_medium: int = Field(default_factory=lambda: int(os.getenv("TEMPORAL_MAX_CONCURRENT_ACTIVITIES_MEDIUM", 3)))
+    max_concurrent_activities_low: int = Field(default_factory=lambda: int(os.getenv("TEMPORAL_MAX_CONCURRENT_ACTIVITIES_LOW", 1)))
+
     model_config = SettingsConfigDict(
         extra="ignore",
         case_sensitive=False,

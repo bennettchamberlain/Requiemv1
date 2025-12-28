@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from .data_aggregator import aggregator
 from . import summaries
+from . import workflow_control
 from . import __version__
 
 # Allow nested event loops (needed for run_sync() in async FastAPI context)
@@ -182,6 +183,87 @@ async def get_aggregate_preview(request: ManualSummaryRequest) -> Dict[str, Any]
         "end_time": end_time.isoformat(),
         "aggregated_data": aggregated,
     }
+
+
+# ============================================================================
+# Workflow Control (for LLM resource management)
+# ============================================================================
+
+class CancelWorkflowsRequest(BaseModel):
+    workflow_types: Optional[list[str]] = Field(
+        default=None,
+        description="Workflow types to cancel (hourly, daily, weekly, monthly, dossier). If None, cancels all."
+    )
+
+
+class CancelUserWorkflowsRequest(BaseModel):
+    user_id: str = Field(description="User ID whose workflows to cancel")
+    workflow_types: Optional[list[str]] = Field(
+        default=None,
+        description="Workflow types to cancel. If None, cancels all user workflows."
+    )
+
+
+@app.post("/workflows/cancel-system")
+async def cancel_system_workflows_endpoint(request: CancelWorkflowsRequest) -> Dict[str, Any]:
+    """
+    Cancel running system workflows to free up LLM resources for high-priority work.
+
+    Use this when critical LLM operations need immediate access and background
+    summarization can be paused.
+    """
+    try:
+        results = await workflow_control.cancel_system_workflows(request.workflow_types)
+        return {
+            "status": "success",
+            "message": "System workflow cancellation requested",
+            "results": results,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Cancellation failed: {str(exc)}") from exc
+
+
+@app.post("/workflows/cancel-user")
+async def cancel_user_workflows_endpoint(request: CancelUserWorkflowsRequest) -> Dict[str, Any]:
+    """
+    Cancel running workflows for a specific user.
+
+    Use this to stop background processing for a particular user when needed.
+    """
+    try:
+        user_id_uuid = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
+
+    try:
+        results = await workflow_control.cancel_user_workflows(
+            str(user_id_uuid),
+            request.workflow_types
+        )
+        return {
+            "status": "success",
+            "message": f"User workflow cancellation requested for {request.user_id}",
+            "results": results,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Cancellation failed: {str(exc)}") from exc
+
+
+@app.get("/workflows/status")
+async def get_workflow_status() -> Dict[str, Any]:
+    """
+    Get information about currently running workflows.
+
+    Useful for monitoring LLM resource usage and deciding when to cancel workflows.
+    """
+    try:
+        workflow_counts = await workflow_control.get_running_workflows()
+        return {
+            "status": "success",
+            "workflows": workflow_counts,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Status fetch failed: {str(exc)}") from exc
 
 
 # ============================================================================

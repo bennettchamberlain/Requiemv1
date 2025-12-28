@@ -9,6 +9,7 @@ import structlog
 from temporalio.client import Client, Schedule, ScheduleActionStartWorkflow, ScheduleSpec
 
 from .config import settings
+from .priority import Priority, get_task_queue
 from .system_workflows import (
     SystemHourlySummariesWorkflow,
     SystemDailySummariesWorkflow,
@@ -35,7 +36,7 @@ async def setup_system_schedules():
     )
     logger.info("temporal_connected", address=settings.temporal_address)
 
-    # Create hourly summary schedule
+    # Create hourly summary schedule (MEDIUM priority)
     try:
         await client.create_schedule(
             "system-hourly-summaries",
@@ -43,7 +44,7 @@ async def setup_system_schedules():
                 action=ScheduleActionStartWorkflow(
                     SystemHourlySummariesWorkflow.run,
                     id="system-hourly-{action.scheduled_time}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 ),
                 spec=ScheduleSpec(
                     # Run at 5 minutes past every hour
@@ -51,14 +52,14 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-hourly-summaries", cron="5 * * * *")
+        logger.info("schedule_created", schedule="system-hourly-summaries", cron="5 * * * *", priority="MEDIUM")
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-hourly-summaries")
         else:
             logger.error("schedule_creation_failed", schedule="system-hourly-summaries", error=str(e))
 
-    # Create daily summary schedule
+    # Create daily summary schedule (MEDIUM priority)
     try:
         await client.create_schedule(
             "system-daily-summaries",
@@ -66,7 +67,7 @@ async def setup_system_schedules():
                 action=ScheduleActionStartWorkflow(
                     SystemDailySummariesWorkflow.run,
                     id="system-daily-{action.scheduled_time}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 ),
                 spec=ScheduleSpec(
                     # Run at 00:10 UTC every day
@@ -74,14 +75,14 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-daily-summaries", cron="10 0 * * *")
+        logger.info("schedule_created", schedule="system-daily-summaries", cron="10 0 * * *", priority="MEDIUM")
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-daily-summaries")
         else:
             logger.error("schedule_creation_failed", schedule="system-daily-summaries", error=str(e))
 
-    # Create weekly summary schedule
+    # Create weekly summary schedule (MEDIUM priority)
     try:
         await client.create_schedule(
             "system-weekly-summaries",
@@ -89,7 +90,7 @@ async def setup_system_schedules():
                 action=ScheduleActionStartWorkflow(
                     SystemWeeklySummariesWorkflow.run,
                     id="system-weekly-{action.scheduled_time}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 ),
                 spec=ScheduleSpec(
                     # Run at 00:15 UTC every Monday
@@ -97,14 +98,14 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-weekly-summaries", cron="15 0 * * MON")
+        logger.info("schedule_created", schedule="system-weekly-summaries", cron="15 0 * * MON", priority="MEDIUM")
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-weekly-summaries")
         else:
             logger.error("schedule_creation_failed", schedule="system-weekly-summaries", error=str(e))
 
-    # Create monthly summary schedule
+    # Create monthly summary schedule (MEDIUM priority)
     try:
         await client.create_schedule(
             "system-monthly-summaries",
@@ -112,7 +113,7 @@ async def setup_system_schedules():
                 action=ScheduleActionStartWorkflow(
                     SystemMonthlySummariesWorkflow.run,
                     id="system-monthly-{action.scheduled_time}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 ),
                 spec=ScheduleSpec(
                     # Run at 00:20 UTC on the 1st of every month
@@ -120,14 +121,14 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-monthly-summaries", cron="20 0 1 * *")
+        logger.info("schedule_created", schedule="system-monthly-summaries", cron="20 0 1 * *", priority="MEDIUM")
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-monthly-summaries")
         else:
             logger.error("schedule_creation_failed", schedule="system-monthly-summaries", error=str(e))
 
-    # Create dossier refresh schedule
+    # Create dossier refresh schedule (MEDIUM priority)
     try:
         await client.create_schedule(
             "system-dossier-refresh",
@@ -135,7 +136,7 @@ async def setup_system_schedules():
                 action=ScheduleActionStartWorkflow(
                     SystemDossierRefreshWorkflow.run,
                     id="system-dossier-{action.scheduled_time}",
-                    task_queue="summary-tasks",
+                    task_queue=get_task_queue(Priority.MEDIUM),
                 ),
                 spec=ScheduleSpec(
                     # Run at 12 minutes past every hour
@@ -143,7 +144,7 @@ async def setup_system_schedules():
                 ),
             ),
         )
-        logger.info("schedule_created", schedule="system-dossier-refresh", cron="12 * * * *")
+        logger.info("schedule_created", schedule="system-dossier-refresh", cron="12 * * * *", priority="MEDIUM")
     except Exception as e:
         if "already exists" in str(e).lower():
             logger.info("schedule_already_exists", schedule="system-dossier-refresh")
@@ -202,7 +203,8 @@ async def list_system_schedules():
 
     print("\n📋 System Schedules:\n")
     count = 0
-    async for schedule in client.list_schedules():
+    schedules_iter = await client.list_schedules()
+    async for schedule in schedules_iter:
         if schedule.id.startswith("system-"):
             print(f"  ✓ {schedule.id}")
             count += 1
@@ -223,6 +225,7 @@ def main():
         print("Usage:")
         print("  python -m src.system_schedules setup    # Set up system schedules (run once)")
         print("  python -m src.system_schedules delete   # Delete all system schedules")
+        print("  python -m src.system_schedules reset    # Delete and recreate all schedules")
         print("  python -m src.system_schedules list     # List all schedules")
         sys.exit(1)
 
@@ -232,6 +235,11 @@ def main():
         asyncio.run(setup_system_schedules())
     elif command == "delete":
         asyncio.run(delete_system_schedules())
+    elif command == "reset":
+        print("Deleting existing schedules...")
+        asyncio.run(delete_system_schedules())
+        print("\nRecreating schedules with new configuration...")
+        asyncio.run(setup_system_schedules())
     elif command == "list":
         asyncio.run(list_system_schedules())
     else:

@@ -104,7 +104,7 @@ services:
       - POSTGRES_PWD=${POSTGRES_PASSWORD}
       - POSTGRES_SEEDS=postgres
     volumes:
-      - ./docker/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+      - ./infrastructure/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
     networks:
       - web
     depends_on:
