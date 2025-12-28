@@ -176,6 +176,10 @@ async def store_summary_activity(
         if key != "total" and count > 0
     ]
 
+    # Prepare embedding (use None if empty)
+    embedding = summary_data.get("embedding", [])
+    embedding_value = json.dumps(embedding) if embedding else None
+
     # Insert
     db.execute_write(
         """
@@ -185,7 +189,7 @@ async def store_summary_activity(
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, :period_type,
             :timezone, :source_types, :title, CAST(:content AS jsonb),
-            CAST(:embedding AS vector), NOW(), NOW()
+            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END, NOW(), NOW()
         )
         """,
         {
@@ -198,7 +202,7 @@ async def store_summary_activity(
             "source_types": source_types,
             "title": f"{summary_type.title()} Summary",
             "content": json.dumps(content),
-            "embedding": json.dumps(summary_data.get("embedding", [])),
+            "embedding": embedding_value,
         },
     )
 
