@@ -84,8 +84,6 @@ export class ContentSearchIndexListener {
       return;
     }
 
-    console.log('content to index', content, content.user);
-
     if (content.user?.id == null) {
       this.logger.warn('Content has no associated user, cannot index');
 

@@ -67,8 +67,6 @@ export class ContentEntity {
   updatedAt!: Date;
 
   static toEgressType(entity: ContentEntity) {
-    console.log('content toEgressType', entity);
-
     return {
       id: entity.id,
       type: entity.type,
