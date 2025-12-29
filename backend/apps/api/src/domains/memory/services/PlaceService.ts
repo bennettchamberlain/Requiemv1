@@ -22,10 +22,13 @@ export class PlaceService {
     const isSingle = !Array.isArray(data);
     const dataArray: CreatePlaceDto[] = isSingle ? [data] : data;
 
+    console.log('data to make into Place', data);
+
     return Promise.all(
       dataArray.map(async (item) => {
         const place = await this.placeRepository.create({
           ...item,
+          entityType: 'Location',
           id: uuidv7(),
           user: {
             id: context.userId,
@@ -58,7 +61,9 @@ export class PlaceService {
       where: {
         id,
         ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
+          user: {
+            id: context.userId,
+          },
         }),
       },
     });
@@ -71,7 +76,9 @@ export class PlaceService {
       where: {
         id: In(ids),
         ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
+          user: {
+            id: context.userId,
+          },
         }),
       },
     });
@@ -84,29 +91,48 @@ export class PlaceService {
   async update(context: ServiceContext, id: string, data: UpdatePlaceDto): Promise<Place | null> {
     const { properties, ...rest } = data;
 
-    const result = await this.placeRepository.update(
-      {
-        id,
+    const place = await this.placeRepository.findOne({
+      where: {
+        id: id,
         ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
+          user: {
+            id: context.userId,
+          },
         }),
       },
-      {
-        ...rest,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        properties: properties as any, // TypeORM will handle JSON serialization
-      },
-    );
-
-    if (result.affected === 0) {
-      return null;
-    }
-
-    await this.eventService.send(PlaceUpdatedEvent, {
-      placeId: id,
     });
 
-    return this.findById(context, id);
+    if (place) {
+      const props = Object.assign({}, place.properties, { ...properties });
+
+      const result = await this.placeRepository.update(
+        {
+          id,
+          ...(context.userId !== SYSTEM_USER && {
+            user: {
+              id: context.userId,
+            },
+          }),
+        },
+        {
+          ...rest,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          properties: props as any, // TypeORM will handle JSON serialization
+        },
+      );
+
+      if (result.affected === 0) {
+        return null;
+      }
+
+      await this.eventService.send(PlaceUpdatedEvent, {
+        placeId: id,
+      });
+
+      return this.findById(context, id);
+    } else {
+      return null;
+    }
   }
 
   async remove(context: ServiceContext, id: string): Promise<boolean> {
@@ -114,7 +140,9 @@ export class PlaceService {
       where: {
         id: id,
         ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
+          user: {
+            id: context.userId,
+          },
         }),
       },
     });
@@ -126,7 +154,9 @@ export class PlaceService {
     await this.placeRepository.delete({
       id,
       ...(context.userId !== SYSTEM_USER && {
-        userId: context.userId,
+        user: {
+          id: context.userId,
+        },
       }),
     });
 

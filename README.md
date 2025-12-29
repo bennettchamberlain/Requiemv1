@@ -25,7 +25,7 @@ This is a Yarn workspace monorepo with the following structure:
 
 ## Getting started
 
-### Install prerequisites
+### Install pre-requisites
 
 #### Homebrew
 
@@ -43,22 +43,46 @@ After it's installed, boot Docker Desktop and verify that it's running and acces
 docker --version
 ```
 
-#### SDK version manager
+#### NodeJS
 
-Many SDK version managers will work just fine, but `asdf` is a great pluggable one that supports multiple languages.
+##### Option 1 - asdf
 
-You can install `asdf` by following the getting started instructions [here](https://asdf-vm.com/guide/getting-started.html).
+[asdf](https://asdf-vm.com) can be used to manage multiple runtimes, including the NodeJS version. (see [getting started](https://asdf-vm.com/guide/getting-started.html) and [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs))
+
+```sh
+brew install asdf
+asdf plugin add nodejs https://github.com/asdf-vm/asdf-nodejs.git
+asdf install
+node --version
+```
 
 Autocompletions are nice to have, but not required to get everything running. Feel free to skip that configuration step.
 
-##### NodeJS plugin
+Note that `asdf` uses the `.tool-versions` file to define the versions of the various runtimes which it manages
 
-Install the `asdf-nodejs` plugin by following the getting started instructions [here](https://github.com/asdf-vm/asdf-nodejs).
+To keep compatibility with `nvm` - also add the following to `$HOME/.asdfrc`:
 
-Cross-compatibility with `nvm` is nice, so adding the following to `$HOME/.asdfrc` is recommended:
-
-```
+```txt
 legacy_version_file = yes
+```
+
+##### Option 2 - nvm
+
+We also maintain parallel compatibility with [nvm](https://github.com/nvm-sh/nvm)
+
+```sh
+brew install nvm
+nvm install
+node --version
+```
+
+Note that `nvm` uses the `.nvmrc` file to define the version of NodeJS to use
+
+
+#### tmux
+
+```bash
+brew install tmux
 ```
 
 #### Ollama
@@ -80,88 +104,55 @@ The `ollama` binary can be daemonized if using Homebrew with:
 brew services start ollama
 ```
 
-You will want to pull at least:
-
-* `nomic-embed-text` from [here](https://ollama.com/library/nomic-embed-text) which powers our embed vector generation
-* `gemma3:1b` from [here](https://ollama.com/library/gemma3:1b) which is a low-memory model that works well enough for development
-
-E.g.
+test that Ollama is running using:
 
 ```bash
+ollama pull gemma3:1b
+ollama run gemma3:1b "say hello"
+
 ollama pull nomic-embed-text
+ollama run nomic-embed-text "embed this"
 ```
 
-If the `ollama` daemon is running, just having the model present should be sufficient, you don't need to serve it explicitly.
 
 ### Hostfile
 
-You'll want to edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
+Edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
 
-## Running the application
-
-Now that you have prerequisites installed you should be able to run a few Make commands to get everything booted.
-
-You should first execute:
+## Initialize Dev environment
 
 ```bash
-make init
+make setup-dev
 ```
 
-Which will:
+This runs a variety of commands to do setup, including:
+
 * Ensure you have NodeJS installed and that the version matches what's expected
 * Ensure you have Ollama installed, that it is running, and that you've downloaded the minimum required models
 * Ensure you have a hostfile entry for dev.companionintelligence.com
 * Set up Yarn PnP with the SDKs relevant to our project and configure VSCode to work with them
 * Install Yarn dependencies
+* boot local docker containers:
+    * A PostgreSQL server which we currently use as a primary database and job queue
+    * A Minio S3 static file bucket where we upload all static files
+    * An NGINX reverse proxy that publishes our backend (NodeJS) and frontend (Vite) processes to dev.companionintelligence.com
+* run data schema migrations
+* seed the database with dev data
+* index the database
 
-To then boot the local infrastructure.
-
-```bash
-make local
-```
-
-This should start:
-* A PostgreSQL server which we currently use as a primary database and job queue
-* A Minio S3 static file bucket where we upload all static files
-* An NGINX reverse proxy that publishes our backend (NodeJS) and frontend (Vite) processes to dev.companionintelligence.com
-
-To then idempotently execute any database migrations.
+If you run into problems with this, you can reset the docker environment using:
 
 ```bash
-make migrate
+make reset
 ```
 
-To then idempotently seed the database:
+## Run the app in dev mode
+
+To run the app in dev mode:
 
 ```bash
-make seed
+make run-dev
 ```
-
-To then idempotently index the database and enable searching:
-
-```bash
-make index
-```
-
-To then boot the development environment.
-
-```bash
-make dev
-```
-
-Note that `make dev` requires `tmux` to be installed.
-
-```
-brew install tmux
-```
-
-This is not required and you can instead run the applications manually following the instructions in the READMEs for each of our services.
-Running services individually can be preferable for examining log scrollback, etc.
-
-* Backend (api) [README](backend/apps/api/README.md)
-* Frontend (web) [README](frontend/apps/web/README.md)
-
-## Exercising the application
 
 You should now be able to view the application at:
 
@@ -174,7 +165,23 @@ Username: jsmith@example.com
 Password: ]60.a6{CJ}lB*rHAp;w;
 ```
 
+-----
+
+Note: You can instead run the applications manually following the instructions in the READMEs for each of our services.
+Running services individually can be preferable for examining log scrollback, etc.
+
+* Backend (api) [README](backend/apps/api/README.md)
+* Frontend (web) [README](frontend/apps/web/README.md)
+
+
 ## Available commands
+
+### Reset docker environment
+
+
+```bash
+make reset
+```
 
 ### Root level
 

@@ -24,6 +24,26 @@ type ActionType implements Node & Taggable {
   updatedAt: DateTime!
 }
 
+type AnswerConnection implements Connection {
+  edges: [AnswerEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type AnswerEdge implements Edge {
+  cursor: String!
+  node: AnswerType!
+}
+
+type AnswerType implements Node {
+  answer: String!
+  answerMethod: String!
+  answerSource: String
+  answeredAt: DateTime!
+  id: ID!
+  question: QuestionType!
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -40,6 +60,7 @@ type CommunicationType implements Node {
   direction: String!
   from: PersonType
   id: ID!
+  preview: String
   subject: String
   time: DateTime!
   to(after: String, before: String, first: Int, last: Int): PersonConnection!
@@ -52,9 +73,90 @@ interface Connection {
   totalCount: Int!
 }
 
+type ContentConnection implements Connection {
+  edges: [ContentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ContentEdge implements Edge {
+  cursor: String!
+  node: ContentType!
+}
+
+type ContentType implements Node {
+  event: EventType
+  externalId: String
+  id: ID!
+  mimetype: String
+  sourceData: JSON
+  sourceUrl: String
+  text: String
+  title: String
+  type: String
+  url: String
+}
+
+input CreateAnswerInput {
+  answer: String!
+  questionId: String!
+}
+
+input CreateContentInput {
+  externalId: String
+  mimetype: String
+  sourceData: JSON
+  sourceUrl: String
+  text: String
+  title: String
+  type: String
+  url: String
+}
+
+input CreateEventInput {
+  category: String
+  confidenceScore: Float
+  description: String
+  durationMinutes: Int
+  endTime: DateTime
+  eventType: String
+  isAllDay: Boolean
+  isRecurring: Boolean
+  locationCoordinates: JSON
+  locationEntityId: ID
+  locationName: String
+  metadata: JSON
+  organizerEntityId: ID
+  participantEntityIds: [ID!]
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  startTime: DateTime!
+  status: String
+  title: String
+}
+
 input CreatePersonInput {
   description: String
   name: String!
+}
+
+input CreatePlaceInput {
+  description: String
+  estimated: Boolean
+  geoFormat: String
+  geolocation: JSON
+  locationBoundary: JSON
+  name: String!
+  properties: JSON
+  tracked: Boolean
+  type: String
+  uploaded: Boolean
+}
+
+input CreateQuestionInput {
+  category: String!
+  text: String!
 }
 
 """
@@ -70,6 +172,41 @@ interface Edge {
 type EntityTagType {
   label: String!
   taggedAt: DateTime!
+}
+
+type EventConnection implements Connection {
+  edges: [EventEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type EventEdge implements Edge {
+  cursor: String!
+  node: EventType!
+}
+
+type EventType implements Node {
+  category: String
+  confidenceScore: Float
+  description: String
+  durationMinutes: Int
+  endTime: DateTime
+  eventType: String
+  id: ID!
+  isAllDay: Boolean
+  isRecurring: Boolean
+  locationCoordinates: JSON
+  locationEntityId: ID
+  locationName: String
+  metadata: JSON
+  organizerEntityId: ID
+  participantEntityIds: [ID!]
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  startTime: DateTime!
+  status: String
+  title: String
 }
 
 type FactConnection implements Connection {
@@ -174,11 +311,26 @@ type MessageType implements Node {
 }
 
 type Mutation {
+  createAnswer(input: CreateAnswerInput!): AnswerType!
+  createContent(input: CreateContentInput!): ContentType!
+  createEvent(input: CreateEventInput!): EventType!
   createPerson(input: CreatePersonInput!): PersonType!
+  createPlace(input: CreatePlaceInput!): PlaceType!
+  createQuestion(input: CreateQuestionInput!): QuestionType!
+  removeAnswer(id: String!): Boolean!
+  removeContent(id: String!): Boolean!
+  removeEvent(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
+  removePlace(id: String!): Boolean!
+  removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
+  updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateContent(input: UpdateContentInput!): ContentType
+  updateEvent(input: UpdateEventInput!): EventType
   updatePerson(input: UpdatePersonInput!): PersonType
+  updatePlace(input: UpdatePlaceInput!): PlaceType
+  updateQuestion(input: UpdateQuestionInput!): QuestionType
 }
 
 interface Node {
@@ -221,11 +373,43 @@ type PersonType implements Node & Taggable {
   tags: [EntityTagType!]!
 }
 
+type PlaceConnection implements Connection {
+  edges: [PlaceEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type PlaceEdge implements Edge {
+  cursor: String!
+  node: PlaceType!
+}
+
+type PlaceType implements Node {
+  description: String
+  entityType: String!
+  estimated: Boolean
+  geoFormat: String
+  geolocation: JSON
+  id: ID!
+  locationBoundary: JSON
+  name: String!
+  properties: JSON!
+  tracked: Boolean
+  type: String
+  uploaded: Boolean
+}
+
 type Query {
   action(id: ID!): ActionType
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
+  answer(id: ID!): AnswerType
+  answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
+  content(id: ID!): ContentType
+  contents(after: String, before: String, first: Int, last: Int): ContentConnection!
+  event(id: ID!): EventType
+  events(after: String, before: String, first: Int, last: Int): EventConnection!
   fact(id: ID!): FactType
   facts(after: String, before: String, first: Int, last: Int): FactConnection!
   file(id: ID!): FileType
@@ -236,11 +420,35 @@ type Query {
   node(id: ID!): Node
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
+  place(id: ID!): PlaceType
+  places(after: String, before: String, first: Int, last: Int): PlaceConnection!
+  question(id: ID!): QuestionType
+  questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
   search(input: SearchInput!): SearchConnection!
   tag(id: ID!): TagType
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
   thread(id: ID!): ThreadType
   threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
+}
+
+type QuestionConnection implements Connection {
+  edges: [QuestionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type QuestionEdge implements Edge {
+  cursor: String!
+  node: QuestionType!
+}
+
+type QuestionType implements Node {
+  category: String!
+  createdByLlm: Boolean
+  id: ID!
+  isSeedQuestion: Boolean
+  questionType: String
+  text: String!
 }
 
 input RemovePersonInput {
@@ -263,7 +471,7 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = PersonType | ThreadType
+union SearchResultType = CommunicationType | PersonType | ThreadType
 
 type TagConnection implements Connection {
   edges: [TagEdge!]!
@@ -310,10 +518,71 @@ type ThreadType implements Node & Taggable {
   tags: [EntityTagType!]!
 }
 
+input UpdateAnswerInput {
+  answer: String!
+  id: String!
+}
+
+input UpdateContentInput {
+  externalId: String
+  id: ID!
+  mimetype: String
+  sourceData: JSON
+  sourceUrl: String
+  text: String
+  title: String
+  type: String
+  url: String
+}
+
+input UpdateEventInput {
+  category: String
+  confidenceScore: Float
+  description: String
+  durationMinutes: Int
+  endTime: DateTime
+  eventType: String
+  id: ID!
+  isAllDay: Boolean
+  isRecurring: Boolean
+  locationCoordinates: JSON
+  locationEntityId: ID
+  locationName: String
+  metadata: JSON
+  organizerEntityId: ID
+  participantEntityIds: [ID!]
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  startTime: DateTime
+  status: String
+  title: String
+}
+
 input UpdatePersonInput {
   description: String
   id: String!
   name: String!
+}
+
+input UpdatePlaceInput {
+  description: String
+  estimated: Boolean
+  geoFormat: String
+  geolocation: JSON
+  id: String!
+  locationBoundary: JSON
+  name: String!
+  properties: JSON
+  tracked: Boolean
+  type: String
+  uploaded: Boolean
+}
+
+input UpdateQuestionInput {
+  category: String!
+  id: String!
+  text: String!
 }
 
 type UserType implements Node {

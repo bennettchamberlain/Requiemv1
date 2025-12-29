@@ -5,18 +5,23 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtAuthGuard } from '@ci/common/guards';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
-import { ActionService } from '@ci/domains/intelligence';
-import { ItemService, PersonService } from '@ci/domains/memory';
+import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
+import { ContentService, EventService, ItemService, PersonService, PlaceService } from '@ci/domains/memory';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
 
 import { ActionType } from '../types/ActionType';
+import { AnswerType } from '../types/AnswerType';
+import { ContentType } from '../types/ContentType';
+import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
 import { MessageType } from '../types/MessageType';
 import { Node } from '../types/Node';
 import { PersonType } from '../types/PersonType';
+import { PlaceType } from '../types/PlaceType';
+import { QuestionType } from '../types/QuestionType';
 import { TagType } from '../types/TagType';
 import { ThreadType } from '../types/ThreadType';
 import { UserType } from '../types/UserType';
@@ -26,10 +31,15 @@ import { UserType } from '../types/UserType';
 export class NodeResolver {
   constructor(
     private readonly actionService: ActionService,
+    private readonly answerService: AnswerService,
+    private readonly contentService: ContentService,
+    private readonly eventService: EventService,
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
     private readonly personService: PersonService,
+    private readonly placeService: PlaceService,
+    private readonly questionService: QuestionService,
     private readonly tagService: TagService,
     private readonly threadService: ThreadService,
     private readonly userService: UserService,
@@ -48,6 +58,24 @@ export class NodeResolver {
         const action = await this.actionService.findById(serviceContext, id);
 
         return action ? ActionType.toType(action) : null;
+      }
+
+      case 'answer': {
+        const answer = await this.answerService.findById(serviceContext, id);
+
+        return answer ? AnswerType.toType(answer) : null;
+      }
+
+      case 'content': {
+        const content = await this.contentService.findById(serviceContext, id);
+
+        return content ? ContentType.toType(content) : null;
+      }
+
+      case 'event': {
+        const event = await this.eventService.findById(serviceContext, id);
+
+        return event ? EventType.toType(event) : null;
       }
 
       case 'file': {
@@ -72,6 +100,18 @@ export class NodeResolver {
         const person = await this.personService.findById(serviceContext, id);
 
         return person ? PersonType.toType(person) : null;
+      }
+
+      case 'place': {
+        const place = await this.placeService.findById(serviceContext, id);
+
+        return place ? PlaceType.toType(place) : null;
+      }
+
+      case 'question': {
+        const question = await this.questionService.findById(serviceContext, id);
+
+        return question ? QuestionType.toType(question) : null;
       }
 
       case 'tag': {

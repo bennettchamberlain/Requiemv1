@@ -36,18 +36,20 @@ import { EventController } from './controllers/EventController';
 import { GraphController } from './controllers/GraphController';
 import { MemoryController } from './controllers/MemoryController';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
+import { type Concept, ConceptEntity } from './entities/ConceptEntity';
 import { ContentEntity } from './entities/ContentEntity';
-import { EventEntity } from './entities/EventEntity';
+import { type Event, EventEntity } from './entities/EventEntity';
 import { type Fact, FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { type Item, type InventoryCondition, ItemEntity } from './entities/ItemEntity';
 import { type Person, PersonEntity } from './entities/PersonEntity';
-import { PlaceEntity } from './entities/PlaceEntity';
+import { type Place, PlaceEntity } from './entities/PlaceEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
 import { ThingEntity } from './entities/ThingEntity';
 import { GraphEventListener } from './listeners/GraphEventListener';
 import { CommunicationService } from './services/CommunicationService';
+import { ConceptService } from './services/ConceptService';
 import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
 import { FactService } from './services/FactService';
@@ -59,9 +61,9 @@ import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { MemoryService } from './services/MemoryService';
 import { PersonService } from './services/PersonService';
+import { PlaceService } from './services/PlaceService';
 import { SearchService } from './services/SearchService';
 import { UserContextService } from './services/UserContextService';
-
 /**
  * @internal
  */
@@ -72,6 +74,7 @@ import { UserContextService } from './services/UserContextService';
       ContentEntity,
       EventEntity,
       PersonEntity,
+      ConceptEntity,
       PlaceEntity,
       ThingEntity,
       GraphNodeEntity,
@@ -103,8 +106,10 @@ import { UserContextService } from './services/UserContextService';
     UserContextService,
     GraphEventListener,
     PersonService,
+    ConceptService,
     FileService,
     SearchService,
+    PlaceService,
   ],
   controllers: [
     MemoryController,
@@ -122,12 +127,14 @@ import { UserContextService } from './services/UserContextService';
     GraphEventService,
     ItemService,
     PersonService,
+    ConceptService,
     UserContextService,
     GraphUtilityService,
     GraphQueryService,
     GraphReadService,
     FileService,
     SearchService,
+    PlaceService,
   ],
 })
 export class MemoryModule {}
@@ -137,6 +144,7 @@ export {
   ContentEntity,
   EventEntity,
   PersonEntity,
+  ConceptEntity,
   PlaceEntity,
   ThingEntity,
   GraphNodeEntity,
@@ -153,11 +161,13 @@ export {
   GraphEventService,
   ItemService,
   PersonService,
+  ConceptService,
   UserContextService,
   GraphUtilityService,
   GraphQueryService,
   GraphReadService,
   FileService,
+  PlaceService,
   SearchService,
 };
 
@@ -184,4 +194,4 @@ export type {
   DatabaseSearchResults,
 } from './services/SearchService';
 
-export type { Fact, Item, InventoryCondition, Person, Communication };
+export type { Concept, Event, Fact, Item, InventoryCondition, Person, Communication, Place };

@@ -2,12 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
-import { EventService, Events } from '@ci/domains/events';
 import { PersonService } from '@ci/domains/memory';
-
-import { PromoteService } from '../PromoteService';
-
-import { FacebookPromotionUtils } from './FacebookPromotionUtils';
 
 interface FacebookProfile {
   id: string;
@@ -25,9 +20,6 @@ interface FacebookProfile {
 export class FacebookProfilePromotionService {
   constructor(
     private readonly personService: PersonService,
-    private readonly eventService: EventService,
-    private readonly promoteService: PromoteService,
-    private readonly utils: FacebookPromotionUtils,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(FacebookProfilePromotionService.name);
@@ -42,9 +34,6 @@ export class FacebookProfilePromotionService {
 
       return;
     }
-
-    // Get user entity ID
-    const userEntityId = await this.promoteService.getUserEntityId(userId);
 
     // Search for existing person by facebook_id first (most reliable)
     let existingEntities = await this.personService.search(
@@ -127,8 +116,6 @@ export class FacebookProfilePromotionService {
       properties.location = profile.location.name;
     }
 
-    const searchContent = this.utils.buildPersonSearchContent(profile.name, properties);
-
     if (existingEntities.length > 0) {
       // Update existing person
       const existingEntity = existingEntities[0];
@@ -166,10 +153,7 @@ export class FacebookProfilePromotionService {
         name: updatedName,
         properties: mergedProperties,
         lastAccessed: new Date(),
-        searchContent: searchContent || undefined,
       });
-
-      await this.utils.enqueuePersonEmbedding(userId, existingEntity.id, searchContent);
 
       this.logger.log('Updated existing person with Facebook profile', {
         userId,
@@ -187,33 +171,31 @@ export class FacebookProfilePromotionService {
           name: profile.name,
           description: `Facebook profile: ${profile.name}`,
           properties,
-          searchContent: searchContent || undefined,
         },
       );
 
-      await this.utils.enqueuePersonEmbedding(userId, entityId, searchContent);
-
       // Create relationship to user
-      await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
-        ownerId: userId,
-        person: {
-          entityId,
-          entityType: 'Person',
-          name: profile.name,
-        },
-        relationships: [
-          {
-            fromEntityId: userEntityId,
-            toEntityId: entityId,
-            relationshipType: 'IS',
-            properties: {
-              source: 'facebook',
-              connection_id: connectionId,
-              last_interaction: new Date().toISOString(),
-            },
-          },
-        ],
-      });
+      // TODO: Use RelationshipService
+      // await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
+      //   ownerId: userId,
+      //   person: {
+      //     entityId,
+      //     entityType: 'Person',
+      //     name: profile.name,
+      //   },
+      //   relationships: [
+      //     {
+      //       fromEntityId: userEntityId,
+      //       toEntityId: entityId,
+      //       relationshipType: 'IS',
+      //       properties: {
+      //         source: 'facebook',
+      //         connection_id: connectionId,
+      //         last_interaction: new Date().toISOString(),
+      //       },
+      //     },
+      //   ],
+      // });
 
       this.logger.log('Created new person from Facebook profile', {
         userId,

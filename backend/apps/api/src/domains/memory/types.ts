@@ -87,7 +87,7 @@ export const updateContentSchema = z.object({
 });
 
 export interface CreateEventDto {
-  id: string;
+  id?: string;
   title: string;
   description?: string;
   event_type?: string;
@@ -220,7 +220,7 @@ export interface SearchEventDto {
 }
 
 export interface CreateContentDto {
-  id: string;
+  id?: string;
   type: string;
   title?: string;
   text?: string;
@@ -228,6 +228,7 @@ export interface CreateContentDto {
   mimetype?: string;
   external_id?: string;
   source_url?: string;
+  source_data?: Record<string, unknown>;
   user_id?: string;
   event_id?: string;
   event?: {
@@ -246,6 +247,7 @@ export interface UpdateContentDto {
   mimetype?: string;
   external_id?: string;
   source_url?: string;
+  source_data?: Record<string, unknown>;
   event?: {
     id: string;
   };
@@ -268,7 +270,6 @@ export interface CreatePlaceDto {
   tracked?: boolean;
   uploaded?: boolean;
   user_id?: string;
-  parent_id?: string;
   user?: {
     id: string;
   };
@@ -292,7 +293,6 @@ export interface UpdatePlaceDto {
     [key: string]: unknown;
   };
   user_id?: string;
-  parent_id?: string;
   parent?: {
     id: string;
   };
@@ -361,6 +361,27 @@ export interface UpdatePersonDto {
   };
 }
 
+export interface CreateConceptDto {
+  id?: string;
+  name?: string;
+  description?: string;
+  searchContent?: string;
+  linkedId?: string | null;
+  linkedTable?: string | null;
+  lastAccessed?: Date;
+  properties?: Record<string, unknown>;
+}
+
+export interface UpdateConceptDto {
+  name?: string;
+  description?: string;
+  searchContent?: string;
+  linkedId?: string | null;
+  linkedTable?: string | null;
+  lastAccessed?: Date;
+  properties?: Record<string, unknown>;
+}
+
 export interface CreateCommunicationDto {
   time: Date;
   communication_type: 'email' | 'sms' | 'call';
@@ -385,6 +406,7 @@ export interface CreateCommunicationDto {
   connection_id?: string;
   is_encrypted?: boolean;
   is_archived?: boolean;
+  preview?: string | null;
 }
 
 export const createCommunicationSchema = z.object({
@@ -409,6 +431,7 @@ export const createCommunicationSchema = z.object({
   connection_id: z.string().optional(),
   is_encrypted: z.boolean().optional(),
   is_archived: z.boolean().optional(),
+  preview: z.string().optional(),
 });
 
 export interface UpdateCommunicationDto {
@@ -433,6 +456,7 @@ export interface UpdateCommunicationDto {
   connection_id?: string;
   is_encrypted?: boolean;
   is_archived?: boolean;
+  preview?: string | null;
 }
 
 export const updateCommunicationSchema = z.object({
@@ -457,6 +481,7 @@ export const updateCommunicationSchema = z.object({
   connection_id: z.string().optional(),
   is_encrypted: z.boolean().optional(),
   is_archived: z.boolean().optional(),
+  preview: z.string().optional(),
 });
 
 const createEventSchemaRoot = z.object({

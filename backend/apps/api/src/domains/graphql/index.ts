@@ -12,20 +12,27 @@ import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
+import { EventLoader } from './loaders/EventLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { PersonLoader } from './loaders/PersonLoader';
+import { QuestionLoader } from './loaders/QuestionLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
+import { AnswerResolver } from './resolvers/AnswerResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
+import { ContentResolver } from './resolvers/ContentResolver';
+import { EventResolver } from './resolvers/EventResolver';
 import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
+import { PlaceResolver } from './resolvers/PlaceResolver';
+import { QuestionResolver } from './resolvers/QuestionResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
@@ -52,7 +59,11 @@ import { UserResolver } from './resolvers/UserResolver';
     ActionResolver,
     CommunicationResolver,
     ComplexityPlugin,
+    ContentResolver,
     NodeResolver,
+    AnswerResolver,
+    EventLoader,
+    EventResolver,
     FactResolver,
     FileItemsLoader,
     FileResolver,
@@ -60,6 +71,8 @@ import { UserResolver } from './resolvers/UserResolver';
     ItemResolver,
     PersonLoader,
     PersonResolver,
+    QuestionLoader,
+    QuestionResolver,
     SearchResolver,
     TagLoader,
     TagResolver,
@@ -67,6 +80,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ThreadMessagesLoader,
     ThreadResolver,
     UserResolver,
+    PlaceResolver,
   ],
   controllers: [GraphQLController],
   exports: [],

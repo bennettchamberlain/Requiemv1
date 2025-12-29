@@ -25,7 +25,8 @@
     "docs": "yarn docs:html",
     "docs:html": "typedoc",
     "docs:json": "typedoc --json docs/typedoc.json",
-    "docs:capabilities": "yarn run exec -- scripts/build-capability-map-from-typedoc.ts"
+    "docs:capabilities": "yarn run exec -- scripts/build-capability-map-from-typedoc.ts",
+    "graphql:generate": "yarn run exec -- scripts/generate-graphql-schema.ts"
   },
   "packageManager": "yarn@4.9.1",
   "dependencies": {

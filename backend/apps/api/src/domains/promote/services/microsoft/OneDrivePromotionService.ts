@@ -9,9 +9,8 @@ import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
-import { EventService as DomainEventService, Events } from '@ci/domains/events';
 import { FileService as FileStorageService } from '@ci/domains/files';
-import { EventService as MemoryEventService, type CreateEventDto, FileService } from '@ci/domains/memory';
+import { EventService as MemoryEventService } from '@ci/domains/memory';
 
 import { PromoteService } from '../PromoteService';
 
@@ -38,8 +37,6 @@ export class OneDrivePromotionService {
     private readonly eventService: MemoryEventService,
     private readonly connectionService: ConnectionService,
     private readonly fileStorageService: FileStorageService,
-    private readonly fileService: FileService,
-    private readonly domainEventService: DomainEventService,
     private readonly promoteService: PromoteService,
     private readonly logger: LoggerService,
   ) {
@@ -54,88 +51,27 @@ export class OneDrivePromotionService {
       contentKeys: apiLogContent && typeof apiLogContent === 'object' ? Object.keys(apiLogContent) : [],
     });
 
-    try {
-      // Extract event ids from the API log content
-      const files = this.extractOneDriveFiles(apiLogContent as RawData[]);
+    // Extract event ids from the API log content
+    const files = this.extractOneDriveFiles(apiLogContent as RawData[]);
 
-      // Get the connection
-      const connection = await this.connectionService.findById({ userId }, connectionId);
-      if (!connection || !connection.accessToken) {
-        this.logger.error('Connection not found or missing access token', { connectionId });
+    // Get the connection
+    const connection = await this.connectionService.findById({ userId }, connectionId);
+    if (!connection || !connection.accessToken) {
+      this.logger.error('Connection not found or missing access token', { connectionId });
 
-        return;
-      }
-
-      // Process each event individually
-      for (const file of files) {
-        if (!file.id) {
-          this.logger.warn('Skipping event without ID', { file });
-          continue;
-        }
-
-        // Process the event
-        await this.processOneDriveFile(file, userId, connectionId);
-      }
-    } catch (error) {
-      this.logger.error('Error promoting Outlook Calendar events', {
-        userId,
-        connectionId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      throw error;
-    }
-  }
-
-  private async enqueueEventEmbedding(ownerId: string, eventId: string, searchContent: string | null) {
-    if (!searchContent || searchContent.trim().length === 0) {
       return;
     }
 
-    try {
-      await this.domainEventService.send(Events.SEARCH_EMBED_EVENT, {
-        ownerId,
-        eventId,
-        searchContent,
-      });
-    } catch (error) {
-      this.logger.error('Failed to enqueue OneDrive event embedding', {
-        ownerId,
-        eventId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  private buildEventSearchContent(fileDetails: ExtractedFile, newEvent: CreateEventDto): string | null {
-    const parts = new Set<string>();
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
+    // Process each event individually
+    for (const file of files) {
+      if (!file.id) {
+        this.logger.warn('Skipping event without ID', { file });
+        continue;
       }
 
-      const normalized = value.trim();
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(newEvent.title);
-    push(fileDetails.content?.name);
-    push(fileDetails.content?.file?.mimeType);
-
-    for (const participant of fileDetails.participants) {
-      push(participant.name);
-      push(participant.email);
+      // Process the event
+      await this.processOneDriveFile(file, userId, connectionId);
     }
-
-    if (parts.size === 0) {
-      return null;
-    }
-
-    return Array.from(parts).join(' ');
   }
 
   private extractOneDriveFiles(content: RawData[]): OneDrivePageEntity[] {
@@ -212,55 +148,56 @@ export class OneDrivePromotionService {
       );
 
       if (existingFiles.length === 0) {
-        const file = {
-          fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
-          originalname: fileDetails.content.name, //Multer requires this, but it's not actually used in our logic
-          mimetype: fileDetails.content.file?.mimeType,
-          size: fileDetails.content.size,
-          encoding: 'base64',
-          destination: '',
-          stream: '' as unknown as Readable,
-          filename: fileDetails.content.name,
-          path: '',
-          buffer: buff,
-        };
-        await this.fileStorageService.upload({ userId }, file);
+        await this.fileStorageService.upload(
+          { userId },
+          {
+            fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
+            originalname: fileDetails.content.name, //Multer requires this, but it's not actually used in our logic
+            mimetype: fileDetails.content.file?.mimeType,
+            size: fileDetails.content.size,
+            encoding: 'base64',
+            destination: '',
+            stream: '' as unknown as Readable,
+            filename: fileDetails.content.name,
+            path: '',
+            buffer: buff,
+          },
+        );
       }
     }
 
-    const eventSearch = {
-      start_time: new Date(fileDetails.startTime),
-      title: 'Edited ' + fileDetails.content?.name,
-      category: 'document_edit',
-      source_system: 'Microsoft OneDrive',
-      event_type: 'work',
-      source_type: 'ETL',
-    };
-
-    const existingEvents = await this.eventService.search({ userId }, eventSearch);
-
-    if (existingEvents.length === 0) {
-      const newEvent = {
-        id: uuidv7(),
+    const existingEvents = await this.eventService.search(
+      { userId },
+      {
         start_time: new Date(fileDetails.startTime),
         title: 'Edited ' + fileDetails.content?.name,
-        user: {
-          id: userId,
-        },
         category: 'document_edit',
         source_system: 'Microsoft OneDrive',
         event_type: 'work',
         source_type: 'ETL',
-        participant_entity_ids: participantEntityIds,
-        metadata: {
-          connection_id: connectionId,
-        },
-      } as CreateEventDto;
+      },
+    );
 
-      const created = await this.eventService.create({ userId }, newEvent);
-      const createdEvent = Array.isArray(created) ? created[0] : created;
-      const searchContent = this.buildEventSearchContent(fileDetails, newEvent);
-      await this.enqueueEventEmbedding(userId, createdEvent.id, searchContent);
+    if (existingEvents.length === 0) {
+      await this.eventService.create(
+        { userId },
+        {
+          id: uuidv7(),
+          start_time: new Date(fileDetails.startTime),
+          title: 'Edited ' + fileDetails.content?.name,
+          user: {
+            id: userId,
+          },
+          category: 'document_edit',
+          source_system: 'Microsoft OneDrive',
+          event_type: 'work',
+          source_type: 'ETL',
+          participant_entity_ids: participantEntityIds,
+          metadata: {
+            connection_id: connectionId,
+          },
+        },
+      );
     }
   }
 
