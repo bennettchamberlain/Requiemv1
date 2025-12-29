@@ -96,8 +96,8 @@ export class ItemEntity {
   @Column('timestamptz', { name: 'subscription_expiration_date', nullable: true })
   subscriptionExpirationDate!: Date | null;
 
-  @Column('jsonb', { name: 'metadata', default: {} })
-  metadata!: Record<string, unknown>;
+  @Column('jsonb', { name: 'metadata', default: {}, nullable: true })
+  metadata!: Record<string, unknown> | null;
 
   @Column('text', { name: 'user_id' })
   userId!: string;

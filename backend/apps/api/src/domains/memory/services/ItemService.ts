@@ -4,16 +4,23 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
 import { SYSTEM_USER, type UserServiceContext, type ServiceContext } from '@ci/common/context';
+import { LoggerService } from '@ci/common/logging';
+import { EventService } from '@ci/domains/events';
+import { ItemCreatedEvent, ItemUpdatedEvent, ItemRemovedEvent } from '@ci/domains/memory/events';
 
 import { type Item, ItemEntity } from '../entities/ItemEntity';
-import type { CreateItemDto } from '../types';
+import type { CreateItemDto, UpdateItemDto } from '../types';
 
 @Injectable()
 export class ItemService {
   constructor(
     @InjectRepository(ItemEntity)
     private readonly itemRepository: Repository<ItemEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+    private readonly eventService: EventService,
+  ) {
+    this.logger.setContext(ItemService.name);
+  }
 
   async create(context: UserServiceContext, data: CreateItemDto): Promise<Item> {
     const entity = this.itemRepository.create({
@@ -32,6 +39,10 @@ export class ItemService {
     });
 
     await this.itemRepository.save(entity);
+
+    await this.eventService.send(ItemCreatedEvent, {
+      itemId: entity.id,
+    });
 
     return ItemEntity.toEgressType(entity);
   }
@@ -117,5 +128,134 @@ export class ItemService {
     }
 
     return fileIds.map((id) => itemsMap.get(id) ?? []);
+  }
+
+  async update(context: ServiceContext, id: string, data: UpdateItemDto): Promise<Item | null> {
+    const updateData: Partial<ItemEntity> = {};
+
+    if (data.name !== undefined) {
+      updateData.name = data.name;
+    }
+
+    if (data.description !== undefined) {
+      updateData.description = data.description;
+    }
+
+    if (data.category !== undefined) {
+      updateData.category = data.category;
+    }
+
+    if (data.subcategory !== undefined) {
+      updateData.subcategory = data.subcategory;
+    }
+
+    if (data.brand !== undefined) {
+      updateData.brand = data.brand;
+    }
+
+    if (data.model !== undefined) {
+      updateData.model = data.model;
+    }
+
+    if (data.currentValue !== undefined) {
+      updateData.currentValue = data.currentValue;
+    }
+
+    if (data.currency !== undefined) {
+      updateData.currency = data.currency;
+    }
+
+    if (data.condition !== undefined) {
+      updateData.condition = data.condition;
+    }
+
+    if (data.metadata !== undefined) {
+      updateData.metadata = data.metadata;
+    }
+
+    const item = await this.itemRepository.findOne({
+      where: {
+        id: id,
+        ...(context.userId !== SYSTEM_USER && {
+          user: {
+            id: context.userId,
+          },
+        }),
+      },
+    });
+
+    if (item) {
+      Object.assign(item, updateData);
+      await this.itemRepository.save(item);
+    } else {
+      return null;
+    }
+
+    await this.eventService.send(ItemUpdatedEvent, {
+      itemId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const result = await this.itemRepository.delete({
+      id,
+      ...(context.userId !== SYSTEM_USER && {
+        userId: context.userId,
+      }),
+    });
+
+    if (result.affected === 0) {
+      return false;
+    }
+
+    await this.eventService.send(ItemRemovedEvent, {
+      itemId: id,
+    });
+
+    return true;
+  }
+
+  async search(context: ServiceContext, query: UpdateItemDto): Promise<ItemEntity[]> {
+    let executable = this.itemRepository
+      .createQueryBuilder('item')
+      .where('user_id = :userId', { userId: context.userId });
+
+    if (query.name) {
+      executable = executable.andWhere('name = :name', { name: query.name });
+    }
+
+    if (query.description) {
+      executable = executable.andWhere('description = :description', { description: query.description });
+    }
+
+    if (query.category) {
+      executable = executable.andWhere('category = :category', { category: query.category });
+    }
+
+    if (query.subcategory) {
+      executable = executable.andWhere('subcategory = :subcategory', { subcategory: query.subcategory });
+    }
+
+    if (query.brand) {
+      executable = executable.andWhere('brand = :brand', { brand: query.brand });
+    }
+
+    if (query.model) {
+      executable = executable.andWhere('model = :model', { model: query.model });
+    }
+
+    if (query.condition) {
+      executable = executable.andWhere('condition = :condition', { condition: query.condition });
+    }
+
+    if (query.metadata) {
+      for (const [key, val] of Object.entries(query.metadata)) {
+        executable = executable.andWhere(`item.metadata->>'${key}' = :${key}`, { [key]: val });
+      }
+    }
+
+    return executable.getMany();
   }
 }

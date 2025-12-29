@@ -280,9 +280,9 @@ type ItemType implements Node {
   description: String
   file: FileType
   id: ID!
-  metadata: JSON!
+  metadata: JSON
   model: String
-  name: String!
+  name: String
   subcategory: String
   updatedAt: DateTime!
 }
@@ -471,7 +471,7 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = CommunicationType | ContentType | PersonType | ThreadType
+union SearchResultType = CommunicationType | ContentType | ItemType | PersonType | ThreadType
 
 type TagConnection implements Connection {
   edges: [TagEdge!]!
