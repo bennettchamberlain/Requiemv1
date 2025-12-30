@@ -8,7 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 
-import { UserEntity } from '@ci/domains/user';
+import { UserEntity, type User } from '@ci/domains/user';
 
 @Entity({ schema: 'ci', name: 'files' })
 export class FileEntity {
@@ -57,7 +57,7 @@ export class FileEntity {
   @Column({ type: 'boolean', name: 'analysis_completed', default: false })
   analysisCompleted!: boolean;
 
-  @ManyToOne(() => UserEntity)
+  @ManyToOne(() => UserEntity, { nullable: true })
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
@@ -86,10 +86,13 @@ export class FileEntity {
       analysisCompleted: entity.analysisCompleted,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
     };
   }
 }
 
-export type File = Readonly<FileEntity>;
+export type File = Readonly<Omit<FileEntity, 'user'>> & {
+  user?: User;
+};
 
 export type SignedFile = File & { readonly url: string };

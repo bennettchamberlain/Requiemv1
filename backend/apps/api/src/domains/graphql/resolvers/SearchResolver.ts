@@ -4,6 +4,7 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ThreadService } from '@ci/domains/conversations';
+import { FileService } from '@ci/domains/files';
 import {
   CommunicationService,
   ContentService,
@@ -23,6 +24,7 @@ import {
 import { CommunicationType } from '../types/CommunicationType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
+import { FileType } from '../types/FileType';
 import { ItemType } from '../types/ItemType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
@@ -39,6 +41,7 @@ export class SearchResolver {
     private readonly communicationService: CommunicationService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
+    private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly personService: PersonService,
     private readonly placeService: PlaceService,
@@ -126,15 +129,17 @@ export class SearchResolver {
     const communicationIds = groupedByType.get('communication') || [];
     const contentIds = groupedByType.get('content') || [];
     const eventIds = groupedByType.get('event') || [];
+    const fileIds = groupedByType.get('file') || [];
     const itemIds = groupedByType.get('item') || [];
     const peopleIds = groupedByType.get('person') || [];
     const placeIds = groupedByType.get('place') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [communications, content, events, items, people, places, threads] = await Promise.all([
+    const [communications, content, events, files, items, people, places, threads] = await Promise.all([
       this.communicationService.findByIds(context, communicationIds),
       this.contentService.findByIds(context, contentIds),
       this.eventService.findByIds(context, eventIds),
+      this.fileService.findByIds(context, fileIds),
       this.itemService.findByIds(context, itemIds),
       this.personService.findByIds(context, peopleIds),
       this.placeService.findByIds(context, placeIds),
@@ -150,6 +155,8 @@ export class SearchResolver {
       .map((entity) => ContentType.toType(entity));
 
     const eventResults = events.filter((entity) => entity != null).map((entity) => EventType.toType(entity));
+
+    const fileResults = files.filter((entity) => entity != null).map((entity) => FileType.toType(entity));
 
     const itemResults = items.filter((entity) => entity != null).map((entity) => ItemType.toType(entity));
 
@@ -172,6 +179,7 @@ export class SearchResolver {
       resultMap.set(makeCompositeKey('content', content.__source.id), content),
     );
     eventResults.forEach((event) => resultMap.set(makeCompositeKey('event', event.__source.id), event));
+    fileResults.forEach((file) => resultMap.set(makeCompositeKey('file', file.__source.id), file));
     itemResults.forEach((item) => resultMap.set(makeCompositeKey('item', item.__source.id), item));
     personResults.forEach((person) => resultMap.set(makeCompositeKey('person', person.__source.id), person));
     placeResults.forEach((place) => resultMap.set(makeCompositeKey('place', place.__source.id), place));

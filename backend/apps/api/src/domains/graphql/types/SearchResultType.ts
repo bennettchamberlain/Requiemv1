@@ -3,6 +3,7 @@ import { createUnionType } from '@nestjs/graphql';
 import { CommunicationType } from './CommunicationType';
 import { ContentType } from './ContentType';
 import { EventType } from './EventType';
+import { FileType } from './FileType';
 import { GlobalUID } from './GlobalUID';
 import { ItemType } from './ItemType';
 import type { Node } from './Node';
@@ -13,7 +14,16 @@ import { ThreadType } from './ThreadType';
 export const SearchResultType = createUnionType({
   name: 'SearchResultType',
   types: () =>
-    [CommunicationType, ContentType, EventType, ItemType, PersonType, PlaceType, ThreadType] as const,
+    [
+      CommunicationType,
+      ContentType,
+      EventType,
+      FileType,
+      ItemType,
+      PersonType,
+      PlaceType,
+      ThreadType,
+    ] as const,
   resolveType(instance): typeof Node {
     const { type } = GlobalUID.decode(instance.id);
 
@@ -24,6 +34,8 @@ export const SearchResultType = createUnionType({
         return ContentType;
       case 'event':
         return EventType;
+      case 'file':
+        return FileType;
       case 'item':
         return ItemType;
       case 'person':
