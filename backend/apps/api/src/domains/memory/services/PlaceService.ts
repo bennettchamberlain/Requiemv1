@@ -22,8 +22,6 @@ export class PlaceService {
     const isSingle = !Array.isArray(data);
     const dataArray: CreatePlaceDto[] = isSingle ? [data] : data;
 
-    console.log('data to make into Place', data);
-
     return Promise.all(
       dataArray.map(async (item) => {
         const place = await this.placeRepository.create({
@@ -53,6 +51,7 @@ export class PlaceService {
           id: context.userId,
         },
       },
+      relations: ['user'],
     });
   }
 
@@ -66,6 +65,7 @@ export class PlaceService {
           },
         }),
       },
+      relations: ['user'],
     });
 
     return result ? PlaceEntity.toEgressType(result) : null;
@@ -81,6 +81,7 @@ export class PlaceService {
           },
         }),
       },
+      relations: ['user'],
     });
 
     const map = new Map(result.map((entity) => [entity.id, PlaceEntity.toEgressType(entity)]));

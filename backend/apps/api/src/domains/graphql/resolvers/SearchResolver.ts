@@ -10,6 +10,7 @@ import {
   EventService,
   ItemService,
   PersonService,
+  PlaceService,
 } from '@ci/domains/memory';
 import {
   SearchService,
@@ -24,6 +25,7 @@ import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
 import { ItemType } from '../types/ItemType';
 import { PersonType } from '../types/PersonType';
+import { PlaceType } from '../types/PlaceType';
 import { SearchConnection } from '../types/SearchConnection';
 import { SearchInput } from '../types/SearchInput';
 import { type SearchResult } from '../types/SearchResultType';
@@ -39,6 +41,7 @@ export class SearchResolver {
     private readonly eventService: EventService,
     private readonly itemService: ItemService,
     private readonly personService: PersonService,
+    private readonly placeService: PlaceService,
     private readonly searchService: SearchService,
     private readonly tagService: TagService,
     private readonly threadService: ThreadService,
@@ -125,14 +128,16 @@ export class SearchResolver {
     const eventIds = groupedByType.get('event') || [];
     const itemIds = groupedByType.get('item') || [];
     const peopleIds = groupedByType.get('person') || [];
+    const placeIds = groupedByType.get('place') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [communications, content, events, items, people, threads] = await Promise.all([
+    const [communications, content, events, items, people, places, threads] = await Promise.all([
       this.communicationService.findByIds(context, communicationIds),
       this.contentService.findByIds(context, contentIds),
       this.eventService.findByIds(context, eventIds),
       this.itemService.findByIds(context, itemIds),
       this.personService.findByIds(context, peopleIds),
+      this.placeService.findByIds(context, placeIds),
       this.threadService.findByIds(context, threadIds),
     ]);
 
@@ -152,6 +157,8 @@ export class SearchResolver {
       .filter((entity) => entity != null)
       .map((entity) => PersonType.toType(entity));
 
+    const placeResults = places.filter((entity) => entity != null).map((entity) => PlaceType.toType(entity));
+
     const threadResults = threads
       .filter((entity) => entity != null)
       .map((entity) => ThreadType.toType(entity));
@@ -167,6 +174,7 @@ export class SearchResolver {
     eventResults.forEach((event) => resultMap.set(makeCompositeKey('event', event.__source.id), event));
     itemResults.forEach((item) => resultMap.set(makeCompositeKey('item', item.__source.id), item));
     personResults.forEach((person) => resultMap.set(makeCompositeKey('person', person.__source.id), person));
+    placeResults.forEach((place) => resultMap.set(makeCompositeKey('place', place.__source.id), place));
     threadResults.forEach((thread) => resultMap.set(makeCompositeKey('thread', thread.__source.id), thread));
 
     const orderedResults = results

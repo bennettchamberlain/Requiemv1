@@ -18,7 +18,7 @@ export class PlaceType implements Node {
   @Field(() => String)
   entityType!: string;
 
-  @Field(() => String)
+  @Field(() => String, { nullable: true })
   name!: string | null;
 
   @Field(() => String, { nullable: true })
@@ -52,7 +52,7 @@ export class PlaceType implements Node {
     return {
       __typename: PlaceType.name,
       __source: place,
-      id: GlobalUID.encode('user', place.id),
+      id: GlobalUID.encode('place', place.id),
       name: place.name,
       entityType: place.entityType,
       description: place.description,
