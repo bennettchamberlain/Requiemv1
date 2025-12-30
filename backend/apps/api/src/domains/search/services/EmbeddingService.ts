@@ -109,26 +109,6 @@ export class EmbeddingService {
   }
 
   /**
-   * Generate and store embedding for an answer
-   */
-  async embedAnswer(answerId: string, answerText: string): Promise<boolean> {
-    try {
-      const embeddingString = await this.generateEmbeddingString(answerText);
-      await this.dataSource.query(`UPDATE ci.answers SET answer_embedding = $1 WHERE answer_id = $2`, [
-        embeddingString,
-        answerId,
-      ]);
-
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to embed answer ${answerId}: ${message}`);
-
-      return false;
-    }
-  }
-
-  /**
    * Generate and store embedding for an entity
    */
   async embedEntity(entityId: string, searchContent: string): Promise<boolean> {
@@ -323,36 +303,6 @@ export class EmbeddingService {
 
     if (failCount > 0) {
       console.warn(`Embedded ${successCount} questions, failed ${failCount}`);
-    }
-
-    return successCount;
-  }
-
-  /**
-   * Find and embed all answers missing embeddings
-   */
-  async embedAllAnswers(): Promise<number> {
-    const answers = await this.dataSource.query(`
-      SELECT answer_id, answer_text
-      FROM ci.answers
-      WHERE answer_embedding IS NULL
-      AND answer_text IS NOT NULL
-    `);
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const answer of answers) {
-      const success = await this.embedAnswer(answer.answer_id, answer.answer_text);
-      if (success) {
-        successCount++;
-      } else {
-        failCount++;
-      }
-    }
-
-    if (failCount > 0) {
-      console.warn(`Embedded ${successCount} answers, failed ${failCount}`);
     }
 
     return successCount;

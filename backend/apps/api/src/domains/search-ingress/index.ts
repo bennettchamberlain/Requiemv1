@@ -10,10 +10,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmbeddingModule } from '@ci/common/embeddings';
 import { FilesModule } from '@ci/domains/files';
+import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 
 import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { VectorEntity } from './entities/VectorEntity';
+import { AnswerSearchIndexListener } from './listeners/AnswerSearchIndexListener';
 import { CommunicationSearchIndexListener } from './listeners/CommunicationSearchIndexListener';
 import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListener';
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
@@ -32,9 +34,11 @@ import { VectorService } from './services/VectorService';
     TypeOrmModule.forFeature([EmbeddingEntity, VectorEntity]),
     EmbeddingModule,
     FilesModule,
+    IntelligenceModule,
     MemoryModule,
   ],
   providers: [
+    AnswerSearchIndexListener,
     CommunicationSearchIndexListener,
     ContentSearchIndexListener,
     EmbeddingService,

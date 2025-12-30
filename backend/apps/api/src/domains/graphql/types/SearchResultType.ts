@@ -1,5 +1,6 @@
 import { createUnionType } from '@nestjs/graphql';
 
+import { AnswerType } from './AnswerType';
 import { CommunicationType } from './CommunicationType';
 import { ContentType } from './ContentType';
 import { EventType } from './EventType';
@@ -15,6 +16,7 @@ export const SearchResultType = createUnionType({
   name: 'SearchResultType',
   types: () =>
     [
+      AnswerType,
       CommunicationType,
       ContentType,
       EventType,
@@ -28,6 +30,8 @@ export const SearchResultType = createUnionType({
     const { type } = GlobalUID.decode(instance.id);
 
     switch (type) {
+      case 'answer':
+        return AnswerType;
       case 'communication':
         return CommunicationType;
       case 'content':

@@ -5,6 +5,7 @@ import { Context, type RequestContext, type UserServiceContext, toServiceContext
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
+import { AnswerService } from '@ci/domains/intelligence';
 import {
   CommunicationService,
   ContentService,
@@ -21,6 +22,7 @@ import {
   type TaggableEntity,
 } from '@ci/domains/search-next';
 
+import { AnswerType } from '../types/AnswerType';
 import { CommunicationType } from '../types/CommunicationType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
@@ -38,6 +40,7 @@ import { Paginator } from '../utils/Paginator';
 @Resolver()
 export class SearchResolver {
   constructor(
+    private readonly answerService: AnswerService,
     private readonly communicationService: CommunicationService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
@@ -126,6 +129,7 @@ export class SearchResolver {
       return acc;
     }, new Map());
 
+    const answerIds = groupedByType.get('answer') || [];
     const communicationIds = groupedByType.get('communication') || [];
     const contentIds = groupedByType.get('content') || [];
     const eventIds = groupedByType.get('event') || [];
@@ -135,16 +139,22 @@ export class SearchResolver {
     const placeIds = groupedByType.get('place') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [communications, content, events, files, items, people, places, threads] = await Promise.all([
-      this.communicationService.findByIds(context, communicationIds),
-      this.contentService.findByIds(context, contentIds),
-      this.eventService.findByIds(context, eventIds),
-      this.fileService.findByIds(context, fileIds),
-      this.itemService.findByIds(context, itemIds),
-      this.personService.findByIds(context, peopleIds),
-      this.placeService.findByIds(context, placeIds),
-      this.threadService.findByIds(context, threadIds),
-    ]);
+    const [answers, communications, content, events, files, items, people, places, threads] =
+      await Promise.all([
+        this.answerService.findByIds(context, answerIds),
+        this.communicationService.findByIds(context, communicationIds),
+        this.contentService.findByIds(context, contentIds),
+        this.eventService.findByIds(context, eventIds),
+        this.fileService.findByIds(context, fileIds),
+        this.itemService.findByIds(context, itemIds),
+        this.personService.findByIds(context, peopleIds),
+        this.placeService.findByIds(context, placeIds),
+        this.threadService.findByIds(context, threadIds),
+      ]);
+
+    const answerResults = answers
+      .filter((entity) => entity != null)
+      .map((entity) => AnswerType.toType(entity));
 
     const communicationResults = communications
       .filter((entity) => entity != null)
@@ -172,6 +182,7 @@ export class SearchResolver {
 
     const resultMap = new Map<string, SearchResult>();
 
+    answerResults.forEach((answer) => resultMap.set(makeCompositeKey('answer', answer.__source.id), answer));
     communicationResults.forEach((communication) =>
       resultMap.set(makeCompositeKey('communication', communication.__source.id), communication),
     );
