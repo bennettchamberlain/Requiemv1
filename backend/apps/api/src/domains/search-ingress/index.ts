@@ -9,6 +9,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmbeddingModule } from '@ci/common/embeddings';
+import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
@@ -23,6 +24,7 @@ import { FileSearchIndexListener } from './listeners/FileSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { PlaceSearchIndexListener } from './listeners/PlaceSearchIndexListener';
+import { ThreadSearchIndexListener } from './listeners/ThreadSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
 import { VectorService } from './services/VectorService';
 
@@ -32,6 +34,7 @@ import { VectorService } from './services/VectorService';
 @Module({
   imports: [
     TypeOrmModule.forFeature([EmbeddingEntity, VectorEntity]),
+    ConversationModule,
     EmbeddingModule,
     FilesModule,
     IntelligenceModule,
@@ -47,6 +50,7 @@ import { VectorService } from './services/VectorService';
     ItemSearchIndexListener,
     PersonSearchIndexListener,
     PlaceSearchIndexListener,
+    ThreadSearchIndexListener,
     VectorService,
   ],
 })

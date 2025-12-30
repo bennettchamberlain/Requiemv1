@@ -6,7 +6,8 @@ export type IndexableEntity =
   | 'file'
   | 'item'
   | 'person'
-  | 'place';
+  | 'place'
+  | 'thread';
 
 export type TaggableEntity = 'action' | 'communication' | 'person' | 'thread';
 
