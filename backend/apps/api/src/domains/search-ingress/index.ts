@@ -15,6 +15,7 @@ import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { VectorEntity } from './entities/VectorEntity';
 import { CommunicationSearchIndexListener } from './listeners/CommunicationSearchIndexListener';
 import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListener';
+import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
@@ -29,6 +30,7 @@ import { VectorService } from './services/VectorService';
     CommunicationSearchIndexListener,
     ContentSearchIndexListener,
     EmbeddingService,
+    EventSearchIndexListener,
     ItemSearchIndexListener,
     PersonSearchIndexListener,
     VectorService,

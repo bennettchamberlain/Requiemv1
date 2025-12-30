@@ -4,7 +4,13 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ThreadService } from '@ci/domains/conversations';
-import { CommunicationService, ContentService, ItemService, PersonService } from '@ci/domains/memory';
+import {
+  CommunicationService,
+  ContentService,
+  EventService,
+  ItemService,
+  PersonService,
+} from '@ci/domains/memory';
 import {
   SearchService,
   TagService,
@@ -15,6 +21,7 @@ import {
 
 import { CommunicationType } from '../types/CommunicationType';
 import { ContentType } from '../types/ContentType';
+import { EventType } from '../types/EventType';
 import { ItemType } from '../types/ItemType';
 import { PersonType } from '../types/PersonType';
 import { SearchConnection } from '../types/SearchConnection';
@@ -29,6 +36,7 @@ export class SearchResolver {
   constructor(
     private readonly communicationService: CommunicationService,
     private readonly contentService: ContentService,
+    private readonly eventService: EventService,
     private readonly itemService: ItemService,
     private readonly personService: PersonService,
     private readonly searchService: SearchService,
@@ -114,13 +122,15 @@ export class SearchResolver {
 
     const communicationIds = groupedByType.get('communication') || [];
     const contentIds = groupedByType.get('content') || [];
+    const eventIds = groupedByType.get('event') || [];
     const itemIds = groupedByType.get('item') || [];
     const peopleIds = groupedByType.get('person') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [communications, content, items, people, threads] = await Promise.all([
+    const [communications, content, events, items, people, threads] = await Promise.all([
       this.communicationService.findByIds(context, communicationIds),
       this.contentService.findByIds(context, contentIds),
+      this.eventService.findByIds(context, eventIds),
       this.itemService.findByIds(context, itemIds),
       this.personService.findByIds(context, peopleIds),
       this.threadService.findByIds(context, threadIds),
@@ -133,6 +143,8 @@ export class SearchResolver {
     const contentResults = content
       .filter((entity) => entity != null)
       .map((entity) => ContentType.toType(entity));
+
+    const eventResults = events.filter((entity) => entity != null).map((entity) => EventType.toType(entity));
 
     const itemResults = items.filter((entity) => entity != null).map((entity) => ItemType.toType(entity));
 
@@ -152,6 +164,7 @@ export class SearchResolver {
     contentResults.forEach((content) =>
       resultMap.set(makeCompositeKey('content', content.__source.id), content),
     );
+    eventResults.forEach((event) => resultMap.set(makeCompositeKey('event', event.__source.id), event));
     itemResults.forEach((item) => resultMap.set(makeCompositeKey('item', item.__source.id), item));
     personResults.forEach((person) => resultMap.set(makeCompositeKey('person', person.__source.id), person));
     threadResults.forEach((thread) => resultMap.set(makeCompositeKey('thread', thread.__source.id), thread));
