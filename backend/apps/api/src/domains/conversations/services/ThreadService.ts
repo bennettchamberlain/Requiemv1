@@ -7,7 +7,7 @@ import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/c
 import { EventService } from '@ci/domains/events';
 
 import { ThreadEntity, type Thread } from '../entities/ThreadEntity';
-import { ThreadCreatedEvent, ThreadUpdatedEvent, ThreadDeletedEvent } from '../events';
+import { ThreadCreatedEvent, ThreadUpdatedEvent, ThreadRemovedEvent } from '../events';
 import type { CreateThreadDto, UpdateThreadDto } from '../types';
 
 import { MessageService } from './MessageService';
@@ -49,6 +49,7 @@ export class ThreadService {
         }),
         isArchived: false,
       },
+      relations: ['user'],
     });
 
     return entities.map((entity) => ThreadEntity.toEgressType(entity));
@@ -65,6 +66,7 @@ export class ThreadService {
         }),
         isArchived: false,
       },
+      relations: ['user'],
     });
 
     const map = new Map(entities.map((entity) => [entity.id, ThreadEntity.toEgressType(entity)]));
@@ -83,6 +85,7 @@ export class ThreadService {
         }),
         isArchived: false,
       },
+      relations: ['user'],
     });
 
     if (result == null) {
@@ -145,7 +148,7 @@ export class ThreadService {
       return false;
     }
 
-    await this.eventService.send(ThreadDeletedEvent, {
+    await this.eventService.send(ThreadRemovedEvent, {
       threadId: id,
     });
 
@@ -172,7 +175,7 @@ export class ThreadService {
       return false;
     }
 
-    await this.eventService.send(ThreadDeletedEvent, {
+    await this.eventService.send(ThreadRemovedEvent, {
       threadId: id,
     });
 

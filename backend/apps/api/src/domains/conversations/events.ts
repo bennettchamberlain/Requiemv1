@@ -2,7 +2,7 @@ import { defineEvent } from '@ci/domains/events';
 
 export const ThreadCreatedEvent = 'thread.created';
 export const ThreadUpdatedEvent = 'thread.updated';
-export const ThreadDeletedEvent = 'thread.deleted';
+export const ThreadRemovedEvent = 'thread.deleted';
 
 export type ThreadCreatedPayload = {
   threadId: string;
@@ -12,7 +12,7 @@ export type ThreadUpdatedPayload = {
   threadId: string;
 };
 
-export type ThreadDeletedPayload = {
+export type ThreadRemovedPayload = {
   threadId: string;
 };
 
@@ -34,7 +34,7 @@ export type MessageDeletedPayload = {
 
 defineEvent<ThreadCreatedPayload>(ThreadCreatedEvent);
 defineEvent<ThreadUpdatedPayload>(ThreadUpdatedEvent);
-defineEvent<ThreadDeletedPayload>(ThreadDeletedEvent);
+defineEvent<ThreadRemovedPayload>(ThreadRemovedEvent);
 
 defineEvent<MessageCreatedPayload>(MessageCreatedEvent);
 defineEvent<MessageUpdatedPayload>(MessageUpdatedEvent);
@@ -44,7 +44,7 @@ declare module '@ci/domains/events/registry' {
   interface EventRegistry {
     [ThreadCreatedEvent]: ThreadCreatedPayload;
     [ThreadUpdatedEvent]: ThreadUpdatedPayload;
-    [ThreadDeletedEvent]: ThreadDeletedPayload;
+    [ThreadRemovedEvent]: ThreadRemovedPayload;
     [MessageCreatedEvent]: MessageCreatedPayload;
     [MessageUpdatedEvent]: MessageUpdatedPayload;
     [MessageDeletedEvent]: MessageDeletedPayload;
