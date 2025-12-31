@@ -101,6 +101,7 @@ export class FileService implements OnModuleInit {
       order: {
         createdAt: 'DESC',
       },
+      relations: ['user'],
     });
 
     return this.signFiles(result);
@@ -116,6 +117,7 @@ export class FileService implements OnModuleInit {
           },
         }),
       },
+      relations: ['user'],
     });
 
     if (result == null) {
@@ -139,6 +141,7 @@ export class FileService implements OnModuleInit {
           },
         }),
       },
+      relations: ['user'],
     });
 
     const signedFiles = await this.signFiles(entities);

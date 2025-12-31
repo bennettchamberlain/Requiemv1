@@ -46,7 +46,7 @@ export type FileUpdatedPayload = {
  */
 export type FileDeletedPayload = {
   /** The identifier of the newly created user */
-  id: string;
+  fileId: string;
 };
 
 defineEvent<FileCreatedPayload>(FileCreatedEvent);

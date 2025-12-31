@@ -9,6 +9,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmbeddingModule } from '@ci/common/embeddings';
+import { FilesModule } from '@ci/domains/files';
 import { MemoryModule } from '@ci/domains/memory';
 
 import { EmbeddingEntity } from './entities/EmbeddingEntity';
@@ -16,6 +17,7 @@ import { VectorEntity } from './entities/VectorEntity';
 import { CommunicationSearchIndexListener } from './listeners/CommunicationSearchIndexListener';
 import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListener';
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
+import { FileSearchIndexListener } from './listeners/FileSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { PlaceSearchIndexListener } from './listeners/PlaceSearchIndexListener';
@@ -26,12 +28,18 @@ import { VectorService } from './services/VectorService';
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([EmbeddingEntity, VectorEntity]), EmbeddingModule, MemoryModule],
+  imports: [
+    TypeOrmModule.forFeature([EmbeddingEntity, VectorEntity]),
+    EmbeddingModule,
+    FilesModule,
+    MemoryModule,
+  ],
   providers: [
     CommunicationSearchIndexListener,
     ContentSearchIndexListener,
     EmbeddingService,
     EventSearchIndexListener,
+    FileSearchIndexListener,
     ItemSearchIndexListener,
     PersonSearchIndexListener,
     PlaceSearchIndexListener,
