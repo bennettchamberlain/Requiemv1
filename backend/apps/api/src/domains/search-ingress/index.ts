@@ -14,6 +14,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { VectorEntity } from './entities/VectorEntity';
 import { CommunicationSearchIndexListener } from './listeners/CommunicationSearchIndexListener';
+import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
 import { VectorService } from './services/VectorService';
@@ -23,7 +24,13 @@ import { VectorService } from './services/VectorService';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([EmbeddingEntity, VectorEntity]), EmbeddingModule, MemoryModule],
-  providers: [CommunicationSearchIndexListener, EmbeddingService, PersonSearchIndexListener, VectorService],
+  providers: [
+    CommunicationSearchIndexListener,
+    ContentSearchIndexListener,
+    EmbeddingService,
+    PersonSearchIndexListener,
+    VectorService,
+  ],
 })
 export class SearchIngressModule {}
 

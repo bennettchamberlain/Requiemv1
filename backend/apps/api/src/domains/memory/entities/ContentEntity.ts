@@ -44,7 +44,7 @@ export class ContentEntity {
   @Column({ type: 'jsonb', nullable: true, name: 'source_data' })
   sourceData!: Record<string, unknown> | null;
 
-  @ManyToOne(() => UserEntity, { nullable: true })
+  @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 

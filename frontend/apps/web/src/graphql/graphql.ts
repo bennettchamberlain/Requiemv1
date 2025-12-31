@@ -819,7 +819,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = CommunicationType | PersonType | ThreadType;
+export type SearchResultType = CommunicationType | ContentType | PersonType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';

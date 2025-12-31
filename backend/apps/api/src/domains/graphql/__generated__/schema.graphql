@@ -471,7 +471,7 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = CommunicationType | PersonType | ThreadType
+union SearchResultType = CommunicationType | ContentType | PersonType | ThreadType
 
 type TagConnection implements Connection {
   edges: [TagEdge!]!
