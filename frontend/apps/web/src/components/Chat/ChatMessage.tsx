@@ -7,15 +7,16 @@ import { parseChatContent } from './parser';
 interface Props {
   role: string;
   content: string;
+  createdAt?: string;
 }
 
-export function ChatMessage({ role, content }: Props) {
+export function ChatMessage({ role, content, createdAt }: Props) {
   if (role === 'tool') {
     return null;
   }
 
   if (role === 'user') {
-    return <UserMessage content={content} />;
+    return <UserMessage content={content} createdAt={createdAt} />;
   }
 
   const segments = parseChatContent(content);

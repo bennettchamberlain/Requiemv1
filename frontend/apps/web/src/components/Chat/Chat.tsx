@@ -34,6 +34,7 @@ type ChatInputProps = ComponentProps<typeof ChatInput>;
 interface Message {
   role: string;
   content: string;
+  createdAt?: string;
 }
 
 interface Props extends ChatInputProps {
@@ -265,7 +266,7 @@ export function Chat({
 
       if (success === true) {
         try {
-          const block = <UserMessage key={uuid7()} content={data.message} />;
+          const block = <UserMessage key={uuid7()} content={data.message} createdAt={new Date().toJSON()} />;
 
           flushStream(block);
           maybeAutoScroll(true);
