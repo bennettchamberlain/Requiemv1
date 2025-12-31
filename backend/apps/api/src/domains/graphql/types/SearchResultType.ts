@@ -7,11 +7,13 @@ import { GlobalUID } from './GlobalUID';
 import { ItemType } from './ItemType';
 import type { Node } from './Node';
 import { PersonType } from './PersonType';
+import { PlaceType } from './PlaceType';
 import { ThreadType } from './ThreadType';
 
 export const SearchResultType = createUnionType({
   name: 'SearchResultType',
-  types: () => [CommunicationType, ContentType, EventType, ItemType, PersonType, ThreadType] as const,
+  types: () =>
+    [CommunicationType, ContentType, EventType, ItemType, PersonType, PlaceType, ThreadType] as const,
   resolveType(instance): typeof Node {
     const { type } = GlobalUID.decode(instance.id);
 
@@ -26,6 +28,8 @@ export const SearchResultType = createUnionType({
         return ItemType;
       case 'person':
         return PersonType;
+      case 'place':
+        return PlaceType;
       case 'thread':
         return ThreadType;
       default:

@@ -123,6 +123,7 @@ export class PlaceEntity {
       userId: entity.user?.id || null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
     };
   }
 }

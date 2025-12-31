@@ -555,7 +555,7 @@ export type PlaceType = Node & {
   geolocation?: Maybe<Scalars['JSON']['output']>;
   id: Scalars['ID']['output'];
   locationBoundary?: Maybe<Scalars['JSON']['output']>;
-  name: Scalars['String']['output'];
+  name?: Maybe<Scalars['String']['output']>;
   properties: Scalars['JSON']['output'];
   tracked?: Maybe<Scalars['Boolean']['output']>;
   type?: Maybe<Scalars['String']['output']>;
@@ -819,7 +819,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = CommunicationType | ContentType | EventType | ItemType | PersonType | ThreadType;
+export type SearchResultType = CommunicationType | ContentType | EventType | ItemType | PersonType | PlaceType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';

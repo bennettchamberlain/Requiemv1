@@ -18,6 +18,7 @@ import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListen
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
+import { PlaceSearchIndexListener } from './listeners/PlaceSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
 import { VectorService } from './services/VectorService';
 
@@ -33,6 +34,7 @@ import { VectorService } from './services/VectorService';
     EventSearchIndexListener,
     ItemSearchIndexListener,
     PersonSearchIndexListener,
+    PlaceSearchIndexListener,
     VectorService,
   ],
 })
