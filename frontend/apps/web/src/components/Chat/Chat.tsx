@@ -364,6 +364,16 @@ export function Chat({
     maybeAutoScroll();
   }, [accumulatedMessages]);
 
+  useEffect(() => {
+    const input = autoFocusRef.current;
+
+    if (input && autoFocus) {
+      requestAnimationFrame(() => {
+        input.focus();
+      });
+    }
+  }, [autoFocus, messages]);
+
   const renderedMessages = useMemo(
     () => messages?.map((message, i) => <ChatMessage key={i} {...message} />),
     [messages],
