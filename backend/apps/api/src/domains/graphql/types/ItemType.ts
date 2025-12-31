@@ -30,8 +30,8 @@ export class ItemType implements Node {
   @Field(() => ID)
   id!: string;
 
-  @Field(() => String)
-  name!: string;
+  @Field(() => String, { nullable: true })
+  name!: string | null;
 
   @Field(() => String, { nullable: true })
   description!: string | null;
@@ -60,8 +60,8 @@ export class ItemType implements Node {
   @Field(() => ItemCondition, { nullable: true })
   condition!: string | null;
 
-  @Field(() => GraphQLJSONObject)
-  metadata!: Record<string, unknown>;
+  @Field(() => GraphQLJSONObject, { nullable: true })
+  metadata?: Record<string, unknown> | null;
 
   @Field(() => FileType, { nullable: true, complexity: 5 })
   file?: FileType | null;

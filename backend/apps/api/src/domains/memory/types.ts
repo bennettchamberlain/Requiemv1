@@ -322,6 +322,21 @@ export interface CreateItemDto {
   metadata?: Record<string, unknown>;
 }
 
+export interface UpdateItemDto {
+  id: string;
+  name?: string;
+  description?: string;
+  category?: string;
+  subcategory?: string;
+  brand?: string;
+  model?: string;
+  currentValue?: number;
+  currency?: string;
+  condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
+  images?: string[];
+  metadata?: Record<string, unknown> | undefined;
+}
+
 export interface CreatePersonDto {
   id?: string;
   name?: string;

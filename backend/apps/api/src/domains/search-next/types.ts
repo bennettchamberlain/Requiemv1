@@ -1,4 +1,4 @@
-export type IndexableEntity = 'communication' | 'content' | 'person';
+export type IndexableEntity = 'communication' | 'content' | 'item' | 'person';
 
 export type TaggableEntity = 'action' | 'communication' | 'person' | 'thread';
 

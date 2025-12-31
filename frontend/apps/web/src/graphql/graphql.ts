@@ -337,9 +337,9 @@ export type ItemType = Node & {
   description?: Maybe<Scalars['String']['output']>;
   file?: Maybe<FileType>;
   id: Scalars['ID']['output'];
-  metadata: Scalars['JSON']['output'];
+  metadata?: Maybe<Scalars['JSON']['output']>;
   model?: Maybe<Scalars['String']['output']>;
-  name: Scalars['String']['output'];
+  name?: Maybe<Scalars['String']['output']>;
   subcategory?: Maybe<Scalars['String']['output']>;
   updatedAt: Scalars['DateTime']['output'];
 };
@@ -819,7 +819,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = CommunicationType | ContentType | PersonType | ThreadType;
+export type SearchResultType = CommunicationType | ContentType | ItemType | PersonType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';
@@ -963,7 +963,7 @@ export type GetActionsQuery = { __typename?: 'Query', actions: { __typename?: 'A
 export type GetInventoryItemsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetInventoryItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', edges: Array<{ __typename?: 'ItemEdge', node: { __typename?: 'ItemType', id: string, name: string, category?: string | null, description?: string | null, brand?: string | null, model?: string | null, currentValue?: number | null, file?: { __typename?: 'FileType', url: string } | null } }> } };
+export type GetInventoryItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', edges: Array<{ __typename?: 'ItemEdge', node: { __typename?: 'ItemType', id: string, name?: string | null, category?: string | null, description?: string | null, brand?: string | null, model?: string | null, currentValue?: number | null, file?: { __typename?: 'FileType', url: string } | null } }> } };
 
 
 export const GetActionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetActions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"actions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"text"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"thread"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetActionsQuery, GetActionsQueryVariables>;

@@ -217,6 +217,60 @@ declare module '@ci/domains/events/registry' {
 }
 
 /**
+ * Event emitted when creating a new item.
+ *
+ * @see {@link ItemService.create} - The method that emits this item
+ */
+export const ItemCreatedEvent = 'item.created';
+export const ItemUpdatedEvent = 'item.updated';
+export const ItemRemovedEvent = 'item.deleted';
+
+/**
+ * Item payload of the event {@link ItemCreatedEvent}.
+ *
+ * @see {@link ItemCreatedEvent} - The item this payload is associated with
+ * @see {@link ItemService.create} - The method that emits this item payload
+ */
+export type ItemCreatedPayload = {
+  /** The identifier of the newly created item */
+  itemId: string;
+};
+
+/**
+ * Item payload of the event {@link ItemUpdatedEvent}.
+ *
+ * @see {@link ItemUpdatedEvent} - The item this payload is associated with
+ * @see {@link ItemService.update} - The method that emits this item payload
+ */
+export type ItemUpdatedPayload = {
+  /** The identifier of the newly created item */
+  itemId: string;
+};
+
+/**
+ * Item payload of the event {@link ItemRemovedEvent}.
+ *
+ * @see {@link ItemRemovedEvent} - The item this payload is associated with
+ * @see {@link ItemService.remove} - The method that emits this item payload
+ */
+export type ItemDeletedPayload = {
+  /** The identifier of the newly created item */
+  itemId: string;
+};
+
+defineEvent<ItemCreatedPayload>(ItemCreatedEvent);
+defineEvent<ItemUpdatedPayload>(ItemUpdatedEvent);
+defineEvent<ItemDeletedPayload>(ItemRemovedEvent);
+
+declare module '@ci/domains/events/registry' {
+  interface EventRegistry {
+    [ItemCreatedEvent]: ItemCreatedPayload;
+    [ItemUpdatedEvent]: ItemUpdatedPayload;
+    [ItemRemovedEvent]: ItemDeletedPayload;
+  }
+}
+
+/**
  * Event emitted when creating a new concept.
  */
 export const ConceptCreatedEvent = 'concept.created';

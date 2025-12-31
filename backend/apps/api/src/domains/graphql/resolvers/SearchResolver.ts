@@ -4,7 +4,7 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { ThreadService } from '@ci/domains/conversations';
-import { CommunicationService, ContentService, PersonService } from '@ci/domains/memory';
+import { CommunicationService, ContentService, ItemService, PersonService } from '@ci/domains/memory';
 import {
   SearchService,
   TagService,
@@ -15,6 +15,7 @@ import {
 
 import { CommunicationType } from '../types/CommunicationType';
 import { ContentType } from '../types/ContentType';
+import { ItemType } from '../types/ItemType';
 import { PersonType } from '../types/PersonType';
 import { SearchConnection } from '../types/SearchConnection';
 import { SearchInput } from '../types/SearchInput';
@@ -28,6 +29,7 @@ export class SearchResolver {
   constructor(
     private readonly communicationService: CommunicationService,
     private readonly contentService: ContentService,
+    private readonly itemService: ItemService,
     private readonly personService: PersonService,
     private readonly searchService: SearchService,
     private readonly tagService: TagService,
@@ -112,12 +114,14 @@ export class SearchResolver {
 
     const communicationIds = groupedByType.get('communication') || [];
     const contentIds = groupedByType.get('content') || [];
+    const itemIds = groupedByType.get('item') || [];
     const peopleIds = groupedByType.get('person') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [communications, content, people, threads] = await Promise.all([
+    const [communications, content, items, people, threads] = await Promise.all([
       this.communicationService.findByIds(context, communicationIds),
       this.contentService.findByIds(context, contentIds),
+      this.itemService.findByIds(context, itemIds),
       this.personService.findByIds(context, peopleIds),
       this.threadService.findByIds(context, threadIds),
     ]);
@@ -129,6 +133,8 @@ export class SearchResolver {
     const contentResults = content
       .filter((entity) => entity != null)
       .map((entity) => ContentType.toType(entity));
+
+    const itemResults = items.filter((entity) => entity != null).map((entity) => ItemType.toType(entity));
 
     const personResults = people
       .filter((entity) => entity != null)
@@ -146,6 +152,7 @@ export class SearchResolver {
     contentResults.forEach((content) =>
       resultMap.set(makeCompositeKey('content', content.__source.id), content),
     );
+    itemResults.forEach((item) => resultMap.set(makeCompositeKey('item', item.__source.id), item));
     personResults.forEach((person) => resultMap.set(makeCompositeKey('person', person.__source.id), person));
     threadResults.forEach((thread) => resultMap.set(makeCompositeKey('thread', thread.__source.id), thread));
 
