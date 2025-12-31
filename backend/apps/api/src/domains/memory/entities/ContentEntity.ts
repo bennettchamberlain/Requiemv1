@@ -4,13 +4,10 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  ManyToMany,
   ManyToOne,
   JoinColumn,
-  JoinTable,
 } from 'typeorm';
 
-import { TagEntity } from '@ci/domains/search';
 import { UserEntity, type User } from '@ci/domains/user';
 
 import { EventEntity, Event } from './EventEntity';
@@ -52,14 +49,6 @@ export class ContentEntity {
   @JoinColumn({ name: 'event_id' })
   event?: EventEntity;
 
-  @ManyToMany(() => TagEntity, { nullable: true })
-  @JoinTable({
-    name: 'content_tag',
-    joinColumn: { name: 'content_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'tag_id', referencedColumnName: 'id' },
-  })
-  tags?: TagEntity[];
-
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -81,7 +70,6 @@ export class ContentEntity {
       eventId: entity.event?.id || null,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
       event: entity.event ? EventEntity.toEgressType(entity.event) : undefined,
-      tags: entity.tags?.map((tag) => tag.id) || [],
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
