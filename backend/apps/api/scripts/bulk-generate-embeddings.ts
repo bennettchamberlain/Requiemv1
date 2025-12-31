@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 
 import config from '@ci/configuration';
 import { ConnectionEntity, ProviderEntity } from '@ci/domains/connections';
-import { AnswerEntity, QuestionEntity } from '@ci/domains/intelligence';
+import { QuestionEntity } from '@ci/domains/intelligence';
 import { EventEntity } from '@ci/domains/memory';
 import { EmbeddingService, TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
@@ -20,15 +20,7 @@ const logger = new Logger(path.basename(__filename));
     database: config.db.database,
     username: config.db.username,
     password: config.db.password,
-    entities: [
-      AnswerEntity,
-      ConnectionEntity,
-      EventEntity,
-      ProviderEntity,
-      QuestionEntity,
-      TagEntity,
-      UserEntity,
-    ],
+    entities: [ConnectionEntity, EventEntity, ProviderEntity, QuestionEntity, TagEntity, UserEntity],
     synchronize: false,
     logging: ['error', 'schema'],
   });
@@ -44,9 +36,6 @@ const logger = new Logger(path.basename(__filename));
 
     const questionsCount = await embeddingService.embedAllQuestions();
     logger.log(`✅ Generated embeddings for ${questionsCount} questions`);
-
-    const answersCount = await embeddingService.embedAllAnswers();
-    logger.log(`✅ Generated embeddings for ${answersCount} answers`);
 
     const entitiesCount = await embeddingService.embedAllEntities();
     logger.log(`✅ Generated embeddings for ${entitiesCount} entities`);
@@ -68,7 +57,6 @@ const logger = new Logger(path.basename(__filename));
 
     const totalCount =
       questionsCount +
-      answersCount +
       entitiesCount +
       inventoryCount +
       factsCount +
