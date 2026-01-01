@@ -1,0 +1,1 @@
+export { GalleryViewNext } from './GalleryViewNext';

@@ -9,12 +9,11 @@ import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
-import { GalleryView } from './GalleryView';
+import { GalleryViewNext } from './GalleryViewNext';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
 import { useMemoryService } from './useMemoryService';
-import { useMemoryServiceNext } from './useMemoryServiceNext';
 
 export default function DesktopMemoryPage() {
   const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
@@ -22,12 +21,6 @@ export default function DesktopMemoryPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('map');
-
-  const [localQuery, setLocalQuery] = useState(searchParams.get('search') || '');
-
-  const { data: resultsNext, loading: loadingNext, error: errorNext } = useMemoryServiceNext(localQuery);
-
-  console.log('MemoryPage Next Results:', { resultsNext, loadingNext, errorNext });
 
   useEffect(() => {
     setDetailsOpen(activeMemory != null);
@@ -42,7 +35,6 @@ export default function DesktopMemoryPage() {
   const handleSearch = useCallback(
     (data: { query: string; entityFilters?: string[] }) => {
       setSearchQuery(data.query);
-      setLocalQuery(data.query);
 
       const currentParams = new URLSearchParams(searchParams);
 
@@ -132,7 +124,7 @@ export default function DesktopMemoryPage() {
 
         {activeTab === 'list' && <ListView />}
         {activeTab === 'map' && <DesktopMapView />}
-        {activeTab === 'gallery' && <GalleryView />}
+        {activeTab === 'gallery' && <GalleryViewNext />}
         {activeTab === 'graph' && <GraphView variant="desktop" />}
       </PageContent>
 
