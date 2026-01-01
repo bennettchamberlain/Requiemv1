@@ -247,8 +247,8 @@ export class QuestionService {
 
     const rows = (await this.dataSource.query(`
       SELECT
-        questions.question_id as id,
-        COALESCE(questions.is_private_to, answers.user_id) as user_id
+        q.question_id as id,
+        COALESCE(q.is_private_to, a.user_id) as user_id
       FROM
         ci.questions as q
       LEFT JOIN ci.answers as a ON a.question_id = q.question_id
