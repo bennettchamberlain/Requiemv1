@@ -31,6 +31,7 @@ type Documents = {
     "\n  fragment GalleryPersonCardData on PersonType {\n    id\n    name\n    description\n  }\n": typeof types.GalleryPersonCardDataFragmentDoc,
     "\n  fragment GalleryPlaceCardData on PlaceType {\n    id\n    name\n    description\n  }\n": typeof types.GalleryPlaceCardDataFragmentDoc,
     "\n  fragment GalleryThreadCardData on ThreadType {\n    id\n    name\n    description\n  }\n": typeof types.GalleryThreadCardDataFragmentDoc,
+    "\n  query Search($query: String!) {\n    search(input: { query: $query }) {\n      edges {\n        node {\n          __typename\n          ...GalleryAnswerCardData\n          ...GalleryBrowserActivityCardData\n          ...GalleryCommunicationCardData\n          ...GalleryContentCardData\n          ...GalleryEventCardData\n          ...GalleryFileCardData\n          ...GalleryItemCardData\n          ...GalleryPersonCardData\n          ...GalleryPlaceCardData\n          ...GalleryThreadCardData\n        }\n      }\n    }\n  }\n": typeof types.SearchDocument,
 };
 const documents: Documents = {
     "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            label\n          }\n        }\n      }\n    }\n  }\n": types.GetActionsDocument,
@@ -46,6 +47,7 @@ const documents: Documents = {
     "\n  fragment GalleryPersonCardData on PersonType {\n    id\n    name\n    description\n  }\n": types.GalleryPersonCardDataFragmentDoc,
     "\n  fragment GalleryPlaceCardData on PlaceType {\n    id\n    name\n    description\n  }\n": types.GalleryPlaceCardDataFragmentDoc,
     "\n  fragment GalleryThreadCardData on ThreadType {\n    id\n    name\n    description\n  }\n": types.GalleryThreadCardDataFragmentDoc,
+    "\n  query Search($query: String!) {\n    search(input: { query: $query }) {\n      edges {\n        node {\n          __typename\n          ...GalleryAnswerCardData\n          ...GalleryBrowserActivityCardData\n          ...GalleryCommunicationCardData\n          ...GalleryContentCardData\n          ...GalleryEventCardData\n          ...GalleryFileCardData\n          ...GalleryItemCardData\n          ...GalleryPersonCardData\n          ...GalleryPlaceCardData\n          ...GalleryThreadCardData\n        }\n      }\n    }\n  }\n": types.SearchDocument,
 };
 
 /**
@@ -114,6 +116,10 @@ export function gql(source: "\n  fragment GalleryPlaceCardData on PlaceType {\n 
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  fragment GalleryThreadCardData on ThreadType {\n    id\n    name\n    description\n  }\n"): (typeof documents)["\n  fragment GalleryThreadCardData on ThreadType {\n    id\n    name\n    description\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query Search($query: String!) {\n    search(input: { query: $query }) {\n      edges {\n        node {\n          __typename\n          ...GalleryAnswerCardData\n          ...GalleryBrowserActivityCardData\n          ...GalleryCommunicationCardData\n          ...GalleryContentCardData\n          ...GalleryEventCardData\n          ...GalleryFileCardData\n          ...GalleryItemCardData\n          ...GalleryPersonCardData\n          ...GalleryPlaceCardData\n          ...GalleryThreadCardData\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query Search($query: String!) {\n    search(input: { query: $query }) {\n      edges {\n        node {\n          __typename\n          ...GalleryAnswerCardData\n          ...GalleryBrowserActivityCardData\n          ...GalleryCommunicationCardData\n          ...GalleryContentCardData\n          ...GalleryEventCardData\n          ...GalleryFileCardData\n          ...GalleryItemCardData\n          ...GalleryPersonCardData\n          ...GalleryPlaceCardData\n          ...GalleryThreadCardData\n        }\n      }\n    }\n  }\n"];
 
 export function gql(source: string) {
   return (documents as any)[source] ?? {};
