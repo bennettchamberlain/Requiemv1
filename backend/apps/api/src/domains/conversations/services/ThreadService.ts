@@ -49,6 +49,9 @@ export class ThreadService {
         }),
         isArchived: false,
       },
+      order: {
+        updatedAt: 'DESC',
+      },
       relations: ['user'],
     });
 
