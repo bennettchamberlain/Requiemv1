@@ -22,7 +22,10 @@ import { SearchGrid } from './SearchGrid';
 
 export function GalleryViewNext() {
   const [searchParams] = useSearchParams();
-  const { data } = useMemoryServiceNext(searchParams.get('search') || '');
+  const { data } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
 
   return (
     <>

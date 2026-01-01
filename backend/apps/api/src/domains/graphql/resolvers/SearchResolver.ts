@@ -81,7 +81,11 @@ export class SearchResolver {
 
       results.push(...tagResults);
     } else if (input.query != null) {
-      const queryResults = await this.searchByQuery(serviceContext, input.query);
+      const queryResults = await this.searchByQuery(serviceContext, {
+        query: input.query,
+        includeTypes: input.includeTypes,
+        excludeTypes: input.excludeTypes,
+      });
 
       results.push(...queryResults);
     }
@@ -102,11 +106,29 @@ export class SearchResolver {
     };
   }
 
-  private async searchByQuery(context: UserServiceContext, query: string): Promise<SearchResult[]> {
-    const queryResults = await this.searchService.search(context, {
+  private async searchByQuery(
+    context: UserServiceContext,
+    {
+      query,
+      includeTypes,
+      excludeTypes,
+    }: {
+      query: string;
+      includeTypes?: IndexableEntity[];
+      excludeTypes?: IndexableEntity[];
+    },
+  ): Promise<SearchResult[]> {
+    const options = {
       query,
       maxResults: 25,
-    });
+    };
+    if (excludeTypes && excludeTypes.length > 0) {
+      Object.assign(options, { excludeTypes });
+    } else if (includeTypes && includeTypes.length > 0) {
+      Object.assign(options, { includeTypes });
+    }
+
+    const queryResults = await this.searchService.search(context, options);
 
     return this.resolveEntities(context, queryResults);
   }

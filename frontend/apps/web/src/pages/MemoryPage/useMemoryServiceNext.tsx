@@ -5,8 +5,8 @@ import { useQuery } from '@apollo/client';
 import { gql } from '@/graphql';
 
 const SEARCH_QUERY = gql(`
-  query Search($query: String!) {
-    search(input: { query: $query }) {
+  query Search($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {
+    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {
       edges {
         node {
           __typename
@@ -26,10 +26,20 @@ const SEARCH_QUERY = gql(`
   }
 `);
 
-export function useMemoryServiceNext(searchQuery: string) {
+export function useMemoryServiceNext({
+  searchQuery,
+  includeTypes,
+  excludeTypes,
+}: {
+  searchQuery: string;
+  includeTypes?: string[];
+  excludeTypes?: string[];
+}) {
   const { data, loading, error } = useQuery(SEARCH_QUERY, {
     variables: {
       query: searchQuery,
+      includeTypes: includeTypes?.map((type) => type.toLowerCase()) || [],
+      excludeTypes: excludeTypes?.map((type) => type.toLowerCase()) || [],
     },
   });
 
