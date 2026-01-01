@@ -15,8 +15,6 @@ export function UserMessage({ content, createdAt }: Props) {
 
   const maxWidth = useMemo(() => (isMobile ? 'max-w-[60%]' : 'max-w-[40%]'), [isMobile]);
 
-  console.log('UserMessage createdAt:', createdAt);
-
   return (
     <div
       className={cn(
