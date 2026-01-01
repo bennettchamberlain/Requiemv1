@@ -1,4 +1,5 @@
 export interface CreateMessageDto {
+  id?: string;
   threadId: string;
   role: string;
   model: string;
@@ -16,6 +17,7 @@ export interface UpdateMessageDto {
 }
 
 export interface CreateThreadDto {
+  id?: string;
   name?: string;
   model?: string;
   description?: string;

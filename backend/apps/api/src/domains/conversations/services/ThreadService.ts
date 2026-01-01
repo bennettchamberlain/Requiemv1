@@ -22,9 +22,11 @@ export class ThreadService {
   ) {}
 
   async create(context: UserServiceContext, data: CreateThreadDto): Promise<Thread> {
+    const id = data.id ?? uuid7();
+
     const instance = this.threadRepository.create({
       ...data,
-      id: uuid7(),
+      id,
       user: {
         id: context.userId,
       },

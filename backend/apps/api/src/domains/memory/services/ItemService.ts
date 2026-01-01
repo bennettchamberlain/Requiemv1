@@ -23,8 +23,10 @@ export class ItemService {
   }
 
   async create(context: UserServiceContext, data: CreateItemDto): Promise<Item> {
+    const id = data.id ?? uuid7();
+
     const entity = this.itemRepository.create({
-      id: uuid7(),
+      id,
       userId: context.userId,
       name: data.name,
       description: data.description ?? null,

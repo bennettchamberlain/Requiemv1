@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export interface CreateActionDto {
+  id?: string;
   title: string;
   text: string;
   imageUrl?: string;
@@ -47,7 +48,11 @@ export interface UpdateAnswerDto {
 export interface CreateQuestionDto {
   id?: string;
   text: string;
-  subcategory?: string;
+  category?: string;
+  isSeedQuestion?: boolean;
+  isActive?: boolean;
+  createdByLlm?: boolean;
+  frequencyRecommendation?: string;
   isPrivateTo?: string | null;
 }
 

@@ -24,23 +24,30 @@ export class QuestionService {
   ) {}
 
   async create(context: ServiceContext, data: CreateQuestionDto): Promise<Question> {
+    const id = data.id ?? uuidv7();
+
     const isPrivateTo =
       data.isPrivateTo !== undefined
         ? data.isPrivateTo
         : context.userId && context.userId !== SYSTEM_USER
           ? context.userId
           : null;
-    const instance = this.questionRepository.create({
-      id: data.id ?? uuidv7(),
+
+    const instance = await this.questionRepository.create({
+      id,
       text: data.text,
-      category: data.subcategory,
+      category: data.category,
+      isSeedQuestion: data.isSeedQuestion ?? false,
+      createdByLlm: data.createdByLlm ?? false,
+      frequencyRecommendation: data.frequencyRecommendation,
+      isActive: data.isActive ?? true,
       isPrivateTo: isPrivateTo,
     });
 
     const entity = await this.questionRepository.save(instance);
 
     await this.eventService.send(QuestionCreatedEvent, {
-      questionId: entity.id,
+      questionId: id,
     });
 
     return QuestionEntity.toEgressType(entity);

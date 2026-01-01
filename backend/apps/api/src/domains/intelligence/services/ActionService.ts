@@ -16,8 +16,10 @@ export class ActionService {
   ) {}
 
   async create(context: UserServiceContext, data: CreateActionDto): Promise<Action> {
+    const id = data.id ?? uuidv7();
+
     const instance = await this.actionRepository.create({
-      id: uuidv7(),
+      id,
       title: data.title,
       text: data.text,
       imageUrl: data.imageUrl,

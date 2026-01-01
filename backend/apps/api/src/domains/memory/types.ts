@@ -309,6 +309,7 @@ export interface CreateFileDto {
 }
 
 export interface CreateItemDto {
+  id?: string;
   name: string;
   description?: string;
   category?: string;

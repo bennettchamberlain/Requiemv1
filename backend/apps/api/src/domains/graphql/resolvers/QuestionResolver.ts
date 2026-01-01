@@ -28,7 +28,7 @@ export class QuestionResolver {
 
     const entity = await this.questionService.create(serviceContext, {
       text: input.text,
-      subcategory: input.category,
+      category: input.category,
     });
 
     return QuestionType.toType(entity);

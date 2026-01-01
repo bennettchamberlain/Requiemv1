@@ -25,11 +25,12 @@ export class UserService {
       throw new Error('Unauthorized');
     }
 
+    const id = data.id ?? uuidv7();
     const hashedPassword = await bcrypt.hash(data.password, config.auth.local.saltRounds);
 
     const instance = this.userRepository.create({
       ...data,
-      id: uuidv7(),
+      id,
       password: hashedPassword,
     });
 
