@@ -202,6 +202,7 @@ export class GmailPromotionService {
         connectionId,
         'email',
         'RECEIVED_EMAIL_FROM',
+        messageDetails.date ? new Date(messageDetails.date) : undefined,
       );
 
       // Create person entities for recipients (with EMAILED relationship)
@@ -211,6 +212,7 @@ export class GmailPromotionService {
         connectionId,
         'email',
         'EMAILED',
+        messageDetails.date ? new Date(messageDetails.date) : undefined,
       );
 
       // Create person entities for recipients (with EMAILED relationship)
@@ -220,6 +222,7 @@ export class GmailPromotionService {
         connectionId,
         'email',
         'EMAILED',
+        messageDetails.date ? new Date(messageDetails.date) : undefined,
       );
 
       // Create person entities for recipients (with EMAILED relationship)
@@ -229,6 +232,7 @@ export class GmailPromotionService {
         connectionId,
         'email',
         'EMAILED',
+        messageDetails.date ? new Date(messageDetails.date) : undefined,
       );
 
       let toEntityIdsCombined = toEntityIds.length > 0 ? toEntityIds : [];

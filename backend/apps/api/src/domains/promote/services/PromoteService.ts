@@ -13,7 +13,7 @@ import { LoggerService } from '@ci/common/logging';
 import { ConnectionEntity } from '@ci/domains/connections';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { Events, EventService } from '@ci/domains/events';
-import { NodeService } from '@ci/domains/graph';
+import { NodeService, RelationshipService } from '@ci/domains/graph';
 import { Person, PersonService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
 
@@ -37,6 +37,7 @@ export class PromoteService {
     private readonly personService: PersonService,
     private readonly userService: UserService,
     private readonly nodeService: NodeService,
+    private readonly relationshipService: RelationshipService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PromoteService.name);
@@ -399,8 +400,11 @@ export class PromoteService {
     connectionId: string,
     source: 'calendar' | 'email' | 'drive',
     relationshipType: 'MET_WITH' | 'EMAILED' | 'RECEIVED_EMAIL_FROM' | 'ORGANIZED_EVENT_WITH' | 'EDITED_WITH',
+    startDate?: Date,
+    endDate?: Date,
   ): Promise<string[]> {
     const context = toServiceContext({ userId });
+    const { userNode } = await this.getUserAndEntity(context, context.userId);
 
     const { entities } = await this.upsertPeopleFromParticipants(context, {
       source,
@@ -408,29 +412,31 @@ export class PromoteService {
       participants,
     });
 
-    // TODO: We still need to reimplement relationship creation.
-    this.logger.warn('Skipping relationship creation', { relationshipType });
-    // await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
-    //   ownerId: userId,
-    //   person: {
-    //     entityId,
-    //     entityType: 'Person',
-    //     name: participant.name,
-    //   },
-    //   relationships: [
-    //     {
-    //       fromEntityId: userEntityId,
-    //       toEntityId: entityId,
-    //       relationshipType,
-    //       properties: {
-    //         source,
-    //         connection_id: connectionId,
-    //         participant_type: participant.type,
-    //         last_interaction: new Date().toISOString(),
-    //       },
-    //     },
-    //   ],
-    // });
+    await Promise.all(
+      entities.map((entity) => {
+        try {
+          this.relationshipService.create(context, {
+            fromNodeId: userNode.entityId,
+            toNodeId: entity.id,
+            type: relationshipType,
+            startDate: startDate,
+            endDate: endDate,
+            properties: {
+              source,
+              connection_id: connectionId,
+              participant_type: entity.type,
+              last_interaction: new Date().toISOString(),
+            },
+          });
+        } catch (err) {
+          this.logger.error('Error creating relationship', {
+            error: err instanceof Error ? err.message : 'Unknown error',
+            userId,
+            entityId: entity.id,
+          });
+        }
+      }),
+    );
 
     return entities.map((entity) => entity.id);
   }

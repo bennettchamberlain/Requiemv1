@@ -27,6 +27,12 @@ export enum RelationshipType {
   LOCATED_AT = 'LOCATED_AT',
   HAPPENED_AT = 'HAPPENED_AT',
   AT_LOCATION = 'AT_LOCATION',
+  MET_WITH = 'MET_WITH',
+  EMAILED = 'EMAILED',
+  RECEIVED_EMAIL_FROM = 'RECEIVED_EMAIL_FROM',
+  ORGANIZED_EVENT_WITH = 'ORGANIZED_EVENT_WITH',
+  EDITED_WITH = 'EDITED_WITH',
+  IS = 'IS',
 }
 
 export type CreateRelationshipDto = Optional<

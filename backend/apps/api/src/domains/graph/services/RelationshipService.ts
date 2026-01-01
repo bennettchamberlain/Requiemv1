@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
+import { LoggerService } from '@ci/common/logging';
 
 import { type Relationship, RelationshipEntity } from '../entities/RelationshipEntity';
 import type { CreateRelationshipDto, UpdateRelationshipDto } from '../types';
@@ -16,9 +17,10 @@ export class RelationshipService {
     @InjectRepository(RelationshipEntity)
     private readonly relationshipRepository: Repository<RelationshipEntity>,
     private readonly nodeService: NodeService,
+    private readonly logger: LoggerService,
   ) {}
 
-  async create(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship> {
+  async create(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship | null> {
     const [fromNode, toNode] = await this.nodeService.findByIds(context, [data.fromNodeId, data.toNodeId]);
 
     if (fromNode == null) {
@@ -35,9 +37,34 @@ export class RelationshipService {
       userId: context.userId,
     });
 
-    const entity = await this.relationshipRepository.save(record);
+    try {
+      const entity = await this.relationshipRepository.save(record);
 
-    return RelationshipEntity.toEgressType(entity);
+      return RelationshipEntity.toEgressType(entity);
+    } catch (err) {
+      //There is a uniqueness constraint on relationships to prevent duplicates
+      //But it may be too narrowly-defined, as it's only a combination of to/from/type,
+      //and we may want to expand that to include the start/end dates.
+      //For now, try to find the existing relationship and return it if we hit a duplicate key error
+      this.logger.error('Error creating relationship', { error: err, data, userId: context.userId });
+      if ((err as Error).message.includes('duplicate key value violates unique constraint')) {
+        const existing = await this.relationshipRepository.findOne({
+          where: {
+            fromNodeId: data.fromNodeId,
+            toNodeId: data.toNodeId,
+            type: data.type,
+            userId: context.userId,
+          },
+        });
+        if (existing) {
+          return RelationshipEntity.toEgressType(existing);
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
   }
 
   // There are some relationships where multiple identical relationships should
