@@ -1,0 +1,135 @@
+"""
+LLM Configuration - creates agents as pure data structures.
+
+This module provides factory functions to create LLM models and agents.
+The configuration is immutable and can be safely shared across workers.
+"""
+from typing import Dict
+from dataclasses import dataclass
+import httpx
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+from .config import settings
+from .summarizer import (
+    HourlySummaryResponse,
+    DailySummaryResponse,
+    WeeklySummaryResponse,
+    MonthlySummaryResponse,
+    SeasonalSummaryResponse,
+    YearlySummaryResponse,
+    UserDossierResponse,
+)
+
+
+@dataclass(frozen=True)
+class LLMConfig:
+    """
+    Immutable LLM configuration containing model and agents.
+
+    This is created once per worker and shared across all activities.
+    """
+    model: OpenAIChatModel
+    agents: Dict[str, Agent]
+
+
+def create_llm_config() -> LLMConfig:
+    """
+    Create LLM configuration with all agents.
+
+    This is a pure factory function that creates the configuration
+    based on settings. It's called once when the worker starts.
+    """
+    # Create HTTP client with long timeout for LLM calls
+    http_client = httpx.AsyncClient(timeout=180.0)
+
+    # Create model pointing to self-hosted endpoint
+    model = OpenAIChatModel(
+        settings.llm_model,
+        provider=OpenAIProvider(
+            base_url=settings.llm_api_base,
+            api_key=settings.llm_api_key,
+            http_client=http_client,
+        ),
+    )
+
+    # Create all time-scale specific agents
+    agents = {
+        'hourly': Agent(
+            model,
+            output_type=HourlySummaryResponse,
+            system_prompt=(
+                "You are an AI that creates concise hourly summaries of user activity. "
+                "Analyze the data and provide insights, patterns, and notable events."
+            ),
+        ),
+        'daily': Agent(
+            model,
+            output_type=DailySummaryResponse,
+            system_prompt=(
+                "You synthesize hourly summaries into a daily overview. "
+                "Focus on: daily rhythms and routines, workflow patterns, "
+                "productivity peaks and valleys, social interactions, "
+                "and how the day's activities connected together. "
+                "Identify what made this day distinct or typical."
+            ),
+        ),
+        'weekly': Agent(
+            model,
+            output_type=WeeklySummaryResponse,
+            system_prompt=(
+                "You synthesize daily summaries into a weekly overview. "
+                "Focus on: work-life balance, recurring weekly patterns, "
+                "progress on projects or goals, social dynamics, "
+                "behavioral trends across weekdays vs weekends. "
+                "Identify how the week developed and key accomplishments or challenges."
+            ),
+        ),
+        'monthly': Agent(
+            model,
+            output_type=MonthlySummaryResponse,
+            system_prompt=(
+                "You synthesize weekly summaries into a monthly overview. "
+                "Focus on: major milestones and achievements, evolving priorities, "
+                "habit formation or changes, relationship developments, "
+                "month-over-month growth or shifts in focus areas. "
+                "Identify the arc of the month and significant transitions."
+            ),
+        ),
+        'seasonal': Agent(
+            model,
+            output_type=SeasonalSummaryResponse,
+            system_prompt=(
+                "You synthesize monthly summaries into a seasonal (3-month) overview. "
+                "Focus on: life phase transitions, major project outcomes, "
+                "seasonal behavioral patterns, strategic direction changes, "
+                "personal or professional evolution. "
+                "Identify the broader narrative arc and transformative themes of this quarter."
+            ),
+        ),
+        'yearly': Agent(
+            model,
+            output_type=YearlySummaryResponse,
+            system_prompt=(
+                "You synthesize seasonal summaries into a yearly overview. "
+                "Focus on: annual achievements and setbacks, identity shifts, "
+                "life trajectory changes, enduring patterns vs. experiments, "
+                "key relationships and their evolution, personal growth themes. "
+                "Provide a bird's-eye view of the year as a chapter in their life story."
+            ),
+        ),
+        'dossier': Agent(
+            model,
+            output_type=UserDossierResponse,
+            system_prompt=(
+                "Create a concise user dossier summarizing personality, preferences, "
+                "challenges, and interests based on their activity. Keep summary under 500 characters."
+            ),
+        ),
+    }
+
+    return LLMConfig(model=model, agents=agents)
+
+
+__all__ = ["LLMConfig", "create_llm_config"]

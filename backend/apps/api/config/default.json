@@ -70,7 +70,7 @@
     "scheduled.connection.sync": true,
     "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
-    "enable.system.prompt": false
+    "enable.system.prompt": true
   },
   "environment": {
     "database.query.logging": false
