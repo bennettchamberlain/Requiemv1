@@ -18,6 +18,7 @@ import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { VectorEntity } from './entities/VectorEntity';
 import { AnswerSearchIndexListener } from './listeners/AnswerSearchIndexListener';
 import { CommunicationSearchIndexListener } from './listeners/CommunicationSearchIndexListener';
+import { ConceptSearchIndexListener } from './listeners/ConceptSearchIndexListener';
 import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListener';
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
 import { FileSearchIndexListener } from './listeners/FileSearchIndexListener';
@@ -43,6 +44,7 @@ import { VectorService } from './services/VectorService';
   providers: [
     AnswerSearchIndexListener,
     CommunicationSearchIndexListener,
+    ConceptSearchIndexListener,
     ContentSearchIndexListener,
     EmbeddingService,
     EventSearchIndexListener,
