@@ -1,6 +1,7 @@
 export type IndexableEntity =
   | 'answer'
   | 'communication'
+  | 'concept'
   | 'content'
   | 'event'
   | 'file'
