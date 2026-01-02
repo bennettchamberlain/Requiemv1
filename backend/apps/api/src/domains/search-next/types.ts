@@ -9,7 +9,7 @@ export type IndexableEntity =
   | 'place'
   | 'thread';
 
-export type TaggableEntity = 'action' | 'communication' | 'person' | 'thread';
+export type TaggableEntity = 'action' | 'communication' | 'content' | 'person' | 'thread';
 
 export interface EntityIdentifier<T> {
   type: T;
