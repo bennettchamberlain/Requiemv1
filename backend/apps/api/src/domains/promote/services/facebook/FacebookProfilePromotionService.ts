@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
+import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { RelationshipService } from '@ci/domains/graph';
 import { PersonService } from '@ci/domains/memory';
+
+import { PromoteService } from '../PromoteService';
 
 interface FacebookProfile {
   id: string;
@@ -20,6 +24,8 @@ interface FacebookProfile {
 export class FacebookProfilePromotionService {
   constructor(
     private readonly personService: PersonService,
+    private readonly promoteService: PromoteService,
+    private readonly relationshipService: RelationshipService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(FacebookProfilePromotionService.name);
@@ -162,40 +168,27 @@ export class FacebookProfilePromotionService {
         hasBirthday: !!profile.birthday,
       });
     } else {
+      const context = toServiceContext({ userId });
       // Create new person
       const entityId = uuidv7();
-      await this.personService.create(
-        { userId },
-        {
-          id: entityId,
-          name: profile.name,
-          description: `Facebook profile: ${profile.name}`,
-          properties,
-        },
-      );
+      await this.personService.create(context, {
+        id: entityId,
+        name: profile.name,
+        description: `Facebook profile: ${profile.name}`,
+        properties,
+      });
 
+      const { userNode } = await this.promoteService.getUserAndEntity(context, userId);
       // Create relationship to user
-      // TODO: Use RelationshipService
-      // await this.eventService.send(Events.GRAPH_PERSON_CREATED, {
-      //   ownerId: userId,
-      //   person: {
-      //     entityId,
-      //     entityType: 'Person',
-      //     name: profile.name,
-      //   },
-      //   relationships: [
-      //     {
-      //       fromEntityId: userEntityId,
-      //       toEntityId: entityId,
-      //       relationshipType: 'IS',
-      //       properties: {
-      //         source: 'facebook',
-      //         connection_id: connectionId,
-      //         last_interaction: new Date().toISOString(),
-      //       },
-      //     },
-      //   ],
-      // });
+      await this.relationshipService.upsert(context, {
+        fromNodeId: userNode.entityId,
+        toNodeId: entityId,
+        type: 'IS',
+        properties: {
+          source: 'facebook',
+          connection_id: connectionId,
+        },
+      });
 
       this.logger.log('Created new person from Facebook profile', {
         userId,

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { v7 as uuid7 } from 'uuid';
 
+import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { RelationshipService } from '@ci/domains/graph';
 import { PersonService, PersonEntity } from '@ci/domains/memory';
 
 import { PromoteService } from '../PromoteService';
@@ -59,6 +61,7 @@ export class ContactsPromotionService {
   constructor(
     private readonly personService: PersonService,
     private readonly promoteService: PromoteService,
+    private readonly relationshipService: RelationshipService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ContactsPromotionService.name);
@@ -260,34 +263,17 @@ export class ContactsPromotionService {
     }
 
     // Create KNOWS relationship (ensuring every entity has at least one relationship)
-    // FIXME: This should be re-implemented after we create a RelationshipService
-    // const existingRelationships = await this.graphUtilityService.findConnectedEntities(
-    //   userEntityId,
-    //   ['KNOWS'],
-    //   'outbound',
-    // );
-
-    // const relationshipExists = existingRelationships.some((entity) => entity.entity_id === contactEntityId);
-
-    // if (!relationshipExists) {
-    //   await this.personService.createRelationship(
-    //     userEntityId,
-    //     contactEntityId,
-    //     'KNOWS',
-    //     {
-    //       source: 'google_contacts',
-    //       connection_id: connectionId,
-    //       synced_at: new Date().toISOString(),
-    //     },
-    //     1.0,
-    //     userId,
-    //   );
-    //
-    //   this.logger.log('Created KNOWS relationship', {
-    //     userEntityId,
-    //     contactEntityId,
-    //   });
-    // }
+    const context = toServiceContext({ userId });
+    await this.relationshipService.upsert(context, {
+      fromNodeId: userEntityId,
+      toNodeId: contactEntityId,
+      type: 'KNOWS',
+      properties: {
+        source: 'google_contacts',
+        connection_id: connectionId,
+        synced_at: new Date().toISOString(),
+      },
+    });
 
     // If contact has relations (e.g., spouse, child), create those relationships
     // if (contact.relations && contact.relations.length > 0) {
@@ -300,10 +286,18 @@ export class ContactsPromotionService {
     //       if (relationType) {
     //         // Note: In a real implementation, you'd search for the person by name
     //         // For now, we just log it
-    //         this.logger.log('Contact has relationship', {
-    //           contactName: displayName,
-    //           relatedPerson: relatedPersonName,
-    //           relationType,
+    //         await this.personService.create(context, {
+    //
+    //         })
+    //         await this.relationshipService.upsert(context, {
+    //           fromNodeId: userEntityId,
+    //           toNodeId: contactEntityId,
+    //           type: relationType,
+    //           properties: {
+    //             source: 'google_contacts',
+    //             connection_id: connectionId,
+    //             synced_at: new Date().toISOString(),
+    //           },
     //         });
     //       }
     //     }

@@ -93,7 +93,7 @@ export class FacebookFriendsPromotionService {
             },
           );
 
-          await this.relationshipService.create(context, {
+          await this.relationshipService.upsert(context, {
             fromNodeId: userNode.entityId,
             toNodeId: newPerson.id,
             type: 'FRIENDS_WITH',

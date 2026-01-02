@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
+import { LoggerService } from '@ci/common/logging';
 
 import { type Relationship, RelationshipEntity } from '../entities/RelationshipEntity';
 import type { CreateRelationshipDto, UpdateRelationshipDto } from '../types';
@@ -16,9 +17,10 @@ export class RelationshipService {
     @InjectRepository(RelationshipEntity)
     private readonly relationshipRepository: Repository<RelationshipEntity>,
     private readonly nodeService: NodeService,
+    private readonly logger: LoggerService,
   ) {}
 
-  async create(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship> {
+  async create(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship | null> {
     const [fromNode, toNode] = await this.nodeService.findByIds(context, [data.fromNodeId, data.toNodeId]);
 
     if (fromNode == null) {
@@ -34,6 +36,82 @@ export class RelationshipService {
       ...data,
       userId: context.userId,
     });
+
+    try {
+      const entity = await this.relationshipRepository.save(record);
+
+      return RelationshipEntity.toEgressType(entity);
+    } catch (err) {
+      //There is a uniqueness constraint on relationships to prevent duplicates
+      //But it may be too narrowly-defined, as it's only a combination of to/from/type,
+      //and we may want to expand that to include the start/end dates.
+      //For now, try to find the existing relationship and return it if we hit a duplicate key error
+      this.logger.error('Error creating relationship', { error: err, data, userId: context.userId });
+      if ((err as Error).message.includes('duplicate key value violates unique constraint')) {
+        const existing = await this.relationshipRepository.findOne({
+          where: {
+            fromNodeId: data.fromNodeId,
+            toNodeId: data.toNodeId,
+            type: data.type,
+            userId: context.userId,
+          },
+        });
+        if (existing) {
+          return RelationshipEntity.toEgressType(existing);
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // There are some relationships where multiple identical relationships should
+  // not exist. For example, a user should not have multiple "FRIENDS_WITH"
+  // relationships to the same person. This upsert method checks for existing
+  // relationships by type, and start and end node ids before creating a new
+  // one.
+  //
+  // Note that there are some cases where a start date should only be updated if
+  // the new date is earlier than the existing one, or an end date should only
+  // be updated if the new date is later than the existing one. This logic is
+  // not implemented here, but could be added in the future if needed. E.g. is
+  // discovering friends from different social media sources.
+  async upsert(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship> {
+    const [fromNode, toNode] = await this.nodeService.findByIds(context, [data.fromNodeId, data.toNodeId]);
+
+    if (fromNode == null) {
+      throw new Error(`Node with id ${data.fromNodeId} not found`);
+    }
+
+    if (toNode == null) {
+      throw new Error(`Node with id ${data.toNodeId} not found`);
+    }
+
+    let record = await this.relationshipRepository.findOne({
+      where: {
+        fromNodeId: data.fromNodeId,
+        toNodeId: data.toNodeId,
+        type: data.type,
+        userId: context.userId,
+      },
+    });
+
+    if (record == null) {
+      record = this.relationshipRepository.create({
+        id: uuidv7(),
+        ...data,
+        userId: context.userId,
+      });
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, properties, type, toNodeId, fromNodeId, ...updateData } = data;
+
+      Object.assign(record, updateData);
+
+      // TODO: Merge properties instead of ignoring them.
+    }
 
     const entity = await this.relationshipRepository.save(record);
 

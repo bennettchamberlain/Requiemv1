@@ -201,6 +201,8 @@ export class OutlookCalendarPromotionService {
       connectionId,
       'email',
       'MET_WITH',
+      event.start.dateTime ? new Date(event.start.dateTime) : undefined,
+      event.end?.dateTime ? new Date(event.end.dateTime) : undefined,
     );
 
     const organizerEntityId = (
@@ -210,6 +212,8 @@ export class OutlookCalendarPromotionService {
         connectionId,
         'calendar',
         'ORGANIZED_EVENT_WITH',
+        event.start.dateTime ? new Date(event.start.dateTime) : undefined,
+        event.end?.dateTime ? new Date(event.end.dateTime) : undefined,
       )
     )[0];
 

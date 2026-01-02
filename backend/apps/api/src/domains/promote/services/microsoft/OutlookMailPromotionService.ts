@@ -206,6 +206,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'RECEIVED_EMAIL_FROM',
+      messageDetails.date ? new Date(messageDetails.date) : undefined,
     );
 
     // Create person entities for recipients (with EMAILED relationship)
@@ -215,6 +216,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'EMAILED',
+      messageDetails.date ? new Date(messageDetails.date) : undefined,
     );
 
     // Create person entities for recipients (with EMAILED relationship)
@@ -224,6 +226,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'EMAILED',
+      messageDetails.date ? new Date(messageDetails.date) : undefined,
     );
 
     // Create person entities for recipients (with EMAILED relationship)
@@ -233,6 +236,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'EMAILED',
+      messageDetails.date ? new Date(messageDetails.date) : undefined,
     );
 
     const attachmentUploadIds = await Promise.all(

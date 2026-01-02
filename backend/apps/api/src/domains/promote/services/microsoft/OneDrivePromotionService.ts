@@ -126,6 +126,7 @@ export class OneDrivePromotionService {
       connectionId,
       'drive',
       'EDITED_WITH',
+      file.lastModifiedDateTime ? new Date(file.lastModifiedDateTime) : undefined,
     );
 
     if (fileDetails.content) {

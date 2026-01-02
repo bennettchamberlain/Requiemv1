@@ -262,7 +262,13 @@ export class GoogleCalendarEventPromotionService {
     await this.eventService.create({ userId }, eventDto);
 
     // Process participants
-    await this.processParticipants(eventDetails.participants, userId, connectionId);
+    await this.processParticipants(
+      eventDetails.participants,
+      userId,
+      connectionId,
+      event.start?.dateTime,
+      event.end?.dateTime,
+    );
 
     this.logger.log('Calendar event saved successfully', {
       eventId: eventDetails.id,
@@ -361,6 +367,8 @@ export class GoogleCalendarEventPromotionService {
     participants: Participant[],
     userId: string,
     connectionId: string,
+    startDate?: string,
+    endDate?: string,
   ): Promise<string[]> {
     const participantInfos = participants.map((p) => ({
       email: p.email,
@@ -379,6 +387,8 @@ export class GoogleCalendarEventPromotionService {
       connectionId,
       'calendar',
       'ORGANIZED_EVENT_WITH',
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
     );
 
     const attendeeEntityIds = await this.promoteService.processParticipants(
@@ -387,6 +397,8 @@ export class GoogleCalendarEventPromotionService {
       connectionId,
       'calendar',
       'MET_WITH',
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
     );
 
     return [...organizerEntityIds, ...attendeeEntityIds];
