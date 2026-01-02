@@ -6,12 +6,20 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { ContentService, EventService, ItemService, PersonService, PlaceService } from '@ci/domains/memory';
+import {
+  ConceptService,
+  ContentService,
+  EventService,
+  ItemService,
+  PersonService,
+  PlaceService,
+} from '@ci/domains/memory';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
 
 import { ActionType } from '../types/ActionType';
 import { AnswerType } from '../types/AnswerType';
+import { ConceptType } from '../types/ConceptType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
@@ -32,6 +40,7 @@ export class NodeResolver {
   constructor(
     private readonly actionService: ActionService,
     private readonly answerService: AnswerService,
+    private readonly conceptService: ConceptService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
     private readonly fileService: FileService,
@@ -64,6 +73,12 @@ export class NodeResolver {
         const answer = await this.answerService.findById(serviceContext, id);
 
         return answer ? AnswerType.toType(answer) : null;
+      }
+
+      case 'concept': {
+        const concept = await this.conceptService.findById(serviceContext, id);
+
+        return concept ? ConceptType.toType(concept) : null;
       }
 
       case 'content': {

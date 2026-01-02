@@ -67,6 +67,23 @@ type CommunicationType implements Node {
   type: String!
 }
 
+type ConceptConnection implements Connection {
+  edges: [ConceptEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ConceptEdge implements Edge {
+  cursor: String!
+  node: ConceptType!
+}
+
+type ConceptType implements Node {
+  description: String
+  id: ID!
+  name: String
+}
+
 interface Connection {
   edges: [Edge!]!
   pageInfo: PageInfo!
@@ -406,6 +423,8 @@ type Query {
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
+  concept(id: ID!): ConceptType
+  concepts(after: String, before: String, first: Int, last: Int): ConceptConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
   event(id: ID!): EventType
