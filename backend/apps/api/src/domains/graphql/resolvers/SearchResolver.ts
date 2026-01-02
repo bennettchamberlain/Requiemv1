@@ -8,6 +8,7 @@ import { FileService } from '@ci/domains/files';
 import { AnswerService } from '@ci/domains/intelligence';
 import {
   CommunicationService,
+  ConceptService,
   ContentService,
   EventService,
   ItemService,
@@ -24,6 +25,7 @@ import {
 
 import { AnswerType } from '../types/AnswerType';
 import { CommunicationType } from '../types/CommunicationType';
+import { ConceptType } from '../types/ConceptType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
@@ -42,6 +44,7 @@ export class SearchResolver {
   constructor(
     private readonly answerService: AnswerService,
     private readonly communicationService: CommunicationService,
+    private readonly conceptService: ConceptService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
     private readonly fileService: FileService,
@@ -131,6 +134,7 @@ export class SearchResolver {
 
     const answerIds = groupedByType.get('answer') || [];
     const communicationIds = groupedByType.get('communication') || [];
+    const conceptIds = groupedByType.get('concept') || [];
     const contentIds = groupedByType.get('content') || [];
     const eventIds = groupedByType.get('event') || [];
     const fileIds = groupedByType.get('file') || [];
@@ -139,10 +143,11 @@ export class SearchResolver {
     const placeIds = groupedByType.get('place') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [answers, communications, content, events, files, items, people, places, threads] =
+    const [answers, communications, concepts, content, events, files, items, people, places, threads] =
       await Promise.all([
         this.answerService.findByIds(context, answerIds),
         this.communicationService.findByIds(context, communicationIds),
+        this.conceptService.findByIds(context, conceptIds),
         this.contentService.findByIds(context, contentIds),
         this.eventService.findByIds(context, eventIds),
         this.fileService.findByIds(context, fileIds),
@@ -159,6 +164,10 @@ export class SearchResolver {
     const communicationResults = communications
       .filter((entity) => entity != null)
       .map((entity) => CommunicationType.toType(entity));
+
+    const conceptResults = concepts
+      .filter((entity) => entity != null)
+      .map((entity) => ConceptType.toType(entity));
 
     const contentResults = content
       .filter((entity) => entity != null)
@@ -185,6 +194,9 @@ export class SearchResolver {
     answerResults.forEach((answer) => resultMap.set(makeCompositeKey('answer', answer.__source.id), answer));
     communicationResults.forEach((communication) =>
       resultMap.set(makeCompositeKey('communication', communication.__source.id), communication),
+    );
+    conceptResults.forEach((concept) =>
+      resultMap.set(makeCompositeKey('concept', concept.__source.id), concept),
     );
     contentResults.forEach((content) =>
       resultMap.set(makeCompositeKey('content', content.__source.id), content),

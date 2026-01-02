@@ -24,6 +24,7 @@ import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
 import { AnswerResolver } from './resolvers/AnswerResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
+import { ConceptResolver } from './resolvers/ConceptResolver';
 import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FactResolver } from './resolvers/FactResolver';
@@ -59,6 +60,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ActionResolver,
     CommunicationResolver,
     ComplexityPlugin,
+    ConceptResolver,
     ContentResolver,
     NodeResolver,
     AnswerResolver,

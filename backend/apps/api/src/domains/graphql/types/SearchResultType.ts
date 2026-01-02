@@ -2,6 +2,7 @@ import { createUnionType } from '@nestjs/graphql';
 
 import { AnswerType } from './AnswerType';
 import { CommunicationType } from './CommunicationType';
+import { ConceptType } from './ConceptType';
 import { ContentType } from './ContentType';
 import { EventType } from './EventType';
 import { FileType } from './FileType';
@@ -18,6 +19,7 @@ export const SearchResultType = createUnionType({
     [
       AnswerType,
       CommunicationType,
+      ConceptType,
       ContentType,
       EventType,
       FileType,
@@ -34,6 +36,8 @@ export const SearchResultType = createUnionType({
         return AnswerType;
       case 'communication':
         return CommunicationType;
+      case 'concept':
+        return ConceptType;
       case 'content':
         return ContentType;
       case 'event':

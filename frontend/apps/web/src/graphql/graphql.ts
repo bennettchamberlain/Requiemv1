@@ -106,6 +106,26 @@ export type CommunicationTypeToArgs = {
   last?: InputMaybe<Scalars['Int']['input']>;
 };
 
+export type ConceptConnection = Connection & {
+  __typename?: 'ConceptConnection';
+  edges: Array<ConceptEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type ConceptEdge = Edge & {
+  __typename?: 'ConceptEdge';
+  cursor: Scalars['String']['output'];
+  node: ConceptType;
+};
+
+export type ConceptType = Node & {
+  __typename?: 'ConceptType';
+  description?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+};
+
 export type Connection = {
   edges: Array<Edge>;
   pageInfo: PageInfo;
@@ -570,6 +590,8 @@ export type Query = {
   answers: AnswerConnection;
   communication?: Maybe<CommunicationType>;
   communications: CommunicationConnection;
+  concept?: Maybe<ConceptType>;
+  concepts: ConceptConnection;
   content?: Maybe<ContentType>;
   contents: ContentConnection;
   event?: Maybe<EventType>;
@@ -628,6 +650,19 @@ export type QueryCommunicationArgs = {
 
 
 export type QueryCommunicationsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryConceptArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryConceptsArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
@@ -819,7 +854,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = AnswerType | CommunicationType | ContentType | EventType | FileType | ItemType | PersonType | PlaceType | ThreadType;
+export type SearchResultType = AnswerType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | PersonType | PlaceType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';
