@@ -11,7 +11,6 @@ import { UserModule } from '@ci/domains/user';
 
 import { type Node, NodeEntity } from './entities/NodeEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
-import { UserGraphListener } from './listeners/UserGraphListener';
 import { GraphService } from './services/GraphService';
 import { NodeService } from './services/NodeService';
 import { RelationshipService } from './services/RelationshipService';
@@ -26,7 +25,7 @@ import { RelationshipService } from './services/RelationshipService';
     MemoryModule,
     UserModule,
   ],
-  providers: [GraphService, NodeService, RelationshipService, UserGraphListener],
+  providers: [GraphService, NodeService, RelationshipService],
   exports: [GraphService, NodeService, RelationshipService],
 })
 export class GraphModule {}
