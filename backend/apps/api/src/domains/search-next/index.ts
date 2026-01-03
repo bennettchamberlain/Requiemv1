@@ -32,4 +32,5 @@ export class SearchNextModule {}
 
 export { SearchService, TagService };
 export type { EntityTag, Tag, TimestampedTag };
+export { INDEXABLE_ENTITIES, TAGGABLE_ENTITIES } from './types';
 export type { EntityIdentifier, IndexableEntity, TaggableEntity } from './types';

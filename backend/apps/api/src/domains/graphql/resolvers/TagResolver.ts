@@ -3,7 +3,7 @@ import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { type TaggableEntity, TagService } from '@ci/domains/search-next';
+import { TAGGABLE_ENTITIES, type TaggableEntity, TagService } from '@ci/domains/search-next';
 
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -113,7 +113,5 @@ export class TagResolver {
 }
 
 function isTaggableEntity(type: string): type is TaggableEntity {
-  const validTypes: TaggableEntity[] = ['action', 'person', 'thread'];
-
-  return validTypes.includes(type as TaggableEntity);
+  return TAGGABLE_ENTITIES.includes(type as TaggableEntity);
 }
