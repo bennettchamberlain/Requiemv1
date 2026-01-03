@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
+import { toServiceContext } from '@ci/common/context';
+import { UserService } from '@ci/domains/user';
+
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { RelationshipEntity } from '../entities/RelationshipEntity';
 
@@ -15,7 +18,10 @@ export interface GraphNodeQueryOptions {
 
 @Injectable()
 export class GraphQueryService {
-  constructor(private readonly graphUtility: GraphUtilityService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly graphUtility: GraphUtilityService,
+  ) {}
 
   getNode(ownerId: string, entityId: string): Promise<GraphNodeEntity | null> {
     return this.graphUtility.getNodeById(entityId, ownerId);
@@ -43,8 +49,20 @@ export class GraphQueryService {
     return this.graphUtility.getNodeByLinkedRecord(ownerId, linkedTable, linkedId);
   }
 
-  getUserEntity(ownerId: string) {
-    return this.getNodeByLinkedRecord(ownerId, 'users', ownerId);
+  async getUserEntity(ownerId: string) {
+    const context = toServiceContext({ userId: ownerId });
+
+    const user = await this.userService.findById(context, ownerId);
+
+    if (user == null) {
+      return null;
+    }
+
+    if (user.entityId == null) {
+      return null;
+    }
+
+    return this.getNode(ownerId, user.entityId);
   }
 
   getRelationships(
