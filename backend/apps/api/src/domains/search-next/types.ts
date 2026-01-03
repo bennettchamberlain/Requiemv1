@@ -1,16 +1,29 @@
-export type IndexableEntity =
-  | 'answer'
-  | 'communication'
-  | 'concept'
-  | 'content'
-  | 'event'
-  | 'file'
-  | 'item'
-  | 'person'
-  | 'place'
-  | 'thread';
+export const INDEXABLE_ENTITIES = [
+  'answer',
+  'communication',
+  'concept',
+  'content',
+  'event',
+  'file',
+  'item',
+  'person',
+  'place',
+  'thread',
+] as const;
 
-export type TaggableEntity = 'action' | 'communication' | 'content' | 'item' | 'person' | 'place' | 'thread';
+export type IndexableEntity = (typeof INDEXABLE_ENTITIES)[number];
+
+export const TAGGABLE_ENTITIES = [
+  'action',
+  'communication',
+  'content',
+  'item',
+  'person',
+  'place',
+  'thread',
+] as const;
+
+export type TaggableEntity = (typeof TAGGABLE_ENTITIES)[number];
 
 export interface EntityIdentifier<T> {
   type: T;
