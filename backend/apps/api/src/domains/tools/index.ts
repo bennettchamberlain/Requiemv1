@@ -26,7 +26,9 @@ import { LoggerService } from '@ci/common/logging';
 import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
+import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
+import { SearchNextModule } from '@ci/domains/search-next';
 
 import { McpController } from './controllers/McpController';
 import { McpClientManager } from './providers/mcp/McpClientManager';
@@ -60,7 +62,14 @@ const nativeToolInstances = [
  * @internal
  */
 @Module({
-  imports: [EventsModule, ConversationModule, FilesModule, MemoryModule],
+  imports: [
+    EventsModule,
+    ConversationModule,
+    FilesModule,
+    MemoryModule,
+    IntelligenceModule,
+    SearchNextModule,
+  ],
   controllers: [McpController],
   providers: [
     ToolRegistry,
