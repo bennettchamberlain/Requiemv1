@@ -50,7 +50,7 @@ import { UserModule } from '@ci/domains/user';
       username: config.db.username,
       password: config.db.password,
       entities: [path.join(__dirname, 'domains/**/*Entity.{ts,js}')],
-      logging: ['error', ...(config.environment['database.query.logging'] ? (['query'] as const) : [])],
+      logging: [...(config.environment['database.query.logging'] ? (['error', 'query'] as const) : [])],
     }),
     LoggingModule,
     EventEmitterModule.forRoot(),
