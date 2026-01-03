@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Repository, QueryFailedError } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
+import { PgErrorCode } from '@ci/common/constants';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
@@ -18,7 +19,9 @@ export class RelationshipService {
     private readonly relationshipRepository: Repository<RelationshipEntity>,
     private readonly nodeService: NodeService,
     private readonly logger: LoggerService,
-  ) {}
+  ) {
+    this.logger.setContext(RelationshipService.name);
+  }
 
   async create(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship | null> {
     const [fromNode, toNode] = await this.nodeService.findByIds(context, [data.fromNodeId, data.toNodeId]);
@@ -41,13 +44,19 @@ export class RelationshipService {
       const entity = await this.relationshipRepository.save(record);
 
       return RelationshipEntity.toEgressType(entity);
-    } catch (err) {
-      //There is a uniqueness constraint on relationships to prevent duplicates
-      //But it may be too narrowly-defined, as it's only a combination of to/from/type,
-      //and we may want to expand that to include the start/end dates.
-      //For now, try to find the existing relationship and return it if we hit a duplicate key error
-      this.logger.error('Error creating relationship', { error: err, data, userId: context.userId });
-      if ((err as Error).message.includes('duplicate key value violates unique constraint')) {
+    } catch (err: unknown) {
+      // There is a uniqueness constraint on relationships to prevent duplicates
+      // But it may be too narrowly-defined, as it's only a combination of
+      // to/from/type, and we may want to expand that to include the start/end
+      // dates. For now, try to find the existing relationship and return it if
+      // we hit a duplicate key error.
+      if (err instanceof QueryFailedError && err.driverError?.code === PgErrorCode.UNIQUE_VIOLATION) {
+        this.logger.log('Attempted to create duplicate relationship', {
+          fromNodeId: data.fromNodeId,
+          toNodeId: data.toNodeId,
+          type: data.type,
+        });
+
         const existing = await this.relationshipRepository.findOne({
           where: {
             fromNodeId: data.fromNodeId,
@@ -56,11 +65,8 @@ export class RelationshipService {
             userId: context.userId,
           },
         });
-        if (existing) {
-          return RelationshipEntity.toEgressType(existing);
-        } else {
-          throw err;
-        }
+
+        return existing ? RelationshipEntity.toEgressType(existing) : null;
       } else {
         throw err;
       }

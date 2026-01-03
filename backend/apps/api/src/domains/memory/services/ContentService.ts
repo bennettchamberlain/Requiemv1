@@ -25,19 +25,18 @@ export class ContentService {
     // TODO: Some of these can fail, we need to return partial success here?
     return Promise.all(
       dataArray.map(async (item) => {
+        const id = item.id ?? uuidv7();
+
         const content = await this.contentRepository.create({
           ...item,
-          id: uuidv7(),
+          id,
+          externalId: `content_${id}`,
           user: {
             id: context.userId,
           },
         });
 
         const contentResult = await this.contentRepository.save(content);
-
-        await this.contentRepository.update(contentResult.id, {
-          externalId: `content_${contentResult.id}`,
-        });
 
         await this.eventService.send(ContentCreatedEvent, {
           contentId: contentResult.id,

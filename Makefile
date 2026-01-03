@@ -1,4 +1,4 @@
-.PHONY: help build chatreset dbclear dev graphql health index init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
+.PHONY: help build chatreset dbclear dev graphql health init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -233,12 +233,6 @@ health: ## Check the repository for prerequisites
 		exit 1; \
 	fi
 
-
-index: ## Generate vector embeddings for indexable content
-	@printf "🗂 Indexing database...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/bulk-generate-embeddings.ts
-	@printf "\nDatabase successfully indexed.\n"
-
 init: ## Initialize repository after checkout
 	@printf "🏗️ Initializing repository...\n\n"
 
@@ -287,10 +281,6 @@ migrate: ## Run database migrations
 seed: ## Seed backend database
 	@printf "🌱 Seeding database...\n\n"
 	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
-	@printf "\nMigrating old schema data to new schema...\n\n"
-	@cd backend/apps/api && yarn run exec -- scripts/seed-database/run-migration.ts
-	@printf "\nAdding graph test data...\n\n"9
-	@cd backend/apps/api/scripts/test-data-generator && ./run.sh --family
 	@printf "\nDatabase successfully seeded. 🌳\n"
 
 staging: ## Run the staging server from Docker images

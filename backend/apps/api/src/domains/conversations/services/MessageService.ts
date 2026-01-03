@@ -23,9 +23,11 @@ export class MessageService {
   async create(context: UserServiceContext, data: CreateMessageDto): Promise<Message> {
     const { threadId, content, toolCalls, promptMessageId, fileIds, ...rest } = data;
 
+    const id = data.id ?? uuid7();
+
     const instance = this.messsageRepository.create({
       ...rest,
-      id: uuid7(),
+      id,
       content,
       toolCalls: toolCalls,
       user: {

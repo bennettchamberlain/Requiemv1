@@ -24,10 +24,12 @@ export class PlaceService {
 
     return Promise.all(
       dataArray.map(async (item) => {
+        const id = item.id ?? uuidv7();
+
         const place = await this.placeRepository.create({
           ...item,
           entityType: 'Location',
-          id: uuidv7(),
+          id,
           user: {
             id: context.userId,
           },

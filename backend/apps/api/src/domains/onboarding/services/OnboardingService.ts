@@ -299,7 +299,7 @@ export class OnboardingService {
 
     const question = await this.questionService.create(context, {
       text: options.question,
-      subcategory: options.subcategory,
+      category: options.subcategory,
       isPrivateTo: context.userId,
     });
 
