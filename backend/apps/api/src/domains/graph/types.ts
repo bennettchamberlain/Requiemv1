@@ -33,6 +33,8 @@ export enum RelationshipType {
   ORGANIZED_EVENT_WITH = 'ORGANIZED_EVENT_WITH',
   EDITED_WITH = 'EDITED_WITH',
   IS = 'IS',
+  LIVES_WITH = 'LIVES_WITH',
+  ASSOCIATED_WITH = 'ASSOCIATED_WITH',
 }
 
 export type CreateRelationshipDto = Optional<
