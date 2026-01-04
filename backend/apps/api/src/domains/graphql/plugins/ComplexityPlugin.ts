@@ -6,6 +6,7 @@ import { GraphQLError } from 'graphql';
 import { fieldExtensionsEstimator, getComplexity, simpleEstimator } from 'graphql-query-complexity';
 
 import { LoggerService } from '@ci/common/logging';
+import config from '@ci/configuration';
 
 @Plugin()
 export class ComplexityPlugin implements ApolloServerPlugin {
@@ -23,8 +24,6 @@ export class ComplexityPlugin implements ApolloServerPlugin {
 
     return {
       async didResolveOperation({ request, document }) {
-        const maxComplexity = 20;
-
         const complexity = getComplexity({
           schema,
           operationName: request.operationName,
@@ -41,9 +40,9 @@ export class ComplexityPlugin implements ApolloServerPlugin {
           ],
         });
 
-        if (complexity > maxComplexity) {
+        if (complexity > config.graphql.maxQueryComplexity) {
           throw new GraphQLError(
-            `Query is too complex: ${complexity}. Maximum allowed complexity: ${maxComplexity}`,
+            `Query is too complex: ${complexity}. Maximum allowed complexity: ${config.graphql.maxQueryComplexity}`,
             {
               extensions: {
                 code: 'BAD_REQUEST',
