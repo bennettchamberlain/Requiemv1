@@ -23,7 +23,7 @@ export function ConceptRow({ concept, onClick }: Props) {
 
   return (
     <SearchTable.Row onClick={onClick}>
-      <SearchTable.Cell className="align-middle w-10">
+      <SearchTable.Cell className="align-middle w-0 px-2.5">
         <ConceptIcon />
       </SearchTable.Cell>
 
