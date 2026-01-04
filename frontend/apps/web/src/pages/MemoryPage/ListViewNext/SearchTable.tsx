@@ -35,7 +35,7 @@ export function SearchRow({ className, children, onClick }: RowProps) {
   );
 
   return (
-    <div className={cn('table-row', className)} onClick={handleClick}>
+    <div className={cn('table-row odd:bg-accent/20 hover:bg-accent/30', className)} onClick={handleClick}>
       {children}
     </div>
   );
