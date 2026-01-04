@@ -80,6 +80,7 @@ export class BrowserActivityService {
       order: {
         time: 'DESC',
       },
+      relations: ['user'],
     });
 
     return results.map((entity) => BrowserActivityEntity.toEgressType(entity));
@@ -94,6 +95,7 @@ export class BrowserActivityService {
         }),
       },
       order: { time: 'DESC' },
+      relations: ['user'],
     });
 
     const map = new Map(results.map((entity) => [entity.id, BrowserActivityEntity.toEgressType(entity)]));
@@ -109,6 +111,7 @@ export class BrowserActivityService {
           user_id: context.userId,
         }),
       },
+      relations: ['user'],
     });
   }
 
