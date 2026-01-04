@@ -18,7 +18,7 @@ import { PlaceCard } from './cards/PlaceCard';
 import { ThreadCard } from './cards/ThreadCard';
 import { SearchGrid } from './SearchGrid';
 
-export function GalleryViewNext() {
+export function GalleryView() {
   const [searchParams] = useSearchParams();
   const { data } = useMemoryServiceNext({
     searchQuery: searchParams.get('search') || '',

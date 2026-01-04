@@ -9,7 +9,7 @@ import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
-import { GalleryViewNext } from './GalleryViewNext';
+import { GalleryView } from './GalleryViewNext';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
@@ -124,7 +124,7 @@ export default function DesktopMemoryPage() {
 
         {activeTab === 'list' && <ListView />}
         {activeTab === 'map' && <DesktopMapView />}
-        {activeTab === 'gallery' && <GalleryViewNext />}
+        {activeTab === 'gallery' && <GalleryView />}
         {activeTab === 'graph' && <GraphView variant="desktop" />}
       </PageContent>
 
