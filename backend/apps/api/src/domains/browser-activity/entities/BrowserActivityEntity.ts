@@ -1,4 +1,12 @@
-import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  CreateDateColumn,
+  UpdateDateColumn,
+  Entity,
+  PrimaryColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 
 import { UserEntity } from '@ci/domains/user';
 
@@ -8,16 +16,16 @@ export interface Device {
 
 @Entity({ schema: 'ci', name: 'browser_activity' })
 export class BrowserActivityEntity {
-  @Column({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
-  @PrimaryColumn({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz' })
   time!: Date;
 
-  @PrimaryColumn({ type: 'uuid' })
+  @Column({ type: 'uuid' })
   user_id!: string;
 
-  @PrimaryColumn({ type: 'uuid' })
+  @Column({ type: 'uuid' })
   device_id!: string;
 
   // URL and page data
@@ -44,16 +52,6 @@ export class BrowserActivityEntity {
   @Column({ type: 'text', nullable: true })
   page_summary?: string;
 
-  @Column({
-    type: 'text',
-    nullable: true,
-    transformer: {
-      to: (v: number[]) => (v ? `[${v.join(',')}]` : null),
-      from: (v: string) => (v ? v.slice(1, -1).split(',').map(Number) : null),
-    },
-  })
-  page_embedding?: number[];
-
   @Column({ type: 'text', nullable: true })
   category?: string;
 
@@ -71,6 +69,12 @@ export class BrowserActivityEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity | undefined;
 
+  @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
+
   static toEgressType(entity: BrowserActivityEntity): BrowserActivity {
     return {
       id: entity.id,
@@ -84,12 +88,13 @@ export class BrowserActivityEntity {
       duration_seconds: entity.duration_seconds,
       scroll_depth_percent: entity.scroll_depth_percent,
       page_summary: entity.page_summary,
-      page_embedding: entity.page_embedding,
       category: entity.category,
       productivity_score: entity.productivity_score,
       is_incognito: entity.is_incognito,
       contains_sensitive: entity.contains_sensitive,
       user: entity.user == null ? undefined : entity.user,
+      updatedAt: entity.updatedAt,
+      createdAt: entity.createdAt,
     };
   }
 }

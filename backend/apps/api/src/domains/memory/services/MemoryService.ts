@@ -858,7 +858,6 @@ export class MemoryService {
         isIncognito: activity.is_incognito,
         containsSensitive: activity.contains_sensitive,
         properties: activity.properties,
-        pageEmbedding: activity.page_embedding,
         url: activity.url,
       },
     };

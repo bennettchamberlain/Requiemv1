@@ -1,5 +1,6 @@
 export const INDEXABLE_ENTITIES = [
   'answer',
+  'browser-activity',
   'communication',
   'concept',
   'content',

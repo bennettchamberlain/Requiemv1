@@ -72,6 +72,30 @@ export type AnswerType = Node & {
   question: QuestionType;
 };
 
+export type BrowserActivityConnection = Connection & {
+  __typename?: 'BrowserActivityConnection';
+  edges: Array<BrowserActivityEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type BrowserActivityEdge = Edge & {
+  __typename?: 'BrowserActivityEdge';
+  cursor: Scalars['String']['output'];
+  node: BrowserActivityType;
+};
+
+export type BrowserActivityType = Node & {
+  __typename?: 'BrowserActivityType';
+  actionType?: Maybe<Scalars['String']['output']>;
+  duration?: Maybe<Scalars['Float']['output']>;
+  id: Scalars['ID']['output'];
+  scrollDepth?: Maybe<Scalars['Float']['output']>;
+  time: Scalars['DateTime']['output'];
+  title?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
+};
+
 export type CommunicationConnection = Connection & {
   __typename?: 'CommunicationConnection';
   edges: Array<CommunicationEdge>;
@@ -588,6 +612,8 @@ export type Query = {
   actions: ActionConnection;
   answer?: Maybe<AnswerType>;
   answers: AnswerConnection;
+  browserActivities: BrowserActivityConnection;
+  browserActivity?: Maybe<BrowserActivityType>;
   communication?: Maybe<CommunicationType>;
   communications: CommunicationConnection;
   concept?: Maybe<ConceptType>;
@@ -641,6 +667,19 @@ export type QueryAnswersArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryBrowserActivitiesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryBrowserActivityArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -854,7 +893,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = AnswerType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | PersonType | PlaceType | ThreadType;
+export type SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | PersonType | PlaceType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';
