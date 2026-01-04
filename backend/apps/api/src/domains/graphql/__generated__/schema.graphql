@@ -504,6 +504,8 @@ type SearchConnection {
 }
 
 input SearchInput {
+  excludeTypes: [String!]
+  includeTypes: [String!]
   query: String
   tags: [String!]
 }

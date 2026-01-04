@@ -48,6 +48,8 @@ export class SearchService {
 
     let results: EntityIdentifier<IndexableEntity>[];
 
+    console.log('mode', mode);
+    console.log('options', options);
     switch (mode) {
       case 'semantic':
         results = await this.semanticSearch(context, options);
@@ -203,6 +205,8 @@ export class SearchService {
 
     const typeFilter = this.buildTypeFilter(options, 3);
 
+    console.log('typeFilter', typeFilter);
+
     const sql = `
       SELECT
         entity_id,
@@ -223,6 +227,8 @@ export class SearchService {
       params.push(typeFilter.param);
     }
 
+    console.log('sql', sql);
+    console.log('params', params);
     const results = await this.vectorRepo.query(sql, params);
 
     return results.map((row: ScoredRowResult) => ({

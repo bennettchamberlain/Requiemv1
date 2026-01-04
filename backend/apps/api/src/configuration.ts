@@ -71,6 +71,9 @@ export const ConfigSchema = z.object({
       secretAccessKey: z.string(),
     }),
   }),
+  graphql: z.object({
+    maxQueryComplexity: z.number().int(),
+  }),
   services: z.object({
     ollama: z.object({
       host: z.string(),

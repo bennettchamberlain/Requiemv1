@@ -1,67 +1,83 @@
-import { Table } from '@ci/shadcn';
-import { Search } from '@ci/shadcn/icons';
+import { Images } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import { Empty } from '@/pages/MemoryPage/Components';
-import { useMemoryService } from '@/pages/MemoryPage/useMemoryService.tsx';
+
+import { useMemoryServiceNext } from '../useMemoryServiceNext';
+
+import { AnswerRow } from './rows/AnswerRow';
+import { BrowserActivityRow } from './rows/BrowserActivityRow';
+import { CommunicationRow } from './rows/CommunicationRow';
+import { ConceptRow } from './rows/ConceptRow';
+import { ContentRow } from './rows/ContentRow';
+import { EventRow } from './rows/EventRow';
+import { FileRow } from './rows/FileRow';
+import { ItemRow } from './rows/ItemRow';
+import { PersonRow } from './rows/PersonRow';
+import { PlaceRow } from './rows/PlaceRow';
+import { ThreadRow } from './rows/ThreadRow';
+import { SearchTable } from './SearchTable';
 
 export function ListView() {
-  const { searchQuery, searchResults } = useMemoryService();
+  const [searchParams] = useSearchParams();
+  const { data } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
+
+  if (data.length === 0) {
+    return (
+      <Empty
+        title="No results found"
+        description="Connect your data sources or try a different search to see content here"
+        icon={Images}
+      />
+    );
+  }
 
   return (
-    <div className="grid grid-cols-1 gap-4 p-4 pt-0">
-      {/* Results Display */}
-      {searchResults.length > 0 && (
-        <>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">
-                {searchResults.length > 0 ? `Found ${searchResults.length} results` : 'No results found'}
-              </h3>
-              {searchResults.length > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Sorted by relevance • Most similar results appear first
-                </p>
-              )}
-            </div>
-          </div>
+    <SearchTable className="p-4 pt-0">
+      <SearchTable.RowGroup>
+        {data.map((item) => {
+          switch (item.__typename) {
+            case 'PersonType':
+              return <PersonRow key={item.id} person={item} onClick={() => {}} />;
 
-          {searchResults.length > 0 ? (
-            <Table>
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Type</Table.Head>
-                  <Table.Head>Content</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {searchResults.map((result) => (
-                  <Table.Row key={result.id}>
-                    <Table.Cell className="capitalize">{result.type.replace('_', ' ')}</Table.Cell>
-                    <Table.Cell className="font-mono text-xs">{result.text}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
-          ) : (
-            searchQuery?.length > 0 &&
-            searchResults?.length === 0 && (
-              <Empty
-                title="No results found for your search query"
-                description="Try using different keywords or a more general search term"
-              />
-            )
-          )}
-        </>
-      )}
+            case 'PlaceType':
+              return <PlaceRow key={item.id} place={item} onClick={() => {}} />;
 
-      {/* Initial State */}
-      {searchQuery?.length === 0 && (
-        <Empty
-          title="Enter a search query to find relevant content"
-          description="The search uses semantic similarity to find related information"
-          icon={Search}
-        />
-      )}
-    </div>
+            case 'EventType':
+              return <EventRow key={item.id} event={item} onClick={() => {}} />;
+
+            case 'ThreadType':
+              return <ThreadRow key={item.id} thread={item} onClick={() => {}} />;
+
+            case 'FileType':
+              return <FileRow key={item.id} file={item} onClick={() => {}} />;
+
+            case 'CommunicationType':
+              return <CommunicationRow key={item.id} communication={item} onClick={() => {}} />;
+
+            case 'ItemType':
+              return <ItemRow key={item.id} item={item} onClick={() => {}} />;
+
+            case 'ContentType':
+              return <ContentRow key={item.id} content={item} onClick={() => {}} />;
+
+            case 'AnswerType':
+              return <AnswerRow key={item.id} answer={item} onClick={() => {}} />;
+
+            case 'ConceptType':
+              return <ConceptRow key={item.id} concept={item} onClick={() => {}} />;
+
+            case 'BrowserActivityType':
+              return <BrowserActivityRow key={item.id} browserActivity={item} onClick={() => {}} />;
+
+            default:
+              return null;
+          }
+        })}
+      </SearchTable.RowGroup>
+    </SearchTable>
   );
 }

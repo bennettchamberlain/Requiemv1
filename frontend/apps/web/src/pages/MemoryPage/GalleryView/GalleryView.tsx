@@ -1,51 +1,81 @@
 import { Images } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import { Empty } from '@/pages/MemoryPage/Components';
-import { ResultCard } from '@/pages/MemoryPage/GalleryView/ResultCard';
-import type { MemoryItem, SearchResult } from '@/pages/MemoryPage/types.ts';
 
-import { useMemoryService } from '../useMemoryService';
+import { useMemoryServiceNext } from '../useMemoryServiceNext';
+
+import { AnswerCard } from './cards/AnswerCard';
+import { BrowserActivityCard } from './cards/BrowserActivityCard';
+import { CommunicationCard } from './cards/CommunicationCard';
+import { ConceptCard } from './cards/ConceptCard';
+import { ContentCard } from './cards/ContentCard';
+import { EventCard } from './cards/EventCard';
+import { FileCard } from './cards/FileCard';
+import { ItemCard } from './cards/ItemCard';
+import { PersonCard } from './cards/PersonCard';
+import { PlaceCard } from './cards/PlaceCard';
+import { ThreadCard } from './cards/ThreadCard';
+import { SearchGrid } from './SearchGrid';
 
 export function GalleryView() {
-  const { memories, searchResults } = useMemoryService();
-
-  let combinedResults: (SearchResult | MemoryItem)[] = [];
-  const memoryIds = memories.map((memory) => memory.id);
-  const uniqueSearchResults = searchResults.filter((searchResult) => {
-    return !memoryIds.includes(searchResult.id);
+  const [searchParams] = useSearchParams();
+  const { data } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
   });
-  combinedResults = combinedResults.concat(memories).concat(uniqueSearchResults);
 
-  // Deduplicate files - if multiple memories reference the same file, only show the first one
-  const seenFileIds = new Set<string>();
-  const deduplicatedResults = combinedResults.filter((result) => {
-    // For MemoryItem with file, check if we've seen this file ID before
-    if ('file' in result && result.file?.id) {
-      if (seenFileIds.has(result.file.id)) {
-        return false; // Skip duplicate file
-      }
-
-      seenFileIds.add(result.file.id);
-    }
-
-    return true; // Include all other results
-  });
+  if (data.length === 0) {
+    return (
+      <Empty
+        title="No results found"
+        description="Connect your data sources or try a different search to see content here"
+        icon={Images}
+      />
+    );
+  }
 
   return (
-    <>
-      {deduplicatedResults.length === 0 ? (
-        <Empty
-          title="No files or results found"
-          description="Upload a file or search to see content here"
-          icon={Images}
-        />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4 pt-0">
-          {deduplicatedResults.map((result) => (
-            <ResultCard key={result.id || Math.random()} result={result} />
-          ))}
-        </div>
-      )}
-    </>
+    <SearchGrid className="p-4 pt-0">
+      {data.map((item) => {
+        switch (item.__typename) {
+          case 'PersonType':
+            return <PersonCard key={item.id} person={item} onClick={() => {}} />;
+
+          case 'PlaceType':
+            return <PlaceCard key={item.id} place={item} onClick={() => {}} />;
+
+          case 'EventType':
+            return <EventCard key={item.id} event={item} onClick={() => {}} />;
+
+          case 'ThreadType':
+            return <ThreadCard key={item.id} thread={item} onClick={() => {}} />;
+
+          case 'FileType':
+            return <FileCard key={item.id} file={item} onClick={() => {}} />;
+
+          case 'CommunicationType':
+            return <CommunicationCard key={item.id} communication={item} onClick={() => {}} />;
+
+          case 'ItemType':
+            return <ItemCard key={item.id} item={item} onClick={() => {}} />;
+
+          case 'ContentType':
+            return <ContentCard key={item.id} content={item} onClick={() => {}} />;
+
+          case 'AnswerType':
+            return <AnswerCard key={item.id} answer={item} onClick={() => {}} />;
+
+          case 'ConceptType':
+            return <ConceptCard key={item.id} concept={item} onClick={() => {}} />;
+
+          case 'BrowserActivityType':
+            return <BrowserActivityCard key={item.id} browserActivity={item} onClick={() => {}} />;
+
+          default:
+            return null;
+        }
+      })}
+    </SearchGrid>
   );
 }
