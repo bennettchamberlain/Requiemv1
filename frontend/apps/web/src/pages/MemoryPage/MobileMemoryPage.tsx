@@ -8,7 +8,7 @@ import { useSearchParams } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 
 import { MemoryDetails } from './Components';
-import { GalleryView } from './GalleryViewNext';
+import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { MobileMapView } from './MapView';
 import { TimelineView } from './TimelineView';

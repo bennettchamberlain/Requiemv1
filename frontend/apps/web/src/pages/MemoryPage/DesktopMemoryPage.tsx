@@ -9,7 +9,7 @@ import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
-import { GalleryView } from './GalleryViewNext';
+import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
