@@ -10,9 +10,11 @@ const SEARCH_QUERY = gql(`
       edges {
         node {
           __typename
+
           ... on Node {
             id
           }
+
           ...GalleryAnswerCardData
           ...GalleryBrowserActivityCardData
           ...GalleryCommunicationCardData
@@ -24,6 +26,18 @@ const SEARCH_QUERY = gql(`
           ...GalleryPersonCardData
           ...GalleryPlaceCardData
           ...GalleryThreadCardData
+
+          ...TableAnswerRowData
+          ...TableCommunicationRowData
+          ...TableConceptRowData
+          ...TableContentRowData
+          ...TableEventRowData
+          ...TableFileRowData
+          ...TableItemRowData
+          ...TablePersonRowData
+          ...TablePlaceRowData
+          ...TableThreadRowData
+          ...TableBrowserActivityRowData
         }
       }
     }

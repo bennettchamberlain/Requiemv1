@@ -11,7 +11,7 @@ import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
 import { GalleryView } from './GalleryViewNext';
 import { GraphView } from './GraphView';
-import { ListView } from './ListView';
+import { ListView } from './ListViewNext';
 import { DesktopMapView } from './MapView';
 import { useMemoryService } from './useMemoryService';
 
