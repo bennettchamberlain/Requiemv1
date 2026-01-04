@@ -893,7 +893,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = AnswerType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | PersonType | PlaceType | ThreadType;
+export type SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | PersonType | PlaceType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';

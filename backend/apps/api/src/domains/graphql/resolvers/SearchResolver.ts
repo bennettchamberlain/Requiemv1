@@ -3,6 +3,7 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { BrowserActivityService } from '@ci/domains/browser-activity';
 import { ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { AnswerService } from '@ci/domains/intelligence';
@@ -24,6 +25,7 @@ import {
 } from '@ci/domains/search-next';
 
 import { AnswerType } from '../types/AnswerType';
+import { BrowserActivityType } from '../types/BrowserActivityType';
 import { CommunicationType } from '../types/CommunicationType';
 import { ConceptType } from '../types/ConceptType';
 import { ContentType } from '../types/ContentType';
@@ -43,6 +45,7 @@ import { Paginator } from '../utils/Paginator';
 export class SearchResolver {
   constructor(
     private readonly answerService: AnswerService,
+    private readonly browserActivityService: BrowserActivityService,
     private readonly communicationService: CommunicationService,
     private readonly conceptService: ConceptService,
     private readonly contentService: ContentService,
@@ -133,6 +136,7 @@ export class SearchResolver {
     }, new Map());
 
     const answerIds = groupedByType.get('answer') || [];
+    const browserActivityIds = groupedByType.get('browser-activity') || [];
     const communicationIds = groupedByType.get('communication') || [];
     const conceptIds = groupedByType.get('concept') || [];
     const contentIds = groupedByType.get('content') || [];
@@ -143,23 +147,39 @@ export class SearchResolver {
     const placeIds = groupedByType.get('place') || [];
     const threadIds = groupedByType.get('thread') || [];
 
-    const [answers, communications, concepts, content, events, files, items, people, places, threads] =
-      await Promise.all([
-        this.answerService.findByIds(context, answerIds),
-        this.communicationService.findByIds(context, communicationIds),
-        this.conceptService.findByIds(context, conceptIds),
-        this.contentService.findByIds(context, contentIds),
-        this.eventService.findByIds(context, eventIds),
-        this.fileService.findByIds(context, fileIds),
-        this.itemService.findByIds(context, itemIds),
-        this.personService.findByIds(context, peopleIds),
-        this.placeService.findByIds(context, placeIds),
-        this.threadService.findByIds(context, threadIds),
-      ]);
+    const [
+      answers,
+      browserActivities,
+      communications,
+      concepts,
+      content,
+      events,
+      files,
+      items,
+      people,
+      places,
+      threads,
+    ] = await Promise.all([
+      this.answerService.findByIds(context, answerIds),
+      this.browserActivityService.findByIds(context, browserActivityIds),
+      this.communicationService.findByIds(context, communicationIds),
+      this.conceptService.findByIds(context, conceptIds),
+      this.contentService.findByIds(context, contentIds),
+      this.eventService.findByIds(context, eventIds),
+      this.fileService.findByIds(context, fileIds),
+      this.itemService.findByIds(context, itemIds),
+      this.personService.findByIds(context, peopleIds),
+      this.placeService.findByIds(context, placeIds),
+      this.threadService.findByIds(context, threadIds),
+    ]);
 
     const answerResults = answers
       .filter((entity) => entity != null)
       .map((entity) => AnswerType.toType(entity));
+
+    const browserActivityResults = browserActivities
+      .filter((entity) => entity != null)
+      .map((entity) => BrowserActivityType.toType(entity));
 
     const communicationResults = communications
       .filter((entity) => entity != null)
@@ -192,15 +212,23 @@ export class SearchResolver {
     const resultMap = new Map<string, SearchResult>();
 
     answerResults.forEach((answer) => resultMap.set(makeCompositeKey('answer', answer.__source.id), answer));
+
+    browserActivityResults.forEach((activity) =>
+      resultMap.set(makeCompositeKey('browser-activity', activity.__source.id), activity),
+    );
+
     communicationResults.forEach((communication) =>
       resultMap.set(makeCompositeKey('communication', communication.__source.id), communication),
     );
+
     conceptResults.forEach((concept) =>
       resultMap.set(makeCompositeKey('concept', concept.__source.id), concept),
     );
+
     contentResults.forEach((content) =>
       resultMap.set(makeCompositeKey('content', content.__source.id), content),
     );
+
     eventResults.forEach((event) => resultMap.set(makeCompositeKey('event', event.__source.id), event));
     fileResults.forEach((file) => resultMap.set(makeCompositeKey('file', file.__source.id), file));
     itemResults.forEach((item) => resultMap.set(makeCompositeKey('item', item.__source.id), item));

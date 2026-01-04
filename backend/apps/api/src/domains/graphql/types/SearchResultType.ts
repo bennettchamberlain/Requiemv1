@@ -1,6 +1,7 @@
 import { createUnionType } from '@nestjs/graphql';
 
 import { AnswerType } from './AnswerType';
+import { BrowserActivityType } from './BrowserActivityType';
 import { CommunicationType } from './CommunicationType';
 import { ConceptType } from './ConceptType';
 import { ContentType } from './ContentType';
@@ -18,6 +19,7 @@ export const SearchResultType = createUnionType({
   types: () =>
     [
       AnswerType,
+      BrowserActivityType,
       CommunicationType,
       ConceptType,
       ContentType,
@@ -34,6 +36,8 @@ export const SearchResultType = createUnionType({
     switch (type) {
       case 'answer':
         return AnswerType;
+      case 'browser-activity':
+        return BrowserActivityType;
       case 'communication':
         return CommunicationType;
       case 'concept':
