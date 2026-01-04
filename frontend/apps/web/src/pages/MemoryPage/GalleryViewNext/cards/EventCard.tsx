@@ -33,7 +33,7 @@ export function EventCard({ event, onClick }: Props) {
         <div className="line-clamp-3 leading-tight">{data.description}</div>
       </SearchCard.Content>
 
-      <SearchCard.Footer>
+      <SearchCard.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Event</div>
       </SearchCard.Footer>
     </SearchCard>

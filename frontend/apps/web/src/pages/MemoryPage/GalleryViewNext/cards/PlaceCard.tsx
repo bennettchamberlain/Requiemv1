@@ -33,7 +33,7 @@ export function PlaceCard({ place, onClick }: Props) {
         <div className="line-clamp-3 leading-tight">{data.description}</div>
       </SearchCard.Content>
 
-      <SearchCard.Footer>
+      <SearchCard.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Place</div>
       </SearchCard.Footer>
     </SearchCard>

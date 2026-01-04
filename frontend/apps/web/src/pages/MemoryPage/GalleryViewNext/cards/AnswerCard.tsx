@@ -43,7 +43,7 @@ export function AnswerCard({ answer, onClick }: Props) {
         </div>
       </SearchCard.Content>
 
-      <SearchCard.Footer>
+      <SearchCard.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Question</div>
       </SearchCard.Footer>
     </SearchCard>

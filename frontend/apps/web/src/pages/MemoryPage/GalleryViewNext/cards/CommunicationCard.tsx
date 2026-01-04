@@ -33,7 +33,7 @@ export function CommunicationCard({ communication, onClick }: Props) {
         <div className="line-clamp-3 leading-tight">{data.preview}</div>
       </SearchCard.Content>
 
-      <SearchCard.Footer>
+      <SearchCard.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Communication</div>
       </SearchCard.Footer>
     </SearchCard>

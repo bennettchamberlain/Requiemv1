@@ -47,7 +47,7 @@ export function ItemCard({ item, onClick }: Props) {
         )}
       </SearchCard.Content>
 
-      <SearchCard.Footer>
+      <SearchCard.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Item</div>
       </SearchCard.Footer>
     </SearchCard>
