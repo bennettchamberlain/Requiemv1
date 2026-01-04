@@ -54,6 +54,9 @@
       "secretAccessKey": "S3_SECRET_ACCESS_KEY"
     }
   },
+  "graphql": {
+    "maxQueryComplexity": 150
+  },
   "services": {
     "ollama": {
       "host": "http://localhost:11434"
