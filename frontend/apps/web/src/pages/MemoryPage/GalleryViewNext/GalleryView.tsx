@@ -36,7 +36,7 @@ export function GalleryView() {
   }
 
   return (
-    <SearchGrid>
+    <SearchGrid className="p-4 pt-0">
       {data.map((item) => {
         switch (item.__typename) {
           case 'PersonType':
