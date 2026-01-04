@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
 
-import type { MemoryItem, SearchResult } from './types';
+import type { MemoryItem } from './types';
 
 // Constants
 const MAX_MEMORIES = 500;
@@ -26,11 +26,8 @@ export interface MemoryQuery {
 
 interface MemoryContextValue {
   memories: MemoryItem[];
-  searchResults: SearchResult[];
   loading: boolean;
-  searchLoading: boolean;
   error: string | null;
-  searchError: string | null;
   hasMorePast: boolean;
   hasMoreFuture: boolean;
   loadPastEvents: () => Promise<void>;
@@ -77,11 +74,8 @@ function useMemoryService(): MemoryContextValue {
   }, [searchParams]);
 
   const [memories, setMemories] = useState<MemoryItem[]>([]);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [hasMorePast, setHasMorePast] = useState(true);
   const [hasMoreFuture, setHasMoreFuture] = useState(true);
   const [searchQuery, setSearchQuery] = useState(query.search || '');
@@ -233,45 +227,6 @@ function useMemoryService(): MemoryContextValue {
     }
   }, [fetchMemories, query]);
 
-  const loadInitialEmbeddings = useCallback(async () => {
-    setSearchResults([]);
-    setSearchLoading(true);
-    setError(null);
-
-    if (query?.search?.length === 0) {
-      return;
-    }
-
-    // Clear existing memories when query changes
-    setMemories([]);
-    try {
-      const response = await fetch(`/api/embeddings/search`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          input: searchQuery,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch memories: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-
-      setSearchResults(result);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      setSearchError(errorMessage);
-      setSearchResults([]);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [query]);
-
   // Load past events (for scrolling up)
   const loadPastEvents = useCallback(async () => {
     if (loadingPast || !hasMorePast) {
@@ -358,16 +313,12 @@ function useMemoryService(): MemoryContextValue {
   // Load initial memories when component mounts or query changes
   useEffect(() => {
     loadInitialMemories();
-    loadInitialEmbeddings();
   }, [query]);
 
   return {
     memories,
-    searchResults,
     loading,
-    searchLoading,
     error,
-    searchError,
     hasMorePast,
     hasMoreFuture,
     loadPastEvents,

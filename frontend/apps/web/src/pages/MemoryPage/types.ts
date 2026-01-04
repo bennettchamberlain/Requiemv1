@@ -74,12 +74,3 @@ export interface FileMeta {
   size: string;
   url?: string;
 }
-
-export interface SearchResult {
-  text: string;
-  type: string;
-  id: string;
-  path: string;
-  imageUrl?: string;
-  metadata?: Record<string, unknown>;
-}
