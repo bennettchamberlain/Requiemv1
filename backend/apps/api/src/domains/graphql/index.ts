@@ -4,6 +4,7 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
+import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
@@ -23,6 +24,7 @@ import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
 import { AnswerResolver } from './resolvers/AnswerResolver';
+import { BrowserActivityResolver } from './resolvers/BrowserActivityResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { ConceptResolver } from './resolvers/ConceptResolver';
 import { ContentResolver } from './resolvers/ContentResolver';
@@ -49,6 +51,7 @@ import { UserResolver } from './resolvers/UserResolver';
       introspection: true,
       graphiql: false,
     }),
+    BrowserActivityModule,
     ConversationModule,
     FilesModule,
     IntelligenceModule,
@@ -58,6 +61,7 @@ import { UserResolver } from './resolvers/UserResolver';
   ],
   providers: [
     ActionResolver,
+    BrowserActivityResolver,
     CommunicationResolver,
     ComplexityPlugin,
     ConceptResolver,

@@ -3,6 +3,7 @@ import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { BrowserActivityService } from '@ci/domains/browser-activity';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
@@ -19,6 +20,7 @@ import { UserService } from '@ci/domains/user';
 
 import { ActionType } from '../types/ActionType';
 import { AnswerType } from '../types/AnswerType';
+import { BrowserActivityType } from '../types/BrowserActivityType';
 import { ConceptType } from '../types/ConceptType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
@@ -40,6 +42,7 @@ export class NodeResolver {
   constructor(
     private readonly actionService: ActionService,
     private readonly answerService: AnswerService,
+    private readonly browserActivityService: BrowserActivityService,
     private readonly conceptService: ConceptService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
@@ -73,6 +76,12 @@ export class NodeResolver {
         const answer = await this.answerService.findById(serviceContext, id);
 
         return answer ? AnswerType.toType(answer) : null;
+      }
+
+      case 'browser-activity': {
+        const activity = await this.browserActivityService.findById(serviceContext, id);
+
+        return activity ? BrowserActivityType.toType(activity) : null;
       }
 
       case 'concept': {

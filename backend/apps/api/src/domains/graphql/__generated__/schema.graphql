@@ -44,6 +44,27 @@ type AnswerType implements Node {
   question: QuestionType!
 }
 
+type BrowserActivityConnection implements Connection {
+  edges: [BrowserActivityEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type BrowserActivityEdge implements Edge {
+  cursor: String!
+  node: BrowserActivityType!
+}
+
+type BrowserActivityType implements Node {
+  actionType: String
+  duration: Float
+  id: ID!
+  scrollDepth: Float
+  time: DateTime!
+  title: String
+  url: String!
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -421,6 +442,8 @@ type Query {
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
   answer(id: ID!): AnswerType
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
+  browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
+  browserActivity(id: ID!): BrowserActivityType
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
   concept(id: ID!): ConceptType

@@ -1,6 +1,7 @@
 type ResourceType =
   | 'action'
   | 'answer'
+  | 'browser-activity'
   | 'communication'
   | 'concept'
   | 'content'
