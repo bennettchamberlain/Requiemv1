@@ -2,17 +2,19 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
+import {
+  MOCK_ANSWERS,
+  MOCK_COMMUNICATIONS,
+  MOCK_CONCEPTS,
+  MOCK_CONTENT,
+  MOCK_ITEMS,
+  MOCK_EVENTS,
+  MOCK_FILES,
+  MOCK_PEOPLE,
+  MOCK_PLACES,
+  MOCK_THREADS,
+} from '@/graphql/mocks';
 
-import { MOCK_ANSWERS } from './mocks/answers.mock';
-import { MOCK_COMMUNICATIONS } from './mocks/communications.mock';
-import { MOCK_CONCEPTS } from './mocks/concepts.mock';
-import { MOCK_CONTENT } from './mocks/content.mock';
-import { MOCK_EVENTS } from './mocks/events.mock';
-import { MOCK_FILES } from './mocks/files.mock';
-import { MOCK_ITEMS } from './mocks/items.mock';
-import { MOCK_PEOPLE } from './mocks/people.mock';
-import { MOCK_PLACES } from './mocks/places.mock';
-import { MOCK_THREADS } from './mocks/threads.mock';
 import { AnswerRow, ANSWER_FRAGMENT } from './rows/AnswerRow';
 import { CommunicationRow, COMMUNICATION_FRAGMENT } from './rows/CommunicationRow';
 import { ConceptRow, CONCEPT_FRAGMENT } from './rows/ConceptRow';
