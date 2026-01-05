@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
+import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
@@ -35,6 +36,7 @@ import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
+import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { TagResolver } from './resolvers/TagResolver';
@@ -52,6 +54,7 @@ import { UserResolver } from './resolvers/UserResolver';
       graphiql: false,
     }),
     BrowserActivityModule,
+    ConnectionsModule,
     ConversationModule,
     FilesModule,
     IntelligenceModule,
@@ -87,6 +90,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ThreadResolver,
     UserResolver,
     PlaceResolver,
+    ProviderResolver,
   ],
   controllers: [GraphQLController],
   exports: [],

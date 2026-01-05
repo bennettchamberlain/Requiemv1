@@ -606,6 +606,41 @@ export type PlaceType = Node & {
   uploaded?: Maybe<Scalars['Boolean']['output']>;
 };
 
+export type ProviderConnection = Connection & {
+  __typename?: 'ProviderConnection';
+  edges: Array<ProviderEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type ProviderEdge = Edge & {
+  __typename?: 'ProviderEdge';
+  cursor: Scalars['String']['output'];
+  node: ProviderType;
+};
+
+export type ProviderEndpointType = {
+  __typename?: 'ProviderEndpointType';
+  description: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+};
+
+export type ProviderThemeType = {
+  __typename?: 'ProviderThemeType';
+  backgroundColor?: Maybe<Scalars['String']['output']>;
+  borderColor?: Maybe<Scalars['String']['output']>;
+};
+
+export type ProviderType = Node & {
+  __typename?: 'ProviderType';
+  description?: Maybe<Scalars['String']['output']>;
+  endpoints: Array<ProviderEndpointType>;
+  id: Scalars['ID']['output'];
+  logoUrl?: Maybe<Scalars['String']['output']>;
+  name?: Maybe<Scalars['String']['output']>;
+  theme?: Maybe<ProviderThemeType>;
+};
+
 export type Query = {
   __typename?: 'Query';
   action?: Maybe<ActionType>;
@@ -634,6 +669,8 @@ export type Query = {
   person?: Maybe<PersonType>;
   place?: Maybe<PlaceType>;
   places: PlaceConnection;
+  provider?: Maybe<ProviderType>;
+  providers: ProviderConnection;
   question?: Maybe<QuestionType>;
   questions: QuestionConnection;
   search: SearchConnection;
@@ -798,6 +835,19 @@ export type QueryPlaceArgs = {
 
 
 export type QueryPlacesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryProviderArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryProvidersArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
