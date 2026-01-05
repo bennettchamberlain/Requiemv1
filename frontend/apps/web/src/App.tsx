@@ -30,6 +30,7 @@ const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
+const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
@@ -70,6 +71,15 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <OnboardingPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/providers/:id"
+        element={
+          <ProtectedRoute>
+            <ProviderPage />
           </ProtectedRoute>
         }
       />
