@@ -19,6 +19,8 @@ import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-
  */
 type Documents = {
     "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            label\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetActionsDocument,
+    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": typeof types.FileGridItemFragmentFragmentDoc,
+    "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetFilesDocument,
     "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetInventoryItemsDocument,
     "\n  fragment GalleryAnswerCardData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.GalleryAnswerCardDataFragmentDoc,
     "\n  fragment GalleryBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": typeof types.GalleryBrowserActivityCardDataFragmentDoc,
@@ -48,6 +50,8 @@ type Documents = {
 };
 const documents: Documents = {
     "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            label\n          }\n        }\n      }\n    }\n  }\n": types.GetActionsDocument,
+    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": types.FileGridItemFragmentFragmentDoc,
+    "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetFilesDocument,
     "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n": types.GetInventoryItemsDocument,
     "\n  fragment GalleryAnswerCardData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.GalleryAnswerCardDataFragmentDoc,
     "\n  fragment GalleryBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": types.GalleryBrowserActivityCardDataFragmentDoc,
@@ -94,6 +98,14 @@ export function gql(source: string): unknown;
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            label\n          }\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            label\n          }\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n"): (typeof documents)["\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
