@@ -38,7 +38,16 @@ export class ConnectionService {
 
     const entity = await this.connectionRepository.save(instance);
 
-    return ConnectionEntity.toEgressType(entity);
+    // We reload the entity to ensure relations are loaded. Otherwise we
+    // we encounter an error serializing this since we only have the provider
+    // id at this point.
+    const reloadedEntity = await this.findById(context, entity.id);
+
+    if (!reloadedEntity) {
+      throw new Error('Failed to reload connection after creation');
+    }
+
+    return reloadedEntity;
   }
 
   async findAll(context: ServiceContext): Promise<Connection[]> {

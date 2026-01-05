@@ -437,6 +437,36 @@ type PlaceType implements Node {
   uploaded: Boolean
 }
 
+type ProviderConnection implements Connection {
+  edges: [ProviderEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProviderEdge implements Edge {
+  cursor: String!
+  node: ProviderType!
+}
+
+type ProviderEndpointType {
+  description: String!
+  name: String!
+}
+
+type ProviderThemeType {
+  backgroundColor: String
+  borderColor: String
+}
+
+type ProviderType implements Node {
+  description: String
+  endpoints: [ProviderEndpointType!]!
+  id: ID!
+  logoUrl: String
+  name: String
+  theme: ProviderThemeType
+}
+
 type Query {
   action(id: ID!): ActionType
   actions(after: String, before: String, first: Int, last: Int): ActionConnection!
@@ -464,6 +494,8 @@ type Query {
   person(id: ID!): PersonType
   place(id: ID!): PlaceType
   places(after: String, before: String, first: Int, last: Int): PlaceConnection!
+  provider(id: ID!): ProviderType
+  providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
   search(input: SearchInput!): SearchConnection!

@@ -12,6 +12,7 @@ type ResourceType =
   | 'message'
   | 'person'
   | 'place'
+  | 'provider'
   | 'question'
   | 'tag'
   | 'thread'
