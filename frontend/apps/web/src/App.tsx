@@ -32,6 +32,7 @@ const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
+const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
@@ -147,6 +148,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <InsightsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/files"
+          element={
+            <ProtectedRoute>
+              <FilesPage />
             </ProtectedRoute>
           }
         />
