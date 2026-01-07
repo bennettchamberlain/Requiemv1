@@ -9,6 +9,7 @@ import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { FileService } from '@ci/domains/files';
 import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
+import { parseDate } from '@ci/domains/promote/util';
 
 import { PromoteService } from '../PromoteService';
 
@@ -328,8 +329,8 @@ export class OutlookCalendarPromotionService {
     return {
       id: event.id || 'unknown',
       subject,
-      startTime: new Date(start.dateTime),
-      endTime: new Date(end.dateTime),
+      startTime: parseDate(start.dateTime),
+      endTime: parseDate(end.dateTime),
       isAllDay,
       bodyPreview: event.bodyPreview || null,
       body,

@@ -5,6 +5,7 @@ import { ConnectionService, type Connection } from '@ci/domains/connections';
 import { CommunicationService } from '@ci/domains/memory';
 import { TagService } from '@ci/domains/search-next';
 
+import { parseDate } from '../../util';
 import { PromoteService } from '../PromoteService';
 
 interface GmailMessage {
@@ -308,7 +309,7 @@ export class GmailPromotionService {
     const to = getHeader('To');
     const cc = getHeader('Cc');
     const bcc = getHeader('Bcc');
-    const date = getHeader('Date');
+    const date = parseDate(getHeader('Date'));
 
     // Extract body
     let body = '';
