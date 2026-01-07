@@ -101,6 +101,8 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
   protected readonly scopes = ['user.read', 'mail.read', 'calendars.read', 'files.read', 'offline_access'];
 
+  protected readonly extraAuthParams = {};
+
   protected get clientId() {
     const clientIdVariable = 'MICROSOFT_CLIENT_ID';
     const clientId = process.env[clientIdVariable];

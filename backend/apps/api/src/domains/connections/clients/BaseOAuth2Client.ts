@@ -20,6 +20,8 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   protected abstract clientSecret: string;
 
+  protected abstract extraAuthParams: Record<string, string>;
+
   async request<T>(connection: Connection, endpoint: string, options?: RequestInit): Promise<T> {
     if (connection.accessToken == null) {
       throw new Error('Connection not authenticated');
@@ -72,6 +74,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
       response_type: 'code',
       scope: this.scopes.join(' '),
       state: connection.id,
+      ...this.extraAuthParams,
     });
 
     return `${this.authorizationEndpoint}?${params.toString()}`;
