@@ -21,18 +21,21 @@ export class FacebookClient extends BaseOAuth2Client {
 
   protected readonly tokenEndpoint = 'https://graph.facebook.com/v21.0/oauth/access_token';
 
+  protected readonly endpointMap = {
+    'Posts': ['user_posts'],
+    'Photos': ['user_photos'],
+    'Videos': ['user_videos'],
+    'Friends': ['user_friends'],
+    'Likes': ['user_likes'],
+    'default': ['email', 'public_profile']
+  }
+
   // Facebook permissions based on what you configured
   protected readonly scopes = [
     'email',
     'public_profile',
-    'user_age_range',
-    'user_birthday',
     'user_friends',
-    'user_gender',
-    'user_hometown',
     'user_likes',
-    'user_link',
-    'user_location',
     'user_photos',
     'user_posts',
     'user_videos',
@@ -66,6 +69,17 @@ export class FacebookClient extends BaseOAuth2Client {
     return clientSecret;
   }
 
+  protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+    const scopesSet = new Set<string>(this.endpointMap['default']);
+
+    activeEndpoints.forEach((endpoint) => {
+      const scopes = this.endpointMap[endpoint as keyof typeof this.endpointMap];
+      scopes.forEach((scope) => scopesSet.add(scope));
+    });
+
+    return scopesSet.size > 0 ? Array.from(scopesSet).join(' ') : '';
+  }
+
   /**
    * Get user's basic profile information
    */
@@ -75,27 +89,13 @@ export class FacebookClient extends BaseOAuth2Client {
         'id',
         'name',
         'email',
-        'age_range',
-        'birthday',
-        'gender',
-        'hometown',
-        'link',
-        'location',
       ].join(',');
 
-      const profile = await this.request<{
+      return await this.request<{
         id: string;
         name: string;
         email?: string;
-        age_range?: { min: number; max?: number };
-        birthday?: string;
-        gender?: string;
-        hometown?: { id: string; name: string };
-        link?: string;
-        location?: { id: string; name: string };
       }>(connection, `/v21.0/me?fields=${fields}`);
-
-      return profile;
     } catch (error) {
       this.logger.error('Failed to fetch Facebook profile', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -369,174 +369,184 @@ export class FacebookClient extends BaseOAuth2Client {
         });
       }
 
-      // Fetch posts
-      try {
-        const posts = await this.fetchPosts(connection, syncState.posts || null);
+      if (connection.activeEndpoints.indexOf('Posts') > -1) {
+        // Fetch posts
+        try {
+          const posts = await this.fetchPosts(connection, syncState.posts || null);
 
-        responses.push({
-          success: true,
-          message: 'Facebook posts sync completed successfully',
-          data: {
-            results: [
-              {
-                api: 'facebook posts',
-                data: posts.data,
-                syncState: posts.syncState,
-              },
-            ],
-            errors: [],
-          },
-          cursor: { posts: posts.syncState },
-        });
-      } catch (error) {
-        this.logger.warn('Failed to sync Facebook posts', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+          responses.push({
+            success: true,
+            message: 'Facebook posts sync completed successfully',
+            data: {
+              results: [
+                {
+                  api: 'facebook posts',
+                  data: posts.data,
+                  syncState: posts.syncState,
+                },
+              ],
+              errors: [],
+            },
+            cursor: {posts: posts.syncState},
+          });
+        } catch (error) {
+          this.logger.warn('Failed to sync Facebook posts', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
 
-        responses.push({
-          success: false,
-          message: `Facebook posts sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          data: {
-            results: [],
-            errors: [`facebook posts: ${error instanceof Error ? error.message : 'Unknown error'}`],
-          },
-        });
+          responses.push({
+            success: false,
+            message: `Facebook posts sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            data: {
+              results: [],
+              errors: [`facebook posts: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            },
+          });
+        }
       }
 
-      // Fetch photos
-      try {
-        const photos = await this.fetchPhotos(connection, syncState.photos || null);
+      if (connection.activeEndpoints.indexOf('Photos') > -1) {
+        // Fetch photos
+        try {
+          const photos = await this.fetchPhotos(connection, syncState.photos || null);
 
-        responses.push({
-          success: true,
-          message: 'Facebook photos sync completed successfully',
-          data: {
-            results: [
-              {
-                api: 'facebook photos',
-                data: photos.data,
-                syncState: photos.syncState,
-              },
-            ],
-            errors: [],
-          },
-          cursor: { photos: photos.syncState },
-        });
-      } catch (error) {
-        this.logger.warn('Failed to sync Facebook photos', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+          responses.push({
+            success: true,
+            message: 'Facebook photos sync completed successfully',
+            data: {
+              results: [
+                {
+                  api: 'facebook photos',
+                  data: photos.data,
+                  syncState: photos.syncState,
+                },
+              ],
+              errors: [],
+            },
+            cursor: {photos: photos.syncState},
+          });
+        } catch (error) {
+          this.logger.warn('Failed to sync Facebook photos', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
 
-        responses.push({
-          success: false,
-          message: `Facebook photos sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          data: {
-            results: [],
-            errors: [`facebook.photos: ${error instanceof Error ? error.message : 'Unknown error'}`],
-          },
-        });
+          responses.push({
+            success: false,
+            message: `Facebook photos sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            data: {
+              results: [],
+              errors: [`facebook.photos: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            },
+          });
+        }
       }
 
-      // Fetch videos
-      try {
-        const videos = await this.fetchVideos(connection, syncState.videos || null);
+      if (connection.activeEndpoints.indexOf('Videos') > -1) {
+        // Fetch videos
+        try {
+          const videos = await this.fetchVideos(connection, syncState.videos || null);
 
-        responses.push({
-          success: true,
-          message: 'Facebook videos sync completed successfully',
-          data: {
-            results: [
-              {
-                api: 'facebook videos',
-                data: videos.data,
-                syncState: videos.syncState,
-              },
-            ],
-            errors: [],
-          },
-          cursor: { videos: videos.syncState },
-        });
-      } catch (error) {
-        this.logger.warn('Failed to sync Facebook videos', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+          responses.push({
+            success: true,
+            message: 'Facebook videos sync completed successfully',
+            data: {
+              results: [
+                {
+                  api: 'facebook videos',
+                  data: videos.data,
+                  syncState: videos.syncState,
+                },
+              ],
+              errors: [],
+            },
+            cursor: {videos: videos.syncState},
+          });
+        } catch (error) {
+          this.logger.warn('Failed to sync Facebook videos', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
 
-        responses.push({
-          success: false,
-          message: `Facebook videos sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          data: {
-            results: [],
-            errors: [`facebook.videos: ${error instanceof Error ? error.message : 'Unknown error'}`],
-          },
-        });
+          responses.push({
+            success: false,
+            message: `Facebook videos sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            data: {
+              results: [],
+              errors: [`facebook.videos: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            },
+          });
+        }
       }
 
-      // Fetch friends
-      try {
-        const friends = await this.fetchFriends(connection, syncState.friends || null);
+      if (connection.activeEndpoints.indexOf('Friends') > -1) {
+        // Fetch friends
+        try {
+          const friends = await this.fetchFriends(connection, syncState.friends || null);
 
-        responses.push({
-          success: true,
-          message: 'Facebook friends sync completed successfully',
-          data: {
-            results: [
-              {
-                api: 'facebook friends',
-                data: friends.data,
-                syncState: friends.syncState,
-              },
-            ],
-            errors: [],
-          },
-          cursor: { friends: friends.syncState },
-        });
-      } catch (error) {
-        this.logger.warn('Failed to sync Facebook friends', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+          responses.push({
+            success: true,
+            message: 'Facebook friends sync completed successfully',
+            data: {
+              results: [
+                {
+                  api: 'facebook friends',
+                  data: friends.data,
+                  syncState: friends.syncState,
+                },
+              ],
+              errors: [],
+            },
+            cursor: {friends: friends.syncState},
+          });
+        } catch (error) {
+          this.logger.warn('Failed to sync Facebook friends', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
 
-        responses.push({
-          success: false,
-          message: `Facebook friends sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          data: {
-            results: [],
-            errors: [`facebook friends: ${error instanceof Error ? error.message : 'Unknown error'}`],
-          },
-        });
+          responses.push({
+            success: false,
+            message: `Facebook friends sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            data: {
+              results: [],
+              errors: [`facebook friends: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            },
+          });
+        }
       }
 
-      // Fetch likes
-      try {
-        const likes = await this.fetchLikes(connection, syncState.likes || null);
+      if (connection.activeEndpoints.indexOf('Likes') > -1) {
+        // Fetch likes
+        try {
+          const likes = await this.fetchLikes(connection, syncState.likes || null);
 
-        responses.push({
-          success: true,
-          message: 'Facebook likes sync completed successfully',
-          data: {
-            results: [
-              {
-                api: 'facebook likes',
-                data: likes.data,
-                syncState: likes.syncState,
-              },
-            ],
-            errors: [],
-          },
-          cursor: { likes: likes.syncState },
-        });
-      } catch (error) {
-        this.logger.warn('Failed to sync Facebook likes', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+          responses.push({
+            success: true,
+            message: 'Facebook likes sync completed successfully',
+            data: {
+              results: [
+                {
+                  api: 'facebook likes',
+                  data: likes.data,
+                  syncState: likes.syncState,
+                },
+              ],
+              errors: [],
+            },
+            cursor: {likes: likes.syncState},
+          });
+        } catch (error) {
+          this.logger.warn('Failed to sync Facebook likes', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
 
-        responses.push({
-          success: false,
-          message: `Facebook likes sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          data: {
-            results: [],
-            errors: [`facebook.likes: ${error instanceof Error ? error.message : 'Unknown error'}`],
-          },
-        });
+          responses.push({
+            success: false,
+            message: `Facebook likes sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            data: {
+              results: [],
+              errors: [`facebook.likes: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            },
+          });
+        }
       }
 
       return responses;

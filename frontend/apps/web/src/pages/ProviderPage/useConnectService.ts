@@ -13,8 +13,8 @@ type ReturnType = [
     authorizationUrl: string | null;
     loading: boolean;
     error: unknown | null;
-    scopes: string[];
-    setScopes: (scopes: string[]) => void;
+    endpoints: string[];
+    setEndpoints: (endpoints: string[]) => void;
   },
   {
     connect: (providerId: string) => Promise<void>;
@@ -27,7 +27,7 @@ export function useConnectService(): ReturnType {
   const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown | null>(null);
-  const [scopes, setScopes] = useState<string[]>([]);
+  const [endpoints, setEndpoints] = useState<string[]>([]);
 
   const connect = useCallback(
     async (providerId: string) => {
@@ -42,7 +42,7 @@ export function useConnectService(): ReturnType {
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ scopes: scopes || [] }),
+          body: JSON.stringify({ endpoints: endpoints || [] }),
         });
 
         setAuthorizationUrl(response.authorizationUrl);
@@ -52,7 +52,7 @@ export function useConnectService(): ReturnType {
         setLoading(false);
       }
     },
-    [authToken, scopes],
+    [authToken, endpoints],
   );
 
   return [
@@ -60,8 +60,8 @@ export function useConnectService(): ReturnType {
       authorizationUrl,
       loading,
       error,
-      scopes,
-      setScopes,
+      endpoints,
+      setEndpoints,
     },
     {
       connect,

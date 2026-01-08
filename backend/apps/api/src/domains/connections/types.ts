@@ -12,7 +12,7 @@ export interface CreateConnectionDto {
   clientkey?: string;
   clientsecret?: string;
   schedule?: string;
-  scopes?: string[];
+  endpoints?: string[];
 }
 
 export interface UpdateConnectionDto {
@@ -23,13 +23,13 @@ export interface UpdateConnectionDto {
   refreshToken?: string | null;
   tokenExpiry?: Date | null;
   syncState?: Record<string, unknown> | null;
-  scopes?: string[];
+  endpoints?: string[];
 }
 
 export interface connectProviderDto {
-  scopes: string[];
+  endpoints: string[];
 }
 
 export const connectProviderSchema = z.object({
-  scopes: z.array(z.string()),
+  endpoints: z.array(z.string()),
 });

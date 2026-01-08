@@ -100,7 +100,7 @@ export class ProvidersController {
       clientid: clientId,
       clientsecret: clientSecret,
       schedule: '1 hour',
-      scopes: input.scopes,
+      endpoints: input.endpoints,
     });
 
     const authorizationUrl = await client.getAuthorizationUrl(connection);

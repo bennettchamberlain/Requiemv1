@@ -103,6 +103,11 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
   protected readonly extraAuthParams = {};
 
+  protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+    let returned = this.scopes.join(' ')
+    return returned
+  }
+
   protected get clientId() {
     const clientIdVariable = 'MICROSOFT_CLIENT_ID';
     const clientId = process.env[clientIdVariable];

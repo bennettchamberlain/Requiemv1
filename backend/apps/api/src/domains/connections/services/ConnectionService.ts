@@ -34,7 +34,7 @@ export class ConnectionService {
       provider: {
         id: providerId,
       },
-      scopes: data.scopes || [],
+      activeEndpoints: data.endpoints || [],
     });
 
     const entity = await this.connectionRepository.save(instance);
