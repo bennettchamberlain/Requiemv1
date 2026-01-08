@@ -44,6 +44,9 @@ export class ConnectionEntity {
   @Column({ type: 'uuid', name: 'provider_id' })
   providerId!: string;
 
+  @Column({ type: 'jsonb', default: [] })
+  scopes!: string[];
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -72,6 +75,7 @@ export class ConnectionEntity {
       providerId: entity.providerId,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
       provider: entity.provider ? ProviderEntity.toEgressType(entity.provider) : undefined,
+      scopes: entity.scopes,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
