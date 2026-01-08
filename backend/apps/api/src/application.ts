@@ -30,6 +30,7 @@ import { GraphQLModule } from '@ci/domains/graphql';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
+import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
 import { PositionModule } from '@ci/domains/position';
 import { PromoteModule } from '@ci/domains/promote';
@@ -71,6 +72,7 @@ import { UserModule } from '@ci/domains/user';
     PositionModule,
     ToolsModule,
     MemoryModule,
+    NotesModule,
     PromoteModule,
     SearchIngressModule,
     SearchNextModule,
