@@ -222,6 +222,17 @@ export type CreateEventInput = {
   title?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type CreateNoteInput = {
+  content?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CreateNotePayload = {
+  __typename?: 'CreateNotePayload';
+  note?: Maybe<NoteType>;
+  success: Scalars['Boolean']['output'];
+};
+
 export type CreatePersonInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
@@ -243,6 +254,16 @@ export type CreatePlaceInput = {
 export type CreateQuestionInput = {
   category: Scalars['String']['input'];
   text: Scalars['String']['input'];
+};
+
+export type DeleteNoteInput = {
+  id: Scalars['String']['input'];
+};
+
+export type DeleteNotePayload = {
+  __typename?: 'DeleteNotePayload';
+  deletedId?: Maybe<Scalars['ID']['output']>;
+  success: Scalars['Boolean']['output'];
 };
 
 export type Edge = {
@@ -414,9 +435,11 @@ export type Mutation = {
   createAnswer: AnswerType;
   createContent: ContentType;
   createEvent: EventType;
+  createNote: CreateNotePayload;
   createPerson: PersonType;
   createPlace: PlaceType;
   createQuestion: QuestionType;
+  deleteNote: DeleteNotePayload;
   removeAnswer: Scalars['Boolean']['output'];
   removeContent: Scalars['Boolean']['output'];
   removeEvent: Scalars['Boolean']['output'];
@@ -428,6 +451,7 @@ export type Mutation = {
   updateAnswer?: Maybe<AnswerType>;
   updateContent?: Maybe<ContentType>;
   updateEvent?: Maybe<EventType>;
+  updateNote: UpdateNotePayload;
   updatePerson?: Maybe<PersonType>;
   updatePlace?: Maybe<PlaceType>;
   updateQuestion?: Maybe<QuestionType>;
@@ -449,6 +473,11 @@ export type MutationCreateEventArgs = {
 };
 
 
+export type MutationCreateNoteArgs = {
+  input: CreateNoteInput;
+};
+
+
 export type MutationCreatePersonArgs = {
   input: CreatePersonInput;
 };
@@ -461,6 +490,11 @@ export type MutationCreatePlaceArgs = {
 
 export type MutationCreateQuestionArgs = {
   input: CreateQuestionInput;
+};
+
+
+export type MutationDeleteNoteArgs = {
+  input: DeleteNoteInput;
 };
 
 
@@ -519,6 +553,11 @@ export type MutationUpdateEventArgs = {
 };
 
 
+export type MutationUpdateNoteArgs = {
+  input: UpdateNoteInput;
+};
+
+
 export type MutationUpdatePersonArgs = {
   input: UpdatePersonInput;
 };
@@ -535,6 +574,28 @@ export type MutationUpdateQuestionArgs = {
 
 export type Node = {
   id: Scalars['ID']['output'];
+};
+
+export type NoteConnection = Connection & {
+  __typename?: 'NoteConnection';
+  edges: Array<NoteEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type NoteEdge = Edge & {
+  __typename?: 'NoteEdge';
+  cursor: Scalars['String']['output'];
+  node: NoteType;
+};
+
+export type NoteType = Node & {
+  __typename?: 'NoteType';
+  content?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['ID']['output'];
+  title?: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['DateTime']['output'];
 };
 
 export type PageInfo = {
@@ -665,6 +726,8 @@ export type Query = {
   items: ItemConnection;
   me?: Maybe<UserType>;
   node?: Maybe<Node>;
+  note?: Maybe<NoteType>;
+  notes: NoteConnection;
   people: PersonConnection;
   person?: Maybe<PersonType>;
   place?: Maybe<PlaceType>;
@@ -813,6 +876,19 @@ export type QueryItemsArgs = {
 
 export type QueryNodeArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryNoteArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryNotesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -1045,6 +1121,18 @@ export type UpdateEventInput = {
   startTime?: InputMaybe<Scalars['DateTime']['input']>;
   status?: InputMaybe<Scalars['String']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateNoteInput = {
+  content?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['String']['input'];
+  title?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateNotePayload = {
+  __typename?: 'UpdateNotePayload';
+  note?: Maybe<NoteType>;
+  success: Scalars['Boolean']['output'];
 };
 
 export type UpdatePersonInput = {

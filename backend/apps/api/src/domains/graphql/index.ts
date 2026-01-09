@@ -10,6 +10,7 @@ import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
+import { NotesModule } from '@ci/domains/notes';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule } from '@ci/domains/user';
 
@@ -34,6 +35,7 @@ import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
+import { NoteResolver } from './resolvers/NoteResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { ProviderResolver } from './resolvers/ProviderResolver';
@@ -59,6 +61,7 @@ import { UserResolver } from './resolvers/UserResolver';
     FilesModule,
     IntelligenceModule,
     MemoryModule,
+    NotesModule,
     SearchNextModule,
     UserModule,
   ],
@@ -70,6 +73,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ConceptResolver,
     ContentResolver,
     NodeResolver,
+    NoteResolver,
     AnswerResolver,
     EventLoader,
     EventResolver,

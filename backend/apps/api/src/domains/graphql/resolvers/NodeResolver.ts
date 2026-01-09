@@ -15,6 +15,7 @@ import {
   PersonService,
   PlaceService,
 } from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
 
@@ -29,6 +30,7 @@ import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
 import { MessageType } from '../types/MessageType';
 import { Node } from '../types/Node';
+import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
 import { QuestionType } from '../types/QuestionType';
@@ -49,6 +51,7 @@ export class NodeResolver {
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
+    private readonly noteService: NoteService,
     private readonly personService: PersonService,
     private readonly placeService: PlaceService,
     private readonly questionService: QuestionService,
@@ -118,6 +121,12 @@ export class NodeResolver {
         const message = await this.messageService.findById(serviceContext, id);
 
         return message ? MessageType.toType(message) : null;
+      }
+
+      case 'note': {
+        const note = await this.noteService.findById(serviceContext, id);
+
+        return note ? NoteType.toType(note) : null;
       }
 
       case 'person': {
