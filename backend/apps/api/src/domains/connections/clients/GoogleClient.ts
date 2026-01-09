@@ -30,13 +30,13 @@ export class GoogleClient extends BaseOAuth2Client {
   protected readonly tokenEndpoint = 'https://oauth2.googleapis.com/token';
 
   protected readonly endpointMap = {
-    'Calendar': ['calendar.readonly'],
-    'Gmail': ['gamil.readonly'],
-    'Drive': ['drive.readonly'],
-    'YouTube': ['youtube'],
-    'Contacts': ['contacts'],
-    'default': []
-  }
+    Calendar: ['calendar.readonly'],
+    Gmail: ['gamil.readonly'],
+    Drive: ['drive.readonly'],
+    YouTube: ['youtube'],
+    Contacts: ['contacts'],
+    default: [],
+  };
 
   protected readonly scopeNames = [
     'gmail.readonly',

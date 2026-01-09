@@ -102,7 +102,7 @@ export class ConnectionService {
   }
 
   async update(context: ServiceContext, id: string, data: UpdateConnectionDto): Promise<Connection | null> {
-    const { syncState, ...rest } = data;
+    const { syncState, endpoints, ...rest } = data;
 
     const result = await this.connectionRepository.update(
       {
@@ -115,6 +115,7 @@ export class ConnectionService {
       },
       {
         ...rest,
+        activeEndpoints: endpoints,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         syncState: syncState as any, // TypeORM will handle JSON serialization
       },

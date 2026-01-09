@@ -105,10 +105,10 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
   protected readonly endpointMap = {
     'Outlook Mail': ['mail.read'],
-    'Calendar': ['calendars.read'],
-    'OneDrive': ['files.read'],
-    'default': ['offline_access', 'user.read']
-  }
+    Calendar: ['calendars.read'],
+    OneDrive: ['files.read'],
+    default: ['offline_access', 'user.read'],
+  };
 
   protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
     const scopesSet = new Set<string>(this.endpointMap['default']);
@@ -150,7 +150,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
-    if (connection.activeEndpoints.indexOf('OneDrive') > - 1) {
+    if (connection.activeEndpoints.indexOf('OneDrive') > -1) {
       // Microsoft Graph - OneDrive
       try {
         const oneDriveSyncState = connection.syncState?.oneDrive as OneDriveSyncState | null;
@@ -160,7 +160,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
           success: true,
           message: 'Microsoft Graph - OneDrive sync completed successfully',
           data: {
-            results: [{api: 'Microsoft Graph - OneDrive Files', data: oneDriveResults}],
+            results: [{ api: 'Microsoft Graph - OneDrive Files', data: oneDriveResults }],
             errors: [],
           },
           cursor: {
@@ -181,7 +181,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
       }
     }
 
-    if (connection.activeEndpoints.indexOf('Calendar') > - 1) {
+    if (connection.activeEndpoints.indexOf('Calendar') > -1) {
       // Microsoft Graph - Calendar
       try {
         const outlookCalendarsSyncState =
@@ -190,14 +190,14 @@ export class MicrosoftClient extends BaseOAuth2Client {
         const calendarsResults = await this.syncCalendars(connection, outlookCalendarsSyncState);
 
         for (const response of calendarsResults) {
-          outlookCalendarsSyncState[response.calendarId] = {skip: response.syncState.skip!};
+          outlookCalendarsSyncState[response.calendarId] = { skip: response.syncState.skip! };
         }
 
         responses.push({
           success: true,
           message: 'Microsoft Graph - Calendar sync completed successfully',
           data: {
-            results: [{api: 'Microsoft Graph - Calendar', data: calendarsResults}],
+            results: [{ api: 'Microsoft Graph - Calendar', data: calendarsResults }],
             errors: [],
           },
           cursor: {
@@ -218,7 +218,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
       }
     }
 
-    if (connection.activeEndpoints.indexOf('Outlook Mail') > - 1) {
+    if (connection.activeEndpoints.indexOf('Outlook Mail') > -1) {
       // Microsoft Graph - Mail
       try {
         const outlookMailSyncState = connection.syncState?.outlookMail as OutlookMailSyncState | null;
@@ -228,7 +228,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
           success: true,
           message: 'Microsoft Graph - Mail sync completed successfully',
           data: {
-            results: [{api: 'Microsoft Graph - Mail', data: outlookResults}],
+            results: [{ api: 'Microsoft Graph - Mail', data: outlookResults }],
             errors: [],
           },
           cursor: {

@@ -22,13 +22,13 @@ export class FacebookClient extends BaseOAuth2Client {
   protected readonly tokenEndpoint = 'https://graph.facebook.com/v21.0/oauth/access_token';
 
   protected readonly endpointMap = {
-    'Posts': ['user_posts'],
-    'Photos': ['user_photos'],
-    'Videos': ['user_videos'],
-    'Friends': ['user_friends'],
-    'Likes': ['user_likes'],
-    'default': ['email', 'public_profile']
-  }
+    Posts: ['user_posts'],
+    Photos: ['user_photos'],
+    Videos: ['user_videos'],
+    Friends: ['user_friends'],
+    Likes: ['user_likes'],
+    default: ['email', 'public_profile'],
+  };
 
   // Facebook permissions based on what you configured
   protected readonly scopes = [
@@ -85,11 +85,7 @@ export class FacebookClient extends BaseOAuth2Client {
    */
   private async fetchProfile(connection: Connection) {
     try {
-      const fields = [
-        'id',
-        'name',
-        'email',
-      ].join(',');
+      const fields = ['id', 'name', 'email'].join(',');
 
       return await this.request<{
         id: string;
@@ -387,7 +383,7 @@ export class FacebookClient extends BaseOAuth2Client {
               ],
               errors: [],
             },
-            cursor: {posts: posts.syncState},
+            cursor: { posts: posts.syncState },
           });
         } catch (error) {
           this.logger.warn('Failed to sync Facebook posts', {
@@ -423,7 +419,7 @@ export class FacebookClient extends BaseOAuth2Client {
               ],
               errors: [],
             },
-            cursor: {photos: photos.syncState},
+            cursor: { photos: photos.syncState },
           });
         } catch (error) {
           this.logger.warn('Failed to sync Facebook photos', {
@@ -459,7 +455,7 @@ export class FacebookClient extends BaseOAuth2Client {
               ],
               errors: [],
             },
-            cursor: {videos: videos.syncState},
+            cursor: { videos: videos.syncState },
           });
         } catch (error) {
           this.logger.warn('Failed to sync Facebook videos', {
@@ -495,7 +491,7 @@ export class FacebookClient extends BaseOAuth2Client {
               ],
               errors: [],
             },
-            cursor: {friends: friends.syncState},
+            cursor: { friends: friends.syncState },
           });
         } catch (error) {
           this.logger.warn('Failed to sync Facebook friends', {
@@ -531,7 +527,7 @@ export class FacebookClient extends BaseOAuth2Client {
               ],
               errors: [],
             },
-            cursor: {likes: likes.syncState},
+            cursor: { likes: likes.syncState },
           });
         } catch (error) {
           this.logger.warn('Failed to sync Facebook likes', {

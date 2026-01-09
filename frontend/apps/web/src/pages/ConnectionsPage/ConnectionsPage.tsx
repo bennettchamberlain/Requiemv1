@@ -1,12 +1,27 @@
 import { useState, useCallback, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Table, Dialog, Input, Label, Select, useToast } from '@ci/shadcn';
+import {
+  Breadcrumb,
+  Button,
+  Table,
+  Dialog,
+  Input,
+  Label,
+  Select,
+  useToast,
+  Form,
+  useForm,
+  formDataResolver,
+  formDataSchema as s,
+} from '@ci/shadcn';
 import { AlertCircle, RefreshCw, Settings, Trash2, Plus } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
+import { Endpoints } from '@/pages/ProviderPage/Endpoints.tsx';
+import { useConnectService } from '@/pages/ProviderPage/useConnectService.ts';
 
 export interface Provider {
   readonly id: string;
@@ -25,8 +40,15 @@ export interface Connection {
   readonly refreshToken: string | null;
   readonly tokenExpiry: Date | null;
   readonly provider?: Provider;
+  readonly activeEndpoints?: string[];
   lastSyncedAt?: string;
 }
+
+export const EditConnectFormSchema = s.object({
+  endpoints: s.array(s.string()).nullable().default(null),
+});
+
+export type EditConnectFormData = s.input<typeof EditConnectFormSchema>;
 
 export function ConnectionsPage() {
   usePageTitle('Connections - Companion Intelligence');
@@ -50,6 +72,13 @@ export function ConnectionsPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+
+  const [{ endpoints, setEndpoints }] = useConnectService();
+
+  const form = useForm<EditConnectFormData>({
+    resolver: formDataResolver(EditConnectFormSchema),
+    shouldUnregister: false,
+  });
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -160,6 +189,7 @@ export function ConnectionsPage() {
         body: JSON.stringify({
           name: editFormData.name,
           schedule: editFormData.schedule,
+          endpoints,
         }),
       });
 
@@ -393,72 +423,89 @@ export function ConnectionsPage() {
             <Dialog.Description>Update the settings for this connection.</Dialog.Description>
           </Dialog.Header>
 
-          <div className="grid gap-4 py-4">
-            {modalError && (
-              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">{modalError}</div>
-            )}
+          <Form {...form}>
+            <form className="relative flex flex-col gap-2">
+              <div className="grid gap-4 py-4">
+                {modalError && (
+                  <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+                    {modalError}
+                  </div>
+                )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Connection Name</Label>
-              <Input
-                id="edit-name"
-                placeholder="My Google Connection"
-                value={editFormData.name}
-                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                disabled={modalLoading}
-              />
-            </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Connection Name</Label>
+                  <Input
+                    id="edit-name"
+                    placeholder="My Google Connection"
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    disabled={modalLoading}
+                  />
+                </div>
 
-            {selectedConnection?.provider && (
-              <div className="grid gap-2">
-                <Label>Provider</Label>
-                <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
-                  {selectedConnection.provider.name} (cannot be changed)
+                {selectedConnection?.provider && (
+                  <div className="grid gap-2">
+                    <Label>Provider</Label>
+                    <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                      {selectedConnection.provider.name} (cannot be changed)
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-schedule">Sync Schedule</Label>
+                  <Select
+                    value={editFormData.schedule}
+                    onValueChange={(value) => setEditFormData({ ...editFormData, schedule: value })}
+                    disabled={modalLoading}
+                  >
+                    <Select.Trigger id="edit-schedule">
+                      <Select.Value />
+                    </Select.Trigger>
+                    <Select.Content>
+                      <Select.Item value="1 min">1 Minute</Select.Item>
+                      <Select.Item value="5 min">5 Minutes</Select.Item>
+                      <Select.Item value="10 min">10 Minutes</Select.Item>
+                      <Select.Item value="30 min">30 Minutes</Select.Item>
+                      <Select.Item value="1 hour">1 Hour</Select.Item>
+                      <Select.Item value="2 hours">2 Hours</Select.Item>
+                      <Select.Item value="6 hours">6 Hours</Select.Item>
+                      <Select.Item value="12 hours">12 Hours</Select.Item>
+                      <Select.Item value="daily">Daily</Select.Item>
+                      <Select.Item value="weekly">Weekly</Select.Item>
+                    </Select.Content>
+                  </Select>
                 </div>
               </div>
-            )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="edit-schedule">Sync Schedule</Label>
-              <Select
-                value={editFormData.schedule}
-                onValueChange={(value) => setEditFormData({ ...editFormData, schedule: value })}
-                disabled={modalLoading}
-              >
-                <Select.Trigger id="edit-schedule">
-                  <Select.Value />
-                </Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="1 min">1 Minute</Select.Item>
-                  <Select.Item value="5 min">5 Minutes</Select.Item>
-                  <Select.Item value="10 min">10 Minutes</Select.Item>
-                  <Select.Item value="30 min">30 Minutes</Select.Item>
-                  <Select.Item value="1 hour">1 Hour</Select.Item>
-                  <Select.Item value="2 hours">2 Hours</Select.Item>
-                  <Select.Item value="6 hours">6 Hours</Select.Item>
-                  <Select.Item value="12 hours">12 Hours</Select.Item>
-                  <Select.Item value="daily">Daily</Select.Item>
-                  <Select.Item value="weekly">Weekly</Select.Item>
-                </Select.Content>
-              </Select>
-            </div>
-          </div>
-
-          <Dialog.Footer>
-            <Button variant="outline" onClick={() => setShowEditModal(false)} disabled={modalLoading}>
-              Cancel
-            </Button>
-            <Button onClick={handleEditSubmit} disabled={modalLoading || !editFormData.name}>
-              {modalLoading ? (
+              {selectedConnection?.provider && (
                 <>
-                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                  Saving...
+                  <div className="grid gap-2">Endpoints</div>
+                  <Endpoints
+                    provider={selectedConnection.provider}
+                    setEndpoints={setEndpoints}
+                    startEndpoints={selectedConnection.activeEndpoints}
+                  />
                 </>
-              ) : (
-                'Save'
               )}
-            </Button>
-          </Dialog.Footer>
+
+              <Dialog.Footer>
+                <Button variant="outline" onClick={() => setShowEditModal(false)} disabled={modalLoading}>
+                  Cancel
+                </Button>
+                <Button onClick={handleEditSubmit} disabled={modalLoading || !editFormData.name}>
+                  {modalLoading ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save'
+                  )}
+                </Button>
+              </Dialog.Footer>
+            </form>
+          </Form>
         </Dialog.Content>
       </Dialog>
     </>

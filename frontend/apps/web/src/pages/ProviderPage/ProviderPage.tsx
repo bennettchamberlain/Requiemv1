@@ -52,7 +52,8 @@ export function ProviderPage() {
 
   const provider = data?.provider;
 
-  const [{ authorizationUrl, loading: connectLoading, error, setEndpoints }, { connect }] = useConnectService();
+  const [{ authorizationUrl, loading: connectLoading, error, setEndpoints }, { connect }] =
+    useConnectService();
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 

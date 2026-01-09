@@ -30,6 +30,7 @@ const createConnectionSchema = z.object({
   clientkey: z.string().optional(),
   clientsecret: z.string().optional(),
   schedule: z.string().optional(),
+  endpoints: z.array(z.string()).default([]),
 });
 
 const updateConnectionSchema = z.object({
@@ -49,6 +50,7 @@ const updateConnectionSchema = z.object({
       },
     )
     .optional(),
+  endpoints: z.array(z.string()).optional(),
 });
 
 const completeConnectionSchema = z.object({
