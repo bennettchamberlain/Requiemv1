@@ -13,6 +13,7 @@ import { ContentRow } from './rows/ContentRow';
 import { EventRow } from './rows/EventRow';
 import { FileRow } from './rows/FileRow';
 import { ItemRow } from './rows/ItemRow';
+import { NoteRow } from './rows/NoteRow';
 import { PersonRow } from './rows/PersonRow';
 import { PlaceRow } from './rows/PlaceRow';
 import { ThreadRow } from './rows/ThreadRow';
@@ -72,6 +73,9 @@ export function ListView() {
 
             case 'BrowserActivityType':
               return <BrowserActivityRow key={item.id} browserActivity={item} onClick={() => {}} />;
+
+            case 'NoteType':
+              return <NoteRow key={item.id} note={item} onClick={() => {}} />;
 
             default:
               return null;
