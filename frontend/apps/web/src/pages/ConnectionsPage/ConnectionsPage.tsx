@@ -41,6 +41,7 @@ export interface Connection {
   readonly tokenExpiry: Date | null;
   readonly provider?: Provider;
   readonly activeEndpoints?: string[];
+  readonly needsReauth: boolean;
   lastSyncedAt?: string;
 }
 
@@ -310,6 +311,24 @@ export function ConnectionsPage() {
     }
   };
 
+  const handleReauthConnection = async (connectionId: string) => {
+    const response = await fetch(`/api/connections/${connectionId}/connect`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Error getting new auth URL: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    window.location.href = data.url;
+  };
+
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -367,11 +386,35 @@ export function ConnectionsPage() {
               <Table.Body>
                 {Connections.map((connection) => (
                   <Table.Row key={connection.id}>
-                    <Table.Cell className="text-sm">{connection.name}</Table.Cell>
-                    <Table.Cell className="text-sm">{connection.provider?.name || 'N/A'}</Table.Cell>
-                    <Table.Cell className="text-sm">{truncateText(connection.schedule ?? '')}</Table.Cell>
+                    <Table.Cell
+                      className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
+                    >
+                      {connection.name}
+                    </Table.Cell>
+                    <Table.Cell
+                      className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
+                    >
+                      {connection.provider?.name || 'N/A'}
+                    </Table.Cell>
+                    <Table.Cell
+                      className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
+                    >
+                      {truncateText(connection.schedule ?? '')}
+                    </Table.Cell>
                     <Table.Cell className="text-sm">
                       <div className="flex gap-2">
+                        {connection.needsReauth && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400"
+                            disabled={deleteLoading === connection.id}
+                            title="Connection needs reauthorization"
+                            onClick={() => handleReauthConnection(connection.id)}
+                          >
+                            <AlertCircle className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"

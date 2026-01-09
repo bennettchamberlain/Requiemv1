@@ -24,6 +24,7 @@ export interface UpdateConnectionDto {
   tokenExpiry?: Date | null;
   syncState?: Record<string, unknown> | null;
   endpoints?: string[];
+  needsReauth?: boolean;
 }
 
 export interface connectProviderDto {

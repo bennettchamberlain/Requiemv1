@@ -47,6 +47,9 @@ export class ConnectionEntity {
   @Column({ type: 'jsonb', default: [], name: 'active_endpoints' })
   activeEndpoints!: string[];
 
+  @Column({ type: 'boolean', default: true, name: 'needs_reauth' })
+  needsReauth!: boolean;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -76,6 +79,7 @@ export class ConnectionEntity {
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
       provider: entity.provider ? ProviderEntity.toEgressType(entity.provider) : undefined,
       activeEndpoints: entity.activeEndpoints,
+      needsReauth: entity.needsReauth,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

@@ -31,7 +31,7 @@ export class GoogleClient extends BaseOAuth2Client {
 
   protected readonly endpointMap = {
     Calendar: ['calendar.readonly'],
-    Gmail: ['gamil.readonly'],
+    Gmail: ['gmail.readonly'],
     Drive: ['drive.readonly'],
     YouTube: ['youtube'],
     Contacts: ['contacts'],
@@ -168,7 +168,7 @@ export class GoogleClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
-    if (connection.activeEndpoints.indexOf('Calendar') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Calendar') > -1) {
       responses.push(
         ...(await this.processSyncAPI<CalendarSyncState>(connection, {
           apiName: 'Google Calendar',
@@ -178,7 +178,7 @@ export class GoogleClient extends BaseOAuth2Client {
       );
     }
 
-    if (connection.activeEndpoints.indexOf('Gmail') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Gmail') > -1) {
       responses.push(
         ...(await this.processSyncAPI<GmailSyncState>(connection, {
           apiName: 'Gmail',
@@ -188,7 +188,7 @@ export class GoogleClient extends BaseOAuth2Client {
       );
     }
 
-    if (connection.activeEndpoints.indexOf('Contacts') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Contacts') > -1) {
       responses.push(
         ...(await this.processSyncAPI<ContactsSyncState>(connection, {
           apiName: 'Google Contacts',
@@ -198,7 +198,7 @@ export class GoogleClient extends BaseOAuth2Client {
       );
     }
 
-    if (connection.activeEndpoints.indexOf('YouTube') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('YouTube') > -1) {
       responses.push(
         ...(await this.processSyncAPI<YouTubeSyncState>(connection, {
           apiName: 'YouTube',
@@ -208,7 +208,7 @@ export class GoogleClient extends BaseOAuth2Client {
       );
     }
 
-    if (connection.activeEndpoints.indexOf('Drive') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Drive') > -1) {
       responses.push(
         ...(await this.processSyncAPI<DriveSyncState>(connection, {
           apiName: 'Google Drive',

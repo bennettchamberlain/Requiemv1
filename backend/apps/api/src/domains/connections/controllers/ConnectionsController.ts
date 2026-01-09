@@ -204,6 +204,7 @@ export class ConnectionsController {
 
     await this.update(context, connectionId, {
       ...tokenExchange,
+      needsReauth: false,
     });
   }
 

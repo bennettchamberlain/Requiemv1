@@ -150,7 +150,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
-    if (connection.activeEndpoints.indexOf('OneDrive') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('OneDrive') > -1) {
       // Microsoft Graph - OneDrive
       try {
         const oneDriveSyncState = connection.syncState?.oneDrive as OneDriveSyncState | null;
@@ -181,7 +181,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
       }
     }
 
-    if (connection.activeEndpoints.indexOf('Calendar') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Calendar') > -1) {
       // Microsoft Graph - Calendar
       try {
         const outlookCalendarsSyncState =
@@ -218,7 +218,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
       }
     }
 
-    if (connection.activeEndpoints.indexOf('Outlook Mail') > -1) {
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Outlook Mail') > -1) {
       // Microsoft Graph - Mail
       try {
         const outlookMailSyncState = connection.syncState?.outlookMail as OutlookMailSyncState | null;

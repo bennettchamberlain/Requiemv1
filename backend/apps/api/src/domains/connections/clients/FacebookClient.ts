@@ -365,7 +365,7 @@ export class FacebookClient extends BaseOAuth2Client {
         });
       }
 
-      if (connection.activeEndpoints.indexOf('Posts') > -1) {
+      if (!connection.needsReauth && connection.activeEndpoints.indexOf('Posts') > -1) {
         // Fetch posts
         try {
           const posts = await this.fetchPosts(connection, syncState.posts || null);
@@ -401,7 +401,7 @@ export class FacebookClient extends BaseOAuth2Client {
         }
       }
 
-      if (connection.activeEndpoints.indexOf('Photos') > -1) {
+      if (!connection.needsReauth && connection.activeEndpoints.indexOf('Photos') > -1) {
         // Fetch photos
         try {
           const photos = await this.fetchPhotos(connection, syncState.photos || null);
@@ -437,7 +437,7 @@ export class FacebookClient extends BaseOAuth2Client {
         }
       }
 
-      if (connection.activeEndpoints.indexOf('Videos') > -1) {
+      if (!connection.needsReauth && connection.activeEndpoints.indexOf('Videos') > -1) {
         // Fetch videos
         try {
           const videos = await this.fetchVideos(connection, syncState.videos || null);
