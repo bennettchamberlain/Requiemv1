@@ -1021,7 +1021,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | PersonType | PlaceType | ThreadType;
+export type SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';
@@ -1276,6 +1276,7 @@ export type SearchQuery = { __typename?: 'Query', search: { __typename?: 'Search
           { __typename: 'ItemType', id: string }
           & { ' $fragmentRefs'?: { 'GalleryItemCardDataFragment': GalleryItemCardDataFragment;'TableItemRowDataFragment': TableItemRowDataFragment } }
         )
+        | { __typename: 'NoteType', id: string }
         | (
           { __typename: 'PersonType', id: string }
           & { ' $fragmentRefs'?: { 'GalleryPersonCardDataFragment': GalleryPersonCardDataFragment;'TablePersonRowDataFragment': TablePersonRowDataFragment } }

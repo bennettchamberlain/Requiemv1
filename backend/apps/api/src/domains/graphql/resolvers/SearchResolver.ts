@@ -16,6 +16,7 @@ import {
   PersonService,
   PlaceService,
 } from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
 import {
   SearchService,
   TagService,
@@ -32,6 +33,7 @@ import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
 import { ItemType } from '../types/ItemType';
+import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
 import { SearchConnection } from '../types/SearchConnection';
@@ -52,6 +54,7 @@ export class SearchResolver {
     private readonly eventService: EventService,
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
+    private readonly noteService: NoteService,
     private readonly personService: PersonService,
     private readonly placeService: PlaceService,
     private readonly searchService: SearchService,
@@ -165,6 +168,7 @@ export class SearchResolver {
     const eventIds = groupedByType.get('event') || [];
     const fileIds = groupedByType.get('file') || [];
     const itemIds = groupedByType.get('item') || [];
+    const noteIds = groupedByType.get('note') || [];
     const peopleIds = groupedByType.get('person') || [];
     const placeIds = groupedByType.get('place') || [];
     const threadIds = groupedByType.get('thread') || [];
@@ -178,6 +182,7 @@ export class SearchResolver {
       events,
       files,
       items,
+      notes,
       people,
       places,
       threads,
@@ -190,6 +195,7 @@ export class SearchResolver {
       this.eventService.findByIds(context, eventIds),
       this.fileService.findByIds(context, fileIds),
       this.itemService.findByIds(context, itemIds),
+      this.noteService.findByIds(context, noteIds),
       this.personService.findByIds(context, peopleIds),
       this.placeService.findByIds(context, placeIds),
       this.threadService.findByIds(context, threadIds),
@@ -220,6 +226,8 @@ export class SearchResolver {
     const fileResults = files.filter((entity) => entity != null).map((entity) => FileType.toType(entity));
 
     const itemResults = items.filter((entity) => entity != null).map((entity) => ItemType.toType(entity));
+
+    const noteResults = notes.filter((entity) => entity != null).map((entity) => NoteType.toType(entity));
 
     const personResults = people
       .filter((entity) => entity != null)
@@ -254,6 +262,7 @@ export class SearchResolver {
     eventResults.forEach((event) => resultMap.set(makeCompositeKey('event', event.__source.id), event));
     fileResults.forEach((file) => resultMap.set(makeCompositeKey('file', file.__source.id), file));
     itemResults.forEach((item) => resultMap.set(makeCompositeKey('item', item.__source.id), item));
+    noteResults.forEach((note) => resultMap.set(makeCompositeKey('note', note.__source.id), note));
     personResults.forEach((person) => resultMap.set(makeCompositeKey('person', person.__source.id), person));
     placeResults.forEach((place) => resultMap.set(makeCompositeKey('place', place.__source.id), place));
     threadResults.forEach((thread) => resultMap.set(makeCompositeKey('thread', thread.__source.id), thread));
