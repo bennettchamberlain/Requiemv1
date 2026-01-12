@@ -64,6 +64,7 @@ export class GoogleClient extends BaseOAuth2Client {
 
     return scopesSet.size > 0 ? Array.from(scopesSet).join(' ') : '';
   }
+
   protected get clientId() {
     const clientIdVariable = 'GOOGLE_CLIENT_ID';
     const clientId = process.env[clientIdVariable];

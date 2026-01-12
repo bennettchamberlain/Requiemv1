@@ -19,13 +19,18 @@ import { AlertCircle, RefreshCw, Settings, Trash2, Plus } from '@ci/shadcn/icons
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { makeFragmentData } from '@/graphql';
 import { useAuth } from '@/hooks';
-import { Endpoints } from '@/pages/ProviderPage/Endpoints.tsx';
+import { Endpoints, ENDPOINTS_FRAGMENT } from '@/pages/ProviderPage/Endpoints.tsx';
 import { useConnectService } from '@/pages/ProviderPage/useConnectService.ts';
 
 export interface Provider {
   readonly id: string;
   readonly name: string | null;
+  readonly endpoints: {
+    name: string;
+    description: string;
+  }[];
 }
 
 export interface Connection {
@@ -525,7 +530,7 @@ export function ConnectionsPage() {
                 <>
                   <div className="grid gap-2">Endpoints</div>
                   <Endpoints
-                    provider={selectedConnection.provider}
+                    provider={makeFragmentData(selectedConnection.provider, ENDPOINTS_FRAGMENT)}
                     setEndpoints={setEndpoints}
                     startEndpoints={selectedConnection.activeEndpoints}
                   />
