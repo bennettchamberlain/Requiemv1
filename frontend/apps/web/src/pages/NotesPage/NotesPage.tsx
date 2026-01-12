@@ -3,9 +3,9 @@ import { type ReactNode, useState } from 'react';
 import { useQuery } from '@apollo/client';
 import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button } from '@ci/shadcn';
-import { NotebookPen } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { NoteIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
@@ -50,7 +50,7 @@ export function NotesPage() {
   } else if (notes.length === 0) {
     content = (
       <EmptyState
-        icon={NotebookPen}
+        icon={<NoteIcon size={48} colorized={false} />}
         message={
           <>
             <div>You don't have any notes yet.</div>
