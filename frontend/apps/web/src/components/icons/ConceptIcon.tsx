@@ -5,8 +5,16 @@ import { Lightbulb } from '@ci/shadcn/icons';
 
 type Props = ComponentProps<typeof Lightbulb> & {
   className?: string;
+  colorized?: boolean;
 };
 
-export function ConceptIcon({ className, ...props }: Props) {
-  return <Lightbulb className={cn('text-purple-500', className)} size={24} strokeWidth={1.5} {...props} />;
+export function ConceptIcon({ className, colorized = true, ...props }: Props) {
+  return (
+    <Lightbulb
+      className={cn(colorized ? 'text-purple-500' : 'text-[rgb(6,108,128)]', className)}
+      size={24}
+      strokeWidth={1.5}
+      {...props}
+    />
+  );
 }
