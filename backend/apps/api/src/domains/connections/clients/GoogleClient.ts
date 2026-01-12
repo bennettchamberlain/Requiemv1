@@ -29,6 +29,15 @@ export class GoogleClient extends BaseOAuth2Client {
 
   protected readonly tokenEndpoint = 'https://oauth2.googleapis.com/token';
 
+  protected readonly endpointScopeMap = {
+    Calendar: ['calendar.readonly'],
+    Gmail: ['gmail.readonly'],
+    Drive: ['drive.readonly'],
+    YouTube: ['youtube'],
+    Contacts: ['contacts'],
+    default: [],
+  };
+
   protected readonly scopeNames = [
     'gmail.readonly',
     'calendar.readonly',
@@ -44,6 +53,17 @@ export class GoogleClient extends BaseOAuth2Client {
     access_type: 'offline',
     prompt: 'consent',
   };
+
+  protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+    const scopesSet = new Set<string>(this.endpointScopeMap['default']);
+
+    activeEndpoints.forEach((endpoint) => {
+      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
+      scopes.forEach((scope) => scopesSet.add(`https://www.googleapis.com/auth/${scope}`));
+    });
+
+    return scopesSet.size > 0 ? Array.from(scopesSet).join(' ') : '';
+  }
 
   protected get clientId() {
     const clientIdVariable = 'GOOGLE_CLIENT_ID';
@@ -149,46 +169,56 @@ export class GoogleClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
-    responses.push(
-      ...(await this.processSyncAPI<CalendarSyncState>(connection, {
-        apiName: 'Google Calendar',
-        stateKey: 'calendar',
-        syncMethod: this.syncCalendar.bind(this),
-      })),
-    );
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Calendar') > -1) {
+      responses.push(
+        ...(await this.processSyncAPI<CalendarSyncState>(connection, {
+          apiName: 'Google Calendar',
+          stateKey: 'calendar',
+          syncMethod: this.syncCalendar.bind(this),
+        })),
+      );
+    }
 
-    responses.push(
-      ...(await this.processSyncAPI<GmailSyncState>(connection, {
-        apiName: 'Gmail',
-        stateKey: 'gmail',
-        syncMethod: this.syncGmail.bind(this),
-      })),
-    );
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Gmail') > -1) {
+      responses.push(
+        ...(await this.processSyncAPI<GmailSyncState>(connection, {
+          apiName: 'Gmail',
+          stateKey: 'gmail',
+          syncMethod: this.syncGmail.bind(this),
+        })),
+      );
+    }
 
-    responses.push(
-      ...(await this.processSyncAPI<ContactsSyncState>(connection, {
-        apiName: 'Google Contacts',
-        stateKey: 'contacts',
-        syncMethod: this.syncContacts.bind(this),
-      })),
-    );
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Contacts') > -1) {
+      responses.push(
+        ...(await this.processSyncAPI<ContactsSyncState>(connection, {
+          apiName: 'Google Contacts',
+          stateKey: 'contacts',
+          syncMethod: this.syncContacts.bind(this),
+        })),
+      );
+    }
 
-    responses.push(
-      ...(await this.processSyncAPI<YouTubeSyncState>(connection, {
-        apiName: 'YouTube',
-        stateKey: 'youtube',
-        syncMethod: this.syncYouTube.bind(this),
-      })),
-    );
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('YouTube') > -1) {
+      responses.push(
+        ...(await this.processSyncAPI<YouTubeSyncState>(connection, {
+          apiName: 'YouTube',
+          stateKey: 'youtube',
+          syncMethod: this.syncYouTube.bind(this),
+        })),
+      );
+    }
 
-    responses.push(
-      ...(await this.processSyncAPI<DriveSyncState>(connection, {
-        apiName: 'Google Drive',
-        stateKey: 'drive',
-        syncMethod: this.syncDriveMetadata.bind(this),
-        logWarningOnError: true,
-      })),
-    );
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Drive') > -1) {
+      responses.push(
+        ...(await this.processSyncAPI<DriveSyncState>(connection, {
+          apiName: 'Google Drive',
+          stateKey: 'drive',
+          syncMethod: this.syncDriveMetadata.bind(this),
+          logWarningOnError: true,
+        })),
+      );
+    }
 
     return responses;
   }

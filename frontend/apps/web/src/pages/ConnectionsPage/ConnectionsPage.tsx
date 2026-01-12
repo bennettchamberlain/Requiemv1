@@ -1,16 +1,36 @@
 import { useState, useCallback, useEffect } from 'react';
 
 import { Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, Table, Dialog, Input, Label, Select, useToast } from '@ci/shadcn';
+import {
+  Breadcrumb,
+  Button,
+  Table,
+  Dialog,
+  Input,
+  Label,
+  Select,
+  useToast,
+  Form,
+  useForm,
+  formDataResolver,
+  formDataSchema as s,
+} from '@ci/shadcn';
 import { AlertCircle, RefreshCw, Settings, Trash2, Plus } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { makeFragmentData } from '@/graphql';
 import { useAuth } from '@/hooks';
+import { Endpoints, ENDPOINTS_FRAGMENT } from '@/pages/ProviderPage/Endpoints.tsx';
+import { useConnectService } from '@/pages/ProviderPage/useConnectService.ts';
 
 export interface Provider {
   readonly id: string;
   readonly name: string | null;
+  readonly endpoints: {
+    name: string;
+    description: string;
+  }[];
 }
 
 export interface Connection {
@@ -25,8 +45,16 @@ export interface Connection {
   readonly refreshToken: string | null;
   readonly tokenExpiry: Date | null;
   readonly provider?: Provider;
+  readonly activeEndpoints?: string[];
+  readonly needsReauth: boolean;
   lastSyncedAt?: string;
 }
+
+export const EditConnectFormSchema = s.object({
+  endpoints: s.array(s.string()).nullable().default(null),
+});
+
+export type EditConnectFormData = s.input<typeof EditConnectFormSchema>;
 
 export function ConnectionsPage() {
   usePageTitle('Connections - Companion Intelligence');
@@ -50,6 +78,13 @@ export function ConnectionsPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+
+  const [{ endpoints, setEndpoints }] = useConnectService();
+
+  const form = useForm<EditConnectFormData>({
+    resolver: formDataResolver(EditConnectFormSchema),
+    shouldUnregister: false,
+  });
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -160,6 +195,7 @@ export function ConnectionsPage() {
         body: JSON.stringify({
           name: editFormData.name,
           schedule: editFormData.schedule,
+          endpoints,
         }),
       });
 
@@ -280,6 +316,24 @@ export function ConnectionsPage() {
     }
   };
 
+  const handleReauthConnection = async (connectionId: string) => {
+    const response = await fetch(`/api/connections/${connectionId}/connect`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Error getting new auth URL: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    window.location.href = data.url;
+  };
+
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -337,11 +391,35 @@ export function ConnectionsPage() {
               <Table.Body>
                 {Connections.map((connection) => (
                   <Table.Row key={connection.id}>
-                    <Table.Cell className="text-sm">{connection.name}</Table.Cell>
-                    <Table.Cell className="text-sm">{connection.provider?.name || 'N/A'}</Table.Cell>
-                    <Table.Cell className="text-sm">{truncateText(connection.schedule ?? '')}</Table.Cell>
+                    <Table.Cell
+                      className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
+                    >
+                      {connection.name}
+                    </Table.Cell>
+                    <Table.Cell
+                      className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
+                    >
+                      {connection.provider?.name || 'N/A'}
+                    </Table.Cell>
+                    <Table.Cell
+                      className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
+                    >
+                      {truncateText(connection.schedule ?? '')}
+                    </Table.Cell>
                     <Table.Cell className="text-sm">
                       <div className="flex gap-2">
+                        {connection.needsReauth && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400"
+                            disabled={deleteLoading === connection.id}
+                            title="Connection needs reauthorization"
+                            onClick={() => handleReauthConnection(connection.id)}
+                          >
+                            <AlertCircle className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -393,72 +471,89 @@ export function ConnectionsPage() {
             <Dialog.Description>Update the settings for this connection.</Dialog.Description>
           </Dialog.Header>
 
-          <div className="grid gap-4 py-4">
-            {modalError && (
-              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">{modalError}</div>
-            )}
+          <Form {...form}>
+            <form className="relative flex flex-col gap-2">
+              <div className="grid gap-4 py-4">
+                {modalError && (
+                  <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
+                    {modalError}
+                  </div>
+                )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Connection Name</Label>
-              <Input
-                id="edit-name"
-                placeholder="My Google Connection"
-                value={editFormData.name}
-                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                disabled={modalLoading}
-              />
-            </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Connection Name</Label>
+                  <Input
+                    id="edit-name"
+                    placeholder="My Google Connection"
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    disabled={modalLoading}
+                  />
+                </div>
 
-            {selectedConnection?.provider && (
-              <div className="grid gap-2">
-                <Label>Provider</Label>
-                <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
-                  {selectedConnection.provider.name} (cannot be changed)
+                {selectedConnection?.provider && (
+                  <div className="grid gap-2">
+                    <Label>Provider</Label>
+                    <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                      {selectedConnection.provider.name} (cannot be changed)
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-schedule">Sync Schedule</Label>
+                  <Select
+                    value={editFormData.schedule}
+                    onValueChange={(value) => setEditFormData({ ...editFormData, schedule: value })}
+                    disabled={modalLoading}
+                  >
+                    <Select.Trigger id="edit-schedule">
+                      <Select.Value />
+                    </Select.Trigger>
+                    <Select.Content>
+                      <Select.Item value="1 min">1 Minute</Select.Item>
+                      <Select.Item value="5 min">5 Minutes</Select.Item>
+                      <Select.Item value="10 min">10 Minutes</Select.Item>
+                      <Select.Item value="30 min">30 Minutes</Select.Item>
+                      <Select.Item value="1 hour">1 Hour</Select.Item>
+                      <Select.Item value="2 hours">2 Hours</Select.Item>
+                      <Select.Item value="6 hours">6 Hours</Select.Item>
+                      <Select.Item value="12 hours">12 Hours</Select.Item>
+                      <Select.Item value="daily">Daily</Select.Item>
+                      <Select.Item value="weekly">Weekly</Select.Item>
+                    </Select.Content>
+                  </Select>
                 </div>
               </div>
-            )}
 
-            <div className="grid gap-2">
-              <Label htmlFor="edit-schedule">Sync Schedule</Label>
-              <Select
-                value={editFormData.schedule}
-                onValueChange={(value) => setEditFormData({ ...editFormData, schedule: value })}
-                disabled={modalLoading}
-              >
-                <Select.Trigger id="edit-schedule">
-                  <Select.Value />
-                </Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="1 min">1 Minute</Select.Item>
-                  <Select.Item value="5 min">5 Minutes</Select.Item>
-                  <Select.Item value="10 min">10 Minutes</Select.Item>
-                  <Select.Item value="30 min">30 Minutes</Select.Item>
-                  <Select.Item value="1 hour">1 Hour</Select.Item>
-                  <Select.Item value="2 hours">2 Hours</Select.Item>
-                  <Select.Item value="6 hours">6 Hours</Select.Item>
-                  <Select.Item value="12 hours">12 Hours</Select.Item>
-                  <Select.Item value="daily">Daily</Select.Item>
-                  <Select.Item value="weekly">Weekly</Select.Item>
-                </Select.Content>
-              </Select>
-            </div>
-          </div>
-
-          <Dialog.Footer>
-            <Button variant="outline" onClick={() => setShowEditModal(false)} disabled={modalLoading}>
-              Cancel
-            </Button>
-            <Button onClick={handleEditSubmit} disabled={modalLoading || !editFormData.name}>
-              {modalLoading ? (
+              {selectedConnection?.provider && (
                 <>
-                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                  Saving...
+                  <div className="grid gap-2">Endpoints</div>
+                  <Endpoints
+                    provider={makeFragmentData(selectedConnection.provider, ENDPOINTS_FRAGMENT)}
+                    setEndpoints={setEndpoints}
+                    startEndpoints={selectedConnection.activeEndpoints}
+                  />
                 </>
-              ) : (
-                'Save'
               )}
-            </Button>
-          </Dialog.Footer>
+
+              <Dialog.Footer>
+                <Button variant="outline" onClick={() => setShowEditModal(false)} disabled={modalLoading}>
+                  Cancel
+                </Button>
+                <Button onClick={handleEditSubmit} disabled={modalLoading || !editFormData.name}>
+                  {modalLoading ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save'
+                  )}
+                </Button>
+              </Dialog.Footer>
+            </form>
+          </Form>
         </Dialog.Content>
       </Dialog>
     </>

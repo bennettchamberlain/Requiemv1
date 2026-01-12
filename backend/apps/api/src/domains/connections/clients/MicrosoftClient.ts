@@ -103,6 +103,24 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
   protected readonly extraAuthParams = {};
 
+  protected readonly endpointScopeMap = {
+    'Outlook Mail': ['mail.read'],
+    Calendar: ['calendars.read'],
+    OneDrive: ['files.read'],
+    default: ['offline_access', 'user.read'],
+  };
+
+  protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+    const scopesSet = new Set<string>(this.endpointScopeMap['default']);
+
+    activeEndpoints.forEach((endpoint) => {
+      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
+      scopes.forEach((scope) => scopesSet.add(scope));
+    });
+
+    return scopesSet.size > 0 ? Array.from(scopesSet).join(' ') : '';
+  }
+
   protected get clientId() {
     const clientIdVariable = 'MICROSOFT_CLIENT_ID';
     const clientId = process.env[clientIdVariable];
@@ -132,97 +150,103 @@ export class MicrosoftClient extends BaseOAuth2Client {
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
-    // Microsoft Graph - OneDrive
-    try {
-      const oneDriveSyncState = connection.syncState?.oneDrive as OneDriveSyncState | null;
-      const oneDriveResults = await this.syncOneDrive(connection, oneDriveSyncState);
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('OneDrive') > -1) {
+      // Microsoft Graph - OneDrive
+      try {
+        const oneDriveSyncState = connection.syncState?.oneDrive as OneDriveSyncState | null;
+        const oneDriveResults = await this.syncOneDrive(connection, oneDriveSyncState);
 
-      responses.push({
-        success: true,
-        message: 'Microsoft Graph - OneDrive sync completed successfully',
-        data: {
-          results: [{ api: 'Microsoft Graph - OneDrive Files', data: oneDriveResults }],
-          errors: [],
-        },
-        cursor: {
-          oneDrive: oneDriveResults[0].syncState || oneDriveSyncState,
-        },
-      });
-    } catch (error) {
-      const errorMsg = `Microsoft OneDrive API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        responses.push({
+          success: true,
+          message: 'Microsoft Graph - OneDrive sync completed successfully',
+          data: {
+            results: [{ api: 'Microsoft Graph - OneDrive Files', data: oneDriveResults }],
+            errors: [],
+          },
+          cursor: {
+            oneDrive: oneDriveResults[0].syncState || oneDriveSyncState,
+          },
+        });
+      } catch (error) {
+        const errorMsg = `Microsoft OneDrive API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
 
-      responses.push({
-        success: false,
-        message: errorMsg,
-        data: {
-          results: [],
-          errors: [errorMsg],
-        },
-      });
-    }
-
-    // Microsoft Graph - Calendar
-    try {
-      const outlookCalendarsSyncState =
-        (connection.syncState?.outlookCalendars as OutlookCalendarsSyncState) ||
-        ({} as OutlookCalendarsSyncState);
-      const calendarsResults = await this.syncCalendars(connection, outlookCalendarsSyncState);
-
-      for (const response of calendarsResults) {
-        outlookCalendarsSyncState[response.calendarId] = { skip: response.syncState.skip! };
+        responses.push({
+          success: false,
+          message: errorMsg,
+          data: {
+            results: [],
+            errors: [errorMsg],
+          },
+        });
       }
-
-      responses.push({
-        success: true,
-        message: 'Microsoft Graph - Calendar sync completed successfully',
-        data: {
-          results: [{ api: 'Microsoft Graph - Calendar', data: calendarsResults }],
-          errors: [],
-        },
-        cursor: {
-          outlookCalendars: outlookCalendarsSyncState,
-        },
-      });
-    } catch (error) {
-      const errorMsg = `Microsoft Calendar API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-
-      responses.push({
-        success: false,
-        message: errorMsg,
-        data: {
-          results: [],
-          errors: [errorMsg],
-        },
-      });
     }
 
-    // Microsoft Graph - Mail
-    try {
-      const outlookMailSyncState = connection.syncState?.outlookMail as OutlookMailSyncState | null;
-      const outlookResults = await this.syncOutlook(connection, outlookMailSyncState);
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Calendar') > -1) {
+      // Microsoft Graph - Calendar
+      try {
+        const outlookCalendarsSyncState =
+          (connection.syncState?.outlookCalendars as OutlookCalendarsSyncState) ||
+          ({} as OutlookCalendarsSyncState);
+        const calendarsResults = await this.syncCalendars(connection, outlookCalendarsSyncState);
 
-      responses.push({
-        success: true,
-        message: 'Microsoft Graph - Mail sync completed successfully',
-        data: {
-          results: [{ api: 'Microsoft Graph - Mail', data: outlookResults }],
-          errors: [],
-        },
-        cursor: {
-          outlookMail: outlookResults[0].syncState || outlookMailSyncState,
-        },
-      });
-    } catch (error) {
-      const errorMsg = `Microsoft Mail API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        for (const response of calendarsResults) {
+          outlookCalendarsSyncState[response.calendarId] = { skip: response.syncState.skip! };
+        }
 
-      responses.push({
-        success: false,
-        message: errorMsg,
-        data: {
-          results: [],
-          errors: [errorMsg],
-        },
-      });
+        responses.push({
+          success: true,
+          message: 'Microsoft Graph - Calendar sync completed successfully',
+          data: {
+            results: [{ api: 'Microsoft Graph - Calendar', data: calendarsResults }],
+            errors: [],
+          },
+          cursor: {
+            outlookCalendars: outlookCalendarsSyncState,
+          },
+        });
+      } catch (error) {
+        const errorMsg = `Microsoft Calendar API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+        responses.push({
+          success: false,
+          message: errorMsg,
+          data: {
+            results: [],
+            errors: [errorMsg],
+          },
+        });
+      }
+    }
+
+    if (!connection.needsReauth && connection.activeEndpoints.indexOf('Outlook Mail') > -1) {
+      // Microsoft Graph - Mail
+      try {
+        const outlookMailSyncState = connection.syncState?.outlookMail as OutlookMailSyncState | null;
+        const outlookResults = await this.syncOutlook(connection, outlookMailSyncState);
+
+        responses.push({
+          success: true,
+          message: 'Microsoft Graph - Mail sync completed successfully',
+          data: {
+            results: [{ api: 'Microsoft Graph - Mail', data: outlookResults }],
+            errors: [],
+          },
+          cursor: {
+            outlookMail: outlookResults[0].syncState || outlookMailSyncState,
+          },
+        });
+      } catch (error) {
+        const errorMsg = `Microsoft Mail API failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+        responses.push({
+          success: false,
+          message: errorMsg,
+          data: {
+            results: [],
+            errors: [errorMsg],
+          },
+        });
+      }
     }
 
     return responses;

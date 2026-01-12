@@ -22,6 +22,10 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   protected abstract extraAuthParams: Record<string, string>;
 
+  protected abstract endpointScopeMap: Record<string, string[]>;
+
+  protected abstract getScopesFromActiveEndpoints(activeEndpoints: string[]): string;
+
   async request<T>(connection: Connection, endpoint: string, options?: RequestInit): Promise<T> {
     if (connection.accessToken == null) {
       throw new Error('Connection not authenticated');
@@ -72,7 +76,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
       client_id: this.clientId,
       redirect_uri: config.auth.oauth.callbackUrl,
       response_type: 'code',
-      scope: this.scopes.join(' '),
+      scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
       state: connection.id,
       ...this.extraAuthParams,
     });

@@ -13,6 +13,8 @@ type ReturnType = [
     authorizationUrl: string | null;
     loading: boolean;
     error: unknown | null;
+    endpoints: string[];
+    setEndpoints: (endpoints: string[]) => void;
   },
   {
     connect: (providerId: string) => Promise<void>;
@@ -25,6 +27,7 @@ export function useConnectService(): ReturnType {
   const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown | null>(null);
+  const [endpoints, setEndpoints] = useState<string[]>([]);
 
   const connect = useCallback(
     async (providerId: string) => {
@@ -39,6 +42,7 @@ export function useConnectService(): ReturnType {
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ endpoints: endpoints || [] }),
         });
 
         setAuthorizationUrl(response.authorizationUrl);
@@ -48,7 +52,7 @@ export function useConnectService(): ReturnType {
         setLoading(false);
       }
     },
-    [authToken],
+    [authToken, endpoints],
   );
 
   return [
@@ -56,6 +60,8 @@ export function useConnectService(): ReturnType {
       authorizationUrl,
       loading,
       error,
+      endpoints,
+      setEndpoints,
     },
     {
       connect,

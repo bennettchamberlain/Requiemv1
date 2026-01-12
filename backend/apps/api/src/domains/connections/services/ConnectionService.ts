@@ -34,6 +34,7 @@ export class ConnectionService {
       provider: {
         id: providerId,
       },
+      activeEndpoints: data.endpoints || [],
     });
 
     const entity = await this.connectionRepository.save(instance);
@@ -101,8 +102,23 @@ export class ConnectionService {
   }
 
   async update(context: ServiceContext, id: string, data: UpdateConnectionDto): Promise<Connection | null> {
-    const { syncState, ...rest } = data;
+    const { syncState, endpoints, ...rest } = data;
 
+    const currentConnection = await this.findById(context, id);
+    if (!currentConnection) {
+      return null;
+    }
+
+    //If endpoints are being updated, check if there are any new scopes that require reauth.
+    //If so, set needsReauth to true.
+    //If not, preserve the existing needsReauth value, as if we previously indicated we needed
+    //reauth, we might still need it, even after multiple updates.
+    //Only if there are no endpoints sent as part of the update should we use the needsReauth value
+    //sent as part of the update.
+    const newScopes = endpoints
+      ? endpoints.some((endpoint) => currentConnection.activeEndpoints.indexOf(endpoint) === -1)
+      : false;
+    const needsReauth = endpoints ? (newScopes ? true : currentConnection.needsReauth) : rest.needsReauth;
     const result = await this.connectionRepository.update(
       {
         id,
@@ -114,6 +130,8 @@ export class ConnectionService {
       },
       {
         ...rest,
+        activeEndpoints: endpoints,
+        needsReauth,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         syncState: syncState as any, // TypeORM will handle JSON serialization
       },
