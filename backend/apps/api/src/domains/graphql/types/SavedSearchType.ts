@@ -1,6 +1,7 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 
 import { type SavedSearch } from '@ci/domains/files';
+import { IndexableEntity } from '@ci/domains/search-next';
 
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
@@ -24,7 +25,7 @@ export class SavedSearchType implements Node {
   query!: string | null;
 
   @Field(() => [String], { nullable: true })
-  entityTypes!: string[] | null;
+  entityTypes!: IndexableEntity[] | null;
 
   @Field(() => [ID], { nullable: true })
   tags!: string[];

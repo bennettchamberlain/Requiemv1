@@ -63,7 +63,6 @@ declare module '@ci/domains/events/registry' {
   }
 }
 
-
 /**
  * Event emitted when creating a new user.
  *

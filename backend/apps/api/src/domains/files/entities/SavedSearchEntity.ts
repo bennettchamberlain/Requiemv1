@@ -8,9 +8,10 @@ import {
   JoinColumn,
 } from 'typeorm';
 
+import { IndexableEntity } from '@ci/domains/search-next';
 import { UserEntity, type User } from '@ci/domains/user';
 
-@Entity({ schema: 'ci', name: 'files' })
+@Entity({ schema: 'ci', name: 'saved_searches' })
 export class SavedSearchEntity {
   @PrimaryColumn({ type: 'uuid', name: 'id' })
   id!: string;
@@ -25,13 +26,13 @@ export class SavedSearchEntity {
   query!: string;
 
   @Column({ array: true, type: 'text', name: 'entity_types' })
-  entityTypes!: string[];
+  entityTypes!: IndexableEntity[];
 
   @Column({ array: true, type: 'uuid', name: 'tags', nullable: true })
   tags!: string[];
 
-  @ManyToOne(() => UserEntity, {nullable: true})
-  @JoinColumn({name: 'user_id' })
+  @ManyToOne(() => UserEntity, { nullable: true })
+  @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })

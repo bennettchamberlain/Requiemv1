@@ -23,7 +23,7 @@ import { FilesController } from './controllers/FilesController';
 import { FileEntity, type File, type SignedFile } from './entities/FileEntity';
 import { SavedSearchEntity, type SavedSearch } from './entities/SavedSearchEntity';
 import { FileService } from './services/FileService';
-import {SavedSearchService} from "./services/SavedSearchService";
+import { SavedSearchService } from './services/SavedSearchService';
 
 /**
  * @internal

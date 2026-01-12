@@ -1,5 +1,6 @@
 import { Field, ID, InputType } from '@nestjs/graphql';
-import GraphQLJSONObject from 'graphql-type-json';
+
+import { IndexableEntity } from '@ci/domains/search-next';
 
 @InputType()
 export class UpdateSavedSearchInput {
@@ -16,7 +17,7 @@ export class UpdateSavedSearchInput {
   query?: string;
 
   @Field(() => [String], { nullable: true })
-  entityTypes?: string[];
+  entityTypes?: IndexableEntity[];
 
   @Field(() => [ID], { nullable: true })
   tags?: string[];

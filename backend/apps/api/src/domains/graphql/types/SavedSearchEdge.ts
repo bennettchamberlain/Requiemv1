@@ -1,7 +1,7 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 
-import { SavedSearchType } from './SavedSearchType';
 import { Edge } from './Edge';
+import { SavedSearchType } from './SavedSearchType';
 
 @ObjectType({ implements: () => [Edge] })
 export class SavedSearchEdge implements Edge {

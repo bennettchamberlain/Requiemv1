@@ -256,6 +256,14 @@ export type CreateQuestionInput = {
   text: Scalars['String']['input'];
 };
 
+export type CreateSavedSearchInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  entityTypes?: InputMaybe<Array<Scalars['String']['input']>>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  query?: InputMaybe<Scalars['String']['input']>;
+  tags?: InputMaybe<Array<Scalars['ID']['input']>>;
+};
+
 export type DeleteNoteInput = {
   id: Scalars['String']['input'];
 };
@@ -439,7 +447,9 @@ export type Mutation = {
   createPerson: PersonType;
   createPlace: PlaceType;
   createQuestion: QuestionType;
+  createSavedSearch: SavedSearchType;
   deleteNote: DeleteNotePayload;
+  deleteSavedSearch: Scalars['Boolean']['output'];
   removeAnswer: Scalars['Boolean']['output'];
   removeContent: Scalars['Boolean']['output'];
   removeEvent: Scalars['Boolean']['output'];
@@ -455,6 +465,7 @@ export type Mutation = {
   updatePerson?: Maybe<PersonType>;
   updatePlace?: Maybe<PlaceType>;
   updateQuestion?: Maybe<QuestionType>;
+  updateSavedSearch?: Maybe<SavedSearchType>;
 };
 
 
@@ -493,8 +504,18 @@ export type MutationCreateQuestionArgs = {
 };
 
 
+export type MutationCreateSavedSearchArgs = {
+  input: CreateSavedSearchInput;
+};
+
+
 export type MutationDeleteNoteArgs = {
   input: DeleteNoteInput;
+};
+
+
+export type MutationDeleteSavedSearchArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -570,6 +591,11 @@ export type MutationUpdatePlaceArgs = {
 
 export type MutationUpdateQuestionArgs = {
   input: UpdateQuestionInput;
+};
+
+
+export type MutationUpdateSavedSearchArgs = {
+  input: UpdateSavedSearchInput;
 };
 
 export type Node = {
@@ -736,6 +762,8 @@ export type Query = {
   providers: ProviderConnection;
   question?: Maybe<QuestionType>;
   questions: QuestionConnection;
+  savedSearch?: Maybe<SavedSearchType>;
+  savedSearches: SavedSearchConnection;
   search: SearchConnection;
   tag?: Maybe<TagType>;
   tags: TagConnection;
@@ -944,6 +972,19 @@ export type QueryQuestionsArgs = {
 };
 
 
+export type QuerySavedSearchArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QuerySavedSearchesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QuerySearchArgs = {
   input: SearchInput;
 };
@@ -999,6 +1040,31 @@ export type QuestionType = Node & {
 
 export type RemovePersonInput = {
   id: Scalars['String']['input'];
+};
+
+export type SavedSearchConnection = Connection & {
+  __typename?: 'SavedSearchConnection';
+  edges: Array<SavedSearchEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type SavedSearchEdge = Edge & {
+  __typename?: 'SavedSearchEdge';
+  cursor: Scalars['String']['output'];
+  node: SavedSearchType;
+};
+
+export type SavedSearchType = Node & {
+  __typename?: 'SavedSearchType';
+  createdAt: Scalars['DateTime']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  entityTypes?: Maybe<Array<Scalars['String']['output']>>;
+  id: Scalars['ID']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  query?: Maybe<Scalars['String']['output']>;
+  tags?: Maybe<Array<Scalars['ID']['output']>>;
+  updatedAt: Scalars['DateTime']['output'];
 };
 
 export type SearchConnection = {
@@ -1159,6 +1225,15 @@ export type UpdateQuestionInput = {
   category: Scalars['String']['input'];
   id: Scalars['String']['input'];
   text: Scalars['String']['input'];
+};
+
+export type UpdateSavedSearchInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  entityTypes?: InputMaybe<Array<Scalars['String']['input']>>;
+  id: Scalars['ID']['input'];
+  name?: InputMaybe<Scalars['String']['input']>;
+  query?: InputMaybe<Scalars['String']['input']>;
+  tags?: InputMaybe<Array<Scalars['ID']['input']>>;
 };
 
 export type UserType = Node & {

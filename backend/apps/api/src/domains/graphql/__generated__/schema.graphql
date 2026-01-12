@@ -385,13 +385,13 @@ type Mutation {
   createQuestion(input: CreateQuestionInput!): QuestionType!
   createSavedSearch(input: CreateSavedSearchInput!): SavedSearchType!
   deleteNote(input: DeleteNoteInput!): DeleteNotePayload!
+  deleteSavedSearch(id: ID!): Boolean!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
   removePerson(input: RemovePersonInput!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
-  removeSavedSearch(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): Boolean!
   untagEntities(input: TagEntitiesInput!): Boolean!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
@@ -553,7 +553,7 @@ type Query {
   question(id: ID!): QuestionType
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
   savedSearch(id: ID!): SavedSearchType
-  savedSearchs(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
+  savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
   search(input: SearchInput!): SearchConnection!
   tag(id: ID!): TagType
   tags(after: String, before: String, first: Int, last: Int): TagConnection!

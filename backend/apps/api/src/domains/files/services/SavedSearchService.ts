@@ -1,17 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
+import { type ServiceContext, SYSTEM_USER, UserServiceContext } from '@ci/common/context';
 import { EventService } from '@ci/domains/events';
-import {
-  SavedSearchCreatedEvent,
-  SavedSearchUpdatedEvent,
-  SavedSearchDeletedEvent,
-} from '../events';
 
 import { SavedSearch, SavedSearchEntity } from '../entities/SavedSearchEntity';
+import { SavedSearchCreatedEvent, SavedSearchUpdatedEvent, SavedSearchDeletedEvent } from '../events';
 import type { CreateSavedSearchDto, UpdateSavedSearchDto } from '../types';
 
 @Injectable()
@@ -23,7 +19,7 @@ export class SavedSearchService {
     private readonly eventService: EventService,
   ) {}
 
-  async create(context: ServiceContext, data: CreateSavedSearchDto): Promise<SavedSearch> {
+  async create(context: UserServiceContext, data: CreateSavedSearchDto): Promise<SavedSearch> {
     const id = data.id ?? uuidv7();
 
     const instance = await this.savedSearchRepository.create({
@@ -32,7 +28,10 @@ export class SavedSearchService {
       description: data.description,
       query: data.query,
       entityTypes: data.entityTypes,
-      tags: data.tags
+      tags: data.tags,
+      user: {
+        id: context.userId,
+      },
     });
 
     const entity = await this.savedSearchRepository.save(instance);
@@ -85,11 +84,7 @@ export class SavedSearchService {
     });
   }
 
-  async update(
-    context: ServiceContext,
-    id: string,
-    data: UpdateSavedSearchDto,
-  ): Promise<SavedSearch | null> {
+  async update(context: ServiceContext, id: string, data: UpdateSavedSearchDto): Promise<SavedSearch | null> {
     const result = await this.savedSearchRepository.update(
       {
         id,

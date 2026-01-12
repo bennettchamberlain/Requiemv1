@@ -1,8 +1,8 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
 
-import { SavedSearchEdge } from './SavedSearchEdge';
 import { Connection } from './Connection';
 import { PageInfo } from './PageInfo';
+import { SavedSearchEdge } from './SavedSearchEdge';
 
 @ObjectType({ implements: () => [Connection] })
 export class SavedSearchConnection implements Connection {

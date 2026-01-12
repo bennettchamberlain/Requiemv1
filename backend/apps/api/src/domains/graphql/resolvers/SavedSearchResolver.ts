@@ -1,25 +1,25 @@
-import { UseGuards } from '@nestjs/common';
+import { BadRequestException, UseGuards } from '@nestjs/common';
 import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { SavedSearchService } from '@ci/domains/files';
+import type { IndexableEntity } from '@ci/domains/search-next';
+import { INDEXABLE_ENTITIES } from '@ci/domains/search-next';
 
-import { SavedSearchConnection } from '../types/SavedSearchConnection';
-import { SavedSearchEdge } from '../types/SavedSearchEdge';
-import { SavedSearchType } from '../types/SavedSearchType';
 import { CreateSavedSearchInput } from '../types/CreateSavedSearchInput';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { SavedSearchConnection } from '../types/SavedSearchConnection';
+import { SavedSearchEdge } from '../types/SavedSearchEdge';
+import { SavedSearchType } from '../types/SavedSearchType';
 import { UpdateSavedSearchInput } from '../types/UpdateSavedSearchInput';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
 @Resolver(() => SavedSearchType)
 export class SavedSearchResolver {
-  constructor(
-    private readonly savedSearchService: SavedSearchService,
-  ) {}
+  constructor(private readonly savedSearchService: SavedSearchService) {}
 
   @Mutation(() => SavedSearchType)
   async createSavedSearch(
@@ -27,6 +27,14 @@ export class SavedSearchResolver {
     @Args('input') input: CreateSavedSearchInput,
   ): Promise<SavedSearchType> {
     const serviceContext = toServiceContext(context);
+
+    if (input.entityTypes) {
+      input.entityTypes.map((entity) => {
+        if (!isIndexableEntity(entity)) {
+          throw new BadRequestException(`Entity type ${entity} is not valid`);
+        }
+      });
+    }
 
     const entity = await this.savedSearchService.create(serviceContext, {
       name: input.name,
@@ -58,14 +66,19 @@ export class SavedSearchResolver {
   }
 
   @Mutation(() => Boolean)
-  async removeSavedSearch(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async deleteSavedSearch(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('savedSearch', gid);
 
     return this.savedSearchService.remove(serviceContext, id);
   }
 
   @Query(() => SavedSearchConnection)
-  async savedSearchs(
+  async savedSearches(
     @Context() context: RequestContext,
     @Args() pagination: PaginationArgs,
   ): Promise<SavedSearchConnection> {
@@ -107,4 +120,8 @@ export class SavedSearchResolver {
 
     return entity ? SavedSearchType.toType(entity) : null;
   }
+}
+
+function isIndexableEntity(type: string): type is IndexableEntity {
+  return INDEXABLE_ENTITIES.includes(type as IndexableEntity);
 }
