@@ -19,3 +19,20 @@ export interface FileQuery {
 export interface UpdateFileDto {
   analysisCompleted?: boolean;
 }
+
+export interface CreateSavedSearchDto {
+  id?: string;
+  name?: string;
+  description?: string;
+  query?: string;
+  entityTypes?: string[];
+  tags?: string[];
+}
+
+export interface UpdateSavedSearchDto {
+  name?: string;
+  description?: string;
+  query?: string;
+  entityTypes?: string[];
+  tags?: string[];
+}
