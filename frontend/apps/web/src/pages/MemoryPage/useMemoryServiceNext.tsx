@@ -22,6 +22,7 @@ const SEARCH_QUERY = gql(`
           ...GalleryContentCardData
           ...GalleryEventCardData
           ...GalleryFileCardData
+          ...GalleryNoteCardData
           ...GalleryItemCardData
           ...GalleryPersonCardData
           ...GalleryPlaceCardData
@@ -34,6 +35,7 @@ const SEARCH_QUERY = gql(`
           ...TableEventRowData
           ...TableFileRowData
           ...TableItemRowData
+          ...TableNoteRowData
           ...TablePersonRowData
           ...TablePlaceRowData
           ...TableThreadRowData

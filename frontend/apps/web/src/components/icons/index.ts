@@ -6,6 +6,7 @@ export { ContentIcon } from './ContentIcon';
 export { EventIcon } from './EventIcon';
 export { FileIcon } from './FileIcon';
 export { ItemIcon } from './ItemIcon';
+export { NoteIcon } from './NoteIcon';
 export { PersonIcon } from './PersonIcon';
 export { PlaceIcon } from './PlaceIcon';
 export { ThreadIcon } from './ThreadIcon';

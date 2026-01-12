@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 import {
   ApolloClient,
@@ -13,6 +13,12 @@ import { useAuth } from '@/hooks';
 export function ApolloProvider({ children }: { children: ReactNode }) {
   const [{ authToken }] = useAuth();
 
+  const tokenRef = useRef(authToken);
+
+  useEffect(() => {
+    tokenRef.current = authToken;
+  }, [authToken]);
+
   const client = useMemo(() => {
     const httpLink = createHttpLink({
       uri: '/api/graphql',
@@ -22,7 +28,7 @@ export function ApolloProvider({ children }: { children: ReactNode }) {
       return {
         headers: {
           ...headers,
-          authorization: authToken ? `Bearer ${authToken}` : '',
+          authorization: tokenRef.current ? `Bearer ${tokenRef.current}` : '',
         },
       };
     });
@@ -31,7 +37,7 @@ export function ApolloProvider({ children }: { children: ReactNode }) {
       link: authLink.concat(httpLink),
       cache: new InMemoryCache(),
     });
-  }, [authToken]);
+  }, []);
 
   return <BaseApolloProvider client={client}>{children}</BaseApolloProvider>;
 }

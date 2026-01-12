@@ -7,6 +7,7 @@ export const INDEXABLE_ENTITIES = [
   'event',
   'file',
   'item',
+  'note',
   'person',
   'place',
   'thread',

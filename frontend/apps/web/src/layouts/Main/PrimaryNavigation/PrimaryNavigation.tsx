@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
 import { Button, DropdownMenu, Separator } from '@ci/shadcn';
-import { Upload, Camera, Plus, Cable } from '@ci/shadcn/icons';
+import { NotebookPen, Upload, Camera, Plus, Cable } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
 import { useUploadFile } from '@/api';
@@ -75,6 +75,14 @@ export function PrimaryNavigation() {
               </DropdownMenu.Trigger>
               <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
                 <div className="grid grid-cols-2 gap-2">
+                  <DropdownMenu.Item
+                    onSelect={() => navigate('/notes/new')}
+                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                  >
+                    <NotebookPen className="h-6! w-6!" strokeWidth={1.25} />
+                    <span className="text-xs">Note</span>
+                  </DropdownMenu.Item>
+
                   <DropdownMenu.Item
                     onSelect={openUploadModal}
                     className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"

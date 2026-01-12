@@ -14,6 +14,7 @@ import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
+import { NotesModule } from '@ci/domains/notes';
 
 import { EmbeddingEntity } from './entities/EmbeddingEntity';
 import { VectorEntity } from './entities/VectorEntity';
@@ -25,6 +26,7 @@ import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListen
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
 import { FileSearchIndexListener } from './listeners/FileSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
+import { NoteSearchIndexListener } from './listeners/NoteSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
 import { PlaceSearchIndexListener } from './listeners/PlaceSearchIndexListener';
 import { ThreadSearchIndexListener } from './listeners/ThreadSearchIndexListener';
@@ -43,6 +45,7 @@ import { VectorService } from './services/VectorService';
     FilesModule,
     IntelligenceModule,
     MemoryModule,
+    NotesModule,
   ],
   providers: [
     AnswerSearchIndexListener,
@@ -54,6 +57,7 @@ import { VectorService } from './services/VectorService';
     EventSearchIndexListener,
     FileSearchIndexListener,
     ItemSearchIndexListener,
+    NoteSearchIndexListener,
     PersonSearchIndexListener,
     PlaceSearchIndexListener,
     ThreadSearchIndexListener,

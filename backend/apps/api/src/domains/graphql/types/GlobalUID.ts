@@ -10,6 +10,7 @@ type ResourceType =
   | 'file'
   | 'item'
   | 'message'
+  | 'note'
   | 'person'
   | 'place'
   | 'provider'

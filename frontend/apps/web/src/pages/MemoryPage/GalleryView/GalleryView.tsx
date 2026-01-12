@@ -13,6 +13,7 @@ import { ContentCard } from './cards/ContentCard';
 import { EventCard } from './cards/EventCard';
 import { FileCard } from './cards/FileCard';
 import { ItemCard } from './cards/ItemCard';
+import { NoteCard } from './cards/NoteCard';
 import { PersonCard } from './cards/PersonCard';
 import { PlaceCard } from './cards/PlaceCard';
 import { ThreadCard } from './cards/ThreadCard';
@@ -71,6 +72,9 @@ export function GalleryView() {
 
           case 'BrowserActivityType':
             return <BrowserActivityCard key={item.id} browserActivity={item} onClick={() => {}} />;
+
+          case 'NoteType':
+            return <NoteCard key={item.id} note={item} onClick={() => {}} />;
 
           default:
             return null;

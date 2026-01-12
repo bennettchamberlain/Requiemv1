@@ -10,6 +10,7 @@ import { FileType } from './FileType';
 import { GlobalUID } from './GlobalUID';
 import { ItemType } from './ItemType';
 import type { Node } from './Node';
+import { NoteType } from './NoteType';
 import { PersonType } from './PersonType';
 import { PlaceType } from './PlaceType';
 import { ThreadType } from './ThreadType';
@@ -26,6 +27,7 @@ export const SearchResultType = createUnionType({
       EventType,
       FileType,
       ItemType,
+      NoteType,
       PersonType,
       PlaceType,
       ThreadType,
@@ -50,6 +52,8 @@ export const SearchResultType = createUnionType({
         return FileType;
       case 'item':
         return ItemType;
+      case 'note':
+        return NoteType;
       case 'person':
         return PersonType;
       case 'place':

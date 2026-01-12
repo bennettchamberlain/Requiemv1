@@ -10,7 +10,12 @@ interface NavLinkProps extends ComponentProps<typeof BaseNavLink> {
 
 export function NavLink({ to, label, children, ...props }: NavLinkProps) {
   const resolvedPath = useResolvedPath(to);
-  const match = useMatch(resolvedPath.pathname);
+
+  const match = useMatch({
+    path: resolvedPath.pathname,
+    end: props.end,
+  });
+
   const isActive = Boolean(match);
 
   return (
