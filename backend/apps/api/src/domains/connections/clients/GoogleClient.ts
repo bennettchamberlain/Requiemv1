@@ -29,7 +29,7 @@ export class GoogleClient extends BaseOAuth2Client {
 
   protected readonly tokenEndpoint = 'https://oauth2.googleapis.com/token';
 
-  protected readonly endpointMap = {
+  protected readonly endpointScopeMap = {
     Calendar: ['calendar.readonly'],
     Gmail: ['gmail.readonly'],
     Drive: ['drive.readonly'],
@@ -55,10 +55,10 @@ export class GoogleClient extends BaseOAuth2Client {
   };
 
   protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
-    const scopesSet = new Set<string>(this.endpointMap['default']);
+    const scopesSet = new Set<string>(this.endpointScopeMap['default']);
 
     activeEndpoints.forEach((endpoint) => {
-      const scopes = this.endpointMap[endpoint as keyof typeof this.endpointMap];
+      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
       scopes.forEach((scope) => scopesSet.add(`https://www.googleapis.com/auth/${scope}`));
     });
 

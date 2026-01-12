@@ -21,7 +21,7 @@ export class FacebookClient extends BaseOAuth2Client {
 
   protected readonly tokenEndpoint = 'https://graph.facebook.com/v21.0/oauth/access_token';
 
-  protected readonly endpointMap = {
+  protected readonly endpointScopeMap = {
     Posts: ['user_posts'],
     Photos: ['user_photos'],
     Videos: ['user_videos'],
@@ -70,10 +70,10 @@ export class FacebookClient extends BaseOAuth2Client {
   }
 
   protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
-    const scopesSet = new Set<string>(this.endpointMap['default']);
+    const scopesSet = new Set<string>(this.endpointScopeMap['default']);
 
     activeEndpoints.forEach((endpoint) => {
-      const scopes = this.endpointMap[endpoint as keyof typeof this.endpointMap];
+      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
       scopes.forEach((scope) => scopesSet.add(scope));
     });
 

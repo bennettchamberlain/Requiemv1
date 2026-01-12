@@ -103,7 +103,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
   protected readonly extraAuthParams = {};
 
-  protected readonly endpointMap = {
+  protected readonly endpointScopeMap = {
     'Outlook Mail': ['mail.read'],
     Calendar: ['calendars.read'],
     OneDrive: ['files.read'],
@@ -111,10 +111,10 @@ export class MicrosoftClient extends BaseOAuth2Client {
   };
 
   protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
-    const scopesSet = new Set<string>(this.endpointMap['default']);
+    const scopesSet = new Set<string>(this.endpointScopeMap['default']);
 
     activeEndpoints.forEach((endpoint) => {
-      const scopes = this.endpointMap[endpoint as keyof typeof this.endpointMap];
+      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
       scopes.forEach((scope) => scopesSet.add(scope));
     });
 
