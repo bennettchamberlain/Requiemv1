@@ -5,8 +5,16 @@ import { MessageSquare } from '@ci/shadcn/icons';
 
 type Props = ComponentProps<typeof MessageSquare> & {
   className?: string;
+  colorized?: boolean;
 };
 
-export function CommunicationIcon({ className, ...props }: Props) {
-  return <MessageSquare className={cn('text-green-500', className)} size={24} strokeWidth={1.5} {...props} />;
+export function CommunicationIcon({ className, colorized = true, ...props }: Props) {
+  return (
+    <MessageSquare
+      className={cn(colorized ? 'text-green-500' : 'text-[rgb(6,108,128)]', className)}
+      size={24}
+      strokeWidth={1.5}
+      {...props}
+    />
+  );
 }
