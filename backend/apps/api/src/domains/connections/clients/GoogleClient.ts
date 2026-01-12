@@ -39,6 +39,12 @@ export class GoogleClient extends BaseOAuth2Client {
 
   protected readonly scopes = this.scopeNames.map((scope) => `https://www.googleapis.com/auth/${scope}`);
 
+  //prompt: consent seems to be needed to always get refresh tokens
+  protected readonly extraAuthParams = {
+    access_type: 'offline',
+    prompt: 'consent',
+  };
+
   protected get clientId() {
     const clientIdVariable = 'GOOGLE_CLIENT_ID';
     const clientId = process.env[clientIdVariable];

@@ -38,6 +38,8 @@ export class FacebookClient extends BaseOAuth2Client {
     'user_videos',
   ];
 
+  protected readonly extraAuthParams = {};
+
   protected get clientId() {
     const clientIdVariable = 'FACEBOOK_CLIENT_ID';
     const clientId = process.env[clientIdVariable];
