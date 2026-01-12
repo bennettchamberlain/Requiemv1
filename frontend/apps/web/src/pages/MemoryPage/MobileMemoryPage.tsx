@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Select, Button, Sheet } from '@ci/shadcn';
 import { Search, Filter, MapPin, List, Images, X, Share2 } from '@ci/shadcn/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
@@ -67,7 +67,9 @@ export default function MobileMemoryPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item>
-              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator />
             <Breadcrumb.Item>

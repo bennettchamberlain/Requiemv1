@@ -3,7 +3,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 import { Portal, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Card } from '@ci/shadcn';
 import { RefreshCw, Send, X } from '@ci/shadcn/icons';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { useThreadService } from '@/api';
 import { Chat, type FormData } from '@/components/Chat';
@@ -185,11 +185,15 @@ function ChatPageContent() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
-              <Breadcrumb.Link href="/chat">Chat</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/chat">Chat</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             {thread && (
               <>
