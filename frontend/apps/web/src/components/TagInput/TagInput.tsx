@@ -23,6 +23,9 @@ interface Props {
 
 export function TagInput({ tags: initialTags, onTagAdded, onTagRemoved }: Props) {
   const [tags, setTags] = useState<string[]>(initialTags ?? []);
+  const [lowercaseTags, setLowercaseTags] = useState<Set<string>>(
+    new Set(initialTags?.map((t) => t.toLowerCase()) ?? []),
+  );
 
   const form = useForm<FormData>({
     resolver: formDataResolver(FormSchema),
@@ -31,19 +34,33 @@ export function TagInput({ tags: initialTags, onTagAdded, onTagRemoved }: Props)
 
   const handleSubmit = useCallback(
     async (data: FormData) => {
+      if (lowercaseTags.has(data.label.toLowerCase())) {
+        return;
+      }
+
       const success = await onTagAdded?.(data.label);
 
       if (success === true) {
         setTags((prev) => [...prev, data.label]);
+        setLowercaseTags((prev) => new Set(prev).add(data.label.toLowerCase()));
         form.reset();
       }
     },
-    [form, onTagAdded],
+    [form, onTagAdded, tags],
   );
 
   const handleRemove = useCallback(
     (value: string) => {
       setTags((prev) => prev.filter((s) => s !== value));
+
+      setLowercaseTags((prev) => {
+        const next = new Set(prev);
+
+        next.delete(value.toLowerCase());
+
+        return next;
+      });
+
       onTagRemoved?.(value);
     },
     [onTagRemoved],
