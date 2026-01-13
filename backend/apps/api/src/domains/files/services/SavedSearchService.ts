@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, UserServiceContext } from '@ci/common/context';
@@ -13,7 +13,6 @@ import type { CreateSavedSearchDto, UpdateSavedSearchDto } from '../types';
 @Injectable()
 export class SavedSearchService {
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(SavedSearchEntity)
     private readonly savedSearchRepository: Repository<SavedSearchEntity>,
     private readonly eventService: EventService,
