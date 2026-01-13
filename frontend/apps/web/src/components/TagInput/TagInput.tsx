@@ -75,10 +75,14 @@ export function TagInput({ tags: initialTags, onTagAdded, onTagRemoved }: Props)
       }
 
       if (e.key === 'Escape') {
-        e.currentTarget.blur();
+        if (e.currentTarget.value === '') {
+          e.currentTarget.blur();
+        } else {
+          form.reset();
+        }
       }
     },
-    [handleRemove, tags],
+    [form, handleRemove, tags],
   );
 
   return (
