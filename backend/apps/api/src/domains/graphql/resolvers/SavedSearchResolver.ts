@@ -4,10 +4,14 @@ import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { SavedSearchService } from '@ci/domains/files';
+import { UpdateSavedSearchPayload } from '@ci/domains/graphql/types/UpdateSavedSearchPayload';
 import type { IndexableEntity } from '@ci/domains/search-next';
 import { INDEXABLE_ENTITIES } from '@ci/domains/search-next';
 
 import { CreateSavedSearchInput } from '../types/CreateSavedSearchInput';
+import { CreateSavedSearchPayload } from '../types/CreateSavedSearchPayload';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { SavedSearchConnection } from '../types/SavedSearchConnection';
@@ -21,11 +25,11 @@ import { Paginator } from '../utils/Paginator';
 export class SavedSearchResolver {
   constructor(private readonly savedSearchService: SavedSearchService) {}
 
-  @Mutation(() => SavedSearchType)
+  @Mutation(() => CreateSavedSearchPayload)
   async createSavedSearch(
     @Context() context: RequestContext,
     @Args('input') input: CreateSavedSearchInput,
-  ): Promise<SavedSearchType> {
+  ): Promise<CreateSavedSearchPayload> {
     const serviceContext = toServiceContext(context);
 
     if (input.entityTypes) {
@@ -44,17 +48,28 @@ export class SavedSearchResolver {
       tags: input.tags,
     });
 
-    return SavedSearchType.toType(entity);
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      savedSearch: entity ? SavedSearchType.toType(entity) : undefined,
+    };
   }
 
-  @Mutation(() => SavedSearchType, { nullable: true })
+  @Mutation(() => UpdateSavedSearchPayload)
   async updateSavedSearch(
     @Context() context: RequestContext,
     @Args('input') input: UpdateSavedSearchInput,
-  ): Promise<SavedSearchType | null> {
+  ): Promise<UpdateSavedSearchPayload> {
     const serviceContext = toServiceContext(context);
 
-    const entity = await this.savedSearchService.update(serviceContext, input.id, {
+    const id = GlobalUID.parse('saved-search', input.id);
+
+    const entity = await this.savedSearchService.update(serviceContext, id, {
       name: input.name,
       description: input.description,
       query: input.query,
@@ -62,19 +77,39 @@ export class SavedSearchResolver {
       tags: input.tags,
     });
 
-    return entity ? SavedSearchType.toType(entity) : entity;
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      savedSearch: entity ? SavedSearchType.toType(entity) : undefined,
+    };
   }
 
-  @Mutation(() => Boolean)
+  @Mutation(() => DeleteByIdPayload)
   async deleteSavedSearch(
     @Context() context: RequestContext,
-    @Args('id', { type: () => ID }) gid: string,
-  ): Promise<boolean> {
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
     const serviceContext = toServiceContext(context);
 
-    const id = GlobalUID.parse('savedSearch', gid);
+    const id = GlobalUID.parse('saved-search', input.id);
 
-    return this.savedSearchService.remove(serviceContext, id);
+    const success = await this.savedSearchService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @Query(() => SavedSearchConnection)
@@ -88,7 +123,7 @@ export class SavedSearchResolver {
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
       ...pagination,
-      getId: (entity) => GlobalUID.encode('savedSearch', entity.id),
+      getId: (entity) => GlobalUID.encode('saved-search', entity.id),
     });
 
     const edges: SavedSearchEdge[] = slice.map((entity) => {
@@ -114,7 +149,7 @@ export class SavedSearchResolver {
   ): Promise<SavedSearchType | null> {
     const serviceContext = toServiceContext(context);
 
-    const id = GlobalUID.parse('savedSearch', gid);
+    const id = GlobalUID.parse('saved-search', gid);
 
     const entity = await this.savedSearchService.findById(serviceContext, id);
 

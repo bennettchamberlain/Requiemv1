@@ -40,7 +40,7 @@ export class SavedSearchType implements Node {
     return {
       __typename: SavedSearchType.name,
       __source: savedSearch,
-      id: GlobalUID.encode('savedSearch', savedSearch.id),
+      id: GlobalUID.encode('saved-search', savedSearch.id),
       name: savedSearch.name,
       description: savedSearch.description,
       query: savedSearch.query,

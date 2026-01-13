@@ -215,16 +215,21 @@ input CreateSavedSearchInput {
   tags: [ID!]
 }
 
+type CreateSavedSearchPayload {
+  savedSearch: SavedSearchType
+  success: Boolean!
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
 scalar DateTime
 
-input DeleteNoteInput {
+input DeleteByIdInput {
   id: String!
 }
 
-type DeleteNotePayload {
+type DeleteByIdPayload {
   deletedId: ID
   success: Boolean!
 }
@@ -383,9 +388,9 @@ type Mutation {
   createPerson(input: CreatePersonInput!): PersonType!
   createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
-  createSavedSearch(input: CreateSavedSearchInput!): SavedSearchType!
-  deleteNote(input: DeleteNoteInput!): DeleteNotePayload!
-  deleteSavedSearch(id: ID!): Boolean!
+  createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
+  deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
@@ -401,7 +406,7 @@ type Mutation {
   updatePerson(input: UpdatePersonInput!): PersonType
   updatePlace(input: UpdatePlaceInput!): PlaceType
   updateQuestion(input: UpdateQuestionInput!): QuestionType
-  updateSavedSearch(input: UpdateSavedSearchInput!): SavedSearchType
+  updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
 }
 
 interface Node {
@@ -757,6 +762,11 @@ input UpdateSavedSearchInput {
   name: String
   query: String
   tags: [ID!]
+}
+
+type UpdateSavedSearchPayload {
+  savedSearch: SavedSearchType
+  success: Boolean!
 }
 
 type UserType implements Node {
