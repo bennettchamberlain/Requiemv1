@@ -22,7 +22,7 @@ type Documents = {
     "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": typeof types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetFilesDocument,
     "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetInventoryItemsDocument,
-    "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n    }\n  }\n": typeof types.CreateSavedSearchDocument,
+    "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": typeof types.CreateSavedSearchDocument,
     "\n  fragment GalleryAnswerCardData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.GalleryAnswerCardDataFragmentDoc,
     "\n  fragment GalleryBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": typeof types.GalleryBrowserActivityCardDataFragmentDoc,
     "\n  fragment GalleryCommunicationCardData on CommunicationType {\n    id\n    subject\n    preview\n  }\n": typeof types.GalleryCommunicationCardDataFragmentDoc,
@@ -63,7 +63,7 @@ const documents: Documents = {
     "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetFilesDocument,
     "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n": types.GetInventoryItemsDocument,
-    "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n    }\n  }\n": types.CreateSavedSearchDocument,
+    "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": types.CreateSavedSearchDocument,
     "\n  fragment GalleryAnswerCardData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.GalleryAnswerCardDataFragmentDoc,
     "\n  fragment GalleryBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": types.GalleryBrowserActivityCardDataFragmentDoc,
     "\n  fragment GalleryCommunicationCardData on CommunicationType {\n    id\n    subject\n    preview\n  }\n": types.GalleryCommunicationCardDataFragmentDoc,
@@ -133,7 +133,7 @@ export function gql(source: "\n  query GetInventoryItems {\n    items {\n      e
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n    }\n  }\n"): (typeof documents)["\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n    }\n  }\n"];
+export function gql(source: "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

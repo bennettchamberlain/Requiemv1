@@ -20,12 +20,14 @@ import { useMemoryService } from './useMemoryService';
 const CREATE_SAVED_SEARCH = gql(`
   mutation CreateSavedSearch($input: CreateSavedSearchInput!) {
     createSavedSearch(input: $input) {
-      id
-      name
-      description
-      query
-      entityTypes
-      tags
+      savedSearch {
+        id
+        name
+        description
+        query
+        entityTypes
+        tags
+      }
     }
   }
 `);
