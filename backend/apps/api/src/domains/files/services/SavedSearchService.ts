@@ -28,9 +28,7 @@ export class SavedSearchService {
       query: data.query,
       entityTypes: data.entityTypes,
       tags: data.tags,
-      user: {
-        id: context.userId,
-      },
+      userId: context.userId,
     });
 
     const entity = await this.savedSearchRepository.save(instance);
@@ -46,10 +44,9 @@ export class SavedSearchService {
     const results = await this.savedSearchRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
+          userId: context.userId,
         }),
       },
-      relations: ['user'],
     });
 
     return results.map((entity) => SavedSearchEntity.toEgressType(entity));
@@ -60,10 +57,9 @@ export class SavedSearchService {
       where: {
         id: In(ids),
         ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
+          userId: context.userId,
         }),
       },
-      relations: ['user'],
     });
 
     const map = new Map(results.map((entity) => [entity.id, SavedSearchEntity.toEgressType(entity)]));
@@ -76,10 +72,9 @@ export class SavedSearchService {
       where: {
         id,
         ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
+          userId: context.userId,
         }),
       },
-      relations: ['user'],
     });
   }
 
@@ -88,9 +83,7 @@ export class SavedSearchService {
       {
         id,
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
       data,
@@ -111,9 +104,7 @@ export class SavedSearchService {
     const result = await this.savedSearchRepository.delete({
       id,
       ...(context.userId !== SYSTEM_USER && {
-        user: {
-          id: context.userId,
-        },
+        userId: context.userId,
       }),
     });
 

@@ -1,15 +1,6 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 import { IndexableEntity } from '@ci/domains/search-next';
-import { UserEntity, type User } from '@ci/domains/user';
 
 @Entity({ schema: 'ci', name: 'saved_searches' })
 export class SavedSearchEntity {
@@ -31,9 +22,8 @@ export class SavedSearchEntity {
   @Column({ array: true, type: 'uuid', name: 'tags', nullable: true })
   tags!: string[];
 
-  @ManyToOne(() => UserEntity, { nullable: true })
-  @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  @Column({ type: 'uuid', name: 'user_id' })
+  userId?: string;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
@@ -55,6 +45,4 @@ export class SavedSearchEntity {
   }
 }
 
-export type SavedSearch = Readonly<Omit<SavedSearchEntity, 'user'>> & {
-  user?: User;
-};
+export type SavedSearch = Readonly<SavedSearchEntity>;
