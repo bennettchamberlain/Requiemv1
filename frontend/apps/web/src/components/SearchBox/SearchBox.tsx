@@ -21,10 +21,10 @@ import {
   formDataSchema as s,
   cn,
 } from '@ci/shadcn';
-import { Funnel, Search, X } from '@ci/shadcn/icons';
+import { ArrowDown, ArrowUp, Search, X } from '@ci/shadcn/icons';
 
-import { FilterContent } from './FilterContent';
-import { FiltersProvider, useFilters } from './useFilters';
+import { DropdownContent } from './DropdownContent.tsx';
+import { DropdownProvider, useDropdown } from './useDropdown';
 
 const FormSchema = s.object({
   query: s.string(),
@@ -60,8 +60,9 @@ interface Props {
   autoSubmit?: boolean;
   autoSubmitDelay?: number;
   displayResults?: boolean;
-  displayFilters?: boolean;
-  onSearch?: (data: FormData & { entityFilters?: string[] }) => boolean | void | Promise<boolean | void>;
+  displayDropdown?: boolean;
+  saveSupported?: boolean;
+  onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
 }
@@ -77,7 +78,8 @@ function SearchBox(
     autoSubmit = false,
     autoSubmitDelay = 300,
     displayResults = false,
-    displayFilters = false,
+    displayDropdown = false,
+    saveSupported = true,
     onSearch,
     onClear,
     onResultSelect,
@@ -89,7 +91,7 @@ function SearchBox(
     defaultValues: EMPTY,
   });
 
-  const [{ isFiltersPanelVisible }, { toggleFilterPanel }] = useFilters();
+  const [{ isDropdownPanelVisible }, { toggleDropdownPanel }] = useDropdown();
 
   const queryValue = form.watch('query');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -269,7 +271,7 @@ function SearchBox(
 
   // Close filters panel on outside click
   useEffect(() => {
-    if (!isFiltersPanelVisible) {
+    if (!isDropdownPanelVisible) {
       return;
     }
 
@@ -284,18 +286,18 @@ function SearchBox(
         return;
       }
 
-      toggleFilterPanel();
+      toggleDropdownPanel();
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
 
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [isFiltersPanelVisible, toggleFilterPanel]);
+  }, [isDropdownPanelVisible, toggleDropdownPanel]);
 
   let resultsNode: ReactNode | null = null;
 
-  if (displayFilters && isFiltersPanelVisible) {
-    resultsNode = <FilterContent />;
+  if (displayDropdown && isDropdownPanelVisible) {
+    resultsNode = <DropdownContent />;
   } else if (queryValue.length > 0 && !disabled && displayResults) {
     if (isLoading) {
       resultsNode = (
@@ -430,16 +432,17 @@ function SearchBox(
                   </Button>
                 )}
 
-                {displayFilters && (
+                {displayDropdown && (
                   <Button
                     type="button"
                     disabled={disabled}
-                    variant={isFiltersPanelVisible ? 'secondary' : 'ghost'}
+                    variant={isDropdownPanelVisible ? 'secondary' : 'ghost'}
                     size="sm"
                     className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
-                    onClick={toggleFilterPanel}
+                    onClick={toggleDropdownPanel}
                   >
-                    <Funnel className="h-4 w-4" />
+                    { isDropdownPanelVisible && <ArrowUp className="h-4 w-4" /> }
+                    { !isDropdownPanelVisible && <ArrowDown className="h-4 w-4" /> }
                   </Button>
                 )}
 
@@ -471,9 +474,9 @@ function SearchBox(
 const SearchBoxForwarded = forwardRef(SearchBox);
 
 const SearchBoxWithContext = forwardRef<HTMLInputElement, Props>((props, ref) => (
-  <FiltersProvider args={[]}>
+  <DropdownProvider args={[]}>
     <SearchBoxForwarded {...props} ref={ref} />
-  </FiltersProvider>
+  </DropdownProvider>
 ));
 
 export { SearchBoxWithContext as SearchBox };

@@ -80,7 +80,7 @@ export default function DesktopMemoryPage() {
       <PageContent className="p-0 gap-0">
         <div className="flex items-center gap-2 p-4">
           <div className="flex-1">
-            <SearchBox onSearch={handleSearch} onClear={handleClear} autoSubmit displayFilters />
+            <SearchBox onSearch={handleSearch} onClear={handleClear} autoSubmit displayDropdown />
           </div>
 
           {/* View Toggle */}
