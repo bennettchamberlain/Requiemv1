@@ -35,6 +35,7 @@ const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
+const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
@@ -259,6 +260,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <NotePage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/saved-searches?"
+          element={
+            <ProtectedRoute>
+              <SavedSearchesPage />
             </ProtectedRoute>
           }
         />
