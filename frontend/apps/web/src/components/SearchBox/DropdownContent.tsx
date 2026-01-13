@@ -1,22 +1,34 @@
-import { EntityTypeFilter } from './EntityTypeFilter';
 import { Button } from '@ci/shadcn';
 import { Save } from '@ci/shadcn/icons';
 
-export function DropdownContent() {
+import { useDropdown } from '@/components/SearchBox/useDropdown.ts';
+
+import { EntityTypeFilter } from './EntityTypeFilter';
+
+interface Props {
+  saveSupported?: boolean;
+  onSave?: (entityTypes: string[]) => Promise<void>;
+}
+
+export function DropdownContent({ onSave, saveSupported = true }: Props) {
+  const [{ selectedEntityTypes }] = useDropdown();
+
   return (
     <div className="flex items-center justify-between mb-2">
       <div className="p-4">
         <h3 className="text-xs font-bold uppercase">Filters</h3>
 
-      <EntityTypeFilter />
+        <EntityTypeFilter />
       </div>
-      <Button
-        className="bg-green-600 hover:bg-green-700 text-white mr-2"
-        onClick={() => {}}
-      >
-        <Save className="mr-2 h-4 w-4" />
-        Save Search
-      </Button>
+      {saveSupported && (
+        <Button
+          className="bg-green-600 hover:bg-green-700 text-white mr-2"
+          onClick={() => onSave?.(selectedEntityTypes)}
+        >
+          <Save className="mr-2 h-4 w-4" />
+          Save Search
+        </Button>
+      )}
     </div>
   );
 }

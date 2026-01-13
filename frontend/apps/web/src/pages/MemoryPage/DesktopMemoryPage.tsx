@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
+import { useMutation } from '@apollo/client';
 import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Sheet, Tooltip } from '@ci/shadcn';
 import { MapPin, List, Images, Share2 } from '@ci/shadcn/icons';
@@ -7,6 +8,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
+import { gql } from '@/graphql';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
 import { GalleryView } from './GalleryView';
@@ -14,6 +16,19 @@ import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
 import { useMemoryService } from './useMemoryService';
+
+const CREATE_SAVED_SEARCH = gql(`
+  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {
+    createSavedSearch(input: $input) {
+      id
+      name
+      description
+      query
+      entityTypes
+      tags
+    }
+  }
+`);
 
 export default function DesktopMemoryPage() {
   const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
@@ -31,6 +46,8 @@ export default function DesktopMemoryPage() {
       setActiveMemory(null);
     }
   };
+
+  const [createSavedSearch] = useMutation(CREATE_SAVED_SEARCH);
 
   const handleSearch = useCallback(
     (data: { query: string; entityFilters?: string[] }) => {
@@ -59,6 +76,20 @@ export default function DesktopMemoryPage() {
     setSearchParams(currentParams);
   }, [setSearchQuery, searchParams, setSearchParams]);
 
+  const handleSaveSearch = useCallback(async (query: string, entityTypes: string[]) => {
+    await createSavedSearch({
+      variables: {
+        input: {
+          name: '',
+          description: '',
+          query,
+          entityTypes,
+          tags: [],
+        },
+      },
+    });
+  }, []);
+
   return (
     <>
       <Portal.Slot id="breadcrumbs">
@@ -80,7 +111,13 @@ export default function DesktopMemoryPage() {
       <PageContent className="p-0 gap-0">
         <div className="flex items-center gap-2 p-4">
           <div className="flex-1">
-            <SearchBox onSearch={handleSearch} onClear={handleClear} autoSubmit displayDropdown />
+            <SearchBox
+              onSearch={handleSearch}
+              onClear={handleClear}
+              onSave={handleSaveSearch}
+              autoSubmit
+              displayDropdown
+            />
           </div>
 
           {/* View Toggle */}

@@ -17,19 +17,15 @@ type ReturnType = [
 ];
 
 export const AVAILABLE_ENTITY_TYPES = [
-  'Person',
-  'Event',
-  'Content',
   'Browser',
-  'Thing',
-  'Contact',
-  'Place',
-  'Location',
-  'Document',
-  'File',
-  'Channel',
-  'Video',
   'Communication',
+  'Content',
+  'Event',
+  'File',
+  'Note',
+  'Person',
+  'Place',
+  'Thing',
 ];
 
 function useDropdown(): ReturnType {

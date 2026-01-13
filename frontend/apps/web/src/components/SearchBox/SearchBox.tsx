@@ -21,7 +21,7 @@ import {
   formDataSchema as s,
   cn,
 } from '@ci/shadcn';
-import { ArrowDown, ArrowUp, Search, X } from '@ci/shadcn/icons';
+import { ArrowDown, Search, X } from '@ci/shadcn/icons';
 
 import { DropdownContent } from './DropdownContent.tsx';
 import { DropdownProvider, useDropdown } from './useDropdown';
@@ -44,6 +44,18 @@ const Keys = {
   ARROW_DOWN: 'ArrowDown',
 } as const;
 
+const ENTITY_TYPE_MAP = {
+  Browser: 'browser-activity',
+  Communication: 'communication',
+  Content: 'content',
+  Event: 'event',
+  File: 'file',
+  Note: 'note',
+  Person: 'person',
+  Place: 'place',
+  Thing: 'item',
+};
+
 interface SearchResultItem {
   id: string;
   content: React.ReactNode;
@@ -65,6 +77,7 @@ interface Props {
   onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
+  onSave?: (query: string, entityTypes: string[]) => void;
 }
 
 function SearchBox(
@@ -83,6 +96,7 @@ function SearchBox(
     onSearch,
     onClear,
     onResultSelect,
+    onSave,
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
 ) {
@@ -217,6 +231,16 @@ function SearchBox(
     [disabled, form, results, selectedIndex, onResultSelect, handleClear],
   );
 
+  const handleSaveSearch = useCallback(
+    async (entityTypes: string[]) => {
+      await onSave?.(
+        queryValue,
+        entityTypes.map((type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP]),
+      );
+    },
+    [onSave, queryValue],
+  );
+
   // Auto-submit with debounce
   useEffect(() => {
     if (!autoSubmit || !queryValue.trim() || disabled) {
@@ -297,7 +321,7 @@ function SearchBox(
   let resultsNode: ReactNode | null = null;
 
   if (displayDropdown && isDropdownPanelVisible) {
-    resultsNode = <DropdownContent />;
+    resultsNode = <DropdownContent onSave={handleSaveSearch} saveSupported={saveSupported} />;
   } else if (queryValue.length > 0 && !disabled && displayResults) {
     if (isLoading) {
       resultsNode = (
@@ -441,8 +465,12 @@ function SearchBox(
                     className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform"
                     onClick={toggleDropdownPanel}
                   >
-                    { isDropdownPanelVisible && <ArrowUp className="h-4 w-4" /> }
-                    { !isDropdownPanelVisible && <ArrowDown className="h-4 w-4" /> }
+                    <ArrowDown
+                      className={cn(
+                        'h-4 w-4 transition-transform duration-200',
+                        isDropdownPanelVisible && 'rotate-180',
+                      )}
+                    />
                   </Button>
                 )}
 
