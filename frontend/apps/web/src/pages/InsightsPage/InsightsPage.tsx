@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from '@ci/shadcn/icons';
+import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
@@ -243,7 +244,9 @@ export function InsightsPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>

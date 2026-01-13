@@ -4,6 +4,7 @@ import { useQuery } from '@apollo/client';
 import { LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 import { File as FileIcon, Download } from '@ci/shadcn/icons';
+import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
@@ -105,7 +106,9 @@ export function FilesPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>

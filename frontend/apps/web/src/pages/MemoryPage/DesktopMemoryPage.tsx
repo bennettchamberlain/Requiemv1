@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Sheet, Tooltip } from '@ci/shadcn';
 import { MapPin, List, Images, Share2 } from '@ci/shadcn/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
@@ -65,7 +65,9 @@ export default function DesktopMemoryPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>

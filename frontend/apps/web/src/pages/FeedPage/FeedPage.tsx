@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
 
 import { ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { useActionListService } from '@/api';
 import { PageContent } from '@/components/layout';
@@ -122,7 +122,9 @@ export function FeedPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
