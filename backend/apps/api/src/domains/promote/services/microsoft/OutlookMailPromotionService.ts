@@ -8,6 +8,7 @@ import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { FileService } from '@ci/domains/files';
 import { CommunicationService } from '@ci/domains/memory';
+import { parseDate } from '@ci/domains/promote/util';
 
 import { PromoteService } from '../PromoteService';
 
@@ -62,7 +63,7 @@ interface ExtractedMessage {
   to?: ExtractedUser[];
   cc?: ExtractedUser[];
   bcc?: ExtractedUser[];
-  date: string;
+  date: Date;
   bodyPreview?: string | null;
   body: string;
   participants: ExtractedUser[];
@@ -206,7 +207,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'RECEIVED_EMAIL_FROM',
-      messageDetails.date ? new Date(messageDetails.date) : undefined,
+      messageDetails.date,
     );
 
     // Create person entities for recipients (with EMAILED relationship)
@@ -216,7 +217,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'EMAILED',
-      messageDetails.date ? new Date(messageDetails.date) : undefined,
+      messageDetails.date,
     );
 
     // Create person entities for recipients (with EMAILED relationship)
@@ -226,7 +227,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'EMAILED',
-      messageDetails.date ? new Date(messageDetails.date) : undefined,
+      messageDetails.date,
     );
 
     // Create person entities for recipients (with EMAILED relationship)
@@ -236,7 +237,7 @@ export class OutlookMailPromotionService {
       connectionId,
       'email',
       'EMAILED',
-      messageDetails.date ? new Date(messageDetails.date) : undefined,
+      messageDetails.date,
     );
 
     const attachmentUploadIds = await Promise.all(
@@ -409,7 +410,7 @@ export class OutlookMailPromotionService {
             };
           })
         : [],
-      date: sentDateTime,
+      date: parseDate(sentDateTime),
       bodyPreview: message.bodyPreview || null,
       body,
       participants,
