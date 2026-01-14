@@ -5,11 +5,11 @@ import { useSearchParams } from 'react-router-dom';
 
 type ReturnType = [
   {
-    isFiltersPanelVisible: boolean;
+    isDropdownPanelVisible: boolean;
     selectedEntityTypes: string[];
   },
   {
-    toggleFilterPanel: () => void;
+    toggleDropdownPanel: () => void;
     selectAllEntityTypes: () => void;
     clearEntityTypes: () => void;
     toggleEntityType: (type: string) => void;
@@ -17,25 +17,21 @@ type ReturnType = [
 ];
 
 export const AVAILABLE_ENTITY_TYPES = [
-  'Person',
-  'Event',
-  'Content',
   'Browser',
-  'Thing',
-  'Contact',
-  'Place',
-  'Location',
-  'Document',
-  'File',
-  'Channel',
-  'Video',
   'Communication',
+  'Content',
+  'Event',
+  'File',
+  'Note',
+  'Person',
+  'Place',
+  'Thing',
 ];
 
-function useFilters(): ReturnType {
+function useDropdown(): ReturnType {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [isFiltersPanelVisible, setFilterPanelVisibile] = useState(false);
+  const [isDropdownPanelVisible, setDropdownPanelVisibile] = useState(false);
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
 
   // Sync entity types with URL parameters
@@ -98,17 +94,17 @@ function useFilters(): ReturnType {
     [setSearchParams],
   );
 
-  const toggleFilterPanel = useCallback(() => {
-    setFilterPanelVisibile((prev) => !prev);
+  const toggleDropdownPanel = useCallback(() => {
+    setDropdownPanelVisibile((prev) => !prev);
   }, []);
 
   return [
     {
-      isFiltersPanelVisible,
+      isDropdownPanelVisible,
       selectedEntityTypes,
     },
     {
-      toggleFilterPanel,
+      toggleDropdownPanel,
       selectAllEntityTypes,
       clearEntityTypes,
       toggleEntityType,
@@ -116,6 +112,6 @@ function useFilters(): ReturnType {
   ];
 }
 
-const { Provider: FiltersProvider, useHookContext: useFiltersContext } = createHookContext(useFilters);
+const { Provider: DropdownProvider, useHookContext: useDropdownContext } = createHookContext(useDropdown);
 
-export { FiltersProvider, useFiltersContext as useFilters };
+export { DropdownProvider, useDropdownContext as useDropdown };

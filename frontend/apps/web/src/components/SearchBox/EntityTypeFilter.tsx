@@ -4,7 +4,7 @@ import { Checkbox } from '@ci/shadcn';
 import { ChevronDown } from '@ci/shadcn/icons';
 import { createPortal } from 'react-dom';
 
-import { AVAILABLE_ENTITY_TYPES, useFilters } from './useFilters';
+import { AVAILABLE_ENTITY_TYPES, useDropdown } from './useDropdown.ts';
 
 export function EntityTypeFilter() {
   const [isOpen, setIsOpen] = useState(false);
@@ -13,7 +13,7 @@ export function EntityTypeFilter() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [{ selectedEntityTypes }, { clearEntityTypes, selectAllEntityTypes, toggleEntityType }] =
-    useFilters();
+    useDropdown();
 
   const handleButtonClick = useCallback(() => {
     if (buttonRef.current) {
