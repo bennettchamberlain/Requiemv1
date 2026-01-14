@@ -13,6 +13,7 @@ type ReturnType = [
     selectAllEntityTypes: () => void;
     clearEntityTypes: () => void;
     toggleEntityType: (type: string) => void;
+    setSelectedEntityTypes: (type: string[]) => void;
   },
 ];
 
@@ -38,6 +39,14 @@ function useDropdown(): ReturnType {
   useEffect(() => {
     const excludedEntityTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || [];
     const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
+
+    setSelectedEntityTypes(selectedTypes);
+  }, [searchParams]);
+
+  // Sync entity types with URL parameters
+  useEffect(() => {
+    const includedEntityTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || [];
+    const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => includedEntityTypes.includes(type));
 
     setSelectedEntityTypes(selectedTypes);
   }, [searchParams]);
@@ -108,6 +117,7 @@ function useDropdown(): ReturnType {
       selectAllEntityTypes,
       clearEntityTypes,
       toggleEntityType,
+      setSelectedEntityTypes,
     },
   ];
 }
