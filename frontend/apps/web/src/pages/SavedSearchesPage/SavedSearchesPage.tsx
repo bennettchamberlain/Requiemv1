@@ -5,14 +5,14 @@ import { EmptyState, LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
-import { SavedSearchIcon } from '@/components/icons/SavedSeachIcon.tsx';
+import { SavedSearchIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import type { FragmentType } from '@/graphql';
 import { gql } from '@/graphql';
 
-import { DeleteSavedSearchModal } from './DeleteSavedSearchModal.tsx';
-import type { SavedSearchGridItemFragment } from './SavedSearch.tsx';
-import { SavedSearch } from './SavedSearch.tsx';
+import { DeleteSavedSearchModal } from './DeleteSavedSearchModal';
+import { type SavedSearchGridItemFragment, SavedSearch } from './SavedSearch';
+import {UpdateSavedSearchModal} from './EditSavedSearchModal';
 
 const GET_SAVED_SEARCHES = gql(`
   query GetSavedSearches($first: Int, $after: String) {
@@ -34,22 +34,25 @@ export function SavedSearchesPage() {
     variables: { first: 50 },
   });
 
-  const [focusedSavedSearch, setFocusedSavedSearch] = useState<string | null>(null);
+  const [savedSearchToDelete, setSavedSearchToDelete] = useState<SavedSearch | null>(null);
+  const [savedSearchToEdit, setSavedSearchToEdit] = useState<SavedSearch | null>(null);
 
-  const openSavedSearchModal = (
+  const openSavedSearchEditModal = (
     e: React.MouseEvent,
     savedSearch: FragmentType<typeof SavedSearchGridItemFragment>,
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('open saved search modal', savedSearch);
+    setSavedSearchToEdit(savedSearch);
   };
 
-  const handleDelete = (e: React.MouseEvent, savedSearchId: string) => {
+  const openSavedSearchDeleteModal = (e: React.MouseEvent, savedSearchId: string) => {
     e.preventDefault();
     e.stopPropagation();
 
-    setFocusedSavedSearch(savedSearchId);
+    console.log('opening delete modal', savedSearchId)
+
+    setSavedSearchToDelete(savedSearchId);
   };
 
   const savedSearches = data?.savedSearches?.edges.map((edge) => edge.node) || [];
@@ -77,8 +80,8 @@ export function SavedSearchesPage() {
             <SavedSearch
               key={savedSearch.id}
               savedSearch={savedSearch}
-              onDelete={(e) => handleDelete(e, savedSearch.id)}
-              openSavedSearchModal={(e) => openSavedSearchModal(e, savedSearch)}
+              openSavedSearchDeleteModal={(e) => openSavedSearchDeleteModal(e, savedSearch.id)}
+              openSavedSearchEditModal={(e) => openSavedSearchEditModal(e, savedSearch)}
             />
           ))}
         </div>
@@ -108,10 +111,17 @@ export function SavedSearchesPage() {
 
       {content}
 
-      {focusedSavedSearch && (
+      {savedSearchToDelete && (
         <DeleteSavedSearchModal
-          savedSearchId={focusedSavedSearch}
-          onClose={() => setFocusedSavedSearch(null)}
+          savedSearchId={savedSearchToDelete.id}
+          onClose={() => setSavedSearchToDelete(null)}
+        />
+      )}
+
+      {savedSearchToEdit && (
+        <UpdateSavedSearchModal
+          savedSearch={savedSearchToEdit}
+          onClose={() => setSavedSearchToEdit(null)}
         />
       )}
     </>

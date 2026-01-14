@@ -10,3 +10,4 @@ export { NoteIcon } from './NoteIcon';
 export { PersonIcon } from './PersonIcon';
 export { PlaceIcon } from './PlaceIcon';
 export { ThreadIcon } from './ThreadIcon';
+export { SavedSearchIcon } from './SavedSearchIcon';

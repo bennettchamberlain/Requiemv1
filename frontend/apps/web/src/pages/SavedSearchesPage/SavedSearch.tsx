@@ -1,8 +1,6 @@
 import { GlobalUID } from '@ci/common';
 import { Button } from '@ci/shadcn';
 import { Pencil, Trash } from '@ci/shadcn/icons';
-import DOMPurify from 'dompurify';
-import parse from 'html-react-parser';
 import { Link } from 'react-router-dom';
 
 import { gql } from '@/graphql';
@@ -10,11 +8,8 @@ import { type FragmentType, useFragment } from '@/graphql/fragment-masking';
 
 interface Props {
   savedSearch: FragmentType<typeof SavedSearchGridItemFragment>;
-  openSavedSearchModal: (
-    e: React.MouseEvent,
-    savedSearch: FragmentType<typeof SavedSearchGridItemFragment>,
-  ) => void;
-  onDelete: (e: React.MouseEvent) => void;
+  openSavedSearchEditModal: (e: React.MouseEvent,) => void;
+  openSavedSearchDeleteModal: (e: React.MouseEvent) => void;
 }
 
 export const SavedSearchGridItemFragment = gql(`
@@ -28,7 +23,7 @@ export const SavedSearchGridItemFragment = gql(`
   }
 `);
 
-export function SavedSearch({ savedSearch: savedSearchMasked, openSavedSearchModal, onDelete }: Props) {
+export function SavedSearch({ savedSearch: savedSearchMasked, openSavedSearchEditModal, openSavedSearchDeleteModal }: Props) {
   const savedSearch = useFragment(SavedSearchGridItemFragment, savedSearchMasked);
 
   return (
@@ -39,21 +34,20 @@ export function SavedSearch({ savedSearch: savedSearchMasked, openSavedSearchMod
         </div>
         <div className="flex-1 flex flex-col gap-2 min-h-0">
           <div className="line-clamp-3 leading-tight">
-            {savedSearch.description ? parse(DOMPurify.sanitize(savedSearch.description)) : null}
+            {savedSearch.description || null}
           </div>
         </div>
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between">
+
           <Button
-            onClick={(e) => openSavedSearchModal(e, savedSearchMasked)}
+            onClick={openSavedSearchEditModal}
             size="icon"
             variant="ghost"
             aria-label="Edit Saved Search"
           >
             <Pencil className="w-4 h-4" />
           </Button>
-        </div>
-        <div className="flex items-center justify-end">
-          <Button onClick={onDelete} size="icon" variant="ghost" aria-label="Delete Saved Search">
+          <Button onClick={openSavedSearchDeleteModal} size="icon" variant="ghost" aria-label="Delete Saved Search">
             <Trash className="w-4 h-4" />
           </Button>
         </div>
