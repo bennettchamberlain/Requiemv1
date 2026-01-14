@@ -1,14 +1,15 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card } from '@ci/shadcn';
+import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
+import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
-import { useNodeGraphService } from '@/api/useNodeGraphService';
-import { ForceGraph } from '@/components/ForceGraph';
+import { EntityGraph } from '@/components/EntityGraph';
 import { PersonIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
+import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
 const GET_PERSON = gql(`
@@ -31,15 +32,11 @@ export function PersonPage() {
   });
 
   const person = data?.person;
+  const [editMode, setEditMode] = useState(false);
 
   usePageTitle(
     person?.name ? `Person - ${person.name} - Companion Intelligence` : 'Person - Companion Intelligence',
   );
-
-  const { data: graphData } = useNodeGraphService({
-    entityId: id,
-    skip: !person,
-  });
 
   let content: ReactNode | null = null;
 
@@ -50,24 +47,58 @@ export function PersonPage() {
   } else {
     content = (
       <PageContent>
-        <div className="flex items-center gap-2">
-          <PersonIcon />
-          <h1 className="text-2xl font-bold">{person.name}</h1>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <PersonIcon />
+            <h1 className="text-2xl font-bold">{person.name}</h1>
+          </div>
+          <Toggle
+            aria-label="Toggle edit mode"
+            size="sm"
+            variant="outline"
+            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
+            pressed={editMode}
+            onPressedChange={setEditMode}
+          >
+            <Pencil />
+          </Toggle>
         </div>
 
-        <p className="text-muted-foreground">{person.description}</p>
-
-        <Card className="p-0">
-          <Card.Content className="p-0">
-            <ForceGraph
-              nodes={graphData?.nodes ?? []}
-              links={graphData?.links ?? []}
-              highlightedNodeId={id}
-              centerNodeId={id}
-              selectedNodeId={id}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <EntityGraph
+              entityId={id!}
+              emptyState={
+                <EmptyState
+                  icon={<PersonIcon size={48} colorized={false} />}
+                  message="No graph data available"
+                />
+              }
             />
-          </Card.Content>
-        </Card>
+          </div>
+
+          <Card className="p-0">
+            <Card.Content className="p-4 flex flex-col gap-6">
+              <div className="space-y-2">
+                <Label>Tags</Label>
+
+                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  defaultValue={person.description ?? ''}
+                  readOnly={!editMode}
+                  className={cn(
+                    'resize-none min-h-[120px]',
+                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
+                  )}
+                />
+              </div>
+            </Card.Content>
+          </Card>
+        </div>
       </PageContent>
     );
   }
