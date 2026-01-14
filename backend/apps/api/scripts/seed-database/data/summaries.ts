@@ -2,10 +2,12 @@ import { type CreateSummaryDto } from '@ci/domains/summaries';
 
 type SeedSummary = RequiredFields<CreateSummaryDto, 'summaryId'>;
 
+import { JOHN_SMITH } from './users';
+
 export const SUMMARIES: SeedSummary[] = [
   {
     summaryId: '01936cb0-0000-7000-8000-000000000001',
-    userId: 'b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b',
+    userId: JOHN_SMITH.id,
     periodStart: new Date('2026-01-13T09:00:00Z'),
     periodEnd: new Date('2026-01-13T10:00:00Z'),
     periodType: 'hourly',
@@ -56,7 +58,7 @@ export const SUMMARIES: SeedSummary[] = [
   },
   {
     summaryId: '01936cb0-0000-7000-8000-000000000002',
-    userId: 'b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b',
+    userId: JOHN_SMITH.id,
     periodStart: new Date('2026-01-13T14:00:00Z'),
     periodEnd: new Date('2026-01-13T15:00:00Z'),
     periodType: 'hourly',
@@ -108,7 +110,7 @@ export const SUMMARIES: SeedSummary[] = [
   },
   {
     summaryId: '01936cb0-0000-7000-8000-000000000003',
-    userId: 'b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b',
+    userId: JOHN_SMITH.id,
     periodStart: new Date('2026-01-12T00:00:00Z'),
     periodEnd: new Date('2026-01-13T00:00:00Z'),
     periodType: 'daily',

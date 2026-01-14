@@ -7,7 +7,7 @@ import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { FileService } from '@ci/domains/files';
-import { CommunicationService } from '@ci/domains/memory';
+import { CommunicationService, CommunicationDirection, CommunicationType } from '@ci/domains/memory';
 import { parseDate } from '@ci/domains/promote/util';
 
 import { PromoteService } from '../PromoteService';
@@ -194,7 +194,7 @@ export class OutlookMailPromotionService {
       participantCount: messageDetails.participants.length,
     });
 
-    const direction = 'inbound'; // TODO: Determine based on user's email
+    const direction = CommunicationDirection.INBOUND; // TODO: Determine based on user's email
 
     const fromParticipants = messageDetails.participants.filter((p) => p.type === 'from');
     const toParticipants = messageDetails.participants.filter((p) => p.type === 'to');
@@ -291,7 +291,7 @@ export class OutlookMailPromotionService {
       { userId },
       {
         time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
-        communication_type: 'email',
+        communication_type: CommunicationType.EMAIL,
         direction,
         from_entity_id: fromEntityIds[0] || undefined,
         to_entity_ids: toEntityIdsCombined,

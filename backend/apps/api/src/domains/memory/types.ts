@@ -398,9 +398,27 @@ export interface UpdateConceptDto {
   properties?: Record<string, unknown>;
 }
 
+export enum CommunicationType {
+  EMAIL = 'email',
+  SMS = 'sms',
+  CALL = 'call',
+  CHAT = 'chat',
+  VIDEO_CALL = 'video_call',
+  VOICE_NOTE = 'voice_note',
+  POST = 'post',
+}
+
+export enum CommunicationDirection {
+  INBOUND = 'inbound',
+  OUTBOUND = 'outbound',
+  INTERNAL = 'internal',
+  ASYNC = 'async',
+  ONGOING = 'ongoing',
+}
 export interface CreateCommunicationDto {
+  id?: string;
   time: Date;
-  communication_type: 'email' | 'sms' | 'call';
+  communication_type: CommunicationType;
   direction: 'inbound' | 'outbound';
   thread_id?: string;
   user_id?: string;

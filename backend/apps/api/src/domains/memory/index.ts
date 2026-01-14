@@ -195,3 +195,4 @@ export type {
 } from './services/SearchService';
 
 export type { Concept, Event, Fact, Item, InventoryCondition, Person, Communication, Place };
+export { CommunicationDirection, CommunicationType } from './types';
