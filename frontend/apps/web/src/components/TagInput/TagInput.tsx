@@ -17,11 +17,12 @@ const EMPTY: FormData = {
 
 interface Props {
   tags?: string[];
+  readOnly?: boolean;
   onTagAdded?: (tag: string) => boolean | Promise<boolean>;
   onTagRemoved?: (tag: string) => void;
 }
 
-export function TagInput({ tags: initialTags, onTagAdded, onTagRemoved }: Props) {
+export function TagInput({ tags: initialTags, readOnly = false, onTagAdded, onTagRemoved }: Props) {
   const [tags, setTags] = useState<string[]>(initialTags ?? []);
   const [lowercaseTags, setLowercaseTags] = useState<Set<string>>(
     new Set(initialTags?.map((t) => t.toLowerCase()) ?? []),
@@ -91,46 +92,51 @@ export function TagInput({ tags: initialTags, onTagAdded, onTagRemoved }: Props)
         <div
           className={cn(
             'w-full flex flex-col p-2',
-            'placeholder:text-muted-foreground/60 field-sizing-content',
+            'placeholder:text-muted-foreground/60',
             'outline-none border shadow-xs rounded-md bg-background text-base',
             'aria-[invalid=true]:ring-destructive/20 dark:aria-[invalid=true]:ring-destructive/40 aria-[invalid=true]:border-destructive',
             'transition-[color,box-shadow]',
+            'focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]',
           )}
         >
           <div className="flex items-center gap-1 flex-wrap">
-            <TagIcon className="h-4 w-4 mr-0.5" strokeWidth={1.75} />
+            <TagIcon className="h-4 w-4 mr-0.5 my-0.5" strokeWidth={1.75} />
 
             {tags.map((tag, i) => {
               return (
                 <Tag key={`${tag}-${i}`} text={tag}>
-                  <button
-                    type="button"
-                    className="flex items-center justify-center cursor-pointer -ml-0.5 -my-0.5 -mr-1.5 p-1"
-                    onClick={() => handleRemove(tag)}
-                  >
-                    <X size={12} />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="flex items-center justify-center cursor-pointer -ml-0.5 -my-0.5 -mr-1.5 p-1"
+                      onClick={() => handleRemove(tag)}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </Tag>
               );
             })}
 
-            <Form.Field
-              control={form.control}
-              name="label"
-              render={({ field }) => (
-                <Input
-                  {...field}
-                  onKeyDown={handleKeyDown}
-                  className={cn(
-                    'min-w-35 !flex-1 !bg-transparent !border-0 !outline-none !ring-0 !shadow-none !rounded-none',
-                    '!p-0 !h-[calc(theme(spacing.9)-2px)] -my-1.5',
-                    'focus:!border-transparent focus:!ring-0 focus-visible:!ring-0 focus-visible:!border-transparent',
-                    'disabled:!bg-transparent',
-                    'resize-none text-base leading-none',
-                  )}
-                />
-              )}
-            />
+            {!readOnly && (
+              <Form.Field
+                control={form.control}
+                name="label"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    onKeyDown={handleKeyDown}
+                    className={cn(
+                      'min-w-35 !flex-1 !bg-transparent !border-0 !outline-none !ring-0 !shadow-none !rounded-none',
+                      '!p-0 h-5',
+                      'focus:!border-transparent focus:!ring-0 focus-visible:!ring-0 focus-visible:!border-transparent',
+                      'disabled:!bg-transparent',
+                      'resize-none text-sm leading-none',
+                    )}
+                  />
+                )}
+              />
+            )}
           </div>
         </div>
       </form>
