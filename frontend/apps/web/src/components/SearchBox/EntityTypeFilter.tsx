@@ -15,6 +15,7 @@ export function EntityTypeFilter() {
   const [{ selectedEntityTypes }, { clearEntityTypes, selectAllEntityTypes, toggleEntityType }] =
     useDropdown();
 
+  console.log('selectedEntityTypes in filter', selectedEntityTypes);
   const handleButtonClick = useCallback(() => {
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();

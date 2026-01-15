@@ -16,6 +16,7 @@ import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
 import { useMemoryService } from './useMemoryService';
+import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
 
 const CREATE_SAVED_SEARCH = gql(`
   mutation CreateSavedSearch($input: CreateSavedSearchInput!) {
@@ -44,18 +45,6 @@ const GET_SAVED_SEARCH = gql(`
     }
   }
 `);
-
-const ENTITY_TYPE_REVERSE_MAP = {
-  'browser-activity': 'Browser',
-  communication: 'Communication',
-  content: 'Content',
-  event: 'Event',
-  file: 'File',
-  note: 'Note',
-  person: 'Person',
-  place: 'Place',
-  item: 'Thing',
-};
 
 export default function DesktopMemoryPage() {
   const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();

@@ -32,7 +32,7 @@ export const AVAILABLE_ENTITY_TYPES = [
 function useDropdown(): ReturnType {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [isDropdownPanelVisible, setDropdownPanelVisibile] = useState(false);
+  const [isDropdownPanelVisible, setDropdownPanelVisible] = useState(false);
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
 
   // Sync entity types with URL parameters
@@ -40,7 +40,9 @@ function useDropdown(): ReturnType {
     const excludedEntityTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || [];
     const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
 
-    setSelectedEntityTypes(selectedTypes);
+    if (window.location.pathname.includes('/memory')) {
+      setSelectedEntityTypes(selectedTypes);
+    }
   }, [searchParams]);
 
   // Sync entity types with URL parameters
@@ -49,7 +51,9 @@ function useDropdown(): ReturnType {
     if (includedEntityTypes.length > 0) {
       const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => includedEntityTypes.includes(type));
 
-      setSelectedEntityTypes(selectedTypes);
+      if (window.location.pathname.includes('/memory')) {
+        setSelectedEntityTypes(selectedTypes);
+      }
     }
   }, [searchParams]);
 
@@ -66,6 +70,7 @@ function useDropdown(): ReturnType {
   const selectAllEntityTypes = useCallback(() => {
     setSelectedEntityTypes([]);
 
+    console.log('selectAllEntityTypes');
     setSearchParams((searchParams) => {
       searchParams.set('excludedEntityTypes', AVAILABLE_ENTITY_TYPES.join(','));
 
@@ -106,7 +111,7 @@ function useDropdown(): ReturnType {
   );
 
   const toggleDropdownPanel = useCallback(() => {
-    setDropdownPanelVisibile((prev) => !prev);
+    setDropdownPanelVisible((prev) => !prev);
   }, []);
 
   return [

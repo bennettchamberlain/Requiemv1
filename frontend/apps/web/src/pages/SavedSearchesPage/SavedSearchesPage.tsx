@@ -12,7 +12,8 @@ import { gql } from '@/graphql';
 
 import { DeleteSavedSearchModal } from './DeleteSavedSearchModal';
 import { type SavedSearchGridItemFragment, SavedSearch } from './SavedSearch';
-import {UpdateSavedSearchModal} from './EditSavedSearchModal';
+import {EditSavedSearchModal} from './EditSavedSearchModal';
+import {DropdownProvider} from "@/components/SearchBox/useDropdown.ts";
 
 const GET_SAVED_SEARCHES = gql(`
   query GetSavedSearches($first: Int, $after: String) {
@@ -119,10 +120,12 @@ export function SavedSearchesPage() {
       )}
 
       {savedSearchToEdit && (
-        <UpdateSavedSearchModal
-          savedSearch={savedSearchToEdit}
-          onClose={() => setSavedSearchToEdit(null)}
-        />
+        <DropdownProvider args={[]} >
+          <EditSavedSearchModal
+            savedSearch={savedSearchToEdit}
+            onClose={() => setSavedSearchToEdit(null)}
+          />
+        </DropdownProvider>
       )}
     </>
   );
