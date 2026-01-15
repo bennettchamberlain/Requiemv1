@@ -9,6 +9,7 @@ import {
   useRef,
 } from 'react';
 
+import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import {
   Button,
   ScrollArea,
@@ -43,18 +44,6 @@ const Keys = {
   ARROW_UP: 'ArrowUp',
   ARROW_DOWN: 'ArrowDown',
 } as const;
-
-const ENTITY_TYPE_MAP = {
-  Browser: 'browser-activity',
-  Communication: 'communication',
-  Content: 'content',
-  Event: 'event',
-  File: 'file',
-  Note: 'note',
-  Person: 'person',
-  Place: 'place',
-  Thing: 'item',
-};
 
 interface SearchResultItem {
   id: string;
@@ -305,6 +294,11 @@ function SearchBox(
       }
 
       const target = e.target as Node;
+      const entityTypeFilter = document.getElementById('entity-type-filters');
+
+      if (entityTypeFilter && entityTypeFilter.contains(target)) {
+        return;
+      }
 
       if (wrapperRef.current.contains(target)) {
         return;
@@ -502,7 +496,7 @@ function SearchBox(
 const SearchBoxForwarded = forwardRef(SearchBox);
 
 const SearchBoxWithContext = forwardRef<HTMLInputElement, Props>((props, ref) => (
-  <DropdownProvider args={[]}>
+  <DropdownProvider args={[{ changeSearchParams: true }]}>
     <SearchBoxForwarded {...props} ref={ref} />
   </DropdownProvider>
 ));

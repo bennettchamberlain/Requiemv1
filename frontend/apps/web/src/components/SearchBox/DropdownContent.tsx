@@ -18,7 +18,7 @@ export function DropdownContent({ onSave, saveSupported = true }: Props) {
       <div className="p-4">
         <h3 className="text-xs font-bold uppercase">Filters</h3>
 
-        <EntityTypeFilter />
+        <EntityTypeFilter modal={false} />
       </div>
       {saveSupported && (
         <Button

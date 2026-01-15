@@ -9,3 +9,15 @@ export const ENTITY_TYPE_REVERSE_MAP = {
   place: 'Place',
   item: 'Thing',
 };
+
+export const ENTITY_TYPE_MAP = {
+  Browser: 'browser-activity',
+  Communication: 'communication',
+  Content: 'content',
+  Event: 'event',
+  File: 'file',
+  Note: 'note',
+  Person: 'person',
+  Place: 'place',
+  Thing: 'item',
+};

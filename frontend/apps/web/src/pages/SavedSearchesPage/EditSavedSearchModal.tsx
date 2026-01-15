@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useMutation, type Reference, isReference } from '@apollo/client';
+
+import { useMutation, type Reference, isReference } from '@apollo/client';
+import { ENTITY_TYPE_MAP, ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
 import { Button, Dialog, Input, Label, Textarea } from '@ci/shadcn';
 
-import { gql } from '@/graphql';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
-import {DropdownProvider, useDropdown} from "@/components/SearchBox/useDropdown.ts";
-import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import {TagInput} from "@/components/TagInput";
+import { useDropdown } from '@/components/SearchBox/useDropdown.ts';
+import { TagInput } from '@/components/TagInput';
+import { gql } from '@/graphql';
 
 interface Props {
   savedSearch: {
@@ -40,16 +41,15 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
   const [name, setName] = useState(savedSearch.name);
   const [description, setDescription] = useState(savedSearch.description);
   const [query, setQuery] = useState(savedSearch.query);
-  const [entityTypes, setEntityTypes] = useState<string[]>(savedSearch.entityTypes);
   const [tags, setTags] = useState<string[]>(savedSearch.tags);
   const [{ selectedEntityTypes }, { setSelectedEntityTypes }] = useDropdown();
 
   useEffect(() => {
-    const mappedEntityTypes = savedSearch.entityTypes
-      .map((type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP])
+    const mappedEntityTypes = savedSearch.entityTypes.map(
+      (type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP],
+    );
     setSelectedEntityTypes(mappedEntityTypes);
   }, [savedSearch?.entityTypes]);
-
 
   const [updateSavedSearch, { loading: updating }] = useMutation(UPDATE_SAVED_SEARCH, {
     update(cache, { data }) {
@@ -75,9 +75,11 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
                 edges: existingSavedSearches.edges.map((edge) => {
                   const edgeNodeId = readField('id', edge.node);
 
-                  return edgeNodeId !== updatedSavedSearchId ? edge : {
-                    node: data.updateSavedSearch.savedSearch
-                  };
+                  return edgeNodeId !== updatedSavedSearchId
+                    ? edge
+                    : {
+                        node: data.updateSavedSearch.savedSearch,
+                      };
                 }),
               };
             },
@@ -90,7 +92,7 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
         });
 
         if (normalizedId) {
-          console.log('evicting', normalizedId)
+          console.log('evicting', normalizedId);
           cache.evict({ id: normalizedId });
           cache.gc();
         }
@@ -106,7 +108,9 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
           name,
           description,
           query,
-          entityTypes,
+          entityTypes: selectedEntityTypes.map(
+            (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP],
+          ),
           tags,
         },
       },
@@ -122,56 +126,49 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
           <Dialog.Title>Update Saved Search</Dialog.Title>
         </Dialog.Header>
 
-        <DropdownProvider args={[]}>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter search name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Enter search description"
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="query">Query</Label>
-              <Input
-                id="query"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Enter search query"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Entity Types</Label>
-              <EntityTypeFilter />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tags">Tags</Label>
-              <TagInput tags={savedSearch.tags} onTagAdded={() => true}/>
-              <Input
-                id="tags"
-                value={tags.join(', ')}
-                disabled
-                placeholder="No tags"
-              />
-            </div>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Name</Label>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter search name"
+            />
           </div>
-        </DropdownProvider>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Enter search description"
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="query">Query</Label>
+            <Input
+              id="query"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Enter search query"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Entity Types</Label>
+            <EntityTypeFilter changeSearchParams={false} modal={true} />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tags">Tags</Label>
+            <TagInput tags={savedSearch.tags} onTagAdded={() => true} />
+            <Input id="tags" value={tags.join(', ')} disabled placeholder="No tags" />
+          </div>
+        </div>
 
         <Dialog.Footer>
           <Button variant="outline" onClick={onClose} disabled={updating}>

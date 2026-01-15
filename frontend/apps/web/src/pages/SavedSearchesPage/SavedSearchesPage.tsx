@@ -7,13 +7,13 @@ import { Link } from 'react-router-dom';
 
 import { SavedSearchIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
+import { DropdownProvider } from '@/components/SearchBox/useDropdown.ts';
 import type { FragmentType } from '@/graphql';
 import { gql } from '@/graphql';
 
 import { DeleteSavedSearchModal } from './DeleteSavedSearchModal';
+import { EditSavedSearchModal } from './EditSavedSearchModal';
 import { type SavedSearchGridItemFragment, SavedSearch } from './SavedSearch';
-import {EditSavedSearchModal} from './EditSavedSearchModal';
-import {DropdownProvider} from "@/components/SearchBox/useDropdown.ts";
 
 const GET_SAVED_SEARCHES = gql(`
   query GetSavedSearches($first: Int, $after: String) {
@@ -51,8 +51,6 @@ export function SavedSearchesPage() {
     e.preventDefault();
     e.stopPropagation();
 
-    console.log('opening delete modal', savedSearchId)
-
     setSavedSearchToDelete(savedSearchId);
   };
 
@@ -76,7 +74,7 @@ export function SavedSearchesPage() {
   } else {
     content = (
       <PageContent>
-        <div className="grid w-full gap-4 justify-center grid-cols-[repeat(auto-fill,300px)] auto-rows-[300px]">
+        <div className="grid w-full gap-4 justify-center grid-cols-[repeat(auto-fill,400px)] auto-rows-[300px]">
           {savedSearches.map((savedSearch) => (
             <SavedSearch
               key={savedSearch.id}
@@ -120,11 +118,8 @@ export function SavedSearchesPage() {
       )}
 
       {savedSearchToEdit && (
-        <DropdownProvider args={[]} >
-          <EditSavedSearchModal
-            savedSearch={savedSearchToEdit}
-            onClose={() => setSavedSearchToEdit(null)}
-          />
+        <DropdownProvider args={[{ changeSearchParams: false }]}>
+          <EditSavedSearchModal savedSearch={savedSearchToEdit} onClose={() => setSavedSearchToEdit(null)} />
         </DropdownProvider>
       )}
     </>
