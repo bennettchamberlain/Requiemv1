@@ -27,7 +27,7 @@ export class SavedSearchType implements Node {
   @Field(() => [String], { nullable: true })
   entityTypes!: IndexableEntity[] | null;
 
-  @Field(() => [ID], { nullable: true })
+  @Field(() => [String], { nullable: true })
   tags!: string[];
 
   @Field(() => Date)

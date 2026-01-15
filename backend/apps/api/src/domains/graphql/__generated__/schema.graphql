@@ -624,7 +624,7 @@ type SavedSearchType implements Node {
   id: ID!
   name: String
   query: String
-  tags: [ID!]
+  tags: [String!]
   updatedAt: DateTime!
 }
 

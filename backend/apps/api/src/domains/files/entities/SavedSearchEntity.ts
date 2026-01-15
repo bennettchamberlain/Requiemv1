@@ -19,7 +19,7 @@ export class SavedSearchEntity {
   @Column({ array: true, type: 'text', name: 'entity_types' })
   entityTypes!: IndexableEntity[];
 
-  @Column({ array: true, type: 'uuid', name: 'tags', nullable: true })
+  @Column({ array: true, type: 'text', name: 'tags', nullable: true })
   tags!: string[];
 
   @Column({ type: 'uuid', name: 'user_id' })
