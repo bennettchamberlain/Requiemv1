@@ -330,18 +330,29 @@ export type EventType = Node & {
   id: Scalars['ID']['output'];
   isAllDay?: Maybe<Scalars['Boolean']['output']>;
   isRecurring?: Maybe<Scalars['Boolean']['output']>;
+  location?: Maybe<PlaceType>;
   locationCoordinates?: Maybe<Scalars['JSON']['output']>;
   locationEntityId?: Maybe<Scalars['ID']['output']>;
   locationName?: Maybe<Scalars['String']['output']>;
   metadata?: Maybe<Scalars['JSON']['output']>;
+  organizer?: Maybe<PersonType>;
   organizerEntityId?: Maybe<Scalars['ID']['output']>;
   participantEntityIds?: Maybe<Array<Scalars['ID']['output']>>;
+  participants: PersonConnection;
   sourceId?: Maybe<Scalars['ID']['output']>;
   sourceSystem?: Maybe<Scalars['String']['output']>;
   sourceType?: Maybe<Scalars['String']['output']>;
   startTime: Scalars['DateTime']['output'];
   status?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
+};
+
+
+export type EventTypeParticipantsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type FactConnection = Connection & {

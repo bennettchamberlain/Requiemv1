@@ -20,6 +20,7 @@ import { EventLoader } from './loaders/EventLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { PersonLoader } from './loaders/PersonLoader';
+import { PlaceLoader } from './loaders/PlaceLoader';
 import { QuestionLoader } from './loaders/QuestionLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
@@ -88,6 +89,9 @@ import { UserResolver } from './resolvers/UserResolver';
     ItemResolver,
     PersonLoader,
     PersonResolver,
+    PlaceLoader,
+    PlaceResolver,
+    ProviderResolver,
     QuestionLoader,
     QuestionResolver,
     SavedSearchResolver,
@@ -99,8 +103,6 @@ import { UserResolver } from './resolvers/UserResolver';
     ThreadMessagesLoader,
     ThreadResolver,
     UserResolver,
-    PlaceResolver,
-    ProviderResolver,
   ],
   controllers: [GraphQLController],
   exports: [],
