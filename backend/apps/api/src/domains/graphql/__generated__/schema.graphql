@@ -139,13 +139,14 @@ type ContentEdge implements Edge {
   node: ContentType!
 }
 
-type ContentType implements Node {
+type ContentType implements Node & Taggable {
   event: EventType
   externalId: String
   id: ID!
   mimetype: String
   sourceData: JSON
   sourceUrl: String
+  tags: [EntityTagType!]!
   text: String
   title: String
   type: String

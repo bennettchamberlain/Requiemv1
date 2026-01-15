@@ -3,11 +3,13 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Content } from '@ci/domains/memory';
 
+import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { Taggable } from './Taggable';
 
-@ObjectType({ implements: () => [Node] })
-export class ContentType implements Node {
+@ObjectType({ implements: () => [Node, Taggable] })
+export class ContentType implements Node, Taggable {
   __typename = ContentType.name;
 
   __source!: Content;
@@ -39,6 +41,9 @@ export class ContentType implements Node {
   @Field(() => GraphQLJSONObject, { nullable: true })
   sourceData!: Record<string, unknown> | null;
 
+  @Field(() => [EntityTagType])
+  tags!: EntityTagType[];
+
   static toType(entity: Content): ContentType {
     return {
       __typename: ContentType.name,
@@ -52,6 +57,7 @@ export class ContentType implements Node {
       externalId: entity.externalId,
       sourceUrl: entity.sourceUrl,
       sourceData: entity.sourceData,
+      tags: [], // Hydrated by resolver
     };
   }
 }

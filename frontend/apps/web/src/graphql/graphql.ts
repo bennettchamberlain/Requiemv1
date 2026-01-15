@@ -187,7 +187,7 @@ export type ContentEdge = Edge & {
   node: ContentType;
 };
 
-export type ContentType = Node & {
+export type ContentType = Node & Taggable & {
   __typename?: 'ContentType';
   event?: Maybe<EventType>;
   externalId?: Maybe<Scalars['String']['output']>;
@@ -195,6 +195,7 @@ export type ContentType = Node & {
   mimetype?: Maybe<Scalars['String']['output']>;
   sourceData?: Maybe<Scalars['JSON']['output']>;
   sourceUrl?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   text?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   type?: Maybe<Scalars['String']['output']>;
