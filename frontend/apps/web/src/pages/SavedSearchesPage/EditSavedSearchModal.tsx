@@ -7,17 +7,11 @@ import { Button, Dialog, Input, Label, Textarea } from '@ci/shadcn';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
 import { useDropdown } from '@/components/SearchBox/useDropdown.ts';
 import { TagInput } from '@/components/TagInput';
-import { gql } from '@/graphql';
+import { gql, useFragment, type FragmentType } from '@/graphql';
+import { SavedSearchGridItemFragment } from '@/pages/SavedSearchesPage/SavedSearch.tsx';
 
 interface Props {
-  savedSearch: {
-    id: string;
-    name: string;
-    description: string;
-    query: string;
-    entityTypes: string[];
-    tags: string[];
-  };
+  savedSearch: FragmentType<typeof SavedSearchGridItemFragment>;
   onClose: () => void;
 }
 
@@ -37,18 +31,20 @@ const UPDATE_SAVED_SEARCH = gql(`
   }
 `);
 
-export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
+export function EditSavedSearchModal({ savedSearch: savedSearchMask, onClose }: Props) {
+  const savedSearch = useFragment(SavedSearchGridItemFragment, savedSearchMask);
+
   const [name, setName] = useState(savedSearch.name);
   const [description, setDescription] = useState(savedSearch.description);
   const [query, setQuery] = useState(savedSearch.query);
-  const [tags, setTags] = useState<string[]>(savedSearch.tags);
+  const [tags, setTags] = useState<string[] | null>(savedSearch.tags || null);
   const [{ selectedEntityTypes }, { setSelectedEntityTypes }] = useDropdown();
 
   useEffect(() => {
-    const mappedEntityTypes = savedSearch.entityTypes.map(
+    const mappedEntityTypes = savedSearch.entityTypes?.map(
       (type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP],
     );
-    setSelectedEntityTypes(mappedEntityTypes);
+    setSelectedEntityTypes(mappedEntityTypes || []);
   }, [savedSearch?.entityTypes]);
 
   const [updateSavedSearch, { loading: updating }] = useMutation(UPDATE_SAVED_SEARCH, {
@@ -75,27 +71,21 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
                 edges: existingSavedSearches.edges.map((edge) => {
                   const edgeNodeId = readField('id', edge.node);
 
+                  if (!data?.updateSavedSearch?.savedSearch) {
+                    return edge;
+                  }
+
                   return edgeNodeId !== updatedSavedSearchId
                     ? edge
                     : {
-                        node: data.updateSavedSearch.savedSearch,
+                        ...edge,
+                        ...data.updateSavedSearch.savedSearch,
                       };
                 }),
               };
             },
           },
         });
-
-        const normalizedId = cache.identify({
-          id: updatedSavedSearchId,
-          __typename: 'SavedSearchType',
-        });
-
-        if (normalizedId) {
-          console.log('evicting', normalizedId);
-          cache.evict({ id: normalizedId });
-          cache.gc();
-        }
       }
     },
   });
@@ -131,7 +121,7 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
-              value={name}
+              value={name || undefined}
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter search name"
             />
@@ -141,7 +131,7 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
             <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
-              value={description}
+              value={description || undefined}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Enter search description"
               rows={3}
@@ -152,7 +142,7 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
             <Label htmlFor="query">Query</Label>
             <Input
               id="query"
-              value={query}
+              value={query || undefined}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Enter search query"
             />
@@ -165,10 +155,10 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
 
           <div className="space-y-2">
             <Label htmlFor="tags">Tags</Label>
-            <TagInput tags={savedSearch.tags} onTagAdded={() => true} />
+            <TagInput tags={savedSearch.tags || undefined} onTagAdded={() => true} />
             <Input
               id="tags"
-              value={tags.join(', ')}
+              value={tags?.join(', ') || undefined}
               disabled
               placeholder="No tags"
               /* Dummy placeholder to avoid lint error */ onChange={() => setTags(tags)}

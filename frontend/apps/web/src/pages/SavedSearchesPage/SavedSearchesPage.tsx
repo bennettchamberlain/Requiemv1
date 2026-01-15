@@ -48,7 +48,7 @@ export function SavedSearchesPage() {
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    setSavedSearchToEdit(useFragment(SavedSearchGridItemFragment, savedSearch));
+    setSavedSearchToEdit(savedSearch);
   };
 
   const openSavedSearchDeleteModal = (
@@ -58,7 +58,7 @@ export function SavedSearchesPage() {
     e.preventDefault();
     e.stopPropagation();
 
-    setSavedSearchToDelete(useFragment(SavedSearchGridItemFragment, savedSearch));
+    setSavedSearchToDelete(savedSearch);
   };
 
   const savedSearches = data?.savedSearches?.edges.map((edge) => edge.node) || [];
@@ -119,17 +119,14 @@ export function SavedSearchesPage() {
 
       {savedSearchToDelete && (
         <DeleteSavedSearchModal
-          savedSearchId={savedSearchToDelete.id}
+          savedSearchId={useFragment(SavedSearchGridItemFragment, savedSearchToDelete).id}
           onClose={() => setSavedSearchToDelete(null)}
         />
       )}
 
       {savedSearchToEdit && (
         <DropdownProvider args={[{ changeSearchParams: false }]}>
-          <EditSavedSearchModal
-            savedSearch={useFragment(SavedSearchGridItemFragment, savedSearchToEdit)}
-            onClose={() => setSavedSearchToEdit(null)}
-          />
+          <EditSavedSearchModal savedSearch={savedSearchToEdit} onClose={() => setSavedSearchToEdit(null)} />
         </DropdownProvider>
       )}
     </>
