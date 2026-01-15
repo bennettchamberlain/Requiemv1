@@ -327,7 +327,7 @@ type FileEdge implements Edge {
   node: FileType!
 }
 
-type FileType implements Node {
+type FileType implements Node & Taggable {
   analysisCompleted: Boolean!
   contentType: String!
   createdAt: DateTime!
@@ -336,6 +336,7 @@ type FileType implements Node {
   items(after: String, before: String, first: Int, last: Int): ItemConnection
   originalName: String!
   size: Float!
+  tags: [EntityTagType!]!
   updatedAt: DateTime!
   url: String!
 }

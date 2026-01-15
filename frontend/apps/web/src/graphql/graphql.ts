@@ -391,7 +391,7 @@ export type FileEdge = Edge & {
   node: FileType;
 };
 
-export type FileType = Node & {
+export type FileType = Node & Taggable & {
   __typename?: 'FileType';
   analysisCompleted: Scalars['Boolean']['output'];
   contentType: Scalars['String']['output'];
@@ -401,6 +401,7 @@ export type FileType = Node & {
   items?: Maybe<ItemConnection>;
   originalName: Scalars['String']['output'];
   size: Scalars['Float']['output'];
+  tags: Array<EntityTagType>;
   updatedAt: Scalars['DateTime']['output'];
   url: Scalars['String']['output'];
 };
