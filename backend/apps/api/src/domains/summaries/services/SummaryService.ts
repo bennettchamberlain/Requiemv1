@@ -67,60 +67,42 @@ export class SummaryService {
   }
 
   async findAll(context: ServiceContext): Promise<Summary[]> {
-    const results = await this.summaryRepository.find({
-      where: {
-        ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
-        }),
-      },
-      order: {
-        periodEnd: 'DESC',
-      },
-    });
+    const query = this.summaryRepository.createQueryBuilder('summary');
 
-    return results
-      .map((entity) => SummaryEntity.toEgressType(entity))
-      .filter((summary) => this.hasActivity(summary));
-  }
-
-  private hasActivity(summary: Summary): boolean {
-    const content = summary.content as Record<string, unknown>;
-
-    // Filter out summaries with no activity
-    const summaryText = content.summary_text as string | undefined;
-    if (summaryText === 'No activity recorded during this window.') {
-      return false;
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('summary.userId = :userId', { userId: context.userId });
     }
 
-    // Filter out summaries with zero total activity count
-    const activityCounts = content.activity_counts as Record<string, unknown> | undefined;
-    if (activityCounts && Number(activityCounts.total) === 0) {
-      return false;
-    }
+    query.andWhere(
+      `summary.content->>'summary_text' IS DISTINCT FROM 'No activity recorded during this window.'`,
+    );
+    query.andWhere(`summary.content->'activity_counts'->>'total' IS DISTINCT FROM '0'`);
 
-    return true;
+    query.orderBy('summary.periodEnd', 'DESC');
+
+    const results = await query.getMany();
+
+    return results.map((entity) => SummaryEntity.toEgressType(entity));
   }
 
   async findRecent(context: ServiceContext, limit: number = 10): Promise<Summary[]> {
-    // Fetch more than requested to account for filtered results
-    const fetchLimit = Math.max(limit * 2, 20);
+    const query = this.summaryRepository.createQueryBuilder('summary');
 
-    const results = await this.summaryRepository.find({
-      where: {
-        ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
-        }),
-      },
-      order: {
-        periodEnd: 'DESC',
-      },
-      take: fetchLimit,
-    });
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('summary.userId = :userId', { userId: context.userId });
+    }
 
-    return results
-      .map((entity) => SummaryEntity.toEgressType(entity))
-      .filter((summary) => this.hasActivity(summary))
-      .slice(0, limit);
+    query.andWhere(
+      `summary.content->>'summary_text' IS DISTINCT FROM 'No activity recorded during this window.'`,
+    );
+    query.andWhere(`summary.content->'activity_counts'->>'total' IS DISTINCT FROM '0'`);
+
+    query.orderBy('summary.periodEnd', 'DESC');
+    query.take(limit);
+
+    const results = await query.getMany();
+
+    return results.map((entity) => SummaryEntity.toEgressType(entity));
   }
 
   async update(context: ServiceContext, id: string, data: UpdateSummaryDto): Promise<Summary | null> {
