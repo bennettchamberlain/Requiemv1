@@ -10,6 +10,8 @@ import { SavedSearch, SavedSearchEntity } from '../entities/SavedSearchEntity';
 import { SavedSearchCreatedEvent, SavedSearchUpdatedEvent, SavedSearchDeletedEvent } from '../events';
 import type { CreateSavedSearchDto, UpdateSavedSearchDto } from '../types';
 
+const TAG_REGEX = /#([\w-]+)/g;
+
 @Injectable()
 export class SavedSearchService {
   constructor(
@@ -27,7 +29,7 @@ export class SavedSearchService {
       description: data.description,
       query: data.query,
       entityTypes: data.entityTypes,
-      tags: data.tags,
+      tags: this.assembleTags(data),
       userId: context.userId,
     });
 
@@ -86,7 +88,10 @@ export class SavedSearchService {
           userId: context.userId,
         }),
       },
-      data,
+      {
+        ...data,
+        tags: this.assembleTags(data),
+      },
     );
 
     if (result.affected === 0) {
@@ -117,5 +122,19 @@ export class SavedSearchService {
     });
 
     return true;
+  }
+
+  private assembleTags(data: CreateSavedSearchDto | UpdateSavedSearchDto): string[] {
+    let match;
+    const tags = [...new Set(data.tags || [])];
+
+    do {
+      match = TAG_REGEX.exec(data.query || '');
+      if (match) {
+        tags.push(match[1]);
+      }
+    } while (match);
+
+    return tags;
   }
 }
