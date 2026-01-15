@@ -7,9 +7,11 @@ import { Link } from 'react-router-dom';
 
 import { SavedSearchIcon } from '@/components/icons/SavedSeachIcon.tsx';
 import { PageContent } from '@/components/layout';
+import type { FragmentType } from '@/graphql';
 import { gql } from '@/graphql';
 
 import { DeleteSavedSearchModal } from './DeleteSavedSearchModal.tsx';
+import type { SavedSearchGridItemFragment } from './SavedSearch.tsx';
 import { SavedSearch } from './SavedSearch.tsx';
 
 const GET_SAVED_SEARCHES = gql(`
@@ -34,8 +36,13 @@ export function SavedSearchesPage() {
 
   const [focusedSavedSearch, setFocusedSavedSearch] = useState<string | null>(null);
 
-  const openSavedSearchModal = () => {
-    console.log('open saved search modal');
+  const openSavedSearchModal = (
+    e: React.MouseEvent,
+    savedSearch: FragmentType<typeof SavedSearchGridItemFragment>,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('open saved search modal', savedSearch);
   };
 
   const handleDelete = (e: React.MouseEvent, savedSearchId: string) => {
@@ -71,7 +78,7 @@ export function SavedSearchesPage() {
               key={savedSearch.id}
               savedSearch={savedSearch}
               onDelete={(e) => handleDelete(e, savedSearch.id)}
-              openSavedSearchModal={openSavedSearchModal}
+              openSavedSearchModal={(e) => openSavedSearchModal(e, savedSearch)}
             />
           ))}
         </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
-import { useMutation } from '@apollo/client';
-import { Portal } from '@ci/common';
+import { useMutation, useQuery } from '@apollo/client';
+import { GlobalUID, Portal } from '@ci/common';
 import { Breadcrumb, Tabs, Sheet, Tooltip } from '@ci/shadcn';
 import { MapPin, List, Images, Share2 } from '@ci/shadcn/icons';
 import { useSearchParams, Link } from 'react-router-dom';
@@ -32,12 +32,76 @@ const CREATE_SAVED_SEARCH = gql(`
   }
 `);
 
+const GET_SAVED_SEARCH = gql(`
+  query GetSavedSearch($id: ID!) {
+    savedSearch(id: $id) {
+      id
+      name
+      description
+      query
+      entityTypes
+      tags
+    }
+  }
+`);
+
+const ENTITY_TYPE_REVERSE_MAP = {
+  'browser-activity': 'Browser',
+  communication: 'Communication',
+  content: 'Content',
+  event: 'Event',
+  file: 'File',
+  note: 'Note',
+  person: 'Person',
+  place: 'Place',
+  item: 'Thing',
+};
+
 export default function DesktopMemoryPage() {
   const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
   const [searchParams, setSearchParams] = useSearchParams();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [searchId, setSearchId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState('map');
+
+  const { data: savedSearchData } = useQuery(GET_SAVED_SEARCH, {
+    variables: { id: GlobalUID.encode('saved-search', searchId!) },
+    skip: !searchId,
+  });
+
+  useEffect(() => {
+    if (savedSearchData?.savedSearch) {
+      const currentParams = new URLSearchParams(searchParams);
+      const { entityTypes, query, tags } = savedSearchData.savedSearch;
+
+      currentParams.delete('search');
+      currentParams.delete('excludedEntityTypes');
+      currentParams.delete('includedEntityTypes');
+      currentParams.delete('saved_search');
+      currentParams.delete('tags');
+
+      if (query?.trim()) {
+        setSearchQuery(query);
+        currentParams.set('search', query.trim());
+      }
+
+      if (entityTypes?.length && entityTypes.length > 0) {
+        const mappedEntityTypes = entityTypes
+          .map((type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP])
+          .join(',');
+        currentParams.set('includedEntityTypes', mappedEntityTypes);
+      }
+
+      //Updating included entities is handled in SearchBox.tsx
+
+      if (tags?.length && tags.length > 0) {
+        currentParams.set('tags', tags.join(','));
+      }
+
+      setSearchParams(currentParams);
+    }
+  }, [searchId, savedSearchData]);
 
   useEffect(() => {
     setDetailsOpen(activeMemory != null);
@@ -48,6 +112,13 @@ export default function DesktopMemoryPage() {
       setActiveMemory(null);
     }
   };
+
+  useEffect(() => {
+    const savedSearchId = searchParams.get('saved_search') || '';
+    if (savedSearchId?.length > 0) {
+      setSearchId(savedSearchId);
+    }
+  }, []);
 
   const [createSavedSearch] = useMutation(CREATE_SAVED_SEARCH);
 

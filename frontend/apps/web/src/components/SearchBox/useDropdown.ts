@@ -13,6 +13,7 @@ type ReturnType = [
     selectAllEntityTypes: () => void;
     clearEntityTypes: () => void;
     toggleEntityType: (type: string) => void;
+    setSelectedEntityTypes: (type: string[]) => void;
   },
 ];
 
@@ -40,6 +41,16 @@ function useDropdown(): ReturnType {
     const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
 
     setSelectedEntityTypes(selectedTypes);
+  }, [searchParams]);
+
+  // Sync entity types with URL parameters
+  useEffect(() => {
+    const includedEntityTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || [];
+    if (includedEntityTypes.length > 0) {
+      const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => includedEntityTypes.includes(type));
+
+      setSelectedEntityTypes(selectedTypes);
+    }
   }, [searchParams]);
 
   const clearEntityTypes = useCallback(() => {
@@ -108,6 +119,7 @@ function useDropdown(): ReturnType {
       selectAllEntityTypes,
       clearEntityTypes,
       toggleEntityType,
+      setSelectedEntityTypes,
     },
   ];
 }
