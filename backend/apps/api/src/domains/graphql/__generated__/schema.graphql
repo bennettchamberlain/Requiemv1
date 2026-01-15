@@ -279,12 +279,15 @@ type EventType implements Node {
   id: ID!
   isAllDay: Boolean
   isRecurring: Boolean
+  location: PlaceType
   locationCoordinates: JSON
   locationEntityId: ID
   locationName: String
   metadata: JSON
+  organizer: PersonType
   organizerEntityId: ID
   participantEntityIds: [ID!]
+  participants(after: String, before: String, first: Int, last: Int): PersonConnection!
   sourceId: ID
   sourceSystem: String
   sourceType: String
