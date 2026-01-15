@@ -125,7 +125,7 @@ export type CommunicationEdge = Edge & {
   node: CommunicationType;
 };
 
-export type CommunicationType = Node & {
+export type CommunicationType = Node & Taggable & {
   __typename?: 'CommunicationType';
   content: Scalars['String']['output'];
   direction: Scalars['String']['output'];
@@ -133,6 +133,7 @@ export type CommunicationType = Node & {
   id: Scalars['ID']['output'];
   preview?: Maybe<Scalars['String']['output']>;
   subject?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   time: Scalars['DateTime']['output'];
   to: PersonConnection;
   type: Scalars['String']['output'];

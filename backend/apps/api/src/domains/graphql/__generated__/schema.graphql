@@ -91,13 +91,14 @@ type CommunicationEdge implements Edge {
   node: CommunicationType!
 }
 
-type CommunicationType implements Node {
+type CommunicationType implements Node & Taggable {
   content: String!
   direction: String!
   from: PersonType
   id: ID!
   preview: String
   subject: String
+  tags: [EntityTagType!]!
   time: DateTime!
   to(after: String, before: String, first: Int, last: Int): PersonConnection!
   type: String!
