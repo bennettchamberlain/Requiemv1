@@ -100,12 +100,13 @@ export type BrowserActivityEdge = Edge & {
   node: BrowserActivityType;
 };
 
-export type BrowserActivityType = Node & {
+export type BrowserActivityType = Node & Taggable & {
   __typename?: 'BrowserActivityType';
   actionType?: Maybe<Scalars['String']['output']>;
   duration?: Maybe<Scalars['Float']['output']>;
   id: Scalars['ID']['output'];
   scrollDepth?: Maybe<Scalars['Float']['output']>;
+  tags: Array<EntityTagType>;
   time: Scalars['DateTime']['output'];
   title?: Maybe<Scalars['String']['output']>;
   url: Scalars['String']['output'];

@@ -69,11 +69,12 @@ type BrowserActivityEdge implements Edge {
   node: BrowserActivityType!
 }
 
-type BrowserActivityType implements Node {
+type BrowserActivityType implements Node & Taggable {
   actionType: String
   duration: Float
   id: ID!
   scrollDepth: Float
+  tags: [EntityTagType!]!
   time: DateTime!
   title: String
   url: String!

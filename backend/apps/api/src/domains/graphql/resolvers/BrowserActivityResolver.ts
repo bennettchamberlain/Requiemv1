@@ -1,13 +1,15 @@
 import { UseGuards } from '@nestjs/common';
-import { Query, Resolver, Args, ID } from '@nestjs/graphql';
+import { Args, ID, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
 
+import { TagLoader } from '../loaders/TagLoader';
 import { BrowserActivityConnection } from '../types/BrowserActivityConnection';
 import { BrowserActivityEdge } from '../types/BrowserActivityEdge';
 import { BrowserActivityType } from '../types/BrowserActivityType';
+import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { Paginator } from '../utils/Paginator';
@@ -15,7 +17,10 @@ import { Paginator } from '../utils/Paginator';
 @UseGuards(JwtAuthGuard)
 @Resolver(() => BrowserActivityType)
 export class BrowserActivityResolver {
-  constructor(private readonly browserActivityService: BrowserActivityService) {}
+  constructor(
+    private readonly browserActivityService: BrowserActivityService,
+    private readonly tagLoader: TagLoader,
+  ) {}
 
   @Query(() => BrowserActivityConnection)
   async browserActivities(
@@ -59,5 +64,20 @@ export class BrowserActivityResolver {
     const entity = await this.browserActivityService.findById(serviceContext, id);
 
     return entity ? BrowserActivityType.toType(entity) : null;
+  }
+
+  @ResolveField(() => [EntityTagType])
+  async tags(
+    @Context() context: RequestContext,
+    @Parent() parent: BrowserActivityType,
+  ): Promise<EntityTagType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const tags = await this.tagLoader.load(serviceContext, {
+      type: 'browser-activity',
+      id: parent.__source.id,
+    });
+
+    return tags.map((tag) => EntityTagType.toType(tag));
   }
 }
