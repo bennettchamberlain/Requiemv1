@@ -115,10 +115,11 @@ type ConceptEdge implements Edge {
   node: ConceptType!
 }
 
-type ConceptType implements Node {
+type ConceptType implements Node & Taggable {
   description: String
   id: ID!
   name: String
+  tags: [EntityTagType!]!
 }
 
 interface Connection {

@@ -160,11 +160,12 @@ export type ConceptEdge = Edge & {
   node: ConceptType;
 };
 
-export type ConceptType = Node & {
+export type ConceptType = Node & Taggable & {
   __typename?: 'ConceptType';
   description?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   name?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
 };
 
 export type Connection = {

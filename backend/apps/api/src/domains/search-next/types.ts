@@ -19,6 +19,7 @@ export const TAGGABLE_ENTITIES = [
   'action',
   'browser-activity',
   'communication',
+  'concept',
   'content',
   'item',
   'person',
