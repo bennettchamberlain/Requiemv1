@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import { ConnectionService, type Connection } from '@ci/domains/connections';
-import { CommunicationService } from '@ci/domains/memory';
+import { CommunicationService, CommunicationDirection, CommunicationType } from '@ci/domains/memory';
 import { TagService } from '@ci/domains/search-next';
 
 import { parseDate } from '../../util';
@@ -189,7 +189,7 @@ export class GmailPromotionService {
 
       // Determine direction (inbound vs outbound)
       // For now, assume all messages are inbound unless we can determine otherwise
-      const direction = 'inbound'; // TODO: Determine based on user's email
+      const direction = CommunicationDirection.INBOUND; // TODO: Determine based on user's email
 
       // Process participants and create entities with relationships
       const fromParticipants = messageDetails.participants.filter((p) => p.type === 'from');
@@ -249,7 +249,7 @@ export class GmailPromotionService {
         { userId },
         {
           time: messageDetails.date ? new Date(messageDetails.date) : new Date(),
-          communication_type: 'email',
+          communication_type: CommunicationType.EMAIL,
           direction,
           thread_id: message.threadId,
           from_entity_id: fromEntityIds[0] || undefined,

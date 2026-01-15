@@ -23,8 +23,10 @@ export class CommunicationService {
   }
 
   async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<Communication> {
+    const id = data.id ?? uuidv7();
+
     const communication = this.communicationRepository.create({
-      id: uuidv7(),
+      id,
       time: data.time,
       communicationType: data.communication_type,
       userId: context.userId,

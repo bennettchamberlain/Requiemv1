@@ -3,8 +3,8 @@ import { type MultiBar } from 'cli-progress';
 
 import { ConceptService } from '@ci/domains/memory';
 
-import { CONCEPTS } from './js1-data/concepts';
-import { JOHN_SMITH } from './js1-data/users';
+import { CONCEPTS } from './data/concepts';
+import { JOHN_SMITH } from './data/users';
 
 export async function seedConcepts(module: TestingModule, multibar: MultiBar) {
   const conceptService = module.get(ConceptService);

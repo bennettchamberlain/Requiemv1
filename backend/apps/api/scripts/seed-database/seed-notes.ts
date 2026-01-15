@@ -3,8 +3,8 @@ import { type MultiBar } from 'cli-progress';
 
 import { NoteService } from '@ci/domains/notes';
 
-import { NOTES } from './js1-data/notes';
-import { JOHN_SMITH } from './js1-data/users';
+import { NOTES } from './data/notes';
+import { JOHN_SMITH } from './data/users';
 
 export async function seedNotes(module: TestingModule, multibar: MultiBar) {
   const noteService = module.get(NoteService);

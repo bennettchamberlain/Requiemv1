@@ -3,8 +3,8 @@ import { type MultiBar } from 'cli-progress';
 
 import { PlaceService } from '@ci/domains/memory';
 
-import { PLACES } from './js1-data/places';
-import { JOHN_SMITH } from './js1-data/users';
+import { PLACES } from './data/places';
+import { JOHN_SMITH } from './data/users';
 
 export async function seedPlaces(module: TestingModule, multibar: MultiBar) {
   const placeService = module.get(PlaceService);

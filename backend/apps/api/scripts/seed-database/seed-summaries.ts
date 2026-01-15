@@ -3,8 +3,8 @@ import { type MultiBar } from 'cli-progress';
 
 import { SummaryService } from '@ci/domains/summaries';
 
-import { SUMMARIES } from './js1-data/summaries';
-import { JOHN_SMITH } from './js1-data/users';
+import { SUMMARIES } from './data/summaries';
+import { JOHN_SMITH } from './data/users';
 
 export async function seedSummaries(module: TestingModule, multibar: MultiBar) {
   const summaryService = module.get(SummaryService);

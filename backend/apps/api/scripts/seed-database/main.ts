@@ -16,8 +16,9 @@ import { App } from '../../src/application';
 
 import { seedActions } from './seed-actions';
 import { seedAnswers } from './seed-answers';
+import { seedCommunications } from './seed-communications';
 import { seedConcepts } from './seed-concepts';
-import { seedContent } from './seed-content';
+import { seedEvents } from './seed-events';
 import { seedItems } from './seed-items';
 import { seedMessages } from './seed-messages';
 import { seedNotes } from './seed-notes';
@@ -65,7 +66,7 @@ const logger = new LoggerService();
 
   let error: Error | null = null;
 
-  const TASK_WIDTH = 10;
+  const TASK_WIDTH = 15;
   const COUNT_WIDTH = 5;
 
   const multibar = new MultiBar(
@@ -108,7 +109,7 @@ const logger = new LoggerService();
   try {
     await seedUsers(module, multibar);
     await seedPeople(module, multibar);
-    await seedAnswers(module, multibar, path.resolve(dataDir, 'js1-data', 'js1-answers.csv'));
+    await seedAnswers(module, multibar, path.resolve(dataDir, 'data', 'answers.csv'));
     await seedThreads(module, multibar);
     await seedActions(module, multibar);
     await seedMessages(module, multibar);
@@ -116,7 +117,12 @@ const logger = new LoggerService();
     await seedItems(module, multibar);
     await seedPlaces(module, multibar);
     await seedConcepts(module, multibar);
-    await seedContent(module, multibar);
+    await seedEvents(module, multibar);
+    // Our seed content is logically incosistent and overloads concepts of other
+    // entity types (e.g. Photo and Video are actually now Files). Until we have
+    // refactored the data, we will skip seeding content.
+    // await seedContent(module, multibar);
+    await seedCommunications(module, multibar);
     await seedRelationships(module, multibar);
     await seedSummaries(module, multibar);
   } catch (err) {

@@ -25,6 +25,7 @@ export class EventService {
     return await Promise.all(
       dataArray.map(async (item) => {
         const toCreate = { ...item } as Partial<EventEntity>;
+
         if (item.start_time) {
           toCreate.startTime = item.start_time;
         }
@@ -61,9 +62,11 @@ export class EventService {
           toCreate.locationName = item.location_name;
         }
 
+        const id = item.id ?? uuidv7();
+
         const event = await this.eventRepository.create({
           ...toCreate,
-          id: uuidv7(),
+          id,
           user: {
             id: context.userId,
           },

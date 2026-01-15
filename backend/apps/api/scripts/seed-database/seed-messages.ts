@@ -3,7 +3,7 @@ import { type MultiBar } from 'cli-progress';
 
 import { MessageService } from '@ci/domains/conversations';
 
-import { MESSAGES } from './js1-data/messages';
+import { MESSAGES } from './data/messages';
 
 export async function seedMessages(module: TestingModule, multibar: MultiBar) {
   const messageService = module.get(MessageService);

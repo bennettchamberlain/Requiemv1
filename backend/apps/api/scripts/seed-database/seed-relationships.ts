@@ -3,8 +3,8 @@ import { type MultiBar } from 'cli-progress';
 
 import { RelationshipService } from '@ci/domains/graph';
 
-import { RELATIONSHIPS } from './js1-data/relationships';
-import { JOHN_SMITH } from './js1-data/users';
+import { RELATIONSHIPS } from './data/relationships';
+import { JOHN_SMITH } from './data/users';
 
 export async function seedRelationships(module: TestingModule, multibar: MultiBar) {
   const relationshipService = module.get(RelationshipService);
