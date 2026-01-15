@@ -436,7 +436,7 @@ export type ItemEdge = Edge & {
   node: ItemType;
 };
 
-export type ItemType = Node & {
+export type ItemType = Node & Taggable & {
   __typename?: 'ItemType';
   acquiredAt?: Maybe<Scalars['DateTime']['output']>;
   brand?: Maybe<Scalars['String']['output']>;
@@ -452,6 +452,7 @@ export type ItemType = Node & {
   model?: Maybe<Scalars['String']['output']>;
   name?: Maybe<Scalars['String']['output']>;
   subcategory?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   updatedAt: Scalars['DateTime']['output'];
 };
 
