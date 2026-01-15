@@ -8,12 +8,12 @@ import { Link } from 'react-router-dom';
 import { SavedSearchIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { DropdownProvider } from '@/components/SearchBox/useDropdown.ts';
-import type { FragmentType } from '@/graphql';
 import { gql } from '@/graphql';
+import { type FragmentType, useFragment } from '@/graphql/fragment-masking';
 
 import { DeleteSavedSearchModal } from './DeleteSavedSearchModal';
 import { EditSavedSearchModal } from './EditSavedSearchModal';
-import { type SavedSearchGridItemFragment, SavedSearch } from './SavedSearch';
+import { SavedSearchGridItemFragment, SavedSearch } from './SavedSearch';
 
 const GET_SAVED_SEARCHES = gql(`
   query GetSavedSearches($first: Int, $after: String) {
@@ -35,8 +35,12 @@ export function SavedSearchesPage() {
     variables: { first: 50 },
   });
 
-  const [savedSearchToDelete, setSavedSearchToDelete] = useState<SavedSearch | null>(null);
-  const [savedSearchToEdit, setSavedSearchToEdit] = useState<SavedSearch | null>(null);
+  const [savedSearchToDelete, setSavedSearchToDelete] = useState<FragmentType<
+    typeof SavedSearchGridItemFragment
+  > | null>(null);
+  const [savedSearchToEdit, setSavedSearchToEdit] = useState<FragmentType<
+    typeof SavedSearchGridItemFragment
+  > | null>(null);
 
   const openSavedSearchEditModal = (
     e: React.MouseEvent,
@@ -44,14 +48,17 @@ export function SavedSearchesPage() {
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    setSavedSearchToEdit(savedSearch);
+    setSavedSearchToEdit(useFragment(SavedSearchGridItemFragment, savedSearch));
   };
 
-  const openSavedSearchDeleteModal = (e: React.MouseEvent, savedSearchId: string) => {
+  const openSavedSearchDeleteModal = (
+    e: React.MouseEvent,
+    savedSearch: FragmentType<typeof SavedSearchGridItemFragment>,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
 
-    setSavedSearchToDelete(savedSearchId);
+    setSavedSearchToDelete(useFragment(SavedSearchGridItemFragment, savedSearch));
   };
 
   const savedSearches = data?.savedSearches?.edges.map((edge) => edge.node) || [];
@@ -79,7 +86,7 @@ export function SavedSearchesPage() {
             <SavedSearch
               key={savedSearch.id}
               savedSearch={savedSearch}
-              openSavedSearchDeleteModal={(e) => openSavedSearchDeleteModal(e, savedSearch.id)}
+              openSavedSearchDeleteModal={(e) => openSavedSearchDeleteModal(e, savedSearch)}
               openSavedSearchEditModal={(e) => openSavedSearchEditModal(e, savedSearch)}
             />
           ))}
@@ -119,7 +126,10 @@ export function SavedSearchesPage() {
 
       {savedSearchToEdit && (
         <DropdownProvider args={[{ changeSearchParams: false }]}>
-          <EditSavedSearchModal savedSearch={savedSearchToEdit} onClose={() => setSavedSearchToEdit(null)} />
+          <EditSavedSearchModal
+            savedSearch={useFragment(SavedSearchGridItemFragment, savedSearchToEdit)}
+            onClose={() => setSavedSearchToEdit(null)}
+          />
         </DropdownProvider>
       )}
     </>

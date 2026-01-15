@@ -53,7 +53,7 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
 
   const [updateSavedSearch, { loading: updating }] = useMutation(UPDATE_SAVED_SEARCH, {
     update(cache, { data }) {
-      const updatedSavedSearchId = data?.updateSavedSearch?.savedSearch.id;
+      const updatedSavedSearchId = data?.updateSavedSearch?.savedSearch?.id;
 
       if (updatedSavedSearchId) {
         cache.modify({
@@ -160,13 +160,19 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
 
           <div className="space-y-2">
             <Label>Entity Types</Label>
-            <EntityTypeFilter changeSearchParams={false} modal={true} />
+            <EntityTypeFilter modal={true} />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="tags">Tags</Label>
             <TagInput tags={savedSearch.tags} onTagAdded={() => true} />
-            <Input id="tags" value={tags.join(', ')} disabled placeholder="No tags" />
+            <Input
+              id="tags"
+              value={tags.join(', ')}
+              disabled
+              placeholder="No tags"
+              /* Dummy placeholder to avoid lint error */ onChange={() => setTags(tags)}
+            />
           </div>
         </div>
 

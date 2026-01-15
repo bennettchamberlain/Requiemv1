@@ -6,14 +6,13 @@ import { ChevronDown } from '@ci/shadcn/icons';
 import { AVAILABLE_ENTITY_TYPES, useDropdown } from './useDropdown.ts';
 
 interface Props {
-  changeSearchParams?: boolean;
   modal?: boolean;
 }
 
-export function EntityTypeFilter({ changeSearchParams = true, modal = true }: Props) {
+export function EntityTypeFilter({ modal = true }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [{ selectedEntityTypes }, { clearEntityTypes, selectAllEntityTypes, toggleEntityType }] =
-    useDropdown(changeSearchParams);
+    useDropdown();
 
   const { CheckboxItem, Content, Label, Separator, Trigger } = DropdownMenu;
 
