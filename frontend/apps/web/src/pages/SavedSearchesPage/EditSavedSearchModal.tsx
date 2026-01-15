@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useMutation, type Reference, isReference } from '@apollo/client';
+import { useQuery, useMutation, type Reference, isReference } from '@apollo/client';
 import { Button, Dialog, Input, Label, Textarea } from '@ci/shadcn';
 
 import { gql } from '@/graphql';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
 import {DropdownProvider, useDropdown} from "@/components/SearchBox/useDropdown.ts";
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
+import {TagInput} from "@/components/TagInput";
 
 interface Props {
   savedSearch: {
@@ -52,13 +53,9 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
 
   const [updateSavedSearch, { loading: updating }] = useMutation(UPDATE_SAVED_SEARCH, {
     update(cache, { data }) {
-      console.log('update data', data)
       const updatedSavedSearchId = data?.updateSavedSearch?.savedSearch.id;
 
-      console.log('initial cache', cache);
-      console.log('updatedSavedSearchId', updatedSavedSearchId);
       if (updatedSavedSearchId) {
-        console.log('cache', cache);
         cache.modify({
           fields: {
             savedSearches(
@@ -165,6 +162,7 @@ export function EditSavedSearchModal({ savedSearch, onClose }: Props) {
 
             <div className="space-y-2">
               <Label htmlFor="tags">Tags</Label>
+              <TagInput tags={savedSearch.tags} onTagAdded={() => true}/>
               <Input
                 id="tags"
                 value={tags.join(', ')}
