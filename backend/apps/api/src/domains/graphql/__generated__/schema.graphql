@@ -504,7 +504,7 @@ type PlaceEdge implements Edge {
   node: PlaceType!
 }
 
-type PlaceType implements Node {
+type PlaceType implements Node & Taggable {
   description: String
   entityType: String!
   estimated: Boolean
@@ -514,6 +514,7 @@ type PlaceType implements Node {
   locationBoundary: JSON
   name: String
   properties: JSON!
+  tags: [EntityTagType!]!
   tracked: Boolean
   type: String
   uploaded: Boolean

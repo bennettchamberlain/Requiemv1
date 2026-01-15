@@ -717,7 +717,7 @@ export type PlaceEdge = Edge & {
   node: PlaceType;
 };
 
-export type PlaceType = Node & {
+export type PlaceType = Node & Taggable & {
   __typename?: 'PlaceType';
   description?: Maybe<Scalars['String']['output']>;
   entityType: Scalars['String']['output'];
@@ -728,6 +728,7 @@ export type PlaceType = Node & {
   locationBoundary?: Maybe<Scalars['JSON']['output']>;
   name?: Maybe<Scalars['String']['output']>;
   properties: Scalars['JSON']['output'];
+  tags: Array<EntityTagType>;
   tracked?: Maybe<Scalars['Boolean']['output']>;
   type?: Maybe<Scalars['String']['output']>;
   uploaded?: Maybe<Scalars['Boolean']['output']>;
