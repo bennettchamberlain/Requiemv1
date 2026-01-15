@@ -654,11 +654,12 @@ export type NoteEdge = Edge & {
   node: NoteType;
 };
 
-export type NoteType = Node & {
+export type NoteType = Node & Taggable & {
   __typename?: 'NoteType';
   content?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
+  tags: Array<EntityTagType>;
   title?: Maybe<Scalars['String']['output']>;
   updatedAt: Scalars['DateTime']['output'];
 };

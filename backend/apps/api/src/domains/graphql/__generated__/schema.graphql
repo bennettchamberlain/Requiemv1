@@ -448,10 +448,11 @@ type NoteEdge implements Edge {
   node: NoteType!
 }
 
-type NoteType implements Node {
+type NoteType implements Node & Taggable {
   content: String
   createdAt: DateTime!
   id: ID!
+  tags: [EntityTagType!]!
   title: String
   updatedAt: DateTime!
 }

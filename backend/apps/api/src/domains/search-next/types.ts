@@ -24,6 +24,7 @@ export const TAGGABLE_ENTITIES = [
   'event',
   'file',
   'item',
+  'note',
   'person',
   'place',
   'thread',
