@@ -8,6 +8,7 @@ import {
   Package,
   HardDrive,
   NotebookPen,
+  FolderSearch2,
 } from '@ci/shadcn/icons';
 
 import { NavLink } from './NavLink';
@@ -30,6 +31,10 @@ export function SecondaryNavigation() {
 
         <NavLink to="/chat" label="Chat">
           <MessagesSquare className="h-6 w-6" strokeWidth={1.25} />
+        </NavLink>
+
+        <NavLink to="/saved-searches" label="Saved Searches">
+          <FolderSearch2 className="h-6 w-6" strokeWidth={1.25} />
         </NavLink>
 
         <NavLink to="/notes" label="Notes" end={false}>
