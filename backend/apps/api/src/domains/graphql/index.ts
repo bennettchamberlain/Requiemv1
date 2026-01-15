@@ -12,6 +12,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
@@ -42,6 +43,7 @@ import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
+import { SummaryResolver } from './resolvers/SummaryResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
@@ -64,6 +66,7 @@ import { UserResolver } from './resolvers/UserResolver';
     MemoryModule,
     NotesModule,
     SearchNextModule,
+    SummariesModule,
     UserModule,
   ],
   providers: [
@@ -89,6 +92,7 @@ import { UserResolver } from './resolvers/UserResolver';
     QuestionResolver,
     SavedSearchResolver,
     SearchResolver,
+    SummaryResolver,
     TagLoader,
     TagResolver,
     ThreadLoader,

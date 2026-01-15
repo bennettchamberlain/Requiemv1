@@ -49,6 +49,21 @@ export type ActionType = Node & Taggable & {
   updatedAt: Scalars['DateTime']['output'];
 };
 
+export type ActivityCountsType = {
+  __typename?: 'ActivityCountsType';
+  activities?: Maybe<Scalars['Int']['output']>;
+  apiLogs?: Maybe<Scalars['Int']['output']>;
+  browserActivity?: Maybe<Scalars['Int']['output']>;
+  communications?: Maybe<Scalars['Int']['output']>;
+  events?: Maybe<Scalars['Int']['output']>;
+  files?: Maybe<Scalars['Int']['output']>;
+  measurements?: Maybe<Scalars['Int']['output']>;
+  messages?: Maybe<Scalars['Int']['output']>;
+  positions?: Maybe<Scalars['Int']['output']>;
+  screenCaptures?: Maybe<Scalars['Int']['output']>;
+  total: Scalars['Int']['output'];
+};
+
 export type AnswerConnection = Connection & {
   __typename?: 'AnswerConnection';
   edges: Array<AnswerEdge>;
@@ -771,6 +786,8 @@ export type Query = {
   savedSearch?: Maybe<SavedSearchType>;
   savedSearches: SavedSearchConnection;
   search: SearchConnection;
+  summaries: SummaryConnection;
+  summary?: Maybe<SummaryType>;
   tag?: Maybe<TagType>;
   tags: TagConnection;
   thread?: Maybe<ThreadType>;
@@ -996,6 +1013,19 @@ export type QuerySearchArgs = {
 };
 
 
+export type QuerySummariesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QuerySummaryArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type QueryTagArgs = {
   id: Scalars['ID']['input'];
 };
@@ -1094,6 +1124,44 @@ export type SearchResultEdge = {
 };
 
 export type SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
+
+export type SummaryConnection = Connection & {
+  __typename?: 'SummaryConnection';
+  edges: Array<SummaryEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type SummaryEdge = Edge & {
+  __typename?: 'SummaryEdge';
+  cursor: Scalars['String']['output'];
+  node: SummaryType;
+};
+
+export type SummaryType = Node & {
+  __typename?: 'SummaryType';
+  activityCounts: ActivityCountsType;
+  anomalies: Array<Scalars['String']['output']>;
+  confidenceScore?: Maybe<Scalars['Float']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  dailyRhythm?: Maybe<Array<Scalars['String']['output']>>;
+  id: Scalars['ID']['output'];
+  keyAccomplishments?: Maybe<Array<Scalars['String']['output']>>;
+  keyInsights: Array<Scalars['String']['output']>;
+  moodIndicators?: Maybe<Array<Scalars['String']['output']>>;
+  notableEvents: Array<Scalars['String']['output']>;
+  periodEnd: Scalars['DateTime']['output'];
+  periodStart: Scalars['DateTime']['output'];
+  periodType: Scalars['String']['output'];
+  productivityPatterns?: Maybe<Array<Scalars['String']['output']>>;
+  socialInteractions?: Maybe<Array<Scalars['String']['output']>>;
+  sourceTypes: Array<Scalars['String']['output']>;
+  summaryText: Scalars['String']['output'];
+  tags: Array<Scalars['String']['output']>;
+  timezone: Scalars['String']['output'];
+  title?: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['DateTime']['output'];
+};
 
 export type TagConnection = Connection & {
   __typename?: 'TagConnection';
