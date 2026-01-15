@@ -59,6 +59,7 @@ type Documents = {
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": typeof types.ProviderEndpointsFragmentFragmentDoc,
     "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": typeof types.GetProviderDocument,
     "\n  mutation DeleteSavedSearch($input: DeleteByIdInput!) {\n    deleteSavedSearch(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteSavedSearchDocument,
+    "\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": typeof types.UpdateSavedSearchDocument,
     "\n  fragment SavedSearchGridItemFragment on SavedSearchType {\n    id\n    name\n    description\n    query\n    entityTypes\n    tags\n  }\n": typeof types.SavedSearchGridItemFragmentFragmentDoc,
     "\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetSavedSearchesDocument,
 };
@@ -104,6 +105,7 @@ const documents: Documents = {
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": types.ProviderEndpointsFragmentFragmentDoc,
     "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": types.GetProviderDocument,
     "\n  mutation DeleteSavedSearch($input: DeleteByIdInput!) {\n    deleteSavedSearch(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteSavedSearchDocument,
+    "\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": types.UpdateSavedSearchDocument,
     "\n  fragment SavedSearchGridItemFragment on SavedSearchType {\n    id\n    name\n    description\n    query\n    entityTypes\n    tags\n  }\n": types.SavedSearchGridItemFragmentFragmentDoc,
     "\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetSavedSearchesDocument,
 };
@@ -286,6 +288,10 @@ export function gql(source: "\n  query GetProvider($id: ID!) {\n    provider(id:
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation DeleteSavedSearch($input: DeleteByIdInput!) {\n    deleteSavedSearch(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteSavedSearch($input: DeleteByIdInput!) {\n    deleteSavedSearch(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

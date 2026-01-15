@@ -230,7 +230,7 @@ input CreateSavedSearchInput {
   entityTypes: [String!]
   name: String
   query: String
-  tags: [ID!]
+  tags: [String!]
 }
 
 type CreateSavedSearchPayload {
@@ -636,7 +636,7 @@ type SavedSearchType implements Node {
   id: ID!
   name: String
   query: String
-  tags: [ID!]
+  tags: [String!]
   updatedAt: DateTime!
 }
 
@@ -824,7 +824,7 @@ input UpdateSavedSearchInput {
   id: ID!
   name: String
   query: String
-  tags: [ID!]
+  tags: [String!]
 }
 
 type UpdateSavedSearchPayload {

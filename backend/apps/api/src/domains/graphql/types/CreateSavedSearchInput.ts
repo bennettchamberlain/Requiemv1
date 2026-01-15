@@ -1,4 +1,4 @@
-import { Field, ID, InputType } from '@nestjs/graphql';
+import { Field, InputType } from '@nestjs/graphql';
 
 import { IndexableEntity } from '@ci/domains/search-next';
 
@@ -16,6 +16,6 @@ export class CreateSavedSearchInput {
   @Field(() => [String], { nullable: true })
   entityTypes?: IndexableEntity[];
 
-  @Field(() => [ID], { nullable: true })
+  @Field(() => [String], { nullable: true })
   tags?: string[];
 }

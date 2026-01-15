@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
+import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
 import { Breadcrumb, Tabs, Sheet, Tooltip } from '@ci/shadcn';
 import { MapPin, List, Images, Share2 } from '@ci/shadcn/icons';
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
+import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown.ts';
 import { gql } from '@/graphql';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
@@ -45,18 +47,6 @@ const GET_SAVED_SEARCH = gql(`
   }
 `);
 
-const ENTITY_TYPE_REVERSE_MAP = {
-  'browser-activity': 'Browser',
-  communication: 'Communication',
-  content: 'Content',
-  event: 'Event',
-  file: 'File',
-  note: 'Note',
-  person: 'Person',
-  place: 'Place',
-  item: 'Thing',
-};
-
 export default function DesktopMemoryPage() {
   const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,10 +77,14 @@ export default function DesktopMemoryPage() {
       }
 
       if (entityTypes?.length && entityTypes.length > 0) {
-        const mappedEntityTypes = entityTypes
-          .map((type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP])
-          .join(',');
-        currentParams.set('includedEntityTypes', mappedEntityTypes);
+        const reverseMapped = entityTypes.map(
+          (type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP],
+        );
+        const inverseEntityTypes = AVAILABLE_ENTITY_TYPES.filter(
+          (entity) => reverseMapped.indexOf(entity) === -1,
+        );
+        const mappedEntityTypes = inverseEntityTypes.join(',');
+        currentParams.set('excludedEntityTypes', mappedEntityTypes);
       }
 
       //Updating included entities is handled in SearchBox.tsx

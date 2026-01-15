@@ -29,10 +29,10 @@ export const AVAILABLE_ENTITY_TYPES = [
   'Thing',
 ];
 
-function useDropdown(): ReturnType {
+function useDropdown({ changeSearchParams = true }: { changeSearchParams: boolean }): ReturnType {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [isDropdownPanelVisible, setDropdownPanelVisibile] = useState(false);
+  const [isDropdownPanelVisible, setDropdownPanelVisible] = useState(false);
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>(AVAILABLE_ENTITY_TYPES);
 
   // Sync entity types with URL parameters
@@ -40,7 +40,9 @@ function useDropdown(): ReturnType {
     const excludedEntityTypes = searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || [];
     const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !excludedEntityTypes.includes(type));
 
-    setSelectedEntityTypes(selectedTypes);
+    if (changeSearchParams) {
+      setSelectedEntityTypes(selectedTypes);
+    }
   }, [searchParams]);
 
   // Sync entity types with URL parameters
@@ -49,28 +51,34 @@ function useDropdown(): ReturnType {
     if (includedEntityTypes.length > 0) {
       const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => includedEntityTypes.includes(type));
 
-      setSelectedEntityTypes(selectedTypes);
+      if (changeSearchParams) {
+        setSelectedEntityTypes(selectedTypes);
+      }
     }
   }, [searchParams]);
 
   const clearEntityTypes = useCallback(() => {
     setSelectedEntityTypes(AVAILABLE_ENTITY_TYPES);
 
-    setSearchParams((searchParams) => {
-      searchParams.delete('excludedEntityTypes');
+    if (changeSearchParams) {
+      setSearchParams((searchParams) => {
+        searchParams.delete('excludedEntityTypes');
 
-      return searchParams;
-    });
+        return searchParams;
+      });
+    }
   }, []);
 
   const selectAllEntityTypes = useCallback(() => {
     setSelectedEntityTypes([]);
 
-    setSearchParams((searchParams) => {
-      searchParams.set('excludedEntityTypes', AVAILABLE_ENTITY_TYPES.join(','));
+    if (changeSearchParams) {
+      setSearchParams((searchParams) => {
+        searchParams.set('excludedEntityTypes', AVAILABLE_ENTITY_TYPES.join(','));
 
-      return searchParams;
-    });
+        return searchParams;
+      });
+    }
   }, []);
 
   const toggleEntityType = useCallback(
@@ -89,15 +97,17 @@ function useDropdown(): ReturnType {
           excludedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => !next.includes(type));
         }
 
-        setSearchParams((searchParams) => {
-          if (excludedTypes.length === 0) {
-            searchParams.delete('excludedEntityTypes');
-          } else {
-            searchParams.set('excludedEntityTypes', excludedTypes.join(','));
-          }
+        if (changeSearchParams) {
+          setSearchParams((searchParams) => {
+            if (excludedTypes.length === 0) {
+              searchParams.delete('excludedEntityTypes');
+            } else {
+              searchParams.set('excludedEntityTypes', excludedTypes.join(','));
+            }
 
-          return searchParams;
-        });
+            return searchParams;
+          });
+        }
 
         return next;
       });
@@ -106,7 +116,7 @@ function useDropdown(): ReturnType {
   );
 
   const toggleDropdownPanel = useCallback(() => {
-    setDropdownPanelVisibile((prev) => !prev);
+    setDropdownPanelVisible((prev) => !prev);
   }, []);
 
   return [
