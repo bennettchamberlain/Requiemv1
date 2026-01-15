@@ -78,36 +78,6 @@ export class SummaryType implements Node {
   updatedAt!: Date;
 
   static toType(source: Summary): SummaryType {
-    const content = source.content || {};
-    const structuredData = (content.structured_data as Record<string, unknown>) || {};
-
-    // Extract tags from structured_data or content
-    const tags = (structuredData.tags || content.tags || []) as string[];
-
-    // Extract key insights (can be in content or structured_data)
-    const keyInsights = (content.key_insights || structuredData.key_insights || []) as string[];
-
-    // Extract notable events
-    const notableEvents = (content.events || structuredData.notable_events || []) as string[];
-
-    // Extract anomalies
-    const anomalies = (content.anomalies || structuredData.anomalies || []) as string[];
-
-    // Extract summary text
-    const summaryText = (content.summary_text || structuredData.summary_text || '') as string;
-
-    // Extract activity counts
-    const activityCounts = ActivityCountsType.fromContent(
-      content.activity_counts as Record<string, unknown> | undefined,
-    );
-
-    // Extract daily-specific fields (if present)
-    const dailyRhythm = structuredData.daily_rhythm as string[] | undefined;
-    const productivityPatterns = structuredData.productivity_patterns as string[] | undefined;
-    const socialInteractions = structuredData.social_interactions as string[] | undefined;
-    const keyAccomplishments = structuredData.key_accomplishments as string[] | undefined;
-    const moodIndicators = structuredData.mood_indicators as string[] | undefined;
-
     return {
       __typename: SummaryType.name,
       __source: source,
@@ -118,17 +88,17 @@ export class SummaryType implements Node {
       periodEnd: source.periodEnd,
       timezone: source.timezone,
       sourceTypes: source.sourceTypes,
-      summaryText,
-      keyInsights,
-      notableEvents,
-      anomalies,
-      activityCounts,
-      tags,
-      dailyRhythm,
-      productivityPatterns,
-      socialInteractions,
-      keyAccomplishments,
-      moodIndicators,
+      summaryText: source.summaryText,
+      keyInsights: source.keyInsights,
+      notableEvents: source.notableEvents,
+      anomalies: source.anomalies,
+      activityCounts: ActivityCountsType.fromContent(source.activityCounts),
+      tags: source.tags,
+      dailyRhythm: source.dailyRhythm,
+      productivityPatterns: source.productivityPatterns,
+      socialInteractions: source.socialInteractions,
+      keyAccomplishments: source.keyAccomplishments,
+      moodIndicators: source.moodIndicators,
       confidenceScore: source.confidenceScore,
       createdAt: source.createdAt,
       updatedAt: source.updatedAt,

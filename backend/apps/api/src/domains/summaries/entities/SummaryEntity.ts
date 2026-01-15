@@ -51,6 +51,21 @@ export class SummaryEntity {
   updatedAt!: Date;
 
   static toEgressType(entity: SummaryEntity): Summary {
+    const content = entity.content || {};
+    const structuredData = (content.structured_data as Record<string, unknown>) || {};
+
+    const keyInsights = (content.key_insights || structuredData.key_insights || []) as string[];
+    const notableEvents = (content.events || structuredData.notable_events || []) as string[];
+    const anomalies = (content.anomalies || structuredData.anomalies || []) as string[];
+    const summaryText = (content.summary_text || structuredData.summary_text || '') as string;
+    const activityCounts = (content.activity_counts || {}) as Record<string, unknown>;
+
+    const dailyRhythm = structuredData.daily_rhythm as string[] | undefined;
+    const productivityPatterns = structuredData.productivity_patterns as string[] | undefined;
+    const socialInteractions = structuredData.social_interactions as string[] | undefined;
+    const keyAccomplishments = structuredData.key_accomplishments as string[] | undefined;
+    const moodIndicators = structuredData.mood_indicators as string[] | undefined;
+
     return {
       summaryId: entity.summaryId,
       userId: entity.userId,
@@ -62,14 +77,43 @@ export class SummaryEntity {
       title: entity.title,
       content: entity.content,
       structuredContext: entity.structuredContext,
-      tags: entity.tags,
+      // Notably converting tags from Record<string, unknown> to string[].
+      // This might be an oversight in the current database schema, but for the
+      // sake of velocity we're keeping it as is for now and implementing the
+      // conversion here.
+      tags: Array.isArray(entity.tags as unknown)
+        ? (entity.tags as unknown as string[])
+        : Object.keys(entity.tags || {}),
       participants: entity.participants,
       confidenceScore: entity.confidenceScore,
       metadata: entity.metadata,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      // Computed fields
+      summaryText,
+      keyInsights,
+      notableEvents,
+      anomalies,
+      activityCounts,
+      dailyRhythm,
+      productivityPatterns,
+      socialInteractions,
+      keyAccomplishments,
+      moodIndicators,
     };
   }
 }
 
-export type Summary = Readonly<Omit<SummaryEntity, never>>;
+export type Summary = Readonly<Omit<SummaryEntity, 'tags'>> & {
+  summaryText: string;
+  keyInsights: string[];
+  notableEvents: string[];
+  anomalies: string[];
+  activityCounts: Record<string, unknown>;
+  tags: string[];
+  dailyRhythm?: string[];
+  productivityPatterns?: string[];
+  socialInteractions?: string[];
+  keyAccomplishments?: string[];
+  moodIndicators?: string[];
+};
