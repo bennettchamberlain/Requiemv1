@@ -54,6 +54,10 @@ export class EventService {
           toCreate.organizerEntityId = item.organizer_entity_id;
         }
 
+        if (item.location_entity_id) {
+          toCreate.locationEntityId = item.location_entity_id;
+        }
+
         if (item.location_coordinates) {
           toCreate.locationCoordinates = item.location_coordinates;
         }
