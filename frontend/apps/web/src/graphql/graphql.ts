@@ -323,7 +323,7 @@ export type EventEdge = Edge & {
   node: EventType;
 };
 
-export type EventType = Node & {
+export type EventType = Node & Taggable & {
   __typename?: 'EventType';
   category?: Maybe<Scalars['String']['output']>;
   confidenceScore?: Maybe<Scalars['Float']['output']>;
@@ -348,6 +348,7 @@ export type EventType = Node & {
   sourceType?: Maybe<Scalars['String']['output']>;
   startTime: Scalars['DateTime']['output'];
   status?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   title?: Maybe<Scalars['String']['output']>;
 };
 

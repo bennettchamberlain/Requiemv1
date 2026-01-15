@@ -21,6 +21,7 @@ export const TAGGABLE_ENTITIES = [
   'communication',
   'concept',
   'content',
+  'event',
   'item',
   'person',
   'place',

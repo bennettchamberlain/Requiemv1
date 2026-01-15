@@ -273,7 +273,7 @@ type EventEdge implements Edge {
   node: EventType!
 }
 
-type EventType implements Node {
+type EventType implements Node & Taggable {
   category: String
   confidenceScore: Float
   description: String
@@ -297,6 +297,7 @@ type EventType implements Node {
   sourceType: String
   startTime: DateTime!
   status: String
+  tags: [EntityTagType!]!
   title: String
 }
 
