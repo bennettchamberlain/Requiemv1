@@ -46,9 +46,11 @@ function useDropdown(): ReturnType {
   // Sync entity types with URL parameters
   useEffect(() => {
     const includedEntityTypes = searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || [];
-    const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => includedEntityTypes.includes(type));
+    if (includedEntityTypes.length > 0) {
+      const selectedTypes = AVAILABLE_ENTITY_TYPES.filter((type) => includedEntityTypes.includes(type));
 
-    setSelectedEntityTypes(selectedTypes);
+      setSelectedEntityTypes(selectedTypes);
+    }
   }, [searchParams]);
 
   const clearEntityTypes = useCallback(() => {
