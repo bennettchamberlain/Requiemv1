@@ -276,7 +276,7 @@ export type CreateSavedSearchInput = {
   entityTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   name?: InputMaybe<Scalars['String']['input']>;
   query?: InputMaybe<Scalars['String']['input']>;
-  tags?: InputMaybe<Array<Scalars['ID']['input']>>;
+  tags?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
 export type CreateSavedSearchPayload = {
@@ -1099,7 +1099,7 @@ export type SavedSearchType = Node & {
   id: Scalars['ID']['output'];
   name?: Maybe<Scalars['String']['output']>;
   query?: Maybe<Scalars['String']['output']>;
-  tags?: Maybe<Array<Scalars['ID']['output']>>;
+  tags?: Maybe<Array<Scalars['String']['output']>>;
   updatedAt: Scalars['DateTime']['output'];
 };
 
@@ -1307,7 +1307,7 @@ export type UpdateSavedSearchInput = {
   id: Scalars['ID']['input'];
   name?: InputMaybe<Scalars['String']['input']>;
   query?: InputMaybe<Scalars['String']['input']>;
-  tags?: InputMaybe<Array<Scalars['ID']['input']>>;
+  tags?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
 export type UpdateSavedSearchPayload = {

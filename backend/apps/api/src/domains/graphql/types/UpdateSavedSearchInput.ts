@@ -19,6 +19,6 @@ export class UpdateSavedSearchInput {
   @Field(() => [String], { nullable: true })
   entityTypes?: IndexableEntity[];
 
-  @Field(() => [ID], { nullable: true })
+  @Field(() => [String], { nullable: true })
   tags?: string[];
 }

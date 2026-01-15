@@ -226,7 +226,7 @@ input CreateSavedSearchInput {
   entityTypes: [String!]
   name: String
   query: String
-  tags: [ID!]
+  tags: [String!]
 }
 
 type CreateSavedSearchPayload {
@@ -812,7 +812,7 @@ input UpdateSavedSearchInput {
   id: ID!
   name: String
   query: String
-  tags: [ID!]
+  tags: [String!]
 }
 
 type UpdateSavedSearchPayload {
