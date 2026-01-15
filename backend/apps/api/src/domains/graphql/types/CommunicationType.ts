@@ -2,11 +2,13 @@ import { Field, ID, ObjectType } from '@nestjs/graphql';
 
 import { type Communication } from '@ci/domains/memory';
 
+import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { Taggable } from './Taggable';
 
-@ObjectType({ implements: () => [Node] })
-export class CommunicationType implements Node {
+@ObjectType({ implements: () => [Node, Taggable] })
+export class CommunicationType implements Node, Taggable {
   __typename = CommunicationType.name;
 
   __source!: Communication;
@@ -32,6 +34,9 @@ export class CommunicationType implements Node {
   @Field(() => Date)
   time!: Date;
 
+  @Field(() => [EntityTagType])
+  tags!: EntityTagType[];
+
   static toType(entity: Communication): CommunicationType {
     return {
       __typename: CommunicationType.name,
@@ -43,6 +48,7 @@ export class CommunicationType implements Node {
       type: entity.communicationType,
       direction: entity.direction,
       time: entity.time,
+      tags: [], // Hydrated by resolver
     };
   }
 }

@@ -1,14 +1,16 @@
 import { UseGuards } from '@nestjs/common';
-import { ID, Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { ID, Args, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { NoteService } from '@ci/domains/notes';
 
+import { TagLoader } from '../loaders/TagLoader';
 import { CreateNoteInput } from '../types/CreateNoteInput';
 import { CreateNotePayload } from '../types/CreateNotePayload';
 import { DeleteByIdInput } from '../types/DeleteByIdInput';
 import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
+import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { NoteConnection } from '../types/NoteConnection';
 import { NoteEdge } from '../types/NoteEdge';
@@ -21,7 +23,10 @@ import { Paginator } from '../utils/Paginator';
 @UseGuards(JwtAuthGuard)
 @Resolver(() => NoteType)
 export class NoteResolver {
-  constructor(private readonly noteService: NoteService) {}
+  constructor(
+    private readonly noteService: NoteService,
+    private readonly tagLoader: TagLoader,
+  ) {}
 
   @Mutation(() => CreateNotePayload)
   async createNote(
@@ -138,5 +143,17 @@ export class NoteResolver {
     const entity = await this.noteService.findById(serviceContext, id);
 
     return entity ? NoteType.toType(entity) : null;
+  }
+
+  @ResolveField(() => [EntityTagType])
+  async tags(@Context() context: RequestContext, @Parent() parent: NoteType): Promise<EntityTagType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const tags = await this.tagLoader.load(serviceContext, {
+      type: 'note',
+      id: parent.__source.id,
+    });
+
+    return tags.map((tag) => EntityTagType.toType(tag));
   }
 }

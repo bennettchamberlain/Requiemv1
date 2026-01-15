@@ -69,11 +69,12 @@ type BrowserActivityEdge implements Edge {
   node: BrowserActivityType!
 }
 
-type BrowserActivityType implements Node {
+type BrowserActivityType implements Node & Taggable {
   actionType: String
   duration: Float
   id: ID!
   scrollDepth: Float
+  tags: [EntityTagType!]!
   time: DateTime!
   title: String
   url: String!
@@ -90,13 +91,14 @@ type CommunicationEdge implements Edge {
   node: CommunicationType!
 }
 
-type CommunicationType implements Node {
+type CommunicationType implements Node & Taggable {
   content: String!
   direction: String!
   from: PersonType
   id: ID!
   preview: String
   subject: String
+  tags: [EntityTagType!]!
   time: DateTime!
   to(after: String, before: String, first: Int, last: Int): PersonConnection!
   type: String!
@@ -113,10 +115,11 @@ type ConceptEdge implements Edge {
   node: ConceptType!
 }
 
-type ConceptType implements Node {
+type ConceptType implements Node & Taggable {
   description: String
   id: ID!
   name: String
+  tags: [EntityTagType!]!
 }
 
 interface Connection {
@@ -136,13 +139,14 @@ type ContentEdge implements Edge {
   node: ContentType!
 }
 
-type ContentType implements Node {
+type ContentType implements Node & Taggable {
   event: EventType
   externalId: String
   id: ID!
   mimetype: String
   sourceData: JSON
   sourceUrl: String
+  tags: [EntityTagType!]!
   text: String
   title: String
   type: String
@@ -269,7 +273,7 @@ type EventEdge implements Edge {
   node: EventType!
 }
 
-type EventType implements Node {
+type EventType implements Node & Taggable {
   category: String
   confidenceScore: Float
   description: String
@@ -293,6 +297,7 @@ type EventType implements Node {
   sourceType: String
   startTime: DateTime!
   status: String
+  tags: [EntityTagType!]!
   title: String
 }
 
@@ -322,7 +327,7 @@ type FileEdge implements Edge {
   node: FileType!
 }
 
-type FileType implements Node {
+type FileType implements Node & Taggable {
   analysisCompleted: Boolean!
   contentType: String!
   createdAt: DateTime!
@@ -331,6 +336,7 @@ type FileType implements Node {
   items(after: String, before: String, first: Int, last: Int): ItemConnection
   originalName: String!
   size: Float!
+  tags: [EntityTagType!]!
   updatedAt: DateTime!
   url: String!
 }
@@ -356,7 +362,7 @@ type ItemEdge implements Edge {
   node: ItemType!
 }
 
-type ItemType implements Node {
+type ItemType implements Node & Taggable {
   acquiredAt: DateTime
   brand: String
   category: String
@@ -371,6 +377,7 @@ type ItemType implements Node {
   model: String
   name: String
   subcategory: String
+  tags: [EntityTagType!]!
   updatedAt: DateTime!
 }
 
@@ -441,10 +448,11 @@ type NoteEdge implements Edge {
   node: NoteType!
 }
 
-type NoteType implements Node {
+type NoteType implements Node & Taggable {
   content: String
   createdAt: DateTime!
   id: ID!
+  tags: [EntityTagType!]!
   title: String
   updatedAt: DateTime!
 }
@@ -496,7 +504,7 @@ type PlaceEdge implements Edge {
   node: PlaceType!
 }
 
-type PlaceType implements Node {
+type PlaceType implements Node & Taggable {
   description: String
   entityType: String!
   estimated: Boolean
@@ -506,6 +514,7 @@ type PlaceType implements Node {
   locationBoundary: JSON
   name: String
   properties: JSON!
+  tags: [EntityTagType!]!
   tracked: Boolean
   type: String
   uploaded: Boolean

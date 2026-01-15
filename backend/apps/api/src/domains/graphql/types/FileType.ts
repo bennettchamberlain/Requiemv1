@@ -2,12 +2,14 @@ import { Field, ID, ObjectType, Float, Directive } from '@nestjs/graphql';
 
 import { type SignedFile } from '@ci/domains/files';
 
+import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { ItemConnection } from './ItemConnection';
 import { Node } from './Node';
+import { Taggable } from './Taggable';
 
-@ObjectType({ implements: () => [Node] })
-export class FileType implements Node {
+@ObjectType({ implements: () => [Node, Taggable] })
+export class FileType implements Node, Taggable {
   __typename = FileType.name;
 
   __source!: SignedFile;
@@ -39,6 +41,9 @@ export class FileType implements Node {
   @Field(() => ItemConnection, { nullable: true, complexity: 5 })
   items?: ItemConnection | null;
 
+  @Field(() => [EntityTagType])
+  tags!: EntityTagType[];
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -56,6 +61,7 @@ export class FileType implements Node {
       size: Number(file.size),
       url: file.url,
       analysisCompleted: file.analysisCompleted,
+      tags: [], // Hydrated by resolver
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };

@@ -8,7 +8,9 @@ import { type Person } from '@ci/domains/memory';
 
 import { PersonLoader } from '../loaders/PersonLoader';
 import { PlaceLoader } from '../loaders/PlaceLoader';
+import { TagLoader } from '../loaders/TagLoader';
 import { CreateEventInput } from '../types/CreateEventInput';
+import { EntityTagType } from '../types/EntityTagType';
 import { EventConnection } from '../types/EventConnection';
 import { EventEdge } from '../types/EventEdge';
 import { EventType } from '../types/EventType';
@@ -28,6 +30,7 @@ export class EventResolver {
     private readonly eventService: EventService,
     private readonly personLoader: PersonLoader,
     private readonly placeLoader: PlaceLoader,
+    private readonly tagLoader: TagLoader,
   ) {}
 
   @Mutation(() => EventType)
@@ -216,5 +219,17 @@ export class EventResolver {
     const place = await this.placeLoader.load(serviceContext, parent.__source.locationEntityId);
 
     return place ? PlaceType.toType(place) : null;
+  }
+
+  @ResolveField(() => [EntityTagType])
+  async tags(@Context() context: RequestContext, @Parent() parent: EventType): Promise<EntityTagType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const tags = await this.tagLoader.load(serviceContext, {
+      type: 'event',
+      id: parent.__source.id,
+    });
+
+    return tags.map((tag) => EntityTagType.toType(tag));
   }
 }

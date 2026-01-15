@@ -100,12 +100,13 @@ export type BrowserActivityEdge = Edge & {
   node: BrowserActivityType;
 };
 
-export type BrowserActivityType = Node & {
+export type BrowserActivityType = Node & Taggable & {
   __typename?: 'BrowserActivityType';
   actionType?: Maybe<Scalars['String']['output']>;
   duration?: Maybe<Scalars['Float']['output']>;
   id: Scalars['ID']['output'];
   scrollDepth?: Maybe<Scalars['Float']['output']>;
+  tags: Array<EntityTagType>;
   time: Scalars['DateTime']['output'];
   title?: Maybe<Scalars['String']['output']>;
   url: Scalars['String']['output'];
@@ -124,7 +125,7 @@ export type CommunicationEdge = Edge & {
   node: CommunicationType;
 };
 
-export type CommunicationType = Node & {
+export type CommunicationType = Node & Taggable & {
   __typename?: 'CommunicationType';
   content: Scalars['String']['output'];
   direction: Scalars['String']['output'];
@@ -132,6 +133,7 @@ export type CommunicationType = Node & {
   id: Scalars['ID']['output'];
   preview?: Maybe<Scalars['String']['output']>;
   subject?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   time: Scalars['DateTime']['output'];
   to: PersonConnection;
   type: Scalars['String']['output'];
@@ -158,11 +160,12 @@ export type ConceptEdge = Edge & {
   node: ConceptType;
 };
 
-export type ConceptType = Node & {
+export type ConceptType = Node & Taggable & {
   __typename?: 'ConceptType';
   description?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   name?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
 };
 
 export type Connection = {
@@ -184,7 +187,7 @@ export type ContentEdge = Edge & {
   node: ContentType;
 };
 
-export type ContentType = Node & {
+export type ContentType = Node & Taggable & {
   __typename?: 'ContentType';
   event?: Maybe<EventType>;
   externalId?: Maybe<Scalars['String']['output']>;
@@ -192,6 +195,7 @@ export type ContentType = Node & {
   mimetype?: Maybe<Scalars['String']['output']>;
   sourceData?: Maybe<Scalars['JSON']['output']>;
   sourceUrl?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   text?: Maybe<Scalars['String']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   type?: Maybe<Scalars['String']['output']>;
@@ -319,7 +323,7 @@ export type EventEdge = Edge & {
   node: EventType;
 };
 
-export type EventType = Node & {
+export type EventType = Node & Taggable & {
   __typename?: 'EventType';
   category?: Maybe<Scalars['String']['output']>;
   confidenceScore?: Maybe<Scalars['Float']['output']>;
@@ -344,6 +348,7 @@ export type EventType = Node & {
   sourceType?: Maybe<Scalars['String']['output']>;
   startTime: Scalars['DateTime']['output'];
   status?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   title?: Maybe<Scalars['String']['output']>;
 };
 
@@ -386,7 +391,7 @@ export type FileEdge = Edge & {
   node: FileType;
 };
 
-export type FileType = Node & {
+export type FileType = Node & Taggable & {
   __typename?: 'FileType';
   analysisCompleted: Scalars['Boolean']['output'];
   contentType: Scalars['String']['output'];
@@ -396,6 +401,7 @@ export type FileType = Node & {
   items?: Maybe<ItemConnection>;
   originalName: Scalars['String']['output'];
   size: Scalars['Float']['output'];
+  tags: Array<EntityTagType>;
   updatedAt: Scalars['DateTime']['output'];
   url: Scalars['String']['output'];
 };
@@ -430,7 +436,7 @@ export type ItemEdge = Edge & {
   node: ItemType;
 };
 
-export type ItemType = Node & {
+export type ItemType = Node & Taggable & {
   __typename?: 'ItemType';
   acquiredAt?: Maybe<Scalars['DateTime']['output']>;
   brand?: Maybe<Scalars['String']['output']>;
@@ -446,6 +452,7 @@ export type ItemType = Node & {
   model?: Maybe<Scalars['String']['output']>;
   name?: Maybe<Scalars['String']['output']>;
   subcategory?: Maybe<Scalars['String']['output']>;
+  tags: Array<EntityTagType>;
   updatedAt: Scalars['DateTime']['output'];
 };
 
@@ -647,11 +654,12 @@ export type NoteEdge = Edge & {
   node: NoteType;
 };
 
-export type NoteType = Node & {
+export type NoteType = Node & Taggable & {
   __typename?: 'NoteType';
   content?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
+  tags: Array<EntityTagType>;
   title?: Maybe<Scalars['String']['output']>;
   updatedAt: Scalars['DateTime']['output'];
 };
@@ -709,7 +717,7 @@ export type PlaceEdge = Edge & {
   node: PlaceType;
 };
 
-export type PlaceType = Node & {
+export type PlaceType = Node & Taggable & {
   __typename?: 'PlaceType';
   description?: Maybe<Scalars['String']['output']>;
   entityType: Scalars['String']['output'];
@@ -720,6 +728,7 @@ export type PlaceType = Node & {
   locationBoundary?: Maybe<Scalars['JSON']['output']>;
   name?: Maybe<Scalars['String']['output']>;
   properties: Scalars['JSON']['output'];
+  tags: Array<EntityTagType>;
   tracked?: Maybe<Scalars['Boolean']['output']>;
   type?: Maybe<Scalars['String']['output']>;
   uploaded?: Maybe<Scalars['Boolean']['output']>;

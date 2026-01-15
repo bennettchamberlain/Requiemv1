@@ -6,6 +6,8 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ItemService } from '@ci/domains/memory';
 
 import { ItemFileLoader } from '../loaders/ItemFileLoader';
+import { TagLoader } from '../loaders/TagLoader';
+import { EntityTagType } from '../types/EntityTagType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemConnection } from '../types/ItemConnection';
@@ -20,6 +22,7 @@ export class ItemResolver {
   constructor(
     private readonly itemFileLoader: ItemFileLoader,
     private readonly itemService: ItemService,
+    private readonly tagLoader: TagLoader,
   ) {}
 
   @Query(() => ItemConnection)
@@ -81,5 +84,17 @@ export class ItemResolver {
     }
 
     return FileType.toType(file);
+  }
+
+  @ResolveField(() => [EntityTagType])
+  async tags(@Context() context: RequestContext, @Parent() parent: ItemType): Promise<EntityTagType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const tags = await this.tagLoader.load(serviceContext, {
+      type: 'item',
+      id: parent.__source.id,
+    });
+
+    return tags.map((tag) => EntityTagType.toType(tag));
   }
 }

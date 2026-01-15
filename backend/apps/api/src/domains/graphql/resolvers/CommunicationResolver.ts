@@ -7,9 +7,11 @@ import { CommunicationService } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
 import { PersonLoader } from '../loaders/PersonLoader';
+import { TagLoader } from '../loaders/TagLoader';
 import { CommunicationConnection } from '../types/CommunicationConnection';
 import { CommunicationEdge } from '../types/CommunicationEdge';
 import { CommunicationType } from '../types/CommunicationType';
+import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { PersonConnection } from '../types/PersonConnection';
@@ -23,6 +25,7 @@ export class CommunicationResolver {
   constructor(
     private readonly communicationService: CommunicationService,
     private readonly personLoader: PersonLoader,
+    private readonly tagLoader: TagLoader,
   ) {}
 
   @Query(() => CommunicationConnection)
@@ -125,5 +128,20 @@ export class CommunicationResolver {
       pageInfo,
       totalCount,
     };
+  }
+
+  @ResolveField(() => [EntityTagType])
+  async tags(
+    @Context() context: RequestContext,
+    @Parent() parent: CommunicationType,
+  ): Promise<EntityTagType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const tags = await this.tagLoader.load(serviceContext, {
+      type: 'communication',
+      id: parent.__source.id,
+    });
+
+    return tags.map((tag) => EntityTagType.toType(tag));
   }
 }

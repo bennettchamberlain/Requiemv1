@@ -2,11 +2,13 @@ import { Field, ID, ObjectType } from '@nestjs/graphql';
 
 import { type BrowserActivity } from '@ci/domains/browser-activity';
 
+import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { Taggable } from './Taggable';
 
-@ObjectType({ implements: () => [Node] })
-export class BrowserActivityType implements Node {
+@ObjectType({ implements: () => [Node, Taggable] })
+export class BrowserActivityType implements Node, Taggable {
   __typename = BrowserActivityType.name;
 
   __source!: BrowserActivity;
@@ -32,6 +34,9 @@ export class BrowserActivityType implements Node {
   @Field(() => Date)
   time!: Date;
 
+  @Field(() => [EntityTagType])
+  tags!: EntityTagType[];
+
   static toType(activity: BrowserActivity): BrowserActivityType {
     return {
       __typename: BrowserActivityType.name,
@@ -43,6 +48,7 @@ export class BrowserActivityType implements Node {
       duration: activity.duration_seconds ?? null,
       scrollDepth: activity.scroll_depth_percent ?? null,
       time: activity.time,
+      tags: [], // Hydrated by resolver
     };
   }
 }

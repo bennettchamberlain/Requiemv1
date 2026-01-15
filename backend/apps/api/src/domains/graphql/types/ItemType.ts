@@ -3,9 +3,11 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Item } from '@ci/domains/memory';
 
+import { EntityTagType } from './EntityTagType';
 import { FileType } from './FileType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { Taggable } from './Taggable';
 
 export enum ItemCondition {
   NEW = 'new',
@@ -21,8 +23,8 @@ registerEnumType(ItemCondition, {
   name: 'ItemCondition',
 });
 
-@ObjectType({ implements: () => [Node] })
-export class ItemType implements Node {
+@ObjectType({ implements: () => [Node, Taggable] })
+export class ItemType implements Node, Taggable {
   __typename = ItemType.name;
 
   __source!: Item;
@@ -66,6 +68,9 @@ export class ItemType implements Node {
   @Field(() => FileType, { nullable: true, complexity: 5 })
   file?: FileType | null;
 
+  @Field(() => [EntityTagType])
+  tags!: EntityTagType[];
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -88,6 +93,7 @@ export class ItemType implements Node {
       condition: item.condition,
       metadata: item.metadata,
       acquiredAt: item.acquiredAt,
+      tags: [], // Hydrated by resolver
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     };

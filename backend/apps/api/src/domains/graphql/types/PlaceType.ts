@@ -3,11 +3,13 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Place } from '@ci/domains/memory';
 
+import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { Taggable } from './Taggable';
 
-@ObjectType({ implements: () => [Node] })
-export class PlaceType implements Node {
+@ObjectType({ implements: () => [Node, Taggable] })
+export class PlaceType implements Node, Taggable {
   __typename = PlaceType.name;
 
   __source!: Place;
@@ -48,6 +50,9 @@ export class PlaceType implements Node {
   @Field(() => Boolean, { nullable: true })
   uploaded!: boolean | null;
 
+  @Field(() => [EntityTagType])
+  tags!: EntityTagType[];
+
   static toType(place: Place): PlaceType {
     return {
       __typename: PlaceType.name,
@@ -64,6 +69,7 @@ export class PlaceType implements Node {
       tracked: place.tracked,
       properties: place.properties,
       uploaded: place.uploaded,
+      tags: [], // Hydrated by resolver
     };
   }
 }
