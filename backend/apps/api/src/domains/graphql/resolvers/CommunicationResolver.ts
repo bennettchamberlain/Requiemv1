@@ -6,8 +6,8 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { CommunicationService } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
-import { TagLoader } from '../loaders/TagLoader';
 import { PersonLoader } from '../loaders/PersonLoader';
+import { TagLoader } from '../loaders/TagLoader';
 import { CommunicationConnection } from '../types/CommunicationConnection';
 import { CommunicationEdge } from '../types/CommunicationEdge';
 import { CommunicationType } from '../types/CommunicationType';
