@@ -37,7 +37,6 @@ export function EditSavedSearchModal({ savedSearch: savedSearchMask, onClose }: 
   const [name, setName] = useState(savedSearch.name);
   const [description, setDescription] = useState(savedSearch.description);
   const [query, setQuery] = useState(savedSearch.query);
-  const [tags, setTags] = useState<string[] | null>(savedSearch.tags || null);
   const [{ selectedEntityTypes }, { setSelectedEntityTypes }] = useDropdown();
 
   useEffect(() => {
@@ -101,7 +100,6 @@ export function EditSavedSearchModal({ savedSearch: savedSearchMask, onClose }: 
           entityTypes: selectedEntityTypes.map(
             (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP],
           ),
-          tags,
         },
       },
     });
@@ -156,13 +154,6 @@ export function EditSavedSearchModal({ savedSearch: savedSearchMask, onClose }: 
           <div className="space-y-2">
             <Label htmlFor="tags">Tags</Label>
             <TagInput tags={savedSearch.tags || undefined} onTagAdded={() => true} />
-            <Input
-              id="tags"
-              value={tags?.join(', ') || undefined}
-              disabled
-              placeholder="No tags"
-              /* Dummy placeholder to avoid lint error */ onChange={() => setTags(tags)}
-            />
           </div>
         </div>
 
