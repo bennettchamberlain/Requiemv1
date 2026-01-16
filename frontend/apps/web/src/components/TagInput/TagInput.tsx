@@ -114,6 +114,7 @@ export function TagInput({ tags: initialTags, readOnly = false, onTagAdded, onTa
                       type="button"
                       className="flex items-center justify-center cursor-pointer -ml-0.5 -my-0.5 -mr-1.5 p-1"
                       onClick={() => handleRemove(tag)}
+                      onMouseDown={(e) => e.preventDefault()}
                     >
                       <X size={12} />
                     </button>
