@@ -44,7 +44,7 @@ export function TagInput({ tags: initialTags, readOnly = false, onTagAdded, onTa
       if (success === true) {
         setTags((prev) => [...prev, data.label]);
         setLowercaseTags((prev) => new Set(prev).add(data.label.toLowerCase()));
-        form.reset();
+        form.reset(EMPTY);
       }
     },
     [form, onTagAdded, tags],
@@ -79,7 +79,7 @@ export function TagInput({ tags: initialTags, readOnly = false, onTagAdded, onTa
         if (e.currentTarget.value === '') {
           e.currentTarget.blur();
         } else {
-          form.reset();
+          form.reset(EMPTY);
         }
       }
     },
