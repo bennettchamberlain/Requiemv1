@@ -421,8 +421,8 @@ type Mutation {
   removePerson(input: RemovePersonInput!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
-  tagEntities(input: TagEntitiesInput!): Boolean!
-  untagEntities(input: TagEntitiesInput!): Boolean!
+  tagEntities(input: TagEntitiesInput!): [Taggable!]!
+  untagEntities(input: TagEntitiesInput!): [Taggable!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
