@@ -6,6 +6,7 @@ import { Breadcrumb, Card, Label, Toggle } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
+import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { FileIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
@@ -18,6 +19,9 @@ const GET_FILE = gql(`
       id
       originalName
       url
+      tags {
+        label
+      }
     }
   }
 `);
@@ -30,6 +34,8 @@ export function FilePage() {
       id: GlobalUID.encode('file', id!),
     },
   });
+
+  const { tagEntities, untagEntities } = useTagEntityService();
 
   const file = data?.file;
   const [editMode, setEditMode] = useState(false);
@@ -79,7 +85,23 @@ export function FilePage() {
             <Card.Content className="p-4 flex flex-col gap-6">
               <div className="space-y-2">
                 <Label>Tags</Label>
-                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
+                <TagInput
+                  key={file.id}
+                  tags={file.tags.map((t) => t.label) ?? []}
+                  readOnly={!editMode}
+                  onTagAdded={async (label) => {
+                    try {
+                      await tagEntities([GlobalUID.encode('file', id!)], [label]);
+
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                  onTagRemoved={async (label) => {
+                    await untagEntities([GlobalUID.encode('file', id!)], [label]);
+                  }}
+                />
               </div>
             </Card.Content>
           </Card>

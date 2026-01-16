@@ -6,8 +6,8 @@ import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
-import { EntityGraph } from '@/components/EntityGraph';
-import { EventIcon } from '@/components/icons';
+import { useTagEntityService } from '@/api';
+import { EventIcon, PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
@@ -18,6 +18,21 @@ const GET_EVENT = gql(`
       id
       title
       description
+      tags {
+        label
+      }
+      location {
+        id
+        name
+      }
+      participants {
+        edges {
+          node {
+            id
+            name
+          }
+        }
+      }
     }
   }
 `);
@@ -30,6 +45,8 @@ export function EventPage() {
       id: GlobalUID.encode('event', id!),
     },
   });
+
+  const { tagEntities, untagEntities } = useTagEntityService();
 
   const event = data?.event;
 
@@ -67,36 +84,64 @@ export function EventPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <EntityGraph
-              entityId={id!}
-              emptyState={
-                <EmptyState
-                  icon={<EventIcon size={48} colorized={false} />}
-                  message="No graph data available"
-                />
-              }
-            />
+            <Card className="p-0">
+              <Card.Content className="p-4 flex flex-col gap-6">
+                {event.participants.edges.length > 0 && (
+                  <div className="mb-2">
+                    <Label>Participants</Label>
+                    {event.participants.edges.map(({ node }) => (
+                      <div key={node.id}>{node.name}</div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Tags</Label>
+
+                  <TagInput
+                    key={event.id}
+                    tags={event.tags.map((t) => t.label) ?? []}
+                    readOnly={!editMode}
+                    onTagAdded={async (label) => {
+                      try {
+                        await tagEntities([GlobalUID.encode('event', id!)], [label]);
+
+                        return true;
+                      } catch {
+                        return false;
+                      }
+                    }}
+                    onTagRemoved={async (label) => {
+                      await untagEntities([GlobalUID.encode('event', id!)], [label]);
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    key={event.id}
+                    id="description"
+                    defaultValue={event.description ?? ''}
+                    readOnly={!editMode}
+                    className={cn(
+                      'resize-none min-h-[120px]',
+                      editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
+                    )}
+                  />
+                </div>
+              </Card.Content>
+            </Card>
           </div>
 
           <Card className="p-0">
             <Card.Content className="p-4 flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label>Tags</Label>
-
-                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  defaultValue={event?.description ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
-              </div>
+              {event.location && (
+                <div className="flex items-center gap-2">
+                  <PlaceIcon />
+                  <div>{event.location.name}</div>
+                </div>
+              )}
             </Card.Content>
           </Card>
         </div>

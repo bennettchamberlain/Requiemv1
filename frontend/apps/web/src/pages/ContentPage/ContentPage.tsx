@@ -6,6 +6,7 @@ import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
+import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { ContentIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
@@ -18,6 +19,9 @@ const GET_CONTENT = gql(`
       id
       title
       text
+      tags {
+        label
+      }
     }
   }
 `);
@@ -30,6 +34,8 @@ export function ContentPage() {
       id: GlobalUID.encode('content', id!),
     },
   });
+
+  const { tagEntities, untagEntities } = useTagEntityService();
 
   const contentItem = data?.content;
 
@@ -77,11 +83,28 @@ export function ContentPage() {
               <div className="space-y-2">
                 <Label>Tags</Label>
 
-                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
+                <TagInput
+                  key={contentItem.id}
+                  tags={contentItem.tags.map((t) => t.label) ?? []}
+                  readOnly={!editMode}
+                  onTagAdded={async (label) => {
+                    try {
+                      await tagEntities([GlobalUID.encode('content', id!)], [label]);
+
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                  onTagRemoved={async (label) => {
+                    await untagEntities([GlobalUID.encode('content', id!)], [label]);
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Text</Label>
                 <Textarea
+                  key={contentItem.id}
                   id="description"
                   defaultValue={contentItem?.text ?? ''}
                   readOnly={!editMode}

@@ -6,6 +6,7 @@ import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
+import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { PersonIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
@@ -18,6 +19,9 @@ const GET_PERSON = gql(`
       id
       name
       description
+      tags {
+        label
+      }
     }
   }
 `);
@@ -30,6 +34,8 @@ export function PersonPage() {
       id: GlobalUID.encode('person', id!),
     },
   });
+
+  const { tagEntities, untagEntities } = useTagEntityService();
 
   const person = data?.person;
   const [editMode, setEditMode] = useState(false);
@@ -74,11 +80,24 @@ export function PersonPage() {
               <div className="space-y-2">
                 <Label>Tags</Label>
 
-                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
+                <TagInput
+                  key={person.id}
+                  tags={person.tags.map((t) => t.label) ?? []}
+                  readOnly={!editMode}
+                  onTagAdded={(label) => {
+                    tagEntities([GlobalUID.encode('person', id!)], [label]);
+
+                    return true;
+                  }}
+                  onTagRemoved={async (label) => {
+                    await untagEntities([GlobalUID.encode('person', id!)], [label]);
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
+                  key={person.id}
                   id="description"
                   defaultValue={person.description ?? ''}
                   readOnly={!editMode}

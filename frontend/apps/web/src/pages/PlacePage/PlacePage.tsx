@@ -6,6 +6,7 @@ import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
+import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
@@ -18,6 +19,9 @@ const GET_PLACE = gql(`
       id
       name
       description
+      tags {
+        label
+      }
     }
   }
 `);
@@ -30,6 +34,8 @@ export function PlacePage() {
       id: GlobalUID.encode('place', id!),
     },
   });
+
+  const { tagEntities, untagEntities } = useTagEntityService();
 
   const place = data?.place;
   const [editMode, setEditMode] = useState(false);
@@ -71,12 +77,28 @@ export function PlacePage() {
             <Card.Content className="p-4 flex flex-col gap-6">
               <div className="space-y-2">
                 <Label>Tags</Label>
+                <TagInput
+                  key={place.id}
+                  tags={place.tags.map((t) => t.label) ?? []}
+                  readOnly={!editMode}
+                  onTagAdded={async (label) => {
+                    try {
+                      await tagEntities([GlobalUID.encode('place', id!)], [label]);
 
-                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                  onTagRemoved={async (label) => {
+                    await untagEntities([GlobalUID.encode('place', id!)], [label]);
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
+                  key={place.id}
                   id="description"
                   defaultValue={place.description ?? ''}
                   readOnly={!editMode}

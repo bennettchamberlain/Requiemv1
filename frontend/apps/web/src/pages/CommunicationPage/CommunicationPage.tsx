@@ -6,6 +6,7 @@ import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
+import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { CommunicationIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
@@ -18,6 +19,9 @@ const GET_COMMUNICATION = gql(`
       id
       subject
       preview
+      tags {
+        label
+      }
     }
   }
 `);
@@ -30,6 +34,8 @@ export function CommunicationPage() {
       id: GlobalUID.encode('communication', id!),
     },
   });
+
+  const { tagEntities, untagEntities } = useTagEntityService();
 
   const communication = data?.communication;
 
@@ -82,13 +88,30 @@ export function CommunicationPage() {
               <div className="space-y-2">
                 <Label>Tags</Label>
 
-                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
+                <TagInput
+                  key={communication.id}
+                  tags={communication.tags.map((t) => t.label) ?? []}
+                  readOnly={!editMode}
+                  onTagAdded={async (label) => {
+                    try {
+                      await tagEntities([GlobalUID.encode('communication', id!)], [label]);
+
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                  onTagRemoved={async (label) => {
+                    await untagEntities([GlobalUID.encode('communication', id!)], [label]);
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Preview</Label>
                 <Textarea
+                  key={communication.id}
                   id="preview"
-                  defaultValue={communication?.preview ?? ''}
+                  defaultValue={communication.preview ?? ''}
                   readOnly={!editMode}
                   className={cn(
                     'resize-none min-h-[120px]',

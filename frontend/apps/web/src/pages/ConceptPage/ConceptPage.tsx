@@ -6,6 +6,7 @@ import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
 import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
+import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { ConceptIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
@@ -18,6 +19,9 @@ const GET_CONCEPT = gql(`
       id
       name
       description
+      tags {
+        label
+      }
     }
   }
 `);
@@ -30,6 +34,8 @@ export function ConceptPage() {
       id: GlobalUID.encode('concept', id!),
     },
   });
+
+  const { tagEntities, untagEntities } = useTagEntityService();
 
   const concept = data?.concept;
 
@@ -75,13 +81,30 @@ export function ConceptPage() {
               <div className="space-y-2">
                 <Label>Tags</Label>
 
-                <TagInput tags={['bug', 'feature']} readOnly={!editMode} onTagAdded={() => true} />
+                <TagInput
+                  key={concept.id}
+                  tags={concept.tags.map((tag) => tag.label) ?? []}
+                  readOnly={!editMode}
+                  onTagAdded={async (label) => {
+                    try {
+                      await tagEntities([GlobalUID.encode('concept', id!)], [label]);
+
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
+                  onTagRemoved={async (label) => {
+                    await untagEntities([GlobalUID.encode('concept', id!)], [label]);
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
+                  key={concept.id}
                   id="description"
-                  defaultValue={concept?.description ?? ''}
+                  defaultValue={concept.description ?? ''}
                   readOnly={!editMode}
                   className={cn(
                     'resize-none min-h-[120px]',
