@@ -68,15 +68,7 @@ export function FilePage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2 space-y-4">
-            <EntityGraph
-              entityId={id!}
-              emptyState={
-                <EmptyState
-                  icon={<FileIcon size={48} colorized={false} />}
-                  message="No graph data available"
-                />
-              }
-            />
+            <EntityGraph entityId={id!} />
             <div className="border rounded-md p-4 bg-muted/20 flex justify-center">
               {/* Display image if url is an image, otherwise just link */}
               <img src={file.url} alt="File content" className="max-w-full h-auto rounded-md shadow-sm" />

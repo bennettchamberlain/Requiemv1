@@ -65,15 +65,7 @@ export function ItemPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <EntityGraph
-              entityId={id!}
-              emptyState={
-                <EmptyState
-                  icon={<ItemIcon size={48} colorized={false} />}
-                  message="No graph data available"
-                />
-              }
-            />
+            <EntityGraph entityId={id!} />
           </div>
 
           <Card className="p-0">

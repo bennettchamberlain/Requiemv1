@@ -1,16 +1,17 @@
 import { type ReactNode } from 'react';
 
-import { Card, Spinner } from '@ci/shadcn';
+import { EmptyState, LoadingPage } from '@ci/common';
+import { Card } from '@ci/shadcn';
+import { Share2 } from '@ci/shadcn/icons';
 
 import { useNodeGraphService } from '@/api/useNodeGraphService';
 import { ForceGraph } from '@/components/ForceGraph';
 
 interface Props {
   entityId: string;
-  emptyState: ReactNode;
 }
 
-export function EntityGraph({ entityId, emptyState }: Props) {
+export function EntityGraph({ entityId }: Props) {
   const { data, loading } = useNodeGraphService({
     entityId,
     skip: !entityId,
@@ -19,13 +20,14 @@ export function EntityGraph({ entityId, emptyState }: Props) {
   let content: ReactNode | null = null;
 
   if (loading) {
-    content = (
-      <div className="flex items-center justify-center h-[420px]">
-        <Spinner size={48} variant="circle" color="rgb(6,108,128)" />
-      </div>
-    );
+    content = <LoadingPage />;
   } else if (data == null) {
-    content = emptyState;
+    content = (
+      <EmptyState
+        icon={<Share2 size={48} className="text-[rgb(6,108,128)]" />}
+        message="No connection data available"
+      />
+    );
   } else {
     content = (
       <ForceGraph
@@ -39,7 +41,7 @@ export function EntityGraph({ entityId, emptyState }: Props) {
   }
 
   return (
-    <Card className="p-0 flex-1">
+    <Card className="p-0 flex-1 relative min-h-[420px]">
       <Card.Content className="p-0">{content}</Card.Content>
     </Card>
   );
