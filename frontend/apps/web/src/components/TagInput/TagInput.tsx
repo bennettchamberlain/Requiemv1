@@ -39,6 +39,10 @@ export function TagInput({ tags: initialTags, readOnly = false, onTagAdded, onTa
         return;
       }
 
+      if (data.label.trim() === '') {
+        return;
+      }
+
       const success = await onTagAdded?.(data.label);
 
       if (success === true) {
