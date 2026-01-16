@@ -495,8 +495,8 @@ export type Mutation = {
   removePerson: Scalars['Boolean']['output'];
   removePlace: Scalars['Boolean']['output'];
   removeQuestion: Scalars['Boolean']['output'];
-  tagEntities: Scalars['Boolean']['output'];
-  untagEntities: Scalars['Boolean']['output'];
+  tagEntities: Array<Taggable>;
+  untagEntities: Array<Taggable>;
   updateAnswer?: Maybe<AnswerType>;
   updateContent?: Maybe<ContentType>;
   updateEvent?: Maybe<EventType>;
