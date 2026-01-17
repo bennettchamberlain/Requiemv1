@@ -647,9 +647,11 @@ type SearchConnection {
 }
 
 input SearchInput {
+  endTime: String
   excludeTypes: [String!]
   includeTypes: [String!]
   query: String
+  startTime: String
   tags: [String!]
 }
 

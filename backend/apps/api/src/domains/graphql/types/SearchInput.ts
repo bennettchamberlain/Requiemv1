@@ -15,4 +15,10 @@ export class SearchInput {
 
   @Field(() => [String], { nullable: true })
   tags?: string[];
+
+  @Field(() => String, { nullable: true })
+  startTime?: string;
+
+  @Field(() => String, { nullable: true })
+  endTime?: string;
 }
