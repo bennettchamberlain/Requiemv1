@@ -41,7 +41,6 @@ const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
-const FilePage = lazy(() => import('@/pages/FilePage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
@@ -340,15 +339,6 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <EventPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/files/:id"
-          element={
-            <ProtectedRoute>
-              <FilePage />
             </ProtectedRoute>
           }
         />
