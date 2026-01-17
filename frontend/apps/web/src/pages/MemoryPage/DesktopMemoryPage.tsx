@@ -12,12 +12,12 @@ import { SearchBox } from '@/components/SearchBox';
 import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown.ts';
 import { gql } from '@/graphql';
 import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
+import { useMemoryServiceNext } from '@/pages/MemoryPage/useMemoryServiceNext.tsx';
 
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
-import { useMemoryService } from './useMemoryService';
 
 const CREATE_SAVED_SEARCH = gql(`
   mutation CreateSavedSearch($input: CreateSavedSearchInput!) {
@@ -48,12 +48,20 @@ const GET_SAVED_SEARCH = gql(`
 `);
 
 export default function DesktopMemoryPage() {
-  const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { data } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
+  const [activeMemory, setActiveMemory] = useState<typeof data>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchId, setSearchId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState('map');
+
+  if (data.length === 0) {
+    //Dummy
+  }
 
   const { data: savedSearchData } = useQuery(GET_SAVED_SEARCH, {
     variables: { id: GlobalUID.encode('saved-search', searchId!) },
@@ -72,7 +80,6 @@ export default function DesktopMemoryPage() {
       currentParams.delete('tags');
 
       if (query?.trim()) {
-        setSearchQuery(query);
         currentParams.set('search', query.trim());
       }
 
@@ -118,8 +125,6 @@ export default function DesktopMemoryPage() {
 
   const handleSearch = useCallback(
     (data: { query: string; entityFilters?: string[] }) => {
-      setSearchQuery(data.query);
-
       const currentParams = new URLSearchParams(searchParams);
 
       if (data.query.trim()) {
@@ -130,18 +135,16 @@ export default function DesktopMemoryPage() {
 
       setSearchParams(currentParams);
     },
-    [setSearchQuery, searchParams, setSearchParams],
+    [searchParams, setSearchParams],
   );
 
   const handleClear = useCallback(() => {
-    setSearchQuery('');
-
     const currentParams = new URLSearchParams(searchParams);
 
     currentParams.delete('search');
 
     setSearchParams(currentParams);
-  }, [setSearchQuery, searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams]);
 
   const handleSaveSearch = useCallback(async (query: string, entityTypes: string[]) => {
     await createSavedSearch({

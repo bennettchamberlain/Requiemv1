@@ -1,15 +1,21 @@
 import { useMemo } from 'react';
 
+import { useSearchParams } from 'react-router-dom';
+
 import { Map } from '@/components/Map';
+import { useMemoryServiceNext } from '@/pages/MemoryPage/useMemoryServiceNext.tsx';
 
 import { TimelineView } from '../TimelineView';
-import { useMemoryService } from '../useMemoryService';
 
 export function DesktopMapView() {
-  const { memories, setActiveMemory } = useMemoryService();
+  const [searchParams] = useSearchParams();
+  const { data } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
 
   const memoriesWithLocation = useMemo(() => {
-    const filteredMemories = memories.filter(
+    const filteredMemories = data.filter(
       (memory) =>
         memory.location &&
         typeof memory.location.lat === 'number' &&
@@ -22,7 +28,7 @@ export function DesktopMapView() {
     filteredMemories.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     return filteredMemories;
-  }, [memories]);
+  }, [data]);
 
   return (
     // TODO: This default leads to some map jittering. It's OK for now, but let's think about tracking the user's last location and use that for the default center.

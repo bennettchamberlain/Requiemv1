@@ -6,23 +6,32 @@ import { Search, Filter, MapPin, List, Images, X, Share2 } from '@ci/shadcn/icon
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { useMemoryServiceNext } from '@/pages/MemoryPage/useMemoryServiceNext.tsx';
 
 import { MemoryDetails } from './Components';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { MobileMapView } from './MapView';
 import { TimelineView } from './TimelineView';
-import { useMemoryService } from './useMemoryService';
 
 export default function MobileMemoryPage() {
-  const { searchQuery, setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { data } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
+  const [activeMemory, setActiveMemory] = useState<typeof data>(null);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
 
   const [activeTab, setActiveTab] = useState('list');
 
   // Mobile-specific states
   const [showFilters, setShowFilters] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+
+  if (data.length === 0) {
+    //Dummy
+  }
 
   // Handle search
   const handleSearch = () => {
