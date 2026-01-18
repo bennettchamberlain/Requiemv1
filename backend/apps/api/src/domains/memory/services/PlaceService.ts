@@ -49,6 +49,7 @@ export class PlaceService {
   async findAll(context: UserServiceContext): Promise<Place[]> {
     return this.placeRepository.find({
       where: {
+        entityType: 'Location',
         user: {
           id: context.userId,
         },
