@@ -3,16 +3,18 @@ import { useMemo } from 'react';
 import { Badge, cn } from '@ci/shadcn';
 
 interface Props {
+  icon?: React.ReactNode;
   text: string;
   children?: React.ReactNode;
   className?: string;
 }
 
-export function Tag({ text, children, className }: Props) {
+export function Tag({ icon, text, children, className }: Props) {
   const color = useMemo(() => getColorFromPalette(text), [text]);
 
   return (
     <Badge className={cn(className, color, 'flex items-center border-0')}>
+      {icon}
       <span>{text}</span>
       {children}
     </Badge>

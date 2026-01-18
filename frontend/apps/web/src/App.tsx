@@ -21,8 +21,13 @@ import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
+const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
 const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
+const ContentPage = lazy(() => import('@/pages/ContentPage'));
+const EventPage = lazy(() => import('@/pages/EventPage'));
+const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const KnowledgePage = lazy(() => import('@/pages/KnowledgePage'));
@@ -32,6 +37,8 @@ const NotePage = lazy(() => import('@/pages/NotePage'));
 const NotesPage = lazy(() => import('@/pages/NotesPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
+const PersonPage = lazy(() => import('@/pages/PersonPage'));
+const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
@@ -269,6 +276,69 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <SavedSearchesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/concepts/:id"
+          element={
+            <ProtectedRoute>
+              <ConceptPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/people/:id"
+          element={
+            <ProtectedRoute>
+              <PersonPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/places/:id"
+          element={
+            <ProtectedRoute>
+              <PlacePage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/content/:id"
+          element={
+            <ProtectedRoute>
+              <ContentPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/communications/:id"
+          element={
+            <ProtectedRoute>
+              <CommunicationPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/items/:id"
+          element={
+            <ProtectedRoute>
+              <ItemPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/events/:id"
+          element={
+            <ProtectedRoute>
+              <EventPage />
             </ProtectedRoute>
           }
         />

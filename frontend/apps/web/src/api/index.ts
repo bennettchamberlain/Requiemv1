@@ -3,6 +3,7 @@ export { useActionListService } from './useActionListService';
 export { useThreadService } from './useThreadService';
 export { useUploadFile } from './useUploadFile';
 export { useSynthesizeService } from './useSynthesizeService';
+export { useTagEntityService } from './useTagEntityService';
 export { useTranscriptionService } from './useTranscriptionService';
 export { useMcpService } from './useMcpService';
 export { useGraphOverview } from './useGraphOverview';
