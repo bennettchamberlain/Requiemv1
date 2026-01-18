@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
 
-import { ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
+import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
+import { Breadcrumb, cn } from '@ci/shadcn';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
-import { useActionListService } from '@/api';
+import { useActionListService, useSummariesService } from '@/api';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
 import { useModalControls } from '@/hooks';
@@ -14,6 +14,8 @@ import { Carousel } from '../../components/Carousel';
 
 import { actionInsightData } from './data';
 import { FeedModal } from './FeedModal';
+import { SummaryCard } from './SummaryCard';
+import type { FeedItem } from './types';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 
@@ -25,6 +27,39 @@ export function FeedPage() {
 
   const { id: actionId } = useParams<{ id?: string }>();
   const [{ data: actions, loading, error }] = useActionListService();
+  const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService(10);
+
+  // Intersperse real summaries between placeholder insight cards
+  const combinedInsights = useMemo(() => {
+    const result: Array<
+      { type: 'insight'; data: FeedItem } | { type: 'summary'; data: (typeof summaries)[number] }
+    > = [];
+
+    // Add first insight card
+    if (actionInsightData[0]) {
+      result.push({ type: 'insight', data: actionInsightData[0] });
+    }
+
+    // Add real summaries interspersed with remaining insight cards
+    let insightIndex = 1;
+    summaries.forEach((summary) => {
+      result.push({ type: 'summary', data: summary });
+
+      // Add insight card after every summary (if available)
+      if (insightIndex < actionInsightData.length) {
+        result.push({ type: 'insight', data: actionInsightData[insightIndex] });
+        insightIndex++;
+      }
+    });
+
+    // Add any remaining insight cards at the end
+    while (insightIndex < actionInsightData.length) {
+      result.push({ type: 'insight', data: actionInsightData[insightIndex] });
+      insightIndex++;
+    }
+
+    return result;
+  }, [summaries]);
 
   const selectedActionIndex = useMemo(
     () => actions.findIndex((item) => item.id === actionId),
@@ -55,6 +90,14 @@ export function FeedPage() {
     navigate('/feed', { replace: true });
     closeModal();
   }, [navigate, closeModal]);
+
+  const handleSummaryClick = useCallback(
+    (encodedId: string) => {
+      const decodedId = GlobalUID.decode(encodedId).id;
+      navigate(`/insights/${decodedId}`);
+    },
+    [navigate],
+  );
 
   if (loading) {
     return (
@@ -100,10 +143,36 @@ export function FeedPage() {
               />
             ))}
 
-          {actionInsightData.map((item) => (
-            <BentoCard key={item.id} title={item.title} description={item.description} tags={item.tags} />
-          ))}
+          {combinedInsights.map((item) => {
+            if (item.type === 'insight') {
+              return (
+                <BentoCard
+                  key={item.data.id}
+                  title={item.data.title}
+                  description={item.data.description}
+                  tags={item.data.tags}
+                  className="cursor-default opacity-95"
+                />
+              );
+            } else {
+              return (
+                <SummaryCard
+                  key={item.data.id}
+                  summary={item.data}
+                  onClick={() => handleSummaryClick(item.data.id)}
+                />
+              );
+            }
+          })}
         </Carousel>
+
+        {(summariesLoading || summariesError) && (
+          <div className="py-4 text-center text-sm text-muted-foreground">
+            {summariesLoading
+              ? 'Fetching your personalized insights...'
+              : 'We could not load live insights. Preview cards are shown until the service recovers.'}
+          </div>
+        )}
 
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
       </PageContent>
@@ -159,17 +228,40 @@ export function FeedPage() {
 
         <h2 className="text-2xl font-bold text-foreground">Insights</h2>
 
-        <Carousel {...carouselProps}>
-          {actionInsightData.map((item) => (
-            <BentoCard
-              key={item.id}
-              title={item.title}
-              description={item.description}
-              tags={item.tags}
-              className="hover:shadow-lg transition-shadow duration-200 h-110"
-            />
-          ))}
-        </Carousel>
+        <div className="space-y-3">
+          {(summariesLoading || summariesError) && (
+            <div className={cn('text-sm', summariesError ? 'text-destructive' : 'text-muted-foreground')}>
+              {summariesLoading
+                ? 'Fetching your personalized insights...'
+                : 'We could not load live insights. Preview cards are shown until the service recovers.'}
+            </div>
+          )}
+
+          <Carousel {...carouselProps}>
+            {combinedInsights.map((item) => {
+              if (item.type === 'insight') {
+                return (
+                  <BentoCard
+                    key={item.data.id}
+                    title={item.data.title}
+                    description={item.data.description}
+                    tags={item.data.tags}
+                    className="hover:shadow-lg transition-shadow duration-200 h-110 cursor-default opacity-95"
+                  />
+                );
+              } else {
+                return (
+                  <SummaryCard
+                    key={item.data.id}
+                    summary={item.data}
+                    onClick={() => handleSummaryClick(item.data.id)}
+                    className="hover:shadow-lg transition-shadow duration-200 h-110"
+                  />
+                );
+              }
+            })}
+          </Carousel>
+        </div>
       </PageContent>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}
