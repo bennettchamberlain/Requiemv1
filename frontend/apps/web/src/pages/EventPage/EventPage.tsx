@@ -3,12 +3,14 @@ import { type ReactNode, useState } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
 import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
-import { Pencil } from '@ci/shadcn/icons';
-import { useParams, Link } from 'react-router-dom';
+import { Pencil, User } from '@ci/shadcn/icons';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
 import { EventIcon, PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
+import { Map } from '@/components/Map';
+import { Tag } from '@/components/Tag';
 import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
@@ -18,13 +20,22 @@ const GET_EVENT = gql(`
       id
       title
       description
+
       tags {
         label
       }
+
       location {
         id
         name
+        properties
       }
+
+      organizer {
+        id
+        name
+      }
+
       participants {
         edges {
           node {
@@ -39,6 +50,8 @@ const GET_EVENT = gql(`
 
 export function EventPage() {
   const { id } = useParams<{ id: string }>();
+
+  const navigate = useNavigate();
 
   const { data, loading } = useQuery(GET_EVENT, {
     variables: {
@@ -86,12 +99,37 @@ export function EventPage() {
           <div className="md:col-span-2">
             <Card className="p-0">
               <Card.Content className="p-4 flex flex-col gap-6">
+                {event.organizer && (
+                  <div className="flex flex-col gap-2">
+                    <Label>Organizer</Label>
+                    <Link to={`/people/${GlobalUID.parse('person', event.organizer.id)}`}>
+                      <Tag icon={<User />} className="text-sm" text={event.organizer.name ?? ''} />
+                    </Link>
+                  </div>
+                )}
+
                 {event.participants.edges.length > 0 && (
-                  <div className="mb-2">
+                  <div className="flex flex-col gap-2">
                     <Label>Participants</Label>
-                    {event.participants.edges.map(({ node }) => (
-                      <div key={node.id}>{node.name}</div>
-                    ))}
+                    <div className="flex flex-wrap gap-2">
+                      {event.participants.edges.map(({ node }) => (
+                        <Link key={node.id} to={`/people/${GlobalUID.parse('person', node.id)}`}>
+                          <Tag icon={<User />} className="text-sm cursor-pointer" text={node.name ?? ''} />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {event.location && (
+                  <div className="flex flex-col gap-2">
+                    <Label>Location</Label>
+                    <Link to={`/places/${GlobalUID.parse('place', event.location.id)}`}>
+                      <div className="flex gap-2 bg-secondary p-2 pr-5 rounded-full items-center cursor-pointer w-fit">
+                        <PlaceIcon />
+                        <div className="text-sm">{event.location?.name ?? ''}</div>
+                      </div>
+                    </Link>
                   </div>
                 )}
 
@@ -103,17 +141,11 @@ export function EventPage() {
                     tags={event.tags.map((t) => t.label) ?? []}
                     readOnly={!editMode}
                     onTagAdded={async (label) => {
-                      try {
-                        await tagEntities([GlobalUID.encode('event', id!)], [label]);
+                      tagEntities([GlobalUID.encode('event', id!)], [label]);
 
-                        return true;
-                      } catch {
-                        return false;
-                      }
+                      return true;
                     }}
-                    onTagRemoved={async (label) => {
-                      await untagEntities([GlobalUID.encode('event', id!)], [label]);
-                    }}
+                    onTagRemoved={(label) => untagEntities([GlobalUID.encode('event', id!)], [label])}
                   />
                 </div>
 
@@ -134,16 +166,25 @@ export function EventPage() {
             </Card>
           </div>
 
-          <Card className="p-0">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              {event.location && (
-                <div className="flex items-center gap-2">
-                  <PlaceIcon />
-                  <div>{event.location.name}</div>
-                </div>
-              )}
-            </Card.Content>
-          </Card>
+          {event.location != null &&
+            typeof event.location.properties.latitude === 'number' &&
+            typeof event.location.properties.longitude === 'number' && (
+              <Card className="p-0 overflow-hidden">
+                <Card.Content className="p-0 h-full w-full">
+                  <Map
+                    center={[event.location.properties.latitude, event.location.properties.longitude]}
+                    zoomEnabled={false}
+                    draggingEnabled={false}
+                    zoom={15}
+                  >
+                    <Map.Marker
+                      position={[event.location.properties.latitude, event.location.properties.longitude]}
+                      onClick={() => navigate(`/places/${GlobalUID.parse('place', event.location!.id)}`)}
+                    />
+                  </Map>
+                </Card.Content>
+              </Card>
+            )}
         </div>
       </PageContent>
     );
