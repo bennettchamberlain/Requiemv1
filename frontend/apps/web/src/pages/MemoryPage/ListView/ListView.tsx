@@ -1,5 +1,6 @@
+import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 import { Empty } from '@/pages/MemoryPage/Components';
 
@@ -21,6 +22,9 @@ import { SearchTable } from './SearchTable';
 
 export function ListView() {
   const [searchParams] = useSearchParams();
+
+  const navigate = useNavigate();
+
   const { data } = useMemoryServiceNext({
     searchQuery: searchParams.get('search') || '',
     excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
@@ -41,41 +45,113 @@ export function ListView() {
       <SearchTable.RowGroup>
         {data.map((item) => {
           switch (item.__typename) {
-            case 'PersonType':
-              return <PersonRow key={item.id} person={item} onClick={() => {}} />;
-
-            case 'PlaceType':
-              return <PlaceRow key={item.id} place={item} onClick={() => {}} />;
-
-            case 'EventType':
-              return <EventRow key={item.id} event={item} onClick={() => {}} />;
-
-            case 'ThreadType':
-              return <ThreadRow key={item.id} thread={item} onClick={() => {}} />;
-
-            case 'FileType':
-              return <FileRow key={item.id} file={item} onClick={() => {}} />;
-
-            case 'CommunicationType':
-              return <CommunicationRow key={item.id} communication={item} onClick={() => {}} />;
-
-            case 'ItemType':
-              return <ItemRow key={item.id} item={item} onClick={() => {}} />;
-
-            case 'ContentType':
-              return <ContentRow key={item.id} content={item} onClick={() => {}} />;
-
             case 'AnswerType':
               return <AnswerRow key={item.id} answer={item} onClick={() => {}} />;
-
-            case 'ConceptType':
-              return <ConceptRow key={item.id} concept={item} onClick={() => {}} />;
 
             case 'BrowserActivityType':
               return <BrowserActivityRow key={item.id} browserActivity={item} onClick={() => {}} />;
 
+            case 'CommunicationType':
+              return (
+                <CommunicationRow
+                  key={item.id}
+                  communication={item}
+                  onClick={() => {
+                    navigate(`/communications/${GlobalUID.parse('communication', item.id)}`);
+                  }}
+                />
+              );
+
+            case 'ConceptType':
+              return (
+                <ConceptRow
+                  key={item.id}
+                  concept={item}
+                  onClick={() => {
+                    navigate(`/concepts/${GlobalUID.parse('concept', item.id)}`);
+                  }}
+                />
+              );
+
+            case 'ContentType':
+              return (
+                <ContentRow
+                  key={item.id}
+                  content={item}
+                  onClick={() => {
+                    navigate(`/contents/${GlobalUID.parse('content', item.id)}`);
+                  }}
+                />
+              );
+
+            case 'EventType':
+              return (
+                <EventRow
+                  key={item.id}
+                  event={item}
+                  onClick={() => {
+                    navigate(`/events/${GlobalUID.parse('event', item.id)}`);
+                  }}
+                />
+              );
+
+            case 'FileType':
+              return <FileRow key={item.id} file={item} />;
+
+            case 'ItemType':
+              return (
+                <ItemRow
+                  key={item.id}
+                  item={item}
+                  onClick={() => {
+                    navigate(`/items/${GlobalUID.parse('item', item.id)}`);
+                  }}
+                />
+              );
+
             case 'NoteType':
-              return <NoteRow key={item.id} note={item} onClick={() => {}} />;
+              return (
+                <NoteRow
+                  key={item.id}
+                  note={item}
+                  onClick={() => {
+                    navigate(`/notes/${GlobalUID.parse('note', item.id)}`);
+                  }}
+                />
+              );
+
+            case 'PersonType':
+              return (
+                <PersonRow
+                  key={item.id}
+                  person={item}
+                  onClick={() => {
+                    navigate(`/people/${GlobalUID.parse('person', item.id)}`);
+                  }}
+                />
+              );
+
+            case 'PlaceType':
+              return (
+                <PlaceRow
+                  key={item.id}
+                  place={item}
+                  onClick={() => {
+                    navigate(`/places/${GlobalUID.parse('place', item.id)}`);
+                  }}
+                />
+              );
+
+            case 'ThreadType':
+              return (
+                <ThreadRow
+                  key={item.id}
+                  thread={item}
+                  onClick={() => {
+                    navigate(`/chat/${GlobalUID.parse('thread', item.id)}`);
+                  }}
+                />
+              );
 
             default:
               return null;
