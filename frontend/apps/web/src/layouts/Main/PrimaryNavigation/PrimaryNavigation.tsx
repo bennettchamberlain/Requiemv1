@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
-import { Button, DropdownMenu, Separator } from '@ci/shadcn';
-import { NotebookPen, Upload, Camera, Plus, Cable } from '@ci/shadcn/icons';
+import { Button, DropdownMenu, Kbd, Separator } from '@ci/shadcn';
+import { NotebookPen, Upload, Camera, Plus, Cable, Search } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
 import { useUploadFile } from '@/api';
 import { CaptureModal } from '@/components/modals/CaptureModal';
+import { SearchModal } from '@/components/modals/SearchModal';
 import { UploadModal } from '@/components/modals/UploadModal';
 import { useModalControls } from '@/hooks';
+import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
 
 import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
   const navigate = useNavigate();
 
+  const [{ isOpen: isSearchModalOpen }, { open: openSearchModal, close: closeSearchModal }] =
+    useModalControls();
   const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
     useModalControls();
   const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
@@ -48,6 +52,8 @@ export function PrimaryNavigation() {
     };
   }, []);
 
+  useKeyboardShortcut('/', openSearchModal);
+
   const handleUpload = (files: FileList) => {
     return upload(Array.from(files));
   };
@@ -62,15 +68,25 @@ export function PrimaryNavigation() {
         <section className="flex flex-row items-center gap-4">
           <Portal ref={actionsRef} id="actions" className="flex flex-row items-center" />
 
-          {hasActions && (
-            <Separator orientation="vertical" className="data-[orientation=vertical]:h-8 -mr-2" />
-          )}
+          {hasActions && <Separator orientation="vertical" className="data-[orientation=vertical]:h-6" />}
 
           <div className="flex flex-row items-center gap-2">
+            <Button
+              variant="outline"
+              className="items-center justify-between flex p-2! gap-3"
+              onClick={openSearchModal}
+            >
+              <Search className="h-4 w-4" strokeWidth={1.25} />
+
+              <div className="pr-4 text-muted-foreground">Search</div>
+
+              <Kbd>/</Kbd>
+            </Button>
+
             <DropdownMenu modal={false}>
               <DropdownMenu.Trigger asChild>
                 <Button variant="ghost" size="icon" aria-label="More Options">
-                  <Plus />
+                  <Plus strokeWidth={1.5} />
                 </Button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
@@ -114,6 +130,8 @@ export function PrimaryNavigation() {
           </div>
         </section>
       </header>
+
+      <SearchModal open={isSearchModalOpen} onClose={closeSearchModal} />
 
       <UploadModal
         open={isUploadModalOpen}

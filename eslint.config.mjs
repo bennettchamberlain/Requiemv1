@@ -10,6 +10,7 @@ export default [
       'backend/apps/api/*',
       'frontend/apps/web/*',
       'infrastructure/iframely/**',
+      'mcp-servers/**',
     ],
   },
 

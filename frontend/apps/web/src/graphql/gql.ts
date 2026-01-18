@@ -21,6 +21,16 @@ type Documents = {
     "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            label\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetActionsDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      tags {\n        label\n      }\n      ... on Node {\n        id\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      tags {\n        label\n      }\n      ... on Node {\n        id\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
+    "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": typeof types.SearchResultCommunicationDataFragmentDoc,
+    "\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n": typeof types.SearchResultConceptDataFragmentDoc,
+    "\n  fragment SearchResultContentData on ContentType {\n    id\n    title\n  }\n": typeof types.SearchResultContentDataFragmentDoc,
+    "\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n": typeof types.SearchResultEventDataFragmentDoc,
+    "\n  fragment SearchResultItemData on ItemType {\n    id\n    name\n  }\n": typeof types.SearchResultItemDataFragmentDoc,
+    "\n  fragment SearchResultNoteData on NoteType {\n    id\n    title\n  }\n": typeof types.SearchResultNoteDataFragmentDoc,
+    "\n  fragment SearchResultPersonData on PersonType {\n    id\n    name\n    description\n  }\n": typeof types.SearchResultPersonDataFragmentDoc,
+    "\n  fragment SearchResultPlaceData on PlaceType {\n    id\n    name\n  }\n": typeof types.SearchResultPlaceDataFragmentDoc,
+    "\n  fragment SearchResultThreadData on ThreadType {\n    id\n    name\n    description\n  }\n": typeof types.SearchResultThreadDataFragmentDoc,
+    "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n": typeof types.SearchBoxQueryDocument,
     "\n  query GetCommunication($id: ID!) {\n    communication(id: $id) {\n      id\n      type\n      subject\n      preview\n      content\n\n      from {\n        id\n        name\n      }\n\n      to {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n\n      tags {\n        label\n      }\n    }\n  }\n": typeof types.GetCommunicationDocument,
     "\n  query GetConcept($id: ID!) {\n    concept(id: $id) {\n      id\n      name\n      description\n      tags {\n        label\n      }\n    }\n  }\n": typeof types.GetConceptDocument,
     "\n  query GetContent($id: ID!) {\n    content(id: $id) {\n      id\n      title\n      text\n      tags {\n        label\n      }\n    }\n  }\n": typeof types.GetContentDocument,
@@ -76,6 +86,16 @@ const documents: Documents = {
     "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            label\n          }\n        }\n      }\n    }\n  }\n": types.GetActionsDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      tags {\n        label\n      }\n      ... on Node {\n        id\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      tags {\n        label\n      }\n      ... on Node {\n        id\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
+    "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": types.SearchResultCommunicationDataFragmentDoc,
+    "\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n": types.SearchResultConceptDataFragmentDoc,
+    "\n  fragment SearchResultContentData on ContentType {\n    id\n    title\n  }\n": types.SearchResultContentDataFragmentDoc,
+    "\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n": types.SearchResultEventDataFragmentDoc,
+    "\n  fragment SearchResultItemData on ItemType {\n    id\n    name\n  }\n": types.SearchResultItemDataFragmentDoc,
+    "\n  fragment SearchResultNoteData on NoteType {\n    id\n    title\n  }\n": types.SearchResultNoteDataFragmentDoc,
+    "\n  fragment SearchResultPersonData on PersonType {\n    id\n    name\n    description\n  }\n": types.SearchResultPersonDataFragmentDoc,
+    "\n  fragment SearchResultPlaceData on PlaceType {\n    id\n    name\n  }\n": types.SearchResultPlaceDataFragmentDoc,
+    "\n  fragment SearchResultThreadData on ThreadType {\n    id\n    name\n    description\n  }\n": types.SearchResultThreadDataFragmentDoc,
+    "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n": types.SearchBoxQueryDocument,
     "\n  query GetCommunication($id: ID!) {\n    communication(id: $id) {\n      id\n      type\n      subject\n      preview\n      content\n\n      from {\n        id\n        name\n      }\n\n      to {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n\n      tags {\n        label\n      }\n    }\n  }\n": types.GetCommunicationDocument,
     "\n  query GetConcept($id: ID!) {\n    concept(id: $id) {\n      id\n      name\n      description\n      tags {\n        label\n      }\n    }\n  }\n": types.GetConceptDocument,
     "\n  query GetContent($id: ID!) {\n    content(id: $id) {\n      id\n      title\n      text\n      tags {\n        label\n      }\n    }\n  }\n": types.GetContentDocument,
@@ -154,6 +174,46 @@ export function gql(source: "\n  mutation TagEntities($input: TagEntitiesInput!)
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      tags {\n        label\n      }\n      ... on Node {\n        id\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      tags {\n        label\n      }\n      ... on Node {\n        id\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n"): (typeof documents)["\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n"): (typeof documents)["\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultContentData on ContentType {\n    id\n    title\n  }\n"): (typeof documents)["\n  fragment SearchResultContentData on ContentType {\n    id\n    title\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n"): (typeof documents)["\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultItemData on ItemType {\n    id\n    name\n  }\n"): (typeof documents)["\n  fragment SearchResultItemData on ItemType {\n    id\n    name\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultNoteData on NoteType {\n    id\n    title\n  }\n"): (typeof documents)["\n  fragment SearchResultNoteData on NoteType {\n    id\n    title\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultPersonData on PersonType {\n    id\n    name\n    description\n  }\n"): (typeof documents)["\n  fragment SearchResultPersonData on PersonType {\n    id\n    name\n    description\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultPlaceData on PlaceType {\n    id\n    name\n  }\n"): (typeof documents)["\n  fragment SearchResultPlaceData on PlaceType {\n    id\n    name\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultThreadData on ThreadType {\n    id\n    name\n    description\n  }\n"): (typeof documents)["\n  fragment SearchResultThreadData on ThreadType {\n    id\n    name\n    description\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
