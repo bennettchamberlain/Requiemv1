@@ -10,6 +10,7 @@ import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
+import { Map } from '@/components/Map';
 import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
@@ -19,6 +20,7 @@ const GET_PLACE = gql(`
       id
       name
       description
+      properties
       tags {
         label
       }
@@ -70,46 +72,65 @@ export function PlacePage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <EntityGraph entityId={id!} />
+            <Card className="p-0 h-full">
+              <Card.Content className="p-4 flex flex-col gap-6 h-full">
+                <div className="space-y-2">
+                  <Label>Tags</Label>
+                  <TagInput
+                    key={place.id}
+                    tags={place.tags.map((t) => t.label) ?? []}
+                    readOnly={!editMode}
+                    onTagAdded={async (label) => {
+                      try {
+                        await tagEntities([GlobalUID.encode('place', id!)], [label]);
+
+                        return true;
+                      } catch {
+                        return false;
+                      }
+                    }}
+                    onTagRemoved={async (label) => {
+                      await untagEntities([GlobalUID.encode('place', id!)], [label]);
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    key={place.id}
+                    id="description"
+                    defaultValue={place.description ?? ''}
+                    readOnly={!editMode}
+                    className={cn(
+                      'resize-none min-h-[120px]',
+                      editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
+                    )}
+                  />
+                </div>
+              </Card.Content>
+            </Card>
           </div>
 
-          <Card className="p-0">
-            <Card.Content className="p-4 flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label>Tags</Label>
-                <TagInput
-                  key={place.id}
-                  tags={place.tags.map((t) => t.label) ?? []}
-                  readOnly={!editMode}
-                  onTagAdded={async (label) => {
-                    try {
-                      await tagEntities([GlobalUID.encode('place', id!)], [label]);
+          <div className="flex flex-col gap-4">
+            {place.properties != null &&
+              typeof place.properties.latitude === 'number' &&
+              typeof place.properties.longitude === 'number' && (
+                <Card className="p-0 overflow-hidden h-[300px]">
+                  <Card.Content className="p-0 h-full w-full">
+                    <Map
+                      center={[place.properties.latitude, place.properties.longitude]}
+                      zoomEnabled={false}
+                      draggingEnabled={false}
+                      zoom={15}
+                    >
+                      <Map.Marker position={[place.properties.latitude, place.properties.longitude]} />
+                    </Map>
+                  </Card.Content>
+                </Card>
+              )}
 
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }}
-                  onTagRemoved={async (label) => {
-                    await untagEntities([GlobalUID.encode('place', id!)], [label]);
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  key={place.id}
-                  id="description"
-                  defaultValue={place.description ?? ''}
-                  readOnly={!editMode}
-                  className={cn(
-                    'resize-none min-h-[120px]',
-                    editMode ? '' : 'shadow-none focus-visible:ring-0 focus-visible:border-border',
-                  )}
-                />
-              </div>
-            </Card.Content>
-          </Card>
+            <EntityGraph entityId={id!} />
+          </div>
         </div>
       </PageContent>
     );
