@@ -93,8 +93,7 @@ export function FeedPage() {
 
   const handleSummaryClick = useCallback(
     (encodedId: string) => {
-      const decodedId = GlobalUID.decode(encodedId).id;
-      navigate(`/insights/${decodedId}`);
+      navigate(`/insights/${GlobalUID.parse('summary', encodedId)}`);
     },
     [navigate],
   );
