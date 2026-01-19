@@ -12,10 +12,8 @@ import { useModalControls } from '@/hooks';
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
 
-import { actionInsightData } from './data';
 import { FeedModal } from './FeedModal';
 import { SummaryCard } from './SummaryCard';
-import type { FeedItem } from './types';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 
@@ -28,38 +26,6 @@ export function FeedPage() {
   const { id: actionId } = useParams<{ id?: string }>();
   const [{ data: actions, loading, error }] = useActionListService();
   const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService(10);
-
-  // Intersperse real summaries between placeholder insight cards
-  const combinedInsights = useMemo(() => {
-    const result: Array<
-      { type: 'insight'; data: FeedItem } | { type: 'summary'; data: (typeof summaries)[number] }
-    > = [];
-
-    // Add first insight card
-    if (actionInsightData[0]) {
-      result.push({ type: 'insight', data: actionInsightData[0] });
-    }
-
-    // Add real summaries interspersed with remaining insight cards
-    let insightIndex = 1;
-    summaries.forEach((summary) => {
-      result.push({ type: 'summary', data: summary });
-
-      // Add insight card after every summary (if available)
-      if (insightIndex < actionInsightData.length) {
-        result.push({ type: 'insight', data: actionInsightData[insightIndex] });
-        insightIndex++;
-      }
-    });
-
-    // Add any remaining insight cards at the end
-    while (insightIndex < actionInsightData.length) {
-      result.push({ type: 'insight', data: actionInsightData[insightIndex] });
-      insightIndex++;
-    }
-
-    return result;
-  }, [summaries]);
 
   const selectedActionIndex = useMemo(
     () => actions.findIndex((item) => item.id === actionId),
@@ -142,27 +108,9 @@ export function FeedPage() {
               />
             ))}
 
-          {combinedInsights.map((item) => {
-            if (item.type === 'insight') {
-              return (
-                <BentoCard
-                  key={item.data.id}
-                  title={item.data.title}
-                  description={item.data.description}
-                  tags={item.data.tags}
-                  className="cursor-default opacity-95"
-                />
-              );
-            } else {
-              return (
-                <SummaryCard
-                  key={item.data.id}
-                  summary={item.data}
-                  onClick={() => handleSummaryClick(item.data.id)}
-                />
-              );
-            }
-          })}
+          {summaries.map((summary) => (
+            <SummaryCard key={summary.id} summary={summary} onClick={() => handleSummaryClick(summary.id)} />
+          ))}
         </Carousel>
 
         {(summariesLoading || summariesError) && (
@@ -237,28 +185,14 @@ export function FeedPage() {
           )}
 
           <Carousel {...carouselProps}>
-            {combinedInsights.map((item) => {
-              if (item.type === 'insight') {
-                return (
-                  <BentoCard
-                    key={item.data.id}
-                    title={item.data.title}
-                    description={item.data.description}
-                    tags={item.data.tags}
-                    className="hover:shadow-lg transition-shadow duration-200 h-110 cursor-default opacity-95"
-                  />
-                );
-              } else {
-                return (
-                  <SummaryCard
-                    key={item.data.id}
-                    summary={item.data}
-                    onClick={() => handleSummaryClick(item.data.id)}
-                    className="hover:shadow-lg transition-shadow duration-200 h-110"
-                  />
-                );
-              }
-            })}
+            {summaries.map((summary) => (
+              <SummaryCard
+                key={summary.id}
+                summary={summary}
+                onClick={() => handleSummaryClick(summary.id)}
+                className="hover:shadow-lg transition-shadow duration-200 h-110"
+              />
+            ))}
           </Carousel>
         </div>
       </PageContent>
