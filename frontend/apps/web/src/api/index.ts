@@ -7,8 +7,6 @@ export { useTagEntityService } from './useTagEntityService';
 export { useTranscriptionService } from './useTranscriptionService';
 export { useMcpService } from './useMcpService';
 export { useGraphOverview } from './useGraphOverview';
-export { useSummariesService } from './useSummariesService';
-export { useSummaryService } from './useSummaryService';
 export type { GraphNode, GraphLink } from './useGraphOverview';
 
 export type { Action, Message, Thread } from './types';

@@ -4,7 +4,7 @@ import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitl
 import { Breadcrumb, cn } from '@ci/shadcn';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
-import { useActionListService, useSummariesService } from '@/api';
+import { useActionListService } from '@/api';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
 import { useModalControls } from '@/hooks';
@@ -14,6 +14,7 @@ import { Carousel } from '../../components/Carousel';
 
 import { FeedModal } from './FeedModal';
 import { SummaryCard } from './SummaryCard';
+import { useSummariesService } from './useSummariesService';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 

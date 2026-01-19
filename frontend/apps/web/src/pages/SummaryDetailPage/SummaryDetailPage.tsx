@@ -2,8 +2,9 @@ import { Portal, ErrorPage, LoadingPage, usePageTitle } from '@ci/common';
 import { Breadcrumb, Badge, Card } from '@ci/shadcn';
 import { Link, useParams } from 'react-router-dom';
 
-import { useSummaryService } from '@/api/useSummaryService';
 import { PageContent } from '@/components/layout';
+
+import { useSummaryService } from './useSummaryService';
 
 export function SummaryDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -218,9 +219,7 @@ export function SummaryDetailPage() {
                 {(summary.activityCounts.files || 0) > 0 && (
                   <div>
                     <div className="text-sm text-muted-foreground">Files</div>
-                    <div className="text-2xl font-bold text-foreground">
-                      {summary.activityCounts.files}
-                    </div>
+                    <div className="text-2xl font-bold text-foreground">{summary.activityCounts.files}</div>
                   </div>
                 )}
               </div>
