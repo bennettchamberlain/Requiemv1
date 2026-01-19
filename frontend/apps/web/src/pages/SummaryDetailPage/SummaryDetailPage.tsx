@@ -101,13 +101,13 @@ export function SummaryDetailPage() {
           </div>
 
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4 text-foreground">Summary</h2>
+            <h2 className="text-xl font-semibold text-foreground">Summary</h2>
             <p className="text-base text-foreground leading-relaxed">{summary.summaryText}</p>
           </Card>
 
           {summary.keyInsights && summary.keyInsights.length > 0 && (
             <Card className="p-6">
-              <h2 className="text-xl font-semibold mb-4 text-foreground">Key Insights</h2>
+              <h2 className="text-xl font-semibold text-foreground">Key Insights</h2>
               <ul className="list-disc pl-6 space-y-2 text-base text-foreground">
                 {summary.keyInsights.map((insight: string, idx: number) => (
                   <li key={idx}>{insight}</li>
@@ -118,7 +118,7 @@ export function SummaryDetailPage() {
 
           {summary.notableEvents && summary.notableEvents.length > 0 && (
             <Card className="p-6">
-              <h2 className="text-xl font-semibold mb-4 text-foreground">Notable Events</h2>
+              <h2 className="text-xl font-semibold text-foreground">Notable Events</h2>
               <ul className="list-disc pl-6 space-y-2 text-base text-foreground">
                 {summary.notableEvents.map((event: string, idx: number) => (
                   <li key={idx}>{event}</li>
@@ -129,7 +129,7 @@ export function SummaryDetailPage() {
 
           {summary.anomalies && summary.anomalies.length > 0 && (
             <Card className="p-6">
-              <h2 className="text-xl font-semibold mb-4 text-foreground">Anomalies</h2>
+              <h2 className="text-xl font-semibold text-foreground">Anomalies</h2>
               <ul className="list-disc pl-6 space-y-2 text-base text-foreground">
                 {summary.anomalies.map((anomaly: string, idx: number) => (
                   <li key={idx}>{anomaly}</li>
