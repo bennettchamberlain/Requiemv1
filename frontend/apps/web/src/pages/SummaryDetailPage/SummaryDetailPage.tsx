@@ -56,13 +56,17 @@ export function SummaryDetailPage() {
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
               <Breadcrumb.Link asChild>
-                <Link to="/feed">Feed</Link>
+                <Link to="/feed">Insights</Link>
               </Breadcrumb.Link>
             </Breadcrumb.Item>
-            <Breadcrumb.Separator />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Summary</Breadcrumb.Page>
-            </Breadcrumb.Item>
+            {summary && (
+              <>
+                <Breadcrumb.Separator />
+                <Breadcrumb.Item>
+                  <Breadcrumb.Page>{summary.title || 'Summary'}</Breadcrumb.Page>
+                </Breadcrumb.Item>
+              </>
+            )}
           </Breadcrumb.List>
         </Breadcrumb>
       </Portal.Slot>
