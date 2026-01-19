@@ -57,6 +57,33 @@ export const SUMMARIES: SeedSummary[] = [
     confidenceScore: 1.0,
   },
   {
+    summaryId: '01936cb0-0000-7000-8000-000000000004',
+    userId: JOHN_SMITH.id,
+    periodStart: new Date('2026-01-13T12:00:00Z'),
+    periodEnd: new Date('2026-01-13T13:00:00Z'),
+    periodType: 'hourly',
+    timezone: 'UTC',
+    sourceTypes: ['memory', 'relationships', 'browsing', 'places'],
+    title: 'Anniversary Planning',
+    content: {
+      tokens_used: 156,
+      key_insights: [
+        "Book a 7:30 PM reservation at Carmine's Italian this weekend",
+        'Compare availability and reviews for top Mexican spots nearby',
+        'Text your babysitter to confirm availability for the night',
+      ],
+      summary_text:
+        "Your anniversary is coming up. You and Sarah Smith most often dine at Carmine's Italian, The Willow Bistro, and El Camino Taqueria. I can book a table at your favorite, or suggest top-rated Mexican options within 25 miles—since they love Mexican.",
+      activity_counts: {
+        total: 10,
+      },
+      structured_data: {
+        tags: ['Anniversary', 'Reservations', 'Planner'],
+      },
+    },
+    confidenceScore: 0.95,
+  },
+  {
     summaryId: '01936cb0-0000-7000-8000-000000000002',
     userId: JOHN_SMITH.id,
     periodStart: new Date('2026-01-13T14:00:00Z'),
@@ -109,10 +136,37 @@ export const SUMMARIES: SeedSummary[] = [
     confidenceScore: 0.95,
   },
   {
+    summaryId: '01936cb0-0000-7000-8000-000000000005',
+    userId: JOHN_SMITH.id,
+    periodStart: new Date('2026-01-13T16:00:00Z'),
+    periodEnd: new Date('2026-01-13T17:00:00Z'),
+    periodType: 'hourly',
+    timezone: 'UTC',
+    sourceTypes: ['memory', 'events', 'people', 'locations'],
+    title: 'Travel Coordination',
+    content: {
+      tokens_used: 142,
+      key_insights: [
+        'Draft an email to friends in Miami to coordinate a meetup',
+        "Plan 3 fun activities around your hotel's location and schedule",
+        'Block travel buffer time on your calendar',
+      ],
+      summary_text:
+        "I noticed a flight to Miami in two weeks. Your friends in Miami include Ana, Marco, and Dev. Would you like me to send a warm note to them, or plan a short itinerary while you're there?",
+      activity_counts: {
+        total: 8,
+      },
+      structured_data: {
+        tags: ['Travel', 'Friends', 'Planner'],
+      },
+    },
+    confidenceScore: 0.92,
+  },
+  {
     summaryId: '01936cb0-0000-7000-8000-000000000003',
     userId: JOHN_SMITH.id,
-    periodStart: new Date('2026-01-12T00:00:00Z'),
-    periodEnd: new Date('2026-01-13T00:00:00Z'),
+    periodStart: new Date('2026-01-13T00:00:00Z'),
+    periodEnd: new Date('2026-01-14T00:00:00Z'),
     periodType: 'daily',
     timezone: 'UTC',
     sourceTypes: ['browser_activity', 'files', 'communications'],
@@ -175,65 +229,11 @@ export const SUMMARIES: SeedSummary[] = [
     confidenceScore: 0.98,
   },
   {
-    summaryId: '01936cb0-0000-7000-8000-000000000004',
+    summaryId: '01936cb0-0000-7000-8000-000000000006',
     userId: JOHN_SMITH.id,
     periodStart: new Date('2026-01-14T09:00:00Z'),
     periodEnd: new Date('2026-01-14T10:00:00Z'),
-    periodType: 'daily',
-    timezone: 'UTC',
-    sourceTypes: ['memory', 'relationships', 'browsing', 'places'],
-    title: 'Anniversary Planning',
-    content: {
-      tokens_used: 156,
-      key_insights: [
-        "Book a 7:30 PM reservation at Carmine's Italian this weekend",
-        'Compare availability and reviews for top Mexican spots nearby',
-        'Text your babysitter to confirm availability for the night',
-      ],
-      summary_text:
-        "Your anniversary is coming up. You and Sarah Smith most often dine at Carmine's Italian, The Willow Bistro, and El Camino Taqueria. I can book a table at your favorite, or suggest top-rated Mexican options within 25 miles—since they love Mexican.",
-      activity_counts: {
-        total: 10,
-      },
-      structured_data: {
-        tags: ['Anniversary', 'Reservations', 'Planner'],
-      },
-    },
-    confidenceScore: 0.95,
-  },
-  {
-    summaryId: '01936cb0-0000-7000-8000-000000000005',
-    userId: JOHN_SMITH.id,
-    periodStart: new Date('2026-01-15T09:00:00Z'),
-    periodEnd: new Date('2026-01-15T10:00:00Z'),
-    periodType: 'daily',
-    timezone: 'UTC',
-    sourceTypes: ['memory', 'events', 'people', 'locations'],
-    title: 'Travel Coordination',
-    content: {
-      tokens_used: 142,
-      key_insights: [
-        'Draft an email to friends in Miami to coordinate a meetup',
-        'Plan 3 fun activities around your hotel’s location and schedule',
-        'Block travel buffer time on your calendar',
-      ],
-      summary_text:
-        'I noticed a flight to Miami in two weeks. Your friends in Miami include Ana, Marco, and Dev. Would you like me to send a warm note to them, or plan a short itinerary while you’re there?',
-      activity_counts: {
-        total: 8,
-      },
-      structured_data: {
-        tags: ['Travel', 'Friends', 'Planner'],
-      },
-    },
-    confidenceScore: 0.92,
-  },
-  {
-    summaryId: '01936cb0-0000-7000-8000-000000000006',
-    userId: JOHN_SMITH.id,
-    periodStart: new Date('2026-01-16T09:00:00Z'),
-    periodEnd: new Date('2026-01-16T10:00:00Z'),
-    periodType: 'daily',
+    periodType: 'hourly',
     timezone: 'UTC',
     sourceTypes: ['memory', 'conversations', 'browsing', 'documents'],
     title: 'Dive Deeper on Interests',
@@ -241,7 +241,7 @@ export const SUMMARIES: SeedSummary[] = [
       tokens_used: 168,
       key_insights: [
         'Curated reading list from your recent articles and YouTube history: Product ML, experimentation, and growth analytics',
-        'A new file has been saved locally with a summary of your Google Drive activity from the last two weeks related to work. I’ve summarized progress and highlighted next-step opportunities for the upcoming two weeks.',
+        "A new file has been saved locally with a summary of your Google Drive activity from the last two weeks related to work. I've summarized progress and highlighted next-step opportunities for the upcoming two weeks.",
       ],
       summary_text:
         'Here are high-impact follow‑ups based on your recent browser activity and reading. Your recent YouTube watch history shows an interest in machine learning for product analytics, so I compiled a focused reading list on that topic.',
@@ -257,9 +257,9 @@ export const SUMMARIES: SeedSummary[] = [
   {
     summaryId: '01936cb0-0000-7000-8000-000000000007',
     userId: JOHN_SMITH.id,
-    periodStart: new Date('2026-01-17T09:00:00Z'),
-    periodEnd: new Date('2026-01-17T10:00:00Z'),
-    periodType: 'daily',
+    periodStart: new Date('2026-01-14T12:00:00Z'),
+    periodEnd: new Date('2026-01-14T13:00:00Z'),
+    periodType: 'hourly',
     timezone: 'UTC',
     sourceTypes: ['memory', 'interests', 'chats', 'local_events'],
     title: "Kids' Hobbies",
@@ -284,9 +284,9 @@ export const SUMMARIES: SeedSummary[] = [
   {
     summaryId: '01936cb0-0000-7000-8000-000000000008',
     userId: JOHN_SMITH.id,
-    periodStart: new Date('2026-01-18T09:00:00Z'),
-    periodEnd: new Date('2026-01-18T10:00:00Z'),
-    periodType: 'daily',
+    periodStart: new Date('2026-01-14T15:00:00Z'),
+    periodEnd: new Date('2026-01-14T16:00:00Z'),
+    periodType: 'hourly',
     timezone: 'UTC',
     sourceTypes: ['vehicles', 'home', 'schedules'],
     title: 'Home & Car Upkeep',
