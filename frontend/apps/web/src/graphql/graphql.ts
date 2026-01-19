@@ -1131,9 +1131,11 @@ export type SearchConnection = {
 };
 
 export type SearchInput = {
+  endTime?: InputMaybe<Scalars['String']['input']>;
   excludeTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   includeTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   query?: InputMaybe<Scalars['String']['input']>;
+  startTime?: InputMaybe<Scalars['String']['input']>;
   tags?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 

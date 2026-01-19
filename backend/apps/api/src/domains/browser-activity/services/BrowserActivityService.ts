@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository, type FindOptionsOrder } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { BrowserActivity, BrowserActivityEntity } from '../entities/BrowserActivityEntity';
 import {
@@ -15,6 +16,13 @@ import {
 } from '../events';
 import type { CreateBrowserActivityDto, UpdateBrowserActivityDto } from '../types';
 
+interface Options {
+  limit?: number;
+  order?: FindOptionsOrder<BrowserActivityEntity>;
+  startTime?: Date;
+  endTime?: Date;
+}
+
 @Injectable()
 export class BrowserActivityService {
   constructor(
@@ -22,6 +30,7 @@ export class BrowserActivityService {
     private readonly browserActivityRepository: Repository<BrowserActivityEntity>,
     private readonly eventService: EventService,
     private readonly logger: LoggerService,
+    private readonly dataSource: DataSource,
   ) {
     this.logger.setContext(BrowserActivityService.name);
   }
@@ -183,5 +192,41 @@ export class BrowserActivityService {
     });
 
     return true;
+  }
+
+  async getEntitiesForBrowserActivities(
+    context: ServiceContext,
+    options: Options,
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.dataSource
+      .getRepository(BrowserActivityEntity)
+      .createQueryBuilder('browser-activity')
+      .select(['browser-activity.id'])
+      .where('browser-activity.user_id = :userId', { userId: context.userId });
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    if (options.order) {
+      for (const [field, direction] of Object.entries(options.order)) {
+        query = query.orderBy(`browser-activity.${field}`, direction as 'ASC' | 'DESC');
+      }
+    }
+
+    if (options.startTime) {
+      query = query.andWhere('browser-activity.time >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('browser-activity.time >= :endTime', { endTime: options.endTime });
+    }
+
+    const results = await query.getRawMany();
+
+    return results.map((row: { 'browser-activity_id': string; type: IndexableEntity }) => ({
+      id: row['browser-activity_id'],
+      type: 'browser-activity' as IndexableEntity,
+    }));
   }
 }

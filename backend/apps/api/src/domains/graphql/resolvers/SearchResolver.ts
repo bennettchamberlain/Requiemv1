@@ -1,9 +1,10 @@
 import { BadRequestException, UseGuards } from '@nestjs/common';
 import { Args, Query, Resolver } from '@nestjs/graphql';
+import { type FindOptionsOrder } from 'typeorm';
 
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { BrowserActivityService } from '@ci/domains/browser-activity';
+import { BrowserActivityEntity, BrowserActivityService } from '@ci/domains/browser-activity';
 import { ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { AnswerService } from '@ci/domains/intelligence';
@@ -12,9 +13,11 @@ import {
   ConceptService,
   ContentService,
   EventService,
+  EventEntity,
   ItemService,
   PersonService,
   PlaceService,
+  CommunicationEntity,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
 import {
@@ -83,11 +86,18 @@ export class SearchResolver {
       const tagResults = await this.searchByTags(serviceContext, input.tags);
 
       results.push(...tagResults);
-    } else if (input.query != null) {
+    } else if (input.query != null && input.query.length > 0) {
       const queryResults = await this.searchByQuery(serviceContext, {
         query: input.query,
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
+      });
+
+      results.push(...queryResults);
+    } else {
+      const queryResults = await this.searchByTimedEntities(serviceContext, {
+        startTime: input.startTime ? new Date(input.startTime) : undefined,
+        endTime: input.endTime ? new Date(input.endTime) : undefined,
       });
 
       results.push(...queryResults);
@@ -144,6 +154,80 @@ export class SearchResolver {
     const tagResults = await this.tagService.getEntitiesForTags(context, tags);
 
     return this.resolveEntities(context, tagResults);
+  }
+
+  private async searchByTimedEntities(
+    context: UserServiceContext,
+    {
+      startTime,
+      endTime,
+    }: {
+      startTime?: Date;
+      endTime?: Date;
+    },
+  ): Promise<SearchResult[]> {
+    const eventOptions: {
+      limit: number;
+      order: FindOptionsOrder<EventEntity>;
+      startTime?: Date;
+      endTime?: Date;
+    } = {
+      limit: 25,
+      order: { startTime: 'DESC' },
+    };
+
+    const browserActivityOptions: {
+      limit: number;
+      order: FindOptionsOrder<BrowserActivityEntity>;
+      startTime?: Date;
+      endTime?: Date;
+    } = {
+      limit: 25,
+      order: { time: 'DESC' },
+    };
+
+    const communicationOptions: {
+      limit: number;
+      order: FindOptionsOrder<CommunicationEntity>;
+      startTime?: Date;
+      endTime?: Date;
+    } = {
+      limit: 25,
+      order: { time: 'DESC' },
+    };
+
+    if (startTime) {
+      eventOptions.startTime = startTime;
+      browserActivityOptions.startTime = startTime;
+      communicationOptions.startTime = startTime;
+    }
+
+    if (endTime) {
+      eventOptions.endTime = endTime;
+      browserActivityOptions.startTime = endTime;
+      communicationOptions.startTime = endTime;
+    }
+
+    const [eventResults, browserActivityResults, communicationResults] = await Promise.all([
+      this.eventService.getEntitiesForEvents(context, eventOptions),
+      this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions),
+      this.communicationService.getEntitiesForCommunications(context, communicationOptions),
+    ]);
+
+    const entities = await this.resolveEntities(context, [
+      ...eventResults,
+      ...browserActivityResults,
+      ...communicationResults,
+    ]);
+
+    return entities.sort((a, b) => {
+      const aTime =
+        'time' in a && a.time ? a.time : 'startTime' in a && a.startTime ? a.startTime : new Date();
+      const bTime =
+        'time' in b && b.time ? b.time : 'startTime' in b && b.startTime ? b.startTime : new Date();
+
+      return bTime.getTime() - aTime.getTime();
+    });
   }
 
   private async resolveEntities(
