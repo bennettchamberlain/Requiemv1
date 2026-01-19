@@ -193,33 +193,39 @@ export function SummaryDetailPage() {
             </Card>
           )}
 
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4 text-foreground">Activity Breakdown</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {summary.activityCounts.browserActivity && (
-                <div>
-                  <div className="text-sm text-muted-foreground">Browser Activity</div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {summary.activityCounts.browserActivity}
+          {((summary.activityCounts.browserActivity || 0) > 0 ||
+            (summary.activityCounts.communications || 0) > 0 ||
+            (summary.activityCounts.files || 0) > 0) && (
+            <Card className="p-6">
+              <h2 className="text-xl font-semibold mb-4 text-foreground">Activity Breakdown</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {(summary.activityCounts.browserActivity || 0) > 0 && (
+                  <div>
+                    <div className="text-sm text-muted-foreground">Browser Activity</div>
+                    <div className="text-2xl font-bold text-foreground">
+                      {summary.activityCounts.browserActivity}
+                    </div>
                   </div>
-                </div>
-              )}
-              {summary.activityCounts.communications && (
-                <div>
-                  <div className="text-sm text-muted-foreground">Communications</div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {summary.activityCounts.communications}
+                )}
+                {(summary.activityCounts.communications || 0) > 0 && (
+                  <div>
+                    <div className="text-sm text-muted-foreground">Communications</div>
+                    <div className="text-2xl font-bold text-foreground">
+                      {summary.activityCounts.communications}
+                    </div>
                   </div>
-                </div>
-              )}
-              {summary.activityCounts.files && (
-                <div>
-                  <div className="text-sm text-muted-foreground">Files</div>
-                  <div className="text-2xl font-bold text-foreground">{summary.activityCounts.files}</div>
-                </div>
-              )}
-            </div>
-          </Card>
+                )}
+                {(summary.activityCounts.files || 0) > 0 && (
+                  <div>
+                    <div className="text-sm text-muted-foreground">Files</div>
+                    <div className="text-2xl font-bold text-foreground">
+                      {summary.activityCounts.files}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
       </PageContent>
     </>
