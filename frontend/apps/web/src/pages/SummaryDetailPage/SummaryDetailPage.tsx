@@ -1,14 +1,12 @@
 import { Portal, ErrorPage, LoadingPage, usePageTitle } from '@ci/common';
 import { Breadcrumb, Badge, Card } from '@ci/shadcn';
-import { ArrowLeft } from '@ci/shadcn/icons';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 import { useSummaryService } from '@/api/useSummaryService';
 import { PageContent } from '@/components/layout';
 
 export function SummaryDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [{ data: summary, loading, error }] = useSummaryService(id || '');
 
   usePageTitle(summary?.title || 'Summary - Companion Intelligence');
@@ -72,16 +70,6 @@ export function SummaryDetailPage() {
       </Portal.Slot>
 
       <PageContent>
-        <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={() => navigate('/feed')}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-5 w-5" />
-            <span>Back to Feed</span>
-          </button>
-        </div>
-
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
