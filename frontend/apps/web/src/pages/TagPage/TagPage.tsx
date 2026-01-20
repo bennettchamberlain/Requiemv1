@@ -5,11 +5,6 @@ import { EmptyState, GlobalUID, LoadingPage, Portal, usePageTitle } from '@ci/co
 import { Breadcrumb } from '@ci/shadcn';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 
-import { TagIcon } from '@/components/icons';
-import { PageContent } from '@/components/layout';
-import { Tag } from '@/components/Tag';
-import { gql } from '@/graphql';
-
 import {
   ActionGridItem,
   BrowserActivityGridItem,
@@ -25,6 +20,10 @@ import {
   PlaceGridItem,
   ThreadGridItem,
 } from '@/components/entities';
+import { TagIcon } from '@/components/icons';
+import { PageContent } from '@/components/layout';
+import { Tag } from '@/components/Tag';
+import { gql } from '@/graphql';
 
 const GET_TAG = gql(`
   query GetTag($id: ID!) {

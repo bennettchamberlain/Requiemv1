@@ -15,6 +15,7 @@ import {
   MOCK_THREADS,
 } from '@/graphql/mocks';
 
+import { EntityGrid } from './EntityGrid';
 import { AnswerGridItem, ANSWER_FRAGMENT } from './grid/AnswerGridItem';
 import { CommunicationGridItem, COMMUNICATION_FRAGMENT } from './grid/CommunicationGridItem';
 import { ConceptGridItem, CONCEPT_FRAGMENT } from './grid/ConceptGridItem';
@@ -25,7 +26,6 @@ import { ItemGridItem, ITEM_FRAGMENT } from './grid/ItemGridItem';
 import { PersonGridItem, PERSON_FRAGMENT } from './grid/PersonGridItem';
 import { PlaceGridItem, PLACE_FRAGMENT } from './grid/PlaceGridItem';
 import { ThreadGridItem, THREAD_FRAGMENT } from './grid/ThreadGridItem';
-import { EntityGrid } from './EntityGrid';
 
 const items: (
   | (typeof MOCK_PEOPLE)[number]
