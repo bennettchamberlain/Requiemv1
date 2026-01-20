@@ -19,8 +19,6 @@ export function TimelineView() {
 
   const groupedMemoriesRaw = groupMemoriesByDate(data);
 
-  console.log('Grouped Memories Raw:', groupedMemoriesRaw);
-
   // Ensure "today" appears first by explicitly sorting dates with today first
   const now = new Date();
   const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -130,7 +128,7 @@ export function TimelineView() {
     const handleScroll = () => {
       clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
-        if (loading || loadingPast || loadingFuture) {
+        if (loading) {
           return;
         }
 
@@ -138,13 +136,13 @@ export function TimelineView() {
 
         // After reversing: scrolling down (toward bottom) loads past events (older memories)
         // Scrolling up (toward top) loads future events (newer memories)
-        if (scrollTop + clientHeight > scrollHeight - 100 && hasMorePast && !loadingPast) {
+        if (scrollTop + clientHeight > scrollHeight - 100) {
           loadPastEvents();
         }
 
-        if (scrollTop < 100 && hasMoreFuture && !loadingFuture) {
-          loadFutureEvents();
-        }
+        // if (scrollTop < 100) {
+        //   loadFutureEvents();
+        // }
       }, 50);
     };
 

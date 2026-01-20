@@ -66,17 +66,20 @@ export function useMemoryServiceNext({
       excludeTypes: excludeTypes?.map((type) => type.toLowerCase()) || [],
     },
   });
+
   const [activeMemory, setActiveMemory] = useState<typeof data>(null);
 
   console.log('activeMemory', activeMemory);
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);
+  const exportedMemory = useMemo(() => activeMemory, [activeMemory]);
+  console.log('exportedMemory', exportedMemory);
 
   return {
     data: results,
     loading,
     error,
-    activeMemory,
+    activeMemory: exportedMemory,
     setActiveMemory
   };
 }

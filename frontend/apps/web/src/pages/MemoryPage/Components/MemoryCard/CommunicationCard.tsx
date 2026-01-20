@@ -101,14 +101,10 @@ export function CommunicationCard({ memory }: Props) {
     return <Mail className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--accent-foreground)]" />;
   };
 
-  const handleClick = () => {
-    setActiveMemory(memory);
-  };
-
   return (
     <Card
       className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={handleClick}
+      onClick={() => setActiveMemory(memory)}
     >
       <div className="flex items-start gap-3">
         {getDirectionIcon()}

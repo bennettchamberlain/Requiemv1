@@ -49,7 +49,7 @@ const GET_SAVED_SEARCH = gql(`
 
 export default function DesktopMemoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data, activeMemory, setActiveMemory } = useMemoryServiceNext({
+  const { activeMemory, setActiveMemory } = useMemoryServiceNext({
     searchQuery: searchParams.get('search') || '',
     excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
   });
@@ -57,10 +57,6 @@ export default function DesktopMemoryPage() {
   const [searchId, setSearchId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState('map');
-
-  if (data.length === 0) {
-    //Dummy
-  }
 
   const { data: savedSearchData } = useQuery(GET_SAVED_SEARCH, {
     variables: { id: GlobalUID.encode('saved-search', searchId!) },
@@ -158,6 +154,7 @@ export default function DesktopMemoryPage() {
       },
     });
   }, []);
+  console.log('activeMemory in page root', activeMemory);
 
   return (
     <>

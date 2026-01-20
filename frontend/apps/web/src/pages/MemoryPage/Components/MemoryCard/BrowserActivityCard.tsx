@@ -1,6 +1,8 @@
-import { Card } from '@ci/shadcn';
+import { Card, Tooltip } from '@ci/shadcn';
 import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
 import { gql } from '@/graphql';
+import { useSearchParams } from 'react-router-dom';
+import {useMemoryServiceNext} from "@/pages/MemoryPage/useMemoryServiceNext.tsx";
 
 export interface Props {
   memory: FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT>;
@@ -18,6 +20,11 @@ export const BROWSER_ACTIVITY_FRAGMENT = gql(`
 `);
 
 export function BrowserActivityCard({ memory }: Props) {
+  const [searchParams] = useSearchParams();
+  const { setActiveMemory } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
   const actionType = memory.actionType as string | undefined;
   const durationSeconds = memory.duration as number | undefined;
   const url = memory.url as string | undefined;
@@ -43,28 +50,26 @@ export function BrowserActivityCard({ memory }: Props) {
     }
   };
 
-  const getProductivityColor = (score: number) => {
-    if (score > 0.7) {
-      return 'text-green-600';
-    }
-
-    if (score > 0.4) {
-      return 'text-yellow-600';
-    }
-
-    return 'text-red-600';
-  };
-
   return (
-    <Card className="!gap-2 !py-4 px-6 hover:shadow-lg transition-shadow duration-200">
+    <Card
+      className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
+      onClick={() => setActiveMemory(memory)}
+    >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
           <Globe className="h-6 w-6 text-blue-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-semibold text-card-foreground truncate">{memory.title}</h3>
-          </div>
+          <Tooltip>
+            <Tooltip.Trigger asChild>
+              <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
+                {memory.title}
+              </h3>
+            </Tooltip.Trigger>
+            <Tooltip.Content>
+              <p>{memory.title}</p>
+            </Tooltip.Content>
+          </Tooltip>
           <p className="text-sm text-muted-foreground">{memory.type}</p>
         </div>
       </div>

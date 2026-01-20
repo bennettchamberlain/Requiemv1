@@ -44,14 +44,10 @@ export function EventCard({ memory }: Props) {
   const hasLocation = memory.location?.name || memory.location?.address;
   const hasDescription = memory.description;
 
-  const handleClick = () => {
-    setActiveMemory(memory);
-  };
-
   return (
     <Card
       className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={handleClick}
+      onClick={() => setActiveMemory(memory)}
     >
       <div className="flex items-start gap-3">
         <Calendar className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--primary)]" />
