@@ -257,7 +257,8 @@ interface Edge {
   node: Node!
 }
 
-type EntityTagType {
+type EntityTagType implements Node {
+  id: ID!
   label: String!
   taggedAt: DateTime!
 }
@@ -421,8 +422,8 @@ type Mutation {
   removePerson(input: RemovePersonInput!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
-  tagEntities(input: TagEntitiesInput!): [Taggable!]!
-  untagEntities(input: TagEntitiesInput!): [Taggable!]!
+  tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
+  untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
@@ -715,6 +716,7 @@ input TagEntitiesInput {
 
 type TagType implements Node {
   description: String
+  entities(after: String, before: String, first: Int, last: Int): TaggableEntityConnection!
   id: ID!
   label: String!
 }
@@ -722,6 +724,19 @@ type TagType implements Node {
 interface Taggable {
   tags: [EntityTagType!]!
 }
+
+type TaggableEntityConnection {
+  edges: [TaggableEntityEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type TaggableEntityEdge {
+  cursor: String!
+  node: TaggableEntityType!
+}
+
+union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
 
 type ThreadConnection implements Connection {
   edges: [ThreadEdge!]!

@@ -304,8 +304,9 @@ export type Edge = {
   node: Node;
 };
 
-export type EntityTagType = {
+export type EntityTagType = Node & {
   __typename?: 'EntityTagType';
+  id: Scalars['ID']['output'];
   label: Scalars['String']['output'];
   taggedAt: Scalars['DateTime']['output'];
 };
@@ -495,8 +496,8 @@ export type Mutation = {
   removePerson: Scalars['Boolean']['output'];
   removePlace: Scalars['Boolean']['output'];
   removeQuestion: Scalars['Boolean']['output'];
-  tagEntities: Array<Taggable>;
-  untagEntities: Array<Taggable>;
+  tagEntities: Array<TaggableEntityType>;
+  untagEntities: Array<TaggableEntityType>;
   updateAnswer?: Maybe<AnswerType>;
   updateContent?: Maybe<ContentType>;
   updateEvent?: Maybe<EventType>;
@@ -1206,13 +1207,37 @@ export type TagEntitiesInput = {
 export type TagType = Node & {
   __typename?: 'TagType';
   description?: Maybe<Scalars['String']['output']>;
+  entities: TaggableEntityConnection;
   id: Scalars['ID']['output'];
   label: Scalars['String']['output'];
+};
+
+
+export type TagTypeEntitiesArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type Taggable = {
   tags: Array<EntityTagType>;
 };
+
+export type TaggableEntityConnection = {
+  __typename?: 'TaggableEntityConnection';
+  edges: Array<TaggableEntityEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type TaggableEntityEdge = {
+  __typename?: 'TaggableEntityEdge';
+  cursor: Scalars['String']['output'];
+  node: TaggableEntityType;
+};
+
+export type TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
 
 export type ThreadConnection = Connection & {
   __typename?: 'ThreadConnection';
