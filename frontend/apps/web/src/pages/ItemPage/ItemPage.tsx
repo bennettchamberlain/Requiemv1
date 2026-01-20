@@ -20,6 +20,7 @@ const GET_ITEM = gql(`
       name
       description
       tags {
+        id
         label
       }
     }

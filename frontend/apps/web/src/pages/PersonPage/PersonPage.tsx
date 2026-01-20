@@ -20,6 +20,7 @@ const GET_PERSON = gql(`
       name
       description
       tags {
+        id
         label
       }
     }

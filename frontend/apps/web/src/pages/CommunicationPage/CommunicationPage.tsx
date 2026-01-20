@@ -37,6 +37,7 @@ const GET_COMMUNICATION = gql(`
       }
 
       tags {
+        id
         label
       }
     }

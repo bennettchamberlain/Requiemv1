@@ -22,6 +22,7 @@ const GET_PLACE = gql(`
       description
       properties
       tags {
+        id
         label
       }
     }
