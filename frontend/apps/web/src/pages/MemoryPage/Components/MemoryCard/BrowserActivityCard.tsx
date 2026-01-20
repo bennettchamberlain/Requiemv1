@@ -1,4 +1,4 @@
-import { Card, cn } from '@ci/shadcn';
+import { Card } from '@ci/shadcn';
 import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
 import { gql } from '@/graphql';
 
@@ -13,6 +13,7 @@ export const BROWSER_ACTIVITY_FRAGMENT = gql(`
     url
     actionType
     duration
+    time
   }
 `);
 

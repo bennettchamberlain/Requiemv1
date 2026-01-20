@@ -3,9 +3,10 @@ import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 import DOMPurify from 'dompurify';
 import parse from 'html-react-parser';
 import { gql } from '@/graphql';
+import { useSearchParams } from 'react-router-dom';
 
-import type { MemoryItem, ParticipantData } from '../../types';
-import { useMemoryService } from '../../useMemoryService';
+import type { ParticipantData } from '../../types';
+import { useMemoryServiceNext } from '../../useMemoryServiceNext';
 
 const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   month: 'short',
@@ -45,8 +46,12 @@ export const COMMUNICATION_FRAGMENT = gql(`
 `);
 
 export function CommunicationCard({ memory }: Props) {
-  const { setActiveMemory } = useMemoryService();
-  const communicationType = memory.communicationType as string | undefined;
+  const [searchParams] = useSearchParams();
+  const { setActiveMemory } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
+  const communicationType = memory.type as string | undefined;
   const direction = memory.direction as string | undefined;
   const participantsMetadata = memory.participantsMetadata as
     | Record<string, ParticipantData[]>
@@ -111,18 +116,16 @@ export function CommunicationCard({ memory }: Props) {
           <Tooltip>
             <Tooltip.Trigger asChild>
               <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {memory.subject}
+                {memory.subject || `${(memory.type[0].toUpperCase()) + memory.type.slice(1)} Communication`}
               </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              <p>{memory.subject}</p>
+              <p>{memory.subject || `${(memory.type[0].toUpperCase()) + memory.type.slice(1)} Communication`}</p>
             </Tooltip.Content>
           </Tooltip>
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm text-muted-foreground">{communicationType}</p>
             {communicationType && (
               <>
-                <span className="text-muted-foreground">•</span>
                 <span className="text-sm text-muted-foreground capitalize">{communicationType}</span>
               </>
             )}
@@ -162,12 +165,12 @@ export function CommunicationCard({ memory }: Props) {
         </span>
       </div>
 
-      {memory.description &&
+      {memory.communicationContent &&
         parse(
           DOMPurify.sanitize(
-            memory.description.length > 1000
-              ? `${memory.description.substring(0, 1000)}...`
-              : memory.description,
+            memory.communicationContent.length > 1000
+              ? `${memory.communicationContent.substring(0, 1000)}...`
+              : memory.communicationContent,
             { USE_PROFILES: { html: true } },
           ),
         )}

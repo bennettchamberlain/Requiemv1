@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { Badge, Button, Input, Separator, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
@@ -87,7 +88,7 @@ const resolveEndpointId = (endpoint: unknown): string | undefined => {
   return undefined;
 };
 
-export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
+export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<string[]>([]);
@@ -101,7 +102,9 @@ export function GraphTabPanel({ variant, searchQuery }: GraphTabPanelProps) {
   const entityTypesKeyRef = useRef<string | null>(null);
   const relationshipTypesKeyRef = useRef<string | null>(null);
 
-  const trimmedSearchQuery = searchQuery?.trim() ?? '';
+  const [searchParams] = useSearchParams();
+
+  const trimmedSearchQuery = searchParams?.get('search')?.trim() ?? '';
   const isSearchMode = trimmedSearchQuery.length > 0;
 
   const [searchLoading, setSearchLoading] = useState(false);

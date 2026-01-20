@@ -96,6 +96,8 @@ export class SearchResolver {
       results.push(...queryResults);
     } else {
       const queryResults = await this.searchByTimedEntities(serviceContext, {
+        includeTypes: input.includeTypes,
+        excludeTypes: input.excludeTypes,
         startTime: input.startTime ? new Date(input.startTime) : undefined,
         endTime: input.endTime ? new Date(input.endTime) : undefined,
       });
@@ -159,9 +161,13 @@ export class SearchResolver {
   private async searchByTimedEntities(
     context: UserServiceContext,
     {
+      includeTypes,
+      excludeTypes,
       startTime,
       endTime,
     }: {
+      includeTypes?: IndexableEntity[];
+      excludeTypes?: IndexableEntity[];
       startTime?: Date;
       endTime?: Date;
     },
@@ -209,9 +215,15 @@ export class SearchResolver {
     }
 
     const [eventResults, browserActivityResults, communicationResults] = await Promise.all([
-      this.eventService.getEntitiesForEvents(context, eventOptions),
-      this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions),
-      this.communicationService.getEntitiesForCommunications(context, communicationOptions),
+      ((includeTypes && includeTypes.indexOf('event') > -1) || (excludeTypes && excludeTypes?.indexOf('event') < 0)) ?
+        this.eventService.getEntitiesForEvents(context, eventOptions) :
+        [],
+      ((includeTypes && includeTypes?.indexOf('browser-activity') > -1) || (excludeTypes && excludeTypes?.indexOf('browser-activity') < 0)) ?
+        this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions) :
+        [],
+      ((includeTypes && includeTypes?.indexOf('communication') > -1) || (excludeTypes && excludeTypes?.indexOf('communication') < 0)) ?
+        this.communicationService.getEntitiesForCommunications(context, communicationOptions) :
+        [],
     ]);
 
     const entities = await this.resolveEntities(context, [

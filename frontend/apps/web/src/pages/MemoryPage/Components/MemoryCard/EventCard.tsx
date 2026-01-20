@@ -2,9 +2,10 @@ import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
 import { gql } from '@/graphql';
 
-import { useMemoryService } from '../../useMemoryService';
+import { useMemoryServiceNext } from '../../useMemoryServiceNext';
 import { formatDateTime, formatDuration } from '../utils';
 import type {FragmentType} from "@/graphql";
+import { useSearchParams } from 'react-router-dom';
 
 interface Props {
   memory: FragmentType<EVENT_FRAGMENT>;
@@ -28,7 +29,11 @@ export const EVENT_FRAGMENT = gql(`
 `);
 
 export function EventCard({ memory }: Props) {
-  const { setActiveMemory } = useMemoryService();
+  const [searchParams] = useSearchParams();
+  const { setActiveMemory } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });;
   const hasStartDate = memory.startDate;
   const hasEndDate = memory.endDate;
   const hasOrganizer = memory.organizer;

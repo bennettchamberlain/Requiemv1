@@ -1,15 +1,6 @@
-import type { MemoryItem } from '../../types';
-
 import { BrowserActivityCard } from './BrowserActivityCard';
 import { CommunicationCard } from './CommunicationCard';
-import { ConceptCard } from './ConceptCard';
-import { ContactCard } from './ContactCard';
-import { ContentCard } from './ContentCard';
 import { EventCard } from './EventCard';
-import { OtherCard } from './OtherCard';
-import { PersonCard } from './PersonCard';
-import { PlaceCard } from './PlaceCard';
-import { ThingCard } from './ThingCard';
 import type {FragmentType} from "@/graphql";
 
 export interface Props {
@@ -24,8 +15,6 @@ export function MemoryCard({ memory }: Props) {
       return <EventCard memory={memory} />;
     case 'CommunicationType':
       return <CommunicationCard memory={memory} />;
-    case 'other':
-      return <OtherCard memory={memory} />;
     default:
       return null;
   }
