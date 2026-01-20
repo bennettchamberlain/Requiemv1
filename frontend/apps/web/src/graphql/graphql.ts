@@ -805,7 +805,7 @@ export type Query = {
   questions: QuestionConnection;
   savedSearch?: Maybe<SavedSearchType>;
   savedSearches: SavedSearchConnection;
-  search: SearchConnection;
+  search: SearchResultConnection;
   summaries: SummaryConnection;
   summary?: Maybe<SummaryType>;
   tag?: Maybe<TagType>;
@@ -1123,13 +1123,6 @@ export type SavedSearchType = Node & {
   updatedAt: Scalars['DateTime']['output'];
 };
 
-export type SearchConnection = {
-  __typename?: 'SearchConnection';
-  edges: Array<SearchResultEdge>;
-  pageInfo: PageInfo;
-  totalCount: Scalars['Int']['output'];
-};
-
 export type SearchInput = {
   endTime?: InputMaybe<Scalars['String']['input']>;
   excludeTypes?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -1137,6 +1130,13 @@ export type SearchInput = {
   query?: InputMaybe<Scalars['String']['input']>;
   startTime?: InputMaybe<Scalars['String']['input']>;
   tags?: InputMaybe<Array<Scalars['String']['input']>>;
+};
+
+export type SearchResultConnection = {
+  __typename?: 'SearchResultConnection';
+  edges: Array<SearchResultEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
 };
 
 export type SearchResultEdge = {
@@ -1416,7 +1416,7 @@ export type SearchBoxQueryQueryVariables = Exact<{
 }>;
 
 
-export type SearchBoxQueryQuery = { __typename?: 'Query', search: { __typename?: 'SearchConnection', edges: Array<{ __typename?: 'SearchResultEdge', node:
+export type SearchBoxQueryQuery = { __typename?: 'Query', search: { __typename?: 'SearchResultConnection', edges: Array<{ __typename?: 'SearchResultEdge', node:
         | { __typename: 'AnswerType', id: string }
         | { __typename: 'BrowserActivityType', id: string }
         | (
@@ -1592,7 +1592,7 @@ export type SearchQueryVariables = Exact<{
 }>;
 
 
-export type SearchQuery = { __typename?: 'Query', search: { __typename?: 'SearchConnection', edges: Array<{ __typename?: 'SearchResultEdge', node:
+export type SearchQuery = { __typename?: 'Query', search: { __typename?: 'SearchResultConnection', edges: Array<{ __typename?: 'SearchResultEdge', node:
         | (
           { __typename: 'AnswerType', id: string }
           & { ' $fragmentRefs'?: { 'GalleryAnswerCardDataFragment': GalleryAnswerCardDataFragment;'TableAnswerRowDataFragment': TableAnswerRowDataFragment } }

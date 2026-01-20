@@ -585,7 +585,7 @@ type Query {
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
   savedSearch(id: ID!): SavedSearchType
   savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
-  search(input: SearchInput!): SearchConnection!
+  search(input: SearchInput!): SearchResultConnection!
   summaries(after: String, before: String, first: Int, last: Int): SummaryConnection!
   summary(id: ID!): SummaryType
   tag(id: ID!): TagType
@@ -640,12 +640,6 @@ type SavedSearchType implements Node {
   updatedAt: DateTime!
 }
 
-type SearchConnection {
-  edges: [SearchResultEdge!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
 input SearchInput {
   endTime: String
   excludeTypes: [String!]
@@ -653,6 +647,12 @@ input SearchInput {
   query: String
   startTime: String
   tags: [String!]
+}
+
+type SearchResultConnection {
+  edges: [SearchResultEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
 }
 
 type SearchResultEdge {

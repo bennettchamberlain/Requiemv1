@@ -4,7 +4,7 @@ import { Connection } from './Connection';
 import { SearchResultEdge } from './SearchResultEdge';
 
 @ObjectType()
-export class SearchConnection extends Connection {
+export class SearchResultConnection extends Connection {
   @Field(() => [SearchResultEdge])
   declare edges: SearchResultEdge[];
 }
