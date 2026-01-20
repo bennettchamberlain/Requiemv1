@@ -39,8 +39,8 @@ import { ItemType } from '../types/ItemType';
 import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
-import { SearchConnection } from '../types/SearchConnection';
 import { SearchInput } from '../types/SearchInput';
+import { SearchResultConnection } from '../types/SearchResultConnection';
 import { type SearchResult } from '../types/SearchResultType';
 import { ThreadType } from '../types/ThreadType';
 import { Paginator } from '../utils/Paginator';
@@ -65,11 +65,11 @@ export class SearchResolver {
     private readonly threadService: ThreadService,
   ) {}
 
-  @Query(() => SearchConnection)
+  @Query(() => SearchResultConnection)
   async search(
     @Context() context: RequestContext,
     @Args('input') input: SearchInput,
-  ): Promise<SearchConnection> {
+  ): Promise<SearchResultConnection> {
     const serviceContext = toServiceContext(context);
 
     if (input.query == null && (!input.tags || input.tags.length === 0)) {

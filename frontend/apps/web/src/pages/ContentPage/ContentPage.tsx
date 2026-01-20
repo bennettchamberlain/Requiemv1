@@ -20,6 +20,7 @@ const GET_CONTENT = gql(`
       title
       text
       tags {
+        id
         label
       }
     }

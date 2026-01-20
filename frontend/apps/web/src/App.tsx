@@ -46,6 +46,8 @@ const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
+const TagPage = lazy(() => import('@/pages/TagPage'));
+const TagsPage = lazy(() => import('@/pages/TagsPage'));
 const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
@@ -349,6 +351,24 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <EventPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tags"
+          element={
+            <ProtectedRoute>
+              <TagsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tags/:id"
+          element={
+            <ProtectedRoute>
+              <TagPage />
             </ProtectedRoute>
           }
         />

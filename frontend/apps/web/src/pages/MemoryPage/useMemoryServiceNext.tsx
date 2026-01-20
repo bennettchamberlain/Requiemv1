@@ -15,18 +15,18 @@ const SEARCH_QUERY = gql(`
             id
           }
 
-          ...GalleryAnswerCardData
-          ...GalleryBrowserActivityCardData
-          ...GalleryCommunicationCardData
-          ...GalleryConceptCardData
-          ...GalleryContentCardData
-          ...GalleryEventCardData
-          ...GalleryFileCardData
-          ...GalleryNoteCardData
-          ...GalleryItemCardData
-          ...GalleryPersonCardData
-          ...GalleryPlaceCardData
-          ...GalleryThreadCardData
+          ...AnswerGridItemData
+          ...BrowserActivityGridItemData
+          ...CommunicationGridItemData
+          ...ConceptGridItemData
+          ...ContentGridItemData
+          ...EventGridItemData
+          ...FileGridItemData
+          ...NoteGridItemData
+          ...ItemGridItemData
+          ...PersonGridItemData
+          ...PlaceGridItemData
+          ...ThreadGridItemData
 
           ...TableAnswerRowData
           ...TableCommunicationRowData
