@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, Portal, usePageTitle } from '@ci/common';
@@ -29,6 +29,16 @@ export function TagsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const { data, loading } = useQuery(GET_TAGS);
 
+  const sortedTags = useMemo(() => {
+    if (data == null) {
+      return [];
+    }
+
+    return [...data.tags.edges].sort((a, b) =>
+      a.node.label.toLowerCase().localeCompare(b.node.label.toLowerCase()),
+    );
+  }, [data]);
+
   let content: ReactNode | null = null;
 
   if (loading) {
@@ -36,7 +46,7 @@ export function TagsPage() {
   } else if (data == null || data.tags.edges.length === 0) {
     content = <EmptyState message="No tags found" />;
   } else {
-    const filteredTags = data.tags.edges.filter(({ node: tag }) =>
+    const filteredTags = sortedTags.filter(({ node: tag }) =>
       tag.label.toLowerCase().includes(searchQuery.toLowerCase()),
     );
 
