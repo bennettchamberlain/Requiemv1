@@ -9,7 +9,7 @@ import { TimelineView } from '../TimelineView';
 
 export function DesktopMapView() {
   const [searchParams] = useSearchParams();
-  const { data } = useMemoryServiceNext({
+  const { data, setActiveMemory } = useMemoryServiceNext({
     searchQuery: searchParams.get('search') || '',
     excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
   });
@@ -18,11 +18,11 @@ export function DesktopMapView() {
     const filteredMemories = data.filter(
       (memory) =>
         memory.location &&
-        typeof memory.location.lat === 'number' &&
-        typeof memory.location.lng === 'number' &&
-        !isNaN(memory.location.lat) &&
-        !isNaN(memory.location.lng) &&
-        !(memory.location.lat === 0 && memory.location.lng === 0),
+        typeof memory.location.properties.latitude === 'number' &&
+        typeof memory.location.properties.longitude === 'number' &&
+        !isNaN(memory.location.properties.latitude) &&
+        !isNaN(memory.location.properties.longitude) &&
+        !(memory.location.properties.latitude === 0 && memory.location.properties.longitude === 0),
     );
 
     filteredMemories.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -43,7 +43,7 @@ export function DesktopMapView() {
       {memoriesWithLocation.map((memory) => (
         <Map.Marker
           key={memory.id}
-          position={[memory.location!.lat, memory.location!.lng]}
+          position={[memory.location!.properties!.latitude, memory.location!.properties!.longitude]}
           onClick={() => setActiveMemory(memory)}
         />
       ))}

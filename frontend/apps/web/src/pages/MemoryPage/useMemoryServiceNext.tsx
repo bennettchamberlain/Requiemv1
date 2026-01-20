@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 
@@ -40,6 +40,10 @@ const SEARCH_QUERY = gql(`
           ...TablePlaceRowData
           ...TableThreadRowData
           ...TableBrowserActivityRowData
+
+          ...TimelineBrowserActivityCardData
+          ...TimelineCommunicationCardData
+          ...TimelineEventCardData
         }
       }
     }
@@ -62,6 +66,9 @@ export function useMemoryServiceNext({
       excludeTypes: excludeTypes?.map((type) => type.toLowerCase()) || [],
     },
   });
+  const [activeMemory, setActiveMemory] = useState<typeof data>(null);
+
+  console.log('activeMemory', activeMemory);
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);
 
@@ -69,5 +76,7 @@ export function useMemoryServiceNext({
     data: results,
     loading,
     error,
+    activeMemory,
+    setActiveMemory
   };
 }

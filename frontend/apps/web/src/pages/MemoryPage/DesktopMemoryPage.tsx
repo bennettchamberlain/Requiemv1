@@ -49,11 +49,10 @@ const GET_SAVED_SEARCH = gql(`
 
 export default function DesktopMemoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data } = useMemoryServiceNext({
+  const { data, activeMemory, setActiveMemory } = useMemoryServiceNext({
     searchQuery: searchParams.get('search') || '',
     excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
   });
-  const [activeMemory, setActiveMemory] = useState<typeof data>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchId, setSearchId] = useState<string | null>(null);
 

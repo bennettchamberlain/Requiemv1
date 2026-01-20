@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 
 import { Empty, MemoryCard } from '../Components';
-import { sortMemoriesByTime, groupMemoriesByDate, formatDateForDisplay } from '../Components/utils';
-import { useMemoryService } from '../useMemoryService';
+import { groupMemoriesByDate, formatDateForDisplay } from '../Components/utils';
+import {useMemoryServiceNext} from "@/pages/MemoryPage/useMemoryServiceNext.tsx";
+import { useSearchParams } from 'react-router-dom';
 
 export function TimelineView() {
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -10,19 +11,15 @@ export function TimelineView() {
   const hasInitialScrolledRef = useRef(false);
   const previousScrollHeightRef = useRef<number>(0);
 
-  const {
-    memories,
-    loading,
-    hasMorePast,
-    hasMoreFuture,
-    loadPastEvents,
-    loadFutureEvents,
-    loadingPast,
-    loadingFuture,
-  } = useMemoryService();
+  const [searchParams] = useSearchParams();
+  const { data, loading } = useMemoryServiceNext({
+    searchQuery: searchParams.get('search') || '',
+    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
+  });
 
-  const sortedMemories = sortMemoriesByTime(memories).reverse();
-  const groupedMemoriesRaw = groupMemoriesByDate(sortedMemories);
+  const groupedMemoriesRaw = groupMemoriesByDate(data);
+
+  console.log('Grouped Memories Raw:', groupedMemoriesRaw);
 
   // Ensure "today" appears first by explicitly sorting dates with today first
   const now = new Date();
@@ -53,7 +50,7 @@ export function TimelineView() {
     const container = scrollContainerRef.current;
 
     // Only scroll to "today" on initial load, not when loading more memories
-    if (container && sortedMemories.length > 0 && !hasInitialScrolledRef.current) {
+    if (container && data.length > 0 && !hasInitialScrolledRef.current) {
       setTimeout(() => {
         // First try to find the current day's date header
         const currentDayHeader = container.querySelector('[data-current-day="true"]');
@@ -72,13 +69,13 @@ export function TimelineView() {
         previousScrollHeightRef.current = container.scrollHeight;
       }, 200);
     }
-  }, [sortedMemories.length]);
+  }, [data.length]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
 
     if (!container || !hasInitialScrolledRef.current) {
-      if (container && memories.length > 0) {
+      if (container && data.length > 0) {
         // Store initial scroll height
         previousScrollHeightRef.current = container.scrollHeight;
       }
@@ -119,7 +116,7 @@ export function TimelineView() {
     } else {
       previousScrollHeightRef.current = currentScrollHeight;
     }
-  }, [memories.length]);
+  }, [data.length]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -157,9 +154,9 @@ export function TimelineView() {
       container.removeEventListener('scroll', handleScroll);
       clearTimeout(scrollTimeout);
     };
-  }, [loading, loadingPast, loadingFuture, hasMorePast, hasMoreFuture, loadPastEvents, loadFutureEvents]);
+  }, [loading]);
 
-  if (memories.length === 0 && !loading) {
+  if (data.length === 0 && !loading) {
     return (
       <Empty
         title="No memories yet"

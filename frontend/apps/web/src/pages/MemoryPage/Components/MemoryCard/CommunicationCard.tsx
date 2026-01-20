@@ -18,14 +18,38 @@ const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
 };
 
 interface Props {
-  memory: MemoryItem;
+  memory: FragmentType<typeof COMMUNICATION_FRAGMENT>;
 }
+
+export const COMMUNICATION_FRAGMENT = gql(`
+  fragment TimelineCommunicationCardData on CommunicationType {
+    id
+    subject
+    preview
+    content
+    time
+    type
+    direction
+    from {
+      id
+      name
+    }
+    to {
+      edges {
+        node {
+          id
+          name
+        }
+      }
+    }
+  }
+`);
 
 export function CommunicationCard({ memory }: Props) {
   const { setActiveMemory } = useMemoryService();
-  const communicationType = memory.metadata?.communicationType as string | undefined;
-  const direction = memory.metadata?.direction as string | undefined;
-  const participantsMetadata = memory.metadata?.participantsMetadata as
+  const communicationType = memory.communicationType as string | undefined;
+  const direction = memory.direction as string | undefined;
+  const participantsMetadata = memory.participantsMetadata as
     | Record<string, ParticipantData[]>
     | undefined;
 
@@ -88,15 +112,15 @@ export function CommunicationCard({ memory }: Props) {
           <Tooltip>
             <Tooltip.Trigger asChild>
               <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {memory.title}
+                {memory.subject}
               </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              <p>{memory.title}</p>
+              <p>{memory.subject}</p>
             </Tooltip.Content>
           </Tooltip>
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm text-muted-foreground">{memory.category}</p>
+            <p className="text-sm text-muted-foreground">{communicationType}</p>
             {communicationType && (
               <>
                 <span className="text-muted-foreground">•</span>
@@ -135,7 +159,7 @@ export function CommunicationCard({ memory }: Props) {
       <div className="flex items-center gap-5">
         <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
         <span className="text-sm text-card-foreground">
-          {new Date(memory.timestamp).toLocaleString('en-US', DATE_FORMAT_OPTIONS)}
+          {new Date(memory.time).toLocaleString('en-US', DATE_FORMAT_OPTIONS)}
         </span>
       </div>
 
@@ -149,13 +173,13 @@ export function CommunicationCard({ memory }: Props) {
           ),
         )}
 
-      {memory.tags.length > 0 && (
-        <div className="flex flex-wrap gap-2 pt-2">
-          {memory.tags.map((tag, index) => (
-            <Tag key={index} text={tag} />
-          ))}
-        </div>
-      )}
+      {/*{memory.tags.length > 0 && (*/}
+      {/*  <div className="flex flex-wrap gap-2 pt-2">*/}
+      {/*    {memory.tags.map((tag, index) => (*/}
+      {/*      <Tag key={index} text={tag} />*/}
+      {/*    ))}*/}
+      {/*  </div>*/}
+      {/*)}*/}
     </Card>
   );
 }

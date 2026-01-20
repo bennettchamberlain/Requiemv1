@@ -54,6 +54,9 @@ type Documents = {
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetFilesDocument,
     "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetInventoryItemsDocument,
     "\n  query GetItem($id: ID!) {\n    item(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetItemDocument,
+  "\n  fragment TimelineBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n    actionType\n    duration\n  }\n": typeof types.TimelineBrowserActivityCardDataFragmentDoc,
+  "\n  fragment TimelineCommunicationCardData on CommunicationType {\n    id\n    subject\n    preview\n    time\n    type\n    direction\n    from {\n      id\n      name\n    }\n    to {\n      edges {\n        node {\n          id\n          name\n        }\n      }\n    }\n  }\n": typeof types.TimelineCommunicationCardDataFragmentDoc,
+  "\n  fragment TimelineEventCardData on EventType {\n    id\n    title\n    description\n    startTime\n
     "\n  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {\n    createSavedSearch(input: $input) {\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": typeof types.CreateSavedSearchDocument,
     "\n  query GetSavedSearch($id: ID!) {\n    savedSearch(id: $id) {\n      id\n      name\n      description\n      query\n      entityTypes\n      tags\n    }\n  }\n": typeof types.GetSavedSearchDocument,
     "\n  fragment TableAnswerRowData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.TableAnswerRowDataFragmentDoc,
@@ -318,6 +321,18 @@ export function gql(source: "\n  query GetInventoryItems {\n    items {\n      e
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetItem($id: ID!) {\n    item(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetItem($id: ID!) {\n    item(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment TimelineBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n    actionType\n    duration\n  }\n"): (typeof documents)["\n  fragment TimelineBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n    actionType\n    duration\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment TimelineCommunicationCardData on CommunicationType {\n    id\n    subject\n    preview\n    time\n    type\n    direction\n    from {\n      id\n      name\n    }\n    to {\n      edges {\n        node {\n          id\n          name\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  fragment TimelineCommunicationCardData on CommunicationType {\n    id\n    subject\n    preview\n    time\n    type\n    direction\n    from {\n      id\n      name\n    }\n    to {\n      edges {\n        node {\n          id\n          name\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment TimelineEventCardData on EventType {\n    id\n    title\n    description\n    startTime\n    endTime\n    location {\n      ... on PlaceType {\n        id\n        name\n        properties\n      }\n    }\n  }\n"): (typeof documents)["\n  fragment TimelineEventCardData on EventType {\n    id\n    title\n    description\n    startTime\n    endTime\n    location {\n      ... on PlaceType {\n        id\n        name\n        properties\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

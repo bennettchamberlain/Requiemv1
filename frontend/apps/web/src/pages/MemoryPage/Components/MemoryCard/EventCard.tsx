@@ -4,10 +4,28 @@ import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/i
 import type { MemoryItem } from '../../types';
 import { useMemoryService } from '../../useMemoryService';
 import { formatDateTime, formatDuration } from '../utils';
+import type {FragmentType} from "@/graphql";
 
 interface Props {
-  memory: MemoryItem;
+  memory: FragmentType<EVENT_FRAGMENT>;
 }
+
+export const EVENT_FRAGMENT = gql(`
+  fragment TimelineEventCardData on EventType {
+    id
+    title
+    description
+    startTime
+    endTime
+    location {
+      ... on PlaceType {
+        id
+        name
+        properties
+      }
+    }
+  }
+`);
 
 export function EventCard({ memory }: Props) {
   const { setActiveMemory } = useMemoryService();

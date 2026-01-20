@@ -103,7 +103,8 @@ export function groupMemoriesByDate(memories: MemoryItem[]): Array<{
   const groups: Record<string, MemoryItem[]> = {};
 
   memories.forEach((memory) => {
-    const memoryDate = new Date(memory.timestamp);
+    console.log('memory', memory)
+    const memoryDate = new Date(memory.time || memory.startTime);
     if (!isNaN(memoryDate.getTime())) {
       // Use local date instead of UTC to match user's timezone
       const year = memoryDate.getFullYear();
@@ -150,11 +151,11 @@ export function getEntityTypeIcon(type: string) {
 export function hasValidLocation(memory: MemoryItem): boolean {
   return !!(
     memory.location &&
-    typeof memory.location.lat === 'number' &&
-    typeof memory.location.lng === 'number' &&
-    !isNaN(memory.location.lat) &&
-    !isNaN(memory.location.lng) &&
-    !(memory.location.lat === 0 && memory.location.lng === 0)
+    typeof memory.location.properties.latitude === 'number' &&
+    typeof memory.location.properties.longitude === 'number' &&
+    !isNaN(memory.location.properties.latitude) &&
+    !isNaN(memory.location.properties.longitude) &&
+    !(memory.location.properties.latitude === 0 && memory.location.longitude === 0)
   );
 }
 

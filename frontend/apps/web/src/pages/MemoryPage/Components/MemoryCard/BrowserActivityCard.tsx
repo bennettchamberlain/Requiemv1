@@ -1,20 +1,24 @@
 import { Card, cn } from '@ci/shadcn';
 import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
 
-import { Tag } from '@/components/Tag';
-
-import type { MemoryItem } from '../../types';
-
 export interface Props {
-  memory: MemoryItem;
+  memory: FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT>;
 }
 
+export const BROWSER_ACTIVITY_FRAGMENT = gql(`
+  fragment TimelineBrowserActivityCardData on BrowserActivityType {
+    id
+    title
+    url
+    actionType
+    duration
+  }
+`);
+
 export function BrowserActivityCard({ memory }: Props) {
-  const actionType = memory.metadata?.actionType as string | undefined;
-  const durationSeconds = memory.metadata?.durationSeconds as number | undefined;
-  const scrollDepthPercent = memory.metadata?.scrollDepthPercent as number | undefined;
-  const productivityScore = memory.metadata?.productivityScore as number | undefined;
-  const url = memory.metadata?.url as string | undefined;
+  const actionType = memory.actionType as string | undefined;
+  const durationSeconds = memory.duration as number | undefined;
+  const url = memory.url as string | undefined;
 
   const formatDuration = (seconds: number) => {
     if (seconds < 60) {
@@ -59,13 +63,13 @@ export function BrowserActivityCard({ memory }: Props) {
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-card-foreground truncate">{memory.title}</h3>
           </div>
-          <p className="text-sm text-muted-foreground">{memory.category}</p>
+          <p className="text-sm text-muted-foreground">{memory.type}</p>
         </div>
       </div>
 
-      {memory.description && (
+      {memory.title && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{memory.title}</p>
         </div>
       )}
 
@@ -84,30 +88,15 @@ export function BrowserActivityCard({ memory }: Props) {
             <span>{formatDuration(durationSeconds)}</span>
           </div>
         )}
-
-        {scrollDepthPercent && (
-          <div className="flex items-center gap-1">
-            <TrendingUp className="h-4 w-4" />
-            <span>{Math.round(scrollDepthPercent)}% scrolled</span>
-          </div>
-        )}
-
-        {productivityScore && (
-          <div className="flex items-center gap-1">
-            <span className={cn('font-medium', getProductivityColor(productivityScore))}>
-              {Math.round(productivityScore * 100)}% productive
-            </span>
-          </div>
-        )}
       </div>
 
-      {memory.tags.length > 0 && (
-        <div className="flex flex-wrap gap-2 pt-2">
-          {memory.tags.map((tag, index) => (
-            <Tag key={index} text={tag} />
-          ))}
-        </div>
-      )}
+      {/*{memory.tags.length > 0 && (*/}
+      {/*  <div className="flex flex-wrap gap-2 pt-2">*/}
+      {/*    {memory.tags.map((tag, index) => (*/}
+      {/*      <Tag key={index} text={tag} />*/}
+      {/*    ))}*/}
+      {/*  </div>*/}
+      {/*)}*/}
 
       {url && (
         <div className="pt-2">

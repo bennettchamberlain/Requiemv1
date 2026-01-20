@@ -1574,6 +1574,12 @@ export type GetItemQueryVariables = Exact<{
 
 export type GetItemQuery = { __typename?: 'Query', item?: { __typename?: 'ItemType', id: string, name?: string | null, description?: string | null, tags: Array<{ __typename?: 'EntityTagType', id: string, label: string }> } | null };
 
+export type TimelineBrowserActivityCardDataFragment = { __typename?: 'BrowserActivityType', id: string, title?: string | null, url: string, actionType?: string | null, duration?: number | null } & { ' $fragmentName'?: 'TimelineBrowserActivityCardDataFragment' };
+
+export type TimelineCommunicationCardDataFragment = { __typename?: 'CommunicationType', id: string, subject?: string | null, preview?: string | null, time: any, type: string, direction: string, from?: { __typename?: 'PersonType', id: string, name?: string | null } | null, to: { __typename?: 'PersonConnection', edges: Array<{ __typename?: 'PersonEdge', node: { __typename?: 'PersonType', id: string, name?: string | null } }> } } & { ' $fragmentName'?: 'TimelineCommunicationCardDataFragment' };
+
+export type TimelineEventCardDataFragment = { __typename?: 'EventType', id: string, title?: string | null, description?: string | null, startTime: any, endTime?: any | null, location?: { __typename?: 'PlaceType', id: string, name?: string | null, properties: any } | null } & { ' $fragmentName'?: 'TimelineEventCardDataFragment' };
+
 export type CreateSavedSearchMutationVariables = Exact<{
   input: CreateSavedSearchInput;
 }>;
