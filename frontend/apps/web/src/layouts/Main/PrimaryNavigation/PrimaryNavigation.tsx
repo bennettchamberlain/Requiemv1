@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
 import { Button, DropdownMenu, Kbd, Separator } from '@ci/shadcn';
-import { NotebookPen, Upload, Camera, Plus, Cable, Search } from '@ci/shadcn/icons';
-import { useNavigate } from 'react-router-dom';
+import { NotebookPen, Upload, Camera, Plus, Cable, Search, Tags } from '@ci/shadcn/icons';
+import { Link, useNavigate } from 'react-router-dom';
 
 import { useUploadFile } from '@/api';
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -83,48 +83,56 @@ export function PrimaryNavigation() {
               <Kbd>/</Kbd>
             </Button>
 
-            <DropdownMenu modal={false}>
-              <DropdownMenu.Trigger asChild>
-                <Button variant="ghost" size="icon" aria-label="More Options">
-                  <Plus strokeWidth={1.5} />
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
-                <div className="grid grid-cols-2 gap-2">
-                  <DropdownMenu.Item
-                    onSelect={() => navigate('/notes/new')}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <NotebookPen className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs">Note</span>
-                  </DropdownMenu.Item>
+            <div className="flex items-center">
+              <Button variant="ghost" size="icon" aria-label="More Options">
+                <Link to="/tags">
+                  <Tags strokeWidth={1.5} />
+                </Link>
+              </Button>
 
-                  <DropdownMenu.Item
-                    onSelect={openUploadModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
-                  >
-                    <Upload className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs">Upload</span>
-                  </DropdownMenu.Item>
+              <DropdownMenu modal={false}>
+                <DropdownMenu.Trigger asChild>
+                  <Button variant="ghost" size="icon" aria-label="More Options">
+                    <Plus strokeWidth={1.5} />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <DropdownMenu.Item
+                      onSelect={() => navigate('/notes/new')}
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                    >
+                      <NotebookPen className="h-6! w-6!" strokeWidth={1.25} />
+                      <span className="text-xs">Note</span>
+                    </DropdownMenu.Item>
 
-                  <DropdownMenu.Item
-                    onSelect={openCaptureModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
-                  >
-                    <Camera className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs">Capture</span>
-                  </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onSelect={openUploadModal}
+                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                    >
+                      <Upload className="h-6! w-6!" strokeWidth={1.25} />
+                      <span className="text-xs">Upload</span>
+                    </DropdownMenu.Item>
 
-                  <DropdownMenu.Item
-                    onSelect={() => navigate('/connect')}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <Cable className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs">Connect</span>
-                  </DropdownMenu.Item>
-                </div>
-              </DropdownMenu.Content>
-            </DropdownMenu>
+                    <DropdownMenu.Item
+                      onSelect={openCaptureModal}
+                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                    >
+                      <Camera className="h-6! w-6!" strokeWidth={1.25} />
+                      <span className="text-xs">Capture</span>
+                    </DropdownMenu.Item>
+
+                    <DropdownMenu.Item
+                      onSelect={() => navigate('/connect')}
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                    >
+                      <Cable className="h-6! w-6!" strokeWidth={1.25} />
+                      <span className="text-xs">Connect</span>
+                    </DropdownMenu.Item>
+                  </div>
+                </DropdownMenu.Content>
+              </DropdownMenu>
+            </div>
 
             <NavUser />
           </div>
