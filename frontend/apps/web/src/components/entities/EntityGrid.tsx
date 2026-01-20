@@ -7,7 +7,7 @@ interface Props {
   children: ReactNode;
 }
 
-export function SearchGrid({ className, children }: Props) {
+export function EntityGrid({ className, children }: Props) {
   return (
     <div
       className={cn(

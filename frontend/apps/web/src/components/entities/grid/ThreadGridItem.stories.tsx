@@ -5,17 +5,17 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { ThreadCard, THREAD_FRAGMENT } from './ThreadCard';
+import { ThreadGridItem, THREAD_FRAGMENT } from './ThreadGridItem';
 
-type StoryProps = ComponentProps<typeof ThreadCard> & {
+type StoryProps = ComponentProps<typeof ThreadGridItem> & {
   name: string;
   description: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: ThreadCard,
+  component: ThreadGridItem,
 
   parameters: {
     layout: 'centered',
@@ -54,9 +54,9 @@ export const Default: Story = {
     const maskedThread = makeFragmentData(thread, THREAD_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <ThreadCard thread={maskedThread} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <ThreadGridItem thread={maskedThread} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

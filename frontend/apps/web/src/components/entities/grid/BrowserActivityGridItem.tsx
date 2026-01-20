@@ -3,10 +3,10 @@ import { type MouseEvent, useMemo } from 'react';
 import { BrowserActivityIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
-import { SearchCard } from '../SearchCard';
+import { EntityGridItem } from './EntityGridItem';
 
 export const BROWSER_ACTIVITY_FRAGMENT = gql(`
-  fragment GalleryBrowserActivityCardData on BrowserActivityType {
+  fragment BrowserActivityGridItemData on BrowserActivityType {
     id
     title
     url
@@ -18,7 +18,7 @@ interface Props {
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function BrowserActivityCard({ browserActivity, onClick }: Props) {
+export function BrowserActivityGridItem({ browserActivity, onClick }: Props) {
   const data = useFragment(BROWSER_ACTIVITY_FRAGMENT, browserActivity);
 
   const domain = useMemo(() => {
@@ -32,14 +32,14 @@ export function BrowserActivityCard({ browserActivity, onClick }: Props) {
   }, [data.url]);
 
   return (
-    <SearchCard onClick={onClick}>
-      <SearchCard.Header>
-        <BrowserActivityIcon />
+    <EntityGridItem onClick={onClick}>
+      <EntityGridItem.Header>
+        <BrowserActivityIcon className="shrink-0" />
 
         <div className="text-md font-semibold truncate">Page view</div>
-      </SearchCard.Header>
+      </EntityGridItem.Header>
 
-      <SearchCard.Content className="gap-8 items-center justify-center">
+      <EntityGridItem.Content className="gap-8 items-center justify-center">
         <div>{data.title}</div>
         <a
           href={data.url}
@@ -49,11 +49,11 @@ export function BrowserActivityCard({ browserActivity, onClick }: Props) {
         >
           {domain}
         </a>
-      </SearchCard.Content>
+      </EntityGridItem.Content>
 
-      <SearchCard.Footer className="self-end">
+      <EntityGridItem.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Page view</div>
-      </SearchCard.Footer>
-    </SearchCard>
+      </EntityGridItem.Footer>
+    </EntityGridItem>
   );
 }

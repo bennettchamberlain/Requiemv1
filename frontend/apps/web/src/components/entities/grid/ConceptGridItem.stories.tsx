@@ -5,24 +5,24 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { EventCard, EVENT_FRAGMENT } from './EventCard';
+import { ConceptGridItem, CONCEPT_FRAGMENT } from './ConceptGridItem';
 
-type StoryProps = ComponentProps<typeof EventCard> & {
-  title: string;
+type StoryProps = ComponentProps<typeof ConceptGridItem> & {
+  name: string;
   description: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: EventCard,
+  component: ConceptGridItem,
 
   parameters: {
     layout: 'centered',
   },
 
   argTypes: {
-    title: {
+    name: {
       control: 'text',
     },
 
@@ -38,25 +38,25 @@ type Story = StoryObj<StoryProps>;
 
 export const Default: Story = {
   args: {
-    title: 'New York City Marathon',
-    description: 'An annual marathon held in New York City. Get psyched for the exercise!',
+    name: 'Software engineering',
+    description: 'The study and application of engineering principles to software development.',
     onClick: fn(),
   },
 
   render: (args) => {
-    const event = {
-      __typename: 'EventType' as const,
+    const concept = {
+      __typename: 'ConceptType' as const,
       id: 'mock-id-1',
-      title: args.title,
+      name: args.name,
       description: args.description,
     };
 
-    const maskedEvent = makeFragmentData(event, EVENT_FRAGMENT);
+    const maskedConcept = makeFragmentData(concept, CONCEPT_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <EventCard event={maskedEvent} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <ConceptGridItem concept={maskedConcept} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

@@ -5,17 +5,17 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { ConceptCard, CONCEPT_FRAGMENT } from './ConceptCard';
+import { PlaceGridItem, PLACE_FRAGMENT } from './PlaceGridItem';
 
-type StoryProps = ComponentProps<typeof ConceptCard> & {
+type StoryProps = ComponentProps<typeof PlaceGridItem> & {
   name: string;
   description: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: ConceptCard,
+  component: PlaceGridItem,
 
   parameters: {
     layout: 'centered',
@@ -38,25 +38,25 @@ type Story = StoryObj<StoryProps>;
 
 export const Default: Story = {
   args: {
-    name: 'Software engineering',
-    description: 'The study and application of engineering principles to software development.',
+    name: 'Central Park',
+    description: 'A large public park in New York City.',
     onClick: fn(),
   },
 
   render: (args) => {
-    const concept = {
-      __typename: 'ConceptType' as const,
+    const place = {
+      __typename: 'PlaceType' as const,
       id: 'mock-id-1',
       name: args.name,
       description: args.description,
     };
 
-    const maskedConcept = makeFragmentData(concept, CONCEPT_FRAGMENT);
+    const maskedPlace = makeFragmentData(place, PLACE_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <ConceptCard concept={maskedConcept} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <PlaceGridItem place={maskedPlace} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

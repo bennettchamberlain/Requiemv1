@@ -5,16 +5,16 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { FileCard, FILE_FRAGMENT } from './FileCard';
+import { FileGridItem, FILE_FRAGMENT } from './FileGridItem';
 
-type StoryProps = ComponentProps<typeof FileCard> & {
+type StoryProps = ComponentProps<typeof FileGridItem> & {
   name: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: FileCard,
+  component: FileGridItem,
 
   parameters: {
     layout: 'centered',
@@ -47,9 +47,9 @@ export const Default: Story = {
     const maskedFile = makeFragmentData(file, FILE_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <FileCard file={maskedFile} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <FileGridItem file={maskedFile} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

@@ -15,17 +15,17 @@ import {
   MOCK_THREADS,
 } from '@/graphql/mocks';
 
-import { AnswerCard, ANSWER_FRAGMENT } from './cards/AnswerCard';
-import { CommunicationCard, COMMUNICATION_FRAGMENT } from './cards/CommunicationCard';
-import { ConceptCard, CONCEPT_FRAGMENT } from './cards/ConceptCard';
-import { ContentCard, CONTENT_FRAGMENT } from './cards/ContentCard';
-import { EventCard, EVENT_FRAGMENT } from './cards/EventCard';
-import { FileCard, FILE_FRAGMENT } from './cards/FileCard';
-import { ItemCard, ITEM_FRAGMENT } from './cards/ItemCard';
-import { PersonCard, PERSON_FRAGMENT } from './cards/PersonCard';
-import { PlaceCard, PLACE_FRAGMENT } from './cards/PlaceCard';
-import { ThreadCard, THREAD_FRAGMENT } from './cards/ThreadCard';
-import { SearchGrid } from './SearchGrid';
+import { AnswerGridItem, ANSWER_FRAGMENT } from './grid/AnswerGridItem';
+import { CommunicationGridItem, COMMUNICATION_FRAGMENT } from './grid/CommunicationGridItem';
+import { ConceptGridItem, CONCEPT_FRAGMENT } from './grid/ConceptGridItem';
+import { ContentGridItem, CONTENT_FRAGMENT } from './grid/ContentGridItem';
+import { EventGridItem, EVENT_FRAGMENT } from './grid/EventGridItem';
+import { FileGridItem, FILE_FRAGMENT } from './grid/FileGridItem';
+import { ItemGridItem, ITEM_FRAGMENT } from './grid/ItemGridItem';
+import { PersonGridItem, PERSON_FRAGMENT } from './grid/PersonGridItem';
+import { PlaceGridItem, PLACE_FRAGMENT } from './grid/PlaceGridItem';
+import { ThreadGridItem, THREAD_FRAGMENT } from './grid/ThreadGridItem';
+import { EntityGrid } from './EntityGrid';
 
 const items: (
   | (typeof MOCK_PEOPLE)[number]
@@ -106,12 +106,12 @@ const meta: Meta = {
 
   render: (args) => {
     return (
-      <SearchGrid>
+      <EntityGrid>
         {items.map((item) => {
           switch (item.__typename) {
             case 'PersonType':
               return (
-                <PersonCard
+                <PersonGridItem
                   key={item.id}
                   person={makeFragmentData(item, PERSON_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -120,7 +120,7 @@ const meta: Meta = {
 
             case 'PlaceType':
               return (
-                <PlaceCard
+                <PlaceGridItem
                   key={item.id}
                   place={makeFragmentData(item, PLACE_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -129,7 +129,7 @@ const meta: Meta = {
 
             case 'EventType':
               return (
-                <EventCard
+                <EventGridItem
                   key={item.id}
                   event={makeFragmentData(item, EVENT_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -138,7 +138,7 @@ const meta: Meta = {
 
             case 'ThreadType':
               return (
-                <ThreadCard
+                <ThreadGridItem
                   key={item.id}
                   thread={makeFragmentData(item, THREAD_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -147,7 +147,7 @@ const meta: Meta = {
 
             case 'FileType':
               return (
-                <FileCard
+                <FileGridItem
                   key={item.id}
                   file={makeFragmentData(item, FILE_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -156,7 +156,7 @@ const meta: Meta = {
 
             case 'CommunicationType':
               return (
-                <CommunicationCard
+                <CommunicationGridItem
                   key={item.id}
                   communication={makeFragmentData(item, COMMUNICATION_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -165,7 +165,7 @@ const meta: Meta = {
 
             case 'ItemType':
               return (
-                <ItemCard
+                <ItemGridItem
                   key={item.id}
                   item={makeFragmentData(item, ITEM_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -174,7 +174,7 @@ const meta: Meta = {
 
             case 'ContentType':
               return (
-                <ContentCard
+                <ContentGridItem
                   key={item.id}
                   content={makeFragmentData(item, CONTENT_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -183,7 +183,7 @@ const meta: Meta = {
 
             case 'AnswerType':
               return (
-                <AnswerCard
+                <AnswerGridItem
                   key={item.id}
                   answer={makeFragmentData(item, ANSWER_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -192,7 +192,7 @@ const meta: Meta = {
 
             case 'ConceptType':
               return (
-                <ConceptCard
+                <ConceptGridItem
                   key={item.id}
                   concept={makeFragmentData(item, CONCEPT_FRAGMENT)}
                   onClick={() => args.onClick(item.id)}
@@ -203,7 +203,7 @@ const meta: Meta = {
               return null;
           }
         })}
-      </SearchGrid>
+      </EntityGrid>
     );
   },
 };

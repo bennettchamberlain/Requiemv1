@@ -3,10 +3,10 @@ import { type MouseEvent } from 'react';
 import { CommunicationIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
-import { SearchCard } from '../SearchCard';
+import { EntityGridItem } from './EntityGridItem';
 
 export const COMMUNICATION_FRAGMENT = gql(`
-  fragment GalleryCommunicationCardData on CommunicationType {
+  fragment CommunicationGridItemData on CommunicationType {
     id
     subject
     preview
@@ -18,24 +18,24 @@ interface Props {
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function CommunicationCard({ communication, onClick }: Props) {
+export function CommunicationGridItem({ communication, onClick }: Props) {
   const data = useFragment(COMMUNICATION_FRAGMENT, communication);
 
   return (
-    <SearchCard onClick={onClick}>
-      <SearchCard.Header>
-        <CommunicationIcon />
+    <EntityGridItem onClick={onClick}>
+      <EntityGridItem.Header>
+        <CommunicationIcon className="shrink-0" />
 
         <div className="text-md font-semibold truncate">{data.subject}</div>
-      </SearchCard.Header>
+      </EntityGridItem.Header>
 
-      <SearchCard.Content>
+      <EntityGridItem.Content>
         <div className="line-clamp-3 leading-tight">{data.preview}</div>
-      </SearchCard.Content>
+      </EntityGridItem.Content>
 
-      <SearchCard.Footer className="self-end">
+      <EntityGridItem.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Communication</div>
-      </SearchCard.Footer>
-    </SearchCard>
+      </EntityGridItem.Footer>
+    </EntityGridItem>
   );
 }

@@ -5,17 +5,17 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { CommunicationCard, COMMUNICATION_FRAGMENT } from './CommunicationCard';
+import { CommunicationGridItem, COMMUNICATION_FRAGMENT } from './CommunicationGridItem';
 
-type StoryProps = ComponentProps<typeof CommunicationCard> & {
+type StoryProps = ComponentProps<typeof CommunicationGridItem> & {
   subject: string;
   preview: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: CommunicationCard,
+  component: CommunicationGridItem,
 
   parameters: {
     layout: 'centered',
@@ -54,9 +54,9 @@ export const Default: Story = {
     const maskedCommunication = makeFragmentData(communication, COMMUNICATION_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <CommunicationCard communication={maskedCommunication} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <CommunicationGridItem communication={maskedCommunication} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

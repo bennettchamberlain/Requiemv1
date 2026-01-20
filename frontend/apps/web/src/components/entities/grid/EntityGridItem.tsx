@@ -2,13 +2,13 @@ import { useCallback, type ReactNode, type MouseEvent } from 'react';
 
 import { cn } from '@ci/shadcn';
 
-interface SearchCardProps {
+interface EntityGridItemProps {
   className?: string;
   children: ReactNode;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function SearchCard({ className, children, onClick }: SearchCardProps) {
+export function EntityGridItem({ className, children, onClick }: EntityGridItemProps) {
   const handleClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       onClick?.(e);
@@ -55,6 +55,6 @@ function Footer({ children, className }: FooterProps) {
   return <div className={cn('flex items-center gap-2', className)}>{children}</div>;
 }
 
-SearchCard.Header = Header;
-SearchCard.Content = Content;
-SearchCard.Footer = Footer;
+EntityGridItem.Header = Header;
+EntityGridItem.Content = Content;
+EntityGridItem.Footer = Footer;

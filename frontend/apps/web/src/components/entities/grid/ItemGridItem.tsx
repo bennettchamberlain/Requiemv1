@@ -3,10 +3,10 @@ import { type MouseEvent } from 'react';
 import { ItemIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
-import { SearchCard } from '../SearchCard';
+import { EntityGridItem } from './EntityGridItem';
 
 export const ITEM_FRAGMENT = gql(`
-  fragment GalleryItemCardData on ItemType {
+  fragment ItemGridItemData on ItemType {
     id
     name
     description
@@ -22,18 +22,18 @@ interface Props {
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function ItemCard({ item, onClick }: Props) {
+export function ItemGridItem({ item, onClick }: Props) {
   const data = useFragment(ITEM_FRAGMENT, item);
 
   return (
-    <SearchCard onClick={onClick}>
-      <SearchCard.Header>
-        <ItemIcon />
+    <EntityGridItem onClick={onClick}>
+      <EntityGridItem.Header>
+        <ItemIcon className="shrink-0" />
 
         <div className="text-md font-semibold truncate">{data.name}</div>
-      </SearchCard.Header>
+      </EntityGridItem.Header>
 
-      <SearchCard.Content>
+      <EntityGridItem.Content>
         <div className="line-clamp-3 leading-tight min-h-0 shrink-0">{data.description}</div>
 
         {data.file && (
@@ -45,11 +45,11 @@ export function ItemCard({ item, onClick }: Props) {
             />
           </div>
         )}
-      </SearchCard.Content>
+      </EntityGridItem.Content>
 
-      <SearchCard.Footer className="self-end">
+      <EntityGridItem.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Item</div>
-      </SearchCard.Footer>
-    </SearchCard>
+      </EntityGridItem.Footer>
+    </EntityGridItem>
   );
 }

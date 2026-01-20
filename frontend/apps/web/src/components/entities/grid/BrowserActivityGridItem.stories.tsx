@@ -5,17 +5,17 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { BrowserActivityCard, BROWSER_ACTIVITY_FRAGMENT } from './BrowserActivityCard';
+import { BrowserActivityGridItem, BROWSER_ACTIVITY_FRAGMENT } from './BrowserActivityGridItem';
 
-type StoryProps = ComponentProps<typeof BrowserActivityCard> & {
+type StoryProps = ComponentProps<typeof BrowserActivityGridItem> & {
   title: string;
   url: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: BrowserActivityCard,
+  component: BrowserActivityGridItem,
 
   parameters: {
     layout: 'centered',
@@ -54,9 +54,9 @@ export const Default: Story = {
     const maskedBrowserActivity = makeFragmentData(browserActivity, BROWSER_ACTIVITY_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <BrowserActivityCard browserActivity={maskedBrowserActivity} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <BrowserActivityGridItem browserActivity={maskedBrowserActivity} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

@@ -3,10 +3,10 @@ import { type MouseEvent } from 'react';
 import { PlaceIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
-import { SearchCard } from '../SearchCard';
+import { EntityGridItem } from './EntityGridItem';
 
 export const PLACE_FRAGMENT = gql(`
-  fragment GalleryPlaceCardData on PlaceType {
+  fragment PlaceGridItemData on PlaceType {
     id
     name
     description
@@ -18,24 +18,24 @@ interface Props {
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function PlaceCard({ place, onClick }: Props) {
+export function PlaceGridItem({ place, onClick }: Props) {
   const data = useFragment(PLACE_FRAGMENT, place);
 
   return (
-    <SearchCard onClick={onClick}>
-      <SearchCard.Header>
-        <PlaceIcon />
+    <EntityGridItem onClick={onClick}>
+      <EntityGridItem.Header>
+        <PlaceIcon className="shrink-0" />
 
         <div className="text-md font-semibold truncate">{data.name}</div>
-      </SearchCard.Header>
+      </EntityGridItem.Header>
 
-      <SearchCard.Content>
+      <EntityGridItem.Content>
         <div className="line-clamp-3 leading-tight">{data.description}</div>
-      </SearchCard.Content>
+      </EntityGridItem.Content>
 
-      <SearchCard.Footer className="self-end">
+      <EntityGridItem.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Place</div>
-      </SearchCard.Footer>
-    </SearchCard>
+      </EntityGridItem.Footer>
+    </EntityGridItem>
   );
 }

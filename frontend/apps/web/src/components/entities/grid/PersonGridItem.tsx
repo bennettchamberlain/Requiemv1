@@ -3,10 +3,10 @@ import { type MouseEvent } from 'react';
 import { PersonIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
-import { SearchCard } from '../SearchCard';
+import { EntityGridItem } from './EntityGridItem';
 
 export const PERSON_FRAGMENT = gql(`
-  fragment GalleryPersonCardData on PersonType {
+  fragment PersonGridItemData on PersonType {
     id
     name
     description
@@ -18,24 +18,24 @@ interface Props {
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function PersonCard({ person, onClick }: Props) {
+export function PersonGridItem({ person, onClick }: Props) {
   const data = useFragment(PERSON_FRAGMENT, person);
 
   return (
-    <SearchCard onClick={onClick}>
-      <SearchCard.Header>
-        <PersonIcon />
+    <EntityGridItem onClick={onClick}>
+      <EntityGridItem.Header>
+        <PersonIcon className="shrink-0" />
 
         <div className="text-md font-semibold truncate">{data.name}</div>
-      </SearchCard.Header>
+      </EntityGridItem.Header>
 
-      <SearchCard.Content>
+      <EntityGridItem.Content>
         <div className="line-clamp-3 leading-tight">{data.description}</div>
-      </SearchCard.Content>
+      </EntityGridItem.Content>
 
-      <SearchCard.Footer className="self-end">
+      <EntityGridItem.Footer className="self-end">
         <div className="text-sm text-muted-foreground">Person</div>
-      </SearchCard.Footer>
-    </SearchCard>
+      </EntityGridItem.Footer>
+    </EntityGridItem>
   );
 }

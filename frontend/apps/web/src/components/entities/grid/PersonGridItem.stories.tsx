@@ -5,17 +5,17 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { PlaceCard, PLACE_FRAGMENT } from './PlaceCard';
+import { PersonGridItem, PERSON_FRAGMENT } from './PersonGridItem';
 
-type StoryProps = ComponentProps<typeof PlaceCard> & {
+type StoryProps = ComponentProps<typeof PersonGridItem> & {
   name: string;
   description: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: PlaceCard,
+  component: PersonGridItem,
 
   parameters: {
     layout: 'centered',
@@ -38,25 +38,25 @@ type Story = StoryObj<StoryProps>;
 
 export const Default: Story = {
   args: {
-    name: 'Central Park',
-    description: 'A large public park in New York City.',
+    name: 'John Doe',
+    description: 'A software engineer based in San Francisco.',
     onClick: fn(),
   },
 
   render: (args) => {
-    const place = {
-      __typename: 'PlaceType' as const,
+    const person = {
+      __typename: 'PersonType' as const,
       id: 'mock-id-1',
       name: args.name,
       description: args.description,
     };
 
-    const maskedPlace = makeFragmentData(place, PLACE_FRAGMENT);
+    const maskedPerson = makeFragmentData(person, PERSON_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <PlaceCard place={maskedPlace} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <PersonGridItem person={maskedPerson} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

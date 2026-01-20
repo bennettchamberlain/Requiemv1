@@ -5,24 +5,24 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { PersonCard, PERSON_FRAGMENT } from './PersonCard';
+import { EventGridItem, EVENT_FRAGMENT } from './EventGridItem';
 
-type StoryProps = ComponentProps<typeof PersonCard> & {
-  name: string;
+type StoryProps = ComponentProps<typeof EventGridItem> & {
+  title: string;
   description: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: PersonCard,
+  component: EventGridItem,
 
   parameters: {
     layout: 'centered',
   },
 
   argTypes: {
-    name: {
+    title: {
       control: 'text',
     },
 
@@ -38,25 +38,25 @@ type Story = StoryObj<StoryProps>;
 
 export const Default: Story = {
   args: {
-    name: 'John Doe',
-    description: 'A software engineer based in San Francisco.',
+    title: 'New York City Marathon',
+    description: 'An annual marathon held in New York City. Get psyched for the exercise!',
     onClick: fn(),
   },
 
   render: (args) => {
-    const person = {
-      __typename: 'PersonType' as const,
+    const event = {
+      __typename: 'EventType' as const,
       id: 'mock-id-1',
-      name: args.name,
+      title: args.title,
       description: args.description,
     };
 
-    const maskedPerson = makeFragmentData(person, PERSON_FRAGMENT);
+    const maskedEvent = makeFragmentData(event, EVENT_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <PersonCard person={maskedPerson} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <EventGridItem event={maskedEvent} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };

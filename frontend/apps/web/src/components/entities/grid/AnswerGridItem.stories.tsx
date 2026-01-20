@@ -5,17 +5,17 @@ import { fn } from 'storybook/test';
 
 import { makeFragmentData } from '@/graphql';
 
-import { SearchGrid } from '../SearchGrid';
+import { EntityGrid } from '../EntityGrid';
 
-import { AnswerCard, ANSWER_FRAGMENT } from './AnswerCard';
+import { AnswerGridItem, ANSWER_FRAGMENT } from './AnswerGridItem';
 
-type StoryProps = ComponentProps<typeof AnswerCard> & {
+type StoryProps = ComponentProps<typeof AnswerGridItem> & {
   question: string;
   answer: string;
 };
 
 const meta: Meta<StoryProps> = {
-  component: AnswerCard,
+  component: AnswerGridItem,
 
   parameters: {
     layout: 'centered',
@@ -58,9 +58,9 @@ export const Default: Story = {
     const maskedAnswer = makeFragmentData(answer, ANSWER_FRAGMENT);
 
     return (
-      <SearchGrid>
-        <AnswerCard answer={maskedAnswer} onClick={args.onClick} />
-      </SearchGrid>
+      <EntityGrid>
+        <AnswerGridItem answer={maskedAnswer} onClick={args.onClick} />
+      </EntityGrid>
     );
   },
 };
