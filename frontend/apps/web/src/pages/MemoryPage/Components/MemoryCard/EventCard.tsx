@@ -1,7 +1,7 @@
 import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
+import { gql } from '@/graphql';
 
-import type { MemoryItem } from '../../types';
 import { useMemoryService } from '../../useMemoryService';
 import { formatDateTime, formatDuration } from '../utils';
 import type {FragmentType} from "@/graphql";

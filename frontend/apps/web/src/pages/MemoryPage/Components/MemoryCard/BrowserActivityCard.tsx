@@ -1,5 +1,6 @@
 import { Card, cn } from '@ci/shadcn';
 import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
+import { gql } from '@/graphql';
 
 export interface Props {
   memory: FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT>;

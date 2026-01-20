@@ -2,8 +2,7 @@ import { Card, Tooltip, cn } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 import DOMPurify from 'dompurify';
 import parse from 'html-react-parser';
-
-import { Tag } from '@/components/Tag';
+import { gql } from '@/graphql';
 
 import type { MemoryItem, ParticipantData } from '../../types';
 import { useMemoryService } from '../../useMemoryService';
@@ -26,7 +25,7 @@ export const COMMUNICATION_FRAGMENT = gql(`
     id
     subject
     preview
-    content
+    communicationContent: content
     time
     type
     direction
