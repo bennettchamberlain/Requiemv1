@@ -23,6 +23,13 @@ const config: CodegenConfig = {
         gqlTagName: 'gql',
       },
     },
+
+    './src/graphql/possibleTypes.ts': {
+      plugins: ['fragment-matcher'],
+      config: {
+        apolloClientVersion: 3,
+      },
+    },
   },
 };
 
