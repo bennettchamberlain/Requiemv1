@@ -41,6 +41,7 @@ import { SpeechModule } from '@ci/domains/speech';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
+import { FeatureModule } from '@ci/common/feature';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { UserModule } from '@ci/domains/user';
       entities: [path.join(__dirname, 'domains/**/*Entity.{ts,js}')],
       logging: [...(config.environment['database.query.logging'] ? (['error', 'query'] as const) : [])],
     }),
+    FeatureModule,
     LoggingModule,
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
