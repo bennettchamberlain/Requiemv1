@@ -32,7 +32,7 @@ const importOrderRules = {
 
 export default [
   {
-    ignores: ['.yarn', '**/dist/**', '**/dev-dist/**', '**/node_modules/**', '.pnp.*', 'src/graphql/**'],
+    ignores: ['.yarn', '**/dist/**', '**/dev-dist/**', '**/node_modules/**', '.pnp.*'],
   },
 
   ...base,
