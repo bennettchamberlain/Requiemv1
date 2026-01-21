@@ -15,6 +15,7 @@ import { ToolCall, Message as OllamaMessage } from 'ollama';
 import { z } from 'zod';
 
 import { Context, type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
@@ -56,6 +57,7 @@ export class OllamaController {
     private readonly fileService: FileService,
     private readonly userContextService: UserContextService,
     private readonly logger: LoggerService,
+    private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(OllamaController.name);
   }
@@ -145,7 +147,8 @@ export class OllamaController {
       }
     });
 
-    const systemPromptEnabled = config.features['enable.system.prompt'];
+    const systemPromptEnabled = await this.featureService.isFeatureEnabled('enable.system.prompt');
+
     let leadingAssistantMessages: OllamaMessage[] = [];
     let conversationMessages = inputMessages;
 

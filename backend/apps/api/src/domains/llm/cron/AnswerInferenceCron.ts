@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
-import config from '@ci/configuration';
 import { EventService, Events } from '@ci/domains/events';
 import { QuestionService } from '@ci/domains/intelligence';
 
@@ -13,13 +13,16 @@ export class AnswerInferenceCron {
     private readonly eventService: EventService,
     private readonly questionService: QuestionService,
     private readonly logger: LoggerService,
+    private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(AnswerInferenceCron.name);
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async cronInferAnswers() {
-    if (!config.features['scheduled.answer.inferencing']) {
+    const featureEnabled = await this.featureService.isFeatureEnabled('scheduled.answer.inferencing');
+
+    if (!featureEnabled) {
       return;
     }
 
