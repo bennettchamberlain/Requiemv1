@@ -65,7 +65,7 @@ export default [
 
   // React app source files - browser environment
   {
-    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    files: ['src/**/*.ts', 'src/**/*.tsx', 'stories/**/*.ts', 'stories/**/*.tsx'],
     languageOptions: {
       globals: globals.browser,
     },

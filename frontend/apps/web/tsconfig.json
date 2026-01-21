@@ -20,6 +20,6 @@
     "resolveJsonModule": true,
     "types": ["vite/client", "google.maps", "node"]
   },
-  "include": ["src", "scripts", "*.config.ts", "codegen.ts", ".storybook/**/*"],
+  "include": ["src", "scripts", "stories", "*.config.ts", "codegen.ts", ".storybook/**/*"],
   "exclude": ["node_modules", "dev-dist", "dist"]
 }
