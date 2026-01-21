@@ -19,6 +19,7 @@ import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
+import { FeaturesProvider, useFeatures } from '@/common/feature';
 
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
@@ -56,11 +57,13 @@ function Providers({ children }: { children: ReactNode }) {
       <ThemeProvider defaultTheme="system" storageKey="ci-ui-theme">
         <DeviceLayoutProvider args={[]}>
           <AuthProvider args={[]}>
-            <ModelProvider args={[]}>
-              <CaptureModalProvider args={[]}>
-                <ApolloProvider>{children}</ApolloProvider>
-              </CaptureModalProvider>
-            </ModelProvider>
+            <FeaturesProvider args={[]}>
+              <ModelProvider args={[]}>
+                <CaptureModalProvider args={[]}>
+                  <ApolloProvider>{children}</ApolloProvider>
+                </CaptureModalProvider>
+              </ModelProvider>
+            </FeaturesProvider>
           </AuthProvider>
         </DeviceLayoutProvider>
       </ThemeProvider>
