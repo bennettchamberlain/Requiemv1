@@ -16,6 +16,7 @@ import { GraphDeltaService } from './services/GraphDeltaService';
 import { GraphService } from './services/GraphService';
 import { NodeService } from './services/NodeService';
 import { RelationshipService } from './services/RelationshipService';
+import { GraphDeltaEntitySubscriber } from './subscribers/GraphDeltaEntitySubscriber';
 
 /**
  * @internal
@@ -27,7 +28,7 @@ import { RelationshipService } from './services/RelationshipService';
     MemoryModule,
     UserModule,
   ],
-  providers: [GraphService, NodeService, RelationshipService, GraphDeltaService],
+  providers: [GraphService, NodeService, RelationshipService, GraphDeltaService, GraphDeltaEntitySubscriber],
   exports: [GraphService, NodeService, RelationshipService, GraphDeltaService],
 })
 export class GraphModule {}
