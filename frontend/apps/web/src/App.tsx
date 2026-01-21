@@ -72,6 +72,8 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
+  const { isFeatureEnabled } = useFeatures();
+
   return (
     <Routes>
       <Route
@@ -250,14 +252,16 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/plugins"
-          element={
-            <ProtectedRoute>
-              <ToolsPage />
-            </ProtectedRoute>
-          }
-        />
+        {isFeatureEnabled('plugins.page') && (
+          <Route
+            path="/plugins"
+            element={
+              <ProtectedRoute>
+                <ToolsPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
 
         <Route
           path="/oauth/callback"
