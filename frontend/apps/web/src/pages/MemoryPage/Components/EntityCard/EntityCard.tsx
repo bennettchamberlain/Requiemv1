@@ -1,0 +1,24 @@
+import type { FragmentType } from '@/graphql';
+
+import { BrowserActivityCard } from './BrowserActivityCard';
+import { CommunicationCard } from './CommunicationCard';
+import { EventCard } from './EventCard';
+
+export interface Props {
+  entity: FragmentType<
+    typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT
+  >;
+}
+
+export function EntityCard({ entity }: Props) {
+  switch (entity.__typename) {
+    case 'BrowserActivityType':
+      return <BrowserActivityCard entity={entity} />;
+    case 'EventType':
+      return <EventCard entity={entity} />;
+    case 'CommunicationType':
+      return <CommunicationCard entity={entity} />;
+    default:
+      return null;
+  }
+}

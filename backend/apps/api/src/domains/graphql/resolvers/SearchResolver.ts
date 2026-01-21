@@ -215,15 +215,18 @@ export class SearchResolver {
     }
 
     const [eventResults, browserActivityResults, communicationResults] = await Promise.all([
-      ((includeTypes && includeTypes.indexOf('event') > -1) || (excludeTypes && excludeTypes?.indexOf('event') < 0)) ?
-        this.eventService.getEntitiesForEvents(context, eventOptions) :
-        [],
-      ((includeTypes && includeTypes?.indexOf('browser-activity') > -1) || (excludeTypes && excludeTypes?.indexOf('browser-activity') < 0)) ?
-        this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions) :
-        [],
-      ((includeTypes && includeTypes?.indexOf('communication') > -1) || (excludeTypes && excludeTypes?.indexOf('communication') < 0)) ?
-        this.communicationService.getEntitiesForCommunications(context, communicationOptions) :
-        [],
+      (includeTypes && includeTypes.indexOf('event') > -1) ||
+      (excludeTypes && excludeTypes?.indexOf('event') < 0)
+        ? this.eventService.getEntitiesForEvents(context, eventOptions)
+        : [],
+      (includeTypes && includeTypes?.indexOf('browser-activity') > -1) ||
+      (excludeTypes && excludeTypes?.indexOf('browser-activity') < 0)
+        ? this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions)
+        : [],
+      (includeTypes && includeTypes?.indexOf('communication') > -1) ||
+      (excludeTypes && excludeTypes?.indexOf('communication') < 0)
+        ? this.communicationService.getEntitiesForCommunications(context, communicationOptions)
+        : [],
     ]);
 
     const entities = await this.resolveEntities(context, [

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 
 import { Badge, Button, Input, Separator, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
+import { useSearchParams } from 'react-router-dom';
 
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
 import { ForceGraph, ForceGraph3D } from '@/components/ForceGraph';

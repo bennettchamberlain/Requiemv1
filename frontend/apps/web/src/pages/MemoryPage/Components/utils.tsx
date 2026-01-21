@@ -1,5 +1,7 @@
 import { Calendar, User, MapPin, Package, FileText, Contact, Lightbulb, Target } from '@ci/shadcn/icons';
 
+import type { FragmentType } from '@/graphql';
+
 import type { MemoryItem } from '../types';
 
 export function formatDuration(minutes: number): string {
@@ -66,13 +68,13 @@ export function formatDateForDisplay(dateStr: string): string {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const memoryDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const entityDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-  if (memoryDate.getTime() === today.getTime()) {
+  if (entityDate.getTime() === today.getTime()) {
     return 'Today';
   }
 
-  if (memoryDate.getTime() === yesterday.getTime()) {
+  if (entityDate.getTime() === yesterday.getTime()) {
     return 'Yesterday';
   }
 
@@ -84,8 +86,14 @@ export function formatDateForDisplay(dateStr: string): string {
   });
 }
 
-export function sortMemoriesByTime(memories: MemoryItem[]): MemoryItem[] {
-  return [...memories].sort((a, b) => {
+export function sortEntitiesByTime(
+  entities: FragmentType<
+    typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT
+  >[][],
+): FragmentType<
+  typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT
+>[][] {
+  return [...entities].sort((a, b) => {
     const dateA = new Date(a.timestamp);
     const dateB = new Date(b.timestamp);
     if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
@@ -96,33 +104,35 @@ export function sortMemoriesByTime(memories: MemoryItem[]): MemoryItem[] {
   });
 }
 
-export function groupMemoriesByDate(memories: MemoryItem[]): Array<{
+export function groupEntitiesByDate(entities: MemoryItem[]): Array<{
   date: string;
-  memories: MemoryItem[];
+  entities: MemoryItem[];
 }> {
-  const groups: Record<string, MemoryItem[]> = {};
+  const groups: Record<
+    string,
+    FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT>[]
+  > = {};
 
-  memories.forEach((memory) => {
-    console.log('memory', memory)
-    const memoryDate = new Date(memory.time || memory.startTime);
-    if (!isNaN(memoryDate.getTime())) {
+  entities.forEach((entity) => {
+    const entityDate = new Date(entity.time || entity.startTime);
+    if (!isNaN(entityDate.getTime())) {
       // Use local date instead of UTC to match user's timezone
-      const year = memoryDate.getFullYear();
-      const month = String(memoryDate.getMonth() + 1).padStart(2, '0');
-      const day = String(memoryDate.getDate()).padStart(2, '0');
+      const year = entityDate.getFullYear();
+      const month = String(entityDate.getMonth() + 1).padStart(2, '0');
+      const day = String(entityDate.getDate()).padStart(2, '0');
       const dateKey = `${year}-${month}-${day}`;
 
       if (!groups[dateKey]) {
         groups[dateKey] = [];
       }
 
-      groups[dateKey].push(memory);
+      groups[dateKey].push(entity);
     }
   });
 
   return Object.entries(groups)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, memories]) => ({ date, memories }));
+    .map(([date, entities]) => ({ date, entities }));
 }
 
 export function getEntityTypeIcon(type: string) {
@@ -148,14 +158,14 @@ export function getEntityTypeIcon(type: string) {
   }
 }
 
-export function hasValidLocation(memory: MemoryItem): boolean {
+export function hasValidLocation(entity: MemoryItem): boolean {
   return !!(
-    memory.location &&
-    typeof memory.location.properties.latitude === 'number' &&
-    typeof memory.location.properties.longitude === 'number' &&
-    !isNaN(memory.location.properties.latitude) &&
-    !isNaN(memory.location.properties.longitude) &&
-    !(memory.location.properties.latitude === 0 && memory.location.longitude === 0)
+    entity.location &&
+    typeof entity.location.properties.latitude === 'number' &&
+    typeof entity.location.properties.longitude === 'number' &&
+    !isNaN(entity.location.properties.latitude) &&
+    !isNaN(entity.location.properties.longitude) &&
+    !(entity.location.properties.latitude === 0 && entity.location.longitude === 0)
   );
 }
 

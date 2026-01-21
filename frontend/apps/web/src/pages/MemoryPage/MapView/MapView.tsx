@@ -1,18 +1,13 @@
 import { useMemo } from 'react';
 
-import { useSearchParams } from 'react-router-dom';
-
 import { Map } from '@/components/Map';
-import { useMemoryServiceNext } from '@/pages/MemoryPage/useMemoryServiceNext.tsx';
+import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
 
 import { TimelineView } from '../TimelineView';
 
 export function DesktopMapView() {
-  const [searchParams] = useSearchParams();
-  const { data, setActiveMemory } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });
+  const [{ data }, { setActiveEntity }] = useEntityService();
+  console.log('data in MapView', data);
 
   const memoriesWithLocation = useMemo(() => {
     const filteredMemories = data.filter(
@@ -44,7 +39,7 @@ export function DesktopMapView() {
         <Map.Marker
           key={memory.id}
           position={[memory.location!.properties!.latitude, memory.location!.properties!.longitude]}
-          onClick={() => setActiveMemory(memory)}
+          onClick={() => setActiveEntity(memory)}
         />
       ))}
     </Map>

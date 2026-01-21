@@ -1,11 +1,12 @@
 import { Card, Tooltip } from '@ci/shadcn';
 import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
+
+import type { FragmentType } from '@/graphql';
 import { gql } from '@/graphql';
-import { useSearchParams } from 'react-router-dom';
-import {useMemoryServiceNext} from "@/pages/MemoryPage/useMemoryServiceNext.tsx";
+import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
 
 export interface Props {
-  memory: FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT>;
+  entity: FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT>;
 }
 
 export const BROWSER_ACTIVITY_FRAGMENT = gql(`
@@ -19,15 +20,11 @@ export const BROWSER_ACTIVITY_FRAGMENT = gql(`
   }
 `);
 
-export function BrowserActivityCard({ memory }: Props) {
-  const [searchParams] = useSearchParams();
-  const { setActiveMemory } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });
-  const actionType = memory.actionType as string | undefined;
-  const durationSeconds = memory.duration as number | undefined;
-  const url = memory.url as string | undefined;
+export function BrowserActivityCard({ entity }: Props) {
+  const [, { setActiveEntity }] = useEntityService();
+  const actionType = entity.actionType as string | undefined;
+  const durationSeconds = entity.duration as number | undefined;
+  const url = entity.url as string | undefined;
 
   const formatDuration = (seconds: number) => {
     if (seconds < 60) {
@@ -53,7 +50,7 @@ export function BrowserActivityCard({ memory }: Props) {
   return (
     <Card
       className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={() => setActiveMemory(memory)}
+      onClick={() => setActiveEntity(entity)}
     >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
@@ -63,20 +60,20 @@ export function BrowserActivityCard({ memory }: Props) {
           <Tooltip>
             <Tooltip.Trigger asChild>
               <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {memory.title}
+                {entity.title}
               </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              <p>{memory.title}</p>
+              <p>{entity.title}</p>
             </Tooltip.Content>
           </Tooltip>
-          <p className="text-sm text-muted-foreground">{memory.type}</p>
+          <p className="text-sm text-muted-foreground">{entity.type}</p>
         </div>
       </div>
 
-      {memory.title && (
+      {entity.title && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">{memory.title}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{entity.title}</p>
         </div>
       )}
 
@@ -97,9 +94,9 @@ export function BrowserActivityCard({ memory }: Props) {
         )}
       </div>
 
-      {/*{memory.tags.length > 0 && (*/}
+      {/*{entity.tags.length > 0 && (*/}
       {/*  <div className="flex flex-wrap gap-2 pt-2">*/}
-      {/*    {memory.tags.map((tag, index) => (*/}
+      {/*    {entity.tags.map((tag, index) => (*/}
       {/*      <Tag key={index} text={tag} />*/}
       {/*    ))}*/}
       {/*  </div>*/}

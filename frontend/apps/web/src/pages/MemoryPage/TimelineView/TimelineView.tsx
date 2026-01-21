@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 
-import { Empty, MemoryCard } from '../Components';
-import { groupMemoriesByDate, formatDateForDisplay } from '../Components/utils';
-import {useMemoryServiceNext} from "@/pages/MemoryPage/useMemoryServiceNext.tsx";
-import { useSearchParams } from 'react-router-dom';
+import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
+
+import { Empty, EntityCard } from '../Components';
+import { groupEntitiesByDate, formatDateForDisplay } from '../Components/utils';
 
 export function TimelineView() {
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -11,18 +11,14 @@ export function TimelineView() {
   const hasInitialScrolledRef = useRef(false);
   const previousScrollHeightRef = useRef<number>(0);
 
-  const [searchParams] = useSearchParams();
-  const { data, loading } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });
+  const [{ data, loading }] = useEntityService();
 
-  const groupedMemoriesRaw = groupMemoriesByDate(data);
+  const groupedEntitiesRaw = groupEntitiesByDate(data);
 
   // Ensure "today" appears first by explicitly sorting dates with today first
   const now = new Date();
   const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const groupedMemories = groupedMemoriesRaw.sort((a, b) => {
+  const groupedEntities = groupedEntitiesRaw.sort((a, b) => {
     // If one is today, it should come first
     if (a.date === todayLocal) {
       return -1;
@@ -154,7 +150,7 @@ export function TimelineView() {
     };
   }, [loading]);
 
-  if (data.length === 0 && !loading) {
+  if (groupedEntities.length === 0 && !loading) {
     return (
       <Empty
         title="No memories yet"
@@ -166,7 +162,7 @@ export function TimelineView() {
 
   return (
     <div ref={timelineRef} className="space-y-6 h-full py-2">
-      {groupedMemories.map(({ date, memories: dayMemories }) => {
+      {groupedEntities.map(({ date, entities: dayEntities }) => {
         // Compare using local date to match user's timezone
         const now = new Date();
         const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -184,18 +180,18 @@ export function TimelineView() {
             <div className="absolute left-[14px] top-0 bottom-0 w-0.5 bg-[#0b5969]" />
 
             <div className="space-y-4 pl-8">
-              {[...dayMemories].reverse().map((memory) => {
-                const memoryDate = new Date(memory.timestamp);
+              {[...dayEntities].reverse().map((entity) => {
+                const entityDate = new Date(entity.timestamp);
                 const now = new Date();
-                const timeDiff = Math.abs(memoryDate.getTime() - now.getTime());
+                const timeDiff = Math.abs(entityDate.getTime() - now.getTime());
                 const isCurrentTime =
-                  isCurrentDay && !isNaN(memoryDate.getTime()) && timeDiff < 24 * 60 * 60 * 1000;
+                  isCurrentDay && !isNaN(entityDate.getTime()) && timeDiff < 24 * 60 * 60 * 1000;
 
                 return (
-                  <div key={memory.id} data-current-time={isCurrentTime} className="relative">
+                  <div key={entity.id} data-current-time={isCurrentTime} className="relative">
                     <div className="absolute top-1/2 -left-4.25 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-[#179298] border-2 border-[#179298]" />
 
-                    <MemoryCard memory={memory} />
+                    <EntityCard entity={entity} />
                   </div>
                 );
               })}

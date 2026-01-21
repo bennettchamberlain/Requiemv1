@@ -2,11 +2,11 @@ import { Card, Tooltip, cn } from '@ci/shadcn';
 import { Clock, User, Mail, Send, Inbox } from '@ci/shadcn/icons';
 import DOMPurify from 'dompurify';
 import parse from 'html-react-parser';
-import { gql } from '@/graphql';
-import { useSearchParams } from 'react-router-dom';
+
+import { gql, type FragmentType } from '@/graphql';
 
 import type { ParticipantData } from '../../types';
-import { useMemoryServiceNext } from '../../useMemoryServiceNext';
+import { useEntityService } from '../../useEntityService';
 
 const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   month: 'short',
@@ -18,7 +18,7 @@ const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
 };
 
 interface Props {
-  memory: FragmentType<typeof COMMUNICATION_FRAGMENT>;
+  entity: FragmentType<typeof COMMUNICATION_FRAGMENT>;
 }
 
 export const COMMUNICATION_FRAGMENT = gql(`
@@ -45,17 +45,11 @@ export const COMMUNICATION_FRAGMENT = gql(`
   }
 `);
 
-export function CommunicationCard({ memory }: Props) {
-  const [searchParams] = useSearchParams();
-  const { setActiveMemory } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });
-  const communicationType = memory.type as string | undefined;
-  const direction = memory.direction as string | undefined;
-  const participantsMetadata = memory.participantsMetadata as
-    | Record<string, ParticipantData[]>
-    | undefined;
+export function CommunicationCard({ entity }: Props) {
+  const [, { setActiveEntity }] = useEntityService();
+  const communicationType = entity.type as string | undefined;
+  const direction = entity.direction as string | undefined;
+  const participantsMetadata = entity.participantsMetadata as Record<string, ParticipantData[]> | undefined;
 
   const getParticipantInfo = () => {
     if (!participantsMetadata) {
@@ -104,7 +98,7 @@ export function CommunicationCard({ memory }: Props) {
   return (
     <Card
       className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={() => setActiveMemory(memory)}
+      onClick={() => setActiveEntity(entity)}
     >
       <div className="flex items-start gap-3">
         {getDirectionIcon()}
@@ -112,11 +106,13 @@ export function CommunicationCard({ memory }: Props) {
           <Tooltip>
             <Tooltip.Trigger asChild>
               <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {memory.subject || `${(memory.type[0].toUpperCase()) + memory.type.slice(1)} Communication`}
+                {entity.subject || `${entity.type[0].toUpperCase() + entity.type.slice(1)} Communication`}
               </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              <p>{memory.subject || `${(memory.type[0].toUpperCase()) + memory.type.slice(1)} Communication`}</p>
+              <p>
+                {entity.subject || `${entity.type[0].toUpperCase() + entity.type.slice(1)} Communication`}
+              </p>
             </Tooltip.Content>
           </Tooltip>
           <div className="flex items-center gap-2 flex-wrap">
@@ -157,23 +153,23 @@ export function CommunicationCard({ memory }: Props) {
       <div className="flex items-center gap-5">
         <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
         <span className="text-sm text-card-foreground">
-          {new Date(memory.time).toLocaleString('en-US', DATE_FORMAT_OPTIONS)}
+          {new Date(entity.time).toLocaleString('en-US', DATE_FORMAT_OPTIONS)}
         </span>
       </div>
 
-      {memory.communicationContent &&
+      {entity.communicationContent &&
         parse(
           DOMPurify.sanitize(
-            memory.communicationContent.length > 1000
-              ? `${memory.communicationContent.substring(0, 1000)}...`
-              : memory.communicationContent,
+            entity.communicationContent.length > 1000
+              ? `${entity.communicationContent.substring(0, 1000)}...`
+              : entity.communicationContent,
             { USE_PROFILES: { html: true } },
           ),
         )}
 
-      {/*{memory.tags.length > 0 && (*/}
+      {/*{entity.tags.length > 0 && (*/}
       {/*  <div className="flex flex-wrap gap-2 pt-2">*/}
-      {/*    {memory.tags.map((tag, index) => (*/}
+      {/*    {entity.tags.map((tag, index) => (*/}
       {/*      <Tag key={index} text={tag} />*/}
       {/*    ))}*/}
       {/*  </div>*/}

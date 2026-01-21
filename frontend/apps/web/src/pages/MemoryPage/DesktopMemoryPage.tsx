@@ -11,8 +11,8 @@ import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
 import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown.ts';
 import { gql } from '@/graphql';
-import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
-import { useMemoryServiceNext } from '@/pages/MemoryPage/useMemoryServiceNext.tsx';
+import { EntityDetails } from '@/pages/MemoryPage/Components/EntityDetails';
+import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
 
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
@@ -49,10 +49,7 @@ const GET_SAVED_SEARCH = gql(`
 
 export default function DesktopMemoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { activeMemory, setActiveMemory } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });
+  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchId, setSearchId] = useState<string | null>(null);
 
@@ -100,12 +97,12 @@ export default function DesktopMemoryPage() {
   }, [searchId, savedSearchData]);
 
   useEffect(() => {
-    setDetailsOpen(activeMemory != null);
-  }, [activeMemory]);
+    setDetailsOpen(activeEntity != null);
+  }, [activeEntity]);
 
-  const toggleActiveMemory = (active: boolean) => {
+  const toggleactiveEntity = (active: boolean) => {
     if (!active) {
-      setActiveMemory(null);
+      setActiveEntity(null);
     }
   };
 
@@ -154,7 +151,7 @@ export default function DesktopMemoryPage() {
       },
     });
   }, []);
-  console.log('activeMemory in page root', activeMemory);
+  console.log('activeEntity in page root', activeEntity);
 
   return (
     <>
@@ -233,9 +230,9 @@ export default function DesktopMemoryPage() {
         {activeTab === 'graph' && <GraphView variant="desktop" />}
       </PageContent>
 
-      {activeMemory && (
-        <Sheet open={detailsOpen} onOpenChange={toggleActiveMemory}>
-          <MemoryDetails memory={activeMemory} />
+      {activeEntity && (
+        <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
+          <EntityDetails entity={activeEntity} />
         </Sheet>
       )}
     </>

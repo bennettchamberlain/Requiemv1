@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
+import { createHookContext } from '@ci/common';
 
+import type { FragmentType } from '@/graphql';
 import { gql } from '@/graphql';
 
 const SEARCH_QUERY = gql(`
   query Search($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {
-    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {
+    search(input: { query: $query, includeTypes: $includeTNbroypes, excludeTypes: $excludeTypes }) {
       edges {
         node {
           __typename
@@ -50,7 +52,19 @@ const SEARCH_QUERY = gql(`
   }
 `);
 
-export function useMemoryServiceNext({
+type ReturnType = [
+  {
+    data: Array<FragmentType>;
+    loading: boolean;
+    error: Error | null;
+    activeEntity: FragmentType;
+  },
+  {
+    setActiveEntity: (entity: FragmentType) => void;
+  },
+];
+
+function useEntityService({
   searchQuery,
   includeTypes,
   excludeTypes,
@@ -58,7 +72,7 @@ export function useMemoryServiceNext({
   searchQuery: string;
   includeTypes?: string[];
   excludeTypes?: string[];
-}) {
+}): ReturnType {
   const { data, loading, error } = useQuery(SEARCH_QUERY, {
     variables: {
       query: searchQuery,
@@ -67,19 +81,24 @@ export function useMemoryServiceNext({
     },
   });
 
-  const [activeMemory, setActiveMemory] = useState<typeof data>(null);
-
-  console.log('activeMemory', activeMemory);
+  console.log('data', data);
+  const [activeEntity, setActiveEntity] = useState<typeof data>(null);
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);
-  const exportedMemory = useMemo(() => activeMemory, [activeMemory]);
-  console.log('exportedMemory', exportedMemory);
 
-  return {
-    data: results,
-    loading,
-    error,
-    activeMemory: exportedMemory,
-    setActiveMemory
-  };
+  return [
+    {
+      data: results,
+      loading,
+      error,
+      activeEntity,
+    },
+    {
+      setActiveEntity,
+    },
+  ];
 }
+
+const { Provider: EntityServiceProvider, useHookContext } = createHookContext(useEntityService);
+
+export { EntityServiceProvider, useHookContext as useEntityService };

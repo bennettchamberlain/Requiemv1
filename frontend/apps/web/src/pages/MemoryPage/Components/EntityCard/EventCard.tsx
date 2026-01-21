@@ -1,14 +1,13 @@
 import { Card, Tooltip } from '@ci/shadcn';
 import { Calendar, Clock, User, MapPin, Link, Repeat, Timer } from '@ci/shadcn/icons';
-import { gql } from '@/graphql';
 
-import { useMemoryServiceNext } from '../../useMemoryServiceNext';
+import { gql, type FragmentType } from '@/graphql';
+
+import { useEntityService } from '../../useEntityService';
 import { formatDateTime, formatDuration } from '../utils';
-import type {FragmentType} from "@/graphql";
-import { useSearchParams } from 'react-router-dom';
 
 interface Props {
-  memory: FragmentType<EVENT_FRAGMENT>;
+  entity: FragmentType<EVENT_FRAGMENT>;
 }
 
 export const EVENT_FRAGMENT = gql(`
@@ -28,26 +27,22 @@ export const EVENT_FRAGMENT = gql(`
   }
 `);
 
-export function EventCard({ memory }: Props) {
-  const [searchParams] = useSearchParams();
-  const { setActiveMemory } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });;
-  const hasStartDate = memory.startDate;
-  const hasEndDate = memory.endDate;
-  const hasOrganizer = memory.organizer;
-  const hasRepeating = memory.repeatingFrequency;
-  const hasDuration = memory.duration;
-  const hasSource = memory.source;
-  const hasSourceLink = memory.sourceLink;
-  const hasLocation = memory.location?.name || memory.location?.address;
-  const hasDescription = memory.description;
+export function EventCard({ entity }: Props) {
+  const [, { setActiveEntity }] = useEntityService();
+  const hasStartDate = entity.startDate;
+  const hasEndDate = entity.endDate;
+  const hasOrganizer = entity.organizer;
+  const hasRepeating = entity.repeatingFrequency;
+  const hasDuration = entity.duration;
+  const hasSource = entity.source;
+  const hasSourceLink = entity.sourceLink;
+  const hasLocation = entity.location?.name || entity.location?.properties?.address;
+  const hasDescription = entity.description;
 
   return (
     <Card
       className="!gap-2 !py-4 px-6 cursor-pointer hover:shadow-lg transition-shadow duration-200"
-      onClick={() => setActiveMemory(memory)}
+      onClick={() => setActiveEntity(entity)}
     >
       <div className="flex items-start gap-3">
         <Calendar className="h-6 w-6 flex-shrink-0 mt-1 text-[var(--primary)]" />
@@ -55,14 +50,14 @@ export function EventCard({ memory }: Props) {
           <Tooltip>
             <Tooltip.Trigger asChild>
               <h3 className="text-lg font-semibold text-card-foreground truncate cursor-default">
-                {memory.title}
+                {entity.title}
               </h3>
             </Tooltip.Trigger>
             <Tooltip.Content>
-              <p>{memory.title}</p>
+              <p>{entity.title}</p>
             </Tooltip.Content>
           </Tooltip>
-          <p className="text-sm text-muted-foreground">{memory.category}</p>
+          <p className="text-sm text-muted-foreground">{entity.category}</p>
         </div>
       </div>
 
@@ -72,7 +67,7 @@ export function EventCard({ memory }: Props) {
           <div className="min-w-0">
             <span className="text-sm font-medium text-muted-foreground">Start:</span>
             <span className="ml-2 text-sm text-card-foreground">
-              {formatDateTime(memory.startDate || '', memory.startTime || undefined)}
+              {formatDateTime(entity.startDate || '', entity.startTime || undefined)}
             </span>
           </div>
         </div>
@@ -84,7 +79,7 @@ export function EventCard({ memory }: Props) {
           <div className="min-w-0">
             <span className="text-sm font-medium text-muted-foreground">End:</span>
             <span className="ml-2 text-sm text-card-foreground">
-              {formatDateTime(memory.endDate || '', memory.endTime || undefined)}
+              {formatDateTime(entity.endDate || '', entity.endTime || undefined)}
             </span>
           </div>
         </div>
@@ -95,7 +90,7 @@ export function EventCard({ memory }: Props) {
           <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
             <span className="text-sm font-medium text-muted-foreground">Organizer:</span>
-            <span className="ml-2 text-sm text-card-foreground">{memory.organizer}</span>
+            <span className="ml-2 text-sm text-card-foreground">{entity.organizer}</span>
           </div>
         </div>
       )}
@@ -105,7 +100,7 @@ export function EventCard({ memory }: Props) {
           <Repeat className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
             <span className="text-sm font-medium text-muted-foreground">Repeats:</span>
-            <span className="ml-2 text-sm text-card-foreground">{memory.repeatingFrequency}</span>
+            <span className="ml-2 text-sm text-card-foreground">{entity.repeatingFrequency}</span>
           </div>
         </div>
       )}
@@ -115,7 +110,7 @@ export function EventCard({ memory }: Props) {
           <Timer className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
             <span className="text-sm font-medium text-muted-foreground">Duration:</span>
-            <span className="ml-2 text-sm text-card-foreground">{formatDuration(memory.duration || 0)}</span>
+            <span className="ml-2 text-sm text-card-foreground">{formatDuration(entity.duration || 0)}</span>
           </div>
         </div>
       )}
@@ -133,7 +128,7 @@ export function EventCard({ memory }: Props) {
       {hasSource && (
         <div className="flex items-center gap-5">
           <span className="text-sm font-medium text-muted-foreground">Source:</span>
-          <span className="text-sm text-card-foreground">{memory.source}</span>
+          <span className="text-sm text-card-foreground">{entity.source}</span>
         </div>
       )}
 
@@ -142,7 +137,7 @@ export function EventCard({ memory }: Props) {
           <Link className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <div className="min-w-0">
             <a
-              href={memory.sourceLink}
+              href={entity.sourceLink}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-primary hover:text-primary/80 underline"
@@ -156,7 +151,7 @@ export function EventCard({ memory }: Props) {
 
       {hasDescription && (
         <div className="pt-3 pb-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">{memory.description}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{entity.description}</p>
         </div>
       )}
     </Card>
