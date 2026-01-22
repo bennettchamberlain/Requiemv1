@@ -4,9 +4,8 @@ import { Avatar, DropdownMenu } from '@ci/shadcn';
 import { ListTodo, LogOut, SunMoon, Settings2, Cable, Blocks } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
-import { useAuth, useTheme } from '@/hooks';
-
 import { useFeatures } from '@/common/feature';
+import { useAuth, useTheme } from '@/hooks';
 
 export function NavUser() {
   const [{ user }, { logout }] = useAuth();

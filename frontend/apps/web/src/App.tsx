@@ -4,6 +4,7 @@ import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
+import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
@@ -19,7 +20,6 @@ import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
-import { FeaturesProvider, useFeatures } from '@/common/feature';
 
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
