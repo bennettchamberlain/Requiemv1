@@ -1,4 +1,4 @@
-import type { EntityItem } from '@/pages/MemoryPage/useEntityService.tsx';
+import type { EntityItem } from '../../useEntityService';
 
 import { BrowserActivityCard } from './BrowserActivityCard';
 import { CommunicationCard } from './CommunicationCard';

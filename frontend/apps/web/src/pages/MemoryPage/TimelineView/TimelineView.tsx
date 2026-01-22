@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
-
+import { useEntityService } from '../../MemoryPage/useEntityService';
 import { Empty, EntityCard } from '../Components';
 import { groupEntitiesByDate, formatDateForDisplay } from '../Components/utils';
 

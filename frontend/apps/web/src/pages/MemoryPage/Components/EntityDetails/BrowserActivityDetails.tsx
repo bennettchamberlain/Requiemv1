@@ -2,7 +2,7 @@ import { Input, Label, Sheet } from '@ci/shadcn';
 
 import { type FragmentType, useFragment } from '@/graphql';
 
-import { BROWSER_ACTIVITY_FRAGMENT } from '../EntityCard/BrowserActivityCard.tsx';
+import { BROWSER_ACTIVITY_FRAGMENT } from '../EntityCard/BrowserActivityCard';
 
 interface Props {
   entity: FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT>;

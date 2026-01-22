@@ -3,7 +3,7 @@ import { Globe, Clock, MousePointer, TrendingUp } from '@ci/shadcn/icons';
 
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
-import { useEntityService } from '../../../MemoryPage/useEntityService.tsx';
+import { useEntityService } from '../../../MemoryPage/useEntityService';
 
 export interface Props {
   entity: FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT>;

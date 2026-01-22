@@ -6,7 +6,8 @@ import { Search, Filter, MapPin, List, Images, X, Share2 } from '@ci/shadcn/icon
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
+
+import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components';
 import { GalleryView } from './GalleryView';

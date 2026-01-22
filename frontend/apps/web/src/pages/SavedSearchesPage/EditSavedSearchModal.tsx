@@ -5,10 +5,11 @@ import { ENTITY_TYPE_MAP, ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constan
 import { Button, Dialog, Input, Label, Textarea } from '@ci/shadcn';
 
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
-import { useDropdown } from '@/components/SearchBox/useDropdown.ts';
+import { useDropdown } from '@/components/SearchBox/useDropdown';
 import { TagInput } from '@/components/TagInput';
 import { gql, useFragment, type FragmentType } from '@/graphql';
-import { SavedSearchGridItemFragment } from '@/pages/SavedSearchesPage/SavedSearch.tsx';
+
+import { SavedSearchGridItemFragment } from '../SavedSearchesPage/SavedSearch';
 
 interface Props {
   savedSearch: FragmentType<typeof SavedSearchGridItemFragment>;

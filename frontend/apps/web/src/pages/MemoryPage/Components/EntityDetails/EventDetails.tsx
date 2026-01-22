@@ -2,7 +2,7 @@ import { Input, Label, Sheet } from '@ci/shadcn';
 
 import { type FragmentType, useFragment } from '@/graphql';
 
-import { EVENT_FRAGMENT } from '../EntityCard/EventCard.tsx';
+import { EVENT_FRAGMENT } from '../EntityCard/EventCard';
 
 interface Props {
   entity: FragmentType<typeof EVENT_FRAGMENT>;

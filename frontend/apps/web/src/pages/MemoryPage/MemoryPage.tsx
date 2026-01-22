@@ -4,7 +4,8 @@ import { usePageTitle } from '@ci/common';
 import { useSearchParams } from 'react-router-dom';
 
 import { ResponsiveLoader } from '@/components/ResponsiveLoader';
-import { EntityServiceProvider } from '@/pages/MemoryPage/useEntityService.tsx';
+
+import { EntityServiceProvider } from '../MemoryPage/useEntityService';
 
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
 const MobilePage = lazy(() => import('./MobileMemoryPage'));

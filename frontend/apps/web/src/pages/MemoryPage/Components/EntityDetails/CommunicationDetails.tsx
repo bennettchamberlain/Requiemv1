@@ -2,7 +2,7 @@ import { Input, Label, Sheet } from '@ci/shadcn';
 
 import { type FragmentType, useFragment } from '@/graphql';
 
-import { COMMUNICATION_FRAGMENT } from '../EntityCard/CommunicationCard.tsx';
+import { COMMUNICATION_FRAGMENT } from '../EntityCard/CommunicationCard';
 
 interface Props {
   entity: FragmentType<typeof COMMUNICATION_FRAGMENT>;

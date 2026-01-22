@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 
 import { Map } from '@/components/Map';
-import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
 
+import { useEntityService } from '../../MemoryPage/useEntityService';
 import { TimelineView } from '../TimelineView';
 
 type LOCATION_TYPE = { properties: { latitude: number; longitude: number } };

@@ -21,8 +21,8 @@ import { Link } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { makeFragmentData } from '@/graphql';
 import { useAuth } from '@/hooks';
-import { Endpoints, ENDPOINTS_FRAGMENT } from '@/pages/ProviderPage/Endpoints.tsx';
-import { useConnectService } from '@/pages/ProviderPage/useConnectService.ts';
+import { Endpoints, ENDPOINTS_FRAGMENT } from '@/pages/ProviderPage/Endpoints';
+import { useConnectService } from '@/pages/ProviderPage/useConnectService';
 
 export interface Provider {
   readonly id: string;

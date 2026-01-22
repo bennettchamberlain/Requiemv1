@@ -9,9 +9,10 @@ import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
-import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown.ts';
+import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
-import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
+
+import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components/EntityDetails';
 import { GalleryView } from './GalleryView';
@@ -151,7 +152,6 @@ export default function DesktopMemoryPage() {
       },
     });
   }, []);
-  console.log('activeEntity in page root', activeEntity);
 
   return (
     <>
