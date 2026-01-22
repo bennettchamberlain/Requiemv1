@@ -5,7 +5,8 @@ import { ListTodo, LogOut, SunMoon, Settings2, Cable, Blocks } from '@ci/shadcn/
 import { Link } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
-import { useAuth, useTheme } from '@/hooks';
+import { useTheme } from '@/components/ThemePicker';
+import { useAuth } from '@/hooks';
 
 export function NavUser() {
   const [{ user }, { logout }] = useAuth();

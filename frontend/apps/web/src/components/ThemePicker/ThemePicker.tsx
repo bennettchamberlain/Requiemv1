@@ -3,7 +3,7 @@ import { type CSSProperties, useMemo, useState } from 'react';
 import { Button, Card, Tabs } from '@ci/shadcn';
 import { Palette, Settings2 } from '@ci/shadcn/icons';
 
-import { useTheme } from '@/hooks';
+import { ColorWheel } from './ColorWheel';
 import {
   PRESET_THEMES,
   TEXTURE_PATTERNS,
@@ -11,9 +11,8 @@ import {
   readTexturePalette,
   DEFAULT_TEXTURE_PALETTE,
   DEFAULT_TEXTURE_ID,
-} from '@/hooks/use-theme';
-
-import { ColorWheel } from './ColorWheel';
+  useTheme,
+} from './useTheme';
 
 const TEXTURE_OPACITY_MIN = 0;
 const TEXTURE_OPACITY_MAX = 0.8;

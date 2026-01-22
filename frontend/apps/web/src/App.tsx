@@ -8,13 +8,8 @@ import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
-import {
-  AuthProvider,
-  CaptureModalProvider,
-  ModelProvider,
-  ThemeProvider,
-  usePreventOverscroll,
-} from '@/hooks';
+import { ThemeProvider } from '@/components/ThemePicker';
+import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
