@@ -1,67 +1,6 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
-export interface Memory {
-  id: string;
-  type: string;
-  title: string;
-  description: string | null;
-  timestamp: Date;
-  category: string;
-  location?: MemoryLocation;
-  tags: string[];
-  userId: string;
-  sourceLink?: string;
-  metadata?: {
-    eventId?: string;
-    eventType?: string;
-    eventName?: string;
-    synthetic?: boolean;
-    personRef?: string;
-    contentRef?: string;
-    thingRef?: string;
-    entityType?: string;
-    communicationType?: string;
-    direction?: string;
-    participantsMetadata?: unknown;
-    relationships?: Array<{
-      type: string;
-      targetId: string;
-      targetName: string;
-      targetType: string;
-      direction: 'outgoing' | 'incoming';
-    }>;
-    [key: string]: unknown;
-  };
-}
-
-export interface MemoryLocation {
-  id: string;
-  name: string | null;
-  lat: number;
-  lng: number;
-  address?: string;
-  placeId?: string;
-}
-
-export interface MemorySearchParams {
-  query?: string;
-  startDate?: Date;
-  endDate?: Date;
-  categories?: string[];
-  excludeCategories?: string[];
-  hasLocation?: boolean;
-  limit?: number;
-  offset?: number;
-}
-
-export interface MemoryResponse {
-  data: Memory[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 export const createContentSchema = z.object({
   type: z.string().optional(),
   title: z.string().optional(),

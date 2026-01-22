@@ -9,11 +9,8 @@
  *   `GraphNodeEntity`, `RelationshipEntity`, etc.) that define the structure of the
  *   knowledge graph.
  * - **Services**:
- *   - `MemoryService`: Provides high-level operations for interacting with the memory graph.
- *   - `ContentService`, `EventService`, `CommunicationService`: Manage specific types of
- *     memory entities.
  *   - `GraphUtilityService`: Offers tools for traversing and manipulating the graph structure.
- * - **Controllers**: Expose REST API endpoints (`MemoryController`, `ContentController`, etc.)
+ * - **Controllers**: Expose REST API endpoints (`ContentController`, etc.)
  *   for creating, retrieving, and managing memory entities.
  * - **User Integration**: Connects with the `UserModule` to ensure all memory entities are
  *   scoped to the correct user.
@@ -34,7 +31,6 @@ import { CommunicationController } from './controllers/CommunicationController';
 import { ContentController } from './controllers/ContentController';
 import { EventController } from './controllers/EventController';
 import { GraphController } from './controllers/GraphController';
-import { MemoryController } from './controllers/MemoryController';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
 import { ContentEntity } from './entities/ContentEntity';
@@ -59,7 +55,6 @@ import { GraphQueryService } from './services/GraphQueryService';
 import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
-import { MemoryService } from './services/MemoryService';
 import { PersonService } from './services/PersonService';
 import { PlaceService } from './services/PlaceService';
 import { SearchService } from './services/SearchService';
@@ -93,7 +88,6 @@ import { UserContextService } from './services/UserContextService';
     BrowserActivityModule,
   ],
   providers: [
-    MemoryService,
     CommunicationService,
     ContentService,
     EventService,
@@ -111,15 +105,8 @@ import { UserContextService } from './services/UserContextService';
     SearchService,
     PlaceService,
   ],
-  controllers: [
-    MemoryController,
-    CommunicationController,
-    ContentController,
-    EventController,
-    GraphController,
-  ],
+  controllers: [CommunicationController, ContentController, EventController, GraphController],
   exports: [
-    MemoryService,
     CommunicationService,
     ContentService,
     EventService,
@@ -153,7 +140,6 @@ export {
 
 // Services
 export {
-  MemoryService,
   ContentService,
   EventService,
   CommunicationService,
@@ -174,16 +160,7 @@ export {
 export type { Content } from './entities/ContentEntity';
 
 // Types
-export type {
-  Memory,
-  MemoryLocation,
-  MemoryResponse,
-  MemorySearchParams,
-  CreateEventDto,
-  UpdateEventDto,
-  CreateContentDto,
-  UpdateContentDto,
-} from './types';
+export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
 
 // Search types
 export type {
