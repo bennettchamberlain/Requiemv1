@@ -21,6 +21,13 @@ echo "Starting Temporal worker..."
 python -m src.worker &
 WORKER_PID=$!
 
+# Give the worker a moment to connect to Temporal
+sleep 3
+
+# Set up system schedules (idempotent - skips existing schedules)
+echo "Setting up system schedules..."
+python -m src.system_schedules setup || echo "Warning: Failed to set up schedules (Temporal may not be ready)"
+
 # Function to handle shutdown gracefully
 shutdown() {
     echo "Shutting down services..."
