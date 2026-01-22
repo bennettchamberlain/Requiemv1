@@ -14,6 +14,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RequestContextMiddleware } from '@ci/common/context';
+import { FeatureModule } from '@ci/common/feature';
 import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
 import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/common/logging';
@@ -54,6 +55,7 @@ import { UserModule } from '@ci/domains/user';
       entities: [path.join(__dirname, 'domains/**/*Entity.{ts,js}')],
       logging: [...(config.environment['database.query.logging'] ? (['error', 'query'] as const) : [])],
     }),
+    FeatureModule,
     LoggingModule,
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),

@@ -3,9 +3,9 @@ import { CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
-import config from '@ci/configuration';
 import { ApiLogEntity } from '@ci/domains/etl';
 import { EventPayloads, Events, OnEvent } from '@ci/domains/events';
 
@@ -28,13 +28,16 @@ export class PromoteController {
     @InjectRepository(ApiLogEntity)
     private readonly apiLogRepository: Repository<ApiLogEntity>,
     private readonly logger: LoggerService,
+    private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(PromoteController.name);
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async promoteApiLogs(): Promise<void> {
-    if (!config.features['scheduled.entity.promotion']) {
+    const featureEnabled = await this.featureService.isFeatureEnabled('scheduled.entity.promotion');
+
+    if (!featureEnabled) {
       this.logger.log('Scheduled entity promotion is disabled');
 
       return;

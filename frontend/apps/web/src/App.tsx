@@ -4,6 +4,7 @@ import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
+import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
@@ -56,11 +57,13 @@ function Providers({ children }: { children: ReactNode }) {
       <ThemeProvider defaultTheme="system" storageKey="ci-ui-theme">
         <DeviceLayoutProvider args={[]}>
           <AuthProvider args={[]}>
-            <ModelProvider args={[]}>
-              <CaptureModalProvider args={[]}>
-                <ApolloProvider>{children}</ApolloProvider>
-              </CaptureModalProvider>
-            </ModelProvider>
+            <FeaturesProvider args={[]}>
+              <ModelProvider args={[]}>
+                <CaptureModalProvider args={[]}>
+                  <ApolloProvider>{children}</ApolloProvider>
+                </CaptureModalProvider>
+              </ModelProvider>
+            </FeaturesProvider>
           </AuthProvider>
         </DeviceLayoutProvider>
       </ThemeProvider>
@@ -69,6 +72,8 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
+  const { isFeatureEnabled } = useFeatures();
+
   return (
     <Routes>
       <Route
@@ -247,14 +252,16 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/plugins"
-          element={
-            <ProtectedRoute>
-              <ToolsPage />
-            </ProtectedRoute>
-          }
-        />
+        {isFeatureEnabled('plugins.page') && (
+          <Route
+            path="/plugins"
+            element={
+              <ProtectedRoute>
+                <ToolsPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
 
         <Route
           path="/oauth/callback"

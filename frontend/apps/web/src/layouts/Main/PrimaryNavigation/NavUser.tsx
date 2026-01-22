@@ -4,10 +4,12 @@ import { Avatar, DropdownMenu } from '@ci/shadcn';
 import { ListTodo, LogOut, SunMoon, Settings2, Cable, Blocks } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { useFeatures } from '@/common/feature';
 import { useAuth, useTheme } from '@/hooks';
 
 export function NavUser() {
   const [{ user }, { logout }] = useAuth();
+  const { isFeatureEnabled } = useFeatures();
   const { themeState, setTheme } = useTheme();
 
   const currentUser = useMemo(
@@ -62,18 +64,23 @@ export function NavUser() {
               Settings
             </Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item asChild>
-            <Link to="/plugins">
-              <Blocks />
-              Plugins
-            </Link>
-          </DropdownMenu.Item>
+
+          {isFeatureEnabled('plugins.page') && (
+            <DropdownMenu.Item asChild>
+              <Link to="/plugins">
+                <Blocks />
+                Plugins
+              </Link>
+            </DropdownMenu.Item>
+          )}
+
           <DropdownMenu.Item asChild>
             <Link to="/connections">
               <Cable />
               Connections
             </Link>
           </DropdownMenu.Item>
+
           <DropdownMenu.Item asChild>
             <Link to="/jobs">
               <ListTodo />
