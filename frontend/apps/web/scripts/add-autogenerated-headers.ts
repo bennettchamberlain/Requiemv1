@@ -5,6 +5,7 @@ const HEADER = `/* ------------------------------------------------------- */
 /*  THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)  */
 /* ------------------------------------------------------- */
 
+/* eslint-disable */
 `;
 
 function addHeaderToFiles(filePaths: string[]) {
@@ -20,13 +21,15 @@ function addHeaderToFiles(filePaths: string[]) {
         return;
       }
 
-      const content = fs.readFileSync(fullPath, 'utf-8');
+      let content = fs.readFileSync(fullPath, 'utf-8');
 
-      if (content.includes(HEADER)) {
-        return;
-      }
+      content = content.replace(/\/\* eslint-disable \*\/\n?/g, '');
+      content = content.replace(
+        /\/\* ------------------------------------------------------- \*\/[\s\S]*?\/\* ------------------------------------------------------- \*\/\n?/g,
+        '',
+      );
 
-      const newContent = HEADER + content;
+      const newContent = HEADER + content.trimStart();
 
       fs.writeFileSync(fullPath, newContent, 'utf-8');
     } catch (error) {
