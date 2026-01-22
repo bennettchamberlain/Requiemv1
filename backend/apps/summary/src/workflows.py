@@ -22,6 +22,12 @@ with workflow.unsafe.imports_passed_through():
         fetch_summaries_for_dossier_activity,
         generate_dossier_activity,
         store_dossier_activity,
+        # Insight activities
+        check_new_data_for_insights_activity,
+        get_last_insight_time_activity,
+        aggregate_insights_context_activity,
+        generate_insights_activity,
+        store_insight_activity,
     )
     from .llm_config import LLMConfig
 
@@ -537,6 +543,133 @@ class DossierRefreshWorkflow:
         }
 
 
+# ============================================================================
+# Insights Generation Workflow
+# ============================================================================
+
+@workflow.defn(name="insights-generation")
+class InsightsGenerationWorkflow:
+    """
+    Workflow to generate proactive insights from user context.
+
+    Steps:
+    1. Check if there's new data since last insight
+    2. Aggregate context (graph deltas, events, relationships, summaries)
+    3. Generate insights using LLM
+    4. Store insights as summary with period_type='insight'
+    """
+
+    @workflow.run
+    async def run(
+        self,
+        user_id: str,
+        timezone: str = "UTC",
+        lookback_hours: int = 72,  # 3 days default lookback
+        llm_config: Optional[LLMConfig] = None,
+    ) -> Dict[str, Any]:
+        """Execute insights generation workflow."""
+        workflow.logger.info(f"insights_generation_workflow_started user_id={user_id}")
+
+        # Import datetime here for workflow determinism
+        from datetime import datetime, timedelta
+
+        now = datetime.utcnow()
+
+        # Step 1: Get last insight time to determine lookback
+        last_insight_time = await workflow.execute_activity(
+            get_last_insight_time_activity,
+            args=[user_id],
+            **get_data_activity_options(),
+        )
+
+        # Determine 'since' time: use last insight time or default lookback
+        if last_insight_time:
+            since = datetime.fromisoformat(last_insight_time)
+        else:
+            since = now - timedelta(hours=lookback_hours)
+
+        workflow.logger.info(
+            f"lookback_window_determined since={since.isoformat()} until={now.isoformat()}"
+        )
+
+        # Step 2: Check if there's new data worth processing
+        has_new_data = await workflow.execute_activity(
+            check_new_data_for_insights_activity,
+            args=[user_id, since.isoformat()],
+            **get_data_activity_options(),
+        )
+
+        if not has_new_data:
+            workflow.logger.info("no_new_data_skipping_insights")
+            return {
+                "skipped": True,
+                "reason": "no_new_data",
+                "user_id": user_id,
+            }
+
+        # Step 3: Aggregate context for insight generation
+        insights_context = await workflow.execute_activity(
+            aggregate_insights_context_activity,
+            args=[user_id, since.isoformat(), now.isoformat()],
+            **get_data_activity_options(),
+        )
+
+        # Check if we have enough context
+        total_context_items = (
+            len(insights_context.get("graph_deltas", []))
+            + len(insights_context.get("upcoming_events", []))
+            + len(insights_context.get("recent_summaries", []))
+        )
+
+        if total_context_items < 2:
+            workflow.logger.info(f"insufficient_context_skipping total_items={total_context_items}")
+            return {
+                "skipped": True,
+                "reason": "insufficient_context",
+                "user_id": user_id,
+                "context_items": total_context_items,
+            }
+
+        workflow.logger.info(f"context_aggregated total_items={total_context_items}")
+
+        # Step 4: Generate insights (LLM call)
+        insights_data = await workflow.execute_activity(
+            generate_insights_activity,
+            args=[insights_context],
+            **get_llm_activity_options(),
+        )
+
+        # Check if any insights were generated
+        num_insights = insights_data.get("num_insights", 0)
+        if num_insights == 0:
+            workflow.logger.info("no_insights_generated")
+            return {
+                "skipped": True,
+                "reason": "no_insights_generated",
+                "user_id": user_id,
+            }
+
+        # Step 5: Store insights
+        summary_id = await workflow.execute_activity(
+            store_insight_activity,
+            args=[user_id, insights_data, since.isoformat(), now.isoformat(), timezone],
+            **get_data_activity_options(),
+        )
+
+        workflow.logger.info(
+            f"insights_generation_workflow_completed summary_id={summary_id} num_insights={num_insights}"
+        )
+
+        return {
+            "skipped": False,
+            "summary_id": summary_id,
+            "user_id": user_id,
+            "num_insights": num_insights,
+            "tokens_used": insights_data.get("tokens_used", 0),
+            "data_sources_used": insights_data.get("data_sources_used", []),
+        }
+
+
 __all__ = [
     "HourlySummaryWorkflow",
     "DailySummaryWorkflow",
@@ -545,4 +678,5 @@ __all__ = [
     "SeasonalSummaryWorkflow",
     "YearlySummaryWorkflow",
     "DossierRefreshWorkflow",
+    "InsightsGenerationWorkflow",
 ]

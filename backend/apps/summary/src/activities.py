@@ -14,11 +14,13 @@ from temporalio import activity
 from .config import settings
 from .data_aggregator import aggregator
 from .database import db
+from .insight_aggregator import insight_aggregator
 from .llm_config import LLMConfig, create_llm_config
 from .summary_functions import (
     generate_hourly_summary,
     generate_rollup_summary,
     generate_user_dossier,
+    generate_insights,
 )
 
 logger = structlog.get_logger()
@@ -482,6 +484,196 @@ async def store_dossier_activity(
     activity.logger.info("dossier_stored", entity_id=entity_id)
 
 
+# ============================================================================
+# Insight Generation Activities
+# ============================================================================
+
+@activity.defn
+async def check_new_data_for_insights_activity(
+    user_id: str,
+    since: str,  # ISO format
+) -> bool:
+    """
+    Check if there's new data worth generating insights for.
+
+    Returns True if new graph deltas, events, or summaries exist since the given time.
+    """
+    activity.logger.info("checking_new_data_for_insights", user_id=user_id, since=since)
+    activity.heartbeat("Checking for new data")
+
+    user_uuid = UUID(user_id)
+    since_dt = datetime.fromisoformat(since)
+
+    has_new_data = insight_aggregator.has_new_data(user_uuid, since_dt)
+
+    activity.logger.info("new_data_check_complete", user_id=user_id, has_new_data=has_new_data)
+    return has_new_data
+
+
+@activity.defn
+async def get_last_insight_time_activity(user_id: str) -> Optional[str]:
+    """
+    Get the timestamp of the last generated insight for this user.
+
+    Returns ISO format timestamp or None if no insights exist.
+    """
+    activity.logger.info("getting_last_insight_time", user_id=user_id)
+    activity.heartbeat("Looking up last insight time")
+
+    user_uuid = UUID(user_id)
+    last_time = insight_aggregator.get_last_insight_time(user_uuid)
+
+    if last_time:
+        activity.logger.info("last_insight_time_found", user_id=user_id, last_time=last_time.isoformat())
+        return last_time.isoformat()
+
+    activity.logger.info("no_previous_insights", user_id=user_id)
+    return None
+
+
+@activity.defn
+async def aggregate_insights_context_activity(
+    user_id: str,
+    since: str,  # ISO format
+    until: str,  # ISO format
+) -> Dict[str, Any]:
+    """
+    Aggregate all context needed for insight generation.
+
+    Collects graph deltas, upcoming events, recent summaries,
+    relevant relationships, and communications.
+    """
+    activity.logger.info("aggregating_insights_context", user_id=user_id, since=since, until=until)
+    activity.heartbeat("Aggregating insights context")
+
+    user_uuid = UUID(user_id)
+    since_dt = datetime.fromisoformat(since)
+    until_dt = datetime.fromisoformat(until)
+
+    context = insight_aggregator.aggregate_insights_context(user_uuid, since_dt, until_dt)
+
+    activity.heartbeat("Insights context aggregated")
+    activity.logger.info(
+        "insights_context_aggregated",
+        user_id=user_id,
+        graph_deltas=len(context.get("graph_deltas", [])),
+        upcoming_events=len(context.get("upcoming_events", [])),
+        recent_summaries=len(context.get("recent_summaries", [])),
+    )
+
+    return context
+
+
+@activity.defn
+async def generate_insights_activity(
+    insights_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate proactive insights from aggregated context using LLM.
+
+    Returns insights data ready for storage.
+    """
+    activity.logger.info("generating_insights")
+    activity.heartbeat("Calling LLM for insights generation")
+
+    # Create LLM config
+    llm_config = create_llm_config()
+
+    # Call pure function
+    insights_data = generate_insights(llm_config, insights_context)
+
+    activity.heartbeat("Insights generated")
+    activity.logger.info(
+        "insights_generated",
+        num_insights=insights_data.get("num_insights", 0),
+        tokens_used=insights_data.get("tokens_used", 0),
+    )
+
+    return insights_data
+
+
+@activity.defn
+async def store_insight_activity(
+    user_id: str,
+    insights_data: Dict[str, Any],
+    start_time: str,
+    end_time: str,
+    timezone: str,
+) -> str:
+    """
+    Store generated insights as a summary with period_type='insight'.
+
+    Returns the summary_id as a string.
+    """
+    activity.logger.info("storing_insight", num_insights=insights_data.get("num_insights", 0))
+    activity.heartbeat("Storing insights to database")
+
+    user_uuid = UUID(user_id)
+    start_dt = datetime.fromisoformat(start_time)
+    end_dt = datetime.fromisoformat(end_time)
+
+    summary_id = uuid4()
+
+    # Build content payload
+    insights_list = insights_data.get("insights", [])
+    content = {
+        "insights": insights_list,
+        "data_sources_used": insights_data.get("data_sources_used", []),
+        "tokens_used": insights_data.get("tokens_used", 0),
+        # Extract summary_text and key_insights for compatibility with existing UI
+        "summary_text": "; ".join([i.get("title", "") for i in insights_list]),
+        "key_insights": [i.get("title", "") + ": " + (i.get("key_actions", [])[:1] or [""])[0] for i in insights_list],
+    }
+
+    # Use data sources as source_types
+    source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+
+    # Generate title from first insight or default
+    if insights_list:
+        title = insights_list[0].get("title", "Proactive Insights")
+    else:
+        title = "Proactive Insights"
+
+    # Prepare embedding
+    embedding = insights_data.get("embedding", [])
+    embedding_value = json.dumps(embedding) if embedding else None
+
+    # Insert with metadata.seen = false
+    metadata = {"seen": False}
+
+    db.execute_write(
+        """
+        INSERT INTO ci.summaries (
+            summary_id, user_id, period_start, period_end, period_type,
+            timezone, source_types, title, content, summary_embedding,
+            metadata, created_at, updated_at
+        ) VALUES (
+            :summary_id, :user_id, :period_start, :period_end, 'insight',
+            :timezone, :source_types, :title, CAST(:content AS jsonb),
+            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END,
+            CAST(:metadata AS jsonb), NOW(), NOW()
+        )
+        """,
+        {
+            "summary_id": str(summary_id),
+            "user_id": str(user_uuid),
+            "period_start": start_dt,
+            "period_end": end_dt,
+            "timezone": timezone,
+            "source_types": source_types,
+            "title": title,
+            "content": json.dumps(content),
+            "embedding": embedding_value,
+            "metadata": json.dumps(metadata),
+        },
+    )
+
+    activity.heartbeat("Insight stored")
+    activity.logger.info("insight_stored", summary_id=str(summary_id), num_insights=len(insights_list))
+
+    return str(summary_id)
+
+
 __all__ = [
     "aggregate_data_activity",
     "generate_hourly_summary_activity",
@@ -493,4 +685,10 @@ __all__ = [
     "fetch_summaries_for_dossier_activity",
     "generate_dossier_activity",
     "store_dossier_activity",
+    # Insight activities
+    "check_new_data_for_insights_activity",
+    "get_last_insight_time_activity",
+    "aggregate_insights_context_activity",
+    "generate_insights_activity",
+    "store_insight_activity",
 ]

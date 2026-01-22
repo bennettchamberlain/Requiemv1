@@ -99,6 +99,22 @@ class UserDossierResponse(BaseModel):
     interests: Optional[List[str]] = Field(default=None, description="Topics of interest")
 
 
+class InsightItem(BaseModel):
+    """A single proactive insight with actionable suggestions."""
+    title: str = Field(description="Short, descriptive title for the insight (e.g., 'Anniversary Planning')")
+    summary_text: str = Field(description="2-3 sentence explanation of the insight and why it's relevant")
+    key_actions: List[str] = Field(description="3-5 specific, actionable suggestions the user can take")
+    relevance_score: float = Field(ge=0.0, le=1.0, description="How relevant/timely this insight is (0.0-1.0)")
+    tags: List[str] = Field(default_factory=list, description="Categories like 'Family', 'Work', 'Health', etc.")
+    related_entity_ids: Optional[List[str]] = Field(default=None, description="IDs of people/events involved")
+
+
+class InsightsResponse(BaseModel):
+    """Structured response for proactive insights generation."""
+    insights: List[InsightItem] = Field(description="3-5 actionable insights based on the user's data")
+    data_sources_used: List[str] = Field(default_factory=list, description="Which data sources informed these insights")
+
+
 # ============================================================================
 # Summarizer
 # ============================================================================
@@ -198,6 +214,28 @@ class Summarizer:
             system_prompt=(
                 "Create a concise user dossier summarizing personality, preferences, "
                 "challenges, and interests based on their activity. Keep summary under 500 characters."
+            ),
+        )
+
+        self.insights_agent = Agent(
+            self.model,
+            output_type=InsightsResponse,
+            system_prompt=(
+                "You are a proactive personal assistant that generates actionable insights. "
+                "Analyze the user's recent activity, relationships, upcoming events, and changes "
+                "to their knowledge graph to surface helpful suggestions they might not think of themselves.\n\n"
+                "Focus on:\n"
+                "- Upcoming dates (anniversaries, birthdays, deadlines) and relevant people\n"
+                "- Recently added or changed relationships that might need attention\n"
+                "- Patterns in behavior that suggest opportunities or needs\n"
+                "- Connections between people, places, and events the user might not see\n"
+                "- Timely reminders based on recurring activities or maintenance cycles\n\n"
+                "Each insight should be:\n"
+                "- Actionable: Include specific next steps the user can take\n"
+                "- Timely: Relevant to upcoming events or recent changes\n"
+                "- Personal: Use knowledge about the user's relationships and preferences\n"
+                "- Non-obvious: Connect dots the user might not see themselves\n\n"
+                "Generate 3-5 high-quality insights. Prioritize quality over quantity."
             ),
         )
 
@@ -328,6 +366,160 @@ class Summarizer:
                 "timezone": timezone,
             },
         }
+
+    def generate_insights(self, insights_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate proactive insights from aggregated context data.
+
+        Args:
+            insights_context: Dict containing:
+                - graph_deltas: Recent changes to entities/relationships
+                - upcoming_events: Events in the next 14 days
+                - recent_summaries: Recent activity summaries
+                - strongest_relationships: Top relationships by strength
+                - recently_changed_relationships: Recently modified relationships
+                - event_relevant_relationships: Relationships tied to upcoming events
+                - recent_communications: Recent messages/emails
+                - user_dossier: User's profile/preferences
+
+        Returns:
+            Dict with insights, embeddings, and metadata
+        """
+        prompt = self._build_insights_prompt(insights_context)
+
+        logger.info(
+            "calling_llm_for_insights",
+            model=settings.llm_model,
+            prompt_length=len(prompt),
+        )
+
+        try:
+            result = self.insights_agent.run_sync(
+                prompt,
+                model_settings={
+                    "temperature": 0.7,  # Slightly higher for creative suggestions
+                    "max_tokens": settings.llm_max_tokens,
+                },
+            )
+            logger.info(
+                "insights_response_received",
+                tokens=result.usage().total_tokens if result.usage() else 0,
+                num_insights=len(result.output.insights),
+            )
+        except Exception as exc:
+            logger.error("insights_generation_failed", error=str(exc), error_type=type(exc).__name__)
+            raise
+
+        response = result.output
+
+        # Generate embedding from combined insight text
+        combined_text = " ".join([i.title + ": " + i.summary_text for i in response.insights])
+        embedding = self.generate_embedding(combined_text)
+
+        # Convert to serializable format
+        insights_list = [item.model_dump() for item in response.insights]
+
+        return {
+            "insights": insights_list,
+            "data_sources_used": response.data_sources_used,
+            "embedding": embedding,
+            "tokens_used": result.usage().total_tokens if result.usage() else 0,
+            "num_insights": len(response.insights),
+        }
+
+    def _build_insights_prompt(self, context: Dict[str, Any]) -> str:
+        """Build prompt for insights generation from aggregated context."""
+        parts = ["Generate proactive insights based on the following user context:\n"]
+
+        # User dossier (personality/preferences)
+        dossier = context.get("user_dossier")
+        if dossier:
+            parts.append("## USER PROFILE")
+            parts.append(f"Summary: {dossier.get('summary', 'N/A')}")
+            if dossier.get("interests"):
+                parts.append(f"Interests: {', '.join(dossier['interests'][:5])}")
+            if dossier.get("preferences"):
+                parts.append(f"Preferences: {', '.join(dossier['preferences'][:5])}")
+            parts.append("")
+
+        # Upcoming events
+        events = context.get("upcoming_events", [])
+        if events:
+            parts.append("## UPCOMING EVENTS (next 14 days)")
+            for event in events[:10]:
+                start = event.get("start_time") or event.get("start_date", "")
+                title = event.get("title") or event.get("name", "Untitled")
+                parts.append(f"- {start}: {title}")
+            parts.append("")
+
+        # Graph deltas (recent changes)
+        deltas = context.get("graph_deltas", [])
+        if deltas:
+            parts.append("## RECENT CHANGES TO KNOWLEDGE GRAPH")
+            for delta in deltas[:15]:
+                change_type = delta.get("change_type", "unknown")
+                node_type = delta.get("node_type", "")
+                entity_type = delta.get("entity_type") or delta.get("relationship_type", "")
+                changed_fields = delta.get("changed_fields", {})
+
+                if node_type == "entity":
+                    name = changed_fields.get("name", {}).get("new") or changed_fields.get("name", {}).get("old", "Unknown")
+                    parts.append(f"- {change_type.upper()} {entity_type}: {name}")
+                else:
+                    parts.append(f"- {change_type.upper()} relationship: {entity_type}")
+            parts.append("")
+
+        # Strongest relationships
+        strongest = context.get("strongest_relationships", [])
+        if strongest:
+            parts.append("## CLOSEST RELATIONSHIPS (by strength)")
+            for rel in strongest[:3]:
+                parts.append(f"- {rel.get('name', 'Unknown')} ({rel.get('relationship_type', 'related')})")
+            parts.append("")
+
+        # Recently changed relationships
+        recent_rels = context.get("recently_changed_relationships", [])
+        if recent_rels:
+            parts.append("## RECENTLY CHANGED RELATIONSHIPS")
+            for rel in recent_rels[:5]:
+                change = rel.get("change_type", "updated")
+                name = rel.get("name", "Unknown")
+                parts.append(f"- {change}: {name}")
+            parts.append("")
+
+        # Event-relevant relationships (people tied to upcoming events)
+        event_rels = context.get("event_relevant_relationships", [])
+        if event_rels:
+            parts.append("## PEOPLE CONNECTED TO UPCOMING EVENTS")
+            for rel in event_rels[:5]:
+                name = rel.get("name", "Unknown")
+                event = rel.get("event_title", "")
+                parts.append(f"- {name}: {event}")
+            parts.append("")
+
+        # Recent summaries (patterns)
+        summaries = context.get("recent_summaries", [])
+        if summaries:
+            parts.append("## RECENT ACTIVITY PATTERNS")
+            for summary in summaries[:5]:
+                text = summary.get("summary_text", "")[:200]
+                if text:
+                    parts.append(f"- {text}")
+            parts.append("")
+
+        # Recent communications
+        comms = context.get("recent_communications", [])
+        if comms:
+            parts.append("## RECENT COMMUNICATIONS")
+            for comm in comms[:5]:
+                subject = comm.get("subject") or comm.get("title", "")[:50]
+                if subject:
+                    parts.append(f"- {subject}")
+            parts.append("")
+
+        parts.append("\nBased on this context, generate 3-5 actionable insights that would be helpful to the user.")
+        parts.append("Focus on upcoming opportunities, relationship maintenance, and timely suggestions.")
+
+        return "\n".join(parts)
 
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding using OpenAI-compatible embedding endpoint."""

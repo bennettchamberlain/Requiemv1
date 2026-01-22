@@ -229,6 +229,158 @@ def generate_user_dossier(
     }
 
 
+def generate_insights(
+    llm_config: LLMConfig,
+    insights_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate proactive insights from aggregated context.
+
+    Pure function that uses LLM to generate actionable insights
+    based on graph deltas, events, relationships, and summaries.
+    """
+    # Get insights agent
+    agent = llm_config.agents.get('insights')
+    if not agent:
+        raise ValueError("No agent configured for insights generation")
+
+    # Build prompt from context
+    prompt = _build_insights_prompt(insights_context)
+
+    # Call LLM with slightly higher temperature for creativity
+    result = agent.run_sync(
+        prompt,
+        model_settings={
+            "temperature": 0.7,
+            "max_tokens": settings.llm_max_tokens,
+        },
+    )
+
+    response = result.output
+
+    # Generate embedding from combined insight text
+    combined_text = " ".join([
+        f"{i.title}: {i.summary_text}"
+        for i in response.insights
+    ])
+    embedding = generate_embedding(llm_config, combined_text)
+
+    # Convert insights to dicts
+    insights_list = [item.model_dump() for item in response.insights]
+
+    return {
+        "insights": insights_list,
+        "data_sources_used": response.data_sources_used,
+        "embedding": embedding,
+        "tokens_used": result.usage().total_tokens if result.usage() else 0,
+        "num_insights": len(response.insights),
+    }
+
+
+def _build_insights_prompt(context: Dict[str, Any]) -> str:
+    """Build prompt for insights generation from aggregated context."""
+    parts = ["Generate proactive insights based on the following user context:\n"]
+
+    # User dossier (personality/preferences)
+    dossier = context.get("user_dossier")
+    if dossier:
+        parts.append("## USER PROFILE")
+        parts.append(f"Summary: {dossier.get('summary', 'N/A')}")
+        if dossier.get("interests"):
+            interests = dossier["interests"]
+            if isinstance(interests, list):
+                parts.append(f"Interests: {', '.join(interests[:5])}")
+        if dossier.get("preferences"):
+            preferences = dossier["preferences"]
+            if isinstance(preferences, list):
+                parts.append(f"Preferences: {', '.join(preferences[:5])}")
+        parts.append("")
+
+    # Upcoming events
+    events = context.get("upcoming_events", [])
+    if events:
+        parts.append("## UPCOMING EVENTS (next 14 days)")
+        for event in events[:10]:
+            start = event.get("start_time") or event.get("start_date", "")
+            title = event.get("title") or event.get("name", "Untitled")
+            parts.append(f"- {start}: {title}")
+        parts.append("")
+
+    # Graph deltas (recent changes)
+    deltas = context.get("graph_deltas", [])
+    if deltas:
+        parts.append("## RECENT CHANGES TO KNOWLEDGE GRAPH")
+        for delta in deltas[:15]:
+            change_type = delta.get("change_type", "unknown")
+            node_type = delta.get("node_type", "")
+            entity_type = delta.get("entity_type") or delta.get("relationship_type", "")
+            changed_fields = delta.get("changed_fields", {})
+
+            if node_type == "entity":
+                name_field = changed_fields.get("name", {})
+                if isinstance(name_field, dict):
+                    name = name_field.get("new") or name_field.get("old", "Unknown")
+                else:
+                    name = str(name_field) if name_field else "Unknown"
+                parts.append(f"- {change_type.upper()} {entity_type}: {name}")
+            else:
+                parts.append(f"- {change_type.upper()} relationship: {entity_type}")
+        parts.append("")
+
+    # Strongest relationships
+    strongest = context.get("strongest_relationships", [])
+    if strongest:
+        parts.append("## CLOSEST RELATIONSHIPS (by strength)")
+        for rel in strongest[:3]:
+            parts.append(f"- {rel.get('name', 'Unknown')} ({rel.get('relationship_type', 'related')})")
+        parts.append("")
+
+    # Recently changed relationships
+    recent_rels = context.get("recently_changed_relationships", [])
+    if recent_rels:
+        parts.append("## RECENTLY CHANGED RELATIONSHIPS")
+        for rel in recent_rels[:5]:
+            change = rel.get("change_type", "updated")
+            name = rel.get("name", "Unknown")
+            parts.append(f"- {change}: {name}")
+        parts.append("")
+
+    # Event-relevant relationships
+    event_rels = context.get("event_relevant_relationships", [])
+    if event_rels:
+        parts.append("## PEOPLE CONNECTED TO UPCOMING EVENTS")
+        for rel in event_rels[:5]:
+            name = rel.get("name", "Unknown")
+            event = rel.get("event_title", "")
+            parts.append(f"- {name}: {event}")
+        parts.append("")
+
+    # Recent summaries (patterns)
+    summaries = context.get("recent_summaries", [])
+    if summaries:
+        parts.append("## RECENT ACTIVITY PATTERNS")
+        for summary in summaries[:5]:
+            text = summary.get("summary_text", "")
+            if text:
+                parts.append(f"- {text[:200]}")
+        parts.append("")
+
+    # Recent communications
+    comms = context.get("recent_communications", [])
+    if comms:
+        parts.append("## RECENT COMMUNICATIONS")
+        for comm in comms[:5]:
+            subject = comm.get("subject") or comm.get("title", "")
+            if subject:
+                parts.append(f"- {subject[:50]}")
+        parts.append("")
+
+    parts.append("\nBased on this context, generate 3-5 actionable insights that would be helpful to the user.")
+    parts.append("Focus on upcoming opportunities, relationship maintenance, and timely suggestions.")
+
+    return "\n".join(parts)
+
+
 def generate_embedding(llm_config: LLMConfig, text: str) -> List[float]:
     """
     Generate embedding for text.
@@ -262,5 +414,6 @@ __all__ = [
     "generate_hourly_summary",
     "generate_rollup_summary",
     "generate_user_dossier",
+    "generate_insights",
     "generate_embedding",
 ]

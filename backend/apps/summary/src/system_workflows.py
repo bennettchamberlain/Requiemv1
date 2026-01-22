@@ -18,6 +18,7 @@ with workflow.unsafe.imports_passed_through():
         WeeklySummaryWorkflow,
         MonthlySummaryWorkflow,
         DossierRefreshWorkflow,
+        InsightsGenerationWorkflow,
     )
 
 
@@ -330,10 +331,99 @@ class SystemDossierRefreshWorkflow:
             return []
 
 
+@workflow.defn(name="system-insights")
+class SystemInsightsWorkflow:
+    """
+    System workflow that generates proactive insights for all active users.
+
+    Runs every 3 hours and spawns child workflows for each user.
+    Each child workflow checks if there's new data before generating insights.
+    """
+
+    @workflow.run
+    async def run(self) -> Dict[str, Any]:
+        """Execute insights generation for all users."""
+        workflow.logger.info("system_insights_started")
+
+        now = workflow.now()
+        users = await self._get_active_users()
+        workflow.logger.info(f"active_users_fetched count={len(users)}")
+
+        if not users:
+            return {"users_processed": 0, "message": "No active users"}
+
+        results = []
+        skipped_count = 0
+        generated_count = 0
+
+        for user_id in users:
+            try:
+                result = await workflow.execute_child_workflow(
+                    InsightsGenerationWorkflow.run,
+                    args=[
+                        user_id,
+                        "UTC",
+                        72,  # 3 days lookback
+                        None,  # LLM config created by worker
+                    ],
+                    id=f"insights-{user_id}-{now.isoformat()}",
+                    task_queue=get_task_queue(Priority.MEDIUM),
+                )
+
+                if result.get("skipped"):
+                    skipped_count += 1
+                    results.append({
+                        "user_id": user_id,
+                        "status": "skipped",
+                        "reason": result.get("reason"),
+                    })
+                else:
+                    generated_count += 1
+                    results.append({
+                        "user_id": user_id,
+                        "status": "success",
+                        "summary_id": result.get("summary_id"),
+                        "num_insights": result.get("num_insights"),
+                    })
+            except Exception as e:
+                workflow.logger.error(f"insights_generation_failed user_id={user_id} error={str(e)}")
+                results.append({"user_id": user_id, "status": "error", "error": str(e)})
+
+        workflow.logger.info(
+            f"system_insights_completed total={len(users)} generated={generated_count} skipped={skipped_count}"
+        )
+
+        return {
+            "users_processed": len(users),
+            "insights_generated": generated_count,
+            "insights_skipped": skipped_count,
+            "timestamp": now.isoformat(),
+            "results": results,
+        }
+
+    async def _get_active_users(self) -> List[str]:
+        """Get all active users from database."""
+        try:
+            rows = db.execute_query("SELECT id FROM ci.users WHERE onboarded = true", {})
+            if rows:
+                return [str(row['id']) for row in rows]
+        except Exception:
+            pass
+        try:
+            rows = db.execute_query(
+                "SELECT DISTINCT owner_user_id FROM entities WHERE owner_user_id IS NOT NULL", {}
+            )
+            return [str(row['owner_user_id']) for row in rows]
+        except Exception:
+            workflow.logger.warning("failed_to_fetch_users")
+            return []
+
+
 __all__ = [
     "SystemHourlySummariesWorkflow",
     "SystemDailySummariesWorkflow",
     "SystemWeeklySummariesWorkflow",
     "SystemMonthlySummariesWorkflow",
     "SystemDossierRefreshWorkflow",
+    "SystemInsightsWorkflow",
 ]

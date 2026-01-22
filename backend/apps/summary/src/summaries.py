@@ -337,3 +337,141 @@ def _get_entity_dossier(entity_id: str) -> dict:
         except json.JSONDecodeError:
             return None
     return None
+
+
+# ============================================================================
+# Insights Generation
+# ============================================================================
+
+def execute_insights(
+    user_id: UUID,
+    timezone: str = "UTC",
+    lookback_hours: int = 72,
+) -> Dict[str, Any]:
+    """
+    Execute proactive insights generation.
+
+    Args:
+        user_id: User to generate insights for
+        timezone: User's timezone
+        lookback_hours: How far back to look for context (default 72 hours / 3 days)
+
+    Returns:
+        Dict with insight results or skip reason
+    """
+    from uuid import uuid4
+    from .insight_aggregator import insight_aggregator
+
+    logger.info("insights_generation_started", user_id=str(user_id))
+
+    now = datetime.utcnow()
+
+    # Get last insight time to determine lookback
+    last_insight_time = insight_aggregator.get_last_insight_time(user_id)
+    if last_insight_time:
+        since = last_insight_time
+    else:
+        since = now - timedelta(hours=lookback_hours)
+
+    logger.info("lookback_window", since=since.isoformat(), until=now.isoformat())
+
+    # Check if there's new data
+    has_new_data = insight_aggregator.has_new_data(user_id, since)
+    if not has_new_data:
+        logger.info("no_new_data_skipping")
+        return {
+            "skipped": True,
+            "reason": "no_new_data",
+            "user_id": str(user_id),
+        }
+
+    # Aggregate context
+    context = insight_aggregator.aggregate_insights_context(user_id, since, now)
+
+    total_context_items = (
+        len(context.get("graph_deltas", []))
+        + len(context.get("upcoming_events", []))
+        + len(context.get("recent_summaries", []))
+    )
+
+    if total_context_items < 2:
+        logger.info("insufficient_context", total_items=total_context_items)
+        return {
+            "skipped": True,
+            "reason": "insufficient_context",
+            "user_id": str(user_id),
+            "context_items": total_context_items,
+        }
+
+    logger.info("context_aggregated", total_items=total_context_items)
+
+    # Generate insights (LLM call)
+    insights_data = summarizer.generate_insights(context)
+
+    num_insights = len(insights_data.get("insights", []))
+    if num_insights == 0:
+        logger.info("no_insights_generated")
+        return {
+            "skipped": True,
+            "reason": "no_insights_generated",
+            "user_id": str(user_id),
+        }
+
+    # Store as summary with period_type='insight'
+    summary_id = uuid4()
+    insights_list = insights_data.get("insights", [])
+
+    content = {
+        "insights": insights_list,
+        "data_sources_used": insights_data.get("data_sources_used", []),
+        "tokens_used": insights_data.get("tokens_used", 0),
+        "summary_text": "; ".join([i.get("title", "") for i in insights_list]),
+        "key_insights": [
+            i.get("title", "") + ": " + (i.get("key_actions", [])[:1] or [""])[0]
+            for i in insights_list
+        ],
+    }
+
+    source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+    title = insights_list[0].get("title", "Proactive Insights") if insights_list else "Proactive Insights"
+
+    embedding = insights_data.get("embedding", [])
+    metadata = {"seen": False}
+
+    db.execute_write(
+        """
+        INSERT INTO ci.summaries (
+            summary_id, user_id, period_start, period_end, period_type,
+            timezone, source_types, title, content, summary_embedding,
+            metadata, created_at, updated_at
+        ) VALUES (
+            :summary_id, :user_id, :period_start, :period_end, 'insight',
+            :timezone, :source_types, :title, CAST(:content AS jsonb),
+            CASE WHEN :embedding = '[]' THEN NULL ELSE CAST(:embedding AS vector) END,
+            CAST(:metadata AS jsonb), NOW(), NOW()
+        )
+        """,
+        {
+            "summary_id": str(summary_id),
+            "user_id": str(user_id),
+            "period_start": since,
+            "period_end": now,
+            "timezone": timezone,
+            "source_types": source_types,
+            "title": title,
+            "content": json.dumps(content),
+            "embedding": json.dumps(embedding),
+            "metadata": json.dumps(metadata),
+        },
+    )
+
+    logger.info("insights_stored", summary_id=str(summary_id), num_insights=num_insights)
+
+    return {
+        "skipped": False,
+        "summary_id": str(summary_id),
+        "user_id": str(user_id),
+        "num_insights": num_insights,
+        "insights": insights_list,
+        "tokens_used": insights_data.get("tokens_used", 0),
+    }

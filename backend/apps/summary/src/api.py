@@ -162,6 +162,177 @@ async def get_dossier(request: DossierFetchRequest) -> Dict[str, Any]:
 
 
 # ============================================================================
+# Insights endpoints
+# ============================================================================
+
+class InsightsRequest(BaseModel):
+    user_id: str = Field(description="User UUID")
+    timezone: str = Field(default="UTC", description="User's timezone")
+    lookback_hours: Optional[int] = Field(default=72, description="Hours to look back for context (default 72)")
+
+
+@app.post("/insights/generate")
+async def generate_insights(request: InsightsRequest) -> Dict[str, Any]:
+    """
+    Manually trigger proactive insights generation.
+
+    Generates actionable insights based on:
+    - Recent graph deltas (new people, relationship changes)
+    - Upcoming events (next 14 days)
+    - Recent activity summaries
+    - Strongest and recently-changed relationships
+    - Recent communications
+
+    Will skip if no new data since last insight generation.
+    """
+    try:
+        user_id = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
+
+    try:
+        result = summaries.execute_insights(
+            user_id,
+            request.timezone,
+            request.lookback_hours,
+        )
+
+        if result.get("skipped"):
+            return {
+                "status": "skipped",
+                "reason": result.get("reason"),
+                "user_id": request.user_id,
+                "message": f"Insights generation skipped: {result.get('reason')}",
+            }
+
+        return {
+            "status": "success",
+            "message": f"Generated {result.get('num_insights', 0)} insights",
+            "summary_id": result.get("summary_id"),
+            "num_insights": result.get("num_insights"),
+            "insights": result.get("insights", []),
+            "tokens_used": result.get("tokens_used", 0),
+        }
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Insights generation failed: {str(exc)}") from exc
+
+
+@app.post("/insights/force-generate")
+async def force_generate_insights(request: InsightsRequest) -> Dict[str, Any]:
+    """
+    Force insights generation even if no new data.
+
+    Use this to regenerate insights regardless of whether there's new data.
+    Sets lookback to specified hours (default 72) from now.
+    """
+    try:
+        user_id = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
+
+    from datetime import datetime, timedelta
+    from .insight_aggregator import insight_aggregator
+    from .summarizer import summarizer as summary_gen
+    from .database import db
+    import json
+
+    try:
+        now = datetime.utcnow()
+        since = now - timedelta(hours=request.lookback_hours)
+
+        # Aggregate context (skip the new data check)
+        context = insight_aggregator.aggregate_insights_context(user_id, since, now)
+
+        total_context_items = (
+            len(context.get("graph_deltas", []))
+            + len(context.get("upcoming_events", []))
+            + len(context.get("recent_summaries", []))
+        )
+
+        if total_context_items < 1:
+            return {
+                "status": "skipped",
+                "reason": "no_context_available",
+                "message": "No context data available for insights generation",
+            }
+
+        # Generate insights (LLM call)
+        insights_data = summary_gen.generate_insights(context)
+
+        num_insights = len(insights_data.get("insights", []))
+        if num_insights == 0:
+            return {
+                "status": "skipped",
+                "reason": "no_insights_generated",
+                "message": "LLM did not generate any insights from available context",
+            }
+
+        # Store
+        from uuid import uuid4
+        summary_id = uuid4()
+        insights_list = insights_data.get("insights", [])
+
+        content = {
+            "insights": insights_list,
+            "data_sources_used": insights_data.get("data_sources_used", []),
+            "tokens_used": insights_data.get("tokens_used", 0),
+            "summary_text": "; ".join([i.get("title", "") for i in insights_list]),
+            "key_insights": [
+                i.get("title", "") + ": " + (i.get("key_actions", [])[:1] or [""])[0]
+                for i in insights_list
+            ],
+        }
+
+        source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+        title = insights_list[0].get("title", "Proactive Insights") if insights_list else "Proactive Insights"
+        embedding = insights_data.get("embedding", [])
+        metadata = {"seen": False, "forced": True}
+
+        db.execute_write(
+            """
+            INSERT INTO ci.summaries (
+                summary_id, user_id, period_start, period_end, period_type,
+                timezone, source_types, title, content, summary_embedding,
+                metadata, created_at, updated_at
+            ) VALUES (
+                :summary_id, :user_id, :period_start, :period_end, 'insight',
+                :timezone, :source_types, :title, CAST(:content AS jsonb),
+                CASE WHEN :embedding = '[]' THEN NULL ELSE CAST(:embedding AS vector) END,
+                CAST(:metadata AS jsonb), NOW(), NOW()
+            )
+            """,
+            {
+                "summary_id": str(summary_id),
+                "user_id": str(user_id),
+                "period_start": since,
+                "period_end": now,
+                "timezone": request.timezone,
+                "source_types": source_types,
+                "title": title,
+                "content": json.dumps(content),
+                "embedding": json.dumps(embedding),
+                "metadata": json.dumps(metadata),
+            },
+        )
+
+        return {
+            "status": "success",
+            "message": f"Force-generated {num_insights} insights",
+            "summary_id": str(summary_id),
+            "num_insights": num_insights,
+            "insights": insights_list,
+            "tokens_used": insights_data.get("tokens_used", 0),
+            "context_items": total_context_items,
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Insights generation failed: {str(exc)}") from exc
+
+
+# ============================================================================
 # Aggregate preview (for debugging)
 # ============================================================================
 
