@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "DOTENV_CONFIG_PATH=../../../.env nodemon --exec ts-node -r tsconfig-paths/register -r @swc/register src/main.ts",
+    "dev": "DOTENV_CONFIG_PATH=../../../.env nodemon --watch src --watch config --watch ../../../.env --exec ts-node -r tsconfig-paths/register -r @swc/register src/main.ts",
     "build": "yarn tsc --build --verbose && yarn tsc-alias --verbose",
     "clean": "rimraf dist",
     "exec": "DOTENV_CONFIG_PATH=../../../.env ts-node -r tsconfig-paths/register -r @swc/register",
