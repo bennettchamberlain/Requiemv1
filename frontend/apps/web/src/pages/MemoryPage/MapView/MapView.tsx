@@ -18,6 +18,10 @@ export function DesktopMapView() {
 
       const location = entity.location as LOCATION_TYPE;
 
+      if (!location) {
+        return false;
+      }
+
       return (
         location.properties.latitude != null &&
         location.properties.longitude != null &&
