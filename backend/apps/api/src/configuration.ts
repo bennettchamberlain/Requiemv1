@@ -91,6 +91,7 @@ export const ConfigSchema = z.object({
     'scheduled.entity.promotion': booleanStringSchema,
     'pinned.demo.models': booleanStringSchema,
     'enable.system.prompt': booleanStringSchema,
+    'plugins.page': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
