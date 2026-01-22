@@ -18,10 +18,8 @@ export function MemoryPage() {
       args={[
         {
           searchQuery: searchParams.get('search') || '',
-          includedEntityTypes:
-            searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || undefined,
-          excludedEntityTypes:
-            searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || undefined,
+          includeTypes: searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || undefined,
+          excludeTypes: searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || undefined,
         },
       ]}
     >

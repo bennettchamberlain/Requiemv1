@@ -1,8 +1,6 @@
 import { Calendar, User, MapPin, Package, FileText, Contact, Lightbulb, Target } from '@ci/shadcn/icons';
 
-import type { FragmentType } from '@/graphql';
-
-import type { MemoryItem } from '../types';
+import type { EntityItem } from '../../MemoryPage/useEntityService';
 
 export function formatDuration(minutes: number): string {
   const days = Math.floor(minutes / (24 * 60));
@@ -86,16 +84,20 @@ export function formatDateForDisplay(dateStr: string): string {
   });
 }
 
-export function sortEntitiesByTime(
-  entities: FragmentType<
-    typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT
-  >[][],
-): FragmentType<
-  typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT
->[][] {
+export function sortEntitiesByTime(entities: EntityItem[][]): EntityItem[][] {
   return [...entities].sort((a, b) => {
-    const dateA = new Date(a.timestamp);
-    const dateB = new Date(b.timestamp);
+    const dateA =
+      'time' in a
+        ? new Date(a.time as string)
+        : 'startTime' in a
+          ? new Date(a.startTime as string)
+          : new Date();
+    const dateB =
+      'time' in b
+        ? new Date(b.time as string)
+        : 'startTime' in b
+          ? new Date(b.startTime as string)
+          : new Date();
     if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
       return 0;
     }
@@ -104,17 +106,23 @@ export function sortEntitiesByTime(
   });
 }
 
-export function groupEntitiesByDate(entities: MemoryItem[]): Array<{
+export function groupEntitiesByDate(entities: EntityItem[]): Array<{
   date: string;
-  entities: MemoryItem[];
+  entities: EntityItem[];
 }> {
-  const groups: Record<
-    string,
-    FragmentType<typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT>[]
-  > = {};
+  const groups: Record<string, EntityItem[]> = {};
 
   entities.forEach((entity) => {
-    const entityDate = new Date(entity.time || entity.startTime);
+    if (!('time' in entity) && !('startTime' in entity)) {
+      return;
+    }
+
+    const entityDate =
+      'time' in entity
+        ? new Date(entity.time as string)
+        : 'startTime' in entity
+          ? new Date(entity.startTime as string)
+          : new Date();
     if (!isNaN(entityDate.getTime())) {
       // Use local date instead of UTC to match user's timezone
       const year = entityDate.getFullYear();
@@ -156,17 +164,6 @@ export function getEntityTypeIcon(type: string) {
     default:
       return <Target className="h-4 w-4" />;
   }
-}
-
-export function hasValidLocation(entity: MemoryItem): boolean {
-  return !!(
-    entity.location &&
-    typeof entity.location.properties.latitude === 'number' &&
-    typeof entity.location.properties.longitude === 'number' &&
-    !isNaN(entity.location.properties.latitude) &&
-    !isNaN(entity.location.properties.longitude) &&
-    !(entity.location.properties.latitude === 0 && entity.location.longitude === 0)
-  );
 }
 
 // Got from the top answer here: https://stackoverflow.com/questions/15900485/correct-way-to-convert-size-in-bytes-to-kb-mb-gb-in-javascript

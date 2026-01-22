@@ -16,8 +16,7 @@ import { TimelineView } from './TimelineView';
 
 export default function MobileMemoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [{ data }] = useEntityService();
-  const [activeEntity, setActiveEntity] = useState<typeof data>(null);
+  const [{ data, activeEntity }, { setActiveEntity }] = useEntityService();
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
 
   const [activeTab, setActiveTab] = useState('list');

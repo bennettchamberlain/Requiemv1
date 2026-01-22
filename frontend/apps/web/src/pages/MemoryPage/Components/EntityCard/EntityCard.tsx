@@ -1,13 +1,11 @@
-import type { FragmentType } from '@/graphql';
+import type { EntityItem } from '@/pages/MemoryPage/useEntityService.tsx';
 
 import { BrowserActivityCard } from './BrowserActivityCard';
 import { CommunicationCard } from './CommunicationCard';
 import { EventCard } from './EventCard';
 
 export interface Props {
-  entity: FragmentType<
-    typeof BROWSER_ACTIVITY_FRAGMENT | typeof COMMUNICATION_FRAGMENT | typeof EVENT_FRAGMENT
-  >;
+  entity: EntityItem;
 }
 
 export function EntityCard({ entity }: Props) {

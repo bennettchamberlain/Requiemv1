@@ -128,13 +128,13 @@ export function TimelineView() {
           return;
         }
 
-        const { scrollTop, scrollHeight, clientHeight } = container;
+        // const { scrollTop, scrollHeight, clientHeight } = container;
 
         // After reversing: scrolling down (toward bottom) loads past events (older memories)
         // Scrolling up (toward top) loads future events (newer memories)
-        if (scrollTop + clientHeight > scrollHeight - 100) {
-          loadPastEvents();
-        }
+        // if (scrollTop + clientHeight > scrollHeight - 100) {
+        //   loadPastEvents();
+        // }
 
         // if (scrollTop < 100) {
         //   loadFutureEvents();
@@ -181,7 +181,12 @@ export function TimelineView() {
 
             <div className="space-y-4 pl-8">
               {[...dayEntities].reverse().map((entity) => {
-                const entityDate = new Date(entity.timestamp);
+                const entityDate =
+                  'time' in entity
+                    ? new Date(entity.time as string)
+                    : 'startTime' in entity
+                      ? new Date(entity.startTime as string)
+                      : new Date();
                 const now = new Date();
                 const timeDiff = Math.abs(entityDate.getTime() - now.getTime());
                 const isCurrentTime =

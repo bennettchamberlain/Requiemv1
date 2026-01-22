@@ -5,24 +5,49 @@ import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
 
 import { TimelineView } from '../TimelineView';
 
+type LOCATION_TYPE = { properties: { latitude: number; longitude: number } };
+
 export function DesktopMapView() {
   const [{ data }, { setActiveEntity }] = useEntityService();
-  console.log('data in MapView', data);
 
-  const memoriesWithLocation = useMemo(() => {
-    const filteredMemories = data.filter(
-      (memory) =>
-        memory.location &&
-        typeof memory.location.properties.latitude === 'number' &&
-        typeof memory.location.properties.longitude === 'number' &&
-        !isNaN(memory.location.properties.latitude) &&
-        !isNaN(memory.location.properties.longitude) &&
-        !(memory.location.properties.latitude === 0 && memory.location.properties.longitude === 0),
-    );
+  const entitiesWithLocation = useMemo(() => {
+    const filteredEntities = data.filter((entity) => {
+      if (!('location' in entity)) {
+        return false;
+      }
 
-    filteredMemories.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const location = entity.location as LOCATION_TYPE;
 
-    return filteredMemories;
+      return (
+        location.properties.latitude != null &&
+        location.properties.longitude != null &&
+        !isNaN(location.properties.latitude) &&
+        !isNaN(location.properties.longitude) &&
+        !(location.properties.latitude === 0 && location.properties.longitude === 0)
+      );
+    });
+
+    filteredEntities.sort((a, b) => {
+      const dateA =
+        'time' in a
+          ? new Date(a.time as string)
+          : 'startTime' in a
+            ? new Date(a.startTime as string)
+            : new Date();
+      const dateB =
+        'time' in b
+          ? new Date(b.time as string)
+          : 'startTime' in b
+            ? new Date(b.startTime as string)
+            : new Date();
+      if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+        return 0;
+      }
+
+      return dateA.getTime() - dateB.getTime();
+    });
+
+    return filteredEntities;
   }, [data]);
 
   return (
@@ -35,13 +60,18 @@ export function DesktopMapView() {
       </Map.Panel>
 
       <Map.RouteLayer />
-      {memoriesWithLocation.map((memory) => (
-        <Map.Marker
-          key={memory.id}
-          position={[memory.location!.properties!.latitude, memory.location!.properties!.longitude]}
-          onClick={() => setActiveEntity(memory)}
-        />
-      ))}
+      {entitiesWithLocation.map((entity) => {
+        return 'location' in entity ? (
+          <Map.Marker
+            key={entity.id}
+            position={[
+              (entity.location as LOCATION_TYPE).properties.latitude,
+              (entity.location as LOCATION_TYPE).properties.longitude,
+            ]}
+            onClick={() => setActiveEntity(entity)}
+          />
+        ) : null;
+      })}
     </Map>
   );
 }

@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react';
 
+import type { ApolloError } from '@apollo/client';
 import { useQuery } from '@apollo/client';
 import { createHookContext } from '@ci/common';
+import { type ResultOf } from '@graphql-typed-document-node/core';
 
-import type { FragmentType } from '@/graphql';
 import { gql } from '@/graphql';
 
 const SEARCH_QUERY = gql(`
   query Search($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {
-    search(input: { query: $query, includeTypes: $includeTNbroypes, excludeTypes: $excludeTypes }) {
+    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {
       edges {
         node {
           __typename
@@ -52,15 +53,17 @@ const SEARCH_QUERY = gql(`
   }
 `);
 
+export type EntityItem = ResultOf<typeof SEARCH_QUERY>['search']['edges'][number]['node'];
+
 type ReturnType = [
   {
-    data: Array<FragmentType>;
+    data: Array<EntityItem>;
     loading: boolean;
-    error: Error | null;
-    activeEntity: FragmentType;
+    error: ApolloError | undefined;
+    activeEntity: EntityItem | null;
   },
   {
-    setActiveEntity: (entity: FragmentType) => void;
+    setActiveEntity: (entity: EntityItem | null) => void;
   },
 ];
 
@@ -81,8 +84,7 @@ function useEntityService({
     },
   });
 
-  console.log('data', data);
-  const [activeEntity, setActiveEntity] = useState<typeof data>(null);
+  const [activeEntity, setActiveEntity] = useState<EntityItem | null>(null);
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);
 

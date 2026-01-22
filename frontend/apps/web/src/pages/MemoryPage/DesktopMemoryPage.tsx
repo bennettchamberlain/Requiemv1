@@ -11,9 +11,9 @@ import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
 import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown.ts';
 import { gql } from '@/graphql';
-import { EntityDetails } from '@/pages/MemoryPage/Components/EntityDetails';
 import { useEntityService } from '@/pages/MemoryPage/useEntityService.tsx';
 
+import { EntityDetails } from './Components/EntityDetails';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
