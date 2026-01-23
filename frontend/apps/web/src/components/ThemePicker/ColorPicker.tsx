@@ -1,10 +1,16 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 
 import { Button, Tabs, ScrollArea, Input, Label, Popover } from '@ci/shadcn';
-import { Palette, Settings2, Sliders, RotateCcw, X } from '@ci/shadcn/icons';
+import { Palette, Settings2, Sliders, RotateCcw, X, Download, Upload, Copy, Check } from '@ci/shadcn/icons';
 
 import { ColorWheel } from './ColorWheel';
-import { PRESET_THEMES, useTheme, COLOR_VARIABLE_CATEGORIES, type ThemeColorVariable } from './useTheme';
+import {
+  PRESET_THEMES,
+  useTheme,
+  COLOR_VARIABLE_CATEGORIES,
+  type ThemeColorVariable,
+  type ShareableTheme,
+} from './useTheme';
 
 interface ColorSwatchEditorProps {
   variable: ThemeColorVariable;
@@ -121,13 +127,61 @@ export function ColorPicker() {
     clearColorVariable,
     clearAllColorOverrides,
     getEffectiveColor,
+    exportTheme,
+    importTheme,
   } = useTheme();
   const [customHue, setCustomHue] = useState(themeState.colorTheme.baseHue);
+  const [copied, setCopied] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync customHue when the theme changes (e.g., when a preset is selected)
   useEffect(() => {
     setCustomHue(themeState.colorTheme.baseHue);
   }, [themeState.colorTheme.baseHue]);
+
+  const handleExportToClipboard = async () => {
+    const theme = exportTheme();
+    const json = JSON.stringify(theme, null, 2);
+    await navigator.clipboard.writeText(json);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExportToFile = () => {
+    const theme = exportTheme();
+    const json = JSON.stringify(theme, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${theme.name.toLowerCase().replace(/\s+/g, '-')}-theme.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFromFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = e.target?.result as string;
+        const theme = JSON.parse(json) as ShareableTheme;
+        importTheme(theme);
+      } catch (error) {
+        console.error('Failed to parse theme file:', error);
+      }
+    };
+
+    reader.readAsText(file);
+    // Reset input so same file can be selected again
+    event.target.value = '';
+  };
 
   const handlePresetSelect = (preset: (typeof PRESET_THEMES)[0]) => {
     setColorTheme(preset);
@@ -286,17 +340,50 @@ export function ColorPicker() {
 
       <Tabs.Content value="advanced" className="p-4 space-y-4">
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium">Color variables</h3>
-              <p className="text-xs text-muted-foreground">Override individual theme colors</p>
-            </div>
-            {overrideCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearAllColorOverrides} className="text-xs">
-                <RotateCcw className="h-3 w-3 mr-1" />
-                Reset all
+          {/* Export/Import Section */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Share theme</h3>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleExportToClipboard} className="flex-1">
+                {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                {copied ? 'Copied!' : 'Copy'}
               </Button>
-            )}
+              <Button variant="outline" size="sm" onClick={handleExportToFile} className="flex-1">
+                <Download className="h-3 w-3 mr-1" />
+                Export
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-1"
+              >
+                <Upload className="h-3 w-3 mr-1" />
+                Import
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportFromFile}
+                className="hidden"
+              />
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium">Color variables</h3>
+                <p className="text-xs text-muted-foreground">Override individual theme colors</p>
+              </div>
+              {overrideCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearAllColorOverrides} className="text-xs">
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                  Reset all
+                </Button>
+              )}
+            </div>
           </div>
 
           <ScrollArea className="h-[450px] pr-4">

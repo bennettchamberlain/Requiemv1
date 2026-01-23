@@ -99,6 +99,15 @@ export const COLOR_VARIABLE_CATEGORIES = {
 // Custom color overrides - allows setting specific variables to specific colors
 export type ColorOverrides = Partial<Record<ThemeColorVariable, string>>;
 
+// Shareable theme format for export/import
+export interface ShareableTheme {
+  version: 1;
+  name: string;
+  colorTheme: ColorTheme;
+  colorOverrides: ColorOverrides;
+  exportedAt: string;
+}
+
 interface ThemeState {
   mode: Theme;
   colorTheme: ColorTheme;
@@ -118,6 +127,8 @@ type ThemeProviderState = {
   themeState: ThemeState;
   setTheme: (theme: Theme) => void;
   setColorTheme: (colorTheme: ColorTheme) => void;
+  exportTheme: (name?: string) => ShareableTheme;
+  importTheme: (theme: ShareableTheme) => boolean;
   setCustomColor: (hue: number) => void;
   setColorVariable: (variable: ThemeColorVariable, color: string) => void;
   clearColorVariable: (variable: ThemeColorVariable) => void;
@@ -414,6 +425,14 @@ const initialState: ThemeProviderState = {
   },
   setTheme: () => null,
   setColorTheme: () => null,
+  exportTheme: () => ({
+    version: 1,
+    name: '',
+    colorTheme: PRESET_THEMES[0],
+    colorOverrides: {},
+    exportedAt: '',
+  }),
+  importTheme: () => false,
   setCustomColor: () => null,
   setColorVariable: () => null,
   clearColorVariable: () => null,
@@ -559,10 +578,69 @@ export function ThemeProvider({
     setThemeState((prev) => ({ ...prev, colorOverrides: {} }));
   };
 
+  const exportTheme = (name?: string): ShareableTheme => {
+    const themeName = name || themeState.colorTheme.name || `Custom Theme ${new Date().toLocaleDateString()}`;
+
+    // Capture the effective value of ALL variables (not just overrides)
+    const allColors: ColorOverrides = {};
+    for (const variable of THEME_COLOR_VARIABLES) {
+      const color = getEffectiveColor(variable);
+      if (color) {
+        allColors[variable] = color;
+      }
+    }
+
+    return {
+      version: 1,
+      name: themeName,
+      colorTheme: themeState.colorTheme,
+      colorOverrides: allColors,
+      exportedAt: new Date().toISOString(),
+    };
+  };
+
+  const importTheme = (theme: ShareableTheme): boolean => {
+    try {
+      // Validate the theme structure
+      if (theme.version !== 1 || !theme.colorTheme) {
+        console.error('Invalid theme format');
+
+        return false;
+      }
+
+      // Apply the color theme
+      const importedColorTheme: ColorTheme = {
+        name: theme.name || theme.colorTheme.name,
+        baseHue: theme.colorTheme.baseHue,
+        isCustom: theme.colorTheme.isCustom,
+      };
+      localStorage.setItem(colorStorageKey, JSON.stringify(importedColorTheme));
+
+      // Apply the color overrides
+      const importedOverrides = theme.colorOverrides || {};
+      localStorage.setItem(colorOverridesStorageKey, JSON.stringify(importedOverrides));
+
+      // Update state
+      setThemeState((prev) => ({
+        ...prev,
+        colorTheme: importedColorTheme,
+        colorOverrides: importedOverrides,
+      }));
+
+      return true;
+    } catch (error) {
+      console.error('Failed to import theme:', error);
+
+      return false;
+    }
+  };
+
   const value = {
     themeState,
     setTheme,
     setColorTheme,
+    exportTheme,
+    importTheme,
     setCustomColor,
     setColorVariable,
     clearColorVariable,
