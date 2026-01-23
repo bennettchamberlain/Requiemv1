@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
 import { useMutation } from '@apollo/client';
-import { Button, Dialog, Input, Label } from '@ci/shadcn';
+import { Button, Dialog, Input, Textarea, Label } from '@ci/shadcn';
 
 import { gql } from '@/graphql';
 
@@ -95,7 +95,7 @@ export function AddConceptModal({ open, onClose }: Props) {
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="description">Description</Label>
-            <Input
+            <Textarea
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
