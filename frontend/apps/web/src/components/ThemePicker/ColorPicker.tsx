@@ -3,6 +3,8 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Button, Tabs, ScrollArea, Input, Label, Popover } from '@ci/shadcn';
 import { Palette, Settings2, Sliders, RotateCcw, X, Download, Upload, Copy, Check } from '@ci/shadcn/icons';
 
+import { useFeatures } from '@/common/feature';
+
 import { ColorWheel } from './ColorWheel';
 import {
   PRESET_THEMES,
@@ -204,9 +206,12 @@ export function ColorPicker() {
     [themeState.colorOverrides],
   );
 
+  const { isFeatureEnabled } = useFeatures();
+  const showAdvancedTab = isFeatureEnabled('advanced.theme.tab');
+
   return (
     <Tabs defaultValue="presets" className="w-full">
-      <Tabs.List className="grid w-full grid-cols-3">
+      <Tabs.List className={`grid w-full ${showAdvancedTab ? 'grid-cols-3' : 'grid-cols-2'}`}>
         <Tabs.Trigger value="presets" className="flex items-center gap-1 text-xs">
           <Palette className="h-3.5 w-3.5" />
           Presets
@@ -215,15 +220,17 @@ export function ColorPicker() {
           <Settings2 className="h-3.5 w-3.5" />
           Custom
         </Tabs.Trigger>
-        <Tabs.Trigger value="advanced" className="flex items-center gap-1 text-xs">
-          <Sliders className="h-3.5 w-3.5" />
-          Advanced
-          {overrideCount > 0 && (
-            <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-primary text-primary-foreground rounded-full">
-              {overrideCount}
-            </span>
-          )}
-        </Tabs.Trigger>
+        {showAdvancedTab && (
+          <Tabs.Trigger value="advanced" className="flex items-center gap-1 text-xs">
+            <Sliders className="h-3.5 w-3.5" />
+            Advanced
+            {overrideCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-primary text-primary-foreground rounded-full">
+                {overrideCount}
+              </span>
+            )}
+          </Tabs.Trigger>
+        )}
       </Tabs.List>
 
       <Tabs.Content value="presets" className="p-4 space-y-4">
@@ -338,85 +345,87 @@ export function ColorPicker() {
         </div>
       </Tabs.Content>
 
-      <Tabs.Content value="advanced" className="p-4 space-y-4">
-        <div className="space-y-4">
-          {/* Export/Import Section */}
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Share theme</h3>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleExportToClipboard} className="flex-1">
-                {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-                {copied ? 'Copied!' : 'Copy'}
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleExportToFile} className="flex-1">
-                <Download className="h-3 w-3 mr-1" />
-                Export
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-1"
-              >
-                <Upload className="h-3 w-3 mr-1" />
-                Import
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleImportFromFile}
-                className="hidden"
-              />
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium">Color variables</h3>
-                <p className="text-xs text-muted-foreground">Override individual theme colors</p>
-              </div>
-              {overrideCount > 0 && (
-                <Button variant="ghost" size="sm" onClick={clearAllColorOverrides} className="text-xs">
-                  <RotateCcw className="h-3 w-3 mr-1" />
-                  Reset all
+      {showAdvancedTab && (
+        <Tabs.Content value="advanced" className="p-4 space-y-4">
+          <div className="space-y-4">
+            {/* Export/Import Section */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">Share theme</h3>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleExportToClipboard} className="flex-1">
+                  {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                  {copied ? 'Copied!' : 'Copy'}
                 </Button>
-              )}
+                <Button variant="outline" size="sm" onClick={handleExportToFile} className="flex-1">
+                  <Download className="h-3 w-3 mr-1" />
+                  Export
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex-1"
+                >
+                  <Upload className="h-3 w-3 mr-1" />
+                  Import
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportFromFile}
+                  className="hidden"
+                />
+              </div>
             </div>
-          </div>
 
-          <ScrollArea className="h-[450px] px-6 -mx-6 -mb-4">
-            <div className="space-y-4 pb-4">
-              {Object.entries(COLOR_VARIABLE_CATEGORIES).map(([category, variables]) => (
-                <div key={category} className="space-y-2">
-                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {category}
-                  </h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {variables.map((variable) => {
-                      const typedVariable = variable as ThemeColorVariable;
-                      const hasOverride = typedVariable in themeState.colorOverrides;
-                      const effectiveColor = getEffectiveColor(typedVariable);
-
-                      return (
-                        <ColorSwatchEditor
-                          key={typedVariable}
-                          variable={typedVariable}
-                          currentColor={effectiveColor}
-                          hasOverride={hasOverride}
-                          onColorChange={(color) => setColorVariable(typedVariable, color)}
-                          onClear={() => clearColorVariable(typedVariable)}
-                        />
-                      );
-                    })}
-                  </div>
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-medium">Color variables</h3>
+                  <p className="text-xs text-muted-foreground">Override individual theme colors</p>
                 </div>
-              ))}
+                {overrideCount > 0 && (
+                  <Button variant="ghost" size="sm" onClick={clearAllColorOverrides} className="text-xs">
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                    Reset all
+                  </Button>
+                )}
+              </div>
             </div>
-          </ScrollArea>
-        </div>
-      </Tabs.Content>
+
+            <ScrollArea className="h-[450px] px-6 -mx-6 -mb-4">
+              <div className="space-y-4 pb-4">
+                {Object.entries(COLOR_VARIABLE_CATEGORIES).map(([category, variables]) => (
+                  <div key={category} className="space-y-2">
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      {category}
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {variables.map((variable) => {
+                        const typedVariable = variable as ThemeColorVariable;
+                        const hasOverride = typedVariable in themeState.colorOverrides;
+                        const effectiveColor = getEffectiveColor(typedVariable);
+
+                        return (
+                          <ColorSwatchEditor
+                            key={typedVariable}
+                            variable={typedVariable}
+                            currentColor={effectiveColor}
+                            hasOverride={hasOverride}
+                            onColorChange={(color) => setColorVariable(typedVariable, color)}
+                            onClear={() => clearColorVariable(typedVariable)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        </Tabs.Content>
+      )}
     </Tabs>
   );
 }
