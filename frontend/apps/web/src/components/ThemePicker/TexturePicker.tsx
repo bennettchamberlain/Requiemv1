@@ -8,21 +8,23 @@ import {
   readTexturePalette,
   DEFAULT_TEXTURE_PALETTE,
   DEFAULT_TEXTURE_ID,
-  useTheme,
-} from './useTheme';
+  useBackground,
+} from './useBackground';
+import { useTheme } from './useTheme';
 
 const TEXTURE_OPACITY_MIN = 0;
 const TEXTURE_OPACITY_MAX = 0.8;
 const TEXTURE_OPACITY_STEP = 0.05;
 
 export function TexturePicker() {
-  const { themeState, setTexture, setTextureOpacity } = useTheme();
+  const { themeState } = useTheme();
+  const { backgroundState, setTexture, setTextureOpacity } = useBackground();
 
   const texturePalette = useMemo(
     () => readTexturePalette() ?? DEFAULT_TEXTURE_PALETTE,
     [themeState.mode, themeState.colorTheme],
   );
-  const textureOpacity = themeState.textureOpacity;
+  const textureOpacity = backgroundState.textureOpacity;
 
   const texturePreviews = useMemo<Record<string, CSSProperties>>(() => {
     return Object.fromEntries(
@@ -44,7 +46,7 @@ export function TexturePicker() {
     );
   }, [texturePalette, textureOpacity]);
 
-  const selectedTexture = TEXTURE_PATTERNS.find((pattern) => pattern.id === themeState.textureId);
+  const selectedTexture = TEXTURE_PATTERNS.find((pattern) => pattern.id === backgroundState.textureId);
 
   return (
     <div className="space-y-4">
@@ -57,7 +59,7 @@ export function TexturePicker() {
           variant="ghost"
           size="sm"
           onClick={() => setTexture(DEFAULT_TEXTURE_ID)}
-          disabled={themeState.textureId === DEFAULT_TEXTURE_ID}
+          disabled={backgroundState.textureId === DEFAULT_TEXTURE_ID}
           className="text-xs"
         >
           Clear
@@ -66,7 +68,7 @@ export function TexturePicker() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {TEXTURE_PATTERNS.map((pattern) => {
-          const isSelected = pattern.id === themeState.textureId;
+          const isSelected = pattern.id === backgroundState.textureId;
           const styles = texturePreviews[pattern.id] ?? {
             backgroundColor: texturePalette.background,
           };

@@ -8,7 +8,7 @@ import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
-import { ThemeProvider } from '@/components/ThemePicker';
+import { ThemeProvider, BackgroundProvider } from '@/components/ThemePicker';
 import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
@@ -50,17 +50,19 @@ function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
       <ThemeProvider defaultTheme="system" storageKey="ci-ui-theme">
-        <DeviceLayoutProvider args={[]}>
-          <AuthProvider args={[]}>
-            <FeaturesProvider args={[]}>
-              <ModelProvider args={[]}>
-                <CaptureModalProvider args={[]}>
-                  <ApolloProvider>{children}</ApolloProvider>
-                </CaptureModalProvider>
-              </ModelProvider>
-            </FeaturesProvider>
-          </AuthProvider>
-        </DeviceLayoutProvider>
+        <BackgroundProvider>
+          <DeviceLayoutProvider args={[]}>
+            <AuthProvider args={[]}>
+              <FeaturesProvider args={[]}>
+                <ModelProvider args={[]}>
+                  <CaptureModalProvider args={[]}>
+                    <ApolloProvider>{children}</ApolloProvider>
+                  </CaptureModalProvider>
+                </ModelProvider>
+              </FeaturesProvider>
+            </AuthProvider>
+          </DeviceLayoutProvider>
+        </BackgroundProvider>
       </ThemeProvider>
     </Router>
   );
