@@ -138,15 +138,15 @@ type ThemeProviderState = {
 
 // Preset color themes
 export const PRESET_THEMES: ColorTheme[] = [
-  { name: 'Ocean Blue', baseHue: 260 },
-  { name: 'Crimson Red', baseHue: 0 },
-  { name: 'Velvety Purple', baseHue: 280 },
-  { name: 'Forest Green', baseHue: 120 },
-  { name: 'Sunset Orange', baseHue: 30 },
-  { name: 'Midnight Indigo', baseHue: 240 },
-  { name: 'Dark Gray', baseHue: -1 }, // Special value for dark neutral
-  { name: 'Light Gray', baseHue: -2 }, // Special value for light neutral
   { name: 'Original', baseHue: -3 }, // Special value for original theme
+  { name: 'Light Gray', baseHue: -2 }, // Special value for light neutral
+  { name: 'Dark Gray', baseHue: -1 }, // Special value for dark neutral
+  { name: 'Crimson Red', baseHue: 0 },
+  { name: 'Sunset Orange', baseHue: 30 },
+  { name: 'Forest Green', baseHue: 120 },
+  { name: 'Midnight Indigo', baseHue: 240 },
+  { name: 'Ocean Blue', baseHue: 260 },
+  { name: 'Velvety Purple', baseHue: 280 },
 ];
 
 // Generate theme colors based on base hue and mode
