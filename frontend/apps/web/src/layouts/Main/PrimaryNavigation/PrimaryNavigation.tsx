@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
 import { Button, DropdownMenu, Kbd, Separator } from '@ci/shadcn';
-import { NotebookPen, Upload, Camera, Plus, Cable, Search, Tags } from '@ci/shadcn/icons';
+import { NotebookPen, Upload, Camera, Plus, Cable, Search, Tags, User, Lightbulb } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useUploadFile } from '@/api';
+import { AddPersonModal } from '@/components/modals/AddItemModal';
+import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { SearchModal } from '@/components/modals/SearchModal';
 import { UploadModal } from '@/components/modals/UploadModal';
@@ -22,6 +24,10 @@ export function PrimaryNavigation() {
   const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
     useModalControls();
   const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
+    useModalControls();
+  const [{ isOpen: isAddPersonModalOpen }, { open: openAddPersonModal, close: closeAddPersonModal }] =
+    useModalControls();
+  const [{ isOpen: isAddConceptModalOpen }, { open: openAddConceptModal, close: closeAddConceptModal }] =
     useModalControls();
 
   const [, { upload, reset: resetUploader }] = useUploadFile();
@@ -97,7 +103,7 @@ export function PrimaryNavigation() {
                   </Button>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <DropdownMenu.Item
                       onSelect={() => navigate('/notes/new')}
                       className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
@@ -107,33 +113,52 @@ export function PrimaryNavigation() {
                     </DropdownMenu.Item>
 
                     <DropdownMenu.Item
-                      onSelect={openUploadModal}
-                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                      onSelect={openAddPersonModal}
+                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
-                      <Upload className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs">Upload</span>
+                      <User className="h-6! w-6!" strokeWidth={1.25} />
+                      <span className="text-xs text-center">Person</span>
                     </DropdownMenu.Item>
 
                     <DropdownMenu.Item
-                      onSelect={openCaptureModal}
-                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                      onSelect={openAddConceptModal}
+                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
-                      <Camera className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs">Capture</span>
+                      <Lightbulb className="h-6! w-6!" strokeWidth={1.25} />
+                      <span className="text-xs text-center">Concept</span>
                     </DropdownMenu.Item>
+                  </div>
+                  <div className="mt-2 -mx-2 -mb-2 bg-muted/50 p-4 rounded-b-lg">
+                    <div className="text-center text-sm font-semibold mb-3">Actions</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <DropdownMenu.Item
+                        onSelect={openUploadModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                      >
+                        <Upload className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Upload</span>
+                      </DropdownMenu.Item>
 
-                    <DropdownMenu.Item
-                      onSelect={() => navigate('/connect')}
-                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                    >
-                      <Cable className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs">Connect</span>
-                    </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        onSelect={openCaptureModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
+                      >
+                        <Camera className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Capture</span>
+                      </DropdownMenu.Item>
+
+                      <DropdownMenu.Item
+                        onSelect={() => navigate('/connect')}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <Cable className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Connect</span>
+                      </DropdownMenu.Item>
+                    </div>
                   </div>
                 </DropdownMenu.Content>
               </DropdownMenu>
             </div>
-
             <NavUser />
           </div>
         </section>
@@ -157,6 +182,10 @@ export function PrimaryNavigation() {
           closeCaptureModal();
         }}
       />
+
+      <AddPersonModal open={isAddPersonModalOpen} onClose={closeAddPersonModal} />
+
+      <AddConceptModal open={isAddConceptModalOpen} onClose={closeAddConceptModal} />
     </>
   );
 }

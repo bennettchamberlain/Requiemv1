@@ -158,6 +158,16 @@ input CreateAnswerInput {
   questionId: String!
 }
 
+input CreateConceptInput {
+  description: String
+  name: String!
+}
+
+type CreateConceptPayload {
+  concept: ConceptType
+  success: Boolean!
+}
+
 input CreateContentInput {
   externalId: String
   mimetype: String
@@ -205,6 +215,11 @@ type CreateNotePayload {
 input CreatePersonInput {
   description: String
   name: String!
+}
+
+type CreatePersonPayload {
+  person: PersonType
+  success: Boolean!
 }
 
 input CreatePlaceInput {
@@ -407,28 +422,31 @@ type MessageType implements Node {
 
 type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
+  createConcept(input: CreateConceptInput!): CreateConceptPayload!
   createContent(input: CreateContentInput!): ContentType!
   createEvent(input: CreateEventInput!): EventType!
   createNote(input: CreateNoteInput!): CreateNotePayload!
-  createPerson(input: CreatePersonInput!): PersonType!
+  createPerson(input: CreatePersonInput!): CreatePersonPayload!
   createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
+  deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
+  deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
-  removePerson(input: RemovePersonInput!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
   updateNote(input: UpdateNoteInput!): UpdateNotePayload!
-  updatePerson(input: UpdatePersonInput!): PersonType
+  updatePerson(input: UpdatePersonInput!): UpdatePersonPayload!
   updatePlace(input: UpdatePlaceInput!): PlaceType
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
@@ -615,10 +633,6 @@ type QuestionType implements Node {
   text: String!
 }
 
-input RemovePersonInput {
-  id: String!
-}
-
 type SavedSearchConnection implements Connection {
   edges: [SavedSearchEdge!]!
   pageInfo: PageInfo!
@@ -762,6 +776,17 @@ input UpdateAnswerInput {
   id: String!
 }
 
+input UpdateConceptInput {
+  description: String
+  id: String!
+  name: String!
+}
+
+type UpdateConceptPayload {
+  concept: ConceptType
+  success: Boolean!
+}
+
 input UpdateContentInput {
   externalId: String
   id: ID!
@@ -813,6 +838,11 @@ input UpdatePersonInput {
   description: String
   id: String!
   name: String!
+}
+
+type UpdatePersonPayload {
+  person: PersonType
+  success: Boolean!
 }
 
 input UpdatePlaceInput {
