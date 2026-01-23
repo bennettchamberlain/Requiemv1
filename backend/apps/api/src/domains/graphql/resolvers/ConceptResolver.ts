@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
+import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -9,9 +9,15 @@ import { TagLoader } from '../loaders/TagLoader';
 import { ConceptConnection } from '../types/ConceptConnection';
 import { ConceptEdge } from '../types/ConceptEdge';
 import { ConceptType } from '../types/ConceptType';
+import { CreateConceptInput } from '../types/CreateConceptInput';
+import { CreateConceptPayload } from '../types/CreateConceptPayload';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { UpdateConceptInput } from '../types/UpdateConceptInput';
+import { UpdateConceptPayload } from '../types/UpdateConceptPayload';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
@@ -64,6 +70,77 @@ export class ConceptResolver {
     const entity = await this.conceptService.findById(serviceContext, id);
 
     return entity ? ConceptType.toType(entity) : null;
+  }
+
+  @Mutation(() => CreateConceptPayload)
+  async createConcept(
+    @Context() context: RequestContext,
+    @Args('input') input: CreateConceptInput,
+  ): Promise<CreateConceptPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const entity = await this.conceptService.create(serviceContext, {
+      name: input.name,
+      description: input.description,
+    });
+
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      concept: entity ? ConceptType.toType(entity) : undefined,
+    };
+  }
+
+  @Mutation(() => UpdateConceptPayload)
+  async updateConcept(
+    @Context() context: RequestContext,
+    @Args('input') input: UpdateConceptInput,
+  ): Promise<UpdateConceptPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const entity = await this.conceptService.update(serviceContext, input.id, {
+      name: input.name,
+      description: input.description,
+    });
+
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      concept: entity ? ConceptType.toType(entity) : undefined,
+    };
+  }
+
+  @Mutation(() => DeleteByIdPayload)
+  async deleteConcept(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('note', input.id);
+
+    const success = await this.conceptService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @ResolveField(() => [EntityTagType])

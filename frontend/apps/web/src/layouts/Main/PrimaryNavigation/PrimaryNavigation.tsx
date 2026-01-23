@@ -2,10 +2,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
 import { Button, DropdownMenu, Kbd, Separator } from '@ci/shadcn';
-import { NotebookPen, Upload, Camera, Plus, Cable, Search, Tags } from '@ci/shadcn/icons';
+import {
+  NotebookPen,
+  Upload,
+  Camera,
+  Plus,
+  Cable,
+  Search,
+  Tags,
+  HardDrive,
+  UserPlus,
+  BadgeQuestionMark,
+} from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useUploadFile } from '@/api';
+import { AddPersonModal } from '@/components/modals/AddItemModal';
+import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { SearchModal } from '@/components/modals/SearchModal';
 import { UploadModal } from '@/components/modals/UploadModal';
@@ -23,10 +36,15 @@ export function PrimaryNavigation() {
     useModalControls();
   const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
     useModalControls();
+  const [{ isOpen: isAddPersonModalOpen }, { open: openAddPersonModal, close: closeAddPersonModal }] =
+    useModalControls();
+  const [{ isOpen: isAddConceptModalOpen }, { open: openAddConceptModal, close: closeAddConceptModal }] =
+    useModalControls();
 
   const [, { upload, reset: resetUploader }] = useUploadFile();
 
   const [hasActions, setHasActions] = useState(false);
+  const [addItemOpen, setAddItemOpen] = useState(false);
   const observer = useRef<MutationObserver | null>(null);
 
   const actionsRef = useCallback((node: HTMLDivElement | null) => {
@@ -111,7 +129,7 @@ export function PrimaryNavigation() {
                       className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
                     >
                       <Upload className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs">Upload</span>
+                      <span className="text-xs text-center">Upload</span>
                     </DropdownMenu.Item>
 
                     <DropdownMenu.Item
@@ -119,7 +137,7 @@ export function PrimaryNavigation() {
                       className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
                     >
                       <Camera className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs">Capture</span>
+                      <span className="text-xs text-center">Capture</span>
                     </DropdownMenu.Item>
 
                     <DropdownMenu.Item
@@ -127,9 +145,52 @@ export function PrimaryNavigation() {
                       className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <Cable className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs">Connect</span>
+                      <span className="text-xs text-center">Connect</span>
+                    </DropdownMenu.Item>
+
+                    <DropdownMenu.Item
+                      onSelect={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setAddItemOpen(!addItemOpen);
+                      }}
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                    >
+                      <HardDrive className="h-6! w-6!" strokeWidth={1.25} />
+                      <span className="text-xs text-center">Add Item</span>
                     </DropdownMenu.Item>
                   </div>
+
+                  {addItemOpen && (
+                    <div className="mt-2 -mx-2 -mb-2 bg-muted/50 p-4 rounded-b-lg">
+                      <div className="text-center text-sm font-semibold mb-3">New Item Type</div>
+                      <div className="flex gap-2">
+                        <DropdownMenu.Item
+                          onSelect={() => {
+                            setAddItemOpen(false);
+                            openAddPersonModal();
+                            // Add navigation or action here
+                          }}
+                          className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                        >
+                          <UserPlus className="h-6! w-6!" strokeWidth={1.25} />
+                          <span className="text-xs text-center">Add Person</span>
+                        </DropdownMenu.Item>
+
+                        <DropdownMenu.Item
+                          onSelect={() => {
+                            setAddItemOpen(false);
+                            openAddConceptModal();
+                            // Add navigation or action here
+                          }}
+                          className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                        >
+                          <BadgeQuestionMark className="h-6! w-6!" strokeWidth={1.25} />
+                          <span className="text-xs text-center">Add Concept</span>
+                        </DropdownMenu.Item>
+                      </div>
+                    </div>
+                  )}
                 </DropdownMenu.Content>
               </DropdownMenu>
             </div>
@@ -157,6 +218,10 @@ export function PrimaryNavigation() {
           closeCaptureModal();
         }}
       />
+
+      <AddPersonModal open={isAddPersonModalOpen} onClose={closeAddPersonModal} />
+
+      <AddConceptModal open={isAddConceptModalOpen} onClose={closeAddConceptModal} />
     </>
   );
 }
