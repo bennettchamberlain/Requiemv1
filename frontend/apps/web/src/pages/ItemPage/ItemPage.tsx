@@ -13,7 +13,7 @@ import { PageContent } from '@/components/layout';
 import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
 
-const GET_ITEM = gql(`
+export const GET_ITEM = gql(`
   query GetItem($id: ID!) {
     item(id: $id) {
       id

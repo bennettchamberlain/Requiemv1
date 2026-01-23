@@ -202,6 +202,20 @@ input CreateEventInput {
   title: String
 }
 
+input CreateItemInput {
+  brand: String
+  category: String
+  currentValue: Float
+  description: String
+  model: String
+  name: String!
+}
+
+type CreateItemPayload {
+  item: ItemType
+  success: Boolean!
+}
+
 input CreateNoteInput {
   content: String
   title: String
@@ -425,12 +439,14 @@ type Mutation {
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
   createContent(input: CreateContentInput!): ContentType!
   createEvent(input: CreateEventInput!): EventType!
+  createItem(input: CreateItemInput!): CreateItemPayload!
   createNote(input: CreateNoteInput!): CreateNotePayload!
   createPerson(input: CreatePersonInput!): CreatePersonPayload!
   createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -445,6 +461,7 @@ type Mutation {
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
+  updateItem(input: UpdateItemInput!): UpdateItemPayload!
   updateNote(input: UpdateNoteInput!): UpdateNotePayload!
   updatePerson(input: UpdatePersonInput!): UpdatePersonPayload!
   updatePlace(input: UpdatePlaceInput!): PlaceType
@@ -821,6 +838,21 @@ input UpdateEventInput {
   startTime: DateTime
   status: String
   title: String
+}
+
+input UpdateItemInput {
+  brand: String
+  category: String
+  currentValue: Float
+  description: String
+  id: ID!
+  model: String
+  name: String!
+}
+
+type UpdateItemPayload {
+  item: ItemType
+  success: Boolean!
 }
 
 input UpdateNoteInput {

@@ -115,7 +115,12 @@ export function InventoryPage() {
           </div>
         )}
 
-        <InventoryItemModal open={!!selectedItem} onClose={() => setSelectedItem(null)} item={selectedItem} />
+        <InventoryItemModal
+          open={!!selectedItem}
+          onClose={() => setSelectedItem(null)}
+          item={selectedItem}
+          create={false}
+        />
       </PageContent>
     </>
   );

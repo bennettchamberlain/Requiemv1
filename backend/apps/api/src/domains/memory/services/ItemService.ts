@@ -179,9 +179,7 @@ export class ItemService {
       where: {
         id: id,
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
     });
