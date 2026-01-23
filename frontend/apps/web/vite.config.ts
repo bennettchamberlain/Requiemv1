@@ -101,6 +101,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // This package is type-only; resolve to empty module for runtime
+      '@graphql-typed-document-node/core': path.resolve(
+        __dirname,
+        './src/graphql/typed-document-node-shim.ts',
+      ),
     },
   },
   server: {
