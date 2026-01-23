@@ -386,8 +386,8 @@ export function ColorPicker() {
             </div>
           </div>
 
-          <ScrollArea className="h-[450px] pr-4">
-            <div className="space-y-4">
+          <ScrollArea className="h-[450px] px-6 -mx-6 -mb-4">
+            <div className="space-y-4 pb-4">
               {Object.entries(COLOR_VARIABLE_CATEGORIES).map(([category, variables]) => (
                 <div key={category} className="space-y-2">
                   <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
