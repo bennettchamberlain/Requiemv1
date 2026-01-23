@@ -51,12 +51,7 @@ function ColorSwatchEditor({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <Popover.Trigger asChild>
-        <button
-          className={`
-            group relative flex items-center gap-2 p-2 rounded-md border transition-all text-left w-full
-            ${hasOverride ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}
-          `}
-        >
+        <button className="group relative flex items-center gap-2 p-2 rounded-md border transition-all text-left w-full">
           <div
             className="w-6 h-6 rounded border border-border shrink-0"
             style={{ backgroundColor: currentColor ?? 'transparent' }}
@@ -67,7 +62,7 @@ function ColorSwatchEditor({
           )}
         </button>
       </Popover.Trigger>
-      <Popover.Content className="w-72 p-3" align="start">
+      <Popover.Content className="w-72 p-3 z-[1001]" align="start" sideOffset={5}>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Label className="text-sm font-medium">{displayName}</Label>
@@ -293,18 +288,18 @@ export function ColorPicker() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-medium">Color Variables</h3>
+              <h3 className="text-sm font-medium">Color variables</h3>
               <p className="text-xs text-muted-foreground">Override individual theme colors</p>
             </div>
             {overrideCount > 0 && (
               <Button variant="ghost" size="sm" onClick={clearAllColorOverrides} className="text-xs">
                 <RotateCcw className="h-3 w-3 mr-1" />
-                Reset All
+                Reset all
               </Button>
             )}
           </div>
 
-          <ScrollArea className="h-[320px] pr-4">
+          <ScrollArea className="h-[450px] pr-4">
             <div className="space-y-4">
               {Object.entries(COLOR_VARIABLE_CATEGORIES).map(([category, variables]) => (
                 <div key={category} className="space-y-2">
@@ -333,14 +328,6 @@ export function ColorPicker() {
               ))}
             </div>
           </ScrollArea>
-
-          {overrideCount > 0 && (
-            <div className="pt-2 border-t">
-              <p className="text-xs text-muted-foreground text-center">
-                {overrideCount} custom override{overrideCount !== 1 ? 's' : ''} active
-              </p>
-            </div>
-          )}
         </div>
       </Tabs.Content>
     </Tabs>
