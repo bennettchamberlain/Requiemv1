@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 import { Button, Tabs, ScrollArea, Input, Label, Popover } from '@ci/shadcn';
 import { Palette, Settings2, Sliders, RotateCcw, X } from '@ci/shadcn/icons';
@@ -129,6 +129,11 @@ export function ColorPicker() {
   } = useTheme();
   const [customHue, setCustomHue] = useState(themeState.colorTheme.baseHue);
 
+  // Sync customHue when the theme changes (e.g., when a preset is selected)
+  useEffect(() => {
+    setCustomHue(themeState.colorTheme.baseHue);
+  }, [themeState.colorTheme.baseHue]);
+
   const handlePresetSelect = (preset: (typeof PRESET_THEMES)[0]) => {
     setColorTheme(preset);
   };
@@ -238,42 +243,6 @@ export function ColorPicker() {
               onChange={handleCustomColorChange}
               onChangeEnd={handleCustomColorApply}
             />
-          </div>
-
-          <div className="flex gap-2 justify-center">
-            <Button
-              variant={customHue === -1 ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setCustomHue(-1);
-                setCustomColor(-1);
-              }}
-              className="text-xs"
-            >
-              Dark Gray
-            </Button>
-            <Button
-              variant={customHue === -2 ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setCustomHue(-2);
-                setCustomColor(-2);
-              }}
-              className="text-xs"
-            >
-              Light Gray
-            </Button>
-            <Button
-              variant={customHue === -3 ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setCustomHue(-3);
-                setCustomColor(-3);
-              }}
-              className="text-xs"
-            >
-              Original
-            </Button>
           </div>
 
           <div className="space-y-3">
