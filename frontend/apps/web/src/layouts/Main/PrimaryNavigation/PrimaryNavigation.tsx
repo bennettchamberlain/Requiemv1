@@ -24,7 +24,7 @@ import { SearchModal } from '@/components/modals/SearchModal';
 import { UploadModal } from '@/components/modals/UploadModal';
 import { useModalControls } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
-import { InventoryItemModal } from '@/pages/InventoryPage/InventoryItemModal.tsx';
+import { InventoryItemModal } from '@/pages/InventoryPage/InventoryItemModal';
 
 import { NavUser } from './NavUser';
 
