@@ -232,6 +232,7 @@ class InsightAggregator:
             d.change_type,
             d.changed_at,
             d.changed_fields,
+            e.entity_id,
             e.name,
             e.entity_type
         FROM ci.graph_deltas d

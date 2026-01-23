@@ -106,7 +106,7 @@ class InsightItem(BaseModel):
     key_actions: List[str] = Field(description="3-5 specific, actionable suggestions the user can take")
     relevance_score: float = Field(ge=0.0, le=1.0, description="How relevant/timely this insight is (0.0-1.0)")
     tags: List[str] = Field(default_factory=list, description="Categories like 'Family', 'Work', 'Health', etc.")
-    related_entity_ids: Optional[List[str]] = Field(default=None, description="IDs of people/events involved")
+    related_entity_ids: Optional[List[str]] = Field(default=None, description="UUIDs of people/events involved (extracted from the prompt context IDs)")
 
 
 class InsightsResponse(BaseModel):
@@ -448,7 +448,8 @@ class Summarizer:
             for event in events[:10]:
                 start = event.get("start_time") or event.get("start_date", "")
                 title = event.get("title") or event.get("name", "Untitled")
-                parts.append(f"- {start}: {title}")
+                eid = event.get("id") or ""
+                parts.append(f"- {start}: {title} (ID: {eid})")
             parts.append("")
 
         # Graph deltas (recent changes)
@@ -460,12 +461,13 @@ class Summarizer:
                 node_type = delta.get("node_type", "")
                 entity_type = delta.get("entity_type") or delta.get("relationship_type", "")
                 changed_fields = delta.get("changed_fields", {})
+                eid = delta.get("entity_id") or delta.get("from_entity_id") or ""
 
                 if node_type == "entity":
                     name = changed_fields.get("name", {}).get("new") or changed_fields.get("name", {}).get("old", "Unknown")
-                    parts.append(f"- {change_type.upper()} {entity_type}: {name}")
+                    parts.append(f"- {change_type.upper()} {entity_type}: {name} (ID: {eid})")
                 else:
-                    parts.append(f"- {change_type.upper()} relationship: {entity_type}")
+                    parts.append(f"- {change_type.upper()} relationship: {entity_type} (ID: {eid})")
             parts.append("")
 
         # Strongest relationships
@@ -473,7 +475,8 @@ class Summarizer:
         if strongest:
             parts.append("## CLOSEST RELATIONSHIPS (by strength)")
             for rel in strongest[:3]:
-                parts.append(f"- {rel.get('name', 'Unknown')} ({rel.get('relationship_type', 'related')})")
+                eid = rel.get("to_entity_id") or ""
+                parts.append(f"- {rel.get('name', 'Unknown')} ({rel.get('relationship_type', 'related')}) (ID: {eid})")
             parts.append("")
 
         # Recently changed relationships
@@ -483,7 +486,8 @@ class Summarizer:
             for rel in recent_rels[:5]:
                 change = rel.get("change_type", "updated")
                 name = rel.get("name", "Unknown")
-                parts.append(f"- {change}: {name}")
+                eid = rel.get("entity_id") or ""
+                parts.append(f"- {change}: {name} (ID: {eid})")
             parts.append("")
 
         # Event-relevant relationships (people tied to upcoming events)
@@ -492,8 +496,9 @@ class Summarizer:
             parts.append("## PEOPLE CONNECTED TO UPCOMING EVENTS")
             for rel in event_rels[:5]:
                 name = rel.get("name", "Unknown")
+                eid = rel.get("entity_id") or ""
                 event = rel.get("event_title", "")
-                parts.append(f"- {name}: {event}")
+                parts.append(f"- {name} (ID: {eid}): {event}")
             parts.append("")
 
         # Recent summaries (patterns)
@@ -512,8 +517,9 @@ class Summarizer:
             parts.append("## RECENT COMMUNICATIONS")
             for comm in comms[:5]:
                 subject = comm.get("subject") or comm.get("title", "")[:50]
+                from_id = comm.get("from_entity_id") or ""
                 if subject:
-                    parts.append(f"- {subject}")
+                    parts.append(f"- {subject} (From ID: {from_id})")
             parts.append("")
 
         parts.append("\nBased on this context, generate 3-5 actionable insights that would be helpful to the user.")

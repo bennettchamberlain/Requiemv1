@@ -272,51 +272,74 @@ async def force_generate_insights(request: InsightsRequest) -> Dict[str, Any]:
 
         # Store
         from uuid import uuid4
-        summary_id = uuid4()
-        insights_list = insights_data.get("insights", [])
+        # Prepare each insight for separate storage
+        for insight in insights_list:
+            summary_id = uuid4()
+            
+            # 1. Tags for this insight
+            tags_list = insight.get("tags", [])
 
-        content = {
-            "insights": insights_list,
-            "data_sources_used": insights_data.get("data_sources_used", []),
-            "tokens_used": insights_data.get("tokens_used", 0),
-            "summary_text": "; ".join([i.get("title", "") for i in insights_list]),
-            "key_insights": [
-                i.get("title", "") + ": " + (i.get("key_actions", [])[:1] or [""])[0]
-                for i in insights_list
-            ],
-        }
+            # 2. Participants for this insight (valid UUIDs only)
+            participants_list = []
+            ids = insight.get("related_entity_ids", [])
+            if ids:
+                for entity_id in ids:
+                    try:
+                        uuid.UUID(str(entity_id))
+                        participants_list.append(str(entity_id))
+                    except (ValueError, TypeError):
+                        pass
 
-        source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
-        title = insights_list[0].get("title", "Proactive Insights") if insights_list else "Proactive Insights"
-        embedding = insights_data.get("embedding", [])
-        metadata = {"seen": False, "forced": True}
+            # 3. Content: lightweight text summary and keys
+            content = {
+                "summary_text": insight.get("summary_text", ""),
+                "key_actions": insight.get("key_actions", []),
+                # Include tokens/metadata for this generation
+                "tokens_used": insights_data.get("tokens_used", 0) // (len(insights_list) or 1),
+                "data_sources_used": insights_data.get("data_sources_used", []) 
+            }
 
-        db.execute_write(
-            """
-            INSERT INTO ci.summaries (
-                summary_id, user_id, period_start, period_end, period_type,
-                timezone, source_types, title, content, summary_embedding,
-                metadata, created_at, updated_at
-            ) VALUES (
-                :summary_id, :user_id, :period_start, :period_end, 'insight',
-                :timezone, :source_types, :title, CAST(:content AS jsonb),
-                CASE WHEN :embedding = '[]' THEN NULL ELSE CAST(:embedding AS vector) END,
-                CAST(:metadata AS jsonb), NOW(), NOW()
+            source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+            title = insight.get("title", "Proactive Insight")
+            embedding = insights_data.get("embedding", []) # Shared embedding for now, or could compute per insight if needed
+            metadata = {
+                "seen": False, 
+                "forced": True,
+                "relevance_score": insight.get("relevance_score", 0),
+            }
+
+            db.execute_write(
+                """
+                INSERT INTO ci.summaries (
+                    summary_id, user_id, period_start, period_end, period_type,
+                    timezone, source_types, title, content, structured_context,
+                    tags, participants, confidence_score, summary_embedding,
+                    metadata, created_at, updated_at
+                ) VALUES (
+                    :summary_id, :user_id, :period_start, :period_end, 'insight',
+                    :timezone, :source_types, :title, CAST(:content AS jsonb), CAST(:structured_context AS jsonb),
+                    CAST(:tags AS jsonb), CAST(:participants AS uuid[]), :confidence_score,
+                    CASE WHEN :embedding = '[]' THEN NULL ELSE CAST(:embedding AS vector) END,
+                    CAST(:metadata AS jsonb), NOW(), NOW()
+                )
+                """,
+                {
+                    "summary_id": str(summary_id),
+                    "user_id": str(user_id),
+                    "period_start": since,
+                    "period_end": now,
+                    "timezone": request.timezone,
+                    "source_types": source_types,
+                    "title": title,
+                    "content": json.dumps(content),
+                    "structured_context": json.dumps(insight), # Store full object for safety
+                    "tags": json.dumps(tags_list),
+                    "participants": participants_list,
+                    "confidence_score": insight.get("relevance_score", 0),
+                    "embedding": json.dumps(embedding),
+                    "metadata": json.dumps(metadata),
+                },
             )
-            """,
-            {
-                "summary_id": str(summary_id),
-                "user_id": str(user_id),
-                "period_start": since,
-                "period_end": now,
-                "timezone": request.timezone,
-                "source_types": source_types,
-                "title": title,
-                "content": json.dumps(content),
-                "embedding": json.dumps(embedding),
-                "metadata": json.dumps(metadata),
-            },
-        )
 
         return {
             "status": "success",
