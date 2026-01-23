@@ -1,13 +1,132 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
-import { Button, Tabs } from '@ci/shadcn';
-import { Palette, Settings2 } from '@ci/shadcn/icons';
+import { Button, Tabs, ScrollArea, Input, Label, Popover } from '@ci/shadcn';
+import { Palette, Settings2, Sliders, RotateCcw, X } from '@ci/shadcn/icons';
 
 import { ColorWheel } from './ColorWheel';
-import { PRESET_THEMES, useTheme } from './useTheme';
+import { PRESET_THEMES, useTheme, COLOR_VARIABLE_CATEGORIES, type ThemeColorVariable } from './useTheme';
+
+interface ColorSwatchEditorProps {
+  variable: ThemeColorVariable;
+  currentColor: string | undefined;
+  hasOverride: boolean;
+  onColorChange: (color: string) => void;
+  onClear: () => void;
+}
+
+function ColorSwatchEditor({
+  variable,
+  currentColor,
+  hasOverride,
+  onColorChange,
+  onClear,
+}: ColorSwatchEditorProps) {
+  const [localColor, setLocalColor] = useState(currentColor ?? '');
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleInputChange = (value: string) => {
+    setLocalColor(value);
+  };
+
+  const handleApply = () => {
+    if (localColor.trim()) {
+      onColorChange(localColor.trim());
+    }
+
+    setIsOpen(false);
+  };
+
+  const handleClear = () => {
+    onClear();
+    setLocalColor('');
+    setIsOpen(false);
+  };
+
+  // Format variable name for display
+  const displayName = variable
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+
+  return (
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className={`
+            group relative flex items-center gap-2 p-2 rounded-md border transition-all text-left w-full
+            ${hasOverride ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}
+          `}
+        >
+          <div
+            className="w-6 h-6 rounded border border-border shrink-0"
+            style={{ backgroundColor: currentColor ?? 'transparent' }}
+          />
+          <span className="text-xs truncate flex-1">{displayName}</span>
+          {hasOverride && (
+            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" title="Custom override" />
+          )}
+        </button>
+      </Popover.Trigger>
+      <Popover.Content className="w-72 p-3" align="start">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">{displayName}</Label>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setIsOpen(false)}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Current value</Label>
+            <div className="flex items-center gap-2">
+              <div
+                className="w-8 h-8 rounded border border-border shrink-0"
+                style={{ backgroundColor: currentColor ?? 'transparent' }}
+              />
+              <code className="text-xs bg-muted px-2 py-1 rounded flex-1 truncate">
+                {currentColor ?? 'not set'}
+              </code>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Custom color (oklch, hsl, rgb, hex)</Label>
+            <Input
+              type="text"
+              placeholder="oklch(0.5 0.1 250) or #ff0000"
+              value={localColor}
+              onChange={(e) => handleInputChange(e.target.value)}
+              className="text-xs font-mono"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleApply} disabled={!localColor.trim()} className="flex-1">
+              Apply
+            </Button>
+            {hasOverride && (
+              <Button size="sm" variant="outline" onClick={handleClear}>
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Reset
+              </Button>
+            )}
+          </div>
+        </div>
+      </Popover.Content>
+    </Popover>
+  );
+}
 
 export function ColorPicker() {
-  const { themeState, setColorTheme, setCustomColor } = useTheme();
+  const {
+    themeState,
+    setColorTheme,
+    setCustomColor,
+    setColorVariable,
+    clearColorVariable,
+    clearAllColorOverrides,
+    getEffectiveColor,
+  } = useTheme();
   const [customHue, setCustomHue] = useState(themeState.colorTheme.baseHue);
 
   const handlePresetSelect = (preset: (typeof PRESET_THEMES)[0]) => {
@@ -26,16 +145,30 @@ export function ColorPicker() {
   const isPresetSelected = (preset: (typeof PRESET_THEMES)[0]) =>
     !isCustomSelected && preset.baseHue === themeState.colorTheme.baseHue;
 
+  const overrideCount = useMemo(
+    () => Object.keys(themeState.colorOverrides).length,
+    [themeState.colorOverrides],
+  );
+
   return (
     <Tabs defaultValue="presets" className="w-full">
-      <Tabs.List className="grid w-full grid-cols-2">
-        <Tabs.Trigger value="presets" className="flex items-center gap-2">
-          <Palette className="h-4 w-4" />
+      <Tabs.List className="grid w-full grid-cols-3">
+        <Tabs.Trigger value="presets" className="flex items-center gap-1 text-xs">
+          <Palette className="h-3.5 w-3.5" />
           Presets
         </Tabs.Trigger>
-        <Tabs.Trigger value="custom" className="flex items-center gap-2">
-          <Settings2 className="h-4 w-4" />
+        <Tabs.Trigger value="custom" className="flex items-center gap-1 text-xs">
+          <Settings2 className="h-3.5 w-3.5" />
           Custom
+        </Tabs.Trigger>
+        <Tabs.Trigger value="advanced" className="flex items-center gap-1 text-xs">
+          <Sliders className="h-3.5 w-3.5" />
+          Advanced
+          {overrideCount > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-primary text-primary-foreground rounded-full">
+              {overrideCount}
+            </span>
+          )}
         </Tabs.Trigger>
       </Tabs.List>
 
@@ -192,6 +325,61 @@ export function ColorPicker() {
               </div>
             )}
           </div>
+        </div>
+      </Tabs.Content>
+
+      <Tabs.Content value="advanced" className="p-4 space-y-4">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium">Color Variables</h3>
+              <p className="text-xs text-muted-foreground">Override individual theme colors</p>
+            </div>
+            {overrideCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearAllColorOverrides} className="text-xs">
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Reset All
+              </Button>
+            )}
+          </div>
+
+          <ScrollArea className="h-[320px] pr-4">
+            <div className="space-y-4">
+              {Object.entries(COLOR_VARIABLE_CATEGORIES).map(([category, variables]) => (
+                <div key={category} className="space-y-2">
+                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    {category}
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {variables.map((variable) => {
+                      const typedVariable = variable as ThemeColorVariable;
+                      const hasOverride = typedVariable in themeState.colorOverrides;
+                      const effectiveColor = getEffectiveColor(typedVariable);
+
+                      return (
+                        <ColorSwatchEditor
+                          key={typedVariable}
+                          variable={typedVariable}
+                          currentColor={effectiveColor}
+                          hasOverride={hasOverride}
+                          onColorChange={(color) => setColorVariable(typedVariable, color)}
+                          onClear={() => clearColorVariable(typedVariable)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+
+          {overrideCount > 0 && (
+            <div className="pt-2 border-t">
+              <p className="text-xs text-muted-foreground text-center">
+                {overrideCount} custom override{overrideCount !== 1 ? 's' : ''} active
+              </p>
+            </div>
+          )}
         </div>
       </Tabs.Content>
     </Tabs>

@@ -8,9 +8,101 @@ interface ColorTheme {
   isCustom?: boolean;
 }
 
+// All available theme color variable names
+export type ThemeColorVariable =
+  | 'background'
+  | 'foreground'
+  | 'card'
+  | 'card-foreground'
+  | 'popover'
+  | 'popover-foreground'
+  | 'primary'
+  | 'primary-foreground'
+  | 'secondary'
+  | 'secondary-foreground'
+  | 'muted'
+  | 'muted-foreground'
+  | 'accent'
+  | 'accent-foreground'
+  | 'destructive'
+  | 'border'
+  | 'input'
+  | 'ring'
+  | 'chart-1'
+  | 'chart-2'
+  | 'chart-3'
+  | 'chart-4'
+  | 'chart-5'
+  | 'sidebar'
+  | 'sidebar-foreground'
+  | 'sidebar-primary'
+  | 'sidebar-primary-foreground'
+  | 'sidebar-accent'
+  | 'sidebar-accent-foreground'
+  | 'sidebar-border'
+  | 'sidebar-ring';
+
+export const THEME_COLOR_VARIABLES: ThemeColorVariable[] = [
+  'background',
+  'foreground',
+  'card',
+  'card-foreground',
+  'popover',
+  'popover-foreground',
+  'primary',
+  'primary-foreground',
+  'secondary',
+  'secondary-foreground',
+  'muted',
+  'muted-foreground',
+  'accent',
+  'accent-foreground',
+  'destructive',
+  'border',
+  'input',
+  'ring',
+  'chart-1',
+  'chart-2',
+  'chart-3',
+  'chart-4',
+  'chart-5',
+  'sidebar',
+  'sidebar-foreground',
+  'sidebar-primary',
+  'sidebar-primary-foreground',
+  'sidebar-accent',
+  'sidebar-accent-foreground',
+  'sidebar-border',
+  'sidebar-ring',
+];
+
+// Color variable categories for UI organization
+export const COLOR_VARIABLE_CATEGORIES = {
+  'Core Colors': ['background', 'foreground', 'primary', 'primary-foreground'],
+  'Surface Colors': ['card', 'card-foreground', 'popover', 'popover-foreground'],
+  'Secondary Colors': ['secondary', 'secondary-foreground', 'muted', 'muted-foreground'],
+  'Accent Colors': ['accent', 'accent-foreground', 'destructive'],
+  'Form Colors': ['border', 'input', 'ring'],
+  'Chart Colors': ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'],
+  'Sidebar Colors': [
+    'sidebar',
+    'sidebar-foreground',
+    'sidebar-primary',
+    'sidebar-primary-foreground',
+    'sidebar-accent',
+    'sidebar-accent-foreground',
+    'sidebar-border',
+    'sidebar-ring',
+  ],
+} as const;
+
+// Custom color overrides - allows setting specific variables to specific colors
+export type ColorOverrides = Partial<Record<ThemeColorVariable, string>>;
+
 interface ThemeState {
   mode: Theme;
   colorTheme: ColorTheme;
+  colorOverrides: ColorOverrides;
 }
 
 type ThemeProviderProps = {
@@ -19,6 +111,7 @@ type ThemeProviderProps = {
   defaultColorTheme?: ColorTheme;
   storageKey?: string;
   colorStorageKey?: string;
+  colorOverridesStorageKey?: string;
 };
 
 type ThemeProviderState = {
@@ -26,6 +119,10 @@ type ThemeProviderState = {
   setTheme: (theme: Theme) => void;
   setColorTheme: (colorTheme: ColorTheme) => void;
   setCustomColor: (hue: number) => void;
+  setColorVariable: (variable: ThemeColorVariable, color: string) => void;
+  clearColorVariable: (variable: ThemeColorVariable) => void;
+  clearAllColorOverrides: () => void;
+  getEffectiveColor: (variable: ThemeColorVariable) => string | undefined;
 };
 
 // Preset color themes
@@ -313,10 +410,15 @@ const initialState: ThemeProviderState = {
   themeState: {
     mode: 'system',
     colorTheme: PRESET_THEMES[0],
+    colorOverrides: {},
   },
   setTheme: () => null,
   setColorTheme: () => null,
   setCustomColor: () => null,
+  setColorVariable: () => null,
+  clearColorVariable: () => null,
+  clearAllColorOverrides: () => null,
+  getEffectiveColor: () => undefined,
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
@@ -327,11 +429,13 @@ export function ThemeProvider({
   defaultColorTheme = PRESET_THEMES[0],
   storageKey = 'ci-ui-theme',
   colorStorageKey = 'ci-ui-color-theme',
+  colorOverridesStorageKey = 'ci-ui-color-overrides',
 }: ThemeProviderProps) {
   const [themeState, setThemeState] = useState<ThemeState>(() => {
     // Try to get theme from localStorage first
     const storedTheme = localStorage.getItem(storageKey) as Theme;
     const storedColorTheme = localStorage.getItem(colorStorageKey);
+    const storedColorOverrides = localStorage.getItem(colorOverridesStorageKey);
 
     let colorTheme = defaultColorTheme;
     if (storedColorTheme) {
@@ -342,11 +446,43 @@ export function ThemeProvider({
       }
     }
 
+    let colorOverrides: ColorOverrides = {};
+    if (storedColorOverrides) {
+      try {
+        colorOverrides = JSON.parse(storedColorOverrides);
+      } catch {
+        // Fallback to empty overrides if parsing fails
+      }
+    }
+
     return {
       mode: storedTheme || defaultTheme,
       colorTheme,
+      colorOverrides,
     };
   });
+
+  // Helper to get effective color (override or generated)
+  const getEffectiveColor = (variable: ThemeColorVariable): string | undefined => {
+    // Check for override first
+    if (themeState.colorOverrides[variable]) {
+      return themeState.colorOverrides[variable];
+    }
+
+    // Otherwise get the generated color
+    let effectiveMode = themeState.mode;
+    if (themeState.mode === 'system') {
+      effectiveMode =
+        typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light';
+    }
+
+    const isDark = effectiveMode === 'dark';
+    const colors = generateThemeColors(themeState.colorTheme.baseHue, isDark);
+
+    return colors[variable];
+  };
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -364,48 +500,24 @@ export function ThemeProvider({
     if (themeState.colorTheme.baseHue === -3) {
       // Original theme - remove all custom properties to use CSS defaults
       // This allows the original :root and .dark CSS rules to take effect
-      const allColorKeys = [
-        'background',
-        'foreground',
-        'card',
-        'card-foreground',
-        'popover',
-        'popover-foreground',
-        'primary',
-        'primary-foreground',
-        'secondary',
-        'secondary-foreground',
-        'muted',
-        'muted-foreground',
-        'accent',
-        'accent-foreground',
-        'destructive',
-        'border',
-        'input',
-        'ring',
-        'chart-1',
-        'chart-2',
-        'chart-3',
-        'chart-4',
-        'chart-5',
-        'sidebar',
-        'sidebar-foreground',
-        'sidebar-primary',
-        'sidebar-primary-foreground',
-        'sidebar-accent',
-        'sidebar-accent-foreground',
-        'sidebar-border',
-        'sidebar-ring',
-      ];
-      allColorKeys.forEach((key) => {
-        root.style.removeProperty(`--${key}`);
+      THEME_COLOR_VARIABLES.forEach((key) => {
+        // But still apply any overrides
+        const override = themeState.colorOverrides[key];
+        if (override) {
+          root.style.setProperty(`--${key}`, override);
+        } else {
+          root.style.removeProperty(`--${key}`);
+        }
       });
     } else {
       // Apply custom color theme for both light and dark modes
       const isDark = effectiveMode === 'dark';
       const colors = generateThemeColors(themeState.colorTheme.baseHue, isDark);
+
+      // Apply generated colors, but overrides take precedence
       Object.entries(colors).forEach(([key, value]) => {
-        root.style.setProperty(`--${key}`, value);
+        const override = themeState.colorOverrides[key as ThemeColorVariable];
+        root.style.setProperty(`--${key}`, override ?? value);
       });
     }
   }, [themeState]);
@@ -429,11 +541,33 @@ export function ThemeProvider({
     setColorTheme(customTheme);
   };
 
+  const setColorVariable = (variable: ThemeColorVariable, color: string) => {
+    const newOverrides = { ...themeState.colorOverrides, [variable]: color };
+    localStorage.setItem(colorOverridesStorageKey, JSON.stringify(newOverrides));
+    setThemeState((prev) => ({ ...prev, colorOverrides: newOverrides }));
+  };
+
+  const clearColorVariable = (variable: ThemeColorVariable) => {
+    const newOverrides = { ...themeState.colorOverrides };
+    delete newOverrides[variable];
+    localStorage.setItem(colorOverridesStorageKey, JSON.stringify(newOverrides));
+    setThemeState((prev) => ({ ...prev, colorOverrides: newOverrides }));
+  };
+
+  const clearAllColorOverrides = () => {
+    localStorage.removeItem(colorOverridesStorageKey);
+    setThemeState((prev) => ({ ...prev, colorOverrides: {} }));
+  };
+
   const value = {
     themeState,
     setTheme,
     setColorTheme,
     setCustomColor,
+    setColorVariable,
+    clearColorVariable,
+    clearAllColorOverrides,
+    getEffectiveColor,
   };
 
   return <ThemeProviderContext.Provider value={value}>{children}</ThemeProviderContext.Provider>;
