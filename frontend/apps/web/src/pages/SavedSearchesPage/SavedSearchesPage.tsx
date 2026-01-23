@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 
 import { SavedSearchIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
-import { DropdownProvider } from '@/components/SearchBox/useDropdown.ts';
+import { DropdownProvider } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
 import { type FragmentType, useFragment } from '@/graphql/fragment-masking';
 

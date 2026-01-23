@@ -1,6 +1,6 @@
 import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import {
   AnswerGridItem,
@@ -19,17 +19,12 @@ import {
 } from '@/components/entities';
 import { Empty } from '@/pages/MemoryPage/Components';
 
-import { useMemoryServiceNext } from '../useMemoryServiceNext';
+import { useEntityService } from '../useEntityService';
 
 export function GalleryView() {
-  const [searchParams] = useSearchParams();
-
   const navigate = useNavigate();
 
-  const { data } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });
+  const [{ data }] = useEntityService();
 
   if (data.length === 0) {
     return (

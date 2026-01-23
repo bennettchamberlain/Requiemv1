@@ -9,15 +9,16 @@ import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { SearchBox } from '@/components/SearchBox';
-import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown.ts';
+import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
-import { MemoryDetails } from '@/pages/MemoryPage/Components/MemoryDetails';
 
+import { useEntityService } from '../MemoryPage/useEntityService';
+
+import { EntityDetails } from './Components/EntityDetails';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
-import { useMemoryService } from './useMemoryService';
 
 const CREATE_SAVED_SEARCH = gql(`
   mutation CreateSavedSearch($input: CreateSavedSearchInput!) {
@@ -48,8 +49,8 @@ const GET_SAVED_SEARCH = gql(`
 `);
 
 export default function DesktopMemoryPage() {
-  const { setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchId, setSearchId] = useState<string | null>(null);
 
@@ -72,7 +73,6 @@ export default function DesktopMemoryPage() {
       currentParams.delete('tags');
 
       if (query?.trim()) {
-        setSearchQuery(query);
         currentParams.set('search', query.trim());
       }
 
@@ -98,12 +98,12 @@ export default function DesktopMemoryPage() {
   }, [searchId, savedSearchData]);
 
   useEffect(() => {
-    setDetailsOpen(activeMemory != null);
-  }, [activeMemory]);
+    setDetailsOpen(activeEntity != null);
+  }, [activeEntity]);
 
-  const toggleActiveMemory = (active: boolean) => {
+  const toggleactiveEntity = (active: boolean) => {
     if (!active) {
-      setActiveMemory(null);
+      setActiveEntity(null);
     }
   };
 
@@ -118,8 +118,6 @@ export default function DesktopMemoryPage() {
 
   const handleSearch = useCallback(
     (data: { query: string; entityFilters?: string[] }) => {
-      setSearchQuery(data.query);
-
       const currentParams = new URLSearchParams(searchParams);
 
       if (data.query.trim()) {
@@ -130,18 +128,16 @@ export default function DesktopMemoryPage() {
 
       setSearchParams(currentParams);
     },
-    [setSearchQuery, searchParams, setSearchParams],
+    [searchParams, setSearchParams],
   );
 
   const handleClear = useCallback(() => {
-    setSearchQuery('');
-
     const currentParams = new URLSearchParams(searchParams);
 
     currentParams.delete('search');
 
     setSearchParams(currentParams);
-  }, [setSearchQuery, searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams]);
 
   const handleSaveSearch = useCallback(async (query: string, entityTypes: string[]) => {
     await createSavedSearch({
@@ -234,9 +230,9 @@ export default function DesktopMemoryPage() {
         {activeTab === 'graph' && <GraphView variant="desktop" />}
       </PageContent>
 
-      {activeMemory && (
-        <Sheet open={detailsOpen} onOpenChange={toggleActiveMemory}>
-          <MemoryDetails memory={activeMemory} />
+      {activeEntity && (
+        <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
+          <EntityDetails entity={activeEntity} />
         </Sheet>
       )}
     </>

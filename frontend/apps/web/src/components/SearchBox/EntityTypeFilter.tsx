@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Button, DropdownMenu } from '@ci/shadcn';
 import { ChevronDown } from '@ci/shadcn/icons';
 
-import { AVAILABLE_ENTITY_TYPES, useDropdown } from './useDropdown.ts';
+import { AVAILABLE_ENTITY_TYPES, useDropdown } from './useDropdown';
 
 interface Props {
   modal?: boolean;
