@@ -27,9 +27,6 @@ import { FilesModule } from '@ci/domains/files';
 import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
-import { CommunicationController } from './controllers/CommunicationController';
-import { ContentController } from './controllers/ContentController';
-import { EventController } from './controllers/EventController';
 import { GraphController } from './controllers/GraphController';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
@@ -105,7 +102,7 @@ import { UserContextService } from './services/UserContextService';
     SearchService,
     PlaceService,
   ],
-  controllers: [CommunicationController, ContentController, EventController, GraphController],
+  controllers: [GraphController],
   exports: [
     CommunicationService,
     ContentService,
