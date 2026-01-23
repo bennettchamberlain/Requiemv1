@@ -292,11 +292,11 @@ export function ColorPicker() {
 
             <div className="grid grid-cols-5 gap-2">
               {[
-                { label: 'BG', lightness: 0.129 },
-                { label: 'Card', lightness: 0.208 },
-                { label: 'Secondary', lightness: 0.279 },
-                { label: 'Accent', lightness: 0.4 },
-                { label: 'Primary', lightness: 0.6 },
+                { label: 'Dark', lightness: 0.25, chroma: 0.08 },
+                { label: 'Mid', lightness: 0.45, chroma: 0.12 },
+                { label: 'Base', lightness: 0.6, chroma: 0.15 },
+                { label: 'Light', lightness: 0.75, chroma: 0.12 },
+                { label: 'Pale', lightness: 0.9, chroma: 0.06 },
               ].map((swatch) => (
                 <div key={swatch.label} className="space-y-1">
                   <div
@@ -304,26 +304,18 @@ export function ColorPicker() {
                     style={{
                       backgroundColor:
                         customHue === -1
-                          ? `oklch(${swatch.lightness + 0.05} 0 0)`
+                          ? `oklch(${swatch.lightness} 0 0)`
                           : customHue === -2
-                            ? `oklch(${0.9 - swatch.lightness * 0.5} 0.005 60)`
+                            ? `oklch(${swatch.lightness} 0.005 60)`
                             : customHue === -3
-                              ? swatch.lightness < 0.3
-                                ? `oklch(${swatch.lightness} 0.042 264)`
-                                : `oklch(${swatch.lightness + 0.4} 0.013 255)`
-                              : `oklch(${swatch.lightness} 0.12 ${customHue})`,
+                              ? `oklch(${swatch.lightness} 0.042 264)`
+                              : `oklch(${swatch.lightness} ${swatch.chroma} ${customHue})`,
                     }}
                   />
                   <div className="text-xs text-center text-muted-foreground">{swatch.label}</div>
                 </div>
               ))}
             </div>
-
-            {isCustomSelected && (
-              <div className="text-center pt-2">
-                <span className="text-sm text-muted-foreground">{themeState.colorTheme.name}</span>
-              </div>
-            )}
           </div>
         </div>
       </Tabs.Content>

@@ -31,15 +31,20 @@ export function ColorWheel({ size = 200, value = 0, onChange, onChangeEnd }: Col
     // Clear canvas
     ctx.clearRect(0, 0, size, size);
 
-    // Draw color wheel
-    for (let angle = 0; angle < 360; angle += 1) {
-      const startAngle = ((angle - 1) * Math.PI) / 180;
-      const endAngle = (angle * Math.PI) / 180;
+    // Draw color wheel using OKLCH color space (matches theme generation)
+    // Canvas angles: 0° = right (3 o'clock), increases clockwise
+    // We want: 0° hue at top (12 o'clock), increasing clockwise
+    // So we offset by -90° when drawing
+    for (let hue = 0; hue < 360; hue += 1) {
+      const canvasAngle = hue - 90; // Rotate so hue 0 is at top
+      const startAngle = ((canvasAngle - 0.5) * Math.PI) / 180;
+      const endAngle = ((canvasAngle + 0.5) * Math.PI) / 180;
 
       ctx.beginPath();
       ctx.arc(centerX, centerY, radius, startAngle, endAngle);
       ctx.lineWidth = 20;
-      ctx.strokeStyle = `hsl(${angle}, 80%, 60%)`;
+      // Use OKLCH with consistent lightness and higher chroma for vibrant colors
+      ctx.strokeStyle = `oklch(0.7 0.25 ${hue})`;
       ctx.stroke();
     }
 
@@ -49,10 +54,10 @@ export function ColorWheel({ size = 200, value = 0, onChange, onChangeEnd }: Col
     ctx.fillStyle = '#1a1a1a';
     ctx.fill();
 
-    // Draw center circle showing selected color
+    // Draw center circle showing selected color (using OKLCH)
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius - 40, 0, 2 * Math.PI);
-    ctx.fillStyle = `hsl(${currentHue}, 80%, 60%)`;
+    ctx.fillStyle = `oklch(0.7 0.25 ${currentHue})`;
     ctx.fill();
 
     // Draw selector indicator
@@ -199,7 +204,6 @@ export function ColorWheel({ size = 200, value = 0, onChange, onChangeEnd }: Col
         onTouchStart={handleTouchStart}
         style={{ touchAction: 'none' }}
       />
-      <div className="text-sm text-muted-foreground">Hue: {currentHue}°</div>
     </div>
   );
 }
