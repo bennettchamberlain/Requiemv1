@@ -140,7 +140,7 @@ export class ItemResolver {
   ): Promise<DeleteByIdPayload> {
     const serviceContext = toServiceContext(context);
 
-    const id = GlobalUID.parse('note', input.id);
+    const id = GlobalUID.parse('item', input.id);
 
     const success = await this.itemService.remove(serviceContext, id);
 
