@@ -21,6 +21,11 @@ echo "Starting Temporal worker..."
 python -m src.worker &
 WORKER_PID=$!
 
+# Run unified startup checks and setup
+# This waits for Temporal and then configures system schedules
+python -m src.startup &
+
+
 # Function to handle shutdown gracefully
 shutdown() {
     echo "Shutting down services..."
