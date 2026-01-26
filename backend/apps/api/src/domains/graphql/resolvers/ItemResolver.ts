@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Parent, Query, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
+import { Parent, Query, Mutation, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -7,6 +7,10 @@ import { ItemService } from '@ci/domains/memory';
 
 import { ItemFileLoader } from '../loaders/ItemFileLoader';
 import { TagLoader } from '../loaders/TagLoader';
+import { CreateItemInput } from '../types/CreateItemInput';
+import { CreateItemPayload } from '../types/CreateItemPayload';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
@@ -14,6 +18,8 @@ import { ItemConnection } from '../types/ItemConnection';
 import { ItemEdge } from '../types/ItemEdge';
 import { ItemType } from '../types/ItemType';
 import { PaginationArgs } from '../types/PaginationArgs';
+import { UpdateItemInput } from '../types/UpdateItemInput';
+import { UpdateItemPayload } from '../types/UpdateItemPayload';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
@@ -67,6 +73,87 @@ export class ItemResolver {
     const entity = await this.itemService.findById(serviceContext, id);
 
     return entity ? ItemType.toType(entity) : null;
+  }
+
+  @Mutation(() => CreateItemPayload)
+  async createItem(
+    @Context() context: RequestContext,
+    @Args('input') input: CreateItemInput,
+  ): Promise<CreateItemPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const entity = await this.itemService.create(serviceContext, {
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      brand: input.brand,
+      model: input.model,
+      currentValue: input.currentValue,
+    });
+
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      item: entity ? ItemType.toType(entity) : undefined,
+    };
+  }
+
+  @Mutation(() => UpdateItemPayload)
+  async updateItem(
+    @Context() context: RequestContext,
+    @Args('input') input: UpdateItemInput,
+  ): Promise<UpdateItemPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('item', input.id);
+
+    const entity = await this.itemService.update(serviceContext, id, {
+      name: input.name,
+      description: input.description,
+      category: input.category,
+      brand: input.brand,
+      model: input.model,
+      currentValue: input.currentValue,
+    });
+
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      item: entity ? ItemType.toType(entity) : undefined,
+    };
+  }
+
+  @Mutation(() => DeleteByIdPayload)
+  async deleteItem(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('item', input.id);
+
+    const success = await this.itemService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @ResolveField(() => FileType, { nullable: true })

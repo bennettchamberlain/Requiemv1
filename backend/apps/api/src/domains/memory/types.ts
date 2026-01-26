@@ -263,7 +263,6 @@ export interface CreateItemDto {
 }
 
 export interface UpdateItemDto {
-  id: string;
   name?: string;
   description?: string;
   category?: string;
