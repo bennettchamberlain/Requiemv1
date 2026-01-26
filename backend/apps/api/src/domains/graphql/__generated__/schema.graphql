@@ -254,6 +254,22 @@ input CreateQuestionInput {
   text: String!
 }
 
+input CreateRelationshipInput {
+  endDate: DateTime
+  fromNodeId: ID!
+  isBidirectional: Boolean
+  properties: JSON
+  startDate: DateTime
+  strength: Float
+  toNodeId: String!
+  type: String!
+}
+
+type CreateRelationshipPayload {
+  relationship: RelationshipType
+  success: Boolean!
+}
+
 input CreateSavedSearchInput {
   description: String
   entityTypes: [String!]
@@ -444,11 +460,13 @@ type Mutation {
   createPerson(input: CreatePersonInput!): CreatePersonPayload!
   createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
+  createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
@@ -466,6 +484,7 @@ type Mutation {
   updatePerson(input: UpdatePersonInput!): UpdatePersonPayload!
   updatePlace(input: UpdatePlaceInput!): PlaceType
   updateQuestion(input: UpdateQuestionInput!): QuestionType
+  updateRelationship(input: UpdateRelationshipInput!): UpdateRelationshipPayload!
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
 }
 
@@ -619,6 +638,7 @@ type Query {
   providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
+  relationship(id: ID!): RelationshipType
   savedSearch(id: ID!): SavedSearchType
   savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
   search(input: SearchInput!): SearchResultConnection!
@@ -648,6 +668,18 @@ type QuestionType implements Node {
   isSeedQuestion: Boolean
   questionType: String
   text: String!
+}
+
+type RelationshipType implements Node {
+  endDate: DateTime
+  fromNodeId: ID!
+  id: ID!
+  isBidirectional: Boolean!
+  properties: JSON
+  startDate: DateTime
+  strength: Float
+  toNodeId: String!
+  type: String!
 }
 
 type SavedSearchConnection implements Connection {
@@ -895,6 +927,20 @@ input UpdateQuestionInput {
   category: String!
   id: String!
   text: String!
+}
+
+input UpdateRelationshipInput {
+  endDate: DateTime
+  id: ID!
+  isBidirectional: Boolean
+  properties: JSON
+  startDate: DateTime
+  strength: Float
+}
+
+type UpdateRelationshipPayload {
+  relationship: RelationshipType
+  success: Boolean!
 }
 
 input UpdateSavedSearchInput {

@@ -72,6 +72,7 @@ export interface PossibleTypesResultData {
       "PlaceType",
       "ProviderType",
       "QuestionType",
+      "RelationshipType",
       "SavedSearchType",
       "SummaryType",
       "TagType",

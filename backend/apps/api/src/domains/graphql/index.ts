@@ -8,6 +8,7 @@ import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
+import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
@@ -42,6 +43,7 @@ import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
+import { RelationshipResolver } from './resolvers/RelationshipResolver';
 import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
 import { SummaryResolver } from './resolvers/SummaryResolver';
@@ -63,6 +65,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ConnectionsModule,
     ConversationModule,
     FilesModule,
+    GraphModule,
     IntelligenceModule,
     MemoryModule,
     NotesModule,
@@ -94,6 +97,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ProviderResolver,
     QuestionLoader,
     QuestionResolver,
+    RelationshipResolver,
     SavedSearchResolver,
     SearchResolver,
     SummaryResolver,

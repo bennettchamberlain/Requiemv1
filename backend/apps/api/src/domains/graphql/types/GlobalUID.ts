@@ -15,6 +15,7 @@ type ResourceType =
   | 'place'
   | 'provider'
   | 'question'
+  | 'relationship'
   | 'summary'
   | 'saved-search'
   | 'tag'

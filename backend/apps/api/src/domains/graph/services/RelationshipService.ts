@@ -174,7 +174,9 @@ export class RelationshipService {
 
     const updatedEntity = await this.relationshipRepository.save(record);
 
-    return RelationshipEntity.toEgressType(updatedEntity);
+    const entity = await this.findById(context, updatedEntity.id);
+
+    return RelationshipEntity.toEgressType(entity!);
   }
 
   async delete(context: ServiceContext, id: string): Promise<boolean> {
