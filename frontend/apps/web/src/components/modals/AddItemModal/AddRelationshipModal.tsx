@@ -205,7 +205,6 @@ export function AddRelationshipModal({
   }, []);
 
   const handleResultSelect = (e: SearchResultItem) => {
-    console.log('e', e);
     setSelectedEntity(e);
   };
 

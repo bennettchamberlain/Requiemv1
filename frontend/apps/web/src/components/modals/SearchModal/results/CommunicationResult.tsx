@@ -20,7 +20,7 @@ export function CommunicationResult({ communication }: Props) {
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2">
         <CommunicationIcon />
-        <div className="font-medium truncate max-w-[30ch]">{data.preview}</div>
+        <div className="font-medium truncate max-w-[25ch]">{data.preview}</div>
         <div className="text-muted-foreground">{new Date(data.time).toLocaleString()}</div>
       </div>
       <div className="text-muted-foreground">Communication</div>
