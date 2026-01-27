@@ -2995,12 +2995,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@ci/native-app@workspace:frontend/apps/native":
-  version: 0.0.0-use.local
-  resolution: "@ci/native-app@workspace:frontend/apps/native"
-  languageName: unknown
-  linkType: soft
-
 "@ci/shadcn@workspace:*, @ci/shadcn@workspace:frontend/packages/shadcn":
   version: 0.0.0-use.local
   resolution: "@ci/shadcn@workspace:frontend/packages/shadcn"
