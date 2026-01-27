@@ -6,9 +6,9 @@ import { RelationshipType, type SeedRelationship } from './types';
 export const SARAH_PREFERS: SeedRelationship[] = [
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.MEDITERRANEAN.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.95,
     properties: {
@@ -17,9 +17,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.THAI_FOOD.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.9,
     properties: {
@@ -28,9 +28,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.VEGETARIAN.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.85,
     properties: {
@@ -39,9 +39,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.SUSHI.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.8,
     properties: {
@@ -50,9 +50,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.ITALIAN_CUISINE.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.75,
     properties: {
@@ -61,9 +61,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.DRAMA.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.9,
     properties: {
@@ -72,9 +72,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.ROMANCE.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.85,
     properties: {
@@ -83,9 +83,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.DOCUMENTARY.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.8,
     properties: {
@@ -94,9 +94,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.COMEDY.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.75,
     properties: {
@@ -105,9 +105,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.YOGA.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.95,
     properties: {
@@ -116,9 +116,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.RUNNING.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.85,
     properties: {
@@ -127,9 +127,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.READING.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.8,
     properties: {
@@ -138,9 +138,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.PAINTING.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.7,
     properties: {
@@ -149,9 +149,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.TEA.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.9,
     properties: {
@@ -160,9 +160,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.WINE.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.85,
     properties: {
@@ -171,9 +171,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.SMOOTHIES.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.PREFERS,
     strength: 0.8,
     properties: {
@@ -185,9 +185,9 @@ export const SARAH_PREFERS: SeedRelationship[] = [
 export const SARAH_DISLIKES: SeedRelationship[] = [
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.HORROR.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.DISLIKES,
     strength: 0.85,
     properties: {
@@ -196,9 +196,9 @@ export const SARAH_DISLIKES: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.BBQ.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.DISLIKES,
     strength: 0.7,
     properties: {
@@ -207,9 +207,9 @@ export const SARAH_DISLIKES: SeedRelationship[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
-    fromNodeType: 'entity',
+    fromNodeType: 'person',
     toNodeId: concepts.BEER.id,
-    toNodeType: 'entity',
+    toNodeType: 'concept',
     type: RelationshipType.DISLIKES,
     strength: 0.8,
     properties: {

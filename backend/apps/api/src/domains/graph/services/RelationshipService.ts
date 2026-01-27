@@ -6,7 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { PgErrorCode } from '@ci/common/constants';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-
+import { ThreadService } from '@ci/domains/conversations';
 import {
   ConceptService,
   CommunicationService,
@@ -15,7 +15,7 @@ import {
   ItemService,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
-import { ThreadService } from '@ci/domains/conversations';
+
 import { type Relationship, RelationshipEntity } from '../entities/RelationshipEntity';
 import type { CreateRelationshipDto, UpdateRelationshipDto } from '../types';
 
@@ -57,6 +57,7 @@ export class RelationshipService {
         return await this.itemService.findById(context, nodeId);
       case 'note':
         return await this.noteService.findById(context, nodeId);
+      case 'entity':
       case 'person':
       case 'place':
         return await this.nodeService.findById(context, nodeId);

@@ -19,7 +19,13 @@ export class RelationshipType implements Node {
   fromNodeId!: string;
 
   @Field(() => String)
+  fromNodeType!: string;
+
+  @Field(() => ID)
   toNodeId!: string;
+
+  @Field(() => String)
+  toNodeType!: string;
 
   @Field(() => String)
   type!: string;
@@ -45,7 +51,9 @@ export class RelationshipType implements Node {
       __source: relationship,
       id: GlobalUID.encode('relationship', relationship.id),
       fromNodeId: relationship.fromNodeId,
+      fromNodeType: relationship.fromNodeType,
       toNodeId: relationship.toNodeId,
+      toNodeType: relationship.toNodeType,
       type: relationship.type,
       strength: relationship.strength,
       properties: relationship.properties,

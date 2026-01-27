@@ -198,12 +198,15 @@ export function PersonPage() {
 
       {content}
 
-      <AddRelationshipModal
-        allowedRelationshipTypes={ALLOWED_TYPES}
-        startId={id}
-        open={addRelationshipModalOpen}
-        onClose={() => setAddRelationshipModalOpen(false)}
-      />
+      {id && (
+        <AddRelationshipModal
+          allowedRelationshipTypes={ALLOWED_TYPES}
+          entityType={'person'}
+          entityId={id}
+          open={addRelationshipModalOpen}
+          onClose={() => setAddRelationshipModalOpen(false)}
+        />
+      )}
     </>
   );
 }

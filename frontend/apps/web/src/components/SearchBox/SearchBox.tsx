@@ -47,6 +47,8 @@ const Keys = {
 
 interface SearchResultItem {
   id: string;
+  parsedId: string;
+  type: string;
   content: React.ReactNode;
   preview?: React.ReactNode;
 }
@@ -519,4 +521,4 @@ const SearchBoxWithContext = forwardRef<HTMLInputElement, Props>((props, ref) =>
   </DropdownProvider>
 ));
 
-export { SearchBoxWithContext as SearchBox };
+export { SearchBoxWithContext as SearchBox, type SearchResultItem };

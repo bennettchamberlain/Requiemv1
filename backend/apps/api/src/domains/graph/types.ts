@@ -46,4 +46,7 @@ export type CreateRelationshipDto = Optional<
   type: keyof typeof RelationshipType;
 };
 
-export type UpdateRelationshipDto = Omit<CreateRelationshipDto, 'id' | 'fromNodeId' | 'toNodeId' | 'fromNodeType' | 'toNodeType' | 'type'>;
+export type UpdateRelationshipDto = Omit<
+  CreateRelationshipDto,
+  'id' | 'fromNodeId' | 'toNodeId' | 'fromNodeType' | 'toNodeType' | 'type'
+>;

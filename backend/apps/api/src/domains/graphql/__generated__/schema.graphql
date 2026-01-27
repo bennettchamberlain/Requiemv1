@@ -257,11 +257,13 @@ input CreateQuestionInput {
 input CreateRelationshipInput {
   endDate: DateTime
   fromNodeId: ID!
+  fromNodeType: String!
   isBidirectional: Boolean
   properties: JSON
   startDate: DateTime
   strength: Float
   toNodeId: String!
+  toNodeType: String!
   type: String!
 }
 
@@ -685,12 +687,14 @@ type RelationshipEdge implements Edge {
 type RelationshipType implements Node {
   endDate: DateTime
   fromNodeId: ID!
+  fromNodeType: String!
   id: ID!
   isBidirectional: Boolean!
   properties: JSON
   startDate: DateTime
   strength: Float
-  toNodeId: String!
+  toNodeId: ID!
+  toNodeType: String!
   type: String!
 }
 

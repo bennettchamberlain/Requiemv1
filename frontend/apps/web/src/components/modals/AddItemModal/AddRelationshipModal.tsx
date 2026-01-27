@@ -1,8 +1,8 @@
-import { useCallback, useState, useMemo, type FormEvent } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 
 import { useMutation } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
-import { Button, Dialog, Input, Textarea, Label, Select } from '@ci/shadcn';
+import { Button, Dialog, Label, Select } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 
 import { CommunicationResult } from '@/components/modals/SearchModal/results/CommunicationResult.tsx';
@@ -15,7 +15,7 @@ import { PersonResult } from '@/components/modals/SearchModal/results/PersonResu
 import { PlaceResult } from '@/components/modals/SearchModal/results/PlaceResult.tsx';
 import { ThreadResult } from '@/components/modals/SearchModal/results/ThreadResult.tsx';
 import { useSearchService } from '@/components/modals/SearchModal/useSearchService.ts';
-import { SearchBox } from '@/components/SearchBox';
+import { type SearchResultItem, SearchBox } from '@/components/SearchBox';
 import { gql } from '@/graphql';
 
 const CREATE_RELATIONSHIP = gql(`
@@ -25,7 +25,10 @@ const CREATE_RELATIONSHIP = gql(`
       relationship {
         id
         fromNodeId
+        fromNodeType
         toNodeId
+        toNodeType
+        type
         properties
         isBidirectional
         startDate
@@ -36,7 +39,8 @@ const CREATE_RELATIONSHIP = gql(`
 `);
 
 interface Props {
-  startId: string;
+  entityId: string;
+  entityType: string;
   allowedRelationshipTypes: {
     communication?: string[];
     concept?: string[];
@@ -52,20 +56,22 @@ interface Props {
   onClose?: (open?: boolean) => void;
 }
 
-export function AddRelationshipModal({ startId, allowedRelationshipTypes, open, onClose }: Props) {
+export function AddRelationshipModal({
+  entityId,
+  entityType,
+  allowedRelationshipTypes,
+  open,
+  onClose,
+}: Props) {
   const [query, setQuery] = useState<string | null>(null);
-  const [selectedEntity, setSelectedEntity] = useState<{
-    id: string;
-    parsedId: string;
-    type: string;
-  } | null>(null);
-  const [selectedRelationshipType, setSelectedRelationshipType] = useState<string>('');
+  const [selectedEntity, setSelectedEntity] = useState<SearchResultItem | null>(null);
+  const [selectedRelationshipType, setSelectedRelationshipType] = useState<string | undefined>(undefined);
 
   const { data, loading, error } = useSearchService({
     searchQuery: query ?? '',
   });
 
-  const results = useMemo(
+  const results: SearchResultItem[] = useMemo(
     () =>
       data.map((item) => {
         switch (item.__typename) {
@@ -155,30 +161,6 @@ export function AddRelationshipModal({ startId, allowedRelationshipTypes, open, 
 
   const [createRelationship] = useMutation(CREATE_RELATIONSHIP);
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    try {
-      await createRelationship({
-        variables: {
-          input: {
-            fromEntityId: '',
-            toEntityId: '',
-            type: '',
-          },
-        },
-      });
-
-      // Reset form and close modal on success
-      setSelectedEntity(null);
-      setSelectedRelationshipType(null);
-      setQuery(null);
-      onClose?.(false);
-    } catch (error) {
-      console.error('Failed to create person:', error);
-    }
-  };
-
   const handleCancel = () => {
     onClose?.(false);
   };
@@ -192,8 +174,10 @@ export function AddRelationshipModal({ startId, allowedRelationshipTypes, open, 
       await createRelationship({
         variables: {
           input: {
-            fromNodeId: startId,
+            fromNodeId: entityId,
+            fromNodeType: entityType,
             toNodeId: selectedEntity.parsedId,
+            toNodeType: selectedEntity.type,
             type: selectedRelationshipType,
           },
         },
@@ -201,7 +185,7 @@ export function AddRelationshipModal({ startId, allowedRelationshipTypes, open, 
 
       // Reset form and close modal on success
       setSelectedEntity(null);
-      setSelectedRelationshipType(null);
+      setSelectedRelationshipType(undefined);
       setQuery(null);
       onClose?.(false);
     } catch (error) {
@@ -211,7 +195,7 @@ export function AddRelationshipModal({ startId, allowedRelationshipTypes, open, 
 
   const handleClose = () => {
     setSelectedEntity(null);
-    setSelectedRelationshipType(null);
+    setSelectedRelationshipType(undefined);
     setQuery(null);
     onClose?.(false);
   };
@@ -220,14 +204,14 @@ export function AddRelationshipModal({ startId, allowedRelationshipTypes, open, 
     setQuery(searchQuery);
   }, []);
 
-  const handleResultSelect = (e: FormEvent<HTMLSelectElement>) => {
-    const { content, ...rest } = e;
-    setSelectedEntity(rest);
+  const handleResultSelect = (e: SearchResultItem) => {
+    console.log('e', e);
+    setSelectedEntity(e);
   };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <Dialog.Content className="sm:max-w-md">
+      <Dialog.Content className="top-[15%] translate-y-0 sm:max-w-2xl">
         <Dialog.Header>
           <Dialog.Title className="text-xl mb-4">Add Relationship</Dialog.Title>
         </Dialog.Header>
@@ -248,13 +232,13 @@ export function AddRelationshipModal({ startId, allowedRelationshipTypes, open, 
         )}
         {selectedEntity && (
           <div className="flex items-center gap-2">
-            <div className="flex-1">{results.find((r) => r.id === selectedEntity.id)?.content}</div>
+            <div className="flex-1">{selectedEntity.content}</div>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => {
                 setSelectedEntity(null);
-                setSelectedRelationshipType(null);
+                setSelectedRelationshipType(undefined);
               }}
               className="text-gray-500 hover:text-red-400 hover:bg-red-50"
             >
