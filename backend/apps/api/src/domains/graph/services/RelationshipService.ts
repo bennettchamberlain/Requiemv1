@@ -124,6 +124,18 @@ export class RelationshipService {
     return RelationshipEntity.toEgressType(entity);
   }
 
+  async findAll(context: ServiceContext): Promise<Relationship[]> {
+    const entities = await this.relationshipRepository.find({
+      where: {
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    return entities.map((entity) => RelationshipEntity.toEgressType(entity));
+  }
+
   async findById(context: ServiceContext, id: string): Promise<Relationship | null> {
     const entity = await this.relationshipRepository.findOne({
       where: {

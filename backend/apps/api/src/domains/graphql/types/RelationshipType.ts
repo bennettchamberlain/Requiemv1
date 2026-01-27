@@ -50,8 +50,8 @@ export class RelationshipType implements Node {
       strength: relationship.strength,
       properties: relationship.properties,
       isBidirectional: relationship.isBidirectional,
-      startDate: relationship.startDate || undefined,
-      endDate: relationship.endDate || undefined,
+      startDate: relationship.startDate ? new Date(relationship.startDate) : undefined,
+      endDate: relationship.endDate ? new Date(relationship.endDate) : undefined,
     };
   }
 }

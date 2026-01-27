@@ -35,6 +35,8 @@ export enum RelationshipType {
   IS = 'IS',
   LIVES_WITH = 'LIVES_WITH',
   ASSOCIATED_WITH = 'ASSOCIATED_WITH',
+  RECEIVED = 'RECEIVED',
+  SENT = 'SENT',
 }
 
 export type CreateRelationshipDto = Optional<
