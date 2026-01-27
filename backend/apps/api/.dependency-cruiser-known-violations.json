@@ -1281,32 +1281,6 @@
     ]
   },
   {
-    "type": "cycle",
-    "from": "src/domains/tools/providers/mcp/McpToolProvider.ts",
-    "to": "src/domains/tools/providers/mcp/McpToolWrapper.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-circular"
-    },
-    "cycle": [
-      {
-        "name": "src/domains/tools/providers/mcp/McpToolWrapper.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/tools/providers/mcp/McpToolProvider.ts",
-        "dependencyTypes": [
-          "local",
-          "type-only",
-          "import"
-        ]
-      }
-    ]
-  },
-  {
     "type": "dependency",
     "from": "src/domains/promote/services/microsoft/OneDrivePromotionService.ts",
     "to": "src/domains/connections/clients/MicrosoftClient.ts",

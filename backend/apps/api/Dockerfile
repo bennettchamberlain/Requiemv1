@@ -45,17 +45,6 @@ COPY .yarnrc.yml ./
 COPY package.json ./
 COPY yarn.lock ./
 
-# Create MCP servers directory and copy source files
-COPY mcp-servers ./mcp-servers
-
-# Build web-search server
-RUN if [ -d "./mcp-servers/web-search" ] && [ -f "./mcp-servers/web-search/package.json" ]; then \
-        cd ./mcp-servers/web-search && \
-        npm ci --production=false && \
-        npm run build && \
-        PLAYWRIGHT_BROWSERS_PATH=/app/mcp-servers/web-search/playwright-browsers npx playwright install --with-deps; \
-    fi
-
 COPY backend/apps/api/package.json ./backend/apps/api/package.json
 COPY backend/apps/api/.yarnrc.yml ./backend/apps/api/.yarnrc.yml
 

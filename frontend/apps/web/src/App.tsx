@@ -4,7 +4,7 @@ import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
-import { FeaturesProvider, useFeatures } from '@/common/feature';
+import { FeaturesProvider } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
@@ -44,7 +44,6 @@ const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const TagPage = lazy(() => import('@/pages/TagPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
-const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
@@ -69,8 +68,6 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
-  const { isFeatureEnabled } = useFeatures();
-
   return (
     <Routes>
       <Route
@@ -248,17 +245,6 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
-        {isFeatureEnabled('plugins.page') && (
-          <Route
-            path="/plugins"
-            element={
-              <ProtectedRoute>
-                <ToolsPage />
-              </ProtectedRoute>
-            }
-          />
-        )}
 
         <Route
           path="/oauth/callback"
