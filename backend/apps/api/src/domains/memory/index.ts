@@ -127,6 +127,8 @@ export {
   CommunicationEntity,
   ContentEntity,
   EventEntity,
+  FileEntity,
+  ItemEntity,
   PersonEntity,
   ConceptEntity,
   PlaceEntity,

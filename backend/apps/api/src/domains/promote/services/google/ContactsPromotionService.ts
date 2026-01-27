@@ -266,9 +266,9 @@ export class ContactsPromotionService {
     const context = toServiceContext({ userId });
     await this.relationshipService.upsert(context, {
       fromNodeId: userEntityId,
-      fromNodeType: 'entity',
+      fromNodeType: 'person',
       toNodeId: contactEntityId,
-      toNodeType: 'entity',
+      toNodeType: 'person',
       type: 'KNOWS',
       properties: {
         source: 'google_contacts',

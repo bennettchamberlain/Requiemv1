@@ -13,26 +13,27 @@ import {
   ContentService,
   EventService,
   ItemService,
+  PersonService,
+  PlaceService,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
 
 import { type Relationship, RelationshipEntity } from '../entities/RelationshipEntity';
 import type { CreateRelationshipDto, UpdateRelationshipDto } from '../types';
 
-import { NodeService } from './NodeService';
-
 @Injectable()
 export class RelationshipService {
   constructor(
     @InjectRepository(RelationshipEntity)
     private readonly relationshipRepository: Repository<RelationshipEntity>,
-    private readonly nodeService: NodeService,
     private readonly conceptService: ConceptService,
     private readonly communicationService: CommunicationService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
     private readonly itemService: ItemService,
     private readonly noteService: NoteService,
+    private readonly personService: PersonService,
+    private readonly placeService: PlaceService,
     private readonly threadService: ThreadService,
     private readonly logger: LoggerService,
   ) {
@@ -57,10 +58,10 @@ export class RelationshipService {
         return await this.itemService.findById(context, nodeId);
       case 'note':
         return await this.noteService.findById(context, nodeId);
-      case 'entity':
       case 'person':
+        return await this.personService.findById(context, nodeId);
       case 'place':
-        return await this.nodeService.findById(context, nodeId);
+        return await this.placeService.findById(context, nodeId);
       case 'thread':
         return await this.threadService.findById(context, nodeId);
       default:

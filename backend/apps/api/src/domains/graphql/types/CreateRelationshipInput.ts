@@ -1,7 +1,7 @@
 import { Field, Float, ID, InputType } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
-import { RelationshipType as RelationshipTypeName } from '@ci/domains/graph/types';
+import { RelationshipType as RelationshipTypeName } from '@ci/domains/graph';
 
 @InputType()
 export class CreateRelationshipInput {

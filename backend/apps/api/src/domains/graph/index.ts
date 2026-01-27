@@ -14,18 +14,21 @@ import {
   ContentService,
   EventService,
   ItemService,
+  PersonService,
+  PlaceService,
   CommunicationEntity,
   ContentEntity,
   EventEntity,
+  FileEntity,
+  ItemEntity,
+  PersonEntity,
+  PlaceEntity,
 } from '@ci/domains/memory';
-import { FileEntity } from '@ci/domains/memory/entities/FileEntity';
-import { ItemEntity } from '@ci/domains/memory/entities/ItemEntity';
-import { NoteService } from '@ci/domains/notes';
-import { NoteEntity } from '@ci/domains/notes/entities/NoteEntity';
+import { NoteService, NoteEntity } from '@ci/domains/notes';
 import { UserModule } from '@ci/domains/user';
 
 import { type Node, NodeEntity } from './entities/NodeEntity';
-import { RelationshipEntity } from './entities/RelationshipEntity';
+import { type Relationship, RelationshipEntity } from './entities/RelationshipEntity';
 import { GraphService } from './services/GraphService';
 import { NodeService } from './services/NodeService';
 import { RelationshipService } from './services/RelationshipService';
@@ -46,6 +49,8 @@ import { RelationshipService } from './services/RelationshipService';
       NoteEntity,
       ThreadEntity,
       RelationshipEntity,
+      PersonEntity,
+      PlaceEntity,
     ]),
     EventsModule,
     MemoryModule,
@@ -62,6 +67,8 @@ import { RelationshipService } from './services/RelationshipService';
     GraphService,
     NodeService,
     MessageService,
+    PersonService,
+    PlaceService,
     RelationshipService,
   ],
   exports: [GraphService, NodeService, RelationshipService],
@@ -69,5 +76,5 @@ import { RelationshipService } from './services/RelationshipService';
 export class GraphModule {}
 
 export { GraphService, NodeService, RelationshipService };
-export type { Node };
+export type { Node, Relationship };
 export { RelationshipType } from './types';

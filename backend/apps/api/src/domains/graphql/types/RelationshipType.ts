@@ -1,7 +1,7 @@
 import { Field, Float, ID, ObjectType } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
-import { type Relationship } from '@ci/domains/graph/entities/RelationshipEntity';
+import { type Relationship } from '@ci/domains/graph';
 
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
