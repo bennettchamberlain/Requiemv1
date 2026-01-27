@@ -118,15 +118,11 @@ dev: ## DEPRECATED
 setup-dev: ## Setup the development environment
 	$(MAKE) init
 	@printf "\n"
-	$(MAKE) build
-	@printf "\n"
 	$(MAKE) local
 	@printf "\n"
 	$(MAKE) migrate
 	@printf "\n"
 	$(MAKE) seed
-	@printf "\n"
-	$(MAKE) index
 
 run-dev: ## Run the development environment locally
 	$(MAKE) local
