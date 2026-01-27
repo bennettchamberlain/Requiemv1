@@ -78,7 +78,7 @@ build: ## Build the application
 	@cd frontend/apps/web && yarn clean && yarn build
 
 	@printf "\nBuilding webserver image...\n\n"
-	@docker build -f docker/webserver/Dockerfile -t $(WEBSERVER_REPO):latest .
+	@docker build -f infrastructure/nginx/Dockerfile.staging -t $(WEBSERVER_REPO):latest .
 
 	@printf "\nApplication successfully built.\n"
 

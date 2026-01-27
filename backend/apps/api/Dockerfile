@@ -3,17 +3,11 @@ FROM node:22.15.1-slim
 ENV YARN_NODE_LINKER=node-modules
 ENV NODE_ENV=production
 
-RUN apt-get update && apt-get install -y tini git && apt-get clean
-
 RUN apt-get update && \
-    apt-get install -y curl && \
-    curl -fsSL https://github.com/amacneil/dbmate/releases/download/v2.27.0/dbmate-linux-amd64 \
-        -o /usr/local/bin/dbmate && \
-    chmod +x /usr/local/bin/dbmate
-
-# Install Playwright system dependencies
-RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
+    tini \
+    curl \
+    ca-certificates \
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -36,6 +30,10 @@ RUN apt-get update && \
     libatspi2.0-0 \
     libwayland-client0 \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://github.com/amacneil/dbmate/releases/download/v2.27.0/dbmate-linux-amd64 \
+        -o /usr/local/bin/dbmate && \
+    chmod +x /usr/local/bin/dbmate
 
 RUN corepack enable && corepack prepare yarn@4.9.1 --activate
 
