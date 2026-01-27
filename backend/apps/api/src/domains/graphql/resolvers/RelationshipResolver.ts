@@ -32,7 +32,9 @@ export class RelationshipResolver {
 
     const entity = await this.relationshipService.create(serviceContext, {
       fromNodeId: input.fromNodeId,
+      fromNodeType: input.fromNodeType,
       toNodeId: input.toNodeId,
+      toNodeType: input.toNodeType,
       type: input.type,
       strength: input.strength || 1,
       properties: input.properties || {},

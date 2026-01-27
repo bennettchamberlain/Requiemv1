@@ -7,7 +7,9 @@ import * as places from '../places';
 export const SMITH_FAMILY: CreateRelationshipDto[] = [
   {
     fromNodeId: people.JOHN_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.SARAH_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.SPOUSE,
     strength: 1.0,
     properties: {
@@ -17,7 +19,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.JOHN_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.SPOUSE,
     strength: 1.0,
     properties: {
@@ -27,7 +31,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.JOHN_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.EMMA_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.PARENT_OF,
     strength: 1.0,
     properties: {
@@ -36,7 +42,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.EMMA_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.PARENT_OF,
     strength: 1.0,
     properties: {
@@ -45,7 +53,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.JOHN_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.LUCAS_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.PARENT_OF,
     strength: 1.0,
     properties: {
@@ -54,7 +64,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.LUCAS_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.PARENT_OF,
     strength: 1.0,
     properties: {
@@ -63,7 +75,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.EMMA_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.LUCAS_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.SIBLING_OF,
     strength: 1.0,
     properties: {
@@ -73,7 +87,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.LUCAS_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: people.EMMA_SMITH.id,
+    toNodeType: 'entity',
     type: RelationshipType.SIBLING_OF,
     strength: 1.0,
     properties: {
@@ -83,7 +99,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.JOHN_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: places.SMITH_FAMILY_HOME.id,
+    toNodeType: 'entity',
     type: RelationshipType.LIVES_IN,
     strength: 1.0,
     properties: {
@@ -92,7 +110,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.SARAH_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: places.SMITH_FAMILY_HOME.id,
+    toNodeType: 'entity',
     type: RelationshipType.LIVES_IN,
     strength: 1.0,
     properties: {
@@ -101,7 +121,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.EMMA_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: places.SMITH_FAMILY_HOME.id,
+    toNodeType: 'entity',
     type: RelationshipType.LIVES_IN,
     strength: 1.0,
     properties: {
@@ -110,7 +132,9 @@ export const SMITH_FAMILY: CreateRelationshipDto[] = [
   },
   {
     fromNodeId: people.LUCAS_SMITH.id,
+    fromNodeType: 'entity',
     toNodeId: places.SMITH_FAMILY_HOME.id,
+    toNodeType: 'entity',
     type: RelationshipType.LIVES_IN,
     strength: 1.0,
     properties: {

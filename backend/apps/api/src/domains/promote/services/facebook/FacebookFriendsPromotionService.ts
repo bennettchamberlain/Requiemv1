@@ -95,7 +95,9 @@ export class FacebookFriendsPromotionService {
 
           await this.relationshipService.upsert(context, {
             fromNodeId: userNode.entityId,
+            fromNodeType: 'entity',
             toNodeId: newPerson.id,
+            toNodeType: 'entity',
             type: 'FRIENDS_WITH',
             properties: {
               source: 'facebook',

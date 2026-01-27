@@ -9,7 +9,13 @@ export class CreateRelationshipInput {
   fromNodeId!: string;
 
   @Field(() => String)
+  fromNodeType!: string;
+
+  @Field(() => String)
   toNodeId!: string;
+
+  @Field(() => String)
+  toNodeType!: string;
 
   @Field(() => String)
   type!: RelationshipTypeName;

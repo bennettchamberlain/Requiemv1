@@ -176,7 +176,9 @@ export class OnboardingService {
 
           await this.relationshipService.create(context, {
             fromNodeId: userEntityId,
+            fromNodeType: 'entity',
             toNodeId: concept.id,
+            toNodeType: 'entity',
             type: 'PREFERS',
             strength: 0.9,
             properties: {
@@ -217,7 +219,9 @@ export class OnboardingService {
 
         await this.relationshipService.create(context, {
           fromNodeId: userEntityId,
+          fromNodeType: 'entity',
           toNodeId: person.id,
+          toNodeType: 'entity',
           ...this.mapRelationship(entry.relationship),
           strength: entry.relationship.toLowerCase() === 'friend' ? 0.8 : 0.7,
           properties: {
@@ -255,7 +259,9 @@ export class OnboardingService {
 
         await this.relationshipService.create(context, {
           fromNodeId: userEntityId,
+          fromNodeType: 'entity',
           toNodeId: concept.id,
+          toNodeType: 'entity',
           type: 'PREFERS',
           strength: 0.85,
           properties: {

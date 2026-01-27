@@ -182,7 +182,9 @@ export class FacebookProfilePromotionService {
       // Create relationship to user
       await this.relationshipService.upsert(context, {
         fromNodeId: userNode.entityId,
+        fromNodeType: 'entity',
         toNodeId: entityId,
+        toNodeType: 'entity',
         type: 'IS',
         properties: {
           source: 'facebook',

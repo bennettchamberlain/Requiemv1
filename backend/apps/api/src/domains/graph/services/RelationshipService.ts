@@ -7,6 +7,15 @@ import { PgErrorCode } from '@ci/common/constants';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
+import {
+  ConceptService,
+  CommunicationService,
+  ContentService,
+  EventService,
+  ItemService,
+} from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
+import { ThreadService } from '@ci/domains/conversations';
 import { type Relationship, RelationshipEntity } from '../entities/RelationshipEntity';
 import type { CreateRelationshipDto, UpdateRelationshipDto } from '../types';
 
@@ -18,20 +27,57 @@ export class RelationshipService {
     @InjectRepository(RelationshipEntity)
     private readonly relationshipRepository: Repository<RelationshipEntity>,
     private readonly nodeService: NodeService,
+    private readonly conceptService: ConceptService,
+    private readonly communicationService: CommunicationService,
+    private readonly contentService: ContentService,
+    private readonly eventService: EventService,
+    private readonly itemService: ItemService,
+    private readonly noteService: NoteService,
+    private readonly threadService: ThreadService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(RelationshipService.name);
   }
 
+  private async findNodeById(
+    context: ServiceContext,
+    nodeId: string,
+    nodeType: string,
+  ): Promise<unknown | null> {
+    switch (nodeType) {
+      case 'concept':
+        return await this.conceptService.findById(context, nodeId);
+      case 'communication':
+        return await this.communicationService.findById(context, nodeId);
+      case 'content':
+        return await this.contentService.findById(context, nodeId);
+      case 'event':
+        return await this.eventService.findById(context, nodeId);
+      case 'item':
+        return await this.itemService.findById(context, nodeId);
+      case 'note':
+        return await this.noteService.findById(context, nodeId);
+      case 'person':
+      case 'place':
+        return await this.nodeService.findById(context, nodeId);
+      case 'thread':
+        return await this.threadService.findById(context, nodeId);
+      default:
+        throw new Error(`Unknown node type: ${nodeType}`);
+    }
+  }
+
   async create(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship | null> {
-    const [fromNode, toNode] = await this.nodeService.findByIds(context, [data.fromNodeId, data.toNodeId]);
+    const fromNode = await this.findNodeById(context, data.fromNodeId, data.fromNodeType);
 
     if (fromNode == null) {
-      throw new Error(`Node with id ${data.fromNodeId} not found`);
+      throw new Error(`Node with id ${data.fromNodeId} and type ${data.fromNodeType} not found`);
     }
 
+    const toNode = await this.findNodeById(context, data.toNodeId, data.toNodeType);
+
     if (toNode == null) {
-      throw new Error(`Node with id ${data.toNodeId} not found`);
+      throw new Error(`Node with id ${data.toNodeId} and type ${data.toNodeType} not found`);
     }
 
     const record = this.relationshipRepository.create({
@@ -60,7 +106,9 @@ export class RelationshipService {
         const existing = await this.relationshipRepository.findOne({
           where: {
             fromNodeId: data.fromNodeId,
+            fromNodeType: data.fromNodeType,
             toNodeId: data.toNodeId,
+            toNodeType: data.toNodeType,
             type: data.type,
             userId: context.userId,
           },
@@ -85,14 +133,16 @@ export class RelationshipService {
   // not implemented here, but could be added in the future if needed. E.g. is
   // discovering friends from different social media sources.
   async upsert(context: UserServiceContext, data: CreateRelationshipDto): Promise<Relationship> {
-    const [fromNode, toNode] = await this.nodeService.findByIds(context, [data.fromNodeId, data.toNodeId]);
+    const fromNode = await this.findNodeById(context, data.fromNodeId, data.fromNodeType);
 
     if (fromNode == null) {
-      throw new Error(`Node with id ${data.fromNodeId} not found`);
+      throw new Error(`Node with id ${data.fromNodeId} and type ${data.fromNodeType} not found`);
     }
 
+    const toNode = await this.findNodeById(context, data.toNodeId, data.toNodeType);
+
     if (toNode == null) {
-      throw new Error(`Node with id ${data.toNodeId} not found`);
+      throw new Error(`Node with id ${data.toNodeId} and type ${data.toNodeType} not found`);
     }
 
     let record = await this.relationshipRepository.findOne({

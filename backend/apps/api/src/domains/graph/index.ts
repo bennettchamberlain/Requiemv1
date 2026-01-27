@@ -14,6 +14,12 @@ import { RelationshipEntity } from './entities/RelationshipEntity';
 import { GraphService } from './services/GraphService';
 import { NodeService } from './services/NodeService';
 import { RelationshipService } from './services/RelationshipService';
+import { CommunicationService } from "@ci/domains/memory";
+import { ContentService } from "@ci/domains/memory";
+import { EventService } from "@ci/domains/memory";
+import { ItemService } from "@ci/domains/memory";
+import { NoteService } from "@ci/domains/notes";
+import { ThreadService } from "@ci/domains/conversations";
 
 /**
  * @internal
@@ -25,7 +31,17 @@ import { RelationshipService } from './services/RelationshipService';
     MemoryModule,
     UserModule,
   ],
-  providers: [GraphService, NodeService, RelationshipService],
+  providers: [
+    CommunicationService,
+    ContentService,
+    EventService,
+    ItemService,
+    NoteService,
+    ThreadService,
+    GraphService,
+    NodeService,
+    RelationshipService
+  ],
   exports: [GraphService, NodeService, RelationshipService],
 })
 export class GraphModule {}
