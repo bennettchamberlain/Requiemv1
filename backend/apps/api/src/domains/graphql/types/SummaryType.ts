@@ -5,6 +5,7 @@ import type { Summary } from '@ci/domains/summaries';
 
 import { ActivityCountsType } from './ActivityCountsType';
 import { GlobalUID } from './GlobalUID';
+import { InsightItemType } from './InsightItemType';
 
 @ObjectType({ implements: () => [Node] })
 export class SummaryType implements Node {
@@ -52,6 +53,9 @@ export class SummaryType implements Node {
   @Field(() => [String!]!)
   tags!: string[];
 
+  @Field(() => [InsightItemType!]!)
+  insights!: InsightItemType[];
+
   // Daily-specific fields (optional)
   @Field(() => [String!], { nullable: true })
   dailyRhythm?: string[];
@@ -94,6 +98,7 @@ export class SummaryType implements Node {
       anomalies: source.anomalies,
       activityCounts: ActivityCountsType.fromContent(source.activityCounts),
       tags: source.tags,
+      insights: (source.insights || []).map((i) => InsightItemType.fromContent(i)),
       dailyRhythm: source.dailyRhythm,
       productivityPatterns: source.productivityPatterns,
       socialInteractions: source.socialInteractions,

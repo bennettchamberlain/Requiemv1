@@ -11,7 +11,11 @@ const GET_SUMMARIES = gql(`
       edges {
         node {
           id
+          periodType
           ...SummaryCardData
+          insights {
+            ...InsightCardData
+          }
         }
       }
       pageInfo {
