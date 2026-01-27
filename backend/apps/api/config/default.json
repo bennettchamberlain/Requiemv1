@@ -74,7 +74,6 @@
     "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
     "enable.system.prompt": true,
-    "plugins.page": true,
     "advanced.theme.tab": false
   },
   "environment": {
