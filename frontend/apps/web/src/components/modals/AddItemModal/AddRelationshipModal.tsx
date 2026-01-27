@@ -2,7 +2,7 @@ import { useCallback, useState, useMemo } from 'react';
 
 import { useMutation } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
-import { Button, Dialog, Label, Select } from '@ci/shadcn';
+import { Button, Calendar, Dialog, Label, Select } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 
 import { CommunicationResult } from '@/components/modals/SearchModal/results/CommunicationResult.tsx';
@@ -66,6 +66,8 @@ export function AddRelationshipModal({
   const [query, setQuery] = useState<string | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<SearchResultItem | null>(null);
   const [selectedRelationshipType, setSelectedRelationshipType] = useState<string | undefined>(undefined);
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
 
   const { data, loading, error } = useSearchService({
     searchQuery: query ?? '',
@@ -179,6 +181,8 @@ export function AddRelationshipModal({
             toNodeId: selectedEntity.parsedId,
             toNodeType: selectedEntity.type,
             type: selectedRelationshipType,
+            startDate: startDate?.toISOString(),
+            endDate: endDate?.toISOString(),
           },
         },
       });
@@ -186,6 +190,8 @@ export function AddRelationshipModal({
       // Reset form and close modal on success
       setSelectedEntity(null);
       setSelectedRelationshipType(undefined);
+      setStartDate(undefined);
+      setEndDate(undefined);
       setQuery(null);
       onClose?.(false);
     } catch (error) {
@@ -196,6 +202,8 @@ export function AddRelationshipModal({
   const handleClose = () => {
     setSelectedEntity(null);
     setSelectedRelationshipType(undefined);
+    setStartDate(undefined);
+    setEndDate(undefined);
     setQuery(null);
     onClose?.(false);
   };
@@ -272,6 +280,61 @@ export function AddRelationshipModal({
                   })}
               </Select.Content>
             </Select>
+          </div>
+        )}
+
+        {selectedEntity && (
+          <div className="flex gap-4 justify-between mt-4">
+            <div className="flex-1">
+              <Label>Start Date</Label>
+              {startDate && (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm">{startDate.toLocaleDateString()}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setStartDate(undefined)}
+                    className="text-gray-500 hover:text-red-400 hover:bg-red-50 h-6 w-6 p-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+              <Calendar
+                mode="single"
+                selected={startDate}
+                defaultMonth={startDate}
+                captionLayout="dropdown"
+                onSelect={(date) => {
+                  setStartDate(date);
+                }}
+              />
+            </div>
+            <div className="flex-1">
+              <Label>End Date</Label>
+              {endDate && (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm">{endDate.toLocaleDateString()}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEndDate(undefined)}
+                    className="text-gray-500 hover:text-red-400 hover:bg-red-50 h-6 w-6 p-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+              <Calendar
+                mode="single"
+                selected={endDate}
+                defaultMonth={endDate}
+                captionLayout="dropdown"
+                onSelect={(date) => {
+                  setEndDate(date);
+                }}
+              />
+            </div>
           </div>
         )}
 
