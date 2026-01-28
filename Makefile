@@ -258,10 +258,10 @@ local: ## Run the local dependencies from Docker images
 	@printf "⌨️ Starting the local services...\n\n"
 
 	@printf "Stopping any staging profile services...\n\n"
-	@docker compose down ci-api staging-webserver
+	@docker compose -f docker-compose.yml -f docker-compose.staging.yml down ci-api staging-webserver
 
 	@printf "\nStarting a new local deployment cluster...\n\n"
-	@docker compose --profile local up -d
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d
 
 	@printf "\nLocal services successfully started.\n"
 
@@ -279,10 +279,10 @@ staging: ## Run the staging server from Docker images
 	@printf "🎭 Starting the staging services...\n\n"
 
 	@printf "Stopping any local profile services...\n\n"
-	@docker compose down dev-webserver
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml down dev-webserver
 
 	@printf "\nStarting a new staging deployment cluster...\n\n"
-	@docker compose --profile staging up -d
+	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging up -d
 
 	@printf "\nStaging services successfully started.\n"
 
