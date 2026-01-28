@@ -6,8 +6,6 @@ services:
   iframely:
     image: jolt/iframely:latest
     container_name: iframely
-    ports:
-      - 8061:8061
     networks:
       - ci
     restart: unless-stopped
@@ -17,13 +15,11 @@ services:
       resources:
         limits:
           memory: 4G
-    profiles: [ "all", "local", "staging" ]
+    profiles: [ "local", "staging" ]
 
   minio:
     image: minio/minio
     container_name: minio
-    ports:
-      - 9000:9000
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
@@ -33,7 +29,7 @@ services:
       - ci
     command: server /data
     restart: unless-stopped
-    profiles: [ "all", "local", "staging" ]
+    profiles: [ "local", "staging" ]
 
   postgres:
     build:
@@ -41,8 +37,6 @@ services:
       dockerfile: Dockerfile
     image: ci/postgres
     container_name: postgres
-    ports:
-      - 5432:5432
     environment:
       POSTGRES_USER: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -58,13 +52,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    profiles: [ "all", "local", "staging" ]
+    profiles: [ "local", "staging" ]
 
   temporal:
     image: temporalio/auto-setup:1.25.1
     container_name: temporal
-    ports:
-      - 7233:7233
     environment:
       - DB=postgres12_pgx
       - DB_PORT=5432
@@ -79,52 +71,11 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    profiles: [ "all", "local", "staging" ]
-
+    profiles: [ "local", "staging" ]
 
   ########################
   # FIRST-PARTY SERVICES #
   ########################
-
-  staging-webserver:
-    image: ci/nginx
-    container_name: staging-webserver
-    ports:
-      - 8642:8642
-    volumes:
-      - ./infrastructure/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
-      - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
-    networks:
-      - ci
-    depends_on:
-      - ci-api
-    restart: unless-stopped
-    profiles: [ "all", "staging" ]
-
-  ci-api:
-    image: ci/api:latest
-    container_name: ci-api
-    ports:
-      - 3030:3030
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: postgres
-      S3_URL: http://minio:9000
-      OLLAMA_HOST: http://host.docker.internal:11434
-      STT_HOST: http://stt-service:9001
-      TTS_HOST: http://tts-service:9002
-    networks:
-      - ci
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    depends_on:
-      migrations:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-    profiles: [ "all", "staging" ]
 
   stt-service:
     build:
@@ -132,8 +83,6 @@ services:
       dockerfile: Dockerfile
     image: ci/stt-service
     container_name: stt-service
-    ports:
-      - 9001:9001
     volumes:
       - stt-service-models:/app/models
       - stt-service-cache:/root/.cache
@@ -142,7 +91,7 @@ services:
     networks:
       - ci
     restart: unless-stopped
-    profiles: [ "all", "local", "staging" ]
+    profiles: [ "local", "staging" ]
 
   tts-service:
     build:
@@ -150,8 +99,6 @@ services:
       dockerfile: Dockerfile
     image: ci/tts-service
     container_name: tts-service
-    ports:
-      - 9002:9002
     volumes:
       - tts-service-models:/app/models
       - tts-service-cache:/root/.cache
@@ -160,7 +107,7 @@ services:
     networks:
       - ci
     restart: unless-stopped
-    profiles: [ "all", "local", "staging" ]
+    profiles: [ "local", "staging" ]
 
   summary-service:
     build:
@@ -169,8 +116,6 @@ services:
     image: ci/summary-service
     pull_policy: build
     container_name: summary-service
-    ports:
-      - 8001:8001
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres:5432/companion_intel
       - LLM_API_BASE=${LLM_API_BASE:-http://host.docker.internal:11434/v1}
@@ -187,51 +132,7 @@ services:
       - postgres
       - temporal
     restart: unless-stopped
-    profiles: [ "all", "local", "staging" ]
-
-
-  #########################
-  # PRODUCTION MIGRATIONS #
-  #########################
-
-  migrations:
-    image: ci/api:latest
-    container_name: migrations
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_USERNAME: ${POSTGRES_USERNAME}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    networks:
-      - ci
-    command: ["yarn", "migrate"]
-    restart: "no"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    profiles: [ "all", "staging" ]
-
-
-  #############################
-  # DEVELOPMENT-ONLY SERVICES #
-  #############################
-
-  dev-webserver:
-    image: nginx:stable
-    container_name: dev-webserver
-    ports:
-      - 80:80
-      - 443:443
-    volumes:
-      - ./infrastructure/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
-      - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
-      - ./infrastructure/nginx/public:/usr/share/nginx/html:ro
-    networks:
-      - ci
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    restart: unless-stopped
-    profiles: [ "all", "local" ]
-
+    profiles: [ "local", "staging" ]
 
   ##############################
   # THIRD-PARTY MANAGEMENT UIs #
@@ -250,7 +151,7 @@ services:
     depends_on:
       - temporal
     restart: unless-stopped
-    profiles: [ "all", "tooling" ]
+    profiles: [ "tooling" ]
 
 volumes:
   minio-data:
