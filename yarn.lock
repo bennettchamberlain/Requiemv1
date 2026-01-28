@@ -2927,6 +2927,7 @@ __metadata:
     "@ci/shadcn": "workspace:*"
     "@graphql-codegen/cli": "npm:^6.1.0"
     "@graphql-codegen/client-preset": "npm:^5.2.1"
+    "@graphql-codegen/fragment-matcher": "npm:^6.0.0"
     "@graphql-typed-document-node/core": "npm:^3.2.0"
     "@storybook/addon-a11y": "npm:^9.0.8"
     "@storybook/addon-docs": "npm:^9.0.8"
@@ -2991,12 +2992,6 @@ __metadata:
     vite: "npm:^6.3.5"
     vite-plugin-pwa: "npm:^1.0.3"
     zod: "npm:^3.25.6"
-  languageName: unknown
-  linkType: soft
-
-"@ci/native-app@workspace:frontend/apps/native":
-  version: 0.0.0-use.local
-  resolution: "@ci/native-app@workspace:frontend/apps/native"
   languageName: unknown
   linkType: soft
 
@@ -4058,6 +4053,18 @@ __metadata:
   peerDependencies:
     graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
   checksum: 10c0/2c3974d085e90a7fb7bbac686c04dbcef73eb5648dadb9bf57aeab223655c8e86f26cf17cf422a8fa3d095e973d8b2dabc03e56b4e6e3044ea24480107809d16
+  languageName: node
+  linkType: hard
+
+"@graphql-codegen/fragment-matcher@npm:^6.0.0":
+  version: 6.0.0
+  resolution: "@graphql-codegen/fragment-matcher@npm:6.0.0"
+  dependencies:
+    "@graphql-codegen/plugin-helpers": "npm:^6.0.0"
+    tslib: "npm:~2.6.0"
+  peerDependencies:
+    graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
+  checksum: 10c0/1dd3aa3a91cd0be7475900d3009a81e7de018dc10ad03060437b7eb059d77c24cc206bed88901b518b6744a35c18b0bef1c6a0eb1455d4efb5836855c84dcef9
   languageName: node
   linkType: hard
 

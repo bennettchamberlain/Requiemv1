@@ -5,7 +5,7 @@ import { Button } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import balloonImage from '@/assets/balloon-bouquet.jpg';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { ThemeToggle } from '@/components/ThemePicker';
 
 export function SplashPage() {
   const { isMobile } = useDeviceLayout();

@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '@ci/common/guards';
 
 import { JobDashboardDto, JobMonitorService } from '../services/JobMonitorService';
 
-@Controller('events/jobs')
+@Controller('jobs')
 export class JobsController {
   constructor(private readonly jobMonitorService: JobMonitorService) {}
 

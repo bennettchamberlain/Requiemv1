@@ -4,16 +4,12 @@ import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
+import { FeaturesProvider } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
-import {
-  AuthProvider,
-  CaptureModalProvider,
-  ModelProvider,
-  ThemeProvider,
-  usePreventOverscroll,
-} from '@/hooks';
+import { ThemeProvider, BackgroundProvider } from '@/components/ThemePicker';
+import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
@@ -46,21 +42,26 @@ const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
-const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
+const TagPage = lazy(() => import('@/pages/TagPage'));
+const TagsPage = lazy(() => import('@/pages/TagsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
       <ThemeProvider defaultTheme="system" storageKey="ci-ui-theme">
-        <DeviceLayoutProvider args={[]}>
-          <AuthProvider args={[]}>
-            <ModelProvider args={[]}>
-              <CaptureModalProvider args={[]}>
-                <ApolloProvider>{children}</ApolloProvider>
-              </CaptureModalProvider>
-            </ModelProvider>
-          </AuthProvider>
-        </DeviceLayoutProvider>
+        <BackgroundProvider>
+          <DeviceLayoutProvider args={[]}>
+            <AuthProvider args={[]}>
+              <FeaturesProvider args={[]}>
+                <ModelProvider args={[]}>
+                  <CaptureModalProvider args={[]}>
+                    <ApolloProvider>{children}</ApolloProvider>
+                  </CaptureModalProvider>
+                </ModelProvider>
+              </FeaturesProvider>
+            </AuthProvider>
+          </DeviceLayoutProvider>
+        </BackgroundProvider>
       </ThemeProvider>
     </Router>
   );
@@ -246,15 +247,6 @@ function AppRoutes() {
         />
 
         <Route
-          path="/plugins"
-          element={
-            <ProtectedRoute>
-              <ToolsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
           path="/oauth/callback"
           element={
             <ProtectedRoute>
@@ -349,6 +341,24 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <EventPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tags"
+          element={
+            <ProtectedRoute>
+              <TagsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tags/:id"
+          element={
+            <ProtectedRoute>
+              <TagPage />
             </ProtectedRoute>
           }
         />

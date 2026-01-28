@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -17,7 +17,12 @@ import {
   PlaceService,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
-import { TAGGABLE_ENTITIES, type TaggableEntity, TagService } from '@ci/domains/search-next';
+import {
+  TAGGABLE_ENTITIES,
+  type EntityIdentifier,
+  type TaggableEntity,
+  TagService,
+} from '@ci/domains/search-next';
 
 import { ActionType } from '../types/ActionType';
 import { BrowserActivityType } from '../types/BrowserActivityType';
@@ -35,13 +40,15 @@ import { PlaceType } from '../types/PlaceType';
 import { TagConnection } from '../types/TagConnection';
 import { TagEdge } from '../types/TagEdge';
 import { TagEntitiesInput } from '../types/TagEntitiesInput';
-import { Taggable } from '../types/Taggable';
+import { TaggableEntityConnection } from '../types/TaggableEntityConnection';
+import { TaggableEntityEdge } from '../types/TaggableEntityEdge';
+import { TaggableEntityType } from '../types/TaggableEntityType';
 import { TagType } from '../types/TagType';
 import { ThreadType } from '../types/ThreadType';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
-@Resolver()
+@Resolver(() => TagType)
 export class TagResolver {
   constructor(
     private readonly actionService: ActionService,
@@ -100,11 +107,60 @@ export class TagResolver {
     return entity ? TagType.toType(entity) : null;
   }
 
-  @Mutation(() => [Taggable])
+  @ResolveField(() => TaggableEntityConnection)
+  async entities(
+    @Context() context: RequestContext,
+    @Parent() parent: TagType,
+    @Args() pagination: PaginationArgs,
+  ): Promise<TaggableEntityConnection> {
+    const serviceContext = toServiceContext(context);
+
+    const tag = await this.tagService.findById(serviceContext, parent.__source.id, {
+      includeEntities: true,
+    });
+
+    if (tag == null || tag.entities == null) {
+      return {
+        edges: [],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+          startCursor: null,
+          endCursor: null,
+        },
+        totalCount: 0,
+      };
+    }
+
+    const allEntities = tag.entities.map((e) => ({
+      type: e.entityType as TaggableEntity,
+      id: e.entityId,
+    }));
+
+    const { slice, pageInfo, totalCount } = Paginator.paginate(allEntities, {
+      ...pagination,
+      getId: (entity) => GlobalUID.encode(entity.type, entity.id),
+    });
+
+    const entities = await this.resolveEntities(serviceContext, slice);
+
+    const edges: TaggableEntityEdge[] = entities.map((entity) => ({
+      cursor: entity.id,
+      node: entity,
+    }));
+
+    return {
+      edges,
+      pageInfo,
+      totalCount,
+    };
+  }
+
+  @Mutation(() => [TaggableEntityType])
   async tagEntities(
     @Context() context: RequestContext,
     @Args('input') input: TagEntitiesInput,
-  ): Promise<Taggable[]> {
+  ): Promise<(typeof TaggableEntityType)[]> {
     const serviceContext = toServiceContext(context);
 
     const entities = input.ids.map((gid) => {
@@ -128,11 +184,11 @@ export class TagResolver {
     return this.resolveEntities(serviceContext, entities);
   }
 
-  @Mutation(() => [Taggable])
+  @Mutation(() => [TaggableEntityType])
   async untagEntities(
     @Context() context: RequestContext,
     @Args('input') input: TagEntitiesInput,
-  ): Promise<Taggable[]> {
+  ): Promise<(typeof TaggableEntityType)[]> {
     const serviceContext = toServiceContext(context);
 
     const entities = input.ids.map((gid) => {
@@ -158,8 +214,8 @@ export class TagResolver {
 
   private async resolveEntities(
     context: ServiceContext,
-    entities: { type: TaggableEntity; id: string }[],
-  ): Promise<Taggable[]> {
+    entities: EntityIdentifier<TaggableEntity>[],
+  ): Promise<(typeof TaggableEntityType)[]> {
     const groupedByType: Map<TaggableEntity, string[]> = entities.reduce((acc, result) => {
       if (!acc.has(result.type)) {
         acc.set(result.type, []);
@@ -249,7 +305,7 @@ export class TagResolver {
       .filter((entity) => entity != null)
       .map((entity) => ThreadType.toType(entity));
 
-    const resultMap = new Map<string, Taggable>();
+    const resultMap = new Map<string, typeof TaggableEntityType>();
 
     actionResults.forEach((action) => resultMap.set(makeCompositeKey('action', action.__source.id), action));
 
@@ -279,7 +335,7 @@ export class TagResolver {
 
     const orderedResults = entities
       .map((result) => resultMap.get(makeCompositeKey(result.type, result.id)))
-      .filter((entity): entity is Taggable => entity != null);
+      .filter((entity): entity is typeof TaggableEntityType => entity != null);
 
     return orderedResults;
   }

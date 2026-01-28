@@ -24,7 +24,7 @@ import {
 } from '@ci/shadcn';
 import { ArrowDown, Search, X } from '@ci/shadcn/icons';
 
-import { DropdownContent } from './DropdownContent.tsx';
+import { DropdownContent } from './DropdownContent';
 import { DropdownProvider, useDropdown } from './useDropdown';
 
 const FormSchema = s.object({

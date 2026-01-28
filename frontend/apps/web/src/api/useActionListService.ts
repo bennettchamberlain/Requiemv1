@@ -15,6 +15,7 @@ const GET_ACTIONS = gql`
             id
           }
           tags {
+            id
             label
           }
         }

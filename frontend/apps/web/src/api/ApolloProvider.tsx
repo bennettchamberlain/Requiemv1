@@ -8,6 +8,7 @@ import {
 } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 
+import introspectionResult from '@/graphql/possibleTypes';
 import { useAuth } from '@/hooks';
 
 export function ApolloProvider({ children }: { children: ReactNode }) {
@@ -35,7 +36,9 @@ export function ApolloProvider({ children }: { children: ReactNode }) {
 
     return new ApolloClient({
       link: authLink.concat(httpLink),
-      cache: new InMemoryCache(),
+      cache: new InMemoryCache({
+        possibleTypes: introspectionResult.possibleTypes,
+      }),
     });
   }, []);
 

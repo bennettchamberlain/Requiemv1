@@ -1,3 +1,4 @@
+export { ActionIcon } from './ActionIcon';
 export { AnswerIcon } from './AnswerIcon';
 export { BrowserActivityIcon } from './BrowserActivityIcon';
 export { CommunicationIcon } from './CommunicationIcon';
@@ -9,5 +10,6 @@ export { ItemIcon } from './ItemIcon';
 export { NoteIcon } from './NoteIcon';
 export { PersonIcon } from './PersonIcon';
 export { PlaceIcon } from './PlaceIcon';
+export { TagIcon } from './TagIcon';
 export { ThreadIcon } from './ThreadIcon';
 export { SavedSearchIcon } from './SavedSearchIcon';

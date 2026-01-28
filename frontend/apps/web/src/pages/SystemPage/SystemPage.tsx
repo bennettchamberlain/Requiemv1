@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { ModelSelector } from '@/components/ModelSelector';
 import NotFoundPage from '@/components/NotFound';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { ThemeToggle } from '@/components/ThemePicker';
 import { useAuth } from '@/hooks';
 
 export function SystemPage() {

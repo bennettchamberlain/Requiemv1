@@ -3,6 +3,9 @@ import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID } from '@nest
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { CreatePersonPayload } from '@ci/domains/graphql/types/CreatePersonPayload';
+import { DeleteByIdInput } from '@ci/domains/graphql/types/DeleteByIdInput';
+import { DeleteByIdPayload } from '@ci/domains/graphql/types/DeleteByIdPayload';
 import { PersonService } from '@ci/domains/memory';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -13,8 +16,8 @@ import { PaginationArgs } from '../types/PaginationArgs';
 import { PersonConnection } from '../types/PersonConnection';
 import { PersonEdge } from '../types/PersonEdge';
 import { PersonType } from '../types/PersonType';
-import { RemovePersonInput } from '../types/RemovePersonInput';
 import { UpdatePersonInput } from '../types/UpdatePersonInput';
+import { UpdatePersonPayload } from '../types/UpdatePersonPayload';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtAuthGuard)
@@ -25,11 +28,11 @@ export class PersonResolver {
     private readonly tagLoader: TagLoader,
   ) {}
 
-  @Mutation(() => PersonType)
+  @Mutation(() => CreatePersonPayload)
   async createPerson(
     @Context() context: RequestContext,
     @Args('input') input: CreatePersonInput,
-  ): Promise<PersonType> {
+  ): Promise<CreatePersonPayload> {
     const serviceContext = toServiceContext(context);
 
     const entity = await this.personService.create(serviceContext, {
@@ -37,14 +40,23 @@ export class PersonResolver {
       description: input.description,
     });
 
-    return PersonType.toType(entity);
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      person: entity ? PersonType.toType(entity) : undefined,
+    };
   }
 
-  @Mutation(() => PersonType, { nullable: true })
+  @Mutation(() => UpdatePersonPayload)
   async updatePerson(
     @Context() context: RequestContext,
     @Args('input') input: UpdatePersonInput,
-  ): Promise<PersonType | null> {
+  ): Promise<UpdatePersonPayload> {
     const serviceContext = toServiceContext(context);
 
     const entity = await this.personService.update(serviceContext, input.id, {
@@ -52,17 +64,39 @@ export class PersonResolver {
       description: input.description,
     });
 
-    return entity ? PersonType.toType(entity) : entity;
+    if (entity == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      person: entity ? PersonType.toType(entity) : undefined,
+    };
   }
 
-  @Mutation(() => Boolean)
-  async removePerson(
+  @Mutation(() => DeleteByIdPayload)
+  async deletePerson(
     @Context() context: RequestContext,
-    @Args('input') input: RemovePersonInput,
-  ): Promise<boolean> {
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
     const serviceContext = toServiceContext(context);
 
-    return this.personService.remove(serviceContext, input.id);
+    const id = GlobalUID.parse('note', input.id);
+
+    const success = await this.personService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @Query(() => PersonConnection)

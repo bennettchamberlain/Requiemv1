@@ -7,22 +7,28 @@ import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 
-import { MemoryDetails } from './Components';
+import { useEntityService } from '../MemoryPage/useEntityService';
+
+import { EntityDetails } from './Components';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { MobileMapView } from './MapView';
 import { TimelineView } from './TimelineView';
-import { useMemoryService } from './useMemoryService';
 
 export default function MobileMemoryPage() {
-  const { searchQuery, setSearchQuery, activeMemory, setActiveMemory } = useMemoryService();
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [{ data, activeEntity }, { setActiveEntity }] = useEntityService();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
 
   const [activeTab, setActiveTab] = useState('list');
 
   // Mobile-specific states
   const [showFilters, setShowFilters] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+
+  if (data.length === 0) {
+    //Dummy
+  }
 
   // Handle search
   const handleSearch = () => {
@@ -51,15 +57,15 @@ export default function MobileMemoryPage() {
     }
   };
 
-  const toggleActiveMemory = (active: boolean) => {
+  const toggleactiveEntity = (active: boolean) => {
     if (!active) {
-      setActiveMemory(null);
+      setActiveEntity(null);
     }
   };
 
   useEffect(() => {
-    setDetailsOpen(activeMemory != null);
-  }, [activeMemory]);
+    setDetailsOpen(activeEntity != null);
+  }, [activeEntity]);
 
   return (
     <>
@@ -184,9 +190,9 @@ export default function MobileMemoryPage() {
           {activeTab === 'graph' && <GraphView variant="mobile" />}
         </>
       </PageContent>
-      {activeMemory && (
-        <Sheet open={detailsOpen} onOpenChange={toggleActiveMemory}>
-          <MemoryDetails memory={activeMemory} />
+      {activeEntity && (
+        <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
+          <EntityDetails entity={activeEntity} />
         </Sheet>
       )}
     </>

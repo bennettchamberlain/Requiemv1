@@ -1,34 +1,30 @@
 import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
+import {
+  AnswerGridItem,
+  BrowserActivityGridItem,
+  CommunicationGridItem,
+  ConceptGridItem,
+  ContentGridItem,
+  EntityGrid,
+  EventGridItem,
+  FileGridItem,
+  ItemGridItem,
+  NoteGridItem,
+  PersonGridItem,
+  PlaceGridItem,
+  ThreadGridItem,
+} from '@/components/entities';
 import { Empty } from '@/pages/MemoryPage/Components';
 
-import { useMemoryServiceNext } from '../useMemoryServiceNext';
-
-import { AnswerCard } from './cards/AnswerCard';
-import { BrowserActivityCard } from './cards/BrowserActivityCard';
-import { CommunicationCard } from './cards/CommunicationCard';
-import { ConceptCard } from './cards/ConceptCard';
-import { ContentCard } from './cards/ContentCard';
-import { EventCard } from './cards/EventCard';
-import { FileCard } from './cards/FileCard';
-import { ItemCard } from './cards/ItemCard';
-import { NoteCard } from './cards/NoteCard';
-import { PersonCard } from './cards/PersonCard';
-import { PlaceCard } from './cards/PlaceCard';
-import { ThreadCard } from './cards/ThreadCard';
-import { SearchGrid } from './SearchGrid';
+import { useEntityService } from '../useEntityService';
 
 export function GalleryView() {
-  const [searchParams] = useSearchParams();
-
   const navigate = useNavigate();
 
-  const { data } = useMemoryServiceNext({
-    searchQuery: searchParams.get('search') || '',
-    excludeTypes: searchParams.get('excludedEntityTypes')?.split(',') || [],
-  });
+  const [{ data }] = useEntityService();
 
   if (data.length === 0) {
     return (
@@ -41,18 +37,18 @@ export function GalleryView() {
   }
 
   return (
-    <SearchGrid className="p-4 pt-0">
+    <EntityGrid className="p-4 pt-0">
       {data.map((item) => {
         switch (item.__typename) {
           case 'AnswerType':
-            return <AnswerCard key={item.id} answer={item} onClick={() => {}} />;
+            return <AnswerGridItem key={item.id} answer={item} onClick={() => {}} />;
 
           case 'BrowserActivityType':
-            return <BrowserActivityCard key={item.id} browserActivity={item} onClick={() => {}} />;
+            return <BrowserActivityGridItem key={item.id} browserActivity={item} onClick={() => {}} />;
 
           case 'CommunicationType':
             return (
-              <CommunicationCard
+              <CommunicationGridItem
                 key={item.id}
                 communication={item}
                 onClick={() => {
@@ -63,7 +59,7 @@ export function GalleryView() {
 
           case 'ConceptType':
             return (
-              <ConceptCard
+              <ConceptGridItem
                 key={item.id}
                 concept={item}
                 onClick={() => {
@@ -74,7 +70,7 @@ export function GalleryView() {
 
           case 'ContentType':
             return (
-              <ContentCard
+              <ContentGridItem
                 key={item.id}
                 content={item}
                 onClick={() => {
@@ -85,7 +81,7 @@ export function GalleryView() {
 
           case 'EventType':
             return (
-              <EventCard
+              <EventGridItem
                 key={item.id}
                 event={item}
                 onClick={() => {
@@ -95,11 +91,11 @@ export function GalleryView() {
             );
 
           case 'FileType':
-            return <FileCard key={item.id} file={item} />;
+            return <FileGridItem key={item.id} file={item} />;
 
           case 'ItemType':
             return (
-              <ItemCard
+              <ItemGridItem
                 key={item.id}
                 item={item}
                 onClick={() => {
@@ -110,7 +106,7 @@ export function GalleryView() {
 
           case 'NoteType':
             return (
-              <NoteCard
+              <NoteGridItem
                 key={item.id}
                 note={item}
                 onClick={() => {
@@ -121,7 +117,7 @@ export function GalleryView() {
 
           case 'PersonType':
             return (
-              <PersonCard
+              <PersonGridItem
                 key={item.id}
                 person={item}
                 onClick={() => {
@@ -132,7 +128,7 @@ export function GalleryView() {
 
           case 'PlaceType':
             return (
-              <PlaceCard
+              <PlaceGridItem
                 key={item.id}
                 place={item}
                 onClick={() => {
@@ -143,7 +139,7 @@ export function GalleryView() {
 
           case 'ThreadType':
             return (
-              <ThreadCard
+              <ThreadGridItem
                 key={item.id}
                 thread={item}
                 onClick={() => {
@@ -156,6 +152,6 @@ export function GalleryView() {
             return null;
         }
       })}
-    </SearchGrid>
+    </EntityGrid>
   );
 }
