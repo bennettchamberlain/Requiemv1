@@ -18,8 +18,8 @@ const ALLOWED_TYPES = {
   communication: ['SENT', 'RECEIVED'],
   concept: ['PREFERS', 'DISLIKES', 'INTERESTED_IN'],
   content: ['CREATED'],
-  event: ['ATTENDED'],
-  item: ['OWNS'],
+  event: ['PARTICIPATED_IN'],
+  item: ['OWNS', 'CREATED'],
   note: ['CREATED'],
   person: [
     'KNOWS',
@@ -29,7 +29,6 @@ const ALLOWED_TYPES = {
     'MENTORED',
     'TAUGHT',
     'LEARNED_FROM',
-    'PARTICIPATED_IN',
     'SPOUSE',
     'PARENT_OF',
     'CHILD_OF',

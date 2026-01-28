@@ -19,7 +19,12 @@ import {
 import { NoteService } from '@ci/domains/notes';
 
 import { type Relationship, RelationshipEntity } from '../entities/RelationshipEntity';
-import type { CreateRelationshipDto, UpdateRelationshipDto } from '../types';
+import {
+  type CreateRelationshipDto,
+  type UpdateRelationshipDto,
+  type RelationshipType,
+  RelationshipMap,
+} from '../types';
 
 @Injectable()
 export class RelationshipService {
@@ -80,6 +85,24 @@ export class RelationshipService {
 
     if (toNode == null) {
       throw new Error(`Node with id ${data.toNodeId} and type ${data.toNodeType} not found`);
+    }
+
+    if (!(data.fromNodeType in RelationshipMap)) {
+      throw new Error(`Cannot create relationship from type ${data.fromNodeType}`);
+    }
+
+    const fromMap = RelationshipMap[data.fromNodeType as keyof typeof RelationshipMap];
+
+    if (!(data.toNodeType in fromMap)) {
+      throw new Error(`Cannot create relationship from ${data.fromNodeType} to ${data.toNodeType}`);
+    }
+
+    const allowedTypes = fromMap[data.toNodeType as keyof typeof fromMap];
+
+    if (!allowedTypes.includes(data.type as RelationshipType)) {
+      throw new Error(
+        `Cannot create relationship of type ${data.type} from ${data.fromNodeType} to ${data.toNodeType}`,
+      );
     }
 
     const record = this.relationshipRepository.create({
