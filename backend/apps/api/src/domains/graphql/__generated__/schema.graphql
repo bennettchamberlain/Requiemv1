@@ -371,6 +371,15 @@ type FileType implements Node & Taggable {
   url: String!
 }
 
+type InsightItemType {
+  keyActions: [String!]!
+  relatedEntityIds: [String!]
+  relevanceScore: Float!
+  summaryText: String!
+  tags: [String!]!
+  title: String!
+}
+
 enum ItemCondition {
   BROKEN
   FAIR
@@ -712,6 +721,7 @@ type SummaryType implements Node {
   createdAt: DateTime!
   dailyRhythm: [String!]
   id: ID!
+  insights: [InsightItemType!]!
   keyAccomplishments: [String!]
   keyInsights: [String!]!
   moodIndicators: [String!]

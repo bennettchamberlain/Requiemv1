@@ -65,6 +65,7 @@ export class SummaryEntity {
     const socialInteractions = structuredData.social_interactions as string[] | undefined;
     const keyAccomplishments = structuredData.key_accomplishments as string[] | undefined;
     const moodIndicators = structuredData.mood_indicators as string[] | undefined;
+    const insights = (content.insights || []) as Record<string, unknown>[];
 
     return {
       summaryId: entity.summaryId,
@@ -100,6 +101,7 @@ export class SummaryEntity {
       socialInteractions,
       keyAccomplishments,
       moodIndicators,
+      insights,
     };
   }
 }
@@ -116,4 +118,5 @@ export type Summary = Readonly<Omit<SummaryEntity, 'tags'>> & {
   socialInteractions?: string[];
   keyAccomplishments?: string[];
   moodIndicators?: string[];
+  insights: Record<string, unknown>[];
 };
