@@ -158,6 +158,16 @@ input CreateAnswerInput {
   questionId: String!
 }
 
+input CreateConceptInput {
+  description: String
+  name: String!
+}
+
+type CreateConceptPayload {
+  concept: ConceptType
+  success: Boolean!
+}
+
 input CreateContentInput {
   externalId: String
   mimetype: String
@@ -192,6 +202,20 @@ input CreateEventInput {
   title: String
 }
 
+input CreateItemInput {
+  brand: String
+  category: String
+  currentValue: Float
+  description: String
+  model: String
+  name: String!
+}
+
+type CreateItemPayload {
+  item: ItemType
+  success: Boolean!
+}
+
 input CreateNoteInput {
   content: String
   title: String
@@ -205,6 +229,11 @@ type CreateNotePayload {
 input CreatePersonInput {
   description: String
   name: String!
+}
+
+type CreatePersonPayload {
+  person: PersonType
+  success: Boolean!
 }
 
 input CreatePlaceInput {
@@ -257,7 +286,8 @@ interface Edge {
   node: Node!
 }
 
-type EntityTagType {
+type EntityTagType implements Node {
+  id: ID!
   label: String!
   taggedAt: DateTime!
 }
@@ -415,28 +445,34 @@ type MessageType implements Node {
 
 type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
+  createConcept(input: CreateConceptInput!): CreateConceptPayload!
   createContent(input: CreateContentInput!): ContentType!
   createEvent(input: CreateEventInput!): EventType!
+  createItem(input: CreateItemInput!): CreateItemPayload!
   createNote(input: CreateNoteInput!): CreateNotePayload!
-  createPerson(input: CreatePersonInput!): PersonType!
+  createPerson(input: CreatePersonInput!): CreatePersonPayload!
   createPlace(input: CreatePlaceInput!): PlaceType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
+  deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
+  deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
-  removePerson(input: RemovePersonInput!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
-  tagEntities(input: TagEntitiesInput!): [Taggable!]!
-  untagEntities(input: TagEntitiesInput!): [Taggable!]!
+  tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
+  untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
+  updateItem(input: UpdateItemInput!): UpdateItemPayload!
   updateNote(input: UpdateNoteInput!): UpdateNotePayload!
-  updatePerson(input: UpdatePersonInput!): PersonType
+  updatePerson(input: UpdatePersonInput!): UpdatePersonPayload!
   updatePlace(input: UpdatePlaceInput!): PlaceType
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
@@ -594,7 +630,7 @@ type Query {
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
   savedSearch(id: ID!): SavedSearchType
   savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
-  search(input: SearchInput!): SearchConnection!
+  search(input: SearchInput!): SearchResultConnection!
   summaries(after: String, before: String, first: Int, last: Int): SummaryConnection!
   summary(id: ID!): SummaryType
   tag(id: ID!): TagType
@@ -623,10 +659,6 @@ type QuestionType implements Node {
   text: String!
 }
 
-input RemovePersonInput {
-  id: String!
-}
-
 type SavedSearchConnection implements Connection {
   edges: [SavedSearchEdge!]!
   pageInfo: PageInfo!
@@ -649,12 +681,6 @@ type SavedSearchType implements Node {
   updatedAt: DateTime!
 }
 
-type SearchConnection {
-  edges: [SearchResultEdge!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
 input SearchInput {
   endTime: String
   excludeTypes: [String!]
@@ -662,6 +688,12 @@ input SearchInput {
   query: String
   startTime: String
   tags: [String!]
+}
+
+type SearchResultConnection {
+  edges: [SearchResultEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
 }
 
 type SearchResultEdge {
@@ -725,6 +757,7 @@ input TagEntitiesInput {
 
 type TagType implements Node {
   description: String
+  entities(after: String, before: String, first: Int, last: Int): TaggableEntityConnection!
   id: ID!
   label: String!
 }
@@ -732,6 +765,19 @@ type TagType implements Node {
 interface Taggable {
   tags: [EntityTagType!]!
 }
+
+type TaggableEntityConnection {
+  edges: [TaggableEntityEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type TaggableEntityEdge {
+  cursor: String!
+  node: TaggableEntityType!
+}
+
+union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
 
 type ThreadConnection implements Connection {
   edges: [ThreadEdge!]!
@@ -755,6 +801,17 @@ type ThreadType implements Node & Taggable {
 input UpdateAnswerInput {
   answer: String!
   id: String!
+}
+
+input UpdateConceptInput {
+  description: String
+  id: String!
+  name: String!
+}
+
+type UpdateConceptPayload {
+  concept: ConceptType
+  success: Boolean!
 }
 
 input UpdateContentInput {
@@ -793,6 +850,21 @@ input UpdateEventInput {
   title: String
 }
 
+input UpdateItemInput {
+  brand: String
+  category: String
+  currentValue: Float
+  description: String
+  id: ID!
+  model: String
+  name: String!
+}
+
+type UpdateItemPayload {
+  item: ItemType
+  success: Boolean!
+}
+
 input UpdateNoteInput {
   content: String
   id: String!
@@ -808,6 +880,11 @@ input UpdatePersonInput {
   description: String
   id: String!
   name: String!
+}
+
+type UpdatePersonPayload {
+  person: PersonType
+  success: Boolean!
 }
 
 input UpdatePlaceInput {

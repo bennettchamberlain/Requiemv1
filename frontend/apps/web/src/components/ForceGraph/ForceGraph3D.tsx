@@ -15,7 +15,7 @@ import {
 } from 'three';
 
 import type { GraphLink, GraphNode } from '@/api/useGraphOverview';
-import { useTheme } from '@/hooks/use-theme';
+import { useTheme } from '@/components/ThemePicker';
 
 export interface ForceGraph3DProps {
   nodes: GraphNode[];

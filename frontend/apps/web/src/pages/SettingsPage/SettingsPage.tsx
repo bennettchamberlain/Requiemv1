@@ -19,7 +19,7 @@ import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { ModelSelector } from '@/components/ModelSelector';
-import { ThemePicker } from '@/components/ThemePicker';
+import { ColorPicker, TexturePicker } from '@/components/ThemePicker';
 
 interface SettingsState {
   // Data Storage
@@ -491,7 +491,15 @@ export function SettingsPage() {
                   <Card.Description>Customize your interface appearance</Card.Description>
                 </Card.Header>
                 <Card.Content>
-                  <ThemePicker />
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    <div>
+                      <ColorPicker />
+                    </div>
+
+                    <div className="border-t border-border pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
+                      <TexturePicker />
+                    </div>
+                  </div>
                 </Card.Content>
               </Card>
 

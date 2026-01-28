@@ -277,6 +277,7 @@ export class TagService {
     const entityTags = await query.getMany();
 
     return entityTags.map((et) => ({
+      id: et.tag!.id,
       label: et.tag!.label,
       taggedAt: et.createdAt,
     }));
@@ -332,6 +333,7 @@ export class TagService {
 
           if (originalIdentifier) {
             results.get(originalIdentifier)?.push({
+              id: et.tag!.id,
               label: et.tag!.label,
               taggedAt: et.createdAt,
             });
@@ -343,8 +345,8 @@ export class TagService {
     return results;
   }
 
-  async getEntitiesForTag(context: UserServiceContext, tagId: string): Promise<EntityTag[]> {
-    const tag = await this.findByLabel(context, tagId, {
+  async getEntitiesForTag(context: UserServiceContext, label: string): Promise<EntityTag[]> {
+    const tag = await this.findByLabel(context, label, {
       includeEntities: true,
     });
 

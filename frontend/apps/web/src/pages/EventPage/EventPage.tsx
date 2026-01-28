@@ -22,6 +22,7 @@ const GET_EVENT = gql(`
       description
 
       tags {
+        id
         label
       }
 

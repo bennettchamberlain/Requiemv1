@@ -8,7 +8,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
 import { InlineModal } from '@/components/InlineModal';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { ThemeToggle } from '@/components/ThemePicker';
 import { gql } from '@/graphql';
 
 import { Endpoints } from './Endpoints';

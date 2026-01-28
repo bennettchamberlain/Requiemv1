@@ -20,6 +20,7 @@ const GET_CONCEPT = gql(`
       name
       description
       tags {
+        id
         label
       }
     }

@@ -1,7 +1,7 @@
 import { Button } from '@ci/shadcn';
 import { Save } from '@ci/shadcn/icons';
 
-import { useDropdown } from '@/components/SearchBox/useDropdown.ts';
+import { useDropdown } from '@/components/SearchBox/useDropdown';
 
 import { EntityTypeFilter } from './EntityTypeFilter';
 

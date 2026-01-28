@@ -13,7 +13,7 @@ export function Tag({ icon, text, children, className }: Props) {
   const color = useMemo(() => getColorFromPalette(text), [text]);
 
   return (
-    <Badge className={cn(className, color, 'flex items-center border-0')}>
+    <Badge className={cn(className, color, 'flex items-center border-0 text-white')}>
       {icon}
       <span>{text}</span>
       {children}

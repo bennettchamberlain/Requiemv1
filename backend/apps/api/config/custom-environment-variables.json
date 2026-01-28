@@ -41,7 +41,8 @@
     "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",
     "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION",
     "pinned.demo.models": "ENABLE_PINNED_DEMO_MODELS",
-    "enable.system.prompt": "ENABLE_SYSTEM_PROMPT"
+    "enable.system.prompt": "ENABLE_SYSTEM_PROMPT",
+    "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"
