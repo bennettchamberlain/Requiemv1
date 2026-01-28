@@ -8,6 +8,7 @@ import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
 import { FilesModule } from '@ci/domains/files';
+import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
@@ -63,6 +64,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ConnectionsModule,
     ConversationModule,
     FilesModule,
+    GraphModule,
     IntelligenceModule,
     MemoryModule,
     NotesModule,

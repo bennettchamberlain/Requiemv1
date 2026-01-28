@@ -913,6 +913,7 @@ type UpdateSavedSearchPayload {
 
 type UserType implements Node {
   email: String!
+  entity: PersonType
   id: ID!
   name: String!
   onboarded: Boolean!
