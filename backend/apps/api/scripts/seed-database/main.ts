@@ -34,18 +34,27 @@ const logger = new LoggerService();
 (async function () {
   const dataDir = path.resolve(__dirname, '..', 'seed-database');
 
-  // Monkey-patch logger to silence noisy methods
-  const filteredLogger = new LoggerService();
+  const createFilteredLogger = () => {
+    const logger = new LoggerService();
 
-  filteredLogger.log = () => {};
+    logger.error = () => {};
 
-  filteredLogger.debug = () => {};
+    logger.warn = () => {};
+
+    logger.log = () => {};
+
+    logger.debug = () => {};
+
+    return logger;
+  };
 
   const module = await Test.createTestingModule({
     imports: [App],
   })
     .overrideProvider(LoggerService)
-    .useValue(filteredLogger)
+    .useFactory({
+      factory: createFilteredLogger,
+    })
     .overrideProvider(EventService)
     .useClass(LocalEventService)
     .overrideModule(EtlModule)
