@@ -2963,6 +2963,7 @@ __metadata:
     html-react-parser: "npm:^5.2.8"
     jsdom: "npm:^26.1.0"
     jwt-decode: "npm:^4.0.0"
+    knip: "npm:^5.66.0"
     leaflet: "npm:^1.9.4"
     playwright: "npm:^1.53.0"
     postcss: "npm:^8.5.3"
