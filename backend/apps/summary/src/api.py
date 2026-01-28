@@ -38,9 +38,66 @@ class ManualSummaryRequest(BaseModel):
     lookback_days: Optional[int] = Field(default=None, description="For dossier: lookback days")
 
 
+async def _trigger_summary_workflow(
+    user_id: str,
+    period_type: str,
+    start_time: str,
+    end_time: str,
+    timezone: str,
+    lookback_days: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Trigger summary generation workflow via Temporal.
+
+    This ensures all summary generation goes through the same code path
+    with proper durability, retries, and visibility.
+    """
+    from temporalio.client import Client
+    from .config import settings
+    from .priority import Priority, get_task_queue
+
+    client = await Client.connect(
+        settings.temporal_address,
+        namespace=settings.temporal_namespace,
+    )
+
+    now = datetime.utcnow()
+
+    # Map period_type to workflow name
+    workflow_map = {
+        "hourly": "hourly-summary",
+        "daily": "daily-summary",
+        "weekly": "weekly-summary",
+        "monthly": "monthly-summary",
+        "dossier": "dossier-refresh",
+    }
+
+    workflow_name = workflow_map.get(period_type)
+    if not workflow_name:
+        raise ValueError(f"Unknown period_type: {period_type}")
+
+    workflow_id = f"{period_type}-{user_id}-{now.isoformat()}"
+
+    # Build args based on workflow type
+    if period_type == "dossier":
+        args = [user_id, end_time, timezone, lookback_days or 30, None]
+    else:
+        args = [user_id, start_time, end_time, timezone, None]
+
+    # Start the workflow and wait for result
+    result = await client.execute_workflow(
+        workflow_name,
+        args=args,
+        id=workflow_id,
+        task_queue=get_task_queue(Priority.HIGH),  # API-triggered = high priority
+    )
+
+    return result
+
+
 @app.post("/summary/manual-trigger")
 async def manual_trigger_summary(request: ManualSummaryRequest) -> Dict[str, Any]:
-    """Manually trigger summary generation (bypasses queue)."""
+    """Manually trigger summary generation via Temporal workflow."""
     try:
         user_id = uuid.UUID(request.user_id)
     except ValueError as exc:
@@ -61,22 +118,15 @@ async def manual_trigger_summary(request: ManualSummaryRequest) -> Dict[str, Any
         }.get(request.period_type, timedelta(hours=1))
         start_time = end_time - delta
 
-    # Execute
     try:
-        if request.period_type == "hourly":
-            result = summaries.execute_hourly_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "daily":
-            result = summaries.execute_daily_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "weekly":
-            result = summaries.execute_weekly_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "monthly":
-            result = summaries.execute_monthly_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "dossier":
-            result = summaries.execute_dossier_refresh(
-                user_id, end_time, request.timezone, request.lookback_days
-            )
-        else:
-            raise HTTPException(status_code=400, detail=f"Unknown period_type: {request.period_type}")
+        result = await _trigger_summary_workflow(
+            str(user_id),
+            request.period_type,
+            start_time.isoformat(),
+            end_time.isoformat(),
+            request.timezone,
+            request.lookback_days,
+        )
 
         return {
             "status": "success",
@@ -109,7 +159,7 @@ class DossierFetchRequest(BaseModel):
 
 @app.post("/dossier/refresh")
 async def refresh_dossier(request: DossierRefreshRequest) -> Dict[str, Any]:
-    """Manually refresh user dossier."""
+    """Manually refresh user dossier via Temporal workflow."""
     try:
         user_id = uuid.UUID(request.user_id)
     except ValueError as exc:
@@ -118,8 +168,13 @@ async def refresh_dossier(request: DossierRefreshRequest) -> Dict[str, Any]:
     end_time = _parse_iso(request.end_time) if request.end_time else datetime.utcnow()
 
     try:
-        result = summaries.execute_dossier_refresh(
-            user_id, end_time, request.timezone, request.lookback_days
+        result = await _trigger_summary_workflow(
+            str(user_id),
+            "dossier",
+            end_time.isoformat(),  # start_time not used for dossier
+            end_time.isoformat(),
+            request.timezone,
+            request.lookback_days,
         )
         return {
             "status": "success",
