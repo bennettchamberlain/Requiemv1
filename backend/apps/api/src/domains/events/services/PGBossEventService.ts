@@ -55,7 +55,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
   async onModuleInit() {
     const listeners = EventListenerRegistry.getListeners();
 
-    this.logger.log(`Validated ${listeners.length} event listeners`);
+    this.logger.debug(`Validated ${listeners.length} event listeners`);
 
     listeners.forEach(([key, registration]) => {
       this.logger.debug(
@@ -64,11 +64,11 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     });
 
     try {
-      this.logger.log('Initializing PgBoss client...');
+      this.logger.debug('Initializing PgBoss client...');
 
       await this.boss.start();
 
-      this.logger.log('Initialized PgBoss client');
+      this.logger.debug('Initialized PgBoss client');
     } catch (err: unknown) {
       this.logger.error(
         'Failed to initialize PgBoss client',
@@ -85,7 +85,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     // Discover all queues from registered listeners
     const discoveredQueues = this.getRegisteredQueues();
 
-    this.logger.log(`Discovered queues: ${Array.from(discoveredQueues).join(', ')}`);
+    this.logger.debug(`Discovered queues: ${Array.from(discoveredQueues).join(', ')}`);
 
     // Create all discovered queues
     for (const queue of discoveredQueues) {
@@ -94,14 +94,14 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
     }
 
     try {
-      this.logger.log('Initializing work queues...');
+      this.logger.debug('Initializing work queues...');
 
       // Start workers for all discovered queues
       for (const queue of discoveredQueues) {
         this.stopTasks.push(this.work(queue));
       }
 
-      this.logger.log(`Initialized ${discoveredQueues.size} work queues`);
+      this.logger.debug(`Initialized ${discoveredQueues.size} work queues`);
     } catch (err: unknown) {
       this.logger.error(
         'Failed to initialize work queue client',
@@ -114,21 +114,21 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
   async onModuleDestroy() {
     try {
-      this.logger.log('Flushing work queues...');
+      this.logger.debug('Flushing work queues...');
 
       await this.flush();
 
-      this.logger.log('Flushed work queues');
+      this.logger.debug('Flushed work queues');
     } catch (err: unknown) {
       this.logger.error('Failed to flush work queues', err instanceof Error ? err : new Error(String(err)));
     }
 
     try {
-      this.logger.log('Stopping PgBoss client...');
+      this.logger.debug('Stopping PgBoss client...');
 
       await this.boss.stop();
 
-      this.logger.log('Stopped PgBoss client');
+      this.logger.debug('Stopped PgBoss client');
     } catch (err: unknown) {
       this.logger.error('Failed to stop PgBoss client', err instanceof Error ? err : new Error(String(err)));
     }

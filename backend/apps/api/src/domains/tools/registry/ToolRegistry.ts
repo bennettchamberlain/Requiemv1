@@ -23,11 +23,11 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
-    this.logger.log('Initializing ToolRegistry');
+    this.logger.debug('Initializing ToolRegistry');
   }
 
   async onModuleDestroy() {
-    this.logger.log('Shutting down ToolRegistry');
+    this.logger.debug('Shutting down ToolRegistry');
     await this.shutdownProviders();
   }
 
@@ -55,7 +55,7 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
       await provider.initialize();
       await this.loadToolsFromProvider(provider);
 
-      this.logger.log(`Initialized provider: ${provider.name}`);
+      this.logger.debug(`Initialized provider: ${provider.name}`);
     } catch (error) {
       this.logger.error(`Failed to initialize provider: ${provider.name}`, error as Error);
     }

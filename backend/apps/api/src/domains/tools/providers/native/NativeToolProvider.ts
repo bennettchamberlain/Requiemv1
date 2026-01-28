@@ -35,7 +35,7 @@ export class NativeToolProvider implements ToolProvider {
 
     this.isInitialized = true;
 
-    this.logger.log(`Initialized native tool provider with ${this.tools.size} tools`, {
+    this.logger.debug(`Initialized native tool provider with ${this.tools.size} tools`, {
       toolNames: Array.from(this.tools.keys()),
     });
   }
@@ -43,7 +43,7 @@ export class NativeToolProvider implements ToolProvider {
   async shutdown(): Promise<void> {
     this.tools.clear();
     this.isInitialized = false;
-    this.logger.log('Native tool provider shut down');
+    this.logger.debug('Native tool provider shut down');
   }
 
   async getAvailableTools(): Promise<ToolSchema[]> {

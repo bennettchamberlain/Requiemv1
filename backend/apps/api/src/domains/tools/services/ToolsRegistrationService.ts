@@ -19,12 +19,12 @@ export class ToolsRegistrationService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    this.logger.log('Registering tool providers');
+    this.logger.debug('Registering tool providers');
 
     try {
       await this.toolRegistry.registerProvider(this.nativeProvider);
 
-      this.logger.log('Successfully registered all tool providers');
+      this.logger.debug('Successfully registered all tool providers');
     } catch (error) {
       this.logger.error('Failed to register tool providers', error as Error);
       throw error;

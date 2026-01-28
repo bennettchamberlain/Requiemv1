@@ -14,6 +14,7 @@ interface PinoParams {
 }
 
 const NEST_CONTEXT_DOWNGRADES = new Set([
+  'GraphQLModule',
   'InstanceLoader',
   'NestApplication',
   'NestFactory',
