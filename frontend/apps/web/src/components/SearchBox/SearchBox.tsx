@@ -47,8 +47,6 @@ const Keys = {
 
 interface SearchResultItem {
   id: string;
-  parsedId: string;
-  type: string;
   content: React.ReactNode;
   preview?: React.ReactNode;
 }

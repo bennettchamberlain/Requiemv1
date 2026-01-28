@@ -80,80 +80,60 @@ export function AddRelationshipModal({
           case 'CommunicationType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('communication', item.id),
-              type: 'communication',
               content: <CommunicationResult communication={item} />,
             };
 
           case 'ConceptType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('concept', item.id),
-              type: 'concept',
               content: <ConceptResult concept={item} />,
             };
 
           case 'ContentType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('content', item.id),
-              type: 'content',
               content: <ContentResult content={item} />,
             };
 
           case 'EventType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('event', item.id),
-              type: 'event',
               content: <EventResult event={item} />,
             };
 
           case 'ItemType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('item', item.id),
-              type: 'item',
               content: <ItemResult item={item} />,
             };
 
           case 'NoteType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('note', item.id),
-              type: 'note',
               content: <NoteResult note={item} />,
             };
 
           case 'PersonType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('person', item.id),
-              type: 'person',
               content: <PersonResult person={item} />,
             };
 
           case 'PlaceType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('place', item.id),
-              type: 'place',
               content: <PlaceResult place={item} />,
             };
 
           case 'ThreadType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('thread', item.id),
-              type: 'thread',
               content: <ThreadResult thread={item} />,
             };
 
           default:
             return {
               id: item.id,
-              parsedId: item.id,
-              type: 'unknown',
               content: null,
             };
         }
@@ -173,13 +153,14 @@ export function AddRelationshipModal({
     }
 
     try {
+      const { type, id } = GlobalUID.decode(selectedEntity.id);
       await createRelationship({
         variables: {
           input: {
             fromNodeId: entityId,
             fromNodeType: entityType,
-            toNodeId: selectedEntity.parsedId,
-            toNodeType: selectedEntity.type,
+            toNodeId: id,
+            toNodeType: type,
             type: selectedRelationshipType,
             startDate: startDate?.toISOString(),
             endDate: endDate?.toISOString(),
@@ -212,10 +193,6 @@ export function AddRelationshipModal({
     setQuery(searchQuery);
   }, []);
 
-  const handleResultSelect = (e: SearchResultItem) => {
-    setSelectedEntity(e);
-  };
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <Dialog.Content className="top-[15%] translate-y-0 sm:max-w-2xl">
@@ -227,7 +204,7 @@ export function AddRelationshipModal({
         {!selectedEntity && (
           <SearchBox
             onSearch={handleSearch}
-            onResultSelect={handleResultSelect}
+            onResultSelect={(e) => setSelectedEntity(e)}
             onKeyDown={() => {}}
             variant="compact"
             autoSubmit
@@ -263,7 +240,9 @@ export function AddRelationshipModal({
               </Select.Trigger>
               <Select.Content>
                 {(
-                  allowedRelationshipTypes[selectedEntity.type as keyof typeof allowedRelationshipTypes] || []
+                  allowedRelationshipTypes[
+                    GlobalUID.decode(selectedEntity.id).type as keyof typeof allowedRelationshipTypes
+                  ] || []
                 )
                   .sort((a, b) => a.localeCompare(b))
                   .map((type) => {

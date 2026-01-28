@@ -39,80 +39,60 @@ export function SearchModal({ open, onClose }: Props) {
           case 'CommunicationType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('communication', item.id),
-              type: 'communication',
               content: <CommunicationResult communication={item} />,
             };
 
           case 'ConceptType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('concept', item.id),
-              type: 'concept',
               content: <ConceptResult concept={item} />,
             };
 
           case 'ContentType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('content', item.id),
-              type: 'content',
               content: <ContentResult content={item} />,
             };
 
           case 'EventType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('event', item.id),
-              type: 'event',
               content: <EventResult event={item} />,
             };
 
           case 'ItemType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('item', item.id),
-              type: 'item',
               content: <ItemResult item={item} />,
             };
 
           case 'NoteType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('note', item.id),
-              type: 'note',
               content: <NoteResult note={item} />,
             };
 
           case 'PersonType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('person', item.id),
-              type: 'person',
               content: <PersonResult person={item} />,
             };
 
           case 'PlaceType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('place', item.id),
-              type: 'place',
               content: <PlaceResult place={item} />,
             };
 
           case 'ThreadType':
             return {
               id: item.id,
-              parsedId: GlobalUID.parse('thread', item.id),
-              type: 'thread',
               content: <ThreadResult thread={item} />,
             };
 
           default:
             return {
               id: item.id,
-              parsedId: item.id,
-              type: 'unknown',
               content: null,
             };
         }

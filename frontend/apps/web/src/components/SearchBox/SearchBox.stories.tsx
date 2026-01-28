@@ -12,8 +12,6 @@ type Props = ComponentProps<typeof SearchBox>;
 const sampleResults = [
   {
     id: '1',
-    parsedId: '1',
-    type: 'person',
     content: (
       <div className="flex items-center gap-2 text-sm">
         <User className="h-4 w-4 text-blue-500" />
@@ -35,8 +33,6 @@ const sampleResults = [
   },
   {
     id: '2',
-    parsedId: '2',
-    type: 'file',
     content: (
       <div className="flex items-center gap-2 text-sm">
         <FileText className="h-4 w-4 text-green-500" />
@@ -59,8 +55,6 @@ const sampleResults = [
   },
   {
     id: '3',
-    parsedId: '3',
-    type: 'place',
     content: (
       <div className="flex items-center gap-2 text-sm">
         <MapPin className="h-4 w-4 text-red-500" />
@@ -82,8 +76,6 @@ const sampleResults = [
   },
   {
     id: '4',
-    parsedId: '4',
-    type: 'event',
     content: (
       <div className="flex items-center gap-2 text-sm">
         <Calendar className="h-4 w-4 text-purple-500" />
@@ -108,8 +100,6 @@ const sampleResults = [
   },
   {
     id: '5',
-    parsedId: '5',
-    type: 'file',
     content: (
       <div className="flex items-center gap-2 text-sm">
         <FileText className="h-4 w-4 text-orange-500" />
@@ -132,8 +122,6 @@ const sampleResults = [
   },
   {
     id: '6',
-    parsedId: '6',
-    type: 'person',
     content: (
       <div className="flex items-center gap-2 text-sm">
         <User className="h-4 w-4 text-blue-500" />
