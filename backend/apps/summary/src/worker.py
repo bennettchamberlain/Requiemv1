@@ -25,6 +25,7 @@ from .workflows import (
     SeasonalSummaryWorkflow,
     YearlySummaryWorkflow,
     DossierRefreshWorkflow,
+    InsightsGenerationWorkflow,
 )
 
 # Import system workflows
@@ -34,6 +35,7 @@ from .system_workflows import (
     SystemWeeklySummariesWorkflow,
     SystemMonthlySummariesWorkflow,
     SystemDossierRefreshWorkflow,
+    SystemInsightsWorkflow,
 )
 
 # Import activities
@@ -48,6 +50,12 @@ from .activities import (
     fetch_summaries_for_dossier_activity,
     generate_dossier_activity,
     store_dossier_activity,
+    # Insight activities
+    check_new_data_for_insights_activity,
+    get_last_insight_time_activity,
+    aggregate_insights_context_activity,
+    generate_insights_activity,
+    store_insight_activity,
 )
 
 # Configure structured logging
@@ -122,12 +130,14 @@ async def run_worker():
             SeasonalSummaryWorkflow,
             YearlySummaryWorkflow,
             DossierRefreshWorkflow,
+            InsightsGenerationWorkflow,
             # System workflows (process all users)
             SystemHourlySummariesWorkflow,
             SystemDailySummariesWorkflow,
             SystemWeeklySummariesWorkflow,
             SystemMonthlySummariesWorkflow,
             SystemDossierRefreshWorkflow,
+            SystemInsightsWorkflow,
         ]
 
         all_activities = [
@@ -141,6 +151,12 @@ async def run_worker():
             fetch_summaries_for_dossier_activity,
             generate_dossier_activity,
             store_dossier_activity,
+            # Insight activities
+            check_new_data_for_insights_activity,
+            get_last_insight_time_activity,
+            aggregate_insights_context_activity,
+            generate_insights_activity,
+            store_insight_activity,
         ]
 
         # Create workers for each priority level
