@@ -599,79 +599,109 @@ async def store_insight_activity(
     start_time: str,
     end_time: str,
     timezone: str,
-) -> str:
+) -> List[str]:
     """
-    Store generated insights as a summary with period_type='insight'.
+    Store generated insights as individual summaries with period_type='insight'.
 
-    Returns the summary_id as a string.
+    Each insight is stored as a separate row to enable individual tracking,
+    tagging, and relationship linking.
+
+    Returns list of summary_ids for all stored insights.
     """
-    activity.logger.info("storing_insight", num_insights=insights_data.get("num_insights", 0))
+    insights_list = insights_data.get("insights", [])
+    num_insights = len(insights_list)
+
+    activity.logger.info("storing_insights", num_insights=num_insights)
     activity.heartbeat("Storing insights to database")
+
+    if not insights_list:
+        activity.logger.info("no_insights_to_store")
+        return []
 
     user_uuid = UUID(user_id)
     start_dt = datetime.fromisoformat(start_time)
     end_dt = datetime.fromisoformat(end_time)
 
-    summary_id = uuid4()
-
-    # Build content payload
-    insights_list = insights_data.get("insights", [])
-    content = {
-        "insights": insights_list,
-        "data_sources_used": insights_data.get("data_sources_used", []),
-        "tokens_used": insights_data.get("tokens_used", 0),
-        # Extract summary_text and key_insights for compatibility with existing UI
-        "summary_text": "; ".join([i.get("title", "") for i in insights_list]),
-        "key_insights": [i.get("title", "") + ": " + (i.get("key_actions", [])[:1] or [""])[0] for i in insights_list],
-    }
-
-    # Use data sources as source_types
     source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+    total_tokens = insights_data.get("tokens_used", 0)
+    tokens_per_insight = total_tokens // num_insights if num_insights > 0 else 0
 
-    # Generate title from first insight or default
-    if insights_list:
-        title = insights_list[0].get("title", "Proactive Insights")
-    else:
-        title = "Proactive Insights"
+    # Prepare all inserts for transaction
+    writes: List[tuple[str, Dict[str, Any]]] = []
+    summary_ids: List[str] = []
 
-    # Prepare embedding
-    embedding = insights_data.get("embedding", [])
-    embedding_value = json.dumps(embedding) if embedding else None
-
-    # Insert with metadata.seen = false
-    metadata = {"seen": False}
-
-    db.execute_write(
-        """
+    insert_query = """
         INSERT INTO ci.summaries (
             summary_id, user_id, period_start, period_end, period_type,
-            timezone, source_types, title, content, summary_embedding,
-            metadata, created_at, updated_at
+            timezone, source_types, title, content, structured_context,
+            tags, participants, confidence_score, metadata, created_at, updated_at
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, 'insight',
             :timezone, :source_types, :title, CAST(:content AS jsonb),
-            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END,
+            CAST(:structured_context AS jsonb), CAST(:tags AS jsonb),
+            CAST(:participants AS uuid[]), :confidence_score,
             CAST(:metadata AS jsonb), NOW(), NOW()
         )
-        """,
-        {
-            "summary_id": str(summary_id),
+    """
+
+    for insight in insights_list:
+        summary_id = str(uuid4())
+        summary_ids.append(summary_id)
+
+        # Extract and validate participant UUIDs
+        participants_list = []
+        related_ids = insight.get("related_entity_ids", [])
+        if related_ids:
+            for entity_id in related_ids:
+                try:
+                    UUID(str(entity_id))
+                    participants_list.append(str(entity_id))
+                except (ValueError, TypeError):
+                    pass
+
+        # Content: lightweight payload for UI consumption
+        content = {
+            "summary_text": insight.get("summary_text", ""),
+            "key_actions": insight.get("key_actions", []),
+            "tokens_used": tokens_per_insight,
+            "data_sources_used": source_types,
+        }
+
+        metadata = {
+            "seen": False,
+            "relevance_score": insight.get("relevance_score", 0),
+        }
+
+        params = {
+            "summary_id": summary_id,
             "user_id": str(user_uuid),
             "period_start": start_dt,
             "period_end": end_dt,
             "timezone": timezone,
             "source_types": source_types,
-            "title": title,
+            "title": insight.get("title", "Proactive Insight"),
             "content": json.dumps(content),
-            "embedding": embedding_value,
+            "structured_context": json.dumps(insight),
+            "tags": json.dumps(insight.get("tags", [])),
+            "participants": participants_list,
+            "confidence_score": insight.get("relevance_score", 0),
             "metadata": json.dumps(metadata),
-        },
+        }
+
+        writes.append((insert_query, params))
+
+    # Execute all inserts in a single transaction
+    activity.heartbeat(f"Inserting {num_insights} insights in transaction")
+    db.execute_writes_in_transaction(writes)
+
+    activity.heartbeat("Insights stored")
+    activity.logger.info(
+        "insights_stored",
+        num_insights=num_insights,
+        summary_ids=summary_ids,
     )
 
-    activity.heartbeat("Insight stored")
-    activity.logger.info("insight_stored", summary_id=str(summary_id), num_insights=len(insights_list))
-
-    return str(summary_id)
+    return summary_ids
 
 
 __all__ = [

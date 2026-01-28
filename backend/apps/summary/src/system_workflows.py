@@ -382,7 +382,7 @@ class SystemInsightsWorkflow:
                     results.append({
                         "user_id": user_id,
                         "status": "success",
-                        "summary_id": result.get("summary_id"),
+                        "summary_ids": result.get("summary_ids"),
                         "num_insights": result.get("num_insights"),
                     })
             except Exception as e:

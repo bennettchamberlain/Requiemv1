@@ -388,14 +388,27 @@ def execute_insights(
     # Aggregate context
     context = insight_aggregator.aggregate_insights_context(user_id, since, now)
 
-    total_context_items = (
-        len(context.get("graph_deltas", []))
-        + len(context.get("upcoming_events", []))
-        + len(context.get("recent_summaries", []))
-    )
+    # Count all context sources for threshold check
+    context_counts = {
+        "graph_deltas": len(context.get("graph_deltas", [])),
+        "upcoming_events": len(context.get("upcoming_events", [])),
+        "recent_summaries": len(context.get("recent_summaries", [])),
+        "strongest_relationships": len(context.get("strongest_relationships", [])),
+        "recently_changed_relationships": len(context.get("recently_changed_relationships", [])),
+        "event_relevant_relationships": len(context.get("event_relevant_relationships", [])),
+        "recent_communications": len(context.get("recent_communications", [])),
+    }
+    total_context_items = sum(context_counts.values())
+    has_dossier = context.get("user_dossier") is not None
 
+    # Require at least 2 context items to generate insights
     if total_context_items < 2:
-        logger.info("insufficient_context", total_items=total_context_items)
+        logger.info(
+            "insufficient_context",
+            total_items=total_context_items,
+            context_counts=context_counts,
+            has_dossier=has_dossier,
+        )
         return {
             "skipped": True,
             "reason": "insufficient_context",
@@ -417,85 +430,86 @@ def execute_insights(
             "user_id": str(user_id),
         }
 
-    # Store as summary with period_type='insight'
-    summary_id = uuid4()
+    # Store each insight as a separate summary row
     insights_list = insights_data.get("insights", [])
+    source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+    total_tokens = insights_data.get("tokens_used", 0)
+    tokens_per_insight = total_tokens // num_insights if num_insights > 0 else 0
 
-    # Prepare each insight for separate storage
+    # Prepare all inserts for transaction
+    writes: list[tuple[str, dict]] = []
+    summary_ids: list[str] = []
+
+    insert_query = """
+        INSERT INTO ci.summaries (
+            summary_id, user_id, period_start, period_end, period_type,
+            timezone, source_types, title, content, structured_context,
+            tags, participants, confidence_score, metadata, created_at, updated_at
+        ) VALUES (
+            :summary_id, :user_id, :period_start, :period_end, 'insight',
+            :timezone, :source_types, :title, CAST(:content AS jsonb),
+            CAST(:structured_context AS jsonb), CAST(:tags AS jsonb),
+            CAST(:participants AS uuid[]), :confidence_score,
+            CAST(:metadata AS jsonb), NOW(), NOW()
+        )
+    """
+
     for insight in insights_list:
-        summary_id = uuid4()
-        
-        # 1. Tags for this insight
-        tags_list = insight.get("tags", [])
+        summary_id = str(uuid4())
+        summary_ids.append(summary_id)
 
-        # 2. Participants for this insight (valid UUIDs only)
+        # Extract and validate participant UUIDs
         participants_list = []
-        ids = insight.get("related_entity_ids", [])
-        if ids:
-            for entity_id in ids:
+        related_ids = insight.get("related_entity_ids", [])
+        if related_ids:
+            for entity_id in related_ids:
                 try:
                     UUID(str(entity_id))
                     participants_list.append(str(entity_id))
                 except (ValueError, TypeError):
                     pass
 
-        # 3. Content: lightweight text summary and keys
+        # Content: lightweight payload for UI consumption
         content = {
             "summary_text": insight.get("summary_text", ""),
             "key_actions": insight.get("key_actions", []),
-            # Include tokens/metadata for this generation
-            "tokens_used": insights_data.get("tokens_used", 0) // (len(insights_list) or 1),
-            "data_sources_used": insights_data.get("data_sources_used", []) 
+            "tokens_used": tokens_per_insight,
+            "data_sources_used": source_types,
         }
 
-        source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
-        title = insight.get("title", "Proactive Insight")
-        embedding = insights_data.get("embedding", []) # Shared embedding or compute new
         metadata = {
             "seen": False,
             "relevance_score": insight.get("relevance_score", 0),
         }
 
-        db.execute_write(
-            """
-            INSERT INTO ci.summaries (
-                summary_id, user_id, period_start, period_end, period_type,
-                timezone, source_types, title, content, structured_context,
-                tags, participants, confidence_score, summary_embedding,
-                metadata, created_at, updated_at
-            ) VALUES (
-                :summary_id, :user_id, :period_start, :period_end, 'insight',
-                :timezone, :source_types, :title, CAST(:content AS jsonb), CAST(:structured_context AS jsonb),
-                CAST(:tags AS jsonb), CAST(:participants AS uuid[]), :confidence_score,
-                CASE WHEN :embedding = '[]' THEN NULL ELSE CAST(:embedding AS vector) END,
-                CAST(:metadata AS jsonb), NOW(), NOW()
-            )
-            """,
-            {
-                "summary_id": str(summary_id),
-                "user_id": str(user_id),
-                "period_start": since,
-                "period_end": now,
-                "timezone": timezone,
-                "source_types": source_types,
-                "title": title,
-                "content": json.dumps(content),
-                "structured_context": json.dumps(insight),
-                "tags": json.dumps(tags_list),
-                "participants": participants_list,
-                "confidence_score": insight.get("relevance_score", 0),
-                "embedding": json.dumps(embedding),
-                "metadata": json.dumps(metadata),
-            },
-        )
+        params = {
+            "summary_id": summary_id,
+            "user_id": str(user_id),
+            "period_start": since,
+            "period_end": now,
+            "timezone": timezone,
+            "source_types": source_types,
+            "title": insight.get("title", "Proactive Insight"),
+            "content": json.dumps(content),
+            "structured_context": json.dumps(insight),
+            "tags": json.dumps(insight.get("tags", [])),
+            "participants": participants_list,
+            "confidence_score": insight.get("relevance_score", 0),
+            "metadata": json.dumps(metadata),
+        }
 
-    logger.info("insights_stored", summary_id=str(summary_id), num_insights=num_insights)
+        writes.append((insert_query, params))
+
+    # Execute all inserts in a single transaction
+    db.execute_writes_in_transaction(writes)
+
+    logger.info("insights_stored", summary_ids=summary_ids, num_insights=num_insights)
 
     return {
         "skipped": False,
-        "summary_id": str(summary_id),
+        "summary_ids": summary_ids,
         "user_id": str(user_id),
         "num_insights": num_insights,
         "insights": insights_list,
-        "tokens_used": insights_data.get("tokens_used", 0),
+        "tokens_used": total_tokens,
     }

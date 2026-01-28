@@ -614,15 +614,23 @@ class InsightsGenerationWorkflow:
             **get_data_activity_options(),
         )
 
-        # Check if we have enough context
-        total_context_items = (
-            len(insights_context.get("graph_deltas", []))
-            + len(insights_context.get("upcoming_events", []))
-            + len(insights_context.get("recent_summaries", []))
-        )
+        # Check if we have enough context (count all sources)
+        context_counts = {
+            "graph_deltas": len(insights_context.get("graph_deltas", [])),
+            "upcoming_events": len(insights_context.get("upcoming_events", [])),
+            "recent_summaries": len(insights_context.get("recent_summaries", [])),
+            "strongest_relationships": len(insights_context.get("strongest_relationships", [])),
+            "recently_changed_relationships": len(insights_context.get("recently_changed_relationships", [])),
+            "event_relevant_relationships": len(insights_context.get("event_relevant_relationships", [])),
+            "recent_communications": len(insights_context.get("recent_communications", [])),
+        }
+        total_context_items = sum(context_counts.values())
+        has_dossier = insights_context.get("user_dossier") is not None
 
         if total_context_items < 2:
-            workflow.logger.info(f"insufficient_context_skipping total_items={total_context_items}")
+            workflow.logger.info(
+                f"insufficient_context_skipping total_items={total_context_items} has_dossier={has_dossier}"
+            )
             return {
                 "skipped": True,
                 "reason": "insufficient_context",
@@ -630,7 +638,9 @@ class InsightsGenerationWorkflow:
                 "context_items": total_context_items,
             }
 
-        workflow.logger.info(f"context_aggregated total_items={total_context_items}")
+        workflow.logger.info(
+            f"context_aggregated total_items={total_context_items} has_dossier={has_dossier}"
+        )
 
         # Step 4: Generate insights (LLM call)
         insights_data = await workflow.execute_activity(
@@ -649,20 +659,20 @@ class InsightsGenerationWorkflow:
                 "user_id": user_id,
             }
 
-        # Step 5: Store insights
-        summary_id = await workflow.execute_activity(
+        # Step 5: Store insights (one row per insight)
+        summary_ids = await workflow.execute_activity(
             store_insight_activity,
             args=[user_id, insights_data, since.isoformat(), now.isoformat(), timezone],
             **get_data_activity_options(),
         )
 
         workflow.logger.info(
-            f"insights_generation_workflow_completed summary_id={summary_id} num_insights={num_insights}"
+            f"insights_generation_workflow_completed num_insights={num_insights} summary_ids={summary_ids}"
         )
 
         return {
             "skipped": False,
-            "summary_id": summary_id,
+            "summary_ids": summary_ids,
             "user_id": user_id,
             "num_insights": num_insights,
             "tokens_used": insights_data.get("tokens_used", 0),
