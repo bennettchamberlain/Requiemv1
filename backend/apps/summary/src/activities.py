@@ -6,10 +6,14 @@ They are thin wrappers around pure functions and database operations.
 """
 import json
 import structlog
+import nest_asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 from temporalio import activity
+
+# Allow nested event loops (needed for run_sync() in async activity context)
+nest_asyncio.apply()
 
 from .config import settings
 from .data_aggregator import aggregator

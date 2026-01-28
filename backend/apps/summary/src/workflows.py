@@ -566,14 +566,15 @@ class InsightsGenerationWorkflow:
         timezone: str = "UTC",
         lookback_hours: int = 72,  # 3 days default lookback
         llm_config: Optional[LLMConfig] = None,
+        force: bool = False,  # Skip new data check if True
     ) -> Dict[str, Any]:
         """Execute insights generation workflow."""
-        workflow.logger.info(f"insights_generation_workflow_started user_id={user_id}")
+        workflow.logger.info(f"insights_generation_workflow_started user_id={user_id} force={force}")
 
-        # Import datetime here for workflow determinism
         from datetime import datetime, timedelta
 
-        now = datetime.utcnow()
+        # Use workflow.now() for deterministic time in workflows
+        now = workflow.now()
 
         # Step 1: Get last insight time to determine lookback
         last_insight_time = await workflow.execute_activity(
@@ -592,20 +593,23 @@ class InsightsGenerationWorkflow:
             f"lookback_window_determined since={since.isoformat()} until={now.isoformat()}"
         )
 
-        # Step 2: Check if there's new data worth processing
-        has_new_data = await workflow.execute_activity(
-            check_new_data_for_insights_activity,
-            args=[user_id, since.isoformat()],
-            **get_data_activity_options(),
-        )
+        # Step 2: Check if there's new data worth processing (skip if force=True)
+        if not force:
+            has_new_data = await workflow.execute_activity(
+                check_new_data_for_insights_activity,
+                args=[user_id, since.isoformat()],
+                **get_data_activity_options(),
+            )
 
-        if not has_new_data:
-            workflow.logger.info("no_new_data_skipping_insights")
-            return {
-                "skipped": True,
-                "reason": "no_new_data",
-                "user_id": user_id,
-            }
+            if not has_new_data:
+                workflow.logger.info("no_new_data_skipping_insights")
+                return {
+                    "skipped": True,
+                    "reason": "no_new_data",
+                    "user_id": user_id,
+                }
+        else:
+            workflow.logger.info("force_mode_skipping_new_data_check")
 
         # Step 3: Aggregate context for insight generation
         insights_context = await workflow.execute_activity(
