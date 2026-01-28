@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { GlobalUID } from '@ci/common';
 import { Avatar, DropdownMenu } from '@ci/shadcn';
 import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette, ChartPie } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
@@ -58,7 +59,7 @@ export function NavUser() {
 
         <DropdownMenu.Group>
           <DropdownMenu.Item asChild>
-            <Link to="/knowledge">
+            <Link to={`/people/${user?.entity?.id ? GlobalUID.parse('person', user.entity.id) : ''}`}>
               <ChartPie />
               Knowledge
             </Link>

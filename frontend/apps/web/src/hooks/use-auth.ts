@@ -18,6 +18,10 @@ const USER_DATA_QUERY = `
       name
       email
       onboarded
+
+      entity {
+        id
+      }
     }
   }
 `;
@@ -33,6 +37,9 @@ interface User {
   name: string;
   email: string;
   onboarded: boolean;
+  entity: {
+    id: string;
+  } | null;
 }
 
 interface UserFetchResponse {
