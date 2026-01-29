@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 
+import { GlobalUID } from '@ci/common';
 import { Avatar, DropdownMenu } from '@ci/shadcn';
-import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette } from '@ci/shadcn/icons';
+import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette, ChartPie } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { useTheme, ColorPicker } from '@/components/ThemePicker';
@@ -52,6 +53,17 @@ export function NavUser() {
               </div>
             </div>
           </DropdownMenu.Label>
+        </DropdownMenu.Group>
+
+        <DropdownMenu.Separator />
+
+        <DropdownMenu.Group>
+          <DropdownMenu.Item asChild>
+            <Link to={`/people/${user?.entity?.id ? GlobalUID.parse('person', user.entity.id) : ''}`}>
+              <ChartPie />
+              Knowledge
+            </Link>
+          </DropdownMenu.Item>
         </DropdownMenu.Group>
 
         <DropdownMenu.Separator />

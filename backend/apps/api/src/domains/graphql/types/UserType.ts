@@ -4,6 +4,7 @@ import { type User } from '@ci/domains/user';
 
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { PersonType } from './PersonType';
 
 @ObjectType({ implements: () => [Node] })
 export class UserType implements Node {
@@ -22,6 +23,9 @@ export class UserType implements Node {
 
   @Field(() => Boolean)
   onboarded!: boolean;
+
+  @Field(() => PersonType, { nullable: true })
+  entity?: PersonType | null;
 
   static toType(user: User): UserType {
     return {

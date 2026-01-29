@@ -11,6 +11,21 @@ const SESSION_TOKEN_COOKIE = 'CI_sessionToken';
 
 const authChannel = new BroadcastChannel('auth');
 
+const USER_DATA_QUERY = `
+  query GetUserData {
+    me {
+      id
+      name
+      email
+      onboarded
+
+      entity {
+        id
+      }
+    }
+  }
+`;
+
 interface JwtPayload {
   sub: string;
   iat: number;
@@ -22,6 +37,15 @@ interface User {
   name: string;
   email: string;
   onboarded: boolean;
+  entity: {
+    id: string;
+  } | null;
+}
+
+interface UserFetchResponse {
+  data: {
+    me: User;
+  };
 }
 
 interface AuthResponse {
@@ -209,13 +233,18 @@ function useAuth(): ReturnValue {
 
   const fetchUser = useCallback(async () => {
     try {
-      const data: User = await fetchJson('/api/users/me', {
+      const response = await fetchJson<UserFetchResponse>('/api/graphql', {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
+        body: JSON.stringify({
+          query: USER_DATA_QUERY,
+        }),
       });
 
-      setUser(data);
+      setUser(response.data.me);
     } catch {
       if (sessionToken) {
         await refresh();

@@ -1570,6 +1570,7 @@ export type UpdateSavedSearchPayload = {
 export type UserType = Node & {
   __typename?: 'UserType';
   email: Scalars['String']['output'];
+  entity?: Maybe<PersonType>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   onboarded: Scalars['Boolean']['output'];

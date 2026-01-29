@@ -26,7 +26,6 @@ const EventPage = lazy(() => import('@/pages/EventPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
-const KnowledgePage = lazy(() => import('@/pages/KnowledgePage'));
 const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const NotePage = lazy(() => import('@/pages/NotePage'));
@@ -192,15 +191,6 @@ function AppRoutes() {
         />
 
         {/* Admin / System */}
-        <Route
-          path="/knowledge"
-          element={
-            <ProtectedRoute>
-              <KnowledgePage />
-            </ProtectedRoute>
-          }
-        />
-
         <Route
           path="/jobs"
           element={
