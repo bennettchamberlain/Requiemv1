@@ -6,20 +6,20 @@ import { v7 as uuidv7 } from 'uuid';
 import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
-import { type GraphDelta, GraphDeltaEntity } from '../entities/GraphDeltaEntity';
-import type { CreateGraphDeltaDto, FindDeltasOptions, UpdateDeltasSummaryDto } from '../types';
+import { type Delta, DeltaEntity } from '../entities/DeltaEntity';
+import type { CreateDeltaDto, FindDeltasOptions, UpdateDeltasSummaryDto } from '../types';
 
 @Injectable()
-export class GraphDeltaService {
+export class DeltaService {
   constructor(
-    @InjectRepository(GraphDeltaEntity)
-    private readonly deltaRepository: Repository<GraphDeltaEntity>,
+    @InjectRepository(DeltaEntity)
+    private readonly deltaRepository: Repository<DeltaEntity>,
     private readonly logger: LoggerService,
   ) {
-    this.logger.setContext(GraphDeltaService.name);
+    this.logger.setContext(DeltaService.name);
   }
 
-  async create(context: ServiceContext, data: CreateGraphDeltaDto): Promise<GraphDelta> {
+  async create(context: ServiceContext, data: CreateDeltaDto): Promise<Delta> {
     const record = this.deltaRepository.create({
       deltaId: data.deltaId || uuidv7(),
       ...data,
@@ -27,10 +27,10 @@ export class GraphDeltaService {
 
     const entity = await this.deltaRepository.save(record);
 
-    return GraphDeltaEntity.toEgressType(entity);
+    return DeltaEntity.toEgressType(entity);
   }
 
-  async findById(context: ServiceContext, id: string): Promise<GraphDelta | null> {
+  async findById(context: ServiceContext, id: string): Promise<Delta | null> {
     const entity = await this.deltaRepository.findOne({
       where: {
         deltaId: id,
@@ -40,10 +40,10 @@ export class GraphDeltaService {
       },
     });
 
-    return entity ? GraphDeltaEntity.toEgressType(entity) : null;
+    return entity ? DeltaEntity.toEgressType(entity) : null;
   }
 
-  async findByIds(context: ServiceContext, ids: string[]): Promise<(GraphDelta | null)[]> {
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Delta | null)[]> {
     const results = await this.deltaRepository.find({
       where: {
         deltaId: In(ids),
@@ -53,12 +53,12 @@ export class GraphDeltaService {
       },
     });
 
-    const map = new Map(results.map((entity) => [entity.deltaId, GraphDeltaEntity.toEgressType(entity)]));
+    const map = new Map(results.map((entity) => [entity.deltaId, DeltaEntity.toEgressType(entity)]));
 
     return ids.map((id) => map.get(id) ?? null);
   }
 
-  async findDeltas(context: ServiceContext, options: FindDeltasOptions = {}): Promise<GraphDelta[]> {
+  async findDeltas(context: ServiceContext, options: FindDeltasOptions = {}): Promise<Delta[]> {
     const query = this.deltaRepository.createQueryBuilder('delta');
 
     if (context.userId !== SYSTEM_USER) {
@@ -101,10 +101,10 @@ export class GraphDeltaService {
 
     const results = await query.getMany();
 
-    return results.map((entity) => GraphDeltaEntity.toEgressType(entity));
+    return results.map((entity) => DeltaEntity.toEgressType(entity));
   }
 
-  async findUnsummarizedDeltas(context: ServiceContext, since?: Date, until?: Date): Promise<GraphDelta[]> {
+  async findUnsummarizedDeltas(context: ServiceContext, since?: Date, until?: Date): Promise<Delta[]> {
     return this.findDeltas(context, {
       unsummarizedOnly: true,
       since,
@@ -112,11 +112,7 @@ export class GraphDeltaService {
     });
   }
 
-  async findDeltasForEntity(
-    context: ServiceContext,
-    entityId: string,
-    limit?: number,
-  ): Promise<GraphDelta[]> {
+  async findDeltasForEntity(context: ServiceContext, entityId: string, limit?: number): Promise<Delta[]> {
     return this.findDeltas(context, {
       entityId,
       limit,
@@ -127,7 +123,7 @@ export class GraphDeltaService {
     context: ServiceContext,
     relationshipId: string,
     limit?: number,
-  ): Promise<GraphDelta[]> {
+  ): Promise<Delta[]> {
     return this.findDeltas(context, {
       relationshipId,
       limit,

@@ -19,6 +19,7 @@ import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
 import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/common/logging';
 import config from '@ci/configuration';
+import { AuditModule } from '@ci/domains/audit';
 import { AuthModule } from '@ci/domains/auth';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
@@ -59,6 +60,7 @@ import { UserModule } from '@ci/domains/user';
     LoggingModule,
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
+    AuditModule,
     AuthModule,
     BrowserActivityModule,
     ConnectionsModule,

@@ -9,7 +9,7 @@ export interface ChangedField {
 }
 
 @Entity({ schema: 'ci', name: 'graph_deltas' })
-export class GraphDeltaEntity {
+export class DeltaEntity {
   @PrimaryColumn({ type: 'uuid', name: 'delta_id' })
   deltaId!: string;
 
@@ -58,7 +58,7 @@ export class GraphDeltaEntity {
   @Column({ type: 'uuid', name: 'owner_user_id', nullable: true })
   ownerUserId!: string | null;
 
-  static toEgressType(entity: GraphDeltaEntity): GraphDelta {
+  static toEgressType(entity: DeltaEntity): Delta {
     return {
       deltaId: entity.deltaId,
       entityId: entity.entityId,
@@ -80,7 +80,7 @@ export class GraphDeltaEntity {
   }
 }
 
-export type GraphDelta = Readonly<{
+export type Delta = Readonly<{
   deltaId: string;
   entityId: string | null;
   relationshipId: string | null;

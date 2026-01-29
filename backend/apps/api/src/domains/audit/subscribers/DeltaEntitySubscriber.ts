@@ -11,10 +11,9 @@ import {
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
+import { NodeEntity, RelationshipEntity } from '@ci/domains/graph';
 
-import { GraphDeltaEntity, type ChangedField } from '../entities/GraphDeltaEntity';
-import { NodeEntity } from '../entities/NodeEntity';
-import { RelationshipEntity } from '../entities/RelationshipEntity';
+import { DeltaEntity, type ChangedField } from '../entities/DeltaEntity';
 
 /**
  * TypeORM Entity Subscriber that automatically tracks changes to graph entities
@@ -25,7 +24,7 @@ import { RelationshipEntity } from '../entities/RelationshipEntity';
  */
 @Injectable()
 @EventSubscriber()
-export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
+export class DeltaEntitySubscriber implements EntitySubscriberInterface {
   // Store old values before updates (keyed by entity type + id)
   private oldValuesCache = new Map<string, Record<string, unknown>>();
 
@@ -35,7 +34,7 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
   ) {
     // Register this subscriber with TypeORM
     dataSource.subscribers.push(this);
-    this.logger.setContext(GraphDeltaEntitySubscriber.name);
+    this.logger.setContext(DeltaEntitySubscriber.name);
   }
 
   /**
@@ -43,7 +42,7 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
    * so we can compute the delta after the update completes.
    */
   beforeUpdate(event: UpdateEvent<NodeEntity | RelationshipEntity>): void {
-    if (!event.entity || !event.databaseEntity || this.isGraphDeltaEntity(event.entity)) {
+    if (!event.entity || !event.databaseEntity || this.isDeltaEntity(event.entity)) {
       return;
     }
 
@@ -61,7 +60,7 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
    * Called after an entity is inserted.
    */
   async afterInsert(event: InsertEvent<NodeEntity | RelationshipEntity>): Promise<void> {
-    if (!event.entity || this.isGraphDeltaEntity(event.entity)) {
+    if (!event.entity || this.isDeltaEntity(event.entity)) {
       return;
     }
 
@@ -90,7 +89,7 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
    * Called after an entity is updated.
    */
   async afterUpdate(event: UpdateEvent<NodeEntity | RelationshipEntity>): Promise<void> {
-    if (!event.entity || this.isGraphDeltaEntity(event.entity)) {
+    if (!event.entity || this.isDeltaEntity(event.entity)) {
       return;
     }
 
@@ -141,7 +140,7 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
     }
 
     const rawEntity = event.entity || event.databaseEntity;
-    if (!rawEntity || this.isGraphDeltaEntity(rawEntity)) {
+    if (!rawEntity || this.isDeltaEntity(rawEntity)) {
       return;
     }
 
@@ -182,7 +181,7 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
     const entityType = (entity.entityType ?? entity.entity_type) as string;
     const ownerUserId = (entity.userId ?? entity.owner_user_id) as string | undefined;
 
-    const delta = manager.create(GraphDeltaEntity, {
+    const delta = manager.create(DeltaEntity, {
       deltaId: uuidv7(),
       entityId,
       nodeType: 'entity',
@@ -219,7 +218,7 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
     const toEntityId = (entity.toNodeId ?? entity.to_entity_id) as string;
     const ownerUserId = (entity.userId ?? entity.owner_user_id) as string | undefined;
 
-    const delta = manager.create(GraphDeltaEntity, {
+    const delta = manager.create(DeltaEntity, {
       deltaId: uuidv7(),
       relationshipId,
       nodeType: 'relationship',
@@ -241,11 +240,11 @@ export class GraphDeltaEntitySubscriber implements EntitySubscriberInterface {
   }
 
   /**
-   * Type guard to detect GraphDeltaEntity (to prevent infinite recursion).
+   * Type guard to detect DeltaEntity (to prevent infinite recursion).
    */
-  private isGraphDeltaEntity(entity: unknown): entity is GraphDeltaEntity {
+  private isDeltaEntity(entity: unknown): entity is DeltaEntity {
     return (
-      entity instanceof GraphDeltaEntity ||
+      entity instanceof DeltaEntity ||
       (typeof entity === 'object' && entity !== null && 'deltaId' in entity && 'nodeType' in entity)
     );
   }
