@@ -16,6 +16,7 @@ from .system_workflows import (
     SystemWeeklySummariesWorkflow,
     SystemMonthlySummariesWorkflow,
     SystemDossierRefreshWorkflow,
+    SystemInsightsWorkflow,
 )
 
 logger = structlog.get_logger()
@@ -151,7 +152,30 @@ async def setup_system_schedules():
         else:
             logger.error("schedule_creation_failed", schedule="system-dossier-refresh", error=str(e))
 
-    logger.info("system_schedule_setup_completed", schedules=5)
+    # Create insights schedule (MEDIUM priority)
+    try:
+        await client.create_schedule(
+            "system-insights",
+            Schedule(
+                action=ScheduleActionStartWorkflow(
+                    SystemInsightsWorkflow.run,
+                    id="system-insights-{action.scheduled_time}",
+                    task_queue=get_task_queue(Priority.MEDIUM),
+                ),
+                spec=ScheduleSpec(
+                    # Run every 3 hours at minute 30 (0:30, 3:30, 6:30, 9:30, 12:30, 15:30, 18:30, 21:30)
+                    cron_expressions=["30 */3 * * *"],
+                ),
+            ),
+        )
+        logger.info("schedule_created", schedule="system-insights", cron="30 */3 * * *", priority="MEDIUM")
+    except Exception as e:
+        if "already exists" in str(e).lower():
+            logger.info("schedule_already_exists", schedule="system-insights")
+        else:
+            logger.error("schedule_creation_failed", schedule="system-insights", error=str(e))
+
+    logger.info("system_schedule_setup_completed", schedules=6)
     print("\n✅ System schedules created successfully!")
     print("\nSchedules:")
     print("  - system-hourly-summaries   (every hour at :05)")
@@ -159,6 +183,7 @@ async def setup_system_schedules():
     print("  - system-weekly-summaries   (Mondays at 00:15 UTC)")
     print("  - system-monthly-summaries  (1st of month at 00:20 UTC)")
     print("  - system-dossier-refresh    (every hour at :12)")
+    print("  - system-insights           (every 3 hours at :30)")
     print("\n👉 View schedules in Temporal UI: http://localhost:8080")
     print("👉 These will automatically process ALL users - no manual setup needed!\n")
 
@@ -178,6 +203,7 @@ async def delete_system_schedules():
         "system-weekly-summaries",
         "system-monthly-summaries",
         "system-dossier-refresh",
+        "system-insights",
     ]
 
     for schedule_id in schedules:

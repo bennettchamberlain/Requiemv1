@@ -6,19 +6,25 @@ They are thin wrappers around pure functions and database operations.
 """
 import json
 import structlog
+import nest_asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 from temporalio import activity
 
+# Allow nested event loops (needed for run_sync() in async activity context)
+nest_asyncio.apply()
+
 from .config import settings
 from .data_aggregator import aggregator
 from .database import db
+from .insight_aggregator import insight_aggregator
 from .llm_config import LLMConfig, create_llm_config
 from .summary_functions import (
     generate_hourly_summary,
     generate_rollup_summary,
     generate_user_dossier,
+    generate_insights,
 )
 
 logger = structlog.get_logger()
@@ -482,6 +488,226 @@ async def store_dossier_activity(
     activity.logger.info("dossier_stored", entity_id=entity_id)
 
 
+# ============================================================================
+# Insight Generation Activities
+# ============================================================================
+
+@activity.defn
+async def check_new_data_for_insights_activity(
+    user_id: str,
+    since: str,  # ISO format
+) -> bool:
+    """
+    Check if there's new data worth generating insights for.
+
+    Returns True if new graph deltas, events, or summaries exist since the given time.
+    """
+    activity.logger.info("checking_new_data_for_insights", user_id=user_id, since=since)
+    activity.heartbeat("Checking for new data")
+
+    user_uuid = UUID(user_id)
+    since_dt = datetime.fromisoformat(since)
+
+    has_new_data = insight_aggregator.has_new_data(user_uuid, since_dt)
+
+    activity.logger.info("new_data_check_complete", user_id=user_id, has_new_data=has_new_data)
+    return has_new_data
+
+
+@activity.defn
+async def get_last_insight_time_activity(user_id: str) -> Optional[str]:
+    """
+    Get the timestamp of the last generated insight for this user.
+
+    Returns ISO format timestamp or None if no insights exist.
+    """
+    activity.logger.info("getting_last_insight_time", user_id=user_id)
+    activity.heartbeat("Looking up last insight time")
+
+    user_uuid = UUID(user_id)
+    last_time = insight_aggregator.get_last_insight_time(user_uuid)
+
+    if last_time:
+        activity.logger.info("last_insight_time_found", user_id=user_id, last_time=last_time.isoformat())
+        return last_time.isoformat()
+
+    activity.logger.info("no_previous_insights", user_id=user_id)
+    return None
+
+
+@activity.defn
+async def aggregate_insights_context_activity(
+    user_id: str,
+    since: str,  # ISO format
+    until: str,  # ISO format
+) -> Dict[str, Any]:
+    """
+    Aggregate all context needed for insight generation.
+
+    Collects graph deltas, upcoming events, recent summaries,
+    relevant relationships, and communications.
+    """
+    activity.logger.info("aggregating_insights_context", user_id=user_id, since=since, until=until)
+    activity.heartbeat("Aggregating insights context")
+
+    user_uuid = UUID(user_id)
+    since_dt = datetime.fromisoformat(since)
+    until_dt = datetime.fromisoformat(until)
+
+    context = insight_aggregator.aggregate_insights_context(user_uuid, since_dt, until_dt)
+
+    activity.heartbeat("Insights context aggregated")
+    activity.logger.info(
+        "insights_context_aggregated",
+        user_id=user_id,
+        graph_deltas=len(context.get("graph_deltas", [])),
+        upcoming_events=len(context.get("upcoming_events", [])),
+        recent_summaries=len(context.get("recent_summaries", [])),
+    )
+
+    return context
+
+
+@activity.defn
+async def generate_insights_activity(
+    insights_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate proactive insights from aggregated context using LLM.
+
+    Returns insights data ready for storage.
+    """
+    activity.logger.info("generating_insights")
+    activity.heartbeat("Calling LLM for insights generation")
+
+    # Create LLM config
+    llm_config = create_llm_config()
+
+    # Call pure function
+    insights_data = generate_insights(llm_config, insights_context)
+
+    activity.heartbeat("Insights generated")
+    activity.logger.info(
+        "insights_generated",
+        num_insights=insights_data.get("num_insights", 0),
+        tokens_used=insights_data.get("tokens_used", 0),
+    )
+
+    return insights_data
+
+
+@activity.defn
+async def store_insight_activity(
+    user_id: str,
+    insights_data: Dict[str, Any],
+    start_time: str,
+    end_time: str,
+    timezone: str,
+) -> List[str]:
+    """
+    Store generated insights as individual summaries with period_type='insight'.
+
+    Each insight is stored as a separate row to enable individual tracking,
+    tagging, and relationship linking.
+
+    Returns list of summary_ids for all stored insights.
+    """
+    insights_list = insights_data.get("insights", [])
+    num_insights = len(insights_list)
+
+    activity.logger.info("storing_insights", num_insights=num_insights)
+    activity.heartbeat("Storing insights to database")
+
+    if not insights_list:
+        activity.logger.info("no_insights_to_store")
+        return []
+
+    user_uuid = UUID(user_id)
+    start_dt = datetime.fromisoformat(start_time)
+    end_dt = datetime.fromisoformat(end_time)
+
+    source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
+    total_tokens = insights_data.get("tokens_used", 0)
+    tokens_per_insight = total_tokens // num_insights if num_insights > 0 else 0
+
+    # Prepare all inserts for transaction
+    writes: List[tuple[str, Dict[str, Any]]] = []
+    summary_ids: List[str] = []
+
+    insert_query = """
+        INSERT INTO ci.summaries (
+            summary_id, user_id, period_start, period_end, period_type,
+            timezone, source_types, title, content, structured_context,
+            tags, participants, confidence_score, metadata, created_at, updated_at
+        ) VALUES (
+            :summary_id, :user_id, :period_start, :period_end, 'insight',
+            :timezone, :source_types, :title, CAST(:content AS jsonb),
+            CAST(:structured_context AS jsonb), CAST(:tags AS jsonb),
+            CAST(:participants AS uuid[]), :confidence_score,
+            CAST(:metadata AS jsonb), NOW(), NOW()
+        )
+    """
+
+    for insight in insights_list:
+        summary_id = str(uuid4())
+        summary_ids.append(summary_id)
+
+        # Extract and validate participant UUIDs
+        participants_list = []
+        related_ids = insight.get("related_entity_ids", [])
+        if related_ids:
+            for entity_id in related_ids:
+                try:
+                    UUID(str(entity_id))
+                    participants_list.append(str(entity_id))
+                except (ValueError, TypeError):
+                    pass
+
+        # Content: lightweight payload for UI consumption
+        content = {
+            "summary_text": insight.get("summary_text", ""),
+            "key_actions": insight.get("key_actions", []),
+            "tokens_used": tokens_per_insight,
+            "data_sources_used": source_types,
+        }
+
+        metadata = {
+            "seen": False,
+            "relevance_score": insight.get("relevance_score", 0),
+        }
+
+        params = {
+            "summary_id": summary_id,
+            "user_id": str(user_uuid),
+            "period_start": start_dt,
+            "period_end": end_dt,
+            "timezone": timezone,
+            "source_types": source_types,
+            "title": insight.get("title", "Proactive Insight"),
+            "content": json.dumps(content),
+            "structured_context": json.dumps(insight),
+            "tags": json.dumps(insight.get("tags", [])),
+            "participants": participants_list,
+            "confidence_score": insight.get("relevance_score", 0),
+            "metadata": json.dumps(metadata),
+        }
+
+        writes.append((insert_query, params))
+
+    # Execute all inserts in a single transaction
+    activity.heartbeat(f"Inserting {num_insights} insights in transaction")
+    db.execute_writes_in_transaction(writes)
+
+    activity.heartbeat("Insights stored")
+    activity.logger.info(
+        "insights_stored",
+        num_insights=num_insights,
+        summary_ids=summary_ids,
+    )
+
+    return summary_ids
+
+
 __all__ = [
     "aggregate_data_activity",
     "generate_hourly_summary_activity",
@@ -493,4 +719,10 @@ __all__ = [
     "fetch_summaries_for_dossier_activity",
     "generate_dossier_activity",
     "store_dossier_activity",
+    # Insight activities
+    "check_new_data_for_insights_activity",
+    "get_last_insight_time_activity",
+    "aggregate_insights_context_activity",
+    "generate_insights_activity",
+    "store_insight_activity",
 ]
