@@ -2,16 +2,50 @@ import { type ReactNode, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb, Card, Label, Textarea, Toggle, cn } from '@ci/shadcn';
-import { Pencil } from '@ci/shadcn/icons';
+import { Breadcrumb, Button, Card, Label, Textarea, Toggle, Tooltip, cn } from '@ci/shadcn';
+import { Pencil, Link as LinkIcon } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
 import { PersonIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
+import { AddRelationshipModal } from '@/components/modals/AddItemModal/AddRelationshipModal';
 import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
+
+const ALLOWED_TYPES = {
+  communication: ['SENT', 'RECEIVED'],
+  concept: ['PREFERS', 'DISLIKES', 'INTERESTED_IN'],
+  content: ['CREATED'],
+  event: ['PARTICIPATED_IN'],
+  item: ['OWNS', 'CREATED'],
+  note: ['CREATED'],
+  person: [
+    'KNOWS',
+    'FRIENDS_WITH',
+    'WORKS_WITH',
+    'COLLABORATED_WITH',
+    'MENTORED',
+    'TAUGHT',
+    'LEARNED_FROM',
+    'SPOUSE',
+    'PARENT_OF',
+    'CHILD_OF',
+    'SIBLING_OF',
+    'FAMILY_MEMBER',
+    'MET_WITH',
+    'EMAILED',
+    'RECEIVED_EMAIL_FROM',
+    'ORGANIZED_EVENT_WITH',
+    'EDITED_WITH',
+    'IS',
+    'LIVES_WITH',
+    'ASSOCIATED_WITH',
+  ],
+  place: ['LIVES_IN', 'STUDIES_AT', 'WORKS_AT', 'LIVES_NEAR', 'VISITED', 'OWNS'],
+  thread: ['CREATED'],
+};
 
 const GET_PERSON = gql(`
   query GetPerson($id: ID!) {
@@ -29,6 +63,7 @@ const GET_PERSON = gql(`
 
 export function PersonPage() {
   const { id } = useParams<{ id: string }>();
+  const [addRelationshipModalOpen, setAddRelationshipModalOpen] = useState(false);
 
   const { data, loading } = useQuery(GET_PERSON, {
     variables: {
@@ -59,16 +94,31 @@ export function PersonPage() {
             <PersonIcon />
             <h1 className="text-2xl font-bold">{person.name}</h1>
           </div>
-          <Toggle
-            aria-label="Toggle edit mode"
-            size="sm"
-            variant="outline"
-            className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
-            pressed={editMode}
-            onPressedChange={setEditMode}
-          >
-            <Pencil />
-          </Toggle>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <Tooltip.Trigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setAddRelationshipModalOpen(true)}
+                  aria-label="Add relationship"
+                >
+                  <LinkIcon />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content>Add relationship</Tooltip.Content>
+            </Tooltip>
+            <Toggle
+              aria-label="Toggle edit mode"
+              size="sm"
+              variant="outline"
+              className="data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500"
+              pressed={editMode}
+              onPressedChange={setEditMode}
+            >
+              <Pencil />
+            </Toggle>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -146,6 +196,16 @@ export function PersonPage() {
       </Portal.Slot>
 
       {content}
+
+      {id && (
+        <AddRelationshipModal
+          allowedRelationshipTypes={ALLOWED_TYPES}
+          entityType={'person'}
+          entityId={id}
+          open={addRelationshipModalOpen}
+          onClose={() => setAddRelationshipModalOpen(false)}
+        />
+      )}
     </>
   );
 }

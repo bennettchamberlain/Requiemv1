@@ -519,4 +519,4 @@ const SearchBoxWithContext = forwardRef<HTMLInputElement, Props>((props, ref) =>
   </DropdownProvider>
 ));
 
-export { SearchBoxWithContext as SearchBox };
+export { SearchBoxWithContext as SearchBox, type SearchResultItem };

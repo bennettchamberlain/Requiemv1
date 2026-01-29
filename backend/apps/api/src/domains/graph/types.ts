@@ -36,6 +36,8 @@ export enum RelationshipType {
   IS = 'IS',
   LIVES_WITH = 'LIVES_WITH',
   ASSOCIATED_WITH = 'ASSOCIATED_WITH',
+  RECEIVED = 'RECEIVED',
+  SENT = 'SENT',
 }
 
 export type CreateRelationshipDto = Optional<
@@ -45,7 +47,55 @@ export type CreateRelationshipDto = Optional<
   type: keyof typeof RelationshipType;
 };
 
-export type UpdateRelationshipDto = Omit<CreateRelationshipDto, 'id' | 'fromNodeId' | 'toNodeId' | 'type'>;
+export type UpdateRelationshipDto = Omit<
+  CreateRelationshipDto,
+  'id' | 'fromNodeId' | 'toNodeId' | 'fromNodeType' | 'toNodeType' | 'type'
+>;
+
+export const RelationshipMap = {
+  person: {
+    communication: [RelationshipType.SENT, RelationshipType.RECEIVED],
+    concept: [RelationshipType.PREFERS, RelationshipType.DISLIKES, RelationshipType.INTERESTED_IN],
+    content: [RelationshipType.CREATED],
+    event: [RelationshipType.PARTICIPATED_IN],
+    item: [RelationshipType.OWNS, RelationshipType.CREATED],
+    note: [RelationshipType.CREATED],
+    person: [
+      RelationshipType.KNOWS,
+      RelationshipType.FRIENDS_WITH,
+      RelationshipType.WORKS_WITH,
+      RelationshipType.COLLABORATED_WITH,
+      RelationshipType.SPOUSE,
+      RelationshipType.PARENT_OF,
+      RelationshipType.CHILD_OF,
+      RelationshipType.SIBLING_OF,
+      RelationshipType.FAMILY_MEMBER,
+      RelationshipType.MENTORED,
+      RelationshipType.TAUGHT,
+      RelationshipType.LEARNED_FROM,
+      RelationshipType.MET_WITH,
+      RelationshipType.EMAILED,
+      RelationshipType.RECEIVED_EMAIL_FROM,
+      RelationshipType.ORGANIZED_EVENT_WITH,
+      RelationshipType.EDITED_WITH,
+      RelationshipType.LIVES_WITH,
+      RelationshipType.ASSOCIATED_WITH,
+      RelationshipType.IS,
+    ],
+    place: [
+      RelationshipType.LIVES_IN,
+      RelationshipType.LIVES_NEAR,
+      RelationshipType.STUDIES_AT,
+      RelationshipType.WORKS_AT,
+      RelationshipType.VISITED,
+      RelationshipType.OWNS,
+    ],
+    thread: [RelationshipType.CREATED],
+  },
+  event: {
+    place: [RelationshipType.LOCATED_AT, RelationshipType.HAPPENED_AT, RelationshipType.AT_LOCATION],
+  },
+};
 
 export interface CreateGraphDeltaDto {
   deltaId?: string;

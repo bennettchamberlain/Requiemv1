@@ -20,5 +20,7 @@ import { NoteService } from './services/NoteService';
 })
 export class NotesModule {}
 
+export { NoteEntity };
+
 export { NoteService };
 export type { Note };

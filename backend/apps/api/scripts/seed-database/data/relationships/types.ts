@@ -4,5 +4,5 @@ export { RelationshipType } from '@ci/domains/graph';
 
 export type SeedRelationship = Pick<
   CreateRelationshipDto,
-  'fromNodeId' | 'toNodeId' | 'type' | 'strength' | 'properties'
+  'fromNodeId' | 'fromNodeType' | 'toNodeId' | 'toNodeType' | 'type' | 'strength' | 'properties'
 >;

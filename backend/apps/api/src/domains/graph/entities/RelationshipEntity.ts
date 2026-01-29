@@ -8,16 +8,14 @@ export class RelationshipEntity {
   @Column({ name: 'from_entity_id', type: 'uuid' })
   fromNodeId!: string;
 
-  // We also need fromNodeType. Let's not worry about it yet.
-  // @Column({ name: 'from_entity_type', type: 'text' })
-  // fromNodeType!: string;
+  @Column({ name: 'from_entity_type', type: 'text' })
+  fromNodeType!: string;
 
   @Column({ name: 'to_entity_id', type: 'uuid' })
   toNodeId!: string;
 
-  // We also need toNodeType. Let's not worry about it yet.
-  // @Column({ name: 'to_entity_type', type: 'text' })
-  // toNodeType!: string;
+  @Column({ name: 'to_entity_type', type: 'text' })
+  toNodeType!: string;
 
   @Column({ name: 'relationship_type', type: 'text' })
   type!: string;
@@ -50,7 +48,9 @@ export class RelationshipEntity {
     return {
       id: entity.id,
       fromNodeId: entity.fromNodeId,
+      fromNodeType: entity.fromNodeType,
       toNodeId: entity.toNodeId,
+      toNodeType: entity.toNodeType,
       type: entity.type,
       strength: entity.strength,
       isBidirectional: entity.isBidirectional,

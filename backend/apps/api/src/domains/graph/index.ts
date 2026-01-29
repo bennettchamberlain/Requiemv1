@@ -5,13 +5,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { ConversationModule } from '@ci/domains/conversations';
 import { EventsModule } from '@ci/domains/events';
 import { MemoryModule } from '@ci/domains/memory';
+import { NotesModule } from '@ci/domains/notes';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphDeltaEntity } from './entities/GraphDeltaEntity';
 import { type Node, NodeEntity } from './entities/NodeEntity';
-import { RelationshipEntity } from './entities/RelationshipEntity';
+import { type Relationship, RelationshipEntity } from './entities/RelationshipEntity';
 import { GraphDeltaService } from './services/GraphDeltaService';
 import { GraphService } from './services/GraphService';
 import { NodeService } from './services/NodeService';
@@ -24,8 +26,10 @@ import { GraphDeltaEntitySubscriber } from './subscribers/GraphDeltaEntitySubscr
 @Module({
   imports: [
     TypeOrmModule.forFeature([NodeEntity, RelationshipEntity, GraphDeltaEntity]),
+    ConversationModule,
     EventsModule,
     MemoryModule,
+    NotesModule,
     UserModule,
   ],
   providers: [GraphService, NodeService, RelationshipService, GraphDeltaService, GraphDeltaEntitySubscriber],
@@ -34,7 +38,7 @@ import { GraphDeltaEntitySubscriber } from './subscribers/GraphDeltaEntitySubscr
 export class GraphModule {}
 
 export { GraphService, NodeService, RelationshipService, GraphDeltaService };
-export type { Node };
+export type { Node, Relationship };
 export type { GraphDelta, NodeType, ChangeType, ChangedField } from './entities/GraphDeltaEntity';
 export type { CreateGraphDeltaDto, FindDeltasOptions, UpdateDeltasSummaryDto } from './types';
 export { RelationshipType } from './types';

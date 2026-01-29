@@ -418,7 +418,9 @@ export class PromoteService {
           if (userNode.entityId !== entity.id) {
             this.relationshipService.create(context, {
               fromNodeId: userNode.entityId,
+              fromNodeType: 'person',
               toNodeId: entity.id,
+              toNodeType: 'person',
               type: relationshipType,
               startDate: startDate,
               endDate: endDate,
