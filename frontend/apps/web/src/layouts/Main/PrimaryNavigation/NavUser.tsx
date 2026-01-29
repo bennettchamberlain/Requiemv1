@@ -2,15 +2,27 @@ import { useMemo } from 'react';
 
 import { GlobalUID } from '@ci/common';
 import { Avatar, DropdownMenu } from '@ci/shadcn';
-import { ListTodo, LogOut, SunMoon, Settings2, Cable, Palette, ChartPie } from '@ci/shadcn/icons';
+import {
+  BadgeQuestionMark,
+  ListTodo,
+  LogOut,
+  SunMoon,
+  Settings2,
+  Cable,
+  Palette,
+  ChartPie,
+} from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { useFeatures } from '@/common/feature';
 import { useTheme, ColorPicker } from '@/components/ThemePicker';
 import { useAuth } from '@/hooks';
 
 export function NavUser() {
   const [{ user }, { logout }] = useAuth();
   const { themeState, setTheme } = useTheme();
+
+  const { isFeatureEnabled } = useFeatures();
 
   const currentUser = useMemo(
     () => ({
@@ -64,6 +76,15 @@ export function NavUser() {
               Knowledge
             </Link>
           </DropdownMenu.Item>
+
+          {isFeatureEnabled('new.insights.page') && (
+            <DropdownMenu.Item asChild>
+              <Link to="/prompts">
+                <BadgeQuestionMark />
+                Prompts
+              </Link>
+            </DropdownMenu.Item>
+          )}
         </DropdownMenu.Group>
 
         <DropdownMenu.Separator />
