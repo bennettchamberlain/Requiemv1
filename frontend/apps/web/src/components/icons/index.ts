@@ -6,6 +6,7 @@ export { ConceptIcon } from './ConceptIcon';
 export { ContentIcon } from './ContentIcon';
 export { EventIcon } from './EventIcon';
 export { FileIcon } from './FileIcon';
+export { InsightIcon } from './InsightIcon';
 export { ItemIcon } from './ItemIcon';
 export { NoteIcon } from './NoteIcon';
 export { PersonIcon } from './PersonIcon';
