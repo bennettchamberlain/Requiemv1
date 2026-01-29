@@ -42,7 +42,8 @@
     "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION",
     "pinned.demo.models": "ENABLE_PINNED_DEMO_MODELS",
     "enable.system.prompt": "ENABLE_SYSTEM_PROMPT",
-    "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB"
+    "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB",
+    "new.insights.page": "ENABLE_NEW_INSIGHTS_PAGE"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"
