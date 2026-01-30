@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FormData } from '@/components/Chat';
 
-import { useAuth } from './use-auth';
-import { useModel } from './use-model';
+import { useAuth } from './useAuth';
+import { useModel } from './useModel';
 
 type Opts = {
   threadId: string | null;

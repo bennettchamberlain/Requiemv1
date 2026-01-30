@@ -11,54 +11,21 @@ const SESSION_TOKEN_COOKIE = 'CI_sessionToken';
 
 const authChannel = new BroadcastChannel('auth');
 
-const USER_DATA_QUERY = `
-  query GetUserData {
-    me {
-      id
-      name
-      email
-      onboarded
-
-      entity {
-        id
-      }
-    }
-  }
-`;
-
 interface JwtPayload {
   sub: string;
   iat: number;
   exp: number;
 }
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  onboarded: boolean;
-  entity: {
-    id: string;
-  } | null;
-}
-
-interface UserFetchResponse {
-  data: {
-    me: User;
-  };
-}
-
 interface AuthResponse {
   sessionToken: string;
   accessToken: string;
-  user: User;
 }
 
 type ReturnValue = [
   {
     expired: boolean;
     authToken?: string | null;
-    user?: User | null;
     loading: boolean;
     error: unknown | null;
   },
@@ -72,11 +39,9 @@ type ReturnValue = [
 function useAuth(): ReturnValue {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState<User | null>(null);
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<unknown | null>(null);
   const [refreshError, setRefreshError] = useState<unknown | null>(null);
-  const [initialLoading, setInitialLoading] = useState<boolean>(true);
 
   const [accessToken, setAccessToken] = useState<string | null>(
     localStorage.getItem(ACCESS_TOKEN_KEY) ?? null,
@@ -134,12 +99,9 @@ function useAuth(): ReturnValue {
 
         updateAccessToken(data.accessToken);
         updateSessionToken(data.sessionToken);
-        setUser(data.user);
-        setInitialLoading(false);
 
         navigate('/');
       } catch (err: unknown) {
-        setUser(null);
         setLoginError(err);
       } finally {
         setLoginLoading(false);
@@ -151,12 +113,16 @@ function useAuth(): ReturnValue {
   const logout = useCallback(async () => {
     if (sessionToken) {
       try {
-        await fetchJson('/api/authenticate/logout', {
+        const response = await fetch('/api/authenticate/logout', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${sessionToken}`,
           },
         });
+
+        if (!response.ok) {
+          console.error('Logout request failed with status:', response.status);
+        }
       } catch (error) {
         console.error('Logout failed on server:', error);
       }
@@ -164,10 +130,9 @@ function useAuth(): ReturnValue {
 
     updateAccessToken(null);
     updateSessionToken(null);
-    setUser(null);
+
     setLoginLoading(false);
     setLoginError(null);
-    setInitialLoading(false);
 
     authChannel.postMessage('logout');
 
@@ -193,18 +158,15 @@ function useAuth(): ReturnValue {
 
         updateAccessToken(data.accessToken);
         updateSessionToken(data.sessionToken);
-        setUser(data.user);
-        setInitialLoading(false);
 
         navigate('/');
       } catch (err: unknown) {
-        setUser(null);
         setLoginError(err);
       } finally {
         setLoginLoading(false);
       }
     },
-    [setUser, updateAccessToken, updateSessionToken, navigate],
+    [updateAccessToken, updateSessionToken, navigate],
   );
 
   const refresh = useCallback(async () => {
@@ -219,38 +181,14 @@ function useAuth(): ReturnValue {
         },
       });
 
-      setUser(data.user);
       updateAccessToken(data.accessToken);
       updateSessionToken(data.sessionToken);
     } catch (err: unknown) {
       setRefreshError(err);
-
-      setUser(null);
       updateAccessToken(null);
       updateSessionToken(null);
     }
   }, [sessionToken, updateAccessToken, updateSessionToken]);
-
-  const fetchUser = useCallback(async () => {
-    try {
-      const response = await fetchJson<UserFetchResponse>('/api/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          query: USER_DATA_QUERY,
-        }),
-      });
-
-      setUser(response.data.me);
-    } catch {
-      if (sessionToken) {
-        await refresh();
-      }
-    }
-  }, [accessToken, sessionToken, refresh]);
 
   useAutoRefreshToken(accessToken, sessionToken, refresh);
 
@@ -259,7 +197,6 @@ function useAuth(): ReturnValue {
       if (event.data === 'logout') {
         updateAccessToken(null);
         updateSessionToken(null);
-        setUser(null);
       }
     };
 
@@ -270,24 +207,11 @@ function useAuth(): ReturnValue {
     };
   }, [updateAccessToken, updateSessionToken]);
 
-  useEffect(() => {
-    (async () => {
-      if (accessToken && !isExpired()) {
-        await fetchUser();
-      } else if (sessionToken) {
-        await refresh();
-      }
-
-      setInitialLoading(false);
-    })();
-  }, []);
-
   return [
     {
       expired: isExpired(),
       authToken: accessToken,
-      user,
-      loading: initialLoading || loginLoading,
+      loading: loginLoading,
       error: loginError ?? refreshError,
     },
     {

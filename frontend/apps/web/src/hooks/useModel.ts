@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createHookContext, fetchJson } from '@ci/common';
 
-import { useAuth } from './use-auth';
+import { useAuth } from './useAuth';
 
 const ACTIVE_MODEL_KEY = 'activeModel';
 
