@@ -63,11 +63,15 @@ export function useTagEntityService() {
         // Evict the `entities` field from the tags that were just added. This
         // ensures that when navigating to a Tag page, the entities list will be
         // refetched and include the newly tagged entity.
+        //
+        // Note that the mutation returns EntityTagType, but the TagPage queries
+        // TagType, but they share the same ID, so we construct the TagType
+        // cache key manually.
         for (const entity of data.tagEntities) {
           if ('tags' in entity && entity.tags) {
             for (const tag of entity.tags) {
               cache.evict({
-                id: cache.identify(tag),
+                id: `TagType:${tag.id}`,
                 fieldName: 'entities',
               });
             }
