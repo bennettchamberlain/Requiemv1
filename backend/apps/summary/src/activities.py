@@ -24,7 +24,9 @@ from .summary_functions import (
     generate_hourly_summary,
     generate_rollup_summary,
     generate_user_dossier,
+    generate_user_dossier,
     generate_insights,
+    generate_actions,
 )
 
 logger = structlog.get_logger()
@@ -597,6 +599,34 @@ async def generate_insights_activity(
 
 
 @activity.defn
+async def generate_actions_activity(
+    insights_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate proactive actions from aggregated context using LLM.
+
+    Returns actions data.
+    """
+    activity.logger.info("generating_actions")
+    activity.heartbeat("Calling LLM for actions generation")
+
+    # Create LLM config
+    llm_config = create_llm_config()
+
+    # Call pure function
+    actions_data = generate_actions(llm_config, insights_context)
+
+    activity.heartbeat("Actions generated")
+    activity.logger.info(
+        "actions_generated",
+        num_actions=len(actions_data.get("actions", [])),
+        tokens_used=actions_data.get("tokens_used", 0),
+    )
+
+    return actions_data
+
+
+@activity.defn
 async def store_insight_activity(
     user_id: str,
     insights_data: Dict[str, Any],
@@ -724,5 +754,6 @@ __all__ = [
     "get_last_insight_time_activity",
     "aggregate_insights_context_activity",
     "generate_insights_activity",
+    "generate_actions_activity",
     "store_insight_activity",
 ]

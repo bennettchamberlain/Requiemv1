@@ -277,6 +277,44 @@ def generate_insights(
     }
 
 
+def generate_actions(
+    llm_config: LLMConfig,
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate actions from context.
+
+    Pure function that uses LLM to generate actions.
+    """
+    # Get action agent
+    agent = llm_config.agents.get('actions')
+    if not agent:
+        raise ValueError("No agent configured for actions generation")
+
+    # Reuse insights prompt builder for now as it contains similar context
+    prompt = _build_insights_prompt(context)
+    prompt += "\nBased on this context, generate appropriate Action Cards (Conversation Starters or Planning Cycles)."
+
+    # Call LLM
+    result = agent.run_sync(
+        prompt,
+        model_settings={
+            "temperature": 0.8,
+            "max_tokens": settings.llm_max_tokens,
+        },
+    )
+
+    response = result.output
+
+    # Convert actions to dicts
+    actions_list = [item.model_dump() for item in response.actions]
+
+    return {
+        "actions": actions_list,
+        "tokens_used": result.usage().total_tokens if result.usage() else 0,
+    }
+
+
 def _build_insights_prompt(context: Dict[str, Any]) -> str:
     """Build prompt for insights generation from aggregated context."""
     parts = ["Generate proactive insights based on the following user context:\n"]
@@ -415,5 +453,6 @@ __all__ = [
     "generate_rollup_summary",
     "generate_user_dossier",
     "generate_insights",
+    "generate_actions",
     "generate_embedding",
 ]

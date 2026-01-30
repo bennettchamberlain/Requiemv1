@@ -20,7 +20,9 @@ from .summarizer import (
     SeasonalSummaryResponse,
     YearlySummaryResponse,
     UserDossierResponse,
+    UserDossierResponse,
     InsightsResponse,
+    ActionsResponse,
 )
 
 
@@ -147,6 +149,17 @@ def create_llm_config() -> LLMConfig:
                 "- Personal: Use knowledge about the user's relationships and preferences\n"
                 "- Non-obvious: Connect dots the user might not see themselves\n\n"
                 "Generate 3-5 high-quality insights. Prioritize quality over quantity."
+            ),
+        ),
+        'actions': Agent(
+            model,
+            output_type=ActionsResponse,
+            system_prompt=(
+                "You are an AI assistant that facilitates proactive engagement. "
+                "Based on the user's recent context, suggest 3 Conversation Starters or Planning Cycles. "
+                "Conversation Starters should be thought-provoking questions or topics based on recent events or interests. "
+                "Planning Cycles should be review prompts for projects, goals, or weekly reflections.\n"
+                "Ensure variety and relevance. Use a friendly and encouraging tone."
             ),
         ),
     }

@@ -261,6 +261,41 @@ async def _trigger_insights_workflow(
     return result
 
 
+    return result
+
+
+async def _trigger_actions_workflow(
+    user_id: str,
+    timezone: str,
+    lookback_hours: int,
+) -> Dict[str, Any]:
+    """
+    Trigger the ActionsGenerationWorkflow via Temporal.
+    """
+    from temporalio.client import Client
+    from .config import settings
+    from .priority import Priority, get_task_queue
+    from datetime import datetime
+
+    client = await Client.connect(
+        settings.temporal_address,
+        namespace=settings.temporal_namespace,
+    )
+
+    now = datetime.utcnow()
+    workflow_id = f"actions-{user_id}-{now.isoformat()}"
+
+    # Start the workflow and wait for result
+    result = await client.execute_workflow(
+        "actions-generation",
+        args=[user_id, timezone, lookback_hours, None],
+        id=workflow_id,
+        task_queue=get_task_queue(Priority.HIGH),
+    )
+
+    return result
+
+
 @app.post("/insights/generate")
 async def generate_insights(request: InsightsRequest) -> Dict[str, Any]:
     """
@@ -349,6 +384,48 @@ async def force_generate_insights(request: InsightsRequest) -> Dict[str, Any]:
 
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Insights generation failed: {str(exc)}") from exc
+
+
+@app.post("/actions/generate")
+async def generate_actions_endpoint(request: InsightsRequest) -> Dict[str, Any]:
+    """
+    Manually trigger proactive actions generation.
+
+    Generates Action Cards based on recent user context.
+    """
+    try:
+        user_id = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
+
+    # Reuse insight aggregation logic for context
+    # We can invoke the activity directly via a workflow, or just run the aggregation + generation here if we want synchronous response
+    # But sticking to workflow pattern is better for timeout handling.
+    # However, for "Action Cards" on a feed, the user might expect a quicker response?
+    # Insights/Summaries are background tasks.
+    # But let's follow the pattern and use a workflow.
+    # I need to create ActionsGenerationWorkflow in workflows.py first.
+    # Since I haven't done that yet, I'll return a placeholder or implement the workflow trigger.
+    # I will implement the workflow trigger, assuming I will create the workflow next.
+    
+    try:
+        # Trigger workflow
+        # Need to define a new workflow in workflows.py and a helper here
+        result = await _trigger_actions_workflow(
+            str(user_id),
+            request.timezone,
+            request.lookback_hours,
+        )
+
+        return {
+            "status": "success",
+            "message": f"Generated {result.get('num_actions', 0)} actions",
+            "actions": result.get("actions", []),
+            "tokens_used": result.get("tokens_used", 0),
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Actions generation failed: {str(exc)}") from exc
 
 
 # ============================================================================

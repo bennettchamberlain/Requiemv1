@@ -27,7 +27,9 @@ with workflow.unsafe.imports_passed_through():
         get_last_insight_time_activity,
         aggregate_insights_context_activity,
         generate_insights_activity,
+        generate_insights_activity,
         store_insight_activity,
+        generate_actions_activity,
     )
     from .llm_config import LLMConfig
 
@@ -684,6 +686,66 @@ class InsightsGenerationWorkflow:
         }
 
 
+# ============================================================================
+# Actions Generation Workflow
+# ============================================================================
+
+@workflow.defn(name="actions-generation")
+class ActionsGenerationWorkflow:
+    """
+    Workflow to generate proactive actions from user context.
+
+    Steps:
+    1. Check if there's new data (optional, skipping for now to always ensure fresh conversation starters)
+    2. Aggregate context (reuse insight context aggregation)
+    3. Generate actions using LLM
+    4. Return actions (API will handle storage/display for now, or we can store them)
+    """
+
+    @workflow.run
+    async def run(
+        self,
+        user_id: str,
+        timezone: str = "UTC",
+        lookback_hours: int = 72,
+        llm_config: Optional[LLMConfig] = None,
+    ) -> Dict[str, Any]:
+        """Execute actions generation workflow."""
+        workflow.logger.info(f"actions_generation_workflow_started user_id={user_id}")
+
+        from datetime import datetime, timedelta
+
+        now = workflow.now()
+        since = now - timedelta(hours=lookback_hours)
+
+        # Step 1: Aggregate context
+        # We reuse the insights context as it provides a good summary of recent changes and events
+        insights_context = await workflow.execute_activity(
+            aggregate_insights_context_activity,
+            args=[user_id, since.isoformat(), now.isoformat()],
+            **get_data_activity_options(),
+        )
+
+        # Step 2: Generate actions (LLM call)
+        actions_data = await workflow.execute_activity(
+            generate_actions_activity,
+            args=[insights_context],
+            **get_llm_activity_options(),
+        )
+
+        num_actions = len(actions_data.get("actions", []))
+
+        workflow.logger.info(
+            f"actions_generation_workflow_completed num_actions={num_actions}"
+        )
+
+        return {
+            "actions": actions_data.get("actions", []),
+            "num_actions": num_actions,
+            "tokens_used": actions_data.get("tokens_used", 0),
+        }
+
+
 __all__ = [
     "HourlySummaryWorkflow",
     "DailySummaryWorkflow",
@@ -692,5 +754,7 @@ __all__ = [
     "SeasonalSummaryWorkflow",
     "YearlySummaryWorkflow",
     "DossierRefreshWorkflow",
+    "DossierRefreshWorkflow",
     "InsightsGenerationWorkflow",
+    "ActionsGenerationWorkflow",
 ]
