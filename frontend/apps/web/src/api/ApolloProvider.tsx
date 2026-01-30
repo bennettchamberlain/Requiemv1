@@ -42,5 +42,11 @@ export function ApolloProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (authToken == null) {
+      client.clearStore();
+    }
+  }, [client, authToken]);
+
   return <BaseApolloProvider client={client}>{children}</BaseApolloProvider>;
 }
