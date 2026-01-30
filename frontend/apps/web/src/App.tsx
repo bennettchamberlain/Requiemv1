@@ -4,7 +4,7 @@ import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
-import { FeaturesProvider } from '@/common/feature';
+import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
@@ -43,6 +43,7 @@ const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const TagPage = lazy(() => import('@/pages/TagPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
+const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
@@ -67,6 +68,8 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
+  const { isFeatureEnabled } = useFeatures();
+
   return (
     <Routes>
       <Route
@@ -158,7 +161,8 @@ function AppRoutes() {
           path="/insights"
           element={
             <ProtectedRoute>
-              <InsightsPage />
+              {isFeatureEnabled('new.insights.page') && <InsightsPage />}
+              {!isFeatureEnabled('new.insights.page') && <PromptsPage />}
             </ProtectedRoute>
           }
         />
@@ -352,6 +356,17 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
+        {isFeatureEnabled('new.insights.page') && (
+          <Route
+            path="/prompts"
+            element={
+              <ProtectedRoute>
+                <PromptsPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
       </Route>
 
       {/* Fallback */}
