@@ -68,7 +68,11 @@ export function OAuthCallbackPage() {
         if (response.ok) {
           toast.success('Created connection');
         } else {
-          toast.error('Failed to create connection');
+          if (response.status === 409) {
+            toast.error('A connection to that account already exists');
+          } else {
+            toast.error('Failed to create connection');
+          }
         }
       } catch (err: unknown) {
         toast.error(String(err));

@@ -13,6 +13,7 @@ export interface CreateConnectionDto {
   clientsecret?: string;
   schedule?: string;
   endpoints?: string[];
+  externalId?: string;
 }
 
 export interface UpdateConnectionDto {
@@ -25,6 +26,7 @@ export interface UpdateConnectionDto {
   syncState?: Record<string, unknown> | null;
   endpoints?: string[];
   needsReauth?: boolean;
+  externalId?: string;
 }
 
 export interface connectProviderDto {

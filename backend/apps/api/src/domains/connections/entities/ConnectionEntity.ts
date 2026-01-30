@@ -20,7 +20,7 @@ export class ConnectionEntity {
   @Column({ type: 'text', nullable: true })
   name!: string | null;
 
-  @Column({ type: 'boolean', default: true })
+  @Column({ type: 'boolean', default: false })
   active!: boolean;
 
   @Column({ type: 'text', nullable: true })
@@ -58,6 +58,9 @@ export class ConnectionEntity {
   @JoinColumn({ name: 'provider_id' })
   provider?: ProviderEntity;
 
+  @Column({ type: 'text', nullable: true, name: 'external_id' })
+  externalId!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -80,6 +83,7 @@ export class ConnectionEntity {
       provider: entity.provider ? ProviderEntity.toEgressType(entity.provider) : undefined,
       activeEndpoints: entity.activeEndpoints,
       needsReauth: entity.needsReauth,
+      externalId: entity.externalId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

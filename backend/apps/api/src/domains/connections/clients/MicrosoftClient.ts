@@ -147,6 +147,32 @@ export class MicrosoftClient extends BaseOAuth2Client {
     return clientSecret;
   }
 
+  getAccountIdentifier(connection: Connection): Promise<string> {
+    return new Promise((resolve) =>
+      this.fetchProfile(connection).then((result) => {
+        console.log('Microsoft profile', result);
+        resolve(result.id || '');
+      }),
+    );
+  }
+
+  /**
+   * Get user's basic profile information
+   */
+  private async fetchProfile(connection: Connection): Promise<{ [key: string]: string }> {
+    try {
+      const endpoint = `/v1.0/me`;
+
+      return (await this.request(connection, endpoint)) as Record<string, string>;
+    } catch (error) {
+      this.logger.error('Failed to fetch Facebook profile', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      throw error;
+    }
+  }
+
   async sync(connection: Connection): Promise<SyncResponse[]> {
     const responses: SyncResponse[] = [];
 
