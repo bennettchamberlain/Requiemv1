@@ -116,18 +116,26 @@ class InsightsResponse(BaseModel):
 
 
 class ActionItem(BaseModel):
-    """A proactive action suggestion."""
-    title: str = Field(description="Short, action-oriented title")
-    text: str = Field(description="Detailed description or prompt for the user")
-    priority: int = Field(description="Priority level (1-10)")
-    tags: List[str] = Field(default_factory=list, description="Relevant tags")
-    type: str = Field(description="Type of action: 'conversation' or 'planning'")
-    payload: Optional[Dict[str, Any]] = Field(default=None, description="Additional data for the action")
+    """A proactive action card suggestion.
+
+    Two main types:
+    - 'conversation_starter': A topic or question to spark interesting discussion
+    - 'time_suggestion': A proactive suggestion for what the user should do next
+    """
+    title: str = Field(description="Short, engaging title (max 60 chars)")
+    text: str = Field(description="The conversation prompt or suggestion details (1-2 sentences)")
+    priority: int = Field(description="Priority/relevance level 1-10, where 10 is most relevant right now")
+    tags: List[str] = Field(default_factory=list, description="Relevant topic tags")
+    type: str = Field(description="Either 'conversation_starter' or 'time_suggestion'")
+    context: Optional[str] = Field(default=None, description="Why this is relevant now (based on recent activity)")
+    related_person: Optional[str] = Field(default=None, description="Name of a person this relates to, if any")
 
 
 class ActionsResponse(BaseModel):
-    """Structured response for action generation."""
-    actions: List[ActionItem] = Field(description="List of checks/actions for the user")
+    """Structured response for action card generation."""
+    actions: List[ActionItem] = Field(
+        description="3-5 action cards: mix of conversation starters and time suggestions"
+    )
 
 
 # ============================================================================

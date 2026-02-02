@@ -27,9 +27,11 @@ with workflow.unsafe.imports_passed_through():
         get_last_insight_time_activity,
         aggregate_insights_context_activity,
         generate_insights_activity,
-        generate_insights_activity,
         store_insight_activity,
+        # Action activities
+        aggregate_action_context_activity,
         generate_actions_activity,
+        store_action_activity,
     )
     from .llm_config import LLMConfig
 
@@ -693,13 +695,12 @@ class InsightsGenerationWorkflow:
 @workflow.defn(name="actions-generation")
 class ActionsGenerationWorkflow:
     """
-    Workflow to generate proactive actions from user context.
+    Workflow to generate proactive action cards from user context.
 
     Steps:
-    1. Check if there's new data (optional, skipping for now to always ensure fresh conversation starters)
-    2. Aggregate context (reuse insight context aggregation)
-    3. Generate actions using LLM
-    4. Return actions (API will handle storage/display for now, or we can store them)
+    1. Aggregate action context (summaries, insights, events, key people)
+    2. Generate action cards using LLM (conversation starters + time suggestions)
+    3. Store actions in database
     """
 
     @workflow.run
@@ -707,40 +708,70 @@ class ActionsGenerationWorkflow:
         self,
         user_id: str,
         timezone: str = "UTC",
-        lookback_hours: int = 72,
+        lookback_days: int = 7,
         llm_config: Optional[LLMConfig] = None,
     ) -> Dict[str, Any]:
         """Execute actions generation workflow."""
         workflow.logger.info(f"actions_generation_workflow_started user_id={user_id}")
 
-        from datetime import datetime, timedelta
-
-        now = workflow.now()
-        since = now - timedelta(hours=lookback_hours)
-
-        # Step 1: Aggregate context
-        # We reuse the insights context as it provides a good summary of recent changes and events
-        insights_context = await workflow.execute_activity(
-            aggregate_insights_context_activity,
-            args=[user_id, since.isoformat(), now.isoformat()],
+        # Step 1: Aggregate action-specific context
+        # This collects summaries, insights, events, and key people
+        # rather than raw data like graph deltas
+        action_context = await workflow.execute_activity(
+            aggregate_action_context_activity,
+            args=[user_id, lookback_days],
             **get_data_activity_options(),
         )
 
-        # Step 2: Generate actions (LLM call)
+        # Check if we have enough context to generate meaningful actions
+        total_context = (
+            len(action_context.get("recent_summaries", [])) +
+            len(action_context.get("recent_insights", [])) +
+            len(action_context.get("upcoming_events", [])) +
+            len(action_context.get("key_people", []))
+        )
+
+        if total_context < 2:
+            workflow.logger.info(f"insufficient_context_for_actions total_items={total_context}")
+            return {
+                "skipped": True,
+                "reason": "insufficient_context",
+                "user_id": user_id,
+                "context_items": total_context,
+            }
+
+        # Step 2: Generate action cards (LLM call)
         actions_data = await workflow.execute_activity(
             generate_actions_activity,
-            args=[insights_context],
+            args=[action_context],
             **get_llm_activity_options(),
         )
 
         num_actions = len(actions_data.get("actions", []))
 
+        if num_actions == 0:
+            workflow.logger.info("no_actions_generated")
+            return {
+                "skipped": True,
+                "reason": "no_actions_generated",
+                "user_id": user_id,
+            }
+
+        # Step 3: Store actions in database
+        action_ids = await workflow.execute_activity(
+            store_action_activity,
+            args=[user_id, actions_data],
+            **get_data_activity_options(),
+        )
+
         workflow.logger.info(
-            f"actions_generation_workflow_completed num_actions={num_actions}"
+            f"actions_generation_workflow_completed num_actions={num_actions} action_ids={action_ids}"
         )
 
         return {
-            "actions": actions_data.get("actions", []),
+            "skipped": False,
+            "action_ids": action_ids,
+            "user_id": user_id,
             "num_actions": num_actions,
             "tokens_used": actions_data.get("tokens_used", 0),
         }

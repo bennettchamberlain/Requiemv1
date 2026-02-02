@@ -282,24 +282,24 @@ def generate_actions(
     context: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Generate actions from context.
+    Generate action cards from aggregated context.
 
-    Pure function that uses LLM to generate actions.
+    Pure function that uses LLM to generate conversation starters
+    and time management suggestions.
     """
     # Get action agent
     agent = llm_config.agents.get('actions')
     if not agent:
         raise ValueError("No agent configured for actions generation")
 
-    # Reuse insights prompt builder for now as it contains similar context
-    prompt = _build_insights_prompt(context)
-    prompt += "\nBased on this context, generate appropriate Action Cards (Conversation Starters or Planning Cycles)."
+    # Build action-specific prompt
+    prompt = _build_actions_prompt(context)
 
-    # Call LLM
+    # Call LLM with slightly higher temperature for creativity
     result = agent.run_sync(
         prompt,
         model_settings={
-            "temperature": 0.8,
+            "temperature": 0.85,
             "max_tokens": settings.llm_max_tokens,
         },
     )
@@ -313,6 +313,91 @@ def generate_actions(
         "actions": actions_list,
         "tokens_used": result.usage().total_tokens if result.usage() else 0,
     }
+
+
+def _build_actions_prompt(context: Dict[str, Any]) -> str:
+    """Build prompt for action card generation from aggregated context."""
+    parts = ["Based on the following context about the user, generate helpful action cards:\n"]
+
+    # User dossier (personality/preferences)
+    dossier = context.get("user_dossier")
+    if dossier:
+        parts.append("## USER PROFILE")
+        parts.append(f"Summary: {dossier.get('summary', 'N/A')}")
+        if dossier.get("interests"):
+            interests = dossier["interests"]
+            if isinstance(interests, list):
+                parts.append(f"Interests: {', '.join(interests[:5])}")
+        if dossier.get("communication_style"):
+            parts.append(f"Communication style: {dossier['communication_style']}")
+        parts.append("")
+
+    # Recent summaries - what's been happening in their life
+    summaries = context.get("recent_summaries", [])
+    if summaries:
+        parts.append("## RECENT ACTIVITY SUMMARIES")
+        for s in summaries[:5]:  # Limit to most recent
+            period = s.get("period_type", "unknown")
+            text = s.get("summary_text", "")
+            if text:
+                parts.append(f"[{period.upper()}] {text[:300]}...")
+        parts.append("")
+
+    # Recent insights - already identified interesting observations
+    insights = context.get("recent_insights", [])
+    if insights:
+        parts.append("## RECENT INSIGHTS (already surfaced to user)")
+        for i in insights[:5]:
+            title = i.get("title", "")
+            text = i.get("insight_text", "")
+            if title or text:
+                parts.append(f"- {title}: {text[:150]}...")
+        parts.append("")
+
+    # Upcoming events - time-sensitive context
+    events = context.get("upcoming_events", [])
+    if events:
+        parts.append("## UPCOMING EVENTS (next 7 days)")
+        for e in events[:5]:
+            title = e.get("title", "Untitled")
+            start = e.get("start_time", "")
+            location = e.get("location", "")
+            event_info = f"- {title}"
+            if start:
+                event_info += f" ({start})"
+            if location:
+                event_info += f" at {location}"
+            parts.append(event_info)
+        parts.append("")
+
+    # Key people - for conversation suggestions
+    people = context.get("key_people", [])
+    if people:
+        parts.append("## KEY PEOPLE IN USER'S LIFE")
+        for p in people[:5]:
+            name = p.get("name", "Unknown")
+            rel_type = p.get("relationship_type", "")
+            desc = p.get("description", "")
+            person_info = f"- {name}"
+            if rel_type:
+                person_info += f" ({rel_type})"
+            if desc:
+                person_info += f": {desc[:100]}"
+            parts.append(person_info)
+        parts.append("")
+
+    # Instructions
+    parts.append("## INSTRUCTIONS")
+    parts.append("Generate 3-5 action cards that are:")
+    parts.append("1. Specific to THIS user's context (not generic)")
+    parts.append("2. Actionable RIGHT NOW")
+    parts.append("3. A mix of conversation starters and time suggestions")
+    parts.append("4. Reference specific people, events, or topics from above")
+    parts.append("")
+    parts.append("For conversation starters: suggest specific topics or questions to discuss with specific people.")
+    parts.append("For time suggestions: suggest what the user should do next based on their schedule and recent activity.")
+
+    return "\n".join(parts)
 
 
 def _build_insights_prompt(context: Dict[str, Any]) -> str:

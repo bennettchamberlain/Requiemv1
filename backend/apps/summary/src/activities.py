@@ -19,6 +19,7 @@ from .config import settings
 from .data_aggregator import aggregator
 from .database import db
 from .insight_aggregator import insight_aggregator
+from .action_aggregator import action_aggregator
 from .llm_config import LLMConfig, create_llm_config
 from .summary_functions import (
     generate_hourly_summary,
@@ -599,13 +600,45 @@ async def generate_insights_activity(
 
 
 @activity.defn
-async def generate_actions_activity(
-    insights_context: Dict[str, Any],
+async def aggregate_action_context_activity(
+    user_id: str,
+    lookback_days: int = 7,
 ) -> Dict[str, Any]:
     """
-    Generate proactive actions from aggregated context using LLM.
+    Aggregate context needed for action card generation.
 
-    Returns actions data.
+    Collects summaries, insights, events, and key people rather than
+    raw data like graph deltas. This produces higher-level context
+    for conversation starters and time suggestions.
+    """
+    activity.logger.info("aggregating_action_context", user_id=user_id, lookback_days=lookback_days)
+    activity.heartbeat("Aggregating action context")
+
+    user_uuid = UUID(user_id)
+
+    context = action_aggregator.aggregate_action_context(user_uuid, lookback_days)
+
+    activity.heartbeat("Action context aggregated")
+    activity.logger.info(
+        "action_context_aggregated",
+        user_id=user_id,
+        recent_summaries=len(context.get("recent_summaries", [])),
+        recent_insights=len(context.get("recent_insights", [])),
+        upcoming_events=len(context.get("upcoming_events", [])),
+        key_people=len(context.get("key_people", [])),
+    )
+
+    return context
+
+
+@activity.defn
+async def generate_actions_activity(
+    action_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate action cards from aggregated context using LLM.
+
+    Returns conversation starters and time suggestions.
     """
     activity.logger.info("generating_actions")
     activity.heartbeat("Calling LLM for actions generation")
@@ -614,7 +647,7 @@ async def generate_actions_activity(
     llm_config = create_llm_config()
 
     # Call pure function
-    actions_data = generate_actions(llm_config, insights_context)
+    actions_data = generate_actions(llm_config, action_context)
 
     activity.heartbeat("Actions generated")
     activity.logger.info(
@@ -624,6 +657,82 @@ async def generate_actions_activity(
     )
 
     return actions_data
+
+
+@activity.defn
+async def store_action_activity(
+    user_id: str,
+    actions_data: Dict[str, Any],
+) -> List[str]:
+    """
+    Store generated actions in the ci.actions table.
+
+    Each action is stored as a separate row with metadata tracking 'seen' status,
+    action type, and any additional payload.
+
+    Returns list of action_ids for all stored actions.
+    """
+    actions_list = actions_data.get("actions", [])
+    num_actions = len(actions_list)
+
+    activity.logger.info("storing_actions", num_actions=num_actions)
+    activity.heartbeat("Storing actions to database")
+
+    if not actions_list:
+        activity.logger.info("no_actions_to_store")
+        return []
+
+    user_uuid = UUID(user_id)
+
+    # Prepare all inserts for transaction
+    writes: List[tuple[str, Dict[str, Any]]] = []
+    action_ids: List[str] = []
+
+    insert_query = """
+        INSERT INTO ci.actions (
+            id, title, text, priority, user_id, metadata, created_at, updated_at
+        ) VALUES (
+            :action_id, :title, :text, :priority, :user_id,
+            CAST(:metadata AS jsonb), NOW(), NOW()
+        )
+    """
+
+    for action in actions_list:
+        action_id = str(uuid4())
+        action_ids.append(action_id)
+
+        # Build metadata with seen=False, type, context, and related_person
+        metadata = {
+            "seen": False,
+            "type": action.get("type", "general"),
+            "context": action.get("context"),
+            "related_person": action.get("related_person"),
+            "tags": action.get("tags", []),
+        }
+
+        params = {
+            "action_id": action_id,
+            "title": action.get("title", ""),
+            "text": action.get("text", ""),
+            "priority": action.get("priority", 5),
+            "user_id": str(user_uuid),
+            "metadata": json.dumps(metadata),
+        }
+
+        writes.append((insert_query, params))
+
+    # Execute all inserts in a single transaction
+    activity.heartbeat(f"Inserting {num_actions} actions in transaction")
+    db.execute_writes_in_transaction(writes)
+
+    activity.heartbeat("Actions stored")
+    activity.logger.info(
+        "actions_stored",
+        num_actions=num_actions,
+        action_ids=action_ids,
+    )
+
+    return action_ids
 
 
 @activity.defn
@@ -754,6 +863,9 @@ __all__ = [
     "get_last_insight_time_activity",
     "aggregate_insights_context_activity",
     "generate_insights_activity",
-    "generate_actions_activity",
     "store_insight_activity",
+    # Action activities
+    "aggregate_action_context_activity",
+    "generate_actions_activity",
+    "store_action_activity",
 ]
