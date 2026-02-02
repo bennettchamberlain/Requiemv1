@@ -151,7 +151,7 @@ services:
     depends_on:
       - temporal
     restart: unless-stopped
-    profiles: [ "tooling" ]
+    profiles: [ "local","tooling" ]
 
 volumes:
   minio-data:

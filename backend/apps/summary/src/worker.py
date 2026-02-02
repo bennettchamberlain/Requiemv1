@@ -26,6 +26,7 @@ from .workflows import (
     YearlySummaryWorkflow,
     DossierRefreshWorkflow,
     InsightsGenerationWorkflow,
+    ActionsGenerationWorkflow,
 )
 
 # Import system workflows
@@ -56,6 +57,10 @@ from .activities import (
     aggregate_insights_context_activity,
     generate_insights_activity,
     store_insight_activity,
+    # Action activities
+    aggregate_action_context_activity,
+    generate_actions_activity,
+    store_action_activity,
 )
 
 # Configure structured logging
@@ -131,6 +136,7 @@ async def run_worker():
             YearlySummaryWorkflow,
             DossierRefreshWorkflow,
             InsightsGenerationWorkflow,
+            ActionsGenerationWorkflow,
             # System workflows (process all users)
             SystemHourlySummariesWorkflow,
             SystemDailySummariesWorkflow,
@@ -157,6 +163,10 @@ async def run_worker():
             aggregate_insights_context_activity,
             generate_insights_activity,
             store_insight_activity,
+            # Action activities
+            aggregate_action_context_activity,
+            generate_actions_activity,
+            store_action_activity,
         ]
 
         # Create workers for each priority level
