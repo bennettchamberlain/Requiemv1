@@ -174,6 +174,35 @@ export type Connection = {
   totalCount: Scalars['Int']['output'];
 };
 
+export type ConnectionConnection = Connection & {
+  __typename?: 'ConnectionConnection';
+  edges: Array<ConnectionEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type ConnectionEdge = Edge & {
+  __typename?: 'ConnectionEdge';
+  cursor: Scalars['String']['output'];
+  node: ConnectionType;
+};
+
+export type ConnectionType = Node & {
+  __typename?: 'ConnectionType';
+  accessToken?: Maybe<Scalars['String']['output']>;
+  active: Scalars['Boolean']['output'];
+  activeEndpoints: Array<Scalars['String']['output']>;
+  externalId?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  needsReauth: Scalars['Boolean']['output'];
+  providerId: Scalars['ID']['output'];
+  refreshToken?: Maybe<Scalars['String']['output']>;
+  schedule?: Maybe<Scalars['String']['output']>;
+  syncState?: Maybe<Scalars['JSON']['output']>;
+  tokenExpiry?: Maybe<Scalars['DateTime']['output']>;
+};
+
 export type ContentConnection = Connection & {
   __typename?: 'ContentConnection';
   edges: Array<ContentEdge>;
@@ -215,6 +244,24 @@ export type CreateConceptInput = {
 export type CreateConceptPayload = {
   __typename?: 'CreateConceptPayload';
   concept?: Maybe<ConceptType>;
+  success: Scalars['Boolean']['output'];
+};
+
+export type CreateConnectionInput = {
+  accessToken?: InputMaybe<Scalars['String']['input']>;
+  activeEndpoints: Array<Scalars['String']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  needsReauth?: InputMaybe<Scalars['Boolean']['input']>;
+  providerId: Scalars['ID']['input'];
+  refreshToken?: InputMaybe<Scalars['String']['input']>;
+  schedule?: InputMaybe<Scalars['String']['input']>;
+  syncState?: InputMaybe<Scalars['JSON']['input']>;
+  tokenExpiry?: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+export type CreateConnectionPayload = {
+  __typename?: 'CreateConnectionPayload';
+  connection?: Maybe<ConnectionType>;
   success: Scalars['Boolean']['output'];
 };
 
@@ -543,6 +590,7 @@ export type Mutation = {
   __typename?: 'Mutation';
   createAnswer: AnswerType;
   createConcept: CreateConceptPayload;
+  createConnection: CreateConnectionPayload;
   createContent: ContentType;
   createEvent: EventType;
   createItem: CreateItemPayload;
@@ -553,6 +601,7 @@ export type Mutation = {
   createRelationship: CreateRelationshipPayload;
   createSavedSearch: CreateSavedSearchPayload;
   deleteConcept: DeleteByIdPayload;
+  deleteConnection: DeleteByIdPayload;
   deleteItem: DeleteByIdPayload;
   deleteNote: DeleteByIdPayload;
   deletePerson: DeleteByIdPayload;
@@ -567,6 +616,7 @@ export type Mutation = {
   untagEntities: Array<TaggableEntityType>;
   updateAnswer?: Maybe<AnswerType>;
   updateConcept: UpdateConceptPayload;
+  updateConnection: UpdateConnectionPayload;
   updateContent?: Maybe<ContentType>;
   updateEvent?: Maybe<EventType>;
   updateItem: UpdateItemPayload;
@@ -586,6 +636,11 @@ export type MutationCreateAnswerArgs = {
 
 export type MutationCreateConceptArgs = {
   input: CreateConceptInput;
+};
+
+
+export type MutationCreateConnectionArgs = {
+  input: CreateConnectionInput;
 };
 
 
@@ -635,6 +690,11 @@ export type MutationCreateSavedSearchArgs = {
 
 
 export type MutationDeleteConceptArgs = {
+  input: DeleteByIdInput;
+};
+
+
+export type MutationDeleteConnectionArgs = {
   input: DeleteByIdInput;
 };
 
@@ -706,6 +766,11 @@ export type MutationUpdateAnswerArgs = {
 
 export type MutationUpdateConceptArgs = {
   input: UpdateConceptInput;
+};
+
+
+export type MutationUpdateConnectionArgs = {
+  input: UpdateConnectionInput;
 };
 
 
@@ -897,6 +962,8 @@ export type Query = {
   communications: CommunicationConnection;
   concept?: Maybe<ConceptType>;
   concepts: ConceptConnection;
+  connection?: Maybe<ConnectionType>;
+  connections: ConnectionConnection;
   content?: Maybe<ContentType>;
   contents: ContentConnection;
   event?: Maybe<EventType>;
@@ -991,6 +1058,19 @@ export type QueryConceptArgs = {
 
 
 export type QueryConceptsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryConnectionArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryConnectionsArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
@@ -1438,6 +1518,26 @@ export type UpdateConceptInput = {
 export type UpdateConceptPayload = {
   __typename?: 'UpdateConceptPayload';
   concept?: Maybe<ConceptType>;
+  success: Scalars['Boolean']['output'];
+};
+
+export type UpdateConnectionInput = {
+  accessToken?: InputMaybe<Scalars['String']['input']>;
+  active: Scalars['Boolean']['input'];
+  activeEndpoints: Array<Scalars['String']['input']>;
+  externalId?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  name?: InputMaybe<Scalars['String']['input']>;
+  needsReauth?: InputMaybe<Scalars['Boolean']['input']>;
+  refreshToken?: InputMaybe<Scalars['String']['input']>;
+  schedule?: InputMaybe<Scalars['String']['input']>;
+  syncState?: InputMaybe<Scalars['JSON']['input']>;
+  tokenExpiry?: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+export type UpdateConnectionPayload = {
+  __typename?: 'UpdateConnectionPayload';
+  connection?: Maybe<ConnectionType>;
   success: Scalars['Boolean']['output'];
 };
 
