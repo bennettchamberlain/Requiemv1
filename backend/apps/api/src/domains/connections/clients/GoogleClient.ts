@@ -35,7 +35,7 @@ export class GoogleClient extends BaseOAuth2Client {
     Drive: ['drive.readonly'],
     YouTube: ['youtube'],
     Contacts: ['contacts'],
-    default: [],
+    default: ['userinfo.profile'],
   };
 
   protected readonly scopeNames = [
@@ -55,7 +55,9 @@ export class GoogleClient extends BaseOAuth2Client {
   };
 
   protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
-    const scopesSet = new Set<string>(this.endpointScopeMap['default']);
+    const scopesSet = new Set<string>(
+      this.endpointScopeMap['default'].map((scope) => `https://www.googleapis.com/auth/${scope}`),
+    );
 
     activeEndpoints.forEach((endpoint) => {
       const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
@@ -91,7 +93,31 @@ export class GoogleClient extends BaseOAuth2Client {
     return clientSecret;
   }
 
-  // Removed People API helper per requirement; use full URLs inline
+  getAccountIdentifier(connection: Connection): Promise<string> {
+    return new Promise((resolve) =>
+      this.fetchProfile(connection).then((result) => {
+        console.log('Google profile', result);
+        resolve(result.id || '');
+      }),
+    );
+  }
+
+  /**
+   * Get user's basic profile information
+   */
+  private async fetchProfile(connection: Connection): Promise<{ [key: string]: string }> {
+    try {
+      const endpoint = `/oauth2/v1/userinfo?alt=json`;
+
+      return (await this.request(connection, endpoint)) as Record<string, string>;
+    } catch (error) {
+      this.logger.error('Failed to fetch Google profile', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      return {};
+    }
+  }
 
   /**
    * Generic handler for processing API sync results
@@ -531,15 +557,7 @@ export class GoogleClient extends BaseOAuth2Client {
         throw new Error('Connection not authenticated');
       }
 
-      const response = (await fetch(endpoint, {
-        headers: { Authorization: `Bearer ${connection.accessToken}` },
-      }).then((r) => {
-        if (!r.ok) {
-          throw new Error(`People API request failed: ${r.status} ${r.statusText}`);
-        }
-
-        return r.json();
-      })) as Record<string, unknown>;
+      const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       lastResponse = response;
       const connections = (response.connections as unknown[]) || [];
 
@@ -625,15 +643,8 @@ export class GoogleClient extends BaseOAuth2Client {
         throw new Error('Connection not authenticated');
       }
 
-      const response = (await fetch(endpoint, {
-        headers: { Authorization: `Bearer ${connection.accessToken}` },
-      }).then((r) => {
-        if (!r.ok) {
-          throw new Error(`People API request failed: ${r.status} ${r.statusText}`);
-        }
+      const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
 
-        return r.json();
-      })) as Record<string, unknown>;
       const connections = (response.connections as unknown[]) || [];
       nextPageToken = response.nextPageToken as string | undefined;
       lastResponse = response;
@@ -700,8 +711,8 @@ export class GoogleClient extends BaseOAuth2Client {
 
         const endpoint = `/youtube/v3/playlistItems?${params.toString()}`;
 
-        const resp = (await this.request(connection, endpoint)) as Record<string, unknown>;
-        const pageItems = (resp.items as Array<Record<string, unknown>>) || [];
+        const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
+        const pageItems = (response.items as Array<Record<string, unknown>>) || [];
         if (!topItemId && pageItems.length > 0) {
           topItemId = String(pageItems[0].id || '');
         }
@@ -720,7 +731,7 @@ export class GoogleClient extends BaseOAuth2Client {
           break;
         }
 
-        pageToken = resp.nextPageToken as string | undefined;
+        pageToken = response.nextPageToken as string | undefined;
       } while (pageToken);
 
       return { items, newTopItemId: topItemId };
@@ -745,8 +756,8 @@ export class GoogleClient extends BaseOAuth2Client {
 
         const endpoint = `/youtube/v3/playlists?${params.toString()}`;
 
-        const resp = (await this.request(connection, endpoint)) as Record<string, unknown>;
-        const pageItems = (resp.items as Array<Record<string, unknown>>) || [];
+        const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
+        const pageItems = (response.items as Array<Record<string, unknown>>) || [];
 
         if (!newestId && pageItems.length > 0) {
           newestId = String(pageItems[0].id || '');
@@ -766,7 +777,7 @@ export class GoogleClient extends BaseOAuth2Client {
           break;
         }
 
-        pageToken = resp.nextPageToken as string | undefined;
+        pageToken = response.nextPageToken as string | undefined;
       } while (pageToken);
 
       if (newestId) {
@@ -820,18 +831,11 @@ export class GoogleClient extends BaseOAuth2Client {
           params.set('pageToken', pageToken);
         }
 
-        const url = `https://www.googleapis.com/youtube/v3/subscriptions?${params.toString()}`;
-        const resp = (await fetch(url, {
-          headers: { Authorization: `Bearer ${connection.accessToken}` },
-        }).then((r) => {
-          if (!r.ok) {
-            throw new Error(`YouTube subscriptions API failed: ${r.status} ${r.statusText}`);
-          }
+        const endpoint = `/youtube/v3/subscriptions?${params.toString()}`;
 
-          return r.json();
-        })) as Record<string, unknown>;
+        const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
 
-        const items = (resp.items as unknown[]) || [];
+        const items = (response.items as unknown[]) || [];
         for (const item of items) {
           const itemObj = item as Record<string, unknown>;
           const itemId = itemObj.id as string;
@@ -847,7 +851,7 @@ export class GoogleClient extends BaseOAuth2Client {
           subscriptions.push(item);
         }
 
-        pageToken = resp.nextPageToken as string | undefined;
+        pageToken = response.nextPageToken as string | undefined;
       } while (pageToken && subscriptions.length < 500);
 
       if (newestId) {
@@ -882,18 +886,10 @@ export class GoogleClient extends BaseOAuth2Client {
           params.set('pageToken', pageToken);
         }
 
-        const url = `https://www.googleapis.com/youtube/v3/activities?${params.toString()}`;
-        const resp = (await fetch(url, {
-          headers: { Authorization: `Bearer ${connection.accessToken}` },
-        }).then((r) => {
-          if (!r.ok) {
-            throw new Error(`YouTube activities API failed: ${r.status} ${r.statusText}`);
-          }
+        const endpoint = `/youtube/v3/activities?${params.toString()}`;
+        const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
 
-          return r.json();
-        })) as Record<string, unknown>;
-
-        const items = (resp.items as unknown[]) || [];
+        const items = (response.items as unknown[]) || [];
         for (const item of items) {
           const itemObj = item as Record<string, unknown>;
           const itemId = itemObj.id as string;
@@ -909,7 +905,7 @@ export class GoogleClient extends BaseOAuth2Client {
           activities.push(item);
         }
 
-        pageToken = resp.nextPageToken as string | undefined;
+        pageToken = response.nextPageToken as string | undefined;
       } while (pageToken && activities.length < 500);
 
       if (newestId) {

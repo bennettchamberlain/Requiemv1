@@ -191,4 +191,22 @@ export class ConnectionService {
       lastSyncedAt: entity.syncState?.lastSyncedAt ? new Date(entity.syncState.lastSyncedAt as string) : null,
     }));
   }
+
+  async search(context: ServiceContext, filters: Partial<Connection>): Promise<Connection[]> {
+    const whereClause: Record<string, unknown> = {
+      ...filters,
+      ...(context.userId !== SYSTEM_USER && {
+        user: {
+          id: context.userId,
+        },
+      }),
+    };
+
+    const entities = await this.connectionRepository.find({
+      where: whereClause,
+      relations: ['provider'],
+    });
+
+    return entities.map((entity) => ConnectionEntity.toEgressType(entity));
+  }
 }

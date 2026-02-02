@@ -170,12 +170,12 @@ export class OneDrivePromotionService {
     const existingEvents = await this.eventService.search(
       { userId },
       {
-        start_time: new Date(fileDetails.startTime),
+        startTime: new Date(fileDetails.startTime),
         title: 'Edited ' + fileDetails.content?.name,
         category: 'document_edit',
-        source_system: 'Microsoft OneDrive',
-        event_type: 'work',
-        source_type: 'ETL',
+        sourceSystem: 'Microsoft OneDrive',
+        eventType: 'work',
+        sourceType: 'ETL',
       },
     );
 

@@ -40,6 +40,7 @@ export interface Connection {
   readonly clientid: string | null;
   readonly clientkey: string | null;
   readonly clientsecret: string | null;
+  readonly externalId: string | null;
   readonly schedule: string | null;
   readonly accessToken: string | null;
   readonly refreshToken: string | null;
@@ -386,6 +387,7 @@ export function ConnectionsPage() {
                 <Table.Row>
                   <Table.Head>Name</Table.Head>
                   <Table.Head>Provider</Table.Head>
+                  <Table.Head>External ID</Table.Head>
                   <Table.Head>Schedule</Table.Head>
                   <Table.Head>Actions</Table.Head>
                 </Table.Row>
@@ -402,6 +404,11 @@ export function ConnectionsPage() {
                       className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
                     >
                       {connection.provider?.name || 'N/A'}
+                    </Table.Cell>
+                    <Table.Cell
+                      className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
+                    >
+                      {connection.externalId}
                     </Table.Cell>
                     <Table.Cell
                       className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
@@ -498,6 +505,15 @@ export function ConnectionsPage() {
                     <Label>Provider</Label>
                     <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
                       {selectedConnection.provider.name} (cannot be changed)
+                    </div>
+                  </div>
+                )}
+
+                {selectedConnection?.externalId && (
+                  <div className="grid gap-2">
+                    <Label>External ID</Label>
+                    <div className="text-sm text-muted-foreground bg-muted px-3 py-2 rounded-md">
+                      {selectedConnection.externalId} (cannot be changed)
                     </div>
                   </div>
                 )}

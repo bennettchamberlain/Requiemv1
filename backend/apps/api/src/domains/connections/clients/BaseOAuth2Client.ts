@@ -26,12 +26,17 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   protected abstract getScopesFromActiveEndpoints(activeEndpoints: string[]): string;
 
+  abstract getAccountIdentifier(connection: Connection): Promise<string>;
+
   async request<T>(connection: Connection, endpoint: string, options?: RequestInit): Promise<T> {
     if (connection.accessToken == null) {
       throw new Error('Connection not authenticated');
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const endpointSplitOnProtocol = /^(https:\/\/[^/]+)(\/.*)?$/.exec(endpoint);
+    const baseUrl = endpointSplitOnProtocol ? endpointSplitOnProtocol[1] : this.baseUrl;
+    const path = endpointSplitOnProtocol ? endpointSplitOnProtocol[2] || '' : endpoint;
+    const response = await fetch(`${baseUrl}${path}`, {
       ...options,
       headers: {
         ...options?.headers,

@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -204,7 +205,27 @@ export class ConnectionsController {
 
     await this.update(context, connectionId, {
       ...tokenExchange,
+      active: true,
       needsReauth: false,
+    });
+
+    const conn = await this.connectionService.findById(serviceContext, connectionId);
+
+    const externalId = await client.getAccountIdentifier(conn!);
+
+    const existingConnection = await this.connectionService.search(serviceContext, {
+      providerId: conn!.providerId,
+      active: true,
+      externalId: externalId,
+    });
+
+    if (existingConnection.length > 0) {
+      await this.connectionService.remove(serviceContext, connectionId);
+      throw new ConflictException('A connection to that account already exists');
+    }
+
+    await this.update(context, connectionId, {
+      externalId,
     });
   }
 

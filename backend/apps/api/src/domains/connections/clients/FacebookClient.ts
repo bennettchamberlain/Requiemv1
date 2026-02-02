@@ -80,10 +80,19 @@ export class FacebookClient extends BaseOAuth2Client {
     return scopesSet.size > 0 ? Array.from(scopesSet).join(' ') : '';
   }
 
+  getAccountIdentifier(connection: Connection): Promise<string> {
+    return new Promise((resolve) =>
+      this.fetchProfile(connection).then((result) => {
+        console.log('FB profile', result);
+        resolve(result.id || '');
+      }),
+    );
+  }
+
   /**
    * Get user's basic profile information
    */
-  private async fetchProfile(connection: Connection) {
+  private async fetchProfile(connection: Connection): Promise<{ [key: string]: string }> {
     try {
       const fields = ['id', 'name', 'email'].join(',');
 
