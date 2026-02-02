@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
 
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/hooks';
 import { MimeTypes } from '@/lib/mime_types';
 
 type ReturnType = [

@@ -16,10 +16,11 @@ import { Link } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 import { useTheme, ColorPicker } from '@/components/ThemePicker';
-import { useAuth } from '@/hooks';
+import { useAuth, useCurrentUser } from '@/hooks';
 
 export function NavUser() {
-  const [{ user }, { logout }] = useAuth();
+  const [, { logout }] = useAuth();
+  const { user } = useCurrentUser();
   const { themeState, setTheme } = useTheme();
 
   const { isFeatureEnabled } = useFeatures();

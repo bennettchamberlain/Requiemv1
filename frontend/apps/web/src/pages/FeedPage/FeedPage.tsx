@@ -26,7 +26,7 @@ export function FeedPage() {
 
   const { id: actionId } = useParams<{ id?: string }>();
   const [{ data: actions, loading, error }] = useActionListService();
-  const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService(10);
+  const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService();
 
   const selectedActionIndex = useMemo(
     () => actions.findIndex((item) => item.id === actionId),
