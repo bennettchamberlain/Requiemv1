@@ -4,6 +4,7 @@ import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
+import { ConnectionService } from '@ci/domains/connections';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
@@ -23,6 +24,7 @@ import { ActionType } from '../types/ActionType';
 import { AnswerType } from '../types/AnswerType';
 import { BrowserActivityType } from '../types/BrowserActivityType';
 import { ConceptType } from '../types/ConceptType';
+import { ConnectionType } from '../types/ConnectionType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
@@ -46,6 +48,7 @@ export class NodeResolver {
     private readonly answerService: AnswerService,
     private readonly browserActivityService: BrowserActivityService,
     private readonly conceptService: ConceptService,
+    private readonly connectionService: ConnectionService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
     private readonly fileService: FileService,
@@ -91,6 +94,12 @@ export class NodeResolver {
         const concept = await this.conceptService.findById(serviceContext, id);
 
         return concept ? ConceptType.toType(concept) : null;
+      }
+
+      case 'connection': {
+        const connection = await this.connectionService.findById(serviceContext, id);
+
+        return connection ? ConnectionType.toType(connection) : null;
       }
 
       case 'content': {
