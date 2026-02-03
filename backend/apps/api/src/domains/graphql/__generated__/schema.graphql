@@ -911,8 +911,8 @@ type UpdateConceptPayload {
 
 input UpdateConnectionInput {
   accessToken: String
-  active: Boolean!
-  activeEndpoints: [String!]!
+  active: Boolean
+  activeEndpoints: [String!]
   externalId: String
   id: ID!
   name: String

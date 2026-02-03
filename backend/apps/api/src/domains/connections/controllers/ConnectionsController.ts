@@ -219,7 +219,7 @@ export class ConnectionsController {
       externalId: externalId,
     });
 
-    if (existingConnection.length > 0) {
+    if (existingConnection.length > 0 && existingConnection.find((c) => c.id !== connectionId)) {
       await this.connectionService.remove(serviceContext, connectionId);
       throw new ConflictException('A connection to that account already exists');
     }

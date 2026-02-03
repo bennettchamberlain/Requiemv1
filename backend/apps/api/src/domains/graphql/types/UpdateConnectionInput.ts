@@ -9,7 +9,7 @@ export class UpdateConnectionInput {
   @Field(() => String, { nullable: true })
   name!: string | null;
 
-  @Field(() => Boolean)
+  @Field(() => Boolean, { nullable: true })
   active!: boolean;
 
   @Field(() => String, { nullable: true })
@@ -30,7 +30,7 @@ export class UpdateConnectionInput {
   @Field(() => Boolean, { nullable: true })
   needsReauth!: boolean;
 
-  @Field(() => [String])
+  @Field(() => [String], { nullable: true })
   activeEndpoints!: string[];
 
   @Field(() => String, { nullable: true })
