@@ -13,6 +13,7 @@ import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
 
 import { FeedModal } from './FeedModal';
+import { InsightCard } from './InsightCard';
 import { SummaryCard } from './SummaryCard';
 import { useSummariesService } from './useSummariesService';
 
@@ -25,8 +26,8 @@ export function FeedPage() {
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
-  const [{ data: actions, loading, error }] = useActionListService();
-  const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService();
+  const [{ data: actions, loading, error }, { markActionAsSeen }] = useActionListService(5);
+  const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService(10);
 
   const selectedActionIndex = useMemo(
     () => actions.findIndex((item) => item.id === actionId),
@@ -49,8 +50,10 @@ export function FeedPage() {
     (id: string) => {
       navigate(`/feed/${id}`, { replace: true });
       openModal();
+      // Mark action as seen when clicked
+      markActionAsSeen(id);
     },
-    [navigate, openModal],
+    [navigate, openModal, markActionAsSeen],
   );
 
   const handleModalClose = useCallback(() => {
@@ -109,6 +112,12 @@ export function FeedPage() {
                 className={cn(!action.seen && 'ring-2 ring-primary/40')}
               />
             ))}
+
+          {summaries.flatMap((summary) =>
+            summary.insights.map((insight, idx) => (
+              <InsightCard key={`${summary.id}-insight-${idx}`} insight={insight} />
+            )),
+          )}
 
           {summaries.map((summary) => (
             <SummaryCard key={summary.id} summary={summary} onClick={() => handleSummaryClick(summary.id)} />
@@ -189,6 +198,22 @@ export function FeedPage() {
             </div>
           )}
 
+          <Carousel {...carouselProps}>
+            {summaries.flatMap((summary) =>
+              summary.insights.map((insight, idx) => (
+                <InsightCard
+                  key={`${summary.id}-insight-${idx}`}
+                  insight={insight}
+                  className="hover:shadow-lg transition-shadow duration-200 h-110"
+                />
+              )),
+            )}
+          </Carousel>
+        </div>
+
+        <h2 className="text-2xl font-bold text-foreground">Summaries</h2>
+
+        <div className="space-y-3">
           <Carousel {...carouselProps}>
             {summaries.map((summary) => (
               <SummaryCard

@@ -1,4 +1,4 @@
-import { gql, useQuery } from '@apollo/client';
+import { gql, useMutation, useQuery } from '@apollo/client';
 
 import { type Action } from './types';
 
@@ -21,6 +21,13 @@ const GET_ACTIONS = gql`
           }
         }
       }
+      thread {
+        id
+      }
+      tags {
+        id
+        label
+      }
     }
   }
 `;
@@ -42,16 +49,19 @@ interface GetActionsResponse {
         }[];
       };
     }[];
-  };
+  }[];
 }
 
-export function useActionListService() {
-  const { data, loading, error } = useQuery<GetActionsResponse>(GET_ACTIONS);
+export function useActionListService(limit: number = 5) {
+  const { data, loading, error, refetch } = useQuery<GetFeedActionsResponse>(GET_FEED_ACTIONS, {
+    variables: { limit },
+  });
+
+  const [markAsSeen] = useMutation(MARK_ACTION_AS_SEEN);
 
   const actions: Action[] =
-    data?.actions.edges
-      .map(({ node }) => node)
-      .filter((node): node is NonNullable<typeof node> => !!node)
+    data?.feedActions
+      ?.filter((node): node is NonNullable<typeof node> => !!node)
       .map((node) => ({
         id: node.id ? atob(node.id).split(':')[1] : '',
         title: node.title,
@@ -62,11 +72,22 @@ export function useActionListService() {
         tags: node.tags?.map((t) => t.label) || [],
       })) || [];
 
+  const markActionAsSeen = async (actionId: string) => {
+    // Encode the ID back to GlobalUID format
+    const gid = btoa(`action:${actionId}`);
+    await markAsSeen({ variables: { id: gid } });
+    refetch();
+  };
+
   return [
     {
       data: actions,
       loading,
       error,
     },
-  ];
+    {
+      refetch,
+      markActionAsSeen,
+    },
+  ] as const;
 }
