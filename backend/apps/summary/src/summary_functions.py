@@ -295,11 +295,11 @@ def generate_actions(
     # Build action-specific prompt
     prompt = _build_actions_prompt(context)
 
-    # Call LLM with slightly higher temperature for creativity
+    # Call LLM with moderate temperature - not too creative to avoid mixing unrelated topics
     result = agent.run_sync(
         prompt,
         model_settings={
-            "temperature": 0.85,
+            "temperature": 0.6,
             "max_tokens": settings.llm_max_tokens,
         },
     )
@@ -393,6 +393,10 @@ def _build_actions_prompt(context: Dict[str, Any]) -> str:
     parts.append("2. Actionable RIGHT NOW")
     parts.append("3. A mix of conversation starters and time suggestions")
     parts.append("4. Reference specific people, events, or topics from above")
+    parts.append("")
+    parts.append("IMPORTANT: Each card must focus on ONE topic. Do NOT combine unrelated activities.")
+    parts.append("BAD example: 'Warm up for your workout by reviewing GraphQL notes' - these are unrelated!")
+    parts.append("GOOD example: 'Prepare for your workout' OR separately 'Review GraphQL documentation'")
     parts.append("")
     parts.append("For conversation starters: suggest specific topics or questions to discuss with specific people.")
     parts.append("For time suggestions: suggest what the user should do next based on their schedule and recent activity.")
