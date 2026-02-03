@@ -83,7 +83,6 @@ export class FacebookClient extends BaseOAuth2Client {
   getAccountIdentifier(connection: Connection): Promise<string> {
     return new Promise((resolve) =>
       this.fetchProfile(connection).then((result) => {
-        console.log('FB profile', result);
         resolve(result.id || '');
       }),
     );
