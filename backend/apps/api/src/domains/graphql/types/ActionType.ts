@@ -22,7 +22,7 @@ export class ActionType implements Node, Taggable {
   @Field(() => String)
   text!: string | null;
 
-  @Field(() => String)
+  @Field(() => String, { nullable: true })
   imageUrl!: string | null;
 
   @Field(() => Date)

@@ -16,7 +16,7 @@ type ActionEdge implements Edge {
 type ActionType implements Node & Taggable {
   createdAt: DateTime!
   id: ID!
-  imageUrl: String!
+  imageUrl: String
   tags: [EntityTagType!]!
   text: String!
   thread: ThreadType

@@ -3,7 +3,7 @@ export interface Action {
   title: string;
   text: string;
   imageUrl?: string;
-  threadId: string;
+  threadId?: string;
   tags: string[];
 }
 
