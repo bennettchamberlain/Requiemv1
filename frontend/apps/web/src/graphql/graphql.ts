@@ -41,7 +41,7 @@ export type ActionType = Node & Taggable & {
   __typename?: 'ActionType';
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
-  imageUrl: Scalars['String']['output'];
+  imageUrl?: Maybe<Scalars['String']['output']>;
   tags: Array<EntityTagType>;
   text: Scalars['String']['output'];
   thread?: Maybe<ThreadType>;
@@ -1579,7 +1579,7 @@ export type UserType = Node & {
 export type GetActionsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetActionsQuery = { __typename?: 'Query', actions: { __typename?: 'ActionConnection', edges: Array<{ __typename?: 'ActionEdge', node: { __typename?: 'ActionType', id: string, title: string, text: string, imageUrl: string, thread?: { __typename?: 'ThreadType', id: string } | null, tags: Array<{ __typename?: 'EntityTagType', id: string, label: string }> } }> } };
+export type GetActionsQuery = { __typename?: 'Query', actions: { __typename?: 'ActionConnection', edges: Array<{ __typename?: 'ActionEdge', node: { __typename?: 'ActionType', id: string, title: string, text: string, imageUrl?: string | null, thread?: { __typename?: 'ThreadType', id: string } | null, tags: Array<{ __typename?: 'EntityTagType', id: string, label: string }> } }> } };
 
 export type TagEntitiesMutationVariables = Exact<{
   input: TagEntitiesInput;
