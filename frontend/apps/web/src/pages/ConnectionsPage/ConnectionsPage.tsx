@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
+import { isReference, type Reference, useMutation, useQuery } from '@apollo/client';
+import { GlobalUID, Portal, usePageTitle } from '@ci/common';
 import {
   Breadcrumb,
   Button,
@@ -19,14 +20,14 @@ import { AlertCircle, RefreshCw, Settings, Trash2, Plus } from '@ci/shadcn/icons
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-import { makeFragmentData } from '@/graphql';
+import { gql, makeFragmentData } from '@/graphql';
 import { useAuth } from '@/hooks';
 import { Endpoints, ENDPOINTS_FRAGMENT } from '@/pages/ProviderPage/Endpoints';
 import { useConnectService } from '@/pages/ProviderPage/useConnectService';
 
 export interface Provider {
   readonly id: string;
-  readonly name: string | null;
+  readonly name?: string | null;
   readonly endpoints: {
     name: string;
     description: string;
@@ -35,16 +36,11 @@ export interface Provider {
 
 export interface Connection {
   readonly id: string;
-  readonly name: string | null;
+  readonly name?: string | null;
   readonly active: boolean;
-  readonly clientid: string | null;
-  readonly clientkey: string | null;
-  readonly clientsecret: string | null;
-  readonly externalId: string | null;
-  readonly schedule: string | null;
-  readonly accessToken: string | null;
-  readonly refreshToken: string | null;
-  readonly tokenExpiry: Date | null;
+  readonly externalId?: string | null;
+  readonly schedule?: string | null;
+  readonly tokenExpiry?: Date | null;
   readonly provider?: Provider;
   readonly activeEndpoints?: string[];
   readonly needsReauth: boolean;
@@ -57,6 +53,80 @@ export const EditConnectFormSchema = s.object({
 
 export type EditConnectFormData = s.input<typeof EditConnectFormSchema>;
 
+const UPDATE_CONNECTION = gql(`
+  mutation UpdateConnection($input: UpdateConnectionInput!) {
+    updateConnection(input: $input) {
+      success
+      connection {
+          id
+          name
+          active
+          schedule
+          tokenExpiry
+          syncState
+          activeEndpoints
+          providerId
+          needsReauth
+          externalId
+          provider {
+              id
+              name
+              endpoints {
+                name
+                description
+              }
+          }
+      }
+    }
+  }
+`);
+
+const DELETE_CONNECTION = gql(`
+  mutation DeleteConnection($input: DeleteByIdInput!) {
+    deleteConnection(input: $input) {
+      success
+      deletedId
+    }
+  }
+`);
+
+const GET_CONNECTIONS = gql(`
+  query GetConnections {
+    connections {
+      edges {
+        cursor
+        node {
+          id
+          name
+          active
+          schedule
+          tokenExpiry
+          syncState
+          activeEndpoints
+          providerId
+          needsReauth
+          externalId
+          provider {
+            id
+            name
+            endpoints {
+              name
+              description
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`);
+
 export function ConnectionsPage() {
   usePageTitle('Connections - Companion Intelligence');
 
@@ -65,9 +135,6 @@ export function ConnectionsPage() {
   const [{ authToken }] = useAuth();
 
   const [Connections, setConnections] = useState<Connection[]>([]);
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -78,76 +145,108 @@ export function ConnectionsPage() {
   });
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
   const [{ endpoints, setEndpoints }] = useConnectService();
+
+  const [updateConnection] = useMutation(UPDATE_CONNECTION, {
+    update(cache, { data }) {
+      const updatedConnectionId = data?.updateConnection?.connection?.id;
+
+      if (updatedConnectionId) {
+        cache.modify({
+          fields: {
+            connections(
+              existingConnections:
+                | {
+                    edges: { node: Reference }[];
+                  }
+                | Reference = { edges: [] },
+              { readField },
+            ) {
+              if (isReference(existingConnections)) {
+                return existingConnections;
+              }
+
+              return {
+                ...existingConnections,
+                edges: existingConnections.edges.map((edge) => {
+                  const edgeNodeId = readField('id', edge.node);
+
+                  if (!data?.updateConnection?.connection) {
+                    return edge;
+                  }
+
+                  return edgeNodeId !== updatedConnectionId
+                    ? edge
+                    : {
+                        ...edge,
+                        ...data.updateConnection.connection,
+                      };
+                }),
+              };
+            },
+          },
+        });
+      }
+    },
+  });
+
+  const [deleteConnection, { loading: deleteLoading }] = useMutation(DELETE_CONNECTION, {
+    update(cache, { data }) {
+      const deletedConnectionId = data?.deleteConnection?.deletedId;
+
+      if (deletedConnectionId) {
+        cache.modify({
+          fields: {
+            connections(
+              existingConnections:
+                | {
+                    edges: { node: Reference }[];
+                  }
+                | Reference = { edges: [] },
+              { readField },
+            ) {
+              if (isReference(existingConnections)) {
+                return existingConnections;
+              }
+
+              return {
+                ...existingConnections,
+                edges: existingConnections.edges.filter((edge) => {
+                  const edgeNodeId = readField('id', edge.node);
+
+                  return edgeNodeId !== deletedConnectionId;
+                }),
+              };
+            },
+          },
+        });
+
+        const normalizedId = cache.identify({
+          id: deletedConnectionId,
+          __typename: 'ConnectionType',
+        });
+
+        if (normalizedId) {
+          cache.evict({ id: normalizedId });
+          cache.gc();
+        }
+      }
+    },
+  });
+
+  const {
+    data: getConnections,
+    loading: connectionsLoading,
+    error: connectionsError,
+  } = useQuery(GET_CONNECTIONS);
+
+  const connections = getConnections?.connections.edges.map((edge) => edge.node) || [];
 
   const form = useForm<EditConnectFormData>({
     resolver: formDataResolver(EditConnectFormSchema),
     shouldUnregister: false,
   });
-
-  const fetchConnections = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      if (!authToken) {
-        console.error('ConnectionsPage: No authentication token found');
-        throw new Error('Authentication token not found');
-      }
-
-      const response = await fetch('/api/connections', {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        // Handle different HTTP error codes
-        console.error(
-          `ConnectionsPage: API request failed with status ${response.status}: ${response.statusText}`,
-        );
-        if (response.status === 401) {
-          throw new Error('Unauthorized: You do not have permission to access this resource');
-        } else if (response.status === 403) {
-          throw new Error('Forbidden: Access denied');
-        } else if (response.status === 404) {
-          throw new Error('API endpoint not found');
-        } else if (response.status >= 500) {
-          throw new Error('Server error: Please try again later');
-        } else {
-          throw new Error(`Error fetching connections: ${response.statusText}`);
-        }
-      }
-
-      const data = await response.json();
-
-      // Handle both array response and paginated response
-      let ConnectionsData: Connection[] = [];
-      if (Array.isArray(data)) {
-        ConnectionsData = data;
-      } else if (data.data && Array.isArray(data.data)) {
-        ConnectionsData = data.data;
-      } else {
-        console.error('ConnectionsPage: Invalid response format', data);
-        throw new Error('Invalid response format: Expected an array of connections');
-      }
-
-      setConnections(ConnectionsData);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('ConnectionsPage: Error in fetchConnections():', errorMessage, err);
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [authToken]);
-
-  useEffect(() => {
-    fetchConnections();
-  }, [fetchConnections]);
 
   const truncateText = (text: string | undefined, maxLength: number = 50) => {
     if (!text) {
@@ -162,7 +261,6 @@ export function ConnectionsPage() {
   };
 
   const connectionEdit = (connection: Connection) => {
-    console.log('connection edit called', connection);
     setSelectedConnection(connection);
     setEditFormData({
       name: connection.name || '',
@@ -187,31 +285,16 @@ export function ConnectionsPage() {
 
       console.log('Updating connection with data:', editFormData);
 
-      const response = await fetch(`/api/connections/${selectedConnection.id}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
+      await updateConnection({
+        variables: {
+          input: {
+            id: selectedConnection!.id,
+            name: editFormData.name || '',
+            schedule: editFormData.schedule || '1 hour',
+            activeEndpoints: endpoints,
+          },
         },
-        body: JSON.stringify({
-          name: editFormData.name,
-          schedule: editFormData.schedule,
-          endpoints,
-        }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Error updating connection: ${response.statusText}`);
-      }
-
-      const updatedConnection = await response.json();
-      console.log('Successfully updated connection:', updatedConnection);
-
-      // Update the connection in the local state
-      setConnections((prevConnections) =>
-        prevConnections.map((conn) => (conn.id === updatedConnection.id ? updatedConnection : conn)),
-      );
 
       // Close modal
       setShowEditModal(false);
@@ -236,30 +319,13 @@ export function ConnectionsPage() {
     }
 
     try {
-      setDeleteLoading(connectionId);
-
-      if (!authToken) {
-        throw new Error('Authentication token not found');
-      }
-
-      const response = await fetch(`/api/connections/${connectionId}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
+      await deleteConnection({
+        variables: {
+          input: {
+            id: connectionId,
+          },
         },
-        body: JSON.stringify({
-          active: false,
-        }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Error deleting connection: ${response.statusText}`);
-      }
-
-      // Remove the connection from the local state
-      setConnections((prevConnections) => prevConnections.filter((conn) => conn.id !== connectionId));
 
       toast.success('Connection deleted successfully');
     } catch (err) {
@@ -267,8 +333,6 @@ export function ConnectionsPage() {
       console.error('Error deleting connection:', errorMessage, err);
 
       toast.error(errorMessage);
-    } finally {
-      setDeleteLoading(null);
     }
   };
 
@@ -278,13 +342,11 @@ export function ConnectionsPage() {
     }
 
     try {
-      setDeleteLoading(connectionId);
-
       if (!authToken) {
         throw new Error('Authentication token not found');
       }
 
-      const response = await fetch(`/api/connections/${connectionId}/sync`, {
+      const response = await fetch(`/api/connections/${GlobalUID.parse('connection', connectionId)}/sync`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -312,13 +374,11 @@ export function ConnectionsPage() {
       console.error('Error syncing connection:', errorMessage, err);
 
       toast.error(errorMessage);
-    } finally {
-      setDeleteLoading(null);
     }
   };
 
   const handleReauthConnection = async (connectionId: string) => {
-    const response = await fetch(`/api/connections/${connectionId}/connect`, {
+    const response = await fetch(`/api/connections/${GlobalUID.parse('connection', connectionId)}/connect`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${authToken}`,
@@ -364,20 +424,17 @@ export function ConnectionsPage() {
           </Button>
         </div>
 
-        {loading ? (
+        {connectionsLoading ? (
           <div className="text-center py-8">
             <RefreshCw className="h-8 w-8 animate-spin mx-auto" />
             <p>Loading...</p>
           </div>
-        ) : error ? (
+        ) : connectionsError ? (
           <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
             <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
             <div>
               <h3 className="font-medium">Error loading</h3>
-              <p className="text-sm">{error}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => fetchConnections()}>
-                Try Again
-              </Button>
+              <p className="text-sm">{connectionsError.message}</p>
             </div>
           </div>
         ) : (
@@ -393,7 +450,7 @@ export function ConnectionsPage() {
                 </Table.Row>
               </Table.Header>
               <Table.Body>
-                {Connections.map((connection) => (
+                {connections.map((connection) => (
                   <Table.Row key={connection.id}>
                     <Table.Cell
                       className={`text-sm ${connection.needsReauth ? 'text-yellow-600 dark:text-yellow-500' : ''}`}
@@ -422,7 +479,7 @@ export function ConnectionsPage() {
                             size="sm"
                             variant="ghost"
                             className="text-yellow-600 dark:text-yellow-500 hover:text-yellow-700 dark:hover:text-yellow-400"
-                            disabled={deleteLoading === connection.id}
+                            disabled={deleteLoading}
                             title="Connection needs reauthorization"
                             onClick={() => handleReauthConnection(connection.id)}
                           >
@@ -433,7 +490,7 @@ export function ConnectionsPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => connectionEdit(connection)}
-                          disabled={deleteLoading === connection.id}
+                          disabled={deleteLoading}
                           title="Edit"
                         >
                           <Settings className="h-4 w-4" />
@@ -442,10 +499,10 @@ export function ConnectionsPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDeleteConnection(connection.id)}
-                          disabled={deleteLoading === connection.id}
+                          disabled={deleteLoading}
                           title="Delete"
                         >
-                          {deleteLoading === connection.id ? (
+                          {deleteLoading ? (
                             <RefreshCw className="h-4 w-4 animate-spin" />
                           ) : (
                             <Trash2 className="h-4 w-4" />
@@ -455,7 +512,7 @@ export function ConnectionsPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleSyncConnection(connection.id)}
-                          disabled={deleteLoading === connection.id}
+                          disabled={deleteLoading}
                           title="Sync Data"
                         >
                           <RefreshCw className="h-4 w-4" />

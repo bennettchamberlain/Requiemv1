@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { type ServiceContext } from '@ci/common/context';
 
@@ -28,5 +28,17 @@ export class ProviderService {
     });
 
     return entity ? ProviderEntity.toEgressType(entity) : null;
+  }
+
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(Provider | null)[]> {
+    const entities = await this.providerRepository.find({
+      where: {
+        id: In(ids),
+      },
+    });
+
+    const map = new Map(entities.map((entity) => [entity.id, ProviderEntity.toEgressType(entity)]));
+
+    return ids.map((id) => map.get(id) ?? null);
   }
 }

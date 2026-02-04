@@ -127,7 +127,7 @@ export class ConceptResolver {
   ): Promise<DeleteByIdPayload> {
     const serviceContext = toServiceContext(context);
 
-    const id = GlobalUID.parse('note', input.id);
+    const id = GlobalUID.parse('concept', input.id);
 
     const success = await this.conceptService.remove(serviceContext, id);
 

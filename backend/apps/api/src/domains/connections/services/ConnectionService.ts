@@ -27,7 +27,7 @@ export class ConnectionService {
     const instance = this.connectionRepository.create({
       ...sanitizedData,
       id: uuid7(),
-      active: true,
+      active: false,
       user: {
         id: context.userId,
       },

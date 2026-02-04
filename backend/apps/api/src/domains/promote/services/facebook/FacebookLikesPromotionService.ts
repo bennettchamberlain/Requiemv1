@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { ContentService, type CreateContentDto } from '@ci/domains/memory';
@@ -32,7 +33,7 @@ export class FacebookLikesPromotionService {
     for (const like of likes) {
       try {
         const contentDto = {
-          id: '',
+          id: uuidv7(),
           type: 'Content',
           title: like.name,
           text: like.category ? `Category: ${like.category}` : '',

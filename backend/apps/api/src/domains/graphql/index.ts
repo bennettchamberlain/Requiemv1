@@ -22,6 +22,7 @@ import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { PersonLoader } from './loaders/PersonLoader';
 import { PlaceLoader } from './loaders/PlaceLoader';
+import { ProviderLoader } from './loaders/ProviderLoader';
 import { QuestionLoader } from './loaders/QuestionLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
@@ -32,6 +33,7 @@ import { AnswerResolver } from './resolvers/AnswerResolver';
 import { BrowserActivityResolver } from './resolvers/BrowserActivityResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { ConceptResolver } from './resolvers/ConceptResolver';
+import { ConnectionResolver } from './resolvers/ConnectionResolver';
 import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FactResolver } from './resolvers/FactResolver';
@@ -79,6 +81,7 @@ import { UserResolver } from './resolvers/UserResolver';
     CommunicationResolver,
     ComplexityPlugin,
     ConceptResolver,
+    ConnectionResolver,
     ContentResolver,
     NodeResolver,
     NoteResolver,
@@ -95,6 +98,7 @@ import { UserResolver } from './resolvers/UserResolver';
     PlaceLoader,
     PlaceResolver,
     ProviderResolver,
+    ProviderLoader,
     QuestionLoader,
     QuestionResolver,
     RelationshipResolver,

@@ -4,6 +4,7 @@ type ResourceType =
   | 'browser-activity'
   | 'communication'
   | 'concept'
+  | 'connection'
   | 'content'
   | 'event'
   | 'fact'

@@ -168,21 +168,21 @@ export function InventoryItemModal({ open, onClose, item, create = false }: Prop
       if (updatedItemId) {
         cache.modify({
           fields: {
-            itemes(
-              existingItemes:
+            items(
+              existingItems:
                 | {
                     edges: { node: Reference }[];
                   }
                 | Reference = { edges: [] },
               { readField },
             ) {
-              if (isReference(existingItemes)) {
-                return existingItemes;
+              if (isReference(existingItems)) {
+                return existingItems;
               }
 
               return {
-                ...existingItemes,
-                edges: existingItemes.edges.map((edge) => {
+                ...existingItems,
+                edges: existingItems.edges.map((edge) => {
                   const edgeNodeId = readField('id', edge.node);
 
                   if (!data?.updateItem?.item) {

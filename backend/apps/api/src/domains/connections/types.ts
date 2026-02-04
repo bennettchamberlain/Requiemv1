@@ -6,7 +6,7 @@ export interface CompleteConnectionDto {
 }
 
 export interface CreateConnectionDto {
-  name: string;
+  name?: string;
   providerId: string;
   clientid?: string;
   clientkey?: string;

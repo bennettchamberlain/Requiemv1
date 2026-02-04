@@ -128,6 +128,31 @@ interface Connection {
   totalCount: Int!
 }
 
+type ConnectionConnection implements Connection {
+  edges: [ConnectionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ConnectionEdge implements Edge {
+  cursor: String!
+  node: ConnectionType!
+}
+
+type ConnectionType implements Node {
+  active: Boolean!
+  activeEndpoints: [String!]!
+  externalId: String
+  id: ID!
+  name: String
+  needsReauth: Boolean!
+  provider: ProviderType!
+  providerId: ID!
+  schedule: String
+  syncState: JSON
+  tokenExpiry: DateTime
+}
+
 type ContentConnection implements Connection {
   edges: [ContentEdge!]!
   pageInfo: PageInfo!
@@ -165,6 +190,23 @@ input CreateConceptInput {
 
 type CreateConceptPayload {
   concept: ConceptType
+  success: Boolean!
+}
+
+input CreateConnectionInput {
+  accessToken: String
+  activeEndpoints: [String!]!
+  name: String
+  needsReauth: Boolean
+  providerId: ID!
+  refreshToken: String
+  schedule: String
+  syncState: JSON
+  tokenExpiry: DateTime
+}
+
+type CreateConnectionPayload {
+  connection: ConnectionType
   success: Boolean!
 }
 
@@ -464,6 +506,7 @@ type MessageType implements Node {
 type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
+  createConnection(input: CreateConnectionInput!): CreateConnectionPayload!
   createContent(input: CreateContentInput!): ContentType!
   createEvent(input: CreateEventInput!): EventType!
   createItem(input: CreateItemInput!): CreateItemPayload!
@@ -474,6 +517,7 @@ type Mutation {
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -488,6 +532,7 @@ type Mutation {
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
+  updateConnection(input: UpdateConnectionInput!): UpdateConnectionPayload!
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
   updateItem(input: UpdateItemInput!): UpdateItemPayload!
@@ -627,6 +672,8 @@ type Query {
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
   concept(id: ID!): ConceptType
   concepts(after: String, before: String, first: Int, last: Int): ConceptConnection!
+  connection(id: ID!): ConnectionType
+  connections(after: String, before: String, first: Int, last: Int): ConnectionConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
   event(id: ID!): EventType
@@ -859,6 +906,25 @@ input UpdateConceptInput {
 
 type UpdateConceptPayload {
   concept: ConceptType
+  success: Boolean!
+}
+
+input UpdateConnectionInput {
+  accessToken: String
+  active: Boolean
+  activeEndpoints: [String!]
+  externalId: String
+  id: ID!
+  name: String
+  needsReauth: Boolean
+  refreshToken: String
+  schedule: String
+  syncState: JSON
+  tokenExpiry: DateTime
+}
+
+type UpdateConnectionPayload {
+  connection: ConnectionType
   success: Boolean!
 }
 
