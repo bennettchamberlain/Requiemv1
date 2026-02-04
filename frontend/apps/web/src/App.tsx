@@ -20,6 +20,7 @@ const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
 const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
 const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
+const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
@@ -218,6 +219,15 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <ConnectionsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/connections/:id"
+          element={
+            <ProtectedRoute>
+              <ConnectionPage />
             </ProtectedRoute>
           }
         />
