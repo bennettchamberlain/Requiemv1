@@ -5,7 +5,6 @@ services:
 
   iframely:
     image: jolt/iframely:latest
-    container_name: iframely
     networks:
       - ci
     restart: unless-stopped
@@ -15,11 +14,10 @@ services:
       resources:
         limits:
           memory: 4G
-    profiles: [ "local", "staging" ]
+    profiles: [ "local", "staging", "production" ]
 
   minio:
     image: minio/minio
-    container_name: minio
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
@@ -29,14 +27,13 @@ services:
       - ci
     command: server /data
     restart: unless-stopped
-    profiles: [ "local", "staging" ]
+    profiles: [ "local", "staging", "production" ]
 
   postgres:
     build:
       context: ./infrastructure/postgres
       dockerfile: Dockerfile
     image: ci/postgres
-    container_name: postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -52,11 +49,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    profiles: [ "local", "staging" ]
+    profiles: [ "local", "staging", "production" ]
 
   temporal:
     image: temporalio/auto-setup:1.25.1
-    container_name: temporal
     environment:
       - DB=postgres12_pgx
       - DB_PORT=5432
@@ -71,7 +67,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    profiles: [ "local", "staging" ]
+    profiles: [ "local", "staging", "production" ]
 
   ########################
   # FIRST-PARTY SERVICES #
@@ -82,7 +78,6 @@ services:
       context: ./backend/apps/stt
       dockerfile: Dockerfile
     image: ci/stt-service
-    container_name: stt-service
     volumes:
       - stt-service-models:/app/models
       - stt-service-cache:/root/.cache
@@ -91,14 +86,13 @@ services:
     networks:
       - ci
     restart: unless-stopped
-    profiles: [ "local", "staging" ]
+    profiles: [ "local", "staging", "production" ]
 
   tts-service:
     build:
       context: ./backend/apps/tts
       dockerfile: Dockerfile
     image: ci/tts-service
-    container_name: tts-service
     volumes:
       - tts-service-models:/app/models
       - tts-service-cache:/root/.cache
@@ -107,7 +101,7 @@ services:
     networks:
       - ci
     restart: unless-stopped
-    profiles: [ "local", "staging" ]
+    profiles: [ "local", "staging", "production" ]
 
   summary-service:
     build:
@@ -115,7 +109,6 @@ services:
       dockerfile: Dockerfile
     image: ci/summary-service
     pull_policy: build
-    container_name: summary-service
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres:5432/companion_intel
       - LLM_API_BASE=${LLM_API_BASE:-http://host.docker.internal:11434/v1}
@@ -132,7 +125,7 @@ services:
       - postgres
       - temporal
     restart: unless-stopped
-    profiles: [ "local", "staging" ]
+    profiles: [ "local", "staging", "production" ]
 
   ##############################
   # THIRD-PARTY MANAGEMENT UIs #
@@ -140,7 +133,6 @@ services:
 
   temporal-ui:
     image: temporalio/ui:2.31.2
-    container_name: temporal-ui
     ports:
       - 8080:8080
     environment:
@@ -148,8 +140,6 @@ services:
       - TEMPORAL_CORS_ORIGINS=http://localhost:3000
     networks:
       - ci
-    depends_on:
-      - temporal
     restart: unless-stopped
     profiles: [ "tooling" ]
 

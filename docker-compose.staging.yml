@@ -1,22 +1,20 @@
 services:
-  staging-webserver:
-    image: ci/nginx
-    container_name: staging-webserver
+  application:
+    image: ci/companion-server:latest
     ports:
       - 8642:8642
     volumes:
-      - ./infrastructure/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/nginx.production.conf:/etc/nginx/nginx.conf:ro
       - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
     networks:
       - ci
     depends_on:
-      - ci-api
+      - api
     restart: unless-stopped
     profiles: [ "staging" ]
 
-  ci-api:
-    image: ci/api:latest
-    container_name: ci-api
+  api:
+    image: ci/companion-api:latest
     env_file:
       - .env
     environment:
@@ -30,7 +28,7 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     depends_on:
-      migrations:
+      database-migrations:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
@@ -41,9 +39,8 @@ services:
   # MIGRATIONS #
   ##############
 
-  migrations:
-    image: ci/api:latest
-    container_name: migrations
+  database-migrations:
+    image: ci/companion-api:latest
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USERNAME: ${POSTGRES_USERNAME}
