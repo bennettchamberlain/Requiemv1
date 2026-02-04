@@ -1,13 +1,28 @@
+import { useQuery } from '@apollo/client';
 import { Portal } from '@ci/common';
 import { Breadcrumb } from '@ci/shadcn';
 import { useNavigate, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { GET_CONNECTIONS } from '@/pages/ConnectionsPage/ConnectionsPage';
 
 import { Card } from './Card';
 
 export function ConnectPage() {
   const navigate = useNavigate();
+  const connectionsCount: Record<string, number> = {};
+
+  const { data: getConnections } = useQuery(GET_CONNECTIONS);
+
+  const connections = getConnections?.connections.edges.map((edge) => edge.node) || [];
+
+  connections.forEach((c) => {
+    if (connectionsCount[c.providerId]) {
+      connectionsCount[c.providerId] += 1;
+    } else {
+      connectionsCount[c.providerId] = 1;
+    }
+  });
 
   return (
     <>
@@ -136,6 +151,16 @@ export function ConnectPage() {
               border="border-sky-300"
               text="Bring your Microsoft account into the mix for email and scheduling. Keep track of what matters without extra steps."
               onClick={() => navigate('/providers/0198779b-3c33-73da-84e5-82e0df145260')}
+              subtext={
+                connectionsCount['0198779b-3c33-73da-84e5-82e0df145260'] === 1
+                  ? `1 Connection`
+                  : connectionsCount['0198779b-3c33-73da-84e5-82e0df145260'] > 1
+                    ? `${connectionsCount['0198779b-3c33-73da-84e5-82e0df145260']} Connections`
+                    : undefined
+              }
+              textBackground={
+                connectionsCount['0198779b-3c33-73da-84e5-82e0df145260'] > 0 ? 'bg-green-200' : undefined
+              }
             />
             <Card
               logo="/branding/google/logo.svg"
@@ -143,6 +168,16 @@ export function ConnectPage() {
               border="border-violet-300"
               text="Link your Google account for quick access to Gmail, Calendar, Drive, Photos, and Youtube. Everything you need, always in sync."
               onClick={() => navigate('/providers/0198779b-182c-716e-9275-b81d99a47fdb')}
+              subtext={
+                connectionsCount['0198779b-182c-716e-9275-b81d99a47fdb'] === 1
+                  ? `1 Connection`
+                  : connectionsCount['0198779b-182c-716e-9275-b81d99a47fdb'] > 1
+                    ? `${connectionsCount['0198779b-182c-716e-9275-b81d99a47fdb']} Connections`
+                    : undefined
+              }
+              textBackground={
+                connectionsCount['0198779b-182c-716e-9275-b81d99a47fdb'] > 0 ? 'bg-green-200' : undefined
+              }
             />
             <Card
               logo="/branding/meta/logo.svg"
@@ -150,6 +185,16 @@ export function ConnectPage() {
               border="border-blue-400"
               text="Connect your Meta account to sync your Facebook posts, photos, videos, friends, and likes. Stay connected with your community."
               onClick={() => navigate('/providers/dbb8002f-12da-4cd9-b02b-37db7791a900')}
+              subtext={
+                connectionsCount['dbb8002f-12da-4cd9-b02b-37db7791a900'] === 1
+                  ? `1 Connection`
+                  : connectionsCount['dbb8002f-12da-4cd9-b02b-37db7791a900'] > 1
+                    ? `${connectionsCount['dbb8002f-12da-4cd9-b02b-37db7791a900']} Connections`
+                    : undefined
+              }
+              textBackground={
+                connectionsCount['dbb8002f-12da-4cd9-b02b-37db7791a900'] > 0 ? 'bg-green-200' : undefined
+              }
             />
             <Card
               logo="/branding/discord/logo.svg"

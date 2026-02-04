@@ -21,7 +21,6 @@ interface EndpointsProps {
 }
 
 export function Endpoints({ provider, setEndpoints, startEndpoints }: EndpointsProps) {
-  console.log('endpoints render', provider, setEndpoints, startEndpoints);
   const { endpoints } = useFragment(ENDPOINTS_FRAGMENT, provider);
   const form = useFormContext();
 

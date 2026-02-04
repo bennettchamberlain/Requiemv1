@@ -10,9 +10,21 @@ interface Props {
   disabled?: boolean;
   onClick?: () => void;
   className?: string;
+  subtext?: string;
+  textBackground?: string;
 }
 
-export function Card({ background, border, logo, text, disabled = false, onClick, className }: Props) {
+export function Card({
+  background,
+  border,
+  logo,
+  text,
+  disabled = false,
+  onClick,
+  className,
+  subtext,
+  textBackground,
+}: Props) {
   const backgroundStyle = useMemo(() => {
     if (isHexColor(background)) {
       return {
@@ -33,11 +45,14 @@ export function Card({ background, border, logo, text, disabled = false, onClick
     return {};
   }, [border]);
 
+  console.log('textBackground', textBackground);
+
   return (
     <div
       className={cn(
         'text-gray-700 dark:text-gray-200 rounded-lg bg-white shadow-md dark:bg-gray-80 select-none',
         !disabled ? 'cursor-pointer' : 'opacity-50',
+        textBackground || '',
         className,
       )}
       onClick={!disabled ? onClick : undefined}
@@ -57,6 +72,7 @@ export function Card({ background, border, logo, text, disabled = false, onClick
         </div>
       </div>
       <div className="font-semibold text-sm p-6">{text}</div>
+      {subtext && <div className="font-semibold text-sm p-6">{subtext}</div>}
     </div>
   );
 }
