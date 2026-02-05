@@ -36,12 +36,6 @@ export interface DatabaseSearchResults {
 
 const ENTITY_RELATIONSHIP_SUMMARY_LIMIT = 5;
 
-/**
- * PostgreSQL ts_rank weight multipliers for weighted tsvectors.
- * Format: {D, C, B, A} - D is lowest priority, A is highest.
- */
-const TS_RANK_WEIGHTS = '{0.1, 0.2, 0.4, 1.0}';
-
 // Internal query result types
 interface EntityQueryResult {
   id: string;
@@ -410,7 +404,7 @@ export class SearchService {
         name,
         description,
         properties,
-        ts_rank('${TS_RANK_WEIGHTS}', search_vector, websearch_to_tsquery('english', $1)) as score
+        ts_rank(search_vector, websearch_to_tsquery('english', $1)) as score
       FROM ci.entities
       WHERE owner_user_id = $2
         AND search_vector @@ websearch_to_tsquery('english', $1)
@@ -456,7 +450,7 @@ export class SearchService {
         fact_statement,
         fact_type,
         source,
-        ts_rank('${TS_RANK_WEIGHTS}', fact_search_vector, websearch_to_tsquery('english', $1)) as score
+        ts_rank(fact_search_vector, websearch_to_tsquery('english', $1)) as score
       FROM ci.facts
       WHERE fact_owner_id = $2
         AND fact_search_vector @@ websearch_to_tsquery('english', $1)
@@ -492,7 +486,7 @@ export class SearchService {
         dc.section_title,
         d.document_id,
         d.title as document_title,
-        ts_rank('${TS_RANK_WEIGHTS}', dc.content_search_vector, websearch_to_tsquery('english', $1)) as score
+        ts_rank(dc.content_search_vector, websearch_to_tsquery('english', $1)) as score
       FROM ci.document_chunks dc
       JOIN ci.documents d ON d.document_id = dc.document_id
       WHERE d.user_id = $2
@@ -530,7 +524,7 @@ export class SearchService {
         m.created_at,
         t.thread_id,
         t.title as thread_title,
-        ts_rank('${TS_RANK_WEIGHTS}', m.search_vector, websearch_to_tsquery('english', $1)) as score
+        ts_rank(m.search_vector, websearch_to_tsquery('english', $1)) as score
       FROM ci.messages m
       JOIN ci.threads t ON t.thread_id = m.thread_id
       WHERE m.user_id = $2
