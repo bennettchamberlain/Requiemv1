@@ -12,7 +12,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from .data_aggregator import aggregator
-from . import summaries
 from . import workflow_control
 from . import __version__
 
@@ -39,9 +38,66 @@ class ManualSummaryRequest(BaseModel):
     lookback_days: Optional[int] = Field(default=None, description="For dossier: lookback days")
 
 
+async def _trigger_summary_workflow(
+    user_id: str,
+    period_type: str,
+    start_time: str,
+    end_time: str,
+    timezone: str,
+    lookback_days: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Trigger summary generation workflow via Temporal.
+
+    This ensures all summary generation goes through the same code path
+    with proper durability, retries, and visibility.
+    """
+    from temporalio.client import Client
+    from .config import settings
+    from .priority import Priority, get_task_queue
+
+    client = await Client.connect(
+        settings.temporal_address,
+        namespace=settings.temporal_namespace,
+    )
+
+    now = datetime.utcnow()
+
+    # Map period_type to workflow name
+    workflow_map = {
+        "hourly": "hourly-summary",
+        "daily": "daily-summary",
+        "weekly": "weekly-summary",
+        "monthly": "monthly-summary",
+        "dossier": "dossier-refresh",
+    }
+
+    workflow_name = workflow_map.get(period_type)
+    if not workflow_name:
+        raise ValueError(f"Unknown period_type: {period_type}")
+
+    workflow_id = f"{period_type}-{user_id}-{now.isoformat()}"
+
+    # Build args based on workflow type
+    if period_type == "dossier":
+        args = [user_id, end_time, timezone, lookback_days or 30, None]
+    else:
+        args = [user_id, start_time, end_time, timezone, None]
+
+    # Start the workflow and wait for result
+    result = await client.execute_workflow(
+        workflow_name,
+        args=args,
+        id=workflow_id,
+        task_queue=get_task_queue(Priority.HIGH),  # API-triggered = high priority
+    )
+
+    return result
+
+
 @app.post("/summary/manual-trigger")
 async def manual_trigger_summary(request: ManualSummaryRequest) -> Dict[str, Any]:
-    """Manually trigger summary generation (bypasses queue)."""
+    """Manually trigger summary generation via Temporal workflow."""
     try:
         user_id = uuid.UUID(request.user_id)
     except ValueError as exc:
@@ -62,22 +118,15 @@ async def manual_trigger_summary(request: ManualSummaryRequest) -> Dict[str, Any
         }.get(request.period_type, timedelta(hours=1))
         start_time = end_time - delta
 
-    # Execute
     try:
-        if request.period_type == "hourly":
-            result = summaries.execute_hourly_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "daily":
-            result = summaries.execute_daily_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "weekly":
-            result = summaries.execute_weekly_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "monthly":
-            result = summaries.execute_monthly_summary(user_id, start_time, end_time, request.timezone)
-        elif request.period_type == "dossier":
-            result = summaries.execute_dossier_refresh(
-                user_id, end_time, request.timezone, request.lookback_days
-            )
-        else:
-            raise HTTPException(status_code=400, detail=f"Unknown period_type: {request.period_type}")
+        result = await _trigger_summary_workflow(
+            str(user_id),
+            request.period_type,
+            start_time.isoformat(),
+            end_time.isoformat(),
+            request.timezone,
+            request.lookback_days,
+        )
 
         return {
             "status": "success",
@@ -110,7 +159,7 @@ class DossierFetchRequest(BaseModel):
 
 @app.post("/dossier/refresh")
 async def refresh_dossier(request: DossierRefreshRequest) -> Dict[str, Any]:
-    """Manually refresh user dossier."""
+    """Manually refresh user dossier via Temporal workflow."""
     try:
         user_id = uuid.UUID(request.user_id)
     except ValueError as exc:
@@ -119,8 +168,13 @@ async def refresh_dossier(request: DossierRefreshRequest) -> Dict[str, Any]:
     end_time = _parse_iso(request.end_time) if request.end_time else datetime.utcnow()
 
     try:
-        result = summaries.execute_dossier_refresh(
-            user_id, end_time, request.timezone, request.lookback_days
+        result = await _trigger_summary_workflow(
+            str(user_id),
+            "dossier",
+            end_time.isoformat(),  # start_time not used for dossier
+            end_time.isoformat(),
+            request.timezone,
+            request.lookback_days,
         )
         return {
             "status": "success",
@@ -159,6 +213,142 @@ async def get_dossier(request: DossierFetchRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="No dossier available")
 
     return {"entity_id": entity_id, "dossier": dossier}
+
+
+# ============================================================================
+# Insights endpoints
+# ============================================================================
+
+class InsightsRequest(BaseModel):
+    user_id: str = Field(description="User UUID")
+    timezone: str = Field(default="UTC", description="User's timezone")
+    lookback_hours: Optional[int] = Field(default=72, description="Hours to look back for context (default 72)")
+
+
+async def _trigger_insights_workflow(
+    user_id: str,
+    timezone: str,
+    lookback_hours: int,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """
+    Trigger the InsightsGenerationWorkflow via Temporal.
+
+    This ensures all insight generation goes through the same code path
+    with proper durability, retries, and visibility.
+    """
+    from temporalio.client import Client
+    from .config import settings
+    from .priority import Priority, get_task_queue
+    from datetime import datetime
+
+    client = await Client.connect(
+        settings.temporal_address,
+        namespace=settings.temporal_namespace,
+    )
+
+    now = datetime.utcnow()
+    workflow_id = f"insights-{user_id}-{now.isoformat()}"
+
+    # Start the workflow and wait for result
+    result = await client.execute_workflow(
+        "insights-generation",
+        args=[user_id, timezone, lookback_hours, None, force],
+        id=workflow_id,
+        task_queue=get_task_queue(Priority.HIGH),  # API-triggered = high priority
+    )
+
+    return result
+
+
+@app.post("/insights/generate")
+async def generate_insights(request: InsightsRequest) -> Dict[str, Any]:
+    """
+    Manually trigger proactive insights generation.
+
+    Generates actionable insights based on:
+    - Recent graph deltas (new people, relationship changes)
+    - Upcoming events (next 14 days)
+    - Recent activity summaries
+    - Strongest and recently-changed relationships
+    - Recent communications
+
+    Will skip if no new data since last insight generation.
+    """
+    try:
+        user_id = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
+
+    try:
+        result = await _trigger_insights_workflow(
+            str(user_id),
+            request.timezone,
+            request.lookback_hours,
+            force=False,
+        )
+
+        if result.get("skipped"):
+            return {
+                "status": "skipped",
+                "reason": result.get("reason"),
+                "user_id": request.user_id,
+                "message": f"Insights generation skipped: {result.get('reason')}",
+            }
+
+        return {
+            "status": "success",
+            "message": f"Generated {result.get('num_insights', 0)} insights",
+            "summary_ids": result.get("summary_ids"),
+            "num_insights": result.get("num_insights"),
+            "tokens_used": result.get("tokens_used", 0),
+        }
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Insights generation failed: {str(exc)}") from exc
+
+
+@app.post("/insights/force-generate")
+async def force_generate_insights(request: InsightsRequest) -> Dict[str, Any]:
+    """
+    Force insights generation even if no new data.
+
+    Use this to regenerate insights regardless of whether there's new data.
+    Sets lookback to specified hours (default 72) from now.
+    """
+    try:
+        user_id = uuid.UUID(request.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
+
+    try:
+        result = await _trigger_insights_workflow(
+            str(user_id),
+            request.timezone,
+            request.lookback_hours,
+            force=True,
+        )
+
+        if result.get("skipped"):
+            return {
+                "status": "skipped",
+                "reason": result.get("reason"),
+                "user_id": request.user_id,
+                "message": f"Insights generation skipped: {result.get('reason')}",
+            }
+
+        return {
+            "status": "success",
+            "message": f"Force-generated {result.get('num_insights', 0)} insights",
+            "summary_ids": result.get("summary_ids"),
+            "num_insights": result.get("num_insights"),
+            "tokens_used": result.get("tokens_used", 0),
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Insights generation failed: {str(exc)}") from exc
 
 
 # ============================================================================

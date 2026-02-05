@@ -6,7 +6,6 @@
  * ### Key Components:
  * - **`UserService` & `UserEntity`**: Core components for managing user data and business logic.
  * - **`SignupCodeService` & `SignupCodeEntity`**: Handle the logic for user invitation and signup codes.
- * - **`UserController`**: Exposes REST API endpoints for user-related operations.
  *
  * ### Module Integration:
  * - **`EventsModule`**: Publishes events, such as when a new user is created, to allow other
@@ -20,7 +19,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { UserController } from './controllers/UserController';
 import { SignupCodeEntity } from './entities/SignupCodeEntity';
 import { UserEntity, type User } from './entities/UserEntity';
 import { SignupCodeService } from './services/SignupCodeService';
@@ -32,7 +30,6 @@ import { UserService } from './services/UserService';
 @Module({
   imports: [TypeOrmModule.forFeature([UserEntity, SignupCodeEntity]), EventsModule],
   providers: [UserService, SignupCodeService],
-  controllers: [UserController],
   exports: [UserService, SignupCodeService],
 })
 export class UserModule {}

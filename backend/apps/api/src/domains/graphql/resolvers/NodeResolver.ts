@@ -3,6 +3,8 @@ import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { BrowserActivityService } from '@ci/domains/browser-activity';
+import { ConnectionService } from '@ci/domains/connections';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
@@ -14,12 +16,15 @@ import {
   PersonService,
   PlaceService,
 } from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
 import { TagService } from '@ci/domains/search-next';
 import { UserService } from '@ci/domains/user';
 
 import { ActionType } from '../types/ActionType';
 import { AnswerType } from '../types/AnswerType';
+import { BrowserActivityType } from '../types/BrowserActivityType';
 import { ConceptType } from '../types/ConceptType';
+import { ConnectionType } from '../types/ConnectionType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
@@ -27,6 +32,7 @@ import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
 import { MessageType } from '../types/MessageType';
 import { Node } from '../types/Node';
+import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
 import { QuestionType } from '../types/QuestionType';
@@ -40,12 +46,15 @@ export class NodeResolver {
   constructor(
     private readonly actionService: ActionService,
     private readonly answerService: AnswerService,
+    private readonly browserActivityService: BrowserActivityService,
     private readonly conceptService: ConceptService,
+    private readonly connectionService: ConnectionService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
+    private readonly noteService: NoteService,
     private readonly personService: PersonService,
     private readonly placeService: PlaceService,
     private readonly questionService: QuestionService,
@@ -75,10 +84,22 @@ export class NodeResolver {
         return answer ? AnswerType.toType(answer) : null;
       }
 
+      case 'browser-activity': {
+        const activity = await this.browserActivityService.findById(serviceContext, id);
+
+        return activity ? BrowserActivityType.toType(activity) : null;
+      }
+
       case 'concept': {
         const concept = await this.conceptService.findById(serviceContext, id);
 
         return concept ? ConceptType.toType(concept) : null;
+      }
+
+      case 'connection': {
+        const connection = await this.connectionService.findById(serviceContext, id);
+
+        return connection ? ConnectionType.toType(connection) : null;
       }
 
       case 'content': {
@@ -109,6 +130,12 @@ export class NodeResolver {
         const message = await this.messageService.findById(serviceContext, id);
 
         return message ? MessageType.toType(message) : null;
+      }
+
+      case 'note': {
+        const note = await this.noteService.findById(serviceContext, id);
+
+        return note ? NoteType.toType(note) : null;
       }
 
       case 'person': {

@@ -33,11 +33,11 @@ If you're on MacOS, install Homebrew with the instructions found [here](https://
 
 #### Docker
 
-You'll want to install Docker on your machine to run containerized versions of our dependencies during development.
+Install Docker on your machine to run containerized versions of our dependencies during development.
 The easiest method here is downloading and installing the Docker Desktop app from [here](https://www.docker.com/products/docker-desktop/).
 The CLI tools should be automatically installed alongside the app.
 
-After it's installed, boot Docker Desktop and verify that it's running and accessible from the command line. We don't run "docker compose up" but rather "make local" below will do this work.
+After it's installed, boot Docker Desktop and verify that it's running and accessible from the command line.
 
 ```bash
 docker --version
@@ -47,7 +47,12 @@ docker --version
 
 ##### Option 1 - asdf
 
-[asdf](https://asdf-vm.com) can be used to manage multiple runtimes, including the NodeJS version. (see [getting started](https://asdf-vm.com/guide/getting-started.html) and [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs))
+[asdf](https://asdf-vm.com) can be used to manage multiple runtimes, including the NodeJS version. See:
+
+* [getting started](https://asdf-vm.com/guide/getting-started.html)
+* [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs))
+
+Install with:
 
 ```sh
 brew install asdf
@@ -56,11 +61,9 @@ asdf install
 node --version
 ```
 
-Autocompletions are nice to have, but not required to get everything running. Feel free to skip that configuration step.
+Note that `asdf` uses the `.tool-versions` file to define the versions of the various runtimes it manages.
 
-Note that `asdf` uses the `.tool-versions` file to define the versions of the various runtimes which it manages
-
-To keep compatibility with `nvm` - also add the following to `$HOME/.asdfrc`:
+To keep compatibility with `nvm`, also add the following to `$HOME/.asdfrc`:
 
 ```txt
 legacy_version_file = yes
@@ -76,8 +79,7 @@ nvm install
 node --version
 ```
 
-Note that `nvm` uses the `.nvmrc` file to define the version of NodeJS to use
-
+Note that `nvm` uses the `.nvmrc` file to define the version of NodeJS to use.
 
 #### tmux
 
@@ -104,7 +106,7 @@ The `ollama` binary can be daemonized if using Homebrew with:
 brew services start ollama
 ```
 
-test that Ollama is running using:
+Test that Ollama is running using:
 
 ```bash
 ollama pull gemma3:1b
@@ -114,15 +116,16 @@ ollama pull nomic-embed-text
 ollama run nomic-embed-text "embed this"
 ```
 
-
 ### Hostfile
 
-Edit your hostfile so that `dev.companionintelligence.com` resolves to 127.0.0.1.
+Edit your hostfile so that `dev.companionintelligence.com` resolves to `127.0.0.1`.
 
-## Initialize Dev environment
+## Initialize development environment
+
+Run the local Docker deployment:
 
 ```bash
-make setup-dev
+make local
 ```
 
 This runs a variety of commands to do setup, including:
@@ -132,13 +135,30 @@ This runs a variety of commands to do setup, including:
 * Ensure you have a hostfile entry for dev.companionintelligence.com
 * Set up Yarn PnP with the SDKs relevant to our project and configure VSCode to work with them
 * Install Yarn dependencies
-* boot local docker containers:
-    * A PostgreSQL server which we currently use as a primary database and job queue
-    * A Minio S3 static file bucket where we upload all static files
-    * An NGINX reverse proxy that publishes our backend (NodeJS) and frontend (Vite) processes to dev.companionintelligence.com
-* run data schema migrations
-* seed the database with dev data
-* index the database
+* Boot local docker containers:
+  * **PostgreSQL** Which we use as a primary database and job queue (via PGBoss)
+  * **Minio** S3 static file bucket where we upload all static files
+  * **Temporal** A durable orchestration engine that manages our more complex async workflows
+  * **NGINX** A reverse proxy that publishes our backend (NodeJS) and frontend (Vite) processes to dev.companionintelligence.com
+* Run data schema migrations
+
+Run our applications following the instructions in their respective READMEs.
+
+* Backend (api) [README](backend/apps/api/README.md)
+* Frontend (web) [README](frontend/apps/web/README.md)
+
+Seed the database with development data:
+
+```bash
+make seed
+```
+
+You should now be able to view the application at [dev.companionintelligence.com](http://dev.companionintelligence.com) and login with the credentials:
+
+```
+Username: jsmith@example.com
+Password: ]60.a6{CJ}lB*rHAp;w;
+```
 
 If you run into problems with this, you can reset the docker environment using:
 
@@ -146,112 +166,78 @@ If you run into problems with this, you can reset the docker environment using:
 make reset
 ```
 
-## Run the app in dev mode
+## Available Commands
 
-To run the app in dev mode:
+Run `make` from the project root to see all available commands with descriptions.
+
+### Setup & Initialization
+
+| Command | Description |
+|---------|-------------|
+| `make init` | Initialize repository after checkout (installs dependencies, sets up VS Code, prepares git hooks) |
+| `make install` | Install project dependencies only |
+| `make health` | Check prerequisites (Node.js version, Yarn version, Ollama, required models) |
+| `make dev-health` | Check prerequisites including development DNS resolution (dev.companionintelligence.com) |
+
+### Development
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Run the development environment locally (health check, local services, tmux session) |
+| `make local` | Run the local deployment (Docker services: PostgreSQL, Minio, NGINX, etc.) |
+| `make graphql` | Generate GraphQL schema and frontend types |
+| `make tooling` | Run development tooling services |
+| `make reset` | Reset the local development environment (removes all containers, volumes, images) |
+
+### Database
+
+| Command | Description |
+|---------|-------------|
+| `make dbclear` | Clear the data stored in the PostgreSQL database |
+| `make dbdestroy` | Drop all PostgreSQL data including tables |
+| `make migrate` | Run database migrations |
+| `make seed` | Seed database with John Smith user and demo data |
+
+### Build & Deploy
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the application (API, frontend, Docker images) |
+| `make staging` | Run the staging deployment |
+| `make production` | Run the production deployment |
+
+### Admin Scripts
+
+| Command | Description |
+|---------|-------------|
+| `make chatreset` | Reset John Smith's demo threads |
+| `make gentoken` | Generates a stable access token for use during development |
+| `make signup` | Generates a set of signup codes for user registration |
+| `make userpw` | Change a user's password |
+
+### Linting
 
 ```bash
-make run-dev
+yarn lint      # Run ESLint across the entire monorepo
+yarn lint:fix  # Auto-fix linting issues
 ```
-
-You should now be able to view the application at:
-
-[dev.companionintelligence.com](http://dev.companionintelligence.com)
-
-If you have run `make seed`, you can login using the credentials:
-
-```
-Username: jsmith@example.com
-Password: ]60.a6{CJ}lB*rHAp;w;
-```
-
------
-
-Note: You can instead run the applications manually following the instructions in the READMEs for each of our services.
-Running services individually can be preferable for examining log scrollback, etc.
-
-* Backend (api) [README](backend/apps/api/README.md)
-* Frontend (web) [README](frontend/apps/web/README.md)
-
-
-## Available commands
-
-### Reset docker environment
-
-
-```bash
-make reset
-```
-
-### Root level
-
-From the project root, you can run:
-
-```bash
-make
-```
-
-To show all available make commands.
-
-Or
-
-```bash
-yarn lint
-```
-
-To execute repository-wide linting.
-
-#### Useful development commands
-
-To generate a stable access token (24 hour expiration) for a user use:
-
-```
-make gentoken
-```
-
-And provide the user's email address. If they exist in the database you should get an access token printed.
 
 ### Backend API Commands (`backend/apps/api`)
 
-Navigate to `backend/apps/api` and run:
-
 ```bash
-# Development
 yarn dev                    # Start development server with nodemon
-
-# Database operations
 yarn migrate:make <name>    # Create a new migration file
 yarn migrate:rollback       # Rollback the last migration
-
-# Code quality
 yarn lint:circular-imports  # Check for circular import dependencies
+yarn lint                   # Lint backend code
+yarn lint:fix               # Auto-fix backend linting issues
 ```
 
-### Frontend SPA commands (`frontend/apps/web`)
-
-Navigate to `frontend/apps/web` and run:
+### Frontend SPA Commands (`frontend/apps/web`)
 
 ```bash
-yarn dev          # Start Vite development server
+yarn dev                    # Start Vite development server
+yarn storybook              # Start Storybook for component development
+yarn lint                   # Lint frontend code
+yarn lint:fix               # Auto-fix frontend linting issues
 ```
-
-### Docker useful commands
-
-```
-# View logs
-docker compose logs -f                   # Follow all container logs
-docker compose logs -f <service-name>    # Follow specific service logs
-
-# Container management
-docker compose ps                        # List running containers
-docker compose restart <service-name>    # Restart specific service
-
-# Reset all Docker
-docker stop $(docker ps -q)
-docker system prune -a
-```
-
-### Tool Use
-Right now, the LLM has limited access to tools. There are two tools developed, one for getting user preferences and one for getting family members. The LLM itself has discression over when and how to use the tools, but it seems to have a strong preference for the family member tool which is now disabled.
-
-Tools are defined in `backend/apps/api/src/domains/llm/tools`.

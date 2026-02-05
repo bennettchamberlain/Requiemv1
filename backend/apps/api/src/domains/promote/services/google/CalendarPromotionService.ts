@@ -44,8 +44,8 @@ interface EventDetails {
   id: string;
   summary: string;
   description: string | null;
-  startTime: string | null;
-  endTime: string | null;
+  startTime: string | undefined;
+  endTime: string | undefined;
   location: string | null;
   organizerEmail: string;
   organizerName: string;
@@ -266,8 +266,8 @@ export class GoogleCalendarEventPromotionService {
       eventDetails.participants,
       userId,
       connectionId,
-      event.start?.dateTime,
-      event.end?.dateTime,
+      eventDetails.startTime,
+      eventDetails.endTime,
     );
 
     this.logger.log('Calendar event saved successfully', {
@@ -277,8 +277,8 @@ export class GoogleCalendarEventPromotionService {
   }
 
   private extractEventDetails(event: CalendarEvent): EventDetails {
-    const startTime = event.start?.dateTime || event.start?.date || null;
-    const endTime = event.end?.dateTime || event.end?.date || null;
+    const startTime = event.start?.dateTime || event.start?.date || undefined;
+    const endTime = event.end?.dateTime || event.end?.date || undefined;
 
     // Extract participants (attendees)
     const participants: Participant[] = (event.attendees || []).map((attendee) => ({
@@ -404,9 +404,9 @@ export class GoogleCalendarEventPromotionService {
     return [...organizerEntityIds, ...attendeeEntityIds];
   }
 
-  private parseDateTime(dateTimeStr: string | null): Date | null {
+  private parseDateTime(dateTimeStr: string | undefined): Date | undefined {
     if (!dateTimeStr) {
-      return null;
+      return undefined;
     }
 
     try {
@@ -414,11 +414,11 @@ export class GoogleCalendarEventPromotionService {
     } catch {
       this.logger.warn('Failed to parse datetime', { dateTimeStr });
 
-      return null;
+      return undefined;
     }
   }
 
-  private isAllDayEvent(startTime: string | null): boolean {
+  private isAllDayEvent(startTime: string | undefined): boolean {
     // If no time component (no 'T' in ISO string), it's an all-day event
     return !!startTime && !startTime.includes('T');
   }

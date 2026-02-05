@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { ContentService, type CreateContentDto, ContentEntity } from '@ci/domains/memory';
@@ -235,7 +236,7 @@ export class FacebookPostsPromotionService {
 
         // Always create a content record for the post, even if it has no media files
         const contentDto = {
-          id: '',
+          id: uuidv7(),
           type: 'Content',
           title: postTitle,
           text: textParts.join('\n\n') || `Facebook post from ${createdDate || 'Facebook'}`,

@@ -58,4 +58,4 @@ export type Tag = Readonly<
   }
 >;
 
-export type TimestampedTag = Readonly<Pick<Tag, 'label'> & Pick<EntityTag, 'taggedAt'>>;
+export type TimestampedTag = Readonly<Pick<Tag, 'id' | 'label'> & Pick<EntityTag, 'taggedAt'>>;

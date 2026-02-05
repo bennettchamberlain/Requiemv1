@@ -14,10 +14,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RequestContextMiddleware } from '@ci/common/context';
+import { FeatureModule } from '@ci/common/feature';
 import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
 import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/common/logging';
 import config from '@ci/configuration';
+import { AuditModule } from '@ci/domains/audit';
 import { AuthModule } from '@ci/domains/auth';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
@@ -30,6 +32,7 @@ import { GraphQLModule } from '@ci/domains/graphql';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
+import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
 import { PositionModule } from '@ci/domains/position';
 import { PromoteModule } from '@ci/domains/promote';
@@ -37,6 +40,7 @@ import { EmbeddingModule } from '@ci/domains/search';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SpeechModule } from '@ci/domains/speech';
+import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
 
@@ -52,9 +56,11 @@ import { UserModule } from '@ci/domains/user';
       entities: [path.join(__dirname, 'domains/**/*Entity.{ts,js}')],
       logging: [...(config.environment['database.query.logging'] ? (['error', 'query'] as const) : [])],
     }),
+    FeatureModule,
     LoggingModule,
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
+    AuditModule,
     AuthModule,
     BrowserActivityModule,
     ConnectionsModule,
@@ -71,10 +77,12 @@ import { UserModule } from '@ci/domains/user';
     PositionModule,
     ToolsModule,
     MemoryModule,
+    NotesModule,
     PromoteModule,
     SearchIngressModule,
     SearchNextModule,
     SpeechModule,
+    SummariesModule,
     UserModule,
   ],
   controllers: [],

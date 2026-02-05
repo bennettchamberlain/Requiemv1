@@ -1,15 +1,19 @@
+import { z } from 'zod';
+
 export interface CompleteConnectionDto {
   state: string;
   code: string;
 }
 
 export interface CreateConnectionDto {
-  name: string;
+  name?: string;
   providerId: string;
   clientid?: string;
   clientkey?: string;
   clientsecret?: string;
   schedule?: string;
+  endpoints?: string[];
+  externalId?: string;
 }
 
 export interface UpdateConnectionDto {
@@ -20,4 +24,15 @@ export interface UpdateConnectionDto {
   refreshToken?: string | null;
   tokenExpiry?: Date | null;
   syncState?: Record<string, unknown> | null;
+  endpoints?: string[];
+  needsReauth?: boolean;
+  externalId?: string;
 }
+
+export interface connectProviderDto {
+  endpoints: string[];
+}
+
+export const connectProviderSchema = z.object({
+  endpoints: z.array(z.string()),
+});

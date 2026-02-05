@@ -1,31 +1,29 @@
-FROM python:3.11-slim
+FROM python:3.11.12-slim-bookworm
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
+RUN useradd -m -u 1000 memorizer
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
-RUN pip install --no-cache-dir uv
+COPY --from=ghcr.io/astral-sh/uv:0.5.18 /uv /usr/local/bin/uv
 
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv (without --frozen to handle lock file updates)
-RUN uv sync --no-dev
+# Install dependencies from lock file (without project structure)
+RUN uv pip install --system --no-cache -r pyproject.toml
 
 # Copy application code
 COPY src/ ./src/
 COPY entrypoint.sh ./
 
-# Make entrypoint executable
-RUN chmod +x entrypoint.sh
+# Make entrypoint executable and set ownership
+RUN chmod +x entrypoint.sh && chown -R memorizer:memorizer /app
 
-# Run as non-root user
-RUN useradd -m -u 1000 memorizer && chown -R memorizer:memorizer /app
 USER memorizer
 
 # Expose API port

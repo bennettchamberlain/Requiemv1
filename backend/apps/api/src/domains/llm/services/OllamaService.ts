@@ -9,6 +9,7 @@ import {
 } from 'ollama';
 
 import type { RequestContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { ToolRegistry, type ToolSchema } from '@ci/domains/tools';
@@ -50,6 +51,7 @@ export class OllamaService {
   constructor(
     private readonly toolRegistry: ToolRegistry,
     private readonly logger: LoggerService,
+    private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(OllamaService.name);
   }
@@ -296,8 +298,10 @@ export class OllamaService {
     let resolvedThinking = enableThinking;
     let resolvedTools = enableTools;
 
+    const pinnedDemoModelsEnabled = await this.featureService.isFeatureEnabled('pinned.demo.models');
+
     // If pinned demo models feature is enabled, always use demo models
-    if (config.features['pinned.demo.models']) {
+    if (pinnedDemoModelsEnabled) {
       // Check if any message contains image content
       const hasVisualContent = messages.some((message) => message.images && message.images.length > 0);
 

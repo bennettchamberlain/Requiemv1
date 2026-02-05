@@ -1,11 +1,13 @@
 import { UseGuards } from '@nestjs/common';
-import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { PlaceService } from '@ci/domains/memory';
 
+import { TagLoader } from '../loaders/TagLoader';
 import { CreatePlaceInput } from '../types/CreatePlaceInput';
+import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { PlaceConnection } from '../types/PlaceConnection';
@@ -17,7 +19,10 @@ import { Paginator } from '../utils/Paginator';
 @UseGuards(JwtAuthGuard)
 @Resolver(() => PlaceType)
 export class PlaceResolver {
-  constructor(private readonly placeService: PlaceService) {}
+  constructor(
+    private readonly placeService: PlaceService,
+    private readonly tagLoader: TagLoader,
+  ) {}
 
   @Mutation(() => PlaceType)
   async createPlace(
@@ -161,5 +166,17 @@ export class PlaceResolver {
     const entity = await this.placeService.findById(serviceContext, id);
 
     return entity ? PlaceType.toType(entity) : null;
+  }
+
+  @ResolveField(() => [EntityTagType])
+  async tags(@Context() context: RequestContext, @Parent() parent: PlaceType): Promise<EntityTagType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const tags = await this.tagLoader.load(serviceContext, {
+      type: 'place',
+      id: parent.__source.id,
+    });
+
+    return tags.map((tag) => EntityTagType.toType(tag));
   }
 }

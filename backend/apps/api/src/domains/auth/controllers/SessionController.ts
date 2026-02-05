@@ -52,7 +52,6 @@ export class SessionController {
     return {
       sessionToken,
       accessToken,
-      user,
     };
   }
 
@@ -95,7 +94,6 @@ export class SessionController {
     return {
       sessionToken,
       accessToken,
-      user,
     };
   }
 
@@ -122,7 +120,6 @@ export class SessionController {
     return {
       sessionToken: newSessionToken,
       accessToken,
-      user,
     };
   }
 

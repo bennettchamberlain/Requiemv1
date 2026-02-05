@@ -92,7 +92,18 @@ export class EtlService {
     const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
 
     if (refreshToken && tokenExpiry && new Date(tokenExpiry) < new Date()) {
-      const newCredentials = await client.refreshAccessToken(connection);
+      let newCredentials;
+      const refreshCredentials = await client.refreshAccessToken(connection);
+
+      //Some providers explicitly return null for refreshToken, which was overwriting the
+      //existing refreshToken. Strip it out in those cases.
+      if (refreshCredentials.refreshToken == null) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { refreshToken, ...stripped } = refreshCredentials;
+        newCredentials = stripped;
+      } else {
+        newCredentials = { ...refreshCredentials };
+      }
 
       connection = await this.connectionService.update({ userId: context.userId }, connectionId, {
         ...newCredentials,

@@ -1,51 +1,157 @@
+import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
 
+import {
+  AnswerGridItem,
+  BrowserActivityGridItem,
+  CommunicationGridItem,
+  ConceptGridItem,
+  ContentGridItem,
+  EntityGrid,
+  EventGridItem,
+  FileGridItem,
+  ItemGridItem,
+  NoteGridItem,
+  PersonGridItem,
+  PlaceGridItem,
+  ThreadGridItem,
+} from '@/components/entities';
 import { Empty } from '@/pages/MemoryPage/Components';
-import { ResultCard } from '@/pages/MemoryPage/GalleryView/ResultCard';
-import type { MemoryItem, SearchResult } from '@/pages/MemoryPage/types.ts';
 
-import { useMemoryService } from '../useMemoryService';
+import { useEntityService } from '../useEntityService';
 
 export function GalleryView() {
-  const { memories, searchResults } = useMemoryService();
+  const navigate = useNavigate();
 
-  let combinedResults: (SearchResult | MemoryItem)[] = [];
-  const memoryIds = memories.map((memory) => memory.id);
-  const uniqueSearchResults = searchResults.filter((searchResult) => {
-    return !memoryIds.includes(searchResult.id);
-  });
-  combinedResults = combinedResults.concat(memories).concat(uniqueSearchResults);
+  const [{ data }] = useEntityService();
 
-  // Deduplicate files - if multiple memories reference the same file, only show the first one
-  const seenFileIds = new Set<string>();
-  const deduplicatedResults = combinedResults.filter((result) => {
-    // For MemoryItem with file, check if we've seen this file ID before
-    if ('file' in result && result.file?.id) {
-      if (seenFileIds.has(result.file.id)) {
-        return false; // Skip duplicate file
-      }
-
-      seenFileIds.add(result.file.id);
-    }
-
-    return true; // Include all other results
-  });
+  if (data.length === 0) {
+    return (
+      <Empty
+        title="No results found"
+        description="Connect your data sources or try a different search to see content here"
+        icon={Images}
+      />
+    );
+  }
 
   return (
-    <>
-      {deduplicatedResults.length === 0 ? (
-        <Empty
-          title="No files or results found"
-          description="Upload a file or search to see content here"
-          icon={Images}
-        />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4 pt-0">
-          {deduplicatedResults.map((result) => (
-            <ResultCard key={result.id || Math.random()} result={result} />
-          ))}
-        </div>
-      )}
-    </>
+    <EntityGrid className="p-4 pt-0">
+      {data.map((item) => {
+        switch (item.__typename) {
+          case 'AnswerType':
+            return <AnswerGridItem key={item.id} answer={item} onClick={() => {}} />;
+
+          case 'BrowserActivityType':
+            return <BrowserActivityGridItem key={item.id} browserActivity={item} onClick={() => {}} />;
+
+          case 'CommunicationType':
+            return (
+              <CommunicationGridItem
+                key={item.id}
+                communication={item}
+                onClick={() => {
+                  navigate(`/communications/${GlobalUID.parse('communication', item.id)}`);
+                }}
+              />
+            );
+
+          case 'ConceptType':
+            return (
+              <ConceptGridItem
+                key={item.id}
+                concept={item}
+                onClick={() => {
+                  navigate(`/concepts/${GlobalUID.parse('concept', item.id)}`);
+                }}
+              />
+            );
+
+          case 'ContentType':
+            return (
+              <ContentGridItem
+                key={item.id}
+                content={item}
+                onClick={() => {
+                  navigate(`/content/${GlobalUID.parse('content', item.id)}`);
+                }}
+              />
+            );
+
+          case 'EventType':
+            return (
+              <EventGridItem
+                key={item.id}
+                event={item}
+                onClick={() => {
+                  navigate(`/events/${GlobalUID.parse('event', item.id)}`);
+                }}
+              />
+            );
+
+          case 'FileType':
+            return <FileGridItem key={item.id} file={item} />;
+
+          case 'ItemType':
+            return (
+              <ItemGridItem
+                key={item.id}
+                item={item}
+                onClick={() => {
+                  navigate(`/items/${GlobalUID.parse('item', item.id)}`);
+                }}
+              />
+            );
+
+          case 'NoteType':
+            return (
+              <NoteGridItem
+                key={item.id}
+                note={item}
+                onClick={() => {
+                  navigate(`/notes/${GlobalUID.parse('note', item.id)}`);
+                }}
+              />
+            );
+
+          case 'PersonType':
+            return (
+              <PersonGridItem
+                key={item.id}
+                person={item}
+                onClick={() => {
+                  navigate(`/people/${GlobalUID.parse('person', item.id)}`);
+                }}
+              />
+            );
+
+          case 'PlaceType':
+            return (
+              <PlaceGridItem
+                key={item.id}
+                place={item}
+                onClick={() => {
+                  navigate(`/places/${GlobalUID.parse('place', item.id)}`);
+                }}
+              />
+            );
+
+          case 'ThreadType':
+            return (
+              <ThreadGridItem
+                key={item.id}
+                thread={item}
+                onClick={() => {
+                  navigate(`/chat/${GlobalUID.parse('thread', item.id)}`);
+                }}
+              />
+            );
+
+          default:
+            return null;
+        }
+      })}
+    </EntityGrid>
   );
 }

@@ -1,14 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DataSource, In, Repository, type FindOptionsOrder } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { EventEntity, Event } from '../entities/EventEntity';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
+
+interface Options {
+  limit?: number;
+  order?: FindOptionsOrder<EventEntity>;
+  startTime?: Date;
+  endTime?: Date;
+}
 
 @Injectable()
 export class EventService {
@@ -16,6 +24,7 @@ export class EventService {
     @InjectRepository(EventEntity)
     private readonly eventRepository: Repository<EventEntity>,
     private readonly signallingEventService: SignallingEventService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(context: UserServiceContext, data: CreateEventDto | CreateEventDto[]): Promise<Event[]> {
@@ -25,6 +34,7 @@ export class EventService {
     return await Promise.all(
       dataArray.map(async (item) => {
         const toCreate = { ...item } as Partial<EventEntity>;
+
         if (item.start_time) {
           toCreate.startTime = item.start_time;
         }
@@ -53,6 +63,10 @@ export class EventService {
           toCreate.organizerEntityId = item.organizer_entity_id;
         }
 
+        if (item.location_entity_id) {
+          toCreate.locationEntityId = item.location_entity_id;
+        }
+
         if (item.location_coordinates) {
           toCreate.locationCoordinates = item.location_coordinates;
         }
@@ -61,9 +75,11 @@ export class EventService {
           toCreate.locationName = item.location_name;
         }
 
+        const id = item.id ?? uuidv7();
+
         const event = await this.eventRepository.create({
           ...toCreate,
-          id: uuidv7(),
+          id,
           user: {
             id: context.userId,
           },
@@ -334,5 +350,41 @@ export class EventService {
         }),
       },
     });
+  }
+
+  async getEntitiesForEvents(
+    context: ServiceContext,
+    options: Options,
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .select(['event.event_id'])
+      .where('event.user_id = :userId', { userId: context.userId });
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    if (options.order) {
+      for (const [field, direction] of Object.entries(options.order)) {
+        query = query.orderBy(`event.${field}`, direction as 'ASC' | 'DESC');
+      }
+    }
+
+    if (options.startTime) {
+      query = query.andWhere('event.start_time >= :startTime', { startDate: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('event.end_time >= :endTime', { endTime: options.endTime });
+    }
+
+    const results = await query.getRawMany();
+
+    return results.map((row: { event_id: string; type: IndexableEntity }) => ({
+      id: row.event_id,
+      type: 'event' as IndexableEntity,
+    }));
   }
 }

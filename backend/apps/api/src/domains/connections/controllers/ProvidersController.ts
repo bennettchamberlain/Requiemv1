@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   InternalServerErrorException,
@@ -11,10 +12,12 @@ import {
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
+import { ValidationPipe } from '@ci/common/pipes';
 
 import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';
 import { ProviderService } from '../services/ProviderService';
+import { connectProviderDto, connectProviderSchema } from '../types';
 
 @Controller('providers')
 export class ProvidersController {
@@ -45,7 +48,11 @@ export class ProvidersController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':id')
-  async connect(@Context() context: RequestContext, @Param('id') id: string) {
+  async connect(
+    @Context() context: RequestContext,
+    @Param('id') id: string,
+    @Body(new ValidationPipe(connectProviderSchema)) input: connectProviderDto,
+  ) {
     const serviceContext = toServiceContext(context);
 
     const provider = await this.providerService.findById(serviceContext, id);
@@ -93,6 +100,7 @@ export class ProvidersController {
       clientid: clientId,
       clientsecret: clientSecret,
       schedule: '1 hour',
+      endpoints: input.endpoints,
     });
 
     const authorizationUrl = await client.getAuthorizationUrl(connection);

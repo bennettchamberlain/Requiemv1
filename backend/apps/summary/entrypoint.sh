@@ -5,9 +5,6 @@ set -e
 
 echo "Starting CI-Summary services..."
 
-# Activate the virtual environment
-source .venv/bin/activate
-
 # Start the FastAPI server in the background
 echo "Starting FastAPI API server on port 8001..."
 uvicorn src.api:app --host 0.0.0.0 --port 8001 &
@@ -20,6 +17,11 @@ sleep 2
 echo "Starting Temporal worker..."
 python -m src.worker &
 WORKER_PID=$!
+
+# Run unified startup checks and setup
+# This waits for Temporal and then configures system schedules
+python -m src.startup &
+
 
 # Function to handle shutdown gracefully
 shutdown() {

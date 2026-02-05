@@ -1,11 +1,13 @@
 export const INDEXABLE_ENTITIES = [
   'answer',
+  'browser-activity',
   'communication',
   'concept',
   'content',
   'event',
   'file',
   'item',
+  'note',
   'person',
   'place',
   'thread',
@@ -15,9 +17,14 @@ export type IndexableEntity = (typeof INDEXABLE_ENTITIES)[number];
 
 export const TAGGABLE_ENTITIES = [
   'action',
+  'browser-activity',
   'communication',
+  'concept',
   'content',
+  'event',
+  'file',
   'item',
+  'note',
   'person',
   'place',
   'thread',

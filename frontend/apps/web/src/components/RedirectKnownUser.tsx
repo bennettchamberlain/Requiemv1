@@ -1,16 +1,17 @@
 import { LoadingPage } from '@ci/common';
 import { Navigate } from 'react-router-dom';
 
-import { useAuth } from '../hooks';
+import { useAuth, useCurrentUser } from '@/hooks';
 
 export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
-  const [{ expired, user, loading }] = useAuth();
+  const [{ expired, loading: authLoading }] = useAuth();
+  const { user, loading: userLoading } = useCurrentUser();
 
   if (expired) {
     return children;
   }
 
-  if (loading) {
+  if (authLoading || userLoading) {
     return <LoadingPage />;
   }
 

@@ -4,7 +4,7 @@ import { type MultiBar } from 'cli-progress';
 import { ActionService } from '@ci/domains/intelligence';
 import { TagService } from '@ci/domains/search-next';
 
-import { ACTIONS } from './js1-data/actions';
+import { ACTIONS } from './data/actions';
 
 export async function seedActions(module: TestingModule, multibar: MultiBar) {
   const actionService = module.get(ActionService);

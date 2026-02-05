@@ -3,7 +3,7 @@ import { type MultiBar } from 'cli-progress';
 
 import { ThreadService } from '@ci/domains/conversations';
 
-import { THREADS } from './js1-data/threads';
+import { THREADS } from './data/threads';
 
 export async function seedThreads(module: TestingModule, multibar: MultiBar) {
   const threadService = module.get(ThreadService);

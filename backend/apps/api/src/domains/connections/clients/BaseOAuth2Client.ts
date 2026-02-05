@@ -20,12 +20,23 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   protected abstract clientSecret: string;
 
+  protected abstract extraAuthParams: Record<string, string>;
+
+  protected abstract endpointScopeMap: Record<string, string[]>;
+
+  protected abstract getScopesFromActiveEndpoints(activeEndpoints: string[]): string;
+
+  abstract getAccountIdentifier(connection: Connection): Promise<string>;
+
   async request<T>(connection: Connection, endpoint: string, options?: RequestInit): Promise<T> {
     if (connection.accessToken == null) {
       throw new Error('Connection not authenticated');
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const endpointSplitOnProtocol = /^(https:\/\/[^/]+)(\/.*)?$/.exec(endpoint);
+    const baseUrl = endpointSplitOnProtocol ? endpointSplitOnProtocol[1] : this.baseUrl;
+    const path = endpointSplitOnProtocol ? endpointSplitOnProtocol[2] || '' : endpoint;
+    const response = await fetch(`${baseUrl}${path}`, {
       ...options,
       headers: {
         ...options?.headers,
@@ -70,8 +81,9 @@ export abstract class BaseOAuth2Client extends BaseClient {
       client_id: this.clientId,
       redirect_uri: config.auth.oauth.callbackUrl,
       response_type: 'code',
-      scope: this.scopes.join(' '),
+      scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
       state: connection.id,
+      ...this.extraAuthParams,
     });
 
     return `${this.authorizationEndpoint}?${params.toString()}`;

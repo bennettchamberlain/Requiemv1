@@ -1,6 +1,7 @@
 import { createUnionType } from '@nestjs/graphql';
 
 import { AnswerType } from './AnswerType';
+import { BrowserActivityType } from './BrowserActivityType';
 import { CommunicationType } from './CommunicationType';
 import { ConceptType } from './ConceptType';
 import { ContentType } from './ContentType';
@@ -9,6 +10,7 @@ import { FileType } from './FileType';
 import { GlobalUID } from './GlobalUID';
 import { ItemType } from './ItemType';
 import type { Node } from './Node';
+import { NoteType } from './NoteType';
 import { PersonType } from './PersonType';
 import { PlaceType } from './PlaceType';
 import { ThreadType } from './ThreadType';
@@ -18,12 +20,14 @@ export const SearchResultType = createUnionType({
   types: () =>
     [
       AnswerType,
+      BrowserActivityType,
       CommunicationType,
       ConceptType,
       ContentType,
       EventType,
       FileType,
       ItemType,
+      NoteType,
       PersonType,
       PlaceType,
       ThreadType,
@@ -34,6 +38,8 @@ export const SearchResultType = createUnionType({
     switch (type) {
       case 'answer':
         return AnswerType;
+      case 'browser-activity':
+        return BrowserActivityType;
       case 'communication':
         return CommunicationType;
       case 'concept':
@@ -46,6 +52,8 @@ export const SearchResultType = createUnionType({
         return FileType;
       case 'item':
         return ItemType;
+      case 'note':
+        return NoteType;
       case 'person':
         return PersonType;
       case 'place':

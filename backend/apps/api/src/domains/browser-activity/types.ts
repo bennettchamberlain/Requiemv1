@@ -29,6 +29,7 @@ export const updateBrowserActivitySchema = createBrowserActivitySchemaRoot.parti
 
 // DTOs
 export interface CreateBrowserActivityDto {
+  id?: string;
   time: string;
   device_id: string;
   url: string;

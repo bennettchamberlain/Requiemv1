@@ -415,19 +415,23 @@ export class PromoteService {
     await Promise.all(
       entities.map((entity) => {
         try {
-          this.relationshipService.create(context, {
-            fromNodeId: userNode.entityId,
-            toNodeId: entity.id,
-            type: relationshipType,
-            startDate: startDate,
-            endDate: endDate,
-            properties: {
-              source,
-              connection_id: connectionId,
-              participant_type: entity.type,
-              last_interaction: new Date().toISOString(),
-            },
-          });
+          if (userNode.entityId !== entity.id) {
+            this.relationshipService.create(context, {
+              fromNodeId: userNode.entityId,
+              fromNodeType: 'person',
+              toNodeId: entity.id,
+              toNodeType: 'person',
+              type: relationshipType,
+              startDate: startDate,
+              endDate: endDate,
+              properties: {
+                source,
+                connection_id: connectionId,
+                participant_type: entity.type,
+                last_interaction: new Date().toISOString(),
+              },
+            });
+          }
         } catch (err) {
           this.logger.error('Error creating relationship', {
             error: err instanceof Error ? err.message : 'Unknown error',

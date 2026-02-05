@@ -1,0 +1,74 @@
+services:
+  application:
+    image: ci/companion-server:latest
+    ports:
+      - 8642:8642
+    volumes:
+      - ./infrastructure/nginx/nginx.production.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl/:/etc/nginx/ssl/:ro
+    networks:
+      - ci
+    depends_on:
+      - api
+    restart: unless-stopped
+    profiles: [ "staging" ]
+
+  api:
+    image: ci/companion-api:latest
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      S3_URL: http://minio:9000
+      OLLAMA_HOST: http://host.docker.internal:11434
+      STT_HOST: http://stt-service:9001
+      TTS_HOST: http://tts-service:9002
+    networks:
+      - ci
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      database-migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: [ "staging" ]
+
+  ##############
+  # MIGRATIONS #
+  ##############
+
+  database-migrations:
+    image: ci/companion-api:latest
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - ci
+    command: ["yarn", "migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [ "staging" ]
+
+  #################
+  # PORT EXPOSURE #
+  #################
+
+  # We expose the PostgreSQL port in the staging environment so that we can
+  # manipulate the database directly from the host machine. We likely want to
+  # add signup codes, seed data, etc. In a production environment we can close
+  # this port off.
+  postgres:
+    ports:
+      - 5432:5432
+
+  # We expose the MinIO port in the staging environment so that we can we can
+  # execute scripts that rely on the FileService from our host machine. In a
+  # production environment we can close this port off.
+  minio:
+    ports:
+      - 9000:9000

@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -30,6 +31,7 @@ const createConnectionSchema = z.object({
   clientkey: z.string().optional(),
   clientsecret: z.string().optional(),
   schedule: z.string().optional(),
+  endpoints: z.array(z.string()).default([]),
 });
 
 const updateConnectionSchema = z.object({
@@ -49,6 +51,7 @@ const updateConnectionSchema = z.object({
       },
     )
     .optional(),
+  endpoints: z.array(z.string()).optional(),
 });
 
 const completeConnectionSchema = z.object({
@@ -202,6 +205,27 @@ export class ConnectionsController {
 
     await this.update(context, connectionId, {
       ...tokenExchange,
+      active: true,
+      needsReauth: false,
+    });
+
+    const conn = await this.connectionService.findById(serviceContext, connectionId);
+
+    const externalId = await client.getAccountIdentifier(conn!);
+
+    const existingConnection = await this.connectionService.search(serviceContext, {
+      providerId: conn!.providerId,
+      active: true,
+      externalId: externalId,
+    });
+
+    if (existingConnection.length > 0 && existingConnection.find((c) => c.id !== connectionId)) {
+      await this.connectionService.remove(serviceContext, connectionId);
+      throw new ConflictException('A connection to that account already exists');
+    }
+
+    await this.update(context, connectionId, {
+      externalId,
     });
   }
 

@@ -4,8 +4,8 @@ import { type MultiBar } from 'cli-progress';
 import { PersonService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
 
-import { JOHN_SMITH, PEOPLE } from './js1-data/people';
-import { JOHN_SMITH as JOHN_SMITH_USER } from './js1-data/users';
+import { JOHN_SMITH, PEOPLE } from './data/people';
+import { JOHN_SMITH as JOHN_SMITH_USER } from './data/users';
 
 export async function seedPeople(module: TestingModule, multibar: MultiBar) {
   const userService = module.get(UserService);

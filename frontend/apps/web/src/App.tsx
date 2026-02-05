@@ -4,16 +4,12 @@ import { DeviceLayoutProvider } from '@ci/common';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
+import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
-import {
-  AuthProvider,
-  CaptureModalProvider,
-  ModelProvider,
-  ThemeProvider,
-  usePreventOverscroll,
-} from '@/hooks';
+import { ThemeProvider, BackgroundProvider } from '@/components/ThemePicker';
+import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
@@ -21,39 +17,60 @@ import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
 
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
+const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
 const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
+const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
 const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
+const ContentPage = lazy(() => import('@/pages/ContentPage'));
+const EventPage = lazy(() => import('@/pages/EventPage'));
+const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const InsightsPage = lazy(() => import('@/pages/InsightsPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
-const KnowledgePage = lazy(() => import('@/pages/KnowledgePage'));
 const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
+const NotePage = lazy(() => import('@/pages/NotePage'));
+const NotesPage = lazy(() => import('@/pages/NotesPage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
+const PersonPage = lazy(() => import('@/pages/PersonPage'));
+const PlacePage = lazy(() => import('@/pages/PlacePage'));
+const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
+const FilesPage = lazy(() => import('@/pages/FilesPage'));
+const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
-const ToolsPage = lazy(() => import('@/pages/ToolsPage'));
+const TagPage = lazy(() => import('@/pages/TagPage'));
+const TagsPage = lazy(() => import('@/pages/TagsPage'));
+const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
       <ThemeProvider defaultTheme="system" storageKey="ci-ui-theme">
-        <DeviceLayoutProvider args={[]}>
-          <AuthProvider args={[]}>
-            <ModelProvider args={[]}>
-              <CaptureModalProvider args={[]}>
-                <ApolloProvider>{children}</ApolloProvider>
-              </CaptureModalProvider>
-            </ModelProvider>
-          </AuthProvider>
-        </DeviceLayoutProvider>
+        <BackgroundProvider>
+          <DeviceLayoutProvider args={[]}>
+            <AuthProvider args={[]}>
+              <FeaturesProvider args={[]}>
+                <ModelProvider args={[]}>
+                  <CaptureModalProvider args={[]}>
+                    <ApolloProvider>{children}</ApolloProvider>
+                  </CaptureModalProvider>
+                </ModelProvider>
+              </FeaturesProvider>
+            </AuthProvider>
+          </DeviceLayoutProvider>
+        </BackgroundProvider>
       </ThemeProvider>
     </Router>
   );
 }
 
 function AppRoutes() {
+  const { isFeatureEnabled } = useFeatures();
+
   return (
     <Routes>
       <Route
@@ -70,6 +87,15 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <OnboardingPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/providers/:id"
+        element={
+          <ProtectedRoute>
+            <ProviderPage />
           </ProtectedRoute>
         }
       />
@@ -136,7 +162,26 @@ function AppRoutes() {
           path="/insights"
           element={
             <ProtectedRoute>
-              <InsightsPage />
+              {isFeatureEnabled('new.insights.page') && <InsightsPage />}
+              {!isFeatureEnabled('new.insights.page') && <PromptsPage />}
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/insights/:id"
+          element={
+            <ProtectedRoute>
+              <SummaryDetailPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/files"
+          element={
+            <ProtectedRoute>
+              <FilesPage />
             </ProtectedRoute>
           }
         />
@@ -151,15 +196,6 @@ function AppRoutes() {
         />
 
         {/* Admin / System */}
-        <Route
-          path="/knowledge"
-          element={
-            <ProtectedRoute>
-              <KnowledgePage />
-            </ProtectedRoute>
-          }
-        />
-
         <Route
           path="/jobs"
           element={
@@ -188,6 +224,15 @@ function AppRoutes() {
         />
 
         <Route
+          path="/connections/:id"
+          element={
+            <ProtectedRoute>
+              <ConnectionPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/settings"
           element={
             <ProtectedRoute>
@@ -206,15 +251,6 @@ function AppRoutes() {
         />
 
         <Route
-          path="/plugins"
-          element={
-            <ProtectedRoute>
-              <ToolsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
           path="/oauth/callback"
           element={
             <ProtectedRoute>
@@ -222,6 +258,125 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/notes"
+          element={
+            <ProtectedRoute>
+              <NotesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/notes/:id?"
+          element={
+            <ProtectedRoute>
+              <NotePage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/saved-searches?"
+          element={
+            <ProtectedRoute>
+              <SavedSearchesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/concepts/:id"
+          element={
+            <ProtectedRoute>
+              <ConceptPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/people/:id"
+          element={
+            <ProtectedRoute>
+              <PersonPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/places/:id"
+          element={
+            <ProtectedRoute>
+              <PlacePage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/content/:id"
+          element={
+            <ProtectedRoute>
+              <ContentPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/communications/:id"
+          element={
+            <ProtectedRoute>
+              <CommunicationPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/items/:id"
+          element={
+            <ProtectedRoute>
+              <ItemPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/events/:id"
+          element={
+            <ProtectedRoute>
+              <EventPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tags"
+          element={
+            <ProtectedRoute>
+              <TagsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/tags/:id"
+          element={
+            <ProtectedRoute>
+              <TagPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {isFeatureEnabled('new.insights.page') && (
+          <Route
+            path="/prompts"
+            element={
+              <ProtectedRoute>
+                <PromptsPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
       </Route>
 
       {/* Fallback */}

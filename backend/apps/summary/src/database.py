@@ -59,7 +59,32 @@ class DatabaseManager:
         except Exception as e:
             logger.error("write_execution_failed", query=query[:100], error=str(e))
             raise
-    
+
+    def execute_writes_in_transaction(
+        self, writes: List[tuple[str, Dict[str, Any]]]
+    ) -> None:
+        """Execute multiple write queries in a single transaction.
+
+        Args:
+            writes: List of (query, params) tuples to execute
+
+        Raises:
+            Exception: If any query fails, the entire transaction is rolled back
+        """
+        try:
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    for query, params in writes:
+                        conn.execute(text(query), params or {})
+                # Transaction auto-commits on successful exit from begin() context
+        except Exception as e:
+            logger.error(
+                "transaction_execution_failed",
+                num_writes=len(writes),
+                error=str(e),
+            )
+            raise
+
     def close(self):
         """Close database connection."""
         if self.engine:

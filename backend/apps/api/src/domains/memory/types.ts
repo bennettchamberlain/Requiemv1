@@ -1,67 +1,6 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
-export interface Memory {
-  id: string;
-  type: string;
-  title: string;
-  description: string | null;
-  timestamp: Date;
-  category: string;
-  location?: MemoryLocation;
-  tags: string[];
-  userId: string;
-  sourceLink?: string;
-  metadata?: {
-    eventId?: string;
-    eventType?: string;
-    eventName?: string;
-    synthetic?: boolean;
-    personRef?: string;
-    contentRef?: string;
-    thingRef?: string;
-    entityType?: string;
-    communicationType?: string;
-    direction?: string;
-    participantsMetadata?: unknown;
-    relationships?: Array<{
-      type: string;
-      targetId: string;
-      targetName: string;
-      targetType: string;
-      direction: 'outgoing' | 'incoming';
-    }>;
-    [key: string]: unknown;
-  };
-}
-
-export interface MemoryLocation {
-  id: string;
-  name: string | null;
-  lat: number;
-  lng: number;
-  address?: string;
-  placeId?: string;
-}
-
-export interface MemorySearchParams {
-  query?: string;
-  startDate?: Date;
-  endDate?: Date;
-  categories?: string[];
-  excludeCategories?: string[];
-  hasLocation?: boolean;
-  limit?: number;
-  offset?: number;
-}
-
-export interface MemoryResponse {
-  data: Memory[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 export const createContentSchema = z.object({
   type: z.string().optional(),
   title: z.string().optional(),
@@ -183,40 +122,40 @@ export interface SearchEventDto {
   id?: string;
   title?: string;
   description?: string;
-  event_type?: string;
+  eventType?: string;
   category?: string;
-  start_time?: Date;
-  end_time?: Date;
-  location_name?: string;
-  event_entity_id?: string;
-  location_entity_id?: string;
-  location_coordinates?: Point;
-  organizer_entity_id?: string;
-  source_type?: string;
-  source_system?: string;
-  source_id?: string;
-  confidence_score?: number;
-  is_recurring?: boolean;
-  recurrence_pattern?: object;
-  is_all_day?: boolean;
-  is_private?: boolean;
+  startTime?: Date;
+  endTime?: Date;
+  locationName?: string;
+  eventEntityId?: string;
+  locationEntityId?: string;
+  locationCoordinates?: Point;
+  organizerEntityId?: string;
+  sourceType?: string;
+  sourceSystem?: string;
+  sourceId?: string;
+  confidenceScore?: number;
+  isRecurring?: boolean;
+  recurrencePattern?: object;
+  isAllDay?: boolean;
+  isPrivate?: boolean;
   priority?: number;
   metadata?: object;
-  is_predicted?: boolean;
-  is_inferred?: boolean;
-  prediction_model?: string;
-  inference_sources?: object;
-  sentiment_score?: number;
-  energy_level?: number;
-  productivity_impact?: number;
+  isPredicted?: boolean;
+  isInferred?: boolean;
+  predictionModel?: string;
+  inferenceSources?: object;
+  sentimentScore?: number;
+  energyLevel?: number;
+  productivityImpact?: number;
   status?: string;
-  is_deleted?: boolean;
-  external_sync_status?: string;
-  last_synced_at?: Date | undefined;
-  parent_event_id?: string;
-  supersedes_event_id?: string;
-  created_by?: string;
-  user_id?: string;
+  isDeleted?: boolean;
+  externalSyncStatus?: string;
+  lastSyncedAt?: Date | undefined;
+  parentEventId?: string;
+  supersedesEventId?: string;
+  createdBy?: string;
+  userId?: string;
 }
 
 export interface CreateContentDto {
@@ -324,7 +263,6 @@ export interface CreateItemDto {
 }
 
 export interface UpdateItemDto {
-  id: string;
   name?: string;
   description?: string;
   category?: string;
@@ -398,9 +336,27 @@ export interface UpdateConceptDto {
   properties?: Record<string, unknown>;
 }
 
+export enum CommunicationType {
+  EMAIL = 'email',
+  SMS = 'sms',
+  CALL = 'call',
+  CHAT = 'chat',
+  VIDEO_CALL = 'video_call',
+  VOICE_NOTE = 'voice_note',
+  POST = 'post',
+}
+
+export enum CommunicationDirection {
+  INBOUND = 'inbound',
+  OUTBOUND = 'outbound',
+  INTERNAL = 'internal',
+  ASYNC = 'async',
+  ONGOING = 'ongoing',
+}
 export interface CreateCommunicationDto {
+  id?: string;
   time: Date;
-  communication_type: 'email' | 'sms' | 'call';
+  communication_type: CommunicationType;
   direction: 'inbound' | 'outbound';
   thread_id?: string;
   user_id?: string;

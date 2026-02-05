@@ -20,7 +20,7 @@ export class ConnectionEntity {
   @Column({ type: 'text', nullable: true })
   name!: string | null;
 
-  @Column({ type: 'boolean', default: true })
+  @Column({ type: 'boolean', default: false })
   active!: boolean;
 
   @Column({ type: 'text', nullable: true })
@@ -44,6 +44,12 @@ export class ConnectionEntity {
   @Column({ type: 'uuid', name: 'provider_id' })
   providerId!: string;
 
+  @Column({ type: 'jsonb', default: [], name: 'active_endpoints' })
+  activeEndpoints!: string[];
+
+  @Column({ type: 'boolean', default: true, name: 'needs_reauth' })
+  needsReauth!: boolean;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -51,6 +57,9 @@ export class ConnectionEntity {
   @ManyToOne(() => ProviderEntity)
   @JoinColumn({ name: 'provider_id' })
   provider?: ProviderEntity;
+
+  @Column({ type: 'text', nullable: true, name: 'external_id' })
+  externalId!: string | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
@@ -72,6 +81,9 @@ export class ConnectionEntity {
       providerId: entity.providerId,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
       provider: entity.provider ? ProviderEntity.toEgressType(entity.provider) : undefined,
+      activeEndpoints: entity.activeEndpoints,
+      needsReauth: entity.needsReauth,
+      externalId: entity.externalId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

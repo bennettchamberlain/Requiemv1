@@ -3,11 +3,13 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Event } from '@ci/domains/memory';
 
+import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
+import { Taggable } from './Taggable';
 
-@ObjectType({ implements: () => [Node] })
-export class EventType implements Node {
+@ObjectType({ implements: () => [Node, Taggable] })
+export class EventType implements Node, Taggable {
   __typename = EventType.name;
 
   __source!: Event;
@@ -78,6 +80,9 @@ export class EventType implements Node {
   @Field(() => String, { nullable: true })
   status!: string;
 
+  @Field(() => [EntityTagType])
+  tags!: EntityTagType[];
+
   static toType(event: Event): EventType {
     return {
       __typename: EventType.name,
@@ -103,6 +108,7 @@ export class EventType implements Node {
       isAllDay: event.isAllDay,
       metadata: event.metadata,
       status: event.status,
+      tags: [], // Hydrated by resolver
     };
   }
 }

@@ -2,9 +2,9 @@ import { Controller } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 
 import { type RequestContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
-import config from '@ci/configuration';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
 
 import { EtlService } from '../services/EtlService';
@@ -15,13 +15,16 @@ export class EtlController {
     private readonly connectionService: ConnectionService,
     private readonly etlService: EtlService,
     private readonly logger: LoggerService,
+    private readonly featureService: FeatureService,
   ) {
     this.logger.setContext(EtlController.name);
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async syncConnections(): Promise<void> {
-    if (!config.features['scheduled.connection.sync']) {
+    const featureEnabled = await this.featureService.isFeatureEnabled('scheduled.connection.sync');
+
+    if (!featureEnabled) {
       return;
     }
 

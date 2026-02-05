@@ -54,6 +54,9 @@
       "secretAccessKey": "S3_SECRET_ACCESS_KEY"
     }
   },
+  "graphql": {
+    "maxQueryComplexity": 150
+  },
   "services": {
     "ollama": {
       "host": "http://localhost:11434"
@@ -70,7 +73,9 @@
     "scheduled.connection.sync": true,
     "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
-    "enable.system.prompt": true
+    "enable.system.prompt": true,
+    "advanced.theme.tab": false,
+    "new.insights.page": false
   },
   "environment": {
     "database.query.logging": false

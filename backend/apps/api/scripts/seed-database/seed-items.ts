@@ -4,8 +4,8 @@ import { type MultiBar } from 'cli-progress';
 import { ItemService } from '@ci/domains/memory';
 import { TagService } from '@ci/domains/search-next';
 
-import { ITEMS } from './js1-data/items';
-import { JOHN_SMITH } from './js1-data/users';
+import { ITEMS } from './data/items';
+import { JOHN_SMITH } from './data/users';
 
 export async function seedItems(module: TestingModule, multibar: MultiBar) {
   const itemService = module.get(ItemService);

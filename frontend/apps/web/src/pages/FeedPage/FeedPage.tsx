@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
 
-import { ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
-import { useNavigate, useParams } from 'react-router-dom';
+import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
+import { Breadcrumb, cn } from '@ci/shadcn';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { useActionListService } from '@/api';
 import { PageContent } from '@/components/layout';
@@ -12,8 +12,9 @@ import { useModalControls } from '@/hooks';
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
 
-import { actionInsightData } from './data';
 import { FeedModal } from './FeedModal';
+import { SummaryCard } from './SummaryCard';
+import { useSummariesService } from './useSummariesService';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
 
@@ -25,6 +26,7 @@ export function FeedPage() {
 
   const { id: actionId } = useParams<{ id?: string }>();
   const [{ data: actions, loading, error }] = useActionListService();
+  const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService();
 
   const selectedActionIndex = useMemo(
     () => actions.findIndex((item) => item.id === actionId),
@@ -55,6 +57,13 @@ export function FeedPage() {
     navigate('/feed', { replace: true });
     closeModal();
   }, [navigate, closeModal]);
+
+  const handleSummaryClick = useCallback(
+    (encodedId: string) => {
+      navigate(`/insights/${GlobalUID.parse('summary', encodedId)}`);
+    },
+    [navigate],
+  );
 
   if (loading) {
     return (
@@ -100,10 +109,18 @@ export function FeedPage() {
               />
             ))}
 
-          {actionInsightData.map((item) => (
-            <BentoCard key={item.id} title={item.title} description={item.description} tags={item.tags} />
+          {summaries.map((summary) => (
+            <SummaryCard key={summary.id} summary={summary} onClick={() => handleSummaryClick(summary.id)} />
           ))}
         </Carousel>
+
+        {(summariesLoading || summariesError) && (
+          <div className="py-4 text-center text-sm text-muted-foreground">
+            {summariesLoading
+              ? 'Fetching your personalized insights...'
+              : 'We could not load live insights. Preview cards are shown until the service recovers.'}
+          </div>
+        )}
 
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
       </PageContent>
@@ -122,7 +139,9 @@ export function FeedPage() {
         <Breadcrumb>
           <Breadcrumb.List>
             <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link href="/">Companion</Breadcrumb.Link>
+              <Breadcrumb.Link asChild>
+                <Link to="/feed">Companion</Link>
+              </Breadcrumb.Link>
             </Breadcrumb.Item>
             <Breadcrumb.Separator className="hidden md:block" />
             <Breadcrumb.Item>
@@ -157,17 +176,26 @@ export function FeedPage() {
 
         <h2 className="text-2xl font-bold text-foreground">Insights</h2>
 
-        <Carousel {...carouselProps}>
-          {actionInsightData.map((item) => (
-            <BentoCard
-              key={item.id}
-              title={item.title}
-              description={item.description}
-              tags={item.tags}
-              className="hover:shadow-lg transition-shadow duration-200 h-110"
-            />
-          ))}
-        </Carousel>
+        <div className="space-y-3">
+          {(summariesLoading || summariesError) && (
+            <div className={cn('text-sm', summariesError ? 'text-destructive' : 'text-muted-foreground')}>
+              {summariesLoading
+                ? 'Fetching your personalized insights...'
+                : 'We could not load live insights. Preview cards are shown until the service recovers.'}
+            </div>
+          )}
+
+          <Carousel {...carouselProps}>
+            {summaries.map((summary) => (
+              <SummaryCard
+                key={summary.id}
+                summary={summary}
+                onClick={() => handleSummaryClick(summary.id)}
+                className="hover:shadow-lg transition-shadow duration-200 h-110"
+              />
+            ))}
+          </Carousel>
+        </div>
       </PageContent>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}

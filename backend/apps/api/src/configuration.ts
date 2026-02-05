@@ -71,6 +71,9 @@ export const ConfigSchema = z.object({
       secretAccessKey: z.string(),
     }),
   }),
+  graphql: z.object({
+    maxQueryComplexity: z.number().int(),
+  }),
   services: z.object({
     ollama: z.object({
       host: z.string(),
@@ -88,6 +91,8 @@ export const ConfigSchema = z.object({
     'scheduled.entity.promotion': booleanStringSchema,
     'pinned.demo.models': booleanStringSchema,
     'enable.system.prompt': booleanStringSchema,
+    'advanced.theme.tab': booleanStringSchema,
+    'new.insights.page': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

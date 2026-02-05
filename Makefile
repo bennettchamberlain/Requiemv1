@@ -1,4 +1,3 @@
-.PHONY: help build chatreset dbclear dev graphql health init install local migrate seed staging gentoken useradd userpw mcp mcp-web-search mcp-check mcp-clean mcp-enable mcp-disable mcp-config mcp-update mcp-logs
 .DEFAULT_GOAL := help
 
 RED=\033[0;31m
@@ -6,8 +5,8 @@ GREEN=\033[0;32m
 YELLOW=\033[0;33m
 RESET=\033[0m
 
-export API_REPO ?= ci/api
-export WEBSERVER_REPO ?= ci/nginx
+export API_REPO ?= ci/companion-api
+export WEBSERVER_REPO ?= ci/companion-server
 export TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 
 define BANNER
@@ -26,118 +25,100 @@ endef
 
 export BANNER
 
+.PHONY: help
 # Sourced from: https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
 help: ## List make commands with their descriptions
 	@printf "$$BANNER\n\n"
-	@printf "\033[33mEnvironment Variables:\033[0m\n"
-	@printf "  MCP_SERVERS_DIR     Directory for MCP servers (default: mcp-servers)\n"
-	@printf "  MCP_SERVERS         List of servers to install (name repo_url)\n"
-	@printf "  See ENVIRONMENT_CONFIG.md for more details\n\n"
 	@printf "\033[33mCommands:\033[0m\n"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@printf "\n"
 
+.PHONY: reset
 reset: ## Reset the local development environment
 	@printf "🧹 Resetting local development environment INCLUDING DATABASE DATA...\n\n"
+
 	@COMPOSE_CONTAINERS=$$(docker compose ps -aq 2>/dev/null); \
 	if [ -n "$$COMPOSE_CONTAINERS" ]; then \
+		printf "► Stopping existing containers...\n\n"; \
 		docker stop $$COMPOSE_CONTAINERS 2>/dev/null || true; \
+		printf "\n► Removing containers...\n\n"; \
 		docker rm -f $$COMPOSE_CONTAINERS 2>/dev/null || true; \
+		printf "\n"; \
 	fi
-	docker compose down -v --remove-orphans
+
+	@docker compose down -v --remove-orphans 2>/dev/null || true
+
 	@COMPOSE_CONTAINERS=$$(docker compose ps -aq 2>/dev/null); \
 	if [ -n "$$COMPOSE_CONTAINERS" ]; then \
-		printf "Removing remaining containers...\n"; \
+		printf "\n► Removing remaining containers...\n\n"; \
 		docker rm -f $$COMPOSE_CONTAINERS 2>/dev/null || true; \
+		printf "\n"; \
 	fi
+
+	@printf "► Removing Docker volumes...\n\n"
 	@COMPOSE_VOLUMES="postgres-data minio-data stt-service-models stt-service-cache tts-service-models tts-service-cache"; \
 	for vol in $$COMPOSE_VOLUMES; do \
 		docker volume ls -q | grep "^ci-server_$$vol$$" | xargs -r docker volume rm -f 2>/dev/null || true; \
-	done
-	docker rmi -f ci/postgres ci/api:latest ci/stt-service ci/tts-service ci/nginx 2>/dev/null || true
-	docker network prune --force
-	@printf "\nLocal development environment successfully reset.\n"
+	done; \
 
-build: mcp ## Build the application
+	@printf "\n► Removing Docker images...\n\n"
+	@docker rmi -f ci/companion-server ci/companion-api ci/postgres ci/stt-service ci/summary-service ci/tts-service ci/nginx 2>/dev/null || true
+
+	@printf "\n► Pruning Docker networks...\n\n"
+	@docker network prune --force 2>/dev/null || true
+
+.PHONY: build
+build: ## Build the application
 	@printf "🧱 Building the application...\n\n"
 
-	@printf "Building PostgreSQL image...\n\n"
+	@printf "► Building PostgreSQL image...\n\n"
 	@docker compose build postgres
 
-	@printf "\nBuilding Speech-to-text service image...\n\n"
+	@printf "\n► Building Speech-to-text service image...\n\n"
 	@docker compose build stt-service
 
-	@printf "\nBuilding Text-to-speech service image...\n\n"
+	@printf "\n► Building Text-to-speech service image...\n\n"
 	@docker compose build tts-service
 
-	@printf "\nBuilding Summary service image...\n\n"
+	@printf "\n► Building Summary service image...\n\n"
 	@docker compose build summary-service
 
-	@printf "\nCompiling API...\n\n"
+	@printf "\n► Compiling API...\n\n"
 	@cd backend/apps/api && yarn clean && yarn build
 
-	@printf "\nBuilding API image...\n\n"
+	@printf "\n► Building API image...\n\n"
 	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
 
-	@printf "\nCompiling web frontend...\n\n"
+	@printf "\n► Compiling web frontend...\n\n"
 	@cd frontend/apps/web && yarn clean && yarn build
 
-	@printf "\nBuilding webserver image...\n\n"
-	@docker build -f docker/webserver/Dockerfile -t $(WEBSERVER_REPO):latest .
+	@printf "\n► Building webserver image...\n\n"
+	@docker build -f infrastructure/nginx/Dockerfile.staging -t $(WEBSERVER_REPO):latest .
 
-	@printf "\nApplication successfully built.\n"
+	@printf "\nApplication successfully built.\n\n"
 
-dbclear: ## Clear the PostgreSQL database and start from scratch
+.PHONY: dbclear
+dbclear: ## Clear the data stored in the PostgreSQL database
 	@printf "🧻 Clearing PostgreSQL data...\n\n"
+
 	@cd backend/apps/api && yarn db:clear
-	@printf "\nData successfully cleared.\n"
 
-dbdestroy: ## Clear the PostgreSQL database and start from scratch
+	@printf "\n"
+
+.PHONY: dbdestroy
+dbdestroy: ## Drop all PostgreSQL data including tables
 	@printf "🧨 Destroying PostgreSQL database...\n\n"
+
 	@cd backend/apps/api && yarn db:destroy
-	@printf "\nDatabase successfully destroyed. 💥\n"
 
-deploy: ## Deploy the application (staging)
-	@printf "🐳 Deploying Companion Intelligence application...\n\n"
-	$(MAKE) init
 	@printf "\n"
-	$(MAKE) build
-	@printf "\n"
-	$(MAKE) staging
 
-dev: ## DEPRECATED
-	$(MAKE) init
-	@printf "\n"
-	$(MAKE) build
-	@printf "\n"
-	$(MAKE) local
-	@printf "\n"
-	$(MAKE) migrate
-	@printf "\n"
-	$(MAKE) seed
-	@printf "\n"
-	$(MAKE) index
-	@printf "\n"
-	$(MAKE) run-dev-session
+.PHONY: deploy
+deploy: ## DEPRECATED: Use production, staging, or local targets instead
+	@$(MAKE) staging
 
-setup-dev: ## Setup the development environment
-	$(MAKE) init
-	@printf "\n"
-	$(MAKE) build
-	@printf "\n"
-	$(MAKE) local
-	@printf "\n"
-	$(MAKE) migrate
-	@printf "\n"
-	$(MAKE) seed
-	@printf "\n"
-	$(MAKE) index
-
-run-dev: ## Run the development environment locally
-	$(MAKE) local
-	@printf "\n"
-	$(MAKE) run-dev-session
-
-run-dev-session:
+.PHONY: dev
+dev: local ## Run the development environment locally
 	@which tmux >/dev/null || { printf "\n$(RED)✗$(RESET) You do not have tmux installed. Please install it first.\n\n"; exit 1; }
 	@SESSION="companion"; \
 	BACKEND_DIR="backend/apps/api"; \
@@ -158,8 +139,9 @@ run-dev-session:
 	tmux select-pane -t 0; \
 	tmux attach -t $$SESSION
 
+.PHONY: graphql
 graphql: ## Generate GraphQL schema and frontend types
-	@printf "🏷️ Generating GraphQL...\n\n"
+	@printf "🏷️ Generating GraphQL...\n"
 
 	@yarn workspace @ci/be-api graphql:generate
 
@@ -167,8 +149,9 @@ graphql: ## Generate GraphQL schema and frontend types
 
 	@yarn workspace @ci/fe-web graphql:generate
 
-	@printf "\nGraphQL successfully generated.\n"
+	@printf "\nGraphQL successfully generated.\n\n"
 
+.PHONY: health
 health: ## Check the repository for prerequisites
 	@printf "🩺 Checking health of prerequisites...\n\n"
 
@@ -187,6 +170,18 @@ health: ## Check the repository for prerequisites
 		exit 1; \
 	else \
 		printf "$(GREEN)✓$(RESET) Node version matches ($$current_version)\n\n"; \
+	fi
+
+	@required_yarn=$$(grep '"packageManager"' package.json | sed 's/.*yarn@\([^"]*\)".*/\1/'); \
+	current_yarn=$$(yarn --version 2>/dev/null); \
+	if [ -z "$$current_yarn" ]; then \
+		printf "$(RED)✗$(RESET) You do not have 'yarn' installed or it is not in your PATH.\n\n"; \
+		exit 1; \
+	elif [ "$$current_yarn" != "$$required_yarn" ]; then \
+		printf "$(RED)✗$(RESET) Yarn version mismatch. Expected $$required_yarn, but got $$current_yarn.\n\n"; \
+		exit 1; \
+	else \
+		printf "$(GREEN)✓$(RESET) Yarn version matches ($$current_yarn)\n\n"; \
 	fi
 
 	@OLLAMA=$$(which ollama 2>/dev/null); \
@@ -224,6 +219,8 @@ health: ## Check the repository for prerequisites
 		exit 1; \
 	fi
 
+.PHONY: dev-health
+dev-health: health ## Check the repository for prerequisites including development DNS resolutions
 	@HOST=dev.companionintelligence.com; \
 	IP=$$(ping -c 1 -W 1 $$HOST | grep -oE '\(([0-9:.]+)\)' | head -n1 | tr -d '()'); \
 	if [ "$$IP" = "127.0.0.1" ] || [ "$$IP" = "::1" ]; then \
@@ -233,6 +230,7 @@ health: ## Check the repository for prerequisites
 		exit 1; \
 	fi
 
+.PHONY: init
 init: ## Initialize repository after checkout
 	@printf "🏗️ Initializing repository...\n\n"
 
@@ -251,224 +249,109 @@ init: ## Initialize repository after checkout
 	@yarn prepare
 
 	@if [ ! -f .env ]; then \
-		printf "\nCopying dotenv template file... "; \
+		printf "Copying dotenv template file... "; \
 		cp -v .env.default .env; \
+		printf "\n"; \
 	fi
 
-	@printf "\nRepository initialized.\n"
-
+.PHONY: install
 install: ## Install project dependencies
 	@printf "📦 Installing dependencies...\n\n"
+
 	@yarn install
-	@printf "\nDependencies successfully installed.\n"
 
-local: ## Run the local dependencies from Docker images
-	@printf "⌨️ Starting the local services...\n\n"
+	@printf "\n"
 
-	@printf "Stopping any staging profile services...\n\n"
-	@docker compose down ci-api staging-webserver
+.PHONY: local
+local: dev-health init stop ## Run the local deployment
+	@printf "⌨️ Starting local services...\n\n"
 
-	@printf "\nStarting a new local deployment cluster...\n\n"
-	@docker compose --profile local up -d
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d --remove-orphans
 
-	@printf "\nLocal services successfully started.\n"
+	@printf "\n"
 
+	@$(MAKE) migrate
+
+.PHONY: migrate
 migrate: ## Run database migrations
 	@printf "🪿 Running database migrations...\n\n"
+
 	@cd backend/apps/api && yarn migrate
-	@printf "\nMigrations successfully run.\n"
 
-seed: ## Seed backend database
+	@printf "\nMigrations successfully run.\n\n"
+
+.PHONY: production
+production: health init build stop ## Run the production deployment
+	@printf "🚀 Starting production services...\n\n"
+
+	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production up -d --remove-orphans
+
+	@printf "\n"
+
+.PHONY: seed
+seed: ## Seed database with John Smith user and demo data
 	@printf "🌱 Seeding database...\n\n"
+
 	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
-	@printf "\nDatabase successfully seeded. 🌳\n"
 
-staging: ## Run the staging server from Docker images
-	@printf "🎭 Starting the staging services...\n\n"
+	@printf "\nDatabase successfully seeded. 🌳\n\n"
 
-	@printf "Stopping any local profile services...\n\n"
-	@docker compose down dev-webserver
+.PHONY: staging
+staging: health init build stop ## Run the staging deployment
+	@printf "🎭 Starting staging services...\n\n"
 
-	@printf "\nStarting a new staging deployment cluster...\n\n"
-	@docker compose --profile staging up -d
+	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging up -d --remove-orphans
 
-	@printf "\nStaging services successfully started.\n"
+	@printf "\n"
+
+.PHONY: stop
+stop: ## Stop all running services
+	@printf "🛑 Stopping all running services... "
+
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local down 2>/dev/null || true
+	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging down 2>/dev/null || true
+	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production down 2>/dev/null || true
+
+	@printf "success!\n\n"
+
+.PHONY: tooling
+tooling: ## Run development tooling services
+	@printf "🛠️ Starting development tooling services...\n\n"
+
+	@docker compose -f docker-compose.yml --profile tooling up -d
+
+	@printf "\n"
 
 #####################
 # API ADMIN SCRIPTS #
 #####################
 
+.PHONY: gentoken
 gentoken: ## Generates a stable access token for use during development
 	@printf "🔑 Generating stable access token...\n\n"
+
 	@cd backend/apps/api && yarn run exec -- scripts/generate-stable-access-token.ts
 
+	@printf "\n"
+
+.PHONY: signup
 signup: ## Generates a set of signup codes for user registration
 	@printf "👋 Generating signup codes...\n\n"
+
 	@cd backend/apps/api && yarn run exec -- scripts/generate-signup-codes.ts
 
+.PHONY: userpw
 userpw: ## Change a user's password
 	@printf "🔑 Changing user password...\n\n"
+
 	@cd backend/apps/api && yarn run exec -- scripts/change-password.ts
 
+	@printf "\n"
+
+.PHONY: chatreset
 chatreset: ## Reset John Smith's demo threads
 	@printf "🧼 Resetting John Smith's demo threads...\n\n"
+
 	@cd backend/apps/api && yarn db:chatreset
-	@printf "\nDemo threads reset.\n"
 
-####################
-# MCP SERVER SETUP #
-####################
-
-# MCP Server Configuration
-MCP_SERVERS_DIR ?= mcp-servers
-
-# List of MCP servers to install
-MCP_SERVERS = web-search filesystem
-
-mcp: mcp-init mcp-install-servers mcp-register mcp-enable ## Install all MCP servers and configure them automatically
-	@printf "🔧 All MCP servers installed and configured successfully!\n\n"
-	@printf "$(GREEN)✓$(RESET) Use 'make mcp-check' to verify installation\n"
-	@printf "$(GREEN)✓$(RESET) Restart CI-Server to load new servers: 'make dev'\n\n"
-
-mcp-init: ## Initialize MCP configuration (create config file if needed)
-	@printf "🏗️ Initializing MCP configuration...\n\n"
-	@mkdir -p $(MCP_SERVERS_DIR)
-	@node scripts/mcp-config.mjs init
-	@printf "\n$(GREEN)✓$(RESET) MCP configuration initialized!\n\n"
-
-mcp-install-servers: ## Install all MCP servers
-	@printf "📦 Installing MCP servers...\n\n"
-	@for server in $(MCP_SERVERS); do \
-		if ! $(MAKE) -s mcp-install-server SERVER_NAME="$$server"; then \
-			printf "$(RED)✗$(RESET) Failed to install $$server server\n"; \
-			exit 1; \
-		fi; \
-	done
-	@printf "\n$(GREEN)✓$(RESET) All MCP servers installed!\n\n"
-
-mcp-install-server: ## Install a single MCP server
-	@if [ -z "$(SERVER_NAME)" ]; then \
-		printf "$(RED)✗$(RESET) SERVER_NAME not specified\n"; \
-		exit 1; \
-	fi
-	@printf "📦 Installing $(SERVER_NAME) MCP server...\n"
-	@mkdir -p $(MCP_SERVERS_DIR)/$(SERVER_NAME)
-	@if [ -f "$(MCP_SERVERS_DIR)/$(SERVER_NAME)/Makefile" ]; then \
-		$(MAKE) -C "$(MCP_SERVERS_DIR)/$(SERVER_NAME)" install; \
-		printf "$(GREEN)✓$(RESET) $(SERVER_NAME) server installed successfully!\n"; \
-	else \
-		printf "$(RED)✗$(RESET) No Makefile found for $(SERVER_NAME) at $(MCP_SERVERS_DIR)/$(SERVER_NAME)/Makefile\n"; \
-		printf "$(YELLOW)⚠$(RESET) Make sure the server directory structure is correct\n"; \
-		exit 1; \
-	fi
-
-mcp-register: ## Register all installed MCP servers in configuration
-	@printf "📝 Registering MCP servers in configuration...\n\n"
-	@for server in $(MCP_SERVERS); do \
-		node scripts/mcp-config.mjs register "$$server"; \
-	done
-	@printf "\n$(GREEN)✓$(RESET) MCP servers registered successfully!\n\n"
-
-mcp-check: ## Check MCP server installation and status
-	@printf "🔍 Checking MCP server installation...\n\n"
-
-	@printf "📋 Configuration Status:\n"
-	@node scripts/mcp-config.mjs status
-
-	@printf "\n🔧 Installation Status:\n"
-	@for server in $(MCP_SERVERS); do \
-		if [ -d "$(MCP_SERVERS_DIR)/$$server" ]; then \
-			printf "$(GREEN)✓$(RESET) $$server MCP server directory exists\n"; \
-			$(MAKE) -C "$(MCP_SERVERS_DIR)/$$server" -s status 2>/dev/null || printf "$(YELLOW)⚠$(RESET) Status check failed for $$server\n"; \
-		else \
-			printf "$(RED)✗$(RESET) $$server MCP server not installed - run 'make mcp'\n"; \
-		fi; \
-	done
-
-	@printf "\n🏃 Runtime Status:\n"
-	@if curl -s http://localhost:3030/tools/health > /dev/null 2>&1; then \
-		printf "$(GREEN)✓$(RESET) CI-Server is running\n"; \
-		printf "$(GREEN)✓$(RESET) Checking registered tools...\n"; \
-		TOOL_COUNT=$$(curl -s http://localhost:3030/tools/ | jq length 2>/dev/null || echo "0"); \
-		printf "$(GREEN)✓$(RESET) Total tools registered: $$TOOL_COUNT\n"; \
-		curl -s http://localhost:3030/tools/health | jq . 2>/dev/null || printf "$(YELLOW)•$(RESET) Health check data not available\n"; \
-	else \
-		printf "$(YELLOW)•$(RESET) CI-Server is not running - start with 'make dev'\n"; \
-	fi
-
-	@printf "\n$(GREEN)✓$(RESET) MCP check complete!\n\n"
-
-mcp-clean: ## Remove all MCP servers
-	@printf "🧹 Cleaning MCP servers...\n\n"
-	@printf "$(YELLOW)⚠$(RESET)  This will clean all MCP server builds but preserve Makefiles!\n"
-	@printf "Are you sure? [y/N] " && read ans && [ $$ans = y ] || exit 1
-
-	@for server in $(MCP_SERVERS); do \
-		if [ -d "$(MCP_SERVERS_DIR)/$$server" ] && [ -f "$(MCP_SERVERS_DIR)/$$server/Makefile" ]; then \
-			printf "$(GREEN)✓$(RESET) Cleaning $$server server...\n"; \
-			$(MAKE) -C "$(MCP_SERVERS_DIR)/$$server" clean; \
-		else \
-			printf "$(YELLOW)⚠$(RESET) $$server server directory or Makefile not found\n"; \
-		fi; \
-	done
-
-	@printf "\n$(GREEN)✓$(RESET) MCP servers cleaned (Makefiles preserved)!\n"
-	@printf "$(GREEN)✓$(RESET) Run 'make mcp' to reinstall\n\n"
-
-mcp-update: ## Update all MCP servers
-	@printf "🔄 Updating MCP servers...\n\n"
-
-	@for server in $(MCP_SERVERS); do \
-		if [ -d "$(MCP_SERVERS_DIR)/$$server" ]; then \
-			printf "$(GREEN)✓$(RESET) Updating $$server server...\n"; \
-			if [ -f "$(MCP_SERVERS_DIR)/$$server/Makefile" ]; then \
-				$(MAKE) -C "$(MCP_SERVERS_DIR)/$$server" install; \
-			else \
-				printf "$(YELLOW)⚠$(RESET) No Makefile found for $$server\n"; \
-			fi; \
-			printf "$(GREEN)✓$(RESET) $$server server updated\n"; \
-		else \
-			printf "$(YELLOW)•$(RESET) $$server server not installed, installing...\n"; \
-			$(MAKE) mcp-install-server SERVER_NAME="$$server"; \
-		fi; \
-	done
-
-	@printf "\n$(GREEN)✓$(RESET) MCP servers updated!\n"
-	@printf "$(GREEN)✓$(RESET) Restart CI-Server to load updates: 'make dev'\n\n"
-
-mcp-enable: ## Enable all installed MCP servers in configuration
-	@printf "⚙️  Enabling MCP servers in configuration...\n\n"
-	@node scripts/mcp-config.mjs enable
-	@printf "\n$(GREEN)✓$(RESET) MCP servers enabled in configuration!\n\n"
-
-mcp-disable: ## Disable all MCP servers in configuration
-	@printf "⚙️  Disabling MCP servers in configuration...\n\n"
-
-	@CONFIG_FILE="backend/apps/api/config/mcp-servers.json"; \
-	BACKUP_FILE="backend/apps/api/config/mcp-servers.json.backup"; \
-	\
-	if [ ! -f "$$CONFIG_FILE" ]; then \
-		printf "$(RED)✗$(RESET) Configuration file not found: $$CONFIG_FILE\n"; \
-		exit 1; \
-	fi; \
-	\
-	printf "$(GREEN)✓$(RESET) Creating backup: $$BACKUP_FILE\n"; \
-	cp "$$CONFIG_FILE" "$$BACKUP_FILE"; \
-	\
-	printf "$(YELLOW)•$(RESET) Disabling all MCP servers...\n"; \
-	sed -i.tmp 's/"enabled":[[:space:]]*true/"enabled": false/g' "$$CONFIG_FILE" && rm "$$CONFIG_FILE.tmp"; \
-	\
-	printf "$(GREEN)✓$(RESET) All MCP servers disabled!\n"; \
-	printf "$(GREEN)✓$(RESET) Backup saved as: $$BACKUP_FILE\n"; \
-	printf "$(GREEN)✓$(RESET) Use 'make mcp-enable' to re-enable\n\n"
-
-mcp-config: ## Show current MCP server configuration
-	@node scripts/mcp-config.mjs status
-
-mcp-logs: ## Show MCP server logs from CI-Server
-	@printf "📊 Showing MCP server logs...\n\n"
-	@if [ -f "backend/apps/api/logs/app.log" ]; then \
-		tail -f backend/apps/api/logs/app.log | grep -i "mcp\|McpHostService"; \
-	else \
-		printf "$(YELLOW)•$(RESET) No log file found. Start CI-Server with 'make dev' first.\n"; \
-	fi
+	@printf "\n"

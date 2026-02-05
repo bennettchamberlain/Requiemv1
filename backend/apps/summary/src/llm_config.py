@@ -20,6 +20,7 @@ from .summarizer import (
     SeasonalSummaryResponse,
     YearlySummaryResponse,
     UserDossierResponse,
+    InsightsResponse,
 )
 
 
@@ -125,6 +126,27 @@ def create_llm_config() -> LLMConfig:
             system_prompt=(
                 "Create a concise user dossier summarizing personality, preferences, "
                 "challenges, and interests based on their activity. Keep summary under 500 characters."
+            ),
+        ),
+        'insights': Agent(
+            model,
+            output_type=InsightsResponse,
+            system_prompt=(
+                "You are a proactive personal assistant that generates actionable insights. "
+                "Analyze the user's recent activity, relationships, upcoming events, and changes "
+                "to their knowledge graph to surface helpful suggestions they might not think of themselves.\n\n"
+                "Focus on:\n"
+                "- Upcoming dates (anniversaries, birthdays, deadlines) and relevant people\n"
+                "- Recently added or changed relationships that might need attention\n"
+                "- Patterns in behavior that suggest opportunities or needs\n"
+                "- Connections between people, places, and events the user might not see\n"
+                "- Timely reminders based on recurring activities or maintenance cycles\n\n"
+                "Each insight should be:\n"
+                "- Actionable: Include specific next steps the user can take\n"
+                "- Timely: Relevant to upcoming events or recent changes\n"
+                "- Personal: Use knowledge about the user's relationships and preferences\n"
+                "- Non-obvious: Connect dots the user might not see themselves\n\n"
+                "Generate 3-5 high-quality insights. Prioritize quality over quantity."
             ),
         ),
     }

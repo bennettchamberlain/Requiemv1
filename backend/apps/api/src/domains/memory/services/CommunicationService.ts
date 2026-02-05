@@ -1,15 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { DataSource, Repository, In, type FindOptionsOrder } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
+import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { CommunicationEntity, Communication } from '../entities/CommunicationEntity';
 import { CommunicationCreatedEvent, CommunicationUpdatedEvent, CommunicationRemovedEvent } from '../events';
 import { CreateCommunicationDto, UpdateCommunicationDto } from '../types';
+
+interface Options {
+  limit?: number;
+  order?: FindOptionsOrder<CommunicationEntity>;
+  startTime?: Date;
+  endTime?: Date;
+}
 
 @Injectable()
 export class CommunicationService {
@@ -18,13 +26,16 @@ export class CommunicationService {
     private readonly communicationRepository: Repository<CommunicationEntity>,
     private readonly eventService: EventService,
     private readonly logger: LoggerService,
+    private readonly dataSource: DataSource,
   ) {
     this.logger.setContext(CommunicationService.name);
   }
 
   async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<Communication> {
+    const id = data.id ?? uuidv7();
+
     const communication = this.communicationRepository.create({
-      id: uuidv7(),
+      id,
       time: data.time,
       communicationType: data.communication_type,
       userId: context.userId,
@@ -261,5 +272,41 @@ export class CommunicationService {
       order: { time: 'DESC' },
       take: limit,
     });
+  }
+
+  async getEntitiesForCommunications(
+    context: ServiceContext,
+    options: Options,
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    let query = this.dataSource
+      .getRepository(CommunicationEntity)
+      .createQueryBuilder('communications')
+      .select(['communications.id'])
+      .where('communications.user_id = :userId', { userId: context.userId });
+
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    if (options.order) {
+      for (const [field, direction] of Object.entries(options.order)) {
+        query = query.orderBy(`communications.${field}`, direction as 'ASC' | 'DESC');
+      }
+    }
+
+    if (options.startTime) {
+      query = query.andWhere('communications.time >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('communications.time >= :endTime', { endTime: options.endTime });
+    }
+
+    const results = await query.getRawMany();
+
+    return results.map((row: { communications_id: string; type: IndexableEntity }) => ({
+      id: row.communications_id,
+      type: 'communication' as IndexableEntity,
+    }));
   }
 }
