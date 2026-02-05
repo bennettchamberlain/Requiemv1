@@ -16,6 +16,7 @@ import {
 
 import { EmbeddingService } from '../services/EmbeddingService';
 import { VectorService } from '../services/VectorService';
+import { type WeightedText } from '../types';
 
 @Injectable()
 export class ConceptSearchIndexListener {
@@ -132,10 +133,18 @@ export class ConceptSearchIndexListener {
     }
   }
 
-  private getSearchContent(concept: Concept): string[] {
-    const parts = [concept.name, concept.description];
+  private getSearchContent(concept: Concept): WeightedText[] {
+    const parts: WeightedText[] = [];
 
-    return parts.filter((part): part is string => typeof part === 'string' && part.length > 0);
+    if (concept.name) {
+      parts.push({ text: concept.name, weight: 10 });
+    }
+
+    if (concept.description) {
+      parts.push({ text: concept.description, weight: 5 });
+    }
+
+    return parts;
   }
 
   private getSearchDocument(concept: Concept): string | null {

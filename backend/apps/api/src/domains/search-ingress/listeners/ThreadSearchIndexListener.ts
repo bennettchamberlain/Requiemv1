@@ -17,6 +17,7 @@ import {
 import { OnEvent } from '@ci/domains/events';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
+import { type WeightedText } from '@ci/domains/search-ingress/types';
 
 @Injectable()
 export class ThreadSearchIndexListener {
@@ -159,14 +160,24 @@ export class ThreadSearchIndexListener {
     }
   }
 
-  private getSearchThread(thread: Thread, messages: Message[]): string[] {
-    const parts = [thread.name, thread.description];
+  private getSearchThread(thread: Thread, messages: Message[]): WeightedText[] {
+    const parts: WeightedText[] = [];
 
-    for (const message of messages) {
-      parts.push(message.content);
+    if (thread.name) {
+      parts.push({ text: thread.name, weight: 10 });
     }
 
-    return parts.filter((part): part is string => typeof part === 'string' && part.length > 0);
+    if (thread.description) {
+      parts.push({ text: thread.description, weight: 5 });
+    }
+
+    for (const message of messages) {
+      if (message.content) {
+        parts.push({ text: message.content, weight: 3 });
+      }
+    }
+
+    return parts;
   }
 
   private getSearchDocument(thread: Thread, messages: Message[]): string | null {

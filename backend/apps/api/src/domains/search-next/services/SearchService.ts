@@ -9,6 +9,19 @@ import { EmbeddingEntity } from '../entities/EmbeddingEntity';
 import { VectorEntity } from '../entities/VectorEntity';
 import type { EntityIdentifier, IndexableEntity } from '../types';
 
+/**
+ * PostgreSQL ts_rank weight multipliers for weighted tsvectors.
+ * Format: {D, C, B, A} - D is lowest priority, A is highest.
+ * These weights determine how much each category contributes to the final score.
+ *
+ * Current configuration:
+ * - A (weight 10+ at ingestion): 1.0 multiplier - names, titles, primary identifiers
+ * - B (weight 4-7 at ingestion): 0.4 multiplier - descriptions, summaries
+ * - C (weight 2-3 at ingestion): 0.2 multiplier - categories, types, URLs
+ * - D (weight <2 at ingestion): 0.1 multiplier - properties, bulk content
+ */
+const TS_RANK_WEIGHTS = '{0.1, 0.2, 0.4, 1.0}';
+
 type ScoredRowResult = {
   entity_id: string;
   entity_type: string;
@@ -211,7 +224,7 @@ export class SearchService {
       SELECT
         entity_id,
         entity_type,
-        ts_rank(vector, websearch_to_tsquery('english', $2)) as score
+        ts_rank('${TS_RANK_WEIGHTS}', vector, websearch_to_tsquery('english', $2)) as score
       FROM
         ci_search.vectors
       WHERE user_id = $1
