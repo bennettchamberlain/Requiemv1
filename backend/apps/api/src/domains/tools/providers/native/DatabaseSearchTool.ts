@@ -1,8 +1,33 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
+import { type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { SearchService, type DatabaseSearchResults } from '@ci/domains/memory';
+import { ThreadService, type Thread } from '@ci/domains/conversations';
+import { FileService, type File } from '@ci/domains/files';
+import { AnswerService, type Answer } from '@ci/domains/intelligence';
+import {
+  CommunicationService,
+  ConceptService,
+  ContentService,
+  EventService,
+  ItemService,
+  PersonService,
+  PlaceService,
+  type Communication,
+  type Concept,
+  type Content,
+  type Event,
+  type Item,
+  type Person,
+  type Place,
+} from '@ci/domains/memory';
+import {
+  INDEXABLE_ENTITIES,
+  SearchService,
+  type EntityIdentifier,
+  type IndexableEntity,
+} from '@ci/domains/search-next';
 
 import { BaseTool } from '../../core/BaseTool';
 import type { ToolExecutionContext } from '../../core/types';
@@ -18,8 +43,20 @@ const DatabaseSearchInputSchema = z.object({
 
 export type DatabaseSearchInput = z.infer<typeof DatabaseSearchInputSchema>;
 
+export type SearchResult =
+  | Answer
+  | Communication
+  | Concept
+  | Content
+  | Event
+  | File
+  | Item
+  | Person
+  | Place
+  | Thread;
+
 @Injectable()
-export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSearchResults> {
+export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchResult[]> {
   readonly schema = {
     name: 'databaseSearch',
     description:
@@ -48,27 +85,14 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
             'hybrid (combines both for best results), ' +
             'or auto (automatically choose based on query). Default: auto',
         },
-        scopes: {
+        entityTypes: {
           type: 'array',
           items: {
             type: 'string',
-            enum: ['entities', 'facts', 'documents', 'messages'],
+            enum: [...INDEXABLE_ENTITIES],
           },
           description:
-            'Which data types to search. Options: entities (people/places/concepts), ' +
-            'facts (archived knowledge), documents (PDFs/files), messages (conversation history). ' +
-            'Omit this parameter or provide empty array to search all data types. ' +
-            'Examples: ["entities", "documents"] or ["messages"]',
-        },
-        entityTypes: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
             'When searching entities, filter to specific types: Person, Concept, Location, Object, etc.',
-        },
-        includeRelationships: {
-          type: 'boolean',
-          description: 'Include relationship context for entity results (default: false)',
         },
         maxResults: {
           type: 'integer',
@@ -80,88 +104,19 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
       required: ['query'],
       additionalProperties: false,
     },
-    examples: [
-      {
-        input: {
-          query: 'coffee shops I visited',
-          searchMode: 'auto',
-          maxResults: 10,
-        },
-        output: {
-          items: [
-            {
-              id: 'uuid-entity-1',
-              type: 'entity',
-              score: 0.92,
-              name: 'Blue Bottle Coffee',
-              content: 'Coffee shop in downtown',
-              metadata: { entityType: 'Location' },
-            },
-            {
-              id: 'uuid-msg-1',
-              type: 'message',
-              score: 0.85,
-              content: 'I went to that new coffee shop on Main Street...',
-              metadata: { threadTitle: 'Weekend Plans', role: 'user' },
-            },
-          ],
-          totalResults: 2,
-          searchMode: 'hybrid',
-          executionTimeMs: 45,
-        },
-        description: 'Natural language search across all data types (default behavior)',
-      },
-      {
-        input: {
-          query: 'john.smith@example.com',
-          searchMode: 'keyword',
-          scopes: ['entities'],
-          entityTypes: ['Person'],
-        },
-        output: {
-          items: [
-            {
-              id: 'uuid-person-1',
-              type: 'entity',
-              score: 0.98,
-              name: 'John Smith',
-              properties: { email: 'john.smith@example.com' },
-              metadata: { entityType: 'Person' },
-            },
-          ],
-          totalResults: 1,
-          searchMode: 'keyword',
-          executionTimeMs: 12,
-        },
-        description: 'Precise keyword search for email address',
-      },
-      {
-        input: {
-          query: 'machine learning papers I read',
-          searchMode: 'semantic',
-          scopes: ['documents', 'messages'],
-          maxResults: 15,
-        },
-        output: {
-          items: [
-            {
-              id: 'uuid-chunk-1',
-              type: 'document_chunk',
-              score: 0.89,
-              content: 'Abstract: This paper presents a novel approach to...',
-              metadata: { documentTitle: 'Attention Is All You Need', sectionTitle: 'Abstract' },
-            },
-          ],
-          totalResults: 1,
-          searchMode: 'semantic',
-          executionTimeMs: 67,
-        },
-        description: 'Semantic search across documents and messages only',
-      },
-    ],
   };
 
   constructor(
+    private readonly answerService: AnswerService,
+    private readonly communicationService: CommunicationService,
+    private readonly conceptService: ConceptService,
+    private readonly contentService: ContentService,
+    private readonly eventService: EventService,
+    private readonly fileService: FileService,
+    private readonly itemService: ItemService,
+    private readonly personService: PersonService,
+    private readonly placeService: PlaceService,
+    private readonly threadService: ThreadService,
     private readonly searchService: SearchService,
     protected readonly logger: LoggerService,
   ) {
@@ -176,18 +131,85 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, DatabaseSe
   protected async executeInternal(
     context: ToolExecutionContext,
     input: DatabaseSearchInput,
-  ): Promise<DatabaseSearchResults> {
-    if (!context.userId) {
-      throw new Error('User context required for database search');
-    }
+  ): Promise<SearchResult[]> {
+    const serviceContext = toServiceContext(context);
 
-    return await this.searchService.search(context.userId, {
+    const searchResults = await this.searchService.search(serviceContext, {
       query: input.query,
-      searchMode: input.searchMode,
-      scopes: input.scopes,
-      entityTypes: input.entityTypes,
-      includeRelationships: input.includeRelationships,
+      mode: input.searchMode,
+      includeTypes: input.entityTypes as IndexableEntity[],
       maxResults: input.maxResults,
     });
+
+    const resolvedEntities = await this.resolveEntities(serviceContext, searchResults);
+
+    return resolvedEntities;
   }
+
+  private async resolveEntities(
+    context: UserServiceContext,
+    results: EntityIdentifier<IndexableEntity>[],
+  ): Promise<SearchResult[]> {
+    const groupedByType: Map<IndexableEntity, string[]> = results.reduce((acc, result) => {
+      if (!acc.has(result.type)) {
+        acc.set(result.type, []);
+      }
+
+      acc.get(result.type)!.push(result.id);
+
+      return acc;
+    }, new Map());
+
+    const answerIds = groupedByType.get('answer') || [];
+    const communicationIds = groupedByType.get('communication') || [];
+    const conceptIds = groupedByType.get('concept') || [];
+    const contentIds = groupedByType.get('content') || [];
+    const eventIds = groupedByType.get('event') || [];
+    const fileIds = groupedByType.get('file') || [];
+    const itemIds = groupedByType.get('item') || [];
+    const peopleIds = groupedByType.get('person') || [];
+    const placeIds = groupedByType.get('place') || [];
+    const threadIds = groupedByType.get('thread') || [];
+
+    const [answers, communications, concepts, content, events, files, items, people, places, threads] =
+      await Promise.all([
+        this.answerService.findByIds(context, answerIds),
+        this.communicationService.findByIds(context, communicationIds),
+        this.conceptService.findByIds(context, conceptIds),
+        this.contentService.findByIds(context, contentIds),
+        this.eventService.findByIds(context, eventIds),
+        this.fileService.findByIds(context, fileIds),
+        this.itemService.findByIds(context, itemIds),
+        this.personService.findByIds(context, peopleIds),
+        this.placeService.findByIds(context, placeIds),
+        this.threadService.findByIds(context, threadIds),
+      ]);
+
+    const resultMap = new Map<string, SearchResult>();
+
+    answers.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('answer', d.id), d));
+
+    communications
+      .filter((d) => d != null)
+      .forEach((d) => resultMap.set(makeCompositeKey('communication', d.id), d));
+
+    concepts.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('concept', d.id), d));
+    content.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('content', d.id), d));
+    events.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('event', d.id), d));
+    files.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('file', d.id), d));
+    items.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('item', d.id), d));
+    people.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('person', d.id), d));
+    places.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('place', d.id), d));
+    threads.filter((d) => d != null).forEach((d) => resultMap.set(makeCompositeKey('thread', d.id), d));
+
+    const orderedResults = results
+      .map((result) => resultMap.get(makeCompositeKey(result.type, result.id)))
+      .filter((entity): entity is SearchResult => entity != null);
+
+    return orderedResults;
+  }
+}
+
+function makeCompositeKey(type: IndexableEntity, id: string): string {
+  return `${type}:${id}`;
 }
