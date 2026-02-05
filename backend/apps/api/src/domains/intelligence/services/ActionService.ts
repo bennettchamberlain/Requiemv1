@@ -49,7 +49,6 @@ export class ActionService {
       order: {
         priority: 'asc',
       },
-      relations: ['tags'],
     });
 
     return entities.map((entity) => ActionEntity.toEgressType(entity));
@@ -65,7 +64,6 @@ export class ActionService {
         }),
         id: In(ids),
       },
-      relations: ['tags'],
     });
 
     const map = new Map(entities.map((entity) => [entity.id, ActionEntity.toEgressType(entity)]));
@@ -83,7 +81,6 @@ export class ActionService {
         }),
         id,
       },
-      relations: ['tags'],
     });
 
     if (entity == null) {
@@ -103,7 +100,6 @@ export class ActionService {
         }),
         threadId,
       },
-      relations: ['tags'],
     });
 
     if (entity == null) {
