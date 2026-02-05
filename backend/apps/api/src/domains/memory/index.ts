@@ -54,8 +54,8 @@ import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { PersonService } from './services/PersonService';
 import { PlaceService } from './services/PlaceService';
-import { SearchService } from './services/SearchService';
 import { UserContextService } from './services/UserContextService';
+
 /**
  * @internal
  */
@@ -99,7 +99,6 @@ import { UserContextService } from './services/UserContextService';
     PersonService,
     ConceptService,
     FileService,
-    SearchService,
     PlaceService,
   ],
   controllers: [GraphController],
@@ -117,7 +116,6 @@ import { UserContextService } from './services/UserContextService';
     GraphQueryService,
     GraphReadService,
     FileService,
-    SearchService,
     PlaceService,
   ],
 })
@@ -153,22 +151,9 @@ export {
   GraphReadService,
   FileService,
   PlaceService,
-  SearchService,
 };
 
 export type { Content } from './entities/ContentEntity';
-
-// Types
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
-
-// Search types
-export type {
-  SearchMode,
-  SearchScope,
-  DatabaseSearchOptions,
-  SearchResultItem,
-  DatabaseSearchResults,
-} from './services/SearchService';
-
 export type { Concept, Event, Fact, Item, InventoryCondition, Person, Communication, Place };
 export { CommunicationDirection, CommunicationType } from './types';
