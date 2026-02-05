@@ -4,9 +4,30 @@ import { Breadcrumb } from '@ci/shadcn';
 import { useNavigate, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-import { GET_CONNECTIONS } from '@/pages/ConnectionsPage/ConnectionsPage';
+import { gql } from '@/graphql';
 
 import { Card } from './Card';
+
+const GET_CONNECTIONS = gql(`
+  query GetConnectionsLight {
+    connections {
+      edges {
+        cursor
+        node {
+          id
+          providerId
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`);
 
 export function ConnectPage() {
   const navigate = useNavigate();

@@ -31,7 +31,7 @@ export interface Connection {
   lastSyncedAt?: string;
 }
 
-export const GET_CONNECTIONS = gql(`
+const GET_CONNECTIONS = gql(`
   query GetConnections {
     connections {
       edges {
