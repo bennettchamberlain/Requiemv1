@@ -113,6 +113,10 @@ dbdestroy: ## Drop all PostgreSQL data including tables
 
 	@printf "\n"
 
+.PHONY: dbshell
+dbshell: ## Open a psql shell to the PostgreSQL database
+	@yarn workspace @ci/be-api dbshell
+
 .PHONY: deploy
 deploy: ## DEPRECATED: Use production, staging, or local targets instead
 	@$(MAKE) staging

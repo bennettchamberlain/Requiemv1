@@ -13,6 +13,7 @@
     "depcheck:accept": "depcruise \"src/**/*.ts\" --output-type baseline > .dependency-cruiser-known-violations.json",
     "typecheck": "tsc --noEmit",
     "dbmate": "DOTENV_CONFIG_PATH=../../../.env node bin/dbmate.js",
+    "dbshell": "DOTENV_CONFIG_PATH=../../../.env node bin/dbshell.js",
     "migrate": "yarn dbmate up",
     "migrate:up": "yarn migrate",
     "migrate:down": "yarn dbmate down",
