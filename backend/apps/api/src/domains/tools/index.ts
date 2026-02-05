@@ -66,7 +66,6 @@ const nativeToolInstances = [
     IntelligenceModule,
     SearchNextModule,
   ],
-  controllers: [McpController],
   providers: [
     ToolRegistry,
     // Native tools
