@@ -10,9 +10,19 @@ interface Props {
   disabled?: boolean;
   onClick?: () => void;
   className?: string;
+  subtext?: string;
 }
 
-export function Card({ background, border, logo, text, disabled = false, onClick, className }: Props) {
+export function Card({
+  background,
+  border,
+  logo,
+  text,
+  disabled = false,
+  onClick,
+  className,
+  subtext,
+}: Props) {
   const backgroundStyle = useMemo(() => {
     if (isHexColor(background)) {
       return {
@@ -57,6 +67,7 @@ export function Card({ background, border, logo, text, disabled = false, onClick
         </div>
       </div>
       <div className="font-semibold text-sm p-6">{text}</div>
+      {subtext && <div className="font-semibold text-sm p-6">{subtext}</div>}
     </div>
   );
 }
