@@ -4,14 +4,11 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  ManyToMany,
   ManyToOne,
-  JoinTable,
   JoinColumn,
   AfterLoad,
 } from 'typeorm';
 
-import { TagEntity } from '@ci/domains/search';
 import { UserEntity } from '@ci/domains/user';
 
 @Entity({ schema: 'ci', name: 'entities' })
@@ -96,14 +93,6 @@ export class PersonEntity {
     this.sourceUrl = (this.properties?.source_url as string) || null;
     this.sourceData = (this.properties?.source_data as Record<string, unknown>) || null;
   }
-
-  @ManyToMany(() => TagEntity, { nullable: true })
-  @JoinTable({
-    name: 'person_tag',
-    joinColumn: { name: 'person_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'tag_id', referencedColumnName: 'id' },
-  })
-  tags?: TagEntity[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;

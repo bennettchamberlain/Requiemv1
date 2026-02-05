@@ -24,7 +24,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BrowserActivityModule, BrowserActivityEntity } from '@ci/domains/browser-activity';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
-import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
@@ -80,7 +79,6 @@ import { UserContextService } from './services/UserContextService';
     ]),
     UserModule,
     EventsModule,
-    EmbeddingModule,
     FilesModule,
     BrowserActivityModule,
   ],

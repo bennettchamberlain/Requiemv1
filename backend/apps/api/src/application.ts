@@ -36,7 +36,6 @@ import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
 import { PositionModule } from '@ci/domains/position';
 import { PromoteModule } from '@ci/domains/promote';
-import { EmbeddingModule } from '@ci/domains/search';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SpeechModule } from '@ci/domains/speech';
@@ -65,7 +64,6 @@ import { UserModule } from '@ci/domains/user';
     BrowserActivityModule,
     ConnectionsModule,
     DeviceModule,
-    EmbeddingModule,
     EtlModule,
     EventsModule,
     FilesModule,

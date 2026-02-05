@@ -4,16 +4,13 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  ManyToMany,
   ManyToOne,
   JoinColumn,
-  JoinTable,
   AfterLoad,
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
 
-import { TagEntity } from '@ci/domains/search';
 import { UserEntity, type User } from '@ci/domains/user';
 
 @Entity({ schema: 'ci', name: 'entities' })
@@ -91,14 +88,6 @@ export class PlaceEntity {
   @ManyToOne(() => UserEntity, { nullable: true })
   @JoinColumn({ name: 'owner_user_id' })
   user?: UserEntity;
-
-  @ManyToMany(() => TagEntity, { nullable: true })
-  @JoinTable({
-    name: 'place_tag',
-    joinColumn: { name: 'place_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'tag_id', referencedColumnName: 'id' },
-  })
-  tags?: TagEntity[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
