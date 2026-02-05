@@ -11,7 +11,6 @@ interface Props {
   onClick?: () => void;
   className?: string;
   subtext?: string;
-  textBackground?: string;
 }
 
 export function Card({
@@ -23,7 +22,6 @@ export function Card({
   onClick,
   className,
   subtext,
-  textBackground,
 }: Props) {
   const backgroundStyle = useMemo(() => {
     if (isHexColor(background)) {
@@ -45,14 +43,11 @@ export function Card({
     return {};
   }, [border]);
 
-  console.log('textBackground', textBackground);
-
   return (
     <div
       className={cn(
         'text-gray-700 dark:text-gray-200 rounded-lg bg-white shadow-md dark:bg-gray-80 select-none',
         !disabled ? 'cursor-pointer' : 'opacity-50',
-        textBackground || '',
         className,
       )}
       onClick={!disabled ? onClick : undefined}

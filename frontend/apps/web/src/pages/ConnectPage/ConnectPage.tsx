@@ -158,7 +158,7 @@ export function ConnectPage() {
                     ? `${connectionsCount['0198779b-3c33-73da-84e5-82e0df145260']} Connections`
                     : undefined
               }
-              textBackground={
+              className={
                 connectionsCount['0198779b-3c33-73da-84e5-82e0df145260'] > 0 ? 'bg-green-200' : undefined
               }
             />
@@ -175,7 +175,7 @@ export function ConnectPage() {
                     ? `${connectionsCount['0198779b-182c-716e-9275-b81d99a47fdb']} Connections`
                     : undefined
               }
-              textBackground={
+              className={
                 connectionsCount['0198779b-182c-716e-9275-b81d99a47fdb'] > 0 ? 'bg-green-200' : undefined
               }
             />
@@ -192,7 +192,7 @@ export function ConnectPage() {
                     ? `${connectionsCount['dbb8002f-12da-4cd9-b02b-37db7791a900']} Connections`
                     : undefined
               }
-              textBackground={
+              className={
                 connectionsCount['dbb8002f-12da-4cd9-b02b-37db7791a900'] > 0 ? 'bg-green-200' : undefined
               }
             />
