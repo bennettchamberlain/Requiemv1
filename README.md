@@ -120,10 +120,12 @@ ollama run nomic-embed-text "embed this"
 
 Edit your hostfile so that `dev.companionintelligence.com` resolves to `127.0.0.1`.
 
-## Initialize Dev environment
+## Initialize development environment
+
+Run the local Docker deployment:
 
 ```bash
-make setup-dev
+make local
 ```
 
 This runs a variety of commands to do setup, including:
@@ -139,41 +141,30 @@ This runs a variety of commands to do setup, including:
   * **Temporal** A durable orchestration engine that manages our more complex async workflows
   * **NGINX** A reverse proxy that publishes our backend (NodeJS) and frontend (Vite) processes to dev.companionintelligence.com
 * Run data schema migrations
-* Seed the database with dev data
 
-If you run into problems with this, you can reset the docker environment using:
+Run our applications following the instructions in their respective READMEs.
 
-```bash
-make reset
-```
+* Backend (api) [README](backend/apps/api/README.md)
+* Frontend (web) [README](frontend/apps/web/README.md)
 
-## Run the app in dev mode
-
-To run the app in dev mode:
+Seed the database with development data:
 
 ```bash
-make run-dev
+make seed
 ```
 
-You should now be able to view the application at:
-
-[dev.companionintelligence.com](http://dev.companionintelligence.com)
-
-If you have run `make setup-dev`, you can login using the credentials:
+You should now be able to view the application at [dev.companionintelligence.com](http://dev.companionintelligence.com) and login with the credentials:
 
 ```
 Username: jsmith@example.com
 Password: ]60.a6{CJ}lB*rHAp;w;
 ```
 
------
+If you run into problems with this, you can reset the docker environment using:
 
-Note: You can instead run the applications manually following the instructions in the READMEs for each of our services.
-Running services individually can be preferable for examining log scrollback, etc.
-
-* Backend (api) [README](backend/apps/api/README.md)
-* Frontend (web) [README](frontend/apps/web/README.md)
-
+```bash
+make reset
+```
 
 ## Available Commands
 
@@ -183,44 +174,45 @@ Run `make` from the project root to see all available commands with descriptions
 
 | Command | Description |
 |---------|-------------|
-| `make setup-dev` | Full development environment setup (init, local services, migrate, seed) |
 | `make init` | Initialize repository after checkout (installs dependencies, sets up VS Code, prepares git hooks) |
 | `make install` | Install project dependencies only |
-| `make health` | Check prerequisites (Node.js version, Ollama, required models, hostfile) |
+| `make health` | Check prerequisites (Node.js version, Yarn version, Ollama, required models) |
+| `make dev-health` | Check prerequisites including development DNS resolution (dev.companionintelligence.com) |
 
 ### Development
 
 | Command | Description |
 |---------|-------------|
-| `make run-dev` | Start local Docker services and launch dev servers in tmux |
-| `make local` | Start local Docker services only (PostgreSQL, Minio, NGINX) |
+| `make dev` | Run the development environment locally (health check, local services, tmux session) |
+| `make local` | Run the local deployment (Docker services: PostgreSQL, Minio, NGINX, etc.) |
 | `make graphql` | Generate GraphQL schema and frontend types |
+| `make tooling` | Run development tooling services |
+| `make reset` | Reset the local development environment (removes all containers, volumes, images) |
 
 ### Database
 
 | Command | Description |
 |---------|-------------|
+| `make dbclear` | Clear the data stored in the PostgreSQL database |
+| `make dbdestroy` | Drop all PostgreSQL data including tables |
 | `make migrate` | Run database migrations |
-| `make seed` | Seed database with development data |
-| `make dbclear` | Clear all data from the database |
-| `make dbdestroy` | Completely destroy the database |
-| `make chatreset` | Reset demo user's chat threads |
+| `make seed` | Seed database with John Smith user and demo data |
 
 ### Build & Deploy
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build the full application (API, frontend, Docker images) |
-| `make staging` | Start the staging server from Docker images |
-| `make deploy` | Full deployment (init, build, staging) |
-| `make reset` | Reset local environment including all Docker containers and volumes |
+| `make build` | Build the application (API, frontend, Docker images) |
+| `make staging` | Run the staging deployment |
+| `make production` | Run the production deployment |
 
 ### Admin Scripts
 
 | Command | Description |
 |---------|-------------|
-| `make gentoken` | Generate a stable access token (24h expiration) for a user by email |
-| `make signup` | Generate signup codes for user registration |
+| `make chatreset` | Reset John Smith's demo threads |
+| `make gentoken` | Generates a stable access token for use during development |
+| `make signup` | Generates a set of signup codes for user registration |
 | `make userpw` | Change a user's password |
 
 ### Linting
