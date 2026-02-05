@@ -4,15 +4,12 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  ManyToMany,
   ManyToOne,
   JoinColumn,
-  JoinTable,
   OneToOne,
 } from 'typeorm';
 
 import { type Thread, ThreadEntity } from '@ci/domains/conversations';
-import { TagEntity } from '@ci/domains/search';
 import { type User, UserEntity } from '@ci/domains/user';
 
 @Entity({ schema: 'ci', name: 'actions' })
@@ -43,14 +40,6 @@ export class ActionEntity {
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
 
-  @ManyToMany(() => TagEntity, { nullable: true })
-  @JoinTable({
-    name: 'action_tag',
-    joinColumn: { name: 'action_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'tag_id', referencedColumnName: 'id' },
-  })
-  tags?: TagEntity[];
-
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -67,7 +56,6 @@ export class ActionEntity {
       threadId: entity.threadId,
       thread: entity.thread ? ThreadEntity.toEgressType(entity.thread) : undefined,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
-      tags: entity.tags?.map((tag) => tag.toTag()).filter((tag) => !!tag) as string[],
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

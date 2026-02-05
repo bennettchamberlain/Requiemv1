@@ -24,7 +24,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BrowserActivityModule, BrowserActivityEntity } from '@ci/domains/browser-activity';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
-import { EmbeddingModule } from '@ci/domains/search';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
@@ -54,8 +53,8 @@ import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { PersonService } from './services/PersonService';
 import { PlaceService } from './services/PlaceService';
-import { SearchService } from './services/SearchService';
 import { UserContextService } from './services/UserContextService';
+
 /**
  * @internal
  */
@@ -80,7 +79,6 @@ import { UserContextService } from './services/UserContextService';
     ]),
     UserModule,
     EventsModule,
-    EmbeddingModule,
     FilesModule,
     BrowserActivityModule,
   ],
@@ -99,7 +97,6 @@ import { UserContextService } from './services/UserContextService';
     PersonService,
     ConceptService,
     FileService,
-    SearchService,
     PlaceService,
   ],
   controllers: [GraphController],
@@ -117,7 +114,6 @@ import { UserContextService } from './services/UserContextService';
     GraphQueryService,
     GraphReadService,
     FileService,
-    SearchService,
     PlaceService,
   ],
 })
@@ -153,22 +149,9 @@ export {
   GraphReadService,
   FileService,
   PlaceService,
-  SearchService,
 };
 
 export type { Content } from './entities/ContentEntity';
-
-// Types
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
-
-// Search types
-export type {
-  SearchMode,
-  SearchScope,
-  DatabaseSearchOptions,
-  SearchResultItem,
-  DatabaseSearchResults,
-} from './services/SearchService';
-
 export type { Concept, Event, Fact, Item, InventoryCondition, Person, Communication, Place };
 export { CommunicationDirection, CommunicationType } from './types';

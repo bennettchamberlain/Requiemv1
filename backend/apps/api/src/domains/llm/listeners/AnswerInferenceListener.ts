@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import { type RequestContext, type ServiceContext, SYSTEM_USER } from '@ci/common/context';
+import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
-import { AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { EmbeddingService } from '@ci/domains/search';
+import { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
 
 import { OllamaService } from '../services/OllamaService';
 
@@ -12,7 +11,6 @@ import { OllamaService } from '../services/OllamaService';
 export class AnswerInferenceListener {
   constructor(
     private readonly answerService: AnswerService,
-    private readonly embeddingService: EmbeddingService,
     private readonly questionService: QuestionService,
     private readonly ollamaService: OllamaService,
     private readonly logger: LoggerService,
@@ -22,10 +20,6 @@ export class AnswerInferenceListener {
 
   @OnEvent(Events.INFER_QUESTION_ANSWER)
   async inferQuestionAnswer(payload: EventPayloads[Events.INFER_QUESTION_ANSWER]) {
-    const context: RequestContext = {
-      userId: payload.ownerId ?? undefined,
-    };
-
     this.logger.log('Inferring answer to question', {
       userId: payload.ownerId,
       questionId: payload.questionId,
@@ -38,19 +32,21 @@ export class AnswerInferenceListener {
     const question = await this.questionService.findById(serviceContext, payload.questionId);
 
     if (question) {
-      const associatedAnswers = await this.embeddingService.findNearest(
-        context,
-        question.text,
-        ['answer'],
-        10,
-      );
+      // const associatedAnswers = await this.embeddingService.findNearest(
+      //   context,
+      //   question.text,
+      //   ['answer'],
+      //   10,
+      // );
+      //
+      // const resolvedAnswers = (
+      //   await this.answerService.findByIds(
+      //     serviceContext,
+      //     associatedAnswers.map((embedding) => embedding.id),
+      //   )
+      // ).filter((answer) => answer != null);
 
-      const resolvedAnswers = (
-        await this.answerService.findByIds(
-          serviceContext,
-          associatedAnswers.map((embedding) => embedding.id),
-        )
-      ).filter((answer) => answer != null);
+      const resolvedAnswers: Answer[] = [];
 
       const ragThread = [
         {
