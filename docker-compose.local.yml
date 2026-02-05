@@ -1,7 +1,6 @@
 services:
-  dev-webserver:
+  application:
     image: nginx:stable
-    container_name: dev-webserver
     ports:
       - 80:80
       - 443:443
