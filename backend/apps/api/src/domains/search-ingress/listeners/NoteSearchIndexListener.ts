@@ -15,6 +15,7 @@ import {
 } from '@ci/domains/notes/events';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
+import { type WeightedText } from '@ci/domains/search-ingress/types';
 
 @Injectable()
 export class NoteSearchIndexListener {
@@ -125,10 +126,18 @@ export class NoteSearchIndexListener {
     this.logger.log('Upserted tsvector for note');
   }
 
-  private getSearchContent(note: Note): string[] {
-    const parts = [note.title, note.content];
+  private getSearchContent(note: Note): WeightedText[] {
+    const parts: WeightedText[] = [];
 
-    return parts.filter((part): part is string => typeof part === 'string' && part.length > 0);
+    if (note.title) {
+      parts.push({ text: note.title, weight: 10 });
+    }
+
+    if (note.content) {
+      parts.push({ text: note.content, weight: 5 });
+    }
+
+    return parts;
   }
 
   private getSearchDocument(note: Note): string | null {

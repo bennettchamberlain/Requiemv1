@@ -15,6 +15,7 @@ import {
 } from '@ci/domains/memory/events';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
+import { type WeightedText } from '@ci/domains/search-ingress/types';
 
 @Injectable()
 export class ItemSearchIndexListener {
@@ -131,18 +132,44 @@ export class ItemSearchIndexListener {
     }
   }
 
-  private getSearchItem(item: Item): string[] {
-    const parts = [
-      item.name,
-      item.description,
-      item.category,
-      item.subcategory,
-      item.brand,
-      item.model,
-      item.maintenanceNotes,
-    ];
+  private getSearchItem(item: Item): WeightedText[] {
+    const parts: WeightedText[] = [];
 
-    return parts.filter((part): part is string => typeof part === 'string' && part.length > 0);
+    if (item.name) {
+      parts.push({ text: item.name, weight: 10 });
+    }
+
+    if (item.description) {
+      parts.push({ text: item.description, weight: 5 });
+    }
+
+    if (item.brand) {
+      parts.push({ text: item.brand, weight: 5 });
+    }
+
+    if (item.model) {
+      parts.push({ text: item.model, weight: 5 });
+    }
+
+    if (item.category) {
+      parts.push({ text: item.category, weight: 3 });
+    }
+
+    if (item.subcategory) {
+      parts.push({ text: item.subcategory, weight: 3 });
+    }
+
+    if (item.maintenanceNotes) {
+      const maintenanceNotes =
+        typeof item.maintenanceNotes === 'string'
+          ? item.maintenanceNotes
+          : JSON.stringify(item.maintenanceNotes);
+      if (maintenanceNotes.length > 0) {
+        parts.push({ text: maintenanceNotes, weight: 1 });
+      }
+    }
+
+    return parts;
   }
 
   private getSearchDocument(item: Item): string | null {

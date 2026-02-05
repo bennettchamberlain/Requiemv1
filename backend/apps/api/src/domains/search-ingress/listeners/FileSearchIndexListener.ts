@@ -17,6 +17,7 @@ import {
 } from '@ci/domains/files/events';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
+import { type WeightedText } from '@ci/domains/search-ingress/types';
 
 @Injectable()
 export class FileSearchIndexListener {
@@ -142,10 +143,24 @@ export class FileSearchIndexListener {
     }
   }
 
-  private getSearchFile(file: File): string[] {
-    const parts = [file.filename?.split('.')[0], file.originalName?.split('.')[0], file.contentType];
+  private getSearchFile(file: File): WeightedText[] {
+    const parts: WeightedText[] = [];
 
-    return parts.filter((part): part is string => typeof part === 'string' && part.length > 0);
+    const filenameWithoutExt = file.filename?.split('.')[0];
+    if (filenameWithoutExt) {
+      parts.push({ text: filenameWithoutExt, weight: 10 });
+    }
+
+    const originalNameWithoutExt = file.originalName?.split('.')[0];
+    if (originalNameWithoutExt) {
+      parts.push({ text: originalNameWithoutExt, weight: 10 });
+    }
+
+    if (file.contentType) {
+      parts.push({ text: file.contentType, weight: 3 });
+    }
+
+    return parts;
   }
 
   private getSearchDocument(file: File): string | null {
