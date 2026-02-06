@@ -19,28 +19,26 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { SignupCodeEntity } from './entities/SignupCodeEntity';
 import { UserEntity, type User } from './entities/UserEntity';
-import { SignupCodeService } from './services/SignupCodeService';
 import { UserService } from './services/UserService';
 
 /**
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity, SignupCodeEntity]), EventsModule],
-  providers: [UserService, SignupCodeService],
-  exports: [UserService, SignupCodeService],
+  imports: [TypeOrmModule.forFeature([UserEntity]), EventsModule],
+  providers: [UserService],
+  exports: [UserService],
 })
 export class UserModule {}
 
 // Entities
-export { UserEntity, SignupCodeEntity };
+export { UserEntity };
 
 // Services
-export { SignupCodeService, UserService };
+export { UserService };
 
 // Types
 export type { User };
-export type { CreateUserDto, UpdateUserDto, SignupCode, SignupDto, UpdateSignupCodeDto } from './types';
+export type { CreateUserDto, UpdateUserDto } from './types';
 export { UserCreatedEvent, type UserCreatedPayload } from './events';

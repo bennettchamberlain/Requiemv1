@@ -23,12 +23,15 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import config from '@ci/configuration';
-import { UserModule, SignupCodeEntity, SignupCodeService } from '@ci/domains/user';
+import { UserModule } from '@ci/domains/user';
 
 import { SessionController } from './controllers/SessionController';
+import { SignupController } from './controllers/SignupController';
 import { SessionEntity } from './entities/SessionEntity';
+import { SignupCodeEntity } from './entities/SignupCodeEntity';
 import { AuthService } from './services/AuthService';
 import { JwtStrategy } from './services/JwtStrategy';
+import { SignupCodeService } from './services/SignupCodeService';
 
 /**
  * @internal
@@ -46,6 +49,9 @@ import { JwtStrategy } from './services/JwtStrategy';
     }),
   ],
   providers: [AuthService, JwtStrategy, SignupCodeService],
-  controllers: [SessionController],
+  controllers: [SessionController, SignupController],
+  exports: [SignupCodeService],
 })
 export class AuthModule {}
+
+export { SignupCodeService };

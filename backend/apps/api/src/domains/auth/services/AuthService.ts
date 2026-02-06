@@ -4,6 +4,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import bcrypt from 'bcrypt';
+import type { Request } from 'express';
 import parseDuration from 'parse-duration';
 import { MoreThan, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
@@ -83,6 +84,13 @@ export class AuthService {
     const accessToken = this.jwtService.sign(payload);
 
     return accessToken;
+  }
+
+  getSessionMetadata(request: Request): SessionMetadata {
+    return {
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    };
   }
 
   private async findSession(userId: string, token: string, data: SessionMetadata): Promise<SessionEntity> {

@@ -3,6 +3,13 @@ export interface LoginDto {
   password: string;
 }
 
+export interface SignupDto {
+  name: string;
+  email: string;
+  password: string;
+  signup_code?: string;
+}
+
 export interface JwtPayload {
   sub: string;
 }
@@ -14,4 +21,8 @@ export interface SignedRequest extends Request {
 export interface SessionMetadata {
   ip?: string;
   userAgent?: string;
+}
+
+export interface UpdateSignupCodeDto {
+  used?: boolean;
 }
