@@ -18,7 +18,7 @@ import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetActionsDocument,
+    "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          seen\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetActionsDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": typeof types.ActionGridItemDataFragmentDoc,
@@ -52,7 +52,7 @@ type Documents = {
     "\n  query GetContent($id: ID!) {\n    content(id: $id) {\n      id\n      title\n      text\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetContentDocument,
     "\n  query GetEvent($id: ID!) {\n    event(id: $id) {\n      id\n      title\n      description\n\n      tags {\n        id\n        label\n      }\n\n      location {\n        id\n        name\n        properties\n      }\n\n      organizer {\n        id\n        name\n      }\n\n      participants {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetEventDocument,
     "\n  fragment InsightCardData on InsightItemType {\n    title\n    summaryText\n    keyActions\n    relevanceScore\n    tags\n    relatedEntityIds\n  }\n": typeof types.InsightCardDataFragmentDoc,
-    "\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n": typeof types.SummaryCardDataFragmentDoc,
+    "\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    seen\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n": typeof types.SummaryCardDataFragmentDoc,
     "\n  query GetSummaries($first: Int) {\n    summaries(first: $first) {\n      edges {\n        node {\n          id\n          periodType\n          ...SummaryCardData\n          insights {\n            ...InsightCardData\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n      }\n      totalCount\n    }\n  }\n": typeof types.GetSummariesDocument,
     "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": typeof types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetFilesDocument,
@@ -99,7 +99,7 @@ type Documents = {
     "\n  query GetTags {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n        }\n      }\n    }\n  }\n": typeof types.GetTagsDocument,
 };
 const documents: Documents = {
-    "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n": types.GetActionsDocument,
+    "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          seen\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n": types.GetActionsDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": types.ActionGridItemDataFragmentDoc,
@@ -133,7 +133,7 @@ const documents: Documents = {
     "\n  query GetContent($id: ID!) {\n    content(id: $id) {\n      id\n      title\n      text\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetContentDocument,
     "\n  query GetEvent($id: ID!) {\n    event(id: $id) {\n      id\n      title\n      description\n\n      tags {\n        id\n        label\n      }\n\n      location {\n        id\n        name\n        properties\n      }\n\n      organizer {\n        id\n        name\n      }\n\n      participants {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n    }\n  }\n": types.GetEventDocument,
     "\n  fragment InsightCardData on InsightItemType {\n    title\n    summaryText\n    keyActions\n    relevanceScore\n    tags\n    relatedEntityIds\n  }\n": types.InsightCardDataFragmentDoc,
-    "\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n": types.SummaryCardDataFragmentDoc,
+    "\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    seen\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n": types.SummaryCardDataFragmentDoc,
     "\n  query GetSummaries($first: Int) {\n    summaries(first: $first) {\n      edges {\n        node {\n          id\n          periodType\n          ...SummaryCardData\n          insights {\n            ...InsightCardData\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n      }\n      totalCount\n    }\n  }\n": types.GetSummariesDocument,
     "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetFilesDocument,
@@ -197,7 +197,7 @@ export function gql(source: string): unknown;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n"];
+export function gql(source: "\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          seen\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetActions {\n    actions {\n      edges {\n        node {\n          id\n          title\n          text\n          imageUrl\n          seen\n          thread {\n            id\n          }\n          tags {\n            id\n            label\n          }\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -333,7 +333,7 @@ export function gql(source: "\n  fragment InsightCardData on InsightItemType {\n
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n"): (typeof documents)["\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n"];
+export function gql(source: "\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    seen\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n"): (typeof documents)["\n  fragment SummaryCardData on SummaryType {\n    id\n    title\n    periodType\n    seen\n    summaryText\n    keyInsights\n    tags\n    activityCounts {\n      total\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -194,11 +194,11 @@ async def store_summary_activity(
         """
         INSERT INTO summaries (
             summary_id, user_id, period_start, period_end, period_type,
-            timezone, source_types, title, content, summary_embedding, created_at, updated_at
+            timezone, source_types, title, content, summary_embedding, seen, created_at, updated_at
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, :period_type,
             :timezone, :source_types, :title, CAST(:content AS jsonb),
-            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END, NOW(), NOW()
+            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END, :seen, NOW(), NOW()
         )
         """,
         {
@@ -212,6 +212,7 @@ async def store_summary_activity(
             "title": f"{summary_type.title()} Summary",
             "content": json.dumps(content),
             "embedding": embedding_value,
+            "seen": bool(summary_data.get("seen", False)),
         },
     )
 
@@ -667,8 +668,8 @@ async def store_action_activity(
     """
     Store generated actions in the ci.actions table.
 
-    Each action is stored as a separate row with metadata tracking 'seen' status,
-    action type, and any additional payload.
+    Each action is stored as a separate row with a dedicated seen column plus
+    metadata for action type and additional payload.
 
     Returns list of action_ids for all stored actions.
     """
@@ -690,9 +691,9 @@ async def store_action_activity(
 
     insert_query = """
         INSERT INTO ci.actions (
-            id, title, text, priority, user_id, metadata, created_at, updated_at
+            id, title, text, priority, user_id, seen, metadata, created_at, updated_at
         ) VALUES (
-            :action_id, :title, :text, :priority, :user_id,
+            :action_id, :title, :text, :priority, :user_id, :seen,
             CAST(:metadata AS jsonb), NOW(), NOW()
         )
     """
@@ -701,9 +702,8 @@ async def store_action_activity(
         action_id = str(uuid4())
         action_ids.append(action_id)
 
-        # Build metadata with seen=False, type, context, and related_person
+        # Build metadata with type, context, and related_person
         metadata = {
-            "seen": False,
             "type": action.get("type", "general"),
             "context": action.get("context"),
             "related_person": action.get("related_person"),
@@ -716,6 +716,7 @@ async def store_action_activity(
             "text": action.get("text", ""),
             "priority": action.get("priority", 5),
             "user_id": str(user_uuid),
+            "seen": False,
             "metadata": json.dumps(metadata),
         }
 
@@ -777,12 +778,12 @@ async def store_insight_activity(
         INSERT INTO ci.summaries (
             summary_id, user_id, period_start, period_end, period_type,
             timezone, source_types, title, content, structured_context,
-            tags, participants, confidence_score, metadata, created_at, updated_at
+            tags, participants, confidence_score, seen, metadata, created_at, updated_at
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, 'insight',
             :timezone, :source_types, :title, CAST(:content AS jsonb),
             CAST(:structured_context AS jsonb), CAST(:tags AS jsonb),
-            CAST(:participants AS uuid[]), :confidence_score,
+            CAST(:participants AS uuid[]), :confidence_score, :seen,
             CAST(:metadata AS jsonb), NOW(), NOW()
         )
     """
@@ -811,7 +812,6 @@ async def store_insight_activity(
         }
 
         metadata = {
-            "seen": False,
             "relevance_score": insight.get("relevance_score", 0),
         }
 
@@ -828,6 +828,7 @@ async def store_insight_activity(
             "tags": json.dumps(insight.get("tags", [])),
             "participants": participants_list,
             "confidence_score": insight.get("relevance_score", 0),
+            "seen": False,
             "metadata": json.dumps(metadata),
         }
 

@@ -1,5 +1,5 @@
 -- migrate:up
--- Add metadata column to actions table for storing additional fields like 'seen', 'type', 'payload'
+-- Add metadata column to actions table for storing additional fields like 'seen'
 ALTER TABLE ci.actions ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
 
 -- Add index for efficient querying of metadata fields (e.g., filtering by seen status)

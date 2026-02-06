@@ -35,6 +35,9 @@ export class ActionEntity {
   @Column({ type: 'jsonb', name: 'metadata', default: '{}' })
   metadata!: Record<string, unknown>;
 
+  @Column({ type: 'boolean', default: false })
+  seen!: boolean;
+
   @Column({ type: 'text', name: 'thread_id', nullable: true })
   threadId!: string;
 
@@ -68,6 +71,7 @@ export class ActionEntity {
       imageUrl: entity.imageUrl,
       priority: entity.priority,
       metadata: entity.metadata,
+      seen: entity.seen ?? false,
       threadId: entity.threadId,
       thread: entity.thread ? ThreadEntity.toEgressType(entity.thread) : undefined,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,

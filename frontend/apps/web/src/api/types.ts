@@ -5,6 +5,7 @@ export interface Action {
   imageUrl?: string;
   threadId?: string;
   tags: string[];
+  seen?: boolean;
 }
 
 export interface File {

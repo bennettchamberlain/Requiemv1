@@ -44,6 +44,9 @@ export class SummaryEntity {
   @Column({ type: 'jsonb', nullable: true })
   metadata!: Record<string, unknown> | null;
 
+  @Column({ type: 'boolean', default: false })
+  seen!: boolean;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -88,6 +91,7 @@ export class SummaryEntity {
       participants: entity.participants,
       confidenceScore: entity.confidenceScore,
       metadata: entity.metadata,
+      seen: entity.seen ?? false,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       // Computed fields

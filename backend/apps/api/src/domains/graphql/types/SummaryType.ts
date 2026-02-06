@@ -75,6 +75,9 @@ export class SummaryType implements Node {
   @Field(() => Float, { nullable: true })
   confidenceScore?: number | null;
 
+  @Field(() => Boolean)
+  seen!: boolean;
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -105,6 +108,7 @@ export class SummaryType implements Node {
       keyAccomplishments: source.keyAccomplishments,
       moodIndicators: source.moodIndicators,
       confidenceScore: source.confidenceScore,
+      seen: source.seen,
       createdAt: source.createdAt,
       updatedAt: source.updatedAt,
     };

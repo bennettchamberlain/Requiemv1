@@ -11,6 +11,7 @@ const GET_ACTIONS = gql`
           title
           text
           imageUrl
+          seen
           thread {
             id
           }
@@ -32,6 +33,7 @@ interface GetActionsResponse {
         title: string;
         text: string;
         imageUrl?: string;
+        seen?: boolean;
         thread: {
           id: string;
         };
@@ -55,6 +57,7 @@ export function useActionListService() {
         title: node.title,
         text: node.text,
         imageUrl: node.imageUrl,
+        seen: node.seen ?? false,
         threadId: node.thread?.id ? atob(node.thread.id).split(':')[1] : undefined,
         tags: node.tags?.map((t) => t.label) || [],
       })) || [];

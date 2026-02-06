@@ -17,6 +17,7 @@ type ActionType implements Node & Taggable {
   createdAt: DateTime!
   id: ID!
   imageUrl: String
+  seen: Boolean!
   tags: [EntityTagType!]!
   text: String!
   thread: ThreadType
@@ -778,6 +779,7 @@ type SummaryType implements Node {
   periodStart: DateTime!
   periodType: String!
   productivityPatterns: [String!]
+  seen: Boolean!
   socialInteractions: [String!]
   sourceTypes: [String!]!
   summaryText: String!
