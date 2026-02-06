@@ -18,9 +18,9 @@ const USER_DATA_QUERY = gql(`
 `);
 
 export function useCurrentUser() {
-  const { data, loading, error } = useQuery(USER_DATA_QUERY);
+  const { data, loading, error, refetch } = useQuery(USER_DATA_QUERY);
 
   const user = data?.me || null;
 
-  return { user, loading, error };
+  return { user, loading, error, refetch };
 }
