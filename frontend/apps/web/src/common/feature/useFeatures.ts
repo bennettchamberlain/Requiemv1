@@ -15,8 +15,10 @@ function useFeatures(): ReturnValue {
   const [{ authToken }] = useAuth();
 
   const [features, setFeatures] = useState<Features>({});
+  const [globalFeatures, setGlobalFeatures] = useState<Features>({});
 
   const hasFetched = useRef(false);
+  const hasFetchedGlobal = useRef(false);
 
   const fetchFeatures = useCallback(
     async (force = false) => {
@@ -45,20 +47,50 @@ function useFeatures(): ReturnValue {
     [authToken],
   );
 
+  const fetchGlobalFeatures = useCallback(async (force = false) => {
+    if (hasFetchedGlobal.current && !force) {
+      return;
+    }
+
+    try {
+      const data = await fetchJson<Features>('/api/_internal/features/global');
+
+      setGlobalFeatures(data);
+
+      hasFetchedGlobal.current = true;
+    } catch (err) {
+      console.error('Failed to fetch features', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchFeatures();
   }, [fetchFeatures]);
 
+  useEffect(() => {
+    fetchGlobalFeatures();
+  }, [fetchGlobalFeatures]);
+
   const isFeatureEnabled = useCallback(
     (featureName: string) => {
-      return !!features[featureName];
+      if (hasFetched.current && features[featureName] === true) {
+        return true;
+      }
+
+      if (hasFetchedGlobal.current && globalFeatures[featureName] === true) {
+        return true;
+      }
+
+      return false;
     },
-    [features],
+    [features, globalFeatures],
   );
 
   return {
     isFeatureEnabled,
-    refresh: () => fetchFeatures(true),
+    refresh: async () => {
+      await Promise.allSettled([fetchFeatures(true), fetchGlobalFeatures(true)]);
+    },
   };
 }
 
