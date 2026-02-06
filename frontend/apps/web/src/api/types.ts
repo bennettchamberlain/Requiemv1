@@ -6,6 +6,7 @@ export interface Action {
   threadId?: string;
   tags: string[];
   seen?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface File {

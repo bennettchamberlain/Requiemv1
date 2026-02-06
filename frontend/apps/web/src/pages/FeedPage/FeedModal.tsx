@@ -39,6 +39,18 @@ export function FeedModal({ onClose }: Props) {
     }
   }, []);
 
+  const actionContext = useMemo(() => {
+    if (!action?.metadata || typeof action.metadata !== 'object') {
+      return undefined;
+    }
+
+    const context = (action.metadata as { context?: string }).context;
+
+    return context && context.trim().length > 0 ? context : undefined;
+  }, [action?.metadata]);
+
+  const rationaleText = actionContext ?? 'No rationale available yet.';
+
   const messages = useMemo(() => {
     const baseMessages = thread?.messages ?? [];
     const actionMessage =
@@ -159,7 +171,10 @@ export function FeedModal({ onClose }: Props) {
             )}
 
             <div className="flex-1 prose dark:prose-invert">
-              <Markdown>{action?.text}</Markdown>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Why this suggestion
+              </div>
+              <Markdown>{rationaleText}</Markdown>
             </div>
           </div>
 
