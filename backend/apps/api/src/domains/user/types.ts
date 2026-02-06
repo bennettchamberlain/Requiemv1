@@ -13,20 +13,3 @@ export interface UpdateUserDto {
   onboarded?: boolean;
   entityId?: string;
 }
-
-export interface SignupCode {
-  readonly id: string;
-  readonly signup_code: string;
-  readonly used: boolean;
-}
-
-export interface SignupDto {
-  name: string;
-  email: string;
-  password: string;
-  signup_code: string;
-}
-
-export interface UpdateSignupCodeDto {
-  used?: boolean;
-}

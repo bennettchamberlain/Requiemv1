@@ -16,4 +16,12 @@ export class FeatureController {
 
     return allFeatures;
   }
+
+  @Get('features/global')
+  @HttpCode(200)
+  async globalFeatures() {
+    const allFeatures = await this.featureService.getAllFeatures();
+
+    return allFeatures;
+  }
 }

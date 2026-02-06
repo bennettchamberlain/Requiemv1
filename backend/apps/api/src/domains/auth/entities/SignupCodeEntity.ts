@@ -14,3 +14,5 @@ export class SignupCodeEntity {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }
+
+export type SignupCode = Readonly<SignupCodeEntity>;

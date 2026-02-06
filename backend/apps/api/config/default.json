@@ -75,7 +75,8 @@
     "pinned.demo.models": false,
     "enable.system.prompt": true,
     "advanced.theme.tab": false,
-    "new.insights.page": false
+    "new.insights.page": false,
+    "require.signup.codes": true
   },
   "environment": {
     "database.query.logging": false
