@@ -93,6 +93,7 @@ export const ConfigSchema = z.object({
     'enable.system.prompt': booleanStringSchema,
     'advanced.theme.tab': booleanStringSchema,
     'new.insights.page': booleanStringSchema,
+    'require.signup.codes': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
