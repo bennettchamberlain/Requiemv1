@@ -42,6 +42,7 @@ export type ActionType = Node & Taggable & {
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
   imageUrl?: Maybe<Scalars['String']['output']>;
+  seen: Scalars['Boolean']['output'];
   tags: Array<EntityTagType>;
   text: Scalars['String']['output'];
   thread?: Maybe<ThreadType>;
@@ -1332,6 +1333,7 @@ export type SummaryType = Node & {
   periodStart: Scalars['DateTime']['output'];
   periodType: Scalars['String']['output'];
   productivityPatterns?: Maybe<Array<Scalars['String']['output']>>;
+  seen: Scalars['Boolean']['output'];
   socialInteractions?: Maybe<Array<Scalars['String']['output']>>;
   sourceTypes: Array<Scalars['String']['output']>;
   summaryText: Scalars['String']['output'];
