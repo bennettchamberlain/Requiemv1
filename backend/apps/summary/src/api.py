@@ -276,6 +276,7 @@ async def _trigger_actions_workflow(
     from .config import settings
     from .priority import Priority, get_task_queue
     from datetime import datetime
+    import math
 
     client = await Client.connect(
         settings.temporal_address,
@@ -285,10 +286,12 @@ async def _trigger_actions_workflow(
     now = datetime.utcnow()
     workflow_id = f"actions-{user_id}-{now.isoformat()}"
 
+    lookback_days = max(1, math.ceil(lookback_hours / 24))
+
     # Start the workflow and wait for result
     result = await client.execute_workflow(
         "actions-generation",
-        args=[user_id, timezone, lookback_hours, None],
+        args=[user_id, timezone, lookback_days, None],
         id=workflow_id,
         task_queue=get_task_queue(Priority.HIGH),
     )

@@ -20,7 +20,7 @@ from .data_aggregator import aggregator
 from .database import db
 from .insight_aggregator import insight_aggregator
 from .action_aggregator import action_aggregator
-from .llm_config import LLMConfig, create_llm_config
+from .llm_config import LLMConfig, get_llm_config
 from .summary_functions import (
     generate_hourly_summary,
     generate_rollup_summary,
@@ -95,7 +95,7 @@ async def generate_hourly_summary_activity(
     activity.heartbeat("Calling LLM for hourly summary")
 
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     summary_data = generate_hourly_summary(llm_config, aggregated_data)
@@ -124,7 +124,7 @@ async def generate_rollup_summary_activity(
     activity.heartbeat(f"Generating {period_type} summary")
 
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     summary_data = generate_rollup_summary(llm_config, period_type, child_summaries)
@@ -436,6 +436,9 @@ async def generate_dossier_activity(
     user_id: str,
     daily_summaries: List[Dict[str, Any]],
     hourly_summaries: List[Dict[str, Any]],
+    end_time: str,
+    timezone: str,
+    lookback_days: int,
     previous_dossier: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
@@ -450,8 +453,11 @@ async def generate_dossier_activity(
     )
     activity.heartbeat("Calling LLM for dossier generation")
 
+    end_dt = datetime.fromisoformat(end_time)
+    lookback_start = end_dt - timedelta(days=lookback_days)
+
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     dossier = generate_user_dossier(
@@ -460,6 +466,10 @@ async def generate_dossier_activity(
         daily_summaries,
         hourly_summaries,
         previous_dossier,
+        lookback_start=lookback_start,
+        lookback_end=end_dt,
+        timezone=timezone,
+        max_chars=settings.dossier_max_chars,
     )
 
     activity.heartbeat("Dossier generated")
@@ -585,7 +595,7 @@ async def generate_insights_activity(
     activity.heartbeat("Calling LLM for insights generation")
 
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     insights_data = generate_insights(llm_config, insights_context)
@@ -645,7 +655,7 @@ async def generate_actions_activity(
     activity.heartbeat("Calling LLM for actions generation")
 
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     actions_data = generate_actions(llm_config, action_context)
@@ -769,6 +779,8 @@ async def store_insight_activity(
     source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
     total_tokens = insights_data.get("tokens_used", 0)
     tokens_per_insight = total_tokens // num_insights if num_insights > 0 else 0
+    embedding = insights_data.get("embedding", [])
+    embedding_value = json.dumps(embedding) if embedding else None
 
     # Prepare all inserts for transaction
     writes: List[tuple[str, Dict[str, Any]]] = []
@@ -778,12 +790,13 @@ async def store_insight_activity(
         INSERT INTO ci.summaries (
             summary_id, user_id, period_start, period_end, period_type,
             timezone, source_types, title, content, structured_context,
-            tags, participants, confidence_score, seen, metadata, created_at, updated_at
+            tags, participants, confidence_score, summary_embedding, seen, metadata, created_at, updated_at
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, 'insight',
             :timezone, :source_types, :title, CAST(:content AS jsonb),
             CAST(:structured_context AS jsonb), CAST(:tags AS jsonb),
-            CAST(:participants AS uuid[]), :confidence_score, :seen,
+            CAST(:participants AS uuid[]), :confidence_score,
+            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END, :seen,
             CAST(:metadata AS jsonb), NOW(), NOW()
         )
     """
@@ -828,6 +841,7 @@ async def store_insight_activity(
             "tags": json.dumps(insight.get("tags", [])),
             "participants": participants_list,
             "confidence_score": insight.get("relevance_score", 0),
+            "embedding": embedding_value,
             "seen": False,
             "metadata": json.dumps(metadata),
         }

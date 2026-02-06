@@ -528,7 +528,7 @@ class DossierRefreshWorkflow:
         # Step 4: Generate dossier (LLM call)
         dossier = await workflow.execute_activity(
             generate_dossier_activity,
-            args=[user_id, daily_summaries, hourly_summaries, previous_dossier],
+            args=[user_id, daily_summaries, hourly_summaries, end_time, timezone, lookback_days, previous_dossier],
             **get_llm_activity_options(),
         )
 
@@ -774,6 +774,7 @@ class ActionsGenerationWorkflow:
             "user_id": user_id,
             "num_actions": num_actions,
             "tokens_used": actions_data.get("tokens_used", 0),
+            "actions": actions_data.get("actions", []),
         }
 
 

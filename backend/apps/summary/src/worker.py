@@ -12,7 +12,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from .config import settings
-from .llm_config import create_llm_config
+from .llm_config import get_llm_config
 from .database import db
 from .agent_registration import agent_registration
 
@@ -114,7 +114,7 @@ async def run_worker():
     try:
         # Create LLM config once at startup
         logger.info("creating_llm_config")
-        llm_config = create_llm_config()
+        llm_config = get_llm_config()
         logger.info("llm_config_created", model=settings.llm_model)
 
         # Connect to Temporal

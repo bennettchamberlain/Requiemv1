@@ -4,7 +4,7 @@ Pure functions for summary generation.
 These are stateless functions that can be called from Temporal activities.
 All dependencies are passed as parameters.
 """
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import httpx
 import json
 
@@ -173,6 +173,10 @@ def generate_user_dossier(
     daily_summaries: List[Dict[str, Any]],
     hourly_summaries: List[Dict[str, Any]],
     previous_dossier: Dict[str, Any] = None,
+    lookback_start: Optional["datetime"] = None,
+    lookback_end: Optional["datetime"] = None,
+    timezone: str = "UTC",
+    max_chars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Generate user dossier from summaries.
@@ -216,8 +220,13 @@ def generate_user_dossier(
 
     # Build dossier payload
     from datetime import datetime
-    return {
-        "summary": response.summary,
+    max_length = max_chars or settings.dossier_max_chars
+    summary = response.summary
+    if max_length and len(summary) > max_length:
+        summary = summary[: max_length - 3] + "..."
+
+    payload: Dict[str, Any] = {
+        "summary": summary,
         "tone": response.tone,
         "personalityTraits": response.personalityTraits,
         "interactionGuidelines": response.interactionGuidelines,
@@ -227,6 +236,15 @@ def generate_user_dossier(
         "lastUpdatedAt": datetime.utcnow().isoformat(),
         "version": 1,
     }
+
+    if lookback_start and lookback_end:
+        payload["sourceWindow"] = {
+            "start": lookback_start.isoformat(),
+            "end": lookback_end.isoformat(),
+            "timezone": timezone,
+        }
+
+    return payload
 
 
 def generate_insights(

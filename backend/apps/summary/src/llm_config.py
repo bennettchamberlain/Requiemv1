@@ -6,6 +6,7 @@ The configuration is immutable and can be safely shared across workers.
 """
 from typing import Dict
 from dataclasses import dataclass
+from functools import lru_cache
 import httpx
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -187,4 +188,10 @@ def create_llm_config() -> LLMConfig:
     return LLMConfig(model=model, agents=agents)
 
 
-__all__ = ["LLMConfig", "create_llm_config"]
+@lru_cache(maxsize=1)
+def get_llm_config() -> LLMConfig:
+    """Return a cached LLM config to reuse clients across activities."""
+    return create_llm_config()
+
+
+__all__ = ["LLMConfig", "create_llm_config", "get_llm_config"]
