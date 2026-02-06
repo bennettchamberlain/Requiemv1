@@ -32,7 +32,7 @@ type ReturnValue = [
   {
     login: (username: string, password: string) => Promise<void>;
     logout: () => void;
-    signup: (name: string, email: string, password: string, signup_code: string) => Promise<void>;
+    signup: (name: string, email: string, password: string, signup_code?: string) => Promise<void>;
   },
 ];
 
@@ -140,7 +140,7 @@ function useAuth(): ReturnValue {
   }, [navigate, sessionToken, updateAccessToken, updateSessionToken]);
 
   const signup = useCallback(
-    async (name: string, email: string, password: string, signup_code: string) => {
+    async (name: string, email: string, password: string, signup_code?: string) => {
       setLoginLoading(true);
       setLoginError(null);
 
