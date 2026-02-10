@@ -1,9 +1,6 @@
 import {
   BadRequestException,
   Controller,
-  Get,
-  HttpCode,
-  Param,
   Post,
   UploadedFiles,
   UseGuards,
@@ -19,35 +16,6 @@ import { FileService } from '../services/FileService';
 @Controller('files')
 export class FilesController {
   constructor(private readonly fileService: FileService) {}
-
-  @UseGuards(JwtAuthGuard)
-  @Get()
-  findAll(@Context() context: RequestContext) {
-    const serviceContext = toServiceContext(context);
-
-    return this.fileService.findAll(serviceContext);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get(':id')
-  findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = toServiceContext(context);
-
-    return this.fileService.findById(serviceContext, id);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':id/presign')
-  @HttpCode(200)
-  async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = toServiceContext(context);
-
-    const url = await this.fileService.generatePresignedLink(serviceContext, id);
-
-    return {
-      url,
-    };
-  }
 
   @UseGuards(JwtAuthGuard)
   @Post('upload')
