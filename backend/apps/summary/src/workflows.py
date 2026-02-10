@@ -28,6 +28,10 @@ with workflow.unsafe.imports_passed_through():
         aggregate_insights_context_activity,
         generate_insights_activity,
         store_insight_activity,
+        # Action activities
+        aggregate_action_context_activity,
+        generate_actions_activity,
+        store_action_activity,
     )
     from .llm_config import LLMConfig
 
@@ -524,7 +528,7 @@ class DossierRefreshWorkflow:
         # Step 4: Generate dossier (LLM call)
         dossier = await workflow.execute_activity(
             generate_dossier_activity,
-            args=[user_id, daily_summaries, hourly_summaries, previous_dossier],
+            args=[user_id, daily_summaries, hourly_summaries, end_time, timezone, lookback_days, previous_dossier],
             **get_llm_activity_options(),
         )
 
@@ -684,6 +688,96 @@ class InsightsGenerationWorkflow:
         }
 
 
+# ============================================================================
+# Actions Generation Workflow
+# ============================================================================
+
+@workflow.defn(name="actions-generation")
+class ActionsGenerationWorkflow:
+    """
+    Workflow to generate proactive action cards from user context.
+
+    Steps:
+    1. Aggregate action context (summaries, insights, events, key people)
+    2. Generate action cards using LLM (conversation starters + time suggestions)
+    3. Store actions in database
+    """
+
+    @workflow.run
+    async def run(
+        self,
+        user_id: str,
+        timezone: str = "UTC",
+        lookback_days: int = 7,
+        llm_config: Optional[LLMConfig] = None,
+    ) -> Dict[str, Any]:
+        """Execute actions generation workflow."""
+        workflow.logger.info(f"actions_generation_workflow_started user_id={user_id}")
+
+        # Step 1: Aggregate action-specific context
+        # This collects summaries, insights, events, and key people
+        # rather than raw data like graph deltas
+        action_context = await workflow.execute_activity(
+            aggregate_action_context_activity,
+            args=[user_id, lookback_days],
+            **get_data_activity_options(),
+        )
+
+        # Check if we have enough context to generate meaningful actions
+        total_context = (
+            len(action_context.get("recent_summaries", [])) +
+            len(action_context.get("recent_insights", [])) +
+            len(action_context.get("upcoming_events", [])) +
+            len(action_context.get("key_people", []))
+        )
+
+        if total_context < 2:
+            workflow.logger.info(f"insufficient_context_for_actions total_items={total_context}")
+            return {
+                "skipped": True,
+                "reason": "insufficient_context",
+                "user_id": user_id,
+                "context_items": total_context,
+            }
+
+        # Step 2: Generate action cards (LLM call)
+        actions_data = await workflow.execute_activity(
+            generate_actions_activity,
+            args=[action_context],
+            **get_llm_activity_options(),
+        )
+
+        num_actions = len(actions_data.get("actions", []))
+
+        if num_actions == 0:
+            workflow.logger.info("no_actions_generated")
+            return {
+                "skipped": True,
+                "reason": "no_actions_generated",
+                "user_id": user_id,
+            }
+
+        # Step 3: Store actions in database
+        action_ids = await workflow.execute_activity(
+            store_action_activity,
+            args=[user_id, actions_data],
+            **get_data_activity_options(),
+        )
+
+        workflow.logger.info(
+            f"actions_generation_workflow_completed num_actions={num_actions} action_ids={action_ids}"
+        )
+
+        return {
+            "skipped": False,
+            "action_ids": action_ids,
+            "user_id": user_id,
+            "num_actions": num_actions,
+            "tokens_used": actions_data.get("tokens_used", 0),
+            "actions": actions_data.get("actions", []),
+        }
+
+
 __all__ = [
     "HourlySummaryWorkflow",
     "DailySummaryWorkflow",
@@ -692,5 +786,7 @@ __all__ = [
     "SeasonalSummaryWorkflow",
     "YearlySummaryWorkflow",
     "DossierRefreshWorkflow",
+    "DossierRefreshWorkflow",
     "InsightsGenerationWorkflow",
+    "ActionsGenerationWorkflow",
 ]

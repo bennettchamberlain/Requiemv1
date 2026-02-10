@@ -24,6 +24,7 @@ export class ActionService {
       text: data.text,
       imageUrl: data.imageUrl,
       priority: data.priority,
+      seen: data.seen ?? false,
       thread: {
         id: data.threadId,
       },

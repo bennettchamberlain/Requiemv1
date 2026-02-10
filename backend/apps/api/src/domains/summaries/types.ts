@@ -13,6 +13,7 @@ export interface CreateSummaryDto {
   participants?: string[] | null;
   confidenceScore?: number | null;
   metadata?: Record<string, unknown> | null;
+  seen?: boolean;
 }
 
 export interface UpdateSummaryDto {
@@ -23,4 +24,5 @@ export interface UpdateSummaryDto {
   participants?: string[] | null;
   confidenceScore?: number | null;
   metadata?: Record<string, unknown> | null;
+  seen?: boolean;
 }

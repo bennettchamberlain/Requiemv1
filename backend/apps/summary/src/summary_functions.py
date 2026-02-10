@@ -4,7 +4,7 @@ Pure functions for summary generation.
 These are stateless functions that can be called from Temporal activities.
 All dependencies are passed as parameters.
 """
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import httpx
 import json
 
@@ -173,6 +173,10 @@ def generate_user_dossier(
     daily_summaries: List[Dict[str, Any]],
     hourly_summaries: List[Dict[str, Any]],
     previous_dossier: Dict[str, Any] = None,
+    lookback_start: Optional["datetime"] = None,
+    lookback_end: Optional["datetime"] = None,
+    timezone: str = "UTC",
+    max_chars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Generate user dossier from summaries.
@@ -216,8 +220,13 @@ def generate_user_dossier(
 
     # Build dossier payload
     from datetime import datetime
-    return {
-        "summary": response.summary,
+    max_length = max_chars or settings.dossier_max_chars
+    summary = response.summary
+    if max_length and len(summary) > max_length:
+        summary = summary[: max_length - 3] + "..."
+
+    payload: Dict[str, Any] = {
+        "summary": summary,
         "tone": response.tone,
         "personalityTraits": response.personalityTraits,
         "interactionGuidelines": response.interactionGuidelines,
@@ -227,6 +236,15 @@ def generate_user_dossier(
         "lastUpdatedAt": datetime.utcnow().isoformat(),
         "version": 1,
     }
+
+    if lookback_start and lookback_end:
+        payload["sourceWindow"] = {
+            "start": lookback_start.isoformat(),
+            "end": lookback_end.isoformat(),
+            "timezone": timezone,
+        }
+
+    return payload
 
 
 def generate_insights(
@@ -275,6 +293,133 @@ def generate_insights(
         "tokens_used": result.usage().total_tokens if result.usage() else 0,
         "num_insights": len(response.insights),
     }
+
+
+def generate_actions(
+    llm_config: LLMConfig,
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate action cards from aggregated context.
+
+    Pure function that uses LLM to generate conversation starters
+    and time management suggestions.
+    """
+    # Get action agent
+    agent = llm_config.agents.get('actions')
+    if not agent:
+        raise ValueError("No agent configured for actions generation")
+
+    # Build action-specific prompt
+    prompt = _build_actions_prompt(context)
+
+    # Call LLM with moderate temperature - not too creative to avoid mixing unrelated topics
+    result = agent.run_sync(
+        prompt,
+        model_settings={
+            "temperature": 0.6,
+            "max_tokens": settings.llm_max_tokens,
+        },
+    )
+
+    response = result.output
+
+    # Convert actions to dicts
+    actions_list = [item.model_dump() for item in response.actions]
+
+    return {
+        "actions": actions_list,
+        "tokens_used": result.usage().total_tokens if result.usage() else 0,
+    }
+
+
+def _build_actions_prompt(context: Dict[str, Any]) -> str:
+    """Build prompt for action card generation from aggregated context."""
+    parts = ["Based on the following context about the user, generate helpful action cards:\n"]
+
+    # User dossier (personality/preferences)
+    dossier = context.get("user_dossier")
+    if dossier:
+        parts.append("## USER PROFILE")
+        parts.append(f"Summary: {dossier.get('summary', 'N/A')}")
+        if dossier.get("interests"):
+            interests = dossier["interests"]
+            if isinstance(interests, list):
+                parts.append(f"Interests: {', '.join(interests[:5])}")
+        if dossier.get("communication_style"):
+            parts.append(f"Communication style: {dossier['communication_style']}")
+        parts.append("")
+
+    # Recent summaries - what's been happening in their life
+    summaries = context.get("recent_summaries", [])
+    if summaries:
+        parts.append("## RECENT ACTIVITY SUMMARIES")
+        for s in summaries[:5]:  # Limit to most recent
+            period = s.get("period_type", "unknown")
+            text = s.get("summary_text", "")
+            if text:
+                parts.append(f"[{period.upper()}] {text[:300]}...")
+        parts.append("")
+
+    # Recent insights - already identified interesting observations
+    insights = context.get("recent_insights", [])
+    if insights:
+        parts.append("## RECENT INSIGHTS (already surfaced to user)")
+        for i in insights[:5]:
+            title = i.get("title", "")
+            text = i.get("insight_text", "")
+            if title or text:
+                parts.append(f"- {title}: {text[:150]}...")
+        parts.append("")
+
+    # Upcoming events - time-sensitive context
+    events = context.get("upcoming_events", [])
+    if events:
+        parts.append("## UPCOMING EVENTS (next 7 days)")
+        for e in events[:5]:
+            title = e.get("title", "Untitled")
+            start = e.get("start_time", "")
+            location = e.get("location", "")
+            event_info = f"- {title}"
+            if start:
+                event_info += f" ({start})"
+            if location:
+                event_info += f" at {location}"
+            parts.append(event_info)
+        parts.append("")
+
+    # Key people - for conversation suggestions
+    people = context.get("key_people", [])
+    if people:
+        parts.append("## KEY PEOPLE IN USER'S LIFE")
+        for p in people[:5]:
+            name = p.get("name", "Unknown")
+            rel_type = p.get("relationship_type", "")
+            desc = p.get("description", "")
+            person_info = f"- {name}"
+            if rel_type:
+                person_info += f" ({rel_type})"
+            if desc:
+                person_info += f": {desc[:100]}"
+            parts.append(person_info)
+        parts.append("")
+
+    # Instructions
+    parts.append("## INSTRUCTIONS")
+    parts.append("Generate 3-5 action cards that are:")
+    parts.append("1. Specific to THIS user's context (not generic)")
+    parts.append("2. Actionable RIGHT NOW")
+    parts.append("3. A mix of conversation starters and time suggestions")
+    parts.append("4. Reference specific people, events, or topics from above")
+    parts.append("")
+    parts.append("IMPORTANT: Each card must focus on ONE topic. Do NOT combine unrelated activities.")
+    parts.append("BAD example: 'Warm up for your workout by reviewing GraphQL notes' - these are unrelated!")
+    parts.append("GOOD example: 'Prepare for your workout' OR separately 'Review GraphQL documentation'")
+    parts.append("")
+    parts.append("For conversation starters: suggest specific topics or questions to discuss with specific people.")
+    parts.append("For time suggestions: suggest what the user should do next based on their schedule and recent activity.")
+
+    return "\n".join(parts)
 
 
 def _build_insights_prompt(context: Dict[str, Any]) -> str:
@@ -415,5 +560,6 @@ __all__ = [
     "generate_rollup_summary",
     "generate_user_dossier",
     "generate_insights",
+    "generate_actions",
     "generate_embedding",
 ]

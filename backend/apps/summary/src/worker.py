@@ -12,7 +12,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from .config import settings
-from .llm_config import create_llm_config
+from .llm_config import get_llm_config
 from .database import db
 from .agent_registration import agent_registration
 
@@ -26,6 +26,7 @@ from .workflows import (
     YearlySummaryWorkflow,
     DossierRefreshWorkflow,
     InsightsGenerationWorkflow,
+    ActionsGenerationWorkflow,
 )
 
 # Import system workflows
@@ -56,6 +57,10 @@ from .activities import (
     aggregate_insights_context_activity,
     generate_insights_activity,
     store_insight_activity,
+    # Action activities
+    aggregate_action_context_activity,
+    generate_actions_activity,
+    store_action_activity,
 )
 
 # Configure structured logging
@@ -109,7 +114,7 @@ async def run_worker():
     try:
         # Create LLM config once at startup
         logger.info("creating_llm_config")
-        llm_config = create_llm_config()
+        llm_config = get_llm_config()
         logger.info("llm_config_created", model=settings.llm_model)
 
         # Connect to Temporal
@@ -131,6 +136,7 @@ async def run_worker():
             YearlySummaryWorkflow,
             DossierRefreshWorkflow,
             InsightsGenerationWorkflow,
+            ActionsGenerationWorkflow,
             # System workflows (process all users)
             SystemHourlySummariesWorkflow,
             SystemDailySummariesWorkflow,
@@ -157,6 +163,10 @@ async def run_worker():
             aggregate_insights_context_activity,
             generate_insights_activity,
             store_insight_activity,
+            # Action activities
+            aggregate_action_context_activity,
+            generate_actions_activity,
+            store_action_activity,
         ]
 
         # Create workers for each priority level

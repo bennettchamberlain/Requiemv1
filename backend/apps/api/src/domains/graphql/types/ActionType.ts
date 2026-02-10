@@ -22,8 +22,11 @@ export class ActionType implements Node, Taggable {
   @Field(() => String)
   text!: string | null;
 
-  @Field(() => String)
+  @Field(() => String, { nullable: true })
   imageUrl!: string | null;
+
+  @Field(() => Boolean)
+  seen!: boolean;
 
   @Field(() => Date)
   createdAt!: Date;
@@ -42,6 +45,7 @@ export class ActionType implements Node, Taggable {
       title: action.title,
       text: action.text,
       imageUrl: action.imageUrl,
+      seen: action.seen ?? false,
       createdAt: action.createdAt,
       updatedAt: action.updatedAt,
       tags: [], // Resolved by ActionResolver

@@ -19,12 +19,15 @@ from .config import settings
 from .data_aggregator import aggregator
 from .database import db
 from .insight_aggregator import insight_aggregator
-from .llm_config import LLMConfig, create_llm_config
+from .action_aggregator import action_aggregator
+from .llm_config import LLMConfig, get_llm_config
 from .summary_functions import (
     generate_hourly_summary,
     generate_rollup_summary,
     generate_user_dossier,
+    generate_user_dossier,
     generate_insights,
+    generate_actions,
 )
 
 logger = structlog.get_logger()
@@ -92,7 +95,7 @@ async def generate_hourly_summary_activity(
     activity.heartbeat("Calling LLM for hourly summary")
 
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     summary_data = generate_hourly_summary(llm_config, aggregated_data)
@@ -121,7 +124,7 @@ async def generate_rollup_summary_activity(
     activity.heartbeat(f"Generating {period_type} summary")
 
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     summary_data = generate_rollup_summary(llm_config, period_type, child_summaries)
@@ -191,11 +194,11 @@ async def store_summary_activity(
         """
         INSERT INTO summaries (
             summary_id, user_id, period_start, period_end, period_type,
-            timezone, source_types, title, content, summary_embedding, created_at, updated_at
+            timezone, source_types, title, content, summary_embedding, seen, created_at, updated_at
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, :period_type,
             :timezone, :source_types, :title, CAST(:content AS jsonb),
-            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END, NOW(), NOW()
+            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END, :seen, NOW(), NOW()
         )
         """,
         {
@@ -209,6 +212,7 @@ async def store_summary_activity(
             "title": f"{summary_type.title()} Summary",
             "content": json.dumps(content),
             "embedding": embedding_value,
+            "seen": bool(summary_data.get("seen", False)),
         },
     )
 
@@ -432,6 +436,9 @@ async def generate_dossier_activity(
     user_id: str,
     daily_summaries: List[Dict[str, Any]],
     hourly_summaries: List[Dict[str, Any]],
+    end_time: str,
+    timezone: str,
+    lookback_days: int,
     previous_dossier: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
@@ -446,8 +453,11 @@ async def generate_dossier_activity(
     )
     activity.heartbeat("Calling LLM for dossier generation")
 
+    end_dt = datetime.fromisoformat(end_time)
+    lookback_start = end_dt - timedelta(days=lookback_days)
+
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     dossier = generate_user_dossier(
@@ -456,6 +466,10 @@ async def generate_dossier_activity(
         daily_summaries,
         hourly_summaries,
         previous_dossier,
+        lookback_start=lookback_start,
+        lookback_end=end_dt,
+        timezone=timezone,
+        max_chars=settings.dossier_max_chars,
     )
 
     activity.heartbeat("Dossier generated")
@@ -581,7 +595,7 @@ async def generate_insights_activity(
     activity.heartbeat("Calling LLM for insights generation")
 
     # Create LLM config
-    llm_config = create_llm_config()
+    llm_config = get_llm_config()
 
     # Call pure function
     insights_data = generate_insights(llm_config, insights_context)
@@ -594,6 +608,142 @@ async def generate_insights_activity(
     )
 
     return insights_data
+
+
+@activity.defn
+async def aggregate_action_context_activity(
+    user_id: str,
+    lookback_days: int = 7,
+) -> Dict[str, Any]:
+    """
+    Aggregate context needed for action card generation.
+
+    Collects summaries, insights, events, and key people rather than
+    raw data like graph deltas. This produces higher-level context
+    for conversation starters and time suggestions.
+    """
+    activity.logger.info("aggregating_action_context", user_id=user_id, lookback_days=lookback_days)
+    activity.heartbeat("Aggregating action context")
+
+    user_uuid = UUID(user_id)
+
+    context = action_aggregator.aggregate_action_context(user_uuid, lookback_days)
+
+    activity.heartbeat("Action context aggregated")
+    activity.logger.info(
+        "action_context_aggregated",
+        user_id=user_id,
+        recent_summaries=len(context.get("recent_summaries", [])),
+        recent_insights=len(context.get("recent_insights", [])),
+        upcoming_events=len(context.get("upcoming_events", [])),
+        key_people=len(context.get("key_people", [])),
+    )
+
+    return context
+
+
+@activity.defn
+async def generate_actions_activity(
+    action_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Generate action cards from aggregated context using LLM.
+
+    Returns conversation starters and time suggestions.
+    """
+    activity.logger.info("generating_actions")
+    activity.heartbeat("Calling LLM for actions generation")
+
+    # Create LLM config
+    llm_config = get_llm_config()
+
+    # Call pure function
+    actions_data = generate_actions(llm_config, action_context)
+
+    activity.heartbeat("Actions generated")
+    activity.logger.info(
+        "actions_generated",
+        num_actions=len(actions_data.get("actions", [])),
+        tokens_used=actions_data.get("tokens_used", 0),
+    )
+
+    return actions_data
+
+
+@activity.defn
+async def store_action_activity(
+    user_id: str,
+    actions_data: Dict[str, Any],
+) -> List[str]:
+    """
+    Store generated actions in the ci.actions table.
+
+    Each action is stored as a separate row with a dedicated seen column plus
+    metadata for action type and additional payload.
+
+    Returns list of action_ids for all stored actions.
+    """
+    actions_list = actions_data.get("actions", [])
+    num_actions = len(actions_list)
+
+    activity.logger.info("storing_actions", num_actions=num_actions)
+    activity.heartbeat("Storing actions to database")
+
+    if not actions_list:
+        activity.logger.info("no_actions_to_store")
+        return []
+
+    user_uuid = UUID(user_id)
+
+    # Prepare all inserts for transaction
+    writes: List[tuple[str, Dict[str, Any]]] = []
+    action_ids: List[str] = []
+
+    insert_query = """
+        INSERT INTO ci.actions (
+            id, title, text, priority, user_id, seen, metadata, created_at, updated_at
+        ) VALUES (
+            :action_id, :title, :text, :priority, :user_id, :seen,
+            CAST(:metadata AS jsonb), NOW(), NOW()
+        )
+    """
+
+    for action in actions_list:
+        action_id = str(uuid4())
+        action_ids.append(action_id)
+
+        # Build metadata with type, context, and related_person
+        metadata = {
+            "type": action.get("type", "general"),
+            "context": action.get("context"),
+            "related_person": action.get("related_person"),
+            "tags": action.get("tags", []),
+        }
+
+        params = {
+            "action_id": action_id,
+            "title": action.get("title", ""),
+            "text": action.get("text", ""),
+            "priority": action.get("priority", 5),
+            "user_id": str(user_uuid),
+            "seen": False,
+            "metadata": json.dumps(metadata),
+        }
+
+        writes.append((insert_query, params))
+
+    # Execute all inserts in a single transaction
+    activity.heartbeat(f"Inserting {num_actions} actions in transaction")
+    db.execute_writes_in_transaction(writes)
+
+    activity.heartbeat("Actions stored")
+    activity.logger.info(
+        "actions_stored",
+        num_actions=num_actions,
+        action_ids=action_ids,
+    )
+
+    return action_ids
 
 
 @activity.defn
@@ -629,6 +779,8 @@ async def store_insight_activity(
     source_types = insights_data.get("data_sources_used", ["graph_deltas", "events", "summaries"])
     total_tokens = insights_data.get("tokens_used", 0)
     tokens_per_insight = total_tokens // num_insights if num_insights > 0 else 0
+    embedding = insights_data.get("embedding", [])
+    embedding_value = json.dumps(embedding) if embedding else None
 
     # Prepare all inserts for transaction
     writes: List[tuple[str, Dict[str, Any]]] = []
@@ -638,12 +790,13 @@ async def store_insight_activity(
         INSERT INTO ci.summaries (
             summary_id, user_id, period_start, period_end, period_type,
             timezone, source_types, title, content, structured_context,
-            tags, participants, confidence_score, metadata, created_at, updated_at
+            tags, participants, confidence_score, summary_embedding, seen, metadata, created_at, updated_at
         ) VALUES (
             :summary_id, :user_id, :period_start, :period_end, 'insight',
             :timezone, :source_types, :title, CAST(:content AS jsonb),
             CAST(:structured_context AS jsonb), CAST(:tags AS jsonb),
             CAST(:participants AS uuid[]), :confidence_score,
+            CASE WHEN :embedding IS NULL THEN NULL ELSE CAST(:embedding AS vector) END, :seen,
             CAST(:metadata AS jsonb), NOW(), NOW()
         )
     """
@@ -672,7 +825,6 @@ async def store_insight_activity(
         }
 
         metadata = {
-            "seen": False,
             "relevance_score": insight.get("relevance_score", 0),
         }
 
@@ -689,6 +841,8 @@ async def store_insight_activity(
             "tags": json.dumps(insight.get("tags", [])),
             "participants": participants_list,
             "confidence_score": insight.get("relevance_score", 0),
+            "embedding": embedding_value,
+            "seen": False,
             "metadata": json.dumps(metadata),
         }
 
@@ -725,4 +879,8 @@ __all__ = [
     "aggregate_insights_context_activity",
     "generate_insights_activity",
     "store_insight_activity",
+    # Action activities
+    "aggregate_action_context_activity",
+    "generate_actions_activity",
+    "store_action_activity",
 ]

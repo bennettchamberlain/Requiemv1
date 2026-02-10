@@ -3,8 +3,10 @@ export interface Action {
   title: string;
   text: string;
   imageUrl?: string;
-  threadId: string;
+  threadId?: string;
   tags: string[];
+  seen?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface File {

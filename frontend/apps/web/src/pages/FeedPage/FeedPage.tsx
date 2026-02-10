@@ -106,6 +106,7 @@ export function FeedPage() {
                 tags={action.tags}
                 imageUrl={action.imageUrl}
                 onClick={() => handleCardClick(action.id)}
+                className={cn(!action.seen && 'ring-2 ring-primary/40')}
               />
             ))}
 
@@ -169,7 +170,10 @@ export function FeedPage() {
                 tags={action.tags}
                 imageUrl={action.imageUrl}
                 onClick={() => handleCardClick(action.id)}
-                className="hover:shadow-lg transition-shadow duration-200"
+                className={cn(
+                  'hover:shadow-lg transition-shadow duration-200',
+                  !action.seen && 'ring-2 ring-primary/40',
+                )}
               />
             ))}
         </Carousel>

@@ -115,6 +115,29 @@ class InsightsResponse(BaseModel):
     data_sources_used: List[str] = Field(default_factory=list, description="Which data sources informed these insights")
 
 
+class ActionItem(BaseModel):
+    """A proactive action card suggestion.
+
+    Two main types:
+    - 'conversation_starter': A topic or question to spark interesting discussion
+    - 'time_suggestion': A proactive suggestion for what the user should do next
+    """
+    title: str = Field(description="Short, engaging title (max 60 chars)")
+    text: str = Field(description="The conversation prompt or suggestion details (1-2 sentences)")
+    priority: int = Field(description="Priority/relevance level 1-10, where 10 is most relevant right now")
+    tags: List[str] = Field(default_factory=list, description="Relevant topic tags")
+    type: str = Field(description="Either 'conversation_starter' or 'time_suggestion'")
+    context: Optional[str] = Field(default=None, description="Why this is relevant now (based on recent activity)")
+    related_person: Optional[str] = Field(default=None, description="Name of a person this relates to, if any")
+
+
+class ActionsResponse(BaseModel):
+    """Structured response for action card generation."""
+    actions: List[ActionItem] = Field(
+        description="3-5 action cards: mix of conversation starters and time suggestions"
+    )
+
+
 # ============================================================================
 # Summarizer
 # ============================================================================
@@ -236,6 +259,18 @@ class Summarizer:
                 "- Personal: Use knowledge about the user's relationships and preferences\n"
                 "- Non-obvious: Connect dots the user might not see themselves\n\n"
                 "Generate 3-5 high-quality insights. Prioritize quality over quantity."
+            ),
+        )
+
+        self.action_agent = Agent(
+            self.model,
+            output_type=ActionsResponse,
+            system_prompt=(
+                "You are an AI assistant that facilitates proactive engagement. "
+                "Based on the user's recent context, suggest 3 Conversation Starters or Planning Cycles. "
+                "Conversation Starters should be thought-provoking questions or topics based on recent events or interests. "
+                "Planning Cycles should be review prompts for projects, goals, or weekly reflections.\n"
+                "Ensure variety and relevance. Use a friendly and encouraging tone."
             ),
         )
 
@@ -424,6 +459,43 @@ class Summarizer:
             "embedding": embedding,
             "tokens_used": result.usage().total_tokens if result.usage() else 0,
             "num_insights": len(response.insights),
+        }
+
+    def generate_actions(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate proactive actions from context."""
+        # Reuse insights prompt builder for now as it contains similar context
+        prompt = self._build_insights_prompt(context)
+        prompt += "\nBased on this context, generate appropriate Action Cards (Conversation Starters or Planning Cycles)."
+
+        logger.info(
+            "calling_llm_for_actions",
+            model=settings.llm_model,
+            prompt_length=len(prompt),
+        )
+
+        try:
+            result = self.action_agent.run_sync(
+                prompt,
+                model_settings={
+                    "temperature": 0.8,
+                    "max_tokens": settings.llm_max_tokens,
+                },
+            )
+            logger.info(
+                "actions_response_received",
+                tokens=result.usage().total_tokens if result.usage() else 0,
+                num_actions=len(result.output.actions),
+            )
+        except Exception as exc:
+            logger.error("actions_generation_failed", error=str(exc), error_type=type(exc).__name__)
+            raise
+
+        response = result.output
+        actions_list = [item.model_dump() for item in response.actions]
+
+        return {
+            "actions": actions_list,
+            "tokens_used": result.usage().total_tokens if result.usage() else 0,
         }
 
     def _build_insights_prompt(self, context: Dict[str, Any]) -> str:

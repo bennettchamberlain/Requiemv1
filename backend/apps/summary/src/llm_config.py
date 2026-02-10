@@ -6,6 +6,7 @@ The configuration is immutable and can be safely shared across workers.
 """
 from typing import Dict
 from dataclasses import dataclass
+from functools import lru_cache
 import httpx
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -20,7 +21,9 @@ from .summarizer import (
     SeasonalSummaryResponse,
     YearlySummaryResponse,
     UserDossierResponse,
+    UserDossierResponse,
     InsightsResponse,
+    ActionsResponse,
 )
 
 
@@ -149,9 +152,46 @@ def create_llm_config() -> LLMConfig:
                 "Generate 3-5 high-quality insights. Prioritize quality over quantity."
             ),
         ),
+        'actions': Agent(
+            model,
+            output_type=ActionsResponse,
+            system_prompt=(
+                "You are a proactive personal assistant that suggests action cards to help the user "
+                "make the most of their time and have meaningful conversations.\n\n"
+                "Generate two types of cards:\n\n"
+                "1. CONVERSATION STARTERS (type='conversation_starter')\n"
+                "   - Topics the user is likely interested in based on recent activity\n"
+                "   - Questions to ask specific people they know\n"
+                "   - Discussion prompts related to their interests or recent events\n"
+                "   - Example: 'Ask Sarah about her trip to Japan' or 'Discuss the new project deadline with the team'\n\n"
+                "2. TIME SUGGESTIONS (type='time_suggestion')\n"
+                "   - What the user should consider doing next with their time\n"
+                "   - Follow-ups on recent activities or meetings\n"
+                "   - Preparation for upcoming events\n"
+                "   - Example: 'Review notes from yesterday's brainstorm session' or 'Prepare talking points for Friday's meeting'\n\n"
+                "CRITICAL RULES:\n"
+                "- NEVER combine unrelated topics into one suggestion (e.g., don't mix workout advice with work tasks)\n"
+                "- Each action card should focus on ONE coherent topic or activity\n"
+                "- If the context mentions multiple unrelated activities, create SEPARATE cards for each\n"
+                "- Keep suggestions practical and grounded - don't invent creative connections between unrelated things\n\n"
+                "Guidelines:\n"
+                "- Be specific and actionable, not generic\n"
+                "- Reference real people, events, or topics from their context\n"
+                "- Prioritize time-sensitive items higher\n"
+                "- Include context for why each suggestion is relevant NOW\n"
+                "- Aim for 3-5 high-quality suggestions with a mix of both types\n"
+                "- Use a friendly, encouraging tone"
+            ),
+        ),
     }
 
     return LLMConfig(model=model, agents=agents)
 
 
-__all__ = ["LLMConfig", "create_llm_config"]
+@lru_cache(maxsize=1)
+def get_llm_config() -> LLMConfig:
+    """Return a cached LLM config to reuse clients across activities."""
+    return create_llm_config()
+
+
+__all__ = ["LLMConfig", "create_llm_config", "get_llm_config"]

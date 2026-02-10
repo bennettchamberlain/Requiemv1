@@ -7,6 +7,7 @@ export interface CreateActionDto {
   imageUrl?: string;
   priority?: number;
   threadId: string;
+  seen?: boolean;
 }
 
 export interface CreateAnswerDto {
