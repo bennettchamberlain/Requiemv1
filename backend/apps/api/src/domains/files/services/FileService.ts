@@ -236,39 +236,6 @@ export class FileService implements OnModuleInit {
     throw new Error(`S3 object body was empty for key: ${key}`);
   }
 
-  async generatePresignedLink(context: ServiceContext, id: string): Promise<string> {
-    const result = await this.fileRepository.findOne({
-      where: {
-        id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
-      },
-    });
-
-    if (result == null) {
-      throw new NotFoundException();
-    }
-
-    if (!result.bucket || !result.key) {
-      return result.filePath;
-    }
-
-    const command = new GetObjectCommand({
-      Bucket: result.bucket ?? config.staticfiles.bucket,
-      Key: result.key!,
-      ResponseContentType: result.contentType,
-    });
-
-    const url = await getSignedUrl(this.signatureS3, command, {
-      expiresIn: config.staticfiles.auth.signatureTTL,
-    });
-
-    return this.getKeyAndQuery(url);
-  }
-
   async upsertExternal(
     context: RequestContext,
     input: {
