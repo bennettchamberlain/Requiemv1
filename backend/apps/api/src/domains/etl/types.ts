@@ -66,6 +66,15 @@ export interface UpdateConnectionSyncJobDto {
   completedAt?: Date | null;
 }
 
+export interface SearchConnectionSyncJobDto {
+  jobId?: string | null;
+  connectionId?: string;
+  endpointName?: string;
+  status?: JobStatus;
+  type?: string;
+  properties?: Record<string, unknown> | null;
+}
+
 export const createConnectionSyncJobSchema = z.object({
   id: z.string().uuid().optional(),
   userId: z.string().uuid(),

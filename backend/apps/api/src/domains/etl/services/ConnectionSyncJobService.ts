@@ -11,6 +11,7 @@ import {
   type ConnectionSyncJob,
   type CreateConnectionSyncJobDto,
   type UpdateConnectionSyncJobDto,
+  type SearchConnectionSyncJobDto
 } from '../types';
 
 @Injectable()
@@ -230,6 +231,42 @@ export class ConnectionSyncJobService {
       completedAt: new Date(),
       ...(error && { error }),
     });
+  }
+
+  async search(context: ServiceContext, query: SearchConnectionSyncJobDto): Promise<ConnectionSyncJobEntity[]> {
+    let executable = this.connectionSyncJobRepository
+      .createQueryBuilder('syncJob')
+      .where('user_id = :userId', { userId: context.userId });
+
+    if (query.connectionId) {
+      executable = executable.andWhere('connection_id = :connectionId', { connectionId: query.connectionId });
+    }
+
+    if (query.jobId) {
+      executable = executable.andWhere('job_id = :jobId', { jobId: query.jobId });
+    }
+
+    if (query.endpointName) {
+      executable = executable.andWhere('endpoint_name = :endpointName', { endpointName: query.endpointName });
+    }
+
+    if (query.status) {
+      executable = executable.andWhere('status = :status', { status: query.status });
+    }
+
+    if (query.type) {
+      executable = executable.andWhere('type = :type', { type: query.type });
+    }
+
+    if (query.properties) {
+      for (const [key, val] of Object.entries(query.properties)) {
+        executable = executable.andWhere(`item.properties->>'${key}' = :${key}`, { [key]: val });
+      }
+    }
+
+    executable = executable.orderBy('updatedAt', 'DESC')
+
+    return executable.getMany();
   }
 }
 
