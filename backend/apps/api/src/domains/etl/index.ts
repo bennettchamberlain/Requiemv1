@@ -24,30 +24,39 @@ import { EventsModule } from '@ci/domains/events';
 
 import { EtlController } from './controllers/EtlController';
 import { ApiLogEntity } from './entities/ApiLogEntity';
+import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { EtlService } from './services/EtlService';
+import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
 
 /**
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([ApiLogEntity, ConnectionEntity]), ConnectionsModule, EventsModule],
-  providers: [EtlService],
+  imports: [
+    TypeOrmModule.forFeature([ApiLogEntity, ConnectionSyncJobEntity, ConnectionEntity]),
+    ConnectionsModule,
+    EventsModule,
+  ],
+  providers: [EtlService, ConnectionSyncJobService],
   controllers: [EtlController],
-  exports: [EtlService],
+  exports: [EtlService, ConnectionSyncJobService],
 })
 export class EtlModule {}
 
 // Entities
 export { ApiLogEntity };
+export { ConnectionSyncJobEntity };
 
 // Services
 export { EtlService };
+export { ConnectionSyncJobService };
 
 // Controllers
 export { EtlController };
 
 // Types
-export type { ApiLog } from './types';
+export type { ApiLog, ConnectionSyncJob, JobStatus } from './types';
+export type { CreateConnectionSyncJobDto, UpdateConnectionSyncJobDto } from './types';
 export type {
   CalendarSyncState,
   GmailSyncState,

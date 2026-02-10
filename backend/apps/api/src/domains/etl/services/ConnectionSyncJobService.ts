@@ -1,0 +1,235 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
+
+import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
+import { EventService } from '@ci/domains/events';
+
+import { ConnectionSyncJobEntity } from '../entities/ConnectionSyncJobEntity';
+import {
+  type ConnectionSyncJob,
+  type CreateConnectionSyncJobDto,
+  type UpdateConnectionSyncJobDto,
+} from '../types';
+
+@Injectable()
+export class ConnectionSyncJobService {
+  constructor(
+    @InjectRepository(ConnectionSyncJobEntity)
+    private readonly connectionSyncJobRepository: Repository<ConnectionSyncJobEntity>,
+    private readonly eventService: EventService,
+  ) {}
+
+  async create(
+    context: UserServiceContext,
+    data: CreateConnectionSyncJobDto | CreateConnectionSyncJobDto[],
+  ): Promise<ConnectionSyncJob[]> {
+    const isSingle = !Array.isArray(data);
+    const dataArray: CreateConnectionSyncJobDto[] = isSingle ? [data] : data;
+
+    return Promise.all(
+      dataArray.map(async (item) => {
+        const id = item.id ?? uuidv7();
+
+        const SyncJob = this.connectionSyncJobRepository.create({
+          id,
+          userId: item.userId,
+          connectionId: item.connectionId,
+          jobId: item.jobId ?? null,
+          endpointName: item.endpointName,
+          status: item.status ?? 'in_progress',
+          data: item.data ?? {},
+          type: item.type,
+          cursor: item.cursor ?? null,
+          nextCursor: item.nextCursor ?? null,
+          properties: item.properties ?? null,
+          error: item.error ?? null,
+        });
+
+        const result = await this.connectionSyncJobRepository.save(SyncJob);
+
+        return ConnectionSyncJobEntity.toEgressType(result);
+      }),
+    );
+  }
+
+  async findAll(context: UserServiceContext): Promise<ConnectionSyncJob[]> {
+    const result = await this.connectionSyncJobRepository.find({
+      where: {
+        userId: context.userId,
+      },
+      relations: ['user', 'connection'],
+    });
+
+    return result.map((entity) => ConnectionSyncJobEntity.toEgressType(entity));
+  }
+
+  async findById(context: ServiceContext, id: string): Promise<ConnectionSyncJob | null> {
+    const result = await this.connectionSyncJobRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+      relations: ['user', 'connection'],
+    });
+
+    return result ? ConnectionSyncJobEntity.toEgressType(result) : null;
+  }
+
+  async findByIds(context: ServiceContext, ids: string[]): Promise<(ConnectionSyncJob | null)[]> {
+    const result = await this.connectionSyncJobRepository.find({
+      where: {
+        id: In(ids),
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+      relations: ['user', 'connection'],
+    });
+
+    const map = new Map(result.map((SyncJob) => [SyncJob.id, ConnectionSyncJobEntity.toEgressType(SyncJob)]));
+
+    return ids.map((id) => map.get(id) ?? null);
+  }
+
+  async findByConnectionId(context: ServiceContext, connectionId: string): Promise<ConnectionSyncJob[]> {
+    const result = await this.connectionSyncJobRepository.find({
+      where: {
+        connectionId,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+      relations: ['user', 'connection'],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    return result.map((entity) => ConnectionSyncJobEntity.toEgressType(entity));
+  }
+
+  async findByJobId(context: ServiceContext, jobId: string): Promise<ConnectionSyncJob[]> {
+    const result = await this.connectionSyncJobRepository.find({
+      where: {
+        jobId,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+      relations: ['user', 'connection'],
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+
+    return result.map((entity) => ConnectionSyncJobEntity.toEgressType(entity));
+  }
+
+  async update(
+    context: ServiceContext,
+    id: string,
+    data: UpdateConnectionSyncJobDto,
+  ): Promise<ConnectionSyncJob | null> {
+    const updateData: Partial<ConnectionSyncJobEntity> = {};
+
+    if (data.jobId !== undefined) {
+      updateData.jobId = data.jobId;
+    }
+
+    if (data.endpointName !== undefined) {
+      updateData.endpointName = data.endpointName;
+    }
+
+    if (data.status !== undefined) {
+      updateData.status = data.status;
+    }
+
+    if (data.data !== undefined) {
+      updateData.data = data.data;
+    }
+
+    if (data.type !== undefined) {
+      updateData.type = data.type;
+    }
+
+    if (data.cursor !== undefined) {
+      updateData.cursor = data.cursor;
+    }
+
+    if (data.nextCursor !== undefined) {
+      updateData.nextCursor = data.nextCursor;
+    }
+
+    if (data.properties !== undefined) {
+      updateData.properties = data.properties;
+    }
+
+    if (data.error !== undefined) {
+      updateData.error = data.error;
+    }
+
+    if (data.completedAt !== undefined) {
+      updateData.completedAt = data.completedAt;
+    }
+
+    const SyncJob = await this.connectionSyncJobRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    if (SyncJob) {
+      Object.assign(SyncJob, updateData);
+      await this.connectionSyncJobRepository.save(SyncJob);
+    } else {
+      return null;
+    }
+
+    return this.findById(context, id);
+  }
+
+  async remove(context: ServiceContext, id: string): Promise<boolean> {
+    const SyncJob = await this.connectionSyncJobRepository.findOne({
+      where: {
+        id,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    if (!SyncJob) {
+      return false;
+    }
+
+    await this.connectionSyncJobRepository.delete({
+      id,
+      ...(context.userId !== SYSTEM_USER && {
+        userId: context.userId,
+      }),
+    });
+
+    return true;
+  }
+
+  async markAsCompleted(
+    context: ServiceContext,
+    id: string,
+    status: 'success' | 'failed',
+    error?: Record<string, unknown>,
+  ): Promise<ConnectionSyncJob | null> {
+    return this.update(context, id, {
+      status,
+      completedAt: new Date(),
+      ...(error && { error }),
+    });
+  }
+}
+
