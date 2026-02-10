@@ -2,7 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS ci_etl;
 
 -- Create an ENUM for status to save space and enforce valid states
-CREATE TYPE ci_etl.job_status AS ENUM ('in_progress', 'failed', 'success');
+CREATE TYPE ci_etl.job_status AS ENUM ('in_progress', 'failed', 'success', 'pending');
 
 CREATE TABLE ci_etl.connection_sync_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
