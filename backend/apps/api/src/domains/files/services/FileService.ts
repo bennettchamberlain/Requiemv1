@@ -89,6 +89,46 @@ export class FileService implements OnModuleInit {
     }
   }
 
+  async create(context: UserServiceContext, file: Express.Multer.File): Promise<SignedFile> {
+    const fileId = uuidv7();
+    const fileKey = uuidv4();
+    const bucket = config.staticfiles.bucket;
+
+    // Construct S3 path for file_path (required field)
+    const filePath = `s3://${bucket}/${fileKey}`;
+
+    const entity = this.fileRepository.create({
+      id: fileId,
+      filePath: filePath,
+      filename: file.originalname,
+      storageType: 'cloud', // S3/Minio is cloud storage
+      storageProvider: 's3',
+      modifiedAtSource: new Date(), // Upload time as modification time
+      bucket,
+      key: fileKey,
+      originalName: file.originalname,
+      contentType: file.mimetype,
+      size: file.size,
+      fileHash: createHmac('sha256', config.auth.session.fieldPepper).update(file.buffer).digest('hex'),
+      user: {
+        id: context.userId,
+      },
+    });
+
+    const result = await this.fileRepository.save(entity);
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: result.bucket ?? config.staticfiles.bucket,
+        Key: result.key!,
+        Body: file.buffer,
+        ContentType: result.contentType,
+      }),
+    );
+
+    return this.signFile(result);
+  }
+
   async findAll(context: ServiceContext): Promise<SignedFile[]> {
     const result = await this.fileRepository.find({
       where: {
@@ -177,48 +217,14 @@ export class FileService implements OnModuleInit {
   }
 
   async upload(context: UserServiceContext, file: Express.Multer.File): Promise<SignedFile> {
-    const fileId = uuidv7();
-    const fileKey = uuidv4();
-    const bucket = config.staticfiles.bucket;
-
-    // Construct S3 path for file_path (required field)
-    const filePath = `s3://${bucket}/${fileKey}`;
-
-    const entity = this.fileRepository.create({
-      id: fileId,
-      filePath: filePath,
-      filename: file.originalname,
-      storageType: 'cloud', // S3/Minio is cloud storage
-      storageProvider: 's3',
-      modifiedAtSource: new Date(), // Upload time as modification time
-      bucket,
-      key: fileKey,
-      originalName: file.originalname,
-      contentType: file.mimetype,
-      size: file.size,
-      fileHash: createHmac('sha256', config.auth.session.fieldPepper).update(file.buffer).digest('hex'),
-      user: {
-        id: context.userId,
-      },
-    });
-
-    const result = await this.fileRepository.save(entity);
-
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: result.bucket ?? config.staticfiles.bucket,
-        Key: result.key!,
-        Body: file.buffer,
-        ContentType: result.contentType,
-      }),
-    );
+    const created = await this.create(context, file);
 
     await this.eventService.send(FileUploadedEvent, {
-      fileId: result.id,
+      fileId: created.id,
       userId: context.userId,
     });
 
-    return this.signFile(entity);
+    return created;
   }
 
   async getFileContent(context: RequestContext, key: string): Promise<Uint8Array> {
