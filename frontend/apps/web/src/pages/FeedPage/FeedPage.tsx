@@ -143,10 +143,8 @@ export function FeedPage() {
     (id: string) => {
       navigate(`/feed/${id}`, { replace: true });
       openModal();
-      // Mark action as seen when clicked
-      markActionAsSeen(id);
     },
-    [navigate, openModal, markActionAsSeen],
+    [navigate, openModal],
   );
 
   const handleActionDismiss = useCallback(
