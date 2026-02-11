@@ -66,7 +66,7 @@ export class SyncOrchestrator {
           } else {
             const sync0 = existingIncrementalSyncs[0];
 
-            if (sync0.status === 'in_progress' || sync0.status === 'failed') {
+            if (sync0.status === 'in_progress' || sync0.status === 'failed' || sync0.status === 'pending') {
               return;
             }
 
@@ -109,6 +109,10 @@ export class SyncOrchestrator {
             );
           } else {
             const sync0 = existingHistoricalSyncs[0];
+
+            if (sync0.status === 'in_progress' || sync0.status === 'failed' || sync0.status === 'pending') {
+              return;
+            }
 
             if (sync0.status === 'success') {
               if (Object.keys(sync0.nextCursor).length > 0) {
