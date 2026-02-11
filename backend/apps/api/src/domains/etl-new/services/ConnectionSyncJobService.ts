@@ -195,7 +195,7 @@ export class ConnectionSyncJobService {
     return this.findById(context, id);
   }
 
-  async remove(context: ServiceContext, id: string): Promise<boolean> {
+  async delete(context: ServiceContext, id: string): Promise<boolean> {
     const SyncJob = await this.connectionSyncJobRepository.findOne({
       where: {
         id,

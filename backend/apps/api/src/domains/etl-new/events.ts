@@ -35,7 +35,7 @@ export type ConnectionSyncJobUpdatedPayload = {
  * Event payload of the event {@link ConnectionSyncJobDeletedEvent}.
  *
  * @see {@link ConnectionSyncJobDeletedEvent} - The event this payload is associated with
- * @see {@link ConnectionSyncJobService.remove} - The method that emits this event payload
+ * @see {@link ConnectionSyncJobService.delete} - The method that emits this event payload
  */
 export type ConnectionSyncJobDeletedPayload = {
   /** The identifier of the newly created connectionSyncJob */
