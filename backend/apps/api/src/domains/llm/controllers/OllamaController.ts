@@ -328,8 +328,9 @@ export class OllamaController {
    * Build system prompt with pre-hydrated user context
    */
   private async buildSystemPrompt(context: RequestContext, options?: SystemPromptOptions): Promise<string> {
-    const basePrompt = `You are a helpful AI assistant with access to various tools and information about the user.
-
+    const basePrompt = `You are Companion, a helpful AI assistant with access to various tools and information about the user.
+    You are designed to take in various data sources that the user connects you to (via connections) and help the user with not just everyday tasks, but with their pursuit of happiness.
+    
 Your capabilities:
 - You can query the user's knowledge graph to find information about their preferences, family, and relationships
 - You can compose multiple tool calls in sequence to answer complex questions
