@@ -1,17 +1,77 @@
-import { useQuery } from '@apollo/client';
+import { gql, useMutation, useQuery } from '@apollo/client';
 
-import { gql } from '@/graphql';
+interface InsightNode {
+  title: string;
+  summaryText: string;
+  keyActions: string[];
+  relevanceScore: number;
+  tags: string[];
+  relatedEntityIds?: string[] | null;
+}
 
-const GET_SUMMARIES = gql(`
+interface SummaryNode {
+  id: string;
+  title?: string | null;
+  periodType: string;
+  seen: boolean;
+  summaryText: string;
+  keyInsights: string[];
+  tags: string[];
+  activityCounts: {
+    total: number;
+  };
+  insights: InsightNode[];
+}
+
+interface GetSummariesQueryResult {
+  summaries: {
+    edges: Array<{
+      node: SummaryNode;
+    }>;
+    pageInfo: {
+      hasNextPage: boolean;
+    };
+    totalCount: number;
+  };
+}
+
+interface GetSummariesQueryVariables {
+  first?: number;
+}
+
+interface MarkSummaryAsSeenMutationResult {
+  markSummaryAsSeen?: {
+    id: string;
+    seen: boolean;
+  } | null;
+}
+
+interface MarkSummaryAsSeenMutationVariables {
+  id: string;
+}
+
+const GET_SUMMARIES = gql`
   query GetSummaries($first: Int) {
     summaries(first: $first) {
       edges {
         node {
           id
+          title
           periodType
-          ...SummaryCardData
+          seen
+          summaryText
+          keyInsights
+          tags
+          activityCounts {
+            total
+          }
           insights {
-            ...InsightCardData
+            title
+            summaryText
+            keyActions
+            relevanceScore
+            tags
+            relatedEntityIds
           }
         }
       }
@@ -21,21 +81,46 @@ const GET_SUMMARIES = gql(`
       totalCount
     }
   }
-`);
+`;
 
-export function useSummariesService() {
-  const { data, loading, error } = useQuery(GET_SUMMARIES, {
-    fetchPolicy: 'cache-and-network',
-    notifyOnNetworkStatusChange: true,
-  });
+const MARK_SUMMARY_AS_SEEN = gql`
+  mutation MarkSummaryAsSeen($id: ID!) {
+    markSummaryAsSeen(id: $id) {
+      id
+      seen
+    }
+  }
+`;
 
-  const summaries = data?.summaries?.edges.map(({ node }) => node) || [];
+export function useSummariesService(first?: number) {
+  const { data, loading, error, refetch } = useQuery<GetSummariesQueryResult, GetSummariesQueryVariables>(
+    GET_SUMMARIES,
+    {
+      variables: { first },
+      fetchPolicy: 'cache-and-network',
+      notifyOnNetworkStatusChange: true,
+    },
+  );
+  const [markSeenMutation] = useMutation<MarkSummaryAsSeenMutationResult, MarkSummaryAsSeenMutationVariables>(
+    MARK_SUMMARY_AS_SEEN,
+  );
+
+  const summaries: SummaryNode[] = data?.summaries?.edges.map(({ node }) => node) || [];
+
+  const markSummaryAsSeen = async (id: string) => {
+    await markSeenMutation({ variables: { id } });
+    await refetch();
+  };
 
   return [
     {
       data: summaries,
       loading: loading,
       error: error,
+    },
+    {
+      refetch,
+      markSummaryAsSeen,
     },
   ] as const;
 }

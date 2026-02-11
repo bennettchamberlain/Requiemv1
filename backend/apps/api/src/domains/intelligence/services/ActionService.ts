@@ -165,7 +165,6 @@ export class ActionService {
         }),
         id,
       },
-      relations: ['tags'],
     });
 
     if (entity == null) {
@@ -177,6 +176,7 @@ export class ActionService {
       ...entity.metadata,
       seen: true,
     };
+    entity.seen = true;
 
     const updated = await this.actionRepository.save(entity);
 

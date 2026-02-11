@@ -548,6 +548,9 @@ type Mutation {
 
   """Mark an action as seen"""
   markActionAsSeen(id: ID!): ActionType
+
+  """Mark a summary as seen"""
+  markSummaryAsSeen(id: ID!): SummaryType
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!

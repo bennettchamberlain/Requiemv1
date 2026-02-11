@@ -2,7 +2,7 @@ import { type MouseEvent, type MouseEventHandler, type ReactNode, useCallback } 
 
 import { useDeviceLayout } from '@ci/common';
 import { Button, cn } from '@ci/shadcn';
-import { MessagesSquare, ThumbsDown, ThumbsUp } from '@ci/shadcn/icons';
+import { MessagesSquare, ThumbsDown, ThumbsUp, X } from '@ci/shadcn/icons';
 
 import { Tag } from '@/components/Tag';
 
@@ -16,6 +16,8 @@ interface Props {
   onLike?: MouseEventHandler;
   onDislike?: MouseEventHandler;
   onExpand?: MouseEventHandler;
+  onDismiss?: MouseEventHandler<HTMLButtonElement>;
+  dismissLabel?: string;
 }
 
 export function BentoCard({
@@ -28,6 +30,8 @@ export function BentoCard({
   onLike,
   onDislike,
   onExpand,
+  onDismiss,
+  dismissLabel = 'Dismiss card',
 }: Props) {
   const { isMobile } = useDeviceLayout();
 
@@ -62,6 +66,28 @@ export function BentoCard({
     [onExpand],
   );
 
+  const handleDismiss = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      onDismiss?.(e);
+    },
+    [onDismiss],
+  );
+
+  const dismissButton = onDismiss ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      className="absolute right-3 top-3 z-30 h-7 w-7 bg-background/80 backdrop-blur-sm"
+      onClick={handleDismiss}
+      aria-label={dismissLabel}
+      title={dismissLabel}
+    >
+      <X className="h-4 w-4" />
+    </Button>
+  ) : null;
+
   if (isMobile) {
     return (
       <div
@@ -72,6 +98,7 @@ export function BentoCard({
         )}
         onClick={handleClick}
       >
+        {dismissButton}
         {imageUrl && (
           <div
             className="relative top-0 left-0 right-0 min-h-42 bg-cover bg-center rounded-t-lg -mx-4 -mt-4 text-4xl font-bold text-center text-white p-4"
@@ -127,11 +154,12 @@ export function BentoCard({
     return (
       <div
         className={cn(
-          'w-[550px] h-[400px] flex flex-col border border-border bg-card text-card-foreground shadow-md rounded-lg cursor-pointer select-none gap-4 p-4',
+          'w-[550px] h-[400px] relative flex flex-col border border-border bg-card text-card-foreground shadow-md rounded-lg cursor-pointer select-none gap-4 p-4',
           className,
         )}
         onClick={handleClick}
       >
+        {dismissButton}
         <div className="flex w-full justify-between content-start">
           <h1 className="text-2xl font-semibold">{title}</h1>
 
@@ -177,11 +205,12 @@ export function BentoCard({
   return (
     <div
       className={cn(
-        'w-[550px] h-[400px] flex flex-row border border-border bg-card text-card-foreground shadow-md rounded-lg cursor-pointer select-none',
+        'w-[550px] h-[400px] relative flex flex-row border border-border bg-card text-card-foreground shadow-md rounded-lg cursor-pointer select-none',
         className,
       )}
       onClick={handleClick}
     >
+      {dismissButton}
       <div className="flex flex-col flex-1 gap-4 justify-between p-4">
         <div>
           <h1 className="text-2xl font-semibold">{title}</h1>

@@ -22,10 +22,11 @@ export const SUMMARY_CARD_FRAGMENT = gql(`
 interface Props {
   summary: FragmentType<typeof SUMMARY_CARD_FRAGMENT>;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
+  onDismiss?: () => void;
   className?: string;
 }
 
-export function SummaryCard({ summary, onClick, className }: Props) {
+export function SummaryCard({ summary, onClick, onDismiss, className }: Props) {
   const data = useFragment(SUMMARY_CARD_FRAGMENT, summary);
 
   const description = (
@@ -54,6 +55,8 @@ export function SummaryCard({ summary, onClick, className }: Props) {
       description={description}
       tags={data.tags}
       onClick={onClick}
+      onDismiss={onDismiss}
+      dismissLabel="Dismiss summary"
       className={className}
     />
   );
