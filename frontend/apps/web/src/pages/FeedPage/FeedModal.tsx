@@ -146,7 +146,7 @@ export function FeedModal({ onClose }: Props) {
           </Dialog.Description>
 
           <div className="flex items-center justify-between flex-1">
-            {(action?.tags.length ?? 0) > 0 && (
+            {(action?.tags?.length ?? 0) > 0 && (
               <div className="flex flex-wrap gap-2">
                 {action?.tags.map((tag) => <Tag key={tag} text={tag} />)}
               </div>

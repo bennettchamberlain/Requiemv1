@@ -135,7 +135,7 @@ export function BentoCard({
         <div className="flex w-full justify-between content-start">
           <h1 className="text-2xl font-semibold">{title}</h1>
 
-          {tags && (
+          {(tags?.length ?? 0) > 0 && (
             <div>
               <div className="flex flex-wrap gap-1 justify-end">
                 {tags.map((tag) => (
@@ -210,13 +210,16 @@ export function BentoCard({
       </div>
 
       <div className="flex flex-col w-50 justify-between content-end text-right relative overflow-hidden rounded-tr-lg rounded-br-lg select-none">
-        {tags && (
+        {(tags?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-1 justify-end relative z-10 p-4 [background-image:radial-gradient(circle_at_top_right,_rgba(255,255,255,0.9),_rgba(255,255,255,0.1))]">
             {tags.map((tag) => (
               <Tag key={tag} text={tag} />
             ))}
           </div>
         )}
+
+        {/* We're relying on flexbox to space this correctly, so we need to render an empty div if there are no tags to render the button at the bottom. */}
+        {tags?.length === 0 && <div></div>}
 
         <div className="relative z-10 text-right justify-end p-4">
           <Button className="bg-stone-50 cursor-pointer" size="icon" variant="outline" onClick={handleExpand}>
