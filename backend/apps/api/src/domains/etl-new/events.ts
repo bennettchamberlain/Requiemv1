@@ -1,9 +1,4 @@
 import { defineEvent } from '@ci/domains/events';
-import {
-  BrowserActivityCreatedEvent,
-  BrowserActivityCreatedPayload, BrowserActivityRemovedEvent, BrowserActivityUpdatedEvent,
-  BrowserActivityUpdatedPayload
-} from "@ci/domains/browser-activity/events";
 
 /**
  * Event emitted when creating a new connectionSyncJob.
@@ -46,7 +41,6 @@ export type ConnectionSyncJobDeletedPayload = {
   /** The identifier of the newly created connectionSyncJob */
   connectionSyncJobId: string;
 };
-
 
 defineEvent<ConnectionSyncJobCreatedPayload>(ConnectionSyncJobCreatedEvent);
 defineEvent<ConnectionSyncJobUpdatedPayload>(ConnectionSyncJobUpdatedEvent);

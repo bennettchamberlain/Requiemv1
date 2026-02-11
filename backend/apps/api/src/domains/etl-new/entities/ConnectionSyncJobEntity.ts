@@ -44,10 +44,10 @@ export class ConnectionSyncJobEntity {
   type!: string;
 
   @Column({ type: 'jsonb', nullable: true, default: {} })
-  cursor!: Record<string, unknown> | null;
+  cursor!: Record<string, unknown>;
 
   @Column({ type: 'jsonb', nullable: true, default: {}, name: 'next_cursor' })
-  nextCursor!: Record<string, unknown> | null;
+  nextCursor!: Record<string, unknown>;
 
   @Column({ type: 'jsonb', nullable: true, default: {} })
   properties!: Record<string, unknown> | null;
@@ -94,4 +94,3 @@ export class ConnectionSyncJobEntity {
     };
   }
 }
-
