@@ -1,20 +1,16 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { v7 as uuid7 } from 'uuid';
+import { Injectable } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 
-import type { RequestContext, ServiceContext } from '@ci/common/context';
+import { EventService } from '@ci/domains/events';
 import { LoggerService } from '@ci/common/logging';
 import {
   ClientFactory,
   ConnectionService,
-  type Connection,
-  type SyncResponse,
 } from '@ci/domains/connections';
 
 import {Cron} from "@ci/common/schedule";
 import {ConnectionSyncJobService} from "@ci/domains/etl";
+import { ConnectionSyncJobCreatedEvent} from "../events";
 
 @Injectable()
 export class SyncOrchestrator {
@@ -22,9 +18,10 @@ export class SyncOrchestrator {
     private readonly clientFactory: ClientFactory,
     private readonly connectionService: ConnectionService,
     private readonly connectionSyncJobService: ConnectionSyncJobService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
-    this.logger.setContext(EtlService.name);
+    this.logger.setContext(SyncOrchestrator.name);
   }
 
   /**
@@ -33,41 +30,128 @@ export class SyncOrchestrator {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async orchestrateSyncJobs(): Promise<void> {
+    console.log('Starting sync orchestration');
     const activeConnections = await this.connectionService.findActiveConnections();
 
-    const activeEndpoints: string[];
+    activeConnections.forEach(({ connection }) => {
+      connection.activeEndpoints.forEach(async endpoint => {
+        const providerEndpoint = connection.provider!.endpoints.find((e) => e.name === endpoint);
+        if (!providerEndpoint) {
+          this.logger.error('Active endpoint not found on provider', {
+            connectionId: connection.id,
+            endpoint,
+          });
 
-    activeConnections.forEach((connection) => {
-      for (const endpoint of connection.activeEndpoints) {
-        const iterationType = connection.provider.endpoints.find((e) => e.name === endpoint)?.iterationType;
+          return;
+        }
+        const iterationType = providerEndpoint.iterationType;
 
         const iterationTypes = iterationType.split(',');
 
         if (iterationTypes.includes('incremental')) {
-          const existingIncrementalSyncs = await this.connectionSyncJobService.search({
+          const existingIncrementalSyncs = await this.connectionSyncJobService.search({ userId: connection.userId }, {
             connectionId: connection.id,
-            endpoint,
-            iterationType: 'incremental',
+            userId: connection.userId,
+            endpointName: endpoint,
+            type: 'incremental',
           });
 
           if (existingIncrementalSyncs.length === 0) {
-            this.connectionSyncJobService.create({
+            const newJob = await this.connectionSyncJobService.create({ userId: connection.userId }, {
               connectionId: connection.id,
-              endpoint,
-              iterationType: 'incremental',
+              userId: connection.userId,
+              endpointName: endpoint,
+              type: 'incremental',
               status: 'pending',
             });
 
-            continue;
+            await this.eventService.send(ConnectionSyncJobCreatedEvent, {
+              connectionSyncJobId: newJob.id,
+            });
           }
 
-          if (existingIncrementalSyncs[0].status === 'in_progress' || existingIncrementalSync[0].status === 'failed') {
-            continue;
+          const sync0 = existingIncrementalSyncs[0];
+
+          if (sync0.status === 'in_progress' || sync0.status === 'failed') {
+            return;
           }
 
+          if (sync0.status === 'success') {
+            const newJob = await this.connectionSyncJobService.create({ userId: connection.userId }, {
+              connectionId: connection.id,
+              userId: connection.userId,
+              endpointName: endpoint,
+              type: 'incremental',
+              status: 'pending',
+            });
 
+            await this.eventService.send(ConnectionSyncJobCreatedEvent, {
+              connectionSyncJobId: newJob.id,
+            });
+          }
         }
-      }
+
+        if (iterationTypes.includes('historical')) {
+          const existingHistoricalSyncs = await this.connectionSyncJobService.search({ userId: connection.userId }, {
+            connectionId: connection.id,
+            userId: connection.userId,
+            endpointName: endpoint,
+            type: 'historical',
+          });
+
+          if (existingHistoricalSyncs.length === 0) {
+            const newJob = await this.connectionSyncJobService.create({ userId: connection.userId }, {
+              connectionId: connection.id,
+              userId: connection.userId,
+              endpointName: endpoint,
+              type: 'historical',
+              status: 'pending',
+            });
+
+            await this.eventService.send(ConnectionSyncJobCreatedEvent, {
+              connectionSyncJobId: newJob.id,
+            });
+          }
+
+          const sync0 = existingHistoricalSyncs[0];
+
+          if (sync0.status === 'success') {
+            if (sync0.nextCursor != null) {
+              const newJob = await this.connectionSyncJobService.create({ userId: connection.userId }, {
+                connectionId: connection.id,
+                userId: connection.userId,
+                endpointName: endpoint,
+                type: 'historical',
+                status: 'pending',
+                cursor: sync0.nextCursor,
+              });
+
+              await this.eventService.send(ConnectionSyncJobCreatedEvent, {
+                connectionSyncJobId: newJob.id,
+              });
+            }
+
+            if (sync0.nextCursor == null && sync0.completedAt && providerEndpoint.TTL != null) {
+              const dateNow = new Date().getTime();
+              const completedAt = new Date(sync0.completedAt).getTime();
+
+              if (dateNow > completedAt + (providerEndpoint.TTL * 1000)) {
+                const newJob = await this.connectionSyncJobService.create({ userId: connection.userId }, {
+                  connectionId: connection.id,
+                  userId: connection.userId,
+                  endpointName: endpoint,
+                  type: 'historical',
+                  status: 'pending',
+                });
+
+                await this.eventService.send(ConnectionSyncJobCreatedEvent, {
+                  connectionSyncJobId: newJob.id,
+                });
+              }
+            }
+          }
+        }
+      });
     });
   }
 }

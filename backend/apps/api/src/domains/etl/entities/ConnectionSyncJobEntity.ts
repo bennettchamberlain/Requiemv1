@@ -13,7 +13,7 @@ import { UserEntity } from '@ci/domains/user';
 
 import type { ConnectionSyncJob, JobStatus } from '../types';
 
-@Entity({ schema: 'ci_etl', name: 'connection_job_sync' })
+@Entity({ schema: 'ci_etl', name: 'connection_sync_jobs' })
 export class ConnectionSyncJobEntity {
   @PrimaryColumn('uuid')
   id!: string;

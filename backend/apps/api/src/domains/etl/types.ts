@@ -16,7 +16,7 @@ export interface ApiLog {
   readonly last_processed?: Date;
 }
 
-export type JobStatus = 'in_progress' | 'failed' | 'success';
+export type JobStatus = 'in_progress' | 'failed' | 'success' | 'pending';
 
 export interface ConnectionSyncJob {
   readonly id: string;
@@ -68,6 +68,7 @@ export interface UpdateConnectionSyncJobDto {
 
 export interface SearchConnectionSyncJobDto {
   jobId?: string | null;
+  userId?: string;
   connectionId?: string;
   endpointName?: string;
   status?: JobStatus;

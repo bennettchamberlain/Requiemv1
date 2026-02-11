@@ -27,6 +27,7 @@ import { ApiLogEntity } from './entities/ApiLogEntity';
 import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { EtlService } from './services/EtlService';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
+import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 
 /**
  * @internal
@@ -37,7 +38,7 @@ import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
     ConnectionsModule,
     EventsModule,
   ],
-  providers: [EtlService, ConnectionSyncJobService],
+  providers: [EtlService, ConnectionSyncJobService, SyncOrchestrator],
   controllers: [EtlController],
   exports: [EtlService, ConnectionSyncJobService],
 })

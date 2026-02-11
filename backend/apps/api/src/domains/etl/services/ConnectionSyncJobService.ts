@@ -24,35 +24,24 @@ export class ConnectionSyncJobService {
 
   async create(
     context: UserServiceContext,
-    data: CreateConnectionSyncJobDto | CreateConnectionSyncJobDto[],
-  ): Promise<ConnectionSyncJob[]> {
-    const isSingle = !Array.isArray(data);
-    const dataArray: CreateConnectionSyncJobDto[] = isSingle ? [data] : data;
+    data: CreateConnectionSyncJobDto,
+  ): Promise<ConnectionSyncJob> {
+    const id = data.id ?? uuidv7();
 
-    return Promise.all(
-      dataArray.map(async (item) => {
-        const id = item.id ?? uuidv7();
+    const SyncJob = this.connectionSyncJobRepository.create({
+      id,
+      userId: data.userId,
+      connectionId: data.connectionId,
+      jobId: data.jobId ?? null,
+      endpointName: data.endpointName,
+      status: data.status ?? 'pending',
+      type: data.type,
+      properties: data.properties ?? null,
+    });
 
-        const SyncJob = this.connectionSyncJobRepository.create({
-          id,
-          userId: item.userId,
-          connectionId: item.connectionId,
-          jobId: item.jobId ?? null,
-          endpointName: item.endpointName,
-          status: item.status ?? 'in_progress',
-          data: item.data ?? {},
-          type: item.type,
-          cursor: item.cursor ?? null,
-          nextCursor: item.nextCursor ?? null,
-          properties: item.properties ?? null,
-          error: item.error ?? null,
-        });
+    const result = await this.connectionSyncJobRepository.save(SyncJob);
 
-        const result = await this.connectionSyncJobRepository.save(SyncJob);
-
-        return ConnectionSyncJobEntity.toEgressType(result);
-      }),
-    );
+    return ConnectionSyncJobEntity.toEgressType(result);
   }
 
   async findAll(context: UserServiceContext): Promise<ConnectionSyncJob[]> {
@@ -264,7 +253,7 @@ export class ConnectionSyncJobService {
       }
     }
 
-    executable = executable.orderBy('updatedAt', 'DESC')
+    executable = executable.orderBy('updated_at', 'DESC')
 
     return executable.getMany();
   }
