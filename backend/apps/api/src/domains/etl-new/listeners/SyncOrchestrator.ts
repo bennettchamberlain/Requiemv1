@@ -18,9 +18,11 @@ export class SyncOrchestrator {
   }
 
   /**
-   * Main entry point for ETL sync - handles sync for any connection type
+   * This method creates sync jobs for connection endpoints that are ready to be run again.
+   * For incremental syncs, this is where there are no prior ones, or the last one was successful.
+   * For historical syncs, this is where there are no prior ones, or the last one was successful and has a nextCursor,
+   * or the last one was successful and has no nextCursor but was completed more than TTL ago.
    */
-
   @Cron(CronExpression.EVERY_MINUTE)
   async orchestrateSyncJobs(): Promise<void> {
     const activeConnections = await this.connectionService.findActiveConnections();
