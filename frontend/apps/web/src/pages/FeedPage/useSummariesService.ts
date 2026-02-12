@@ -14,6 +14,7 @@ interface SummaryNode {
   title?: string | null;
   periodType: string;
   seen: boolean;
+  dismissed: boolean;
   summaryText: string;
   keyInsights: string[];
   tags: string[];
@@ -50,6 +51,17 @@ interface MarkSummaryAsSeenMutationVariables {
   id: string;
 }
 
+interface MarkSummaryAsDismissedMutationResult {
+  markSummaryAsDismissed?: {
+    id: string;
+    dismissed: boolean;
+  } | null;
+}
+
+interface MarkSummaryAsDismissedMutationVariables {
+  id: string;
+}
+
 const GET_SUMMARIES = gql`
   query GetSummaries($first: Int) {
     summaries(first: $first) {
@@ -59,6 +71,7 @@ const GET_SUMMARIES = gql`
           title
           periodType
           seen
+          dismissed
           summaryText
           keyInsights
           tags
@@ -92,6 +105,15 @@ const MARK_SUMMARY_AS_SEEN = gql`
   }
 `;
 
+const MARK_SUMMARY_AS_DISMISSED = gql`
+  mutation MarkSummaryAsDismissed($id: ID!) {
+    markSummaryAsDismissed(id: $id) {
+      id
+      dismissed
+    }
+  }
+`;
+
 export function useSummariesService(first?: number) {
   const { data, loading, error, refetch } = useQuery<GetSummariesQueryResult, GetSummariesQueryVariables>(
     GET_SUMMARIES,
@@ -104,11 +126,20 @@ export function useSummariesService(first?: number) {
   const [markSeenMutation] = useMutation<MarkSummaryAsSeenMutationResult, MarkSummaryAsSeenMutationVariables>(
     MARK_SUMMARY_AS_SEEN,
   );
+  const [markDismissedMutation] = useMutation<
+    MarkSummaryAsDismissedMutationResult,
+    MarkSummaryAsDismissedMutationVariables
+  >(MARK_SUMMARY_AS_DISMISSED);
 
   const summaries: SummaryNode[] = data?.summaries?.edges.map(({ node }) => node) || [];
 
   const markSummaryAsSeen = async (id: string) => {
     await markSeenMutation({ variables: { id } });
+    await refetch();
+  };
+
+  const markSummaryAsDismissed = async (id: string) => {
+    await markDismissedMutation({ variables: { id } });
     await refetch();
   };
 
@@ -121,6 +152,7 @@ export function useSummariesService(first?: number) {
     {
       refetch,
       markSummaryAsSeen,
+      markSummaryAsDismissed,
     },
   ] as const;
 }

@@ -119,4 +119,16 @@ export class ActionResolver {
 
     return entity ? ActionType.toType(entity) : null;
   }
+
+  @Mutation(() => ActionType, { nullable: true, description: 'Mark an action as dismissed' })
+  async markActionAsDismissed(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<ActionType | null> {
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('action', gid);
+    const entity = await this.actionService.markAsDismissed(serviceContext, id);
+
+    return entity ? ActionType.toType(entity) : null;
+  }
 }

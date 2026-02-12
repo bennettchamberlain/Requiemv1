@@ -10,6 +10,8 @@ const GET_FEED_ACTIONS = gql(`
       text
       imageUrl
       priority
+      seen
+      dismissed
       metadata {
         seen
         type
@@ -27,9 +29,16 @@ const MARK_ACTION_AS_SEEN = gql(`
   mutation MarkActionAsSeen($id: ID!) {
     markActionAsSeen(id: $id) {
       id
-      metadata {
-        seen
-      }
+      seen
+    }
+  }
+`);
+
+const MARK_ACTION_AS_DISMISSED = gql(`
+  mutation MarkActionAsDismissed($id: ID!) {
+    markActionAsDismissed(id: $id) {
+      id
+      dismissed
     }
   }
 `);
@@ -40,6 +49,8 @@ interface FeedActionNode {
   text: string;
   imageUrl?: string | null;
   priority?: number | null;
+  seen: boolean;
+  dismissed: boolean;
   metadata: {
     seen: boolean;
     type?: string | null;
@@ -72,6 +83,7 @@ export function useActionListService(limit: number = 5) {
   });
 
   const [markAsSeen] = useMutation(MARK_ACTION_AS_SEEN);
+  const [markAsDismissed] = useMutation(MARK_ACTION_AS_DISMISSED);
 
   const actions: Action[] =
     data?.feedActions
@@ -82,17 +94,23 @@ export function useActionListService(limit: number = 5) {
         text: node.text,
         imageUrl: node.imageUrl ?? undefined,
         priority: node.priority ?? undefined,
-        seen: node.metadata.seen,
+        seen: node.seen,
+        dismissed: node.dismissed,
         metadata: node.metadata,
         threadId: node.thread?.id ? decodeGlobalId(node.thread.id) : undefined,
         tags: [],
       })) || [];
 
   const markActionAsSeen = async (actionId: string) => {
-    // Encode the ID back to GlobalUID format
     const gid = btoa(`action:${actionId}`);
     await markAsSeen({ variables: { id: gid } });
-    refetch();
+    await refetch();
+  };
+
+  const markActionAsDismissed = async (actionId: string) => {
+    const gid = btoa(`action:${actionId}`);
+    await markAsDismissed({ variables: { id: gid } });
+    await refetch();
   };
 
   return [
@@ -104,6 +122,7 @@ export function useActionListService(limit: number = 5) {
     {
       refetch,
       markActionAsSeen,
+      markActionAsDismissed,
     },
   ] as const;
 }

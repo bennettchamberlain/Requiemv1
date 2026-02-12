@@ -69,4 +69,16 @@ export class SummaryResolver {
 
     return updated ? SummaryType.toType(updated) : null;
   }
+
+  @Mutation(() => SummaryType, { nullable: true, description: 'Mark a summary as dismissed' })
+  async markSummaryAsDismissed(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<SummaryType | null> {
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('summary', gid);
+    const updated = await this.summaryService.update(serviceContext, id, { dismissed: true });
+
+    return updated ? SummaryType.toType(updated) : null;
+  }
 }

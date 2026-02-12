@@ -14,6 +14,7 @@ export interface Action {
   tags: string[];
   priority?: number;
   seen?: boolean;
+  dismissed?: boolean;
   metadata?: Record<string, unknown>;
 }
 

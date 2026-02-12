@@ -30,9 +30,12 @@ export function FeedPage() {
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
-  const [{ data: actions, loading, error }, { markActionAsSeen }] = useActionListService(5);
-  const [{ data: summaries, loading: summariesLoading, error: summariesError }, { markSummaryAsSeen }] =
-    useSummariesService(10);
+  const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
+    useActionListService(5);
+  const [
+    { data: summaries, loading: summariesLoading, error: summariesError },
+    { markSummaryAsSeen, markSummaryAsDismissed },
+  ] = useSummariesService(10);
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
   const [dismissedInsightIds, setDismissedInsightIds] = useState<Set<string>>(new Set());
@@ -60,11 +63,11 @@ export function FeedPage() {
   }, [dismissedInsightIds]);
 
   const visibleActions = useMemo(
-    () => actions.filter((action) => !action.seen && !dismissedActionIds.has(action.id)),
+    () => actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id)),
     [actions, dismissedActionIds],
   );
   const visibleSummaries = useMemo(
-    () => summaries.filter((summary) => !summary.seen && !dismissedSummaryIds.has(summary.id)),
+    () => summaries.filter((summary) => !summary.dismissed && !dismissedSummaryIds.has(summary.id)),
     [summaries, dismissedSummaryIds],
   );
   const visibleInsights = useMemo(
@@ -73,7 +76,7 @@ export function FeedPage() {
         summary.insights
           .map((insight, idx) => ({
             id: `${summary.id}:${idx}`,
-            summaryId: summary.id,
+            summarySeen: summary.seen,
             insight,
           }))
           .filter((item) => !dismissedInsightIds.has(item.id)),
@@ -86,7 +89,7 @@ export function FeedPage() {
           kind: 'insight';
           id: string;
           insightId: string;
-          summaryId: string;
+          isSeen: boolean;
           insight: (typeof visibleInsights)[number]['insight'];
         }
       | {
@@ -104,7 +107,7 @@ export function FeedPage() {
           kind: 'insight',
           id: `insight:${insight.id}`,
           insightId: insight.id,
-          summaryId: insight.summaryId,
+          isSeen: insight.summarySeen,
           insight: insight.insight,
         });
       }
@@ -140,11 +143,12 @@ export function FeedPage() {
   }, [closeModal, openModal, selectedActionIndex]);
 
   const handleCardClick = useCallback(
-    (id: string) => {
+    async (id: string) => {
       navigate(`/feed/${id}`, { replace: true });
       openModal();
+      await markActionAsSeen(id);
     },
-    [navigate, openModal],
+    [markActionAsSeen, navigate, openModal],
   );
 
   const handleActionDismiss = useCallback(
@@ -155,26 +159,22 @@ export function FeedPage() {
         navigate('/feed', { replace: true });
       }
 
-      await markActionAsSeen(id);
+      await markActionAsDismissed(id);
     },
-    [actionId, markActionAsSeen, navigate],
+    [actionId, markActionAsDismissed, navigate],
   );
 
   const handleSummaryDismiss = useCallback(
     async (id: string) => {
       setDismissedSummaryIds((prev) => new Set(prev).add(id));
-      await markSummaryAsSeen(id);
+      await markSummaryAsDismissed(id);
     },
-    [markSummaryAsSeen],
+    [markSummaryAsDismissed],
   );
 
-  const handleInsightDismiss = useCallback(
-    async (insightId: string, summaryId: string) => {
-      setDismissedInsightIds((prev) => new Set(prev).add(insightId));
-      await markSummaryAsSeen(summaryId);
-    },
-    [markSummaryAsSeen],
-  );
+  const handleInsightDismiss = useCallback((insightId: string) => {
+    setDismissedInsightIds((prev) => new Set(prev).add(insightId));
+  }, []);
 
   const handleModalClose = useCallback(() => {
     navigate('/feed', { replace: true });
@@ -182,10 +182,11 @@ export function FeedPage() {
   }, [navigate, closeModal]);
 
   const handleSummaryClick = useCallback(
-    (encodedId: string) => {
+    async (encodedId: string) => {
+      await markSummaryAsSeen(encodedId);
       navigate(`/insights/${GlobalUID.parse('summary', encodedId)}`);
     },
-    [navigate],
+    [markSummaryAsSeen, navigate],
   );
 
   if (loading) {
@@ -228,10 +229,10 @@ export function FeedPage() {
                 }
                 tags={action.tags}
                 imageUrl={action.imageUrl}
-                onClick={() => handleCardClick(action.id)}
+                onClick={() => void handleCardClick(action.id)}
                 onDismiss={() => void handleActionDismiss(action.id)}
                 dismissLabel="Dismiss action"
-                className={cn(!action.seen && 'ring-2 ring-primary/40')}
+                showUnseenIndicator={!action.seen}
               />
             ))}
 
@@ -240,13 +241,14 @@ export function FeedPage() {
               <InsightCard
                 key={card.id}
                 insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
-                onDismiss={() => void handleInsightDismiss(card.insightId, card.summaryId)}
+                isSeen={card.isSeen}
+                onDismiss={() => handleInsightDismiss(card.insightId)}
               />
             ) : (
               <SummaryCard
                 key={card.id}
                 summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
-                onClick={() => handleSummaryClick(card.summary.id)}
+                onClick={() => void handleSummaryClick(card.summary.id)}
                 onDismiss={() => void handleSummaryDismiss(card.summary.id)}
               />
             ),
@@ -307,13 +309,11 @@ export function FeedPage() {
                 }
                 tags={action.tags}
                 imageUrl={action.imageUrl}
-                onClick={() => handleCardClick(action.id)}
+                onClick={() => void handleCardClick(action.id)}
                 onDismiss={() => void handleActionDismiss(action.id)}
                 dismissLabel="Dismiss action"
-                className={cn(
-                  'hover:shadow-lg transition-shadow duration-200',
-                  !action.seen && 'ring-2 ring-primary/40',
-                )}
+                showUnseenIndicator={!action.seen}
+                className="hover:shadow-lg transition-shadow duration-200"
               />
             ))}
         </Carousel>
@@ -335,14 +335,15 @@ export function FeedPage() {
                 <InsightCard
                   key={card.id}
                   insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
-                  onDismiss={() => void handleInsightDismiss(card.insightId, card.summaryId)}
+                  isSeen={card.isSeen}
+                  onDismiss={() => handleInsightDismiss(card.insightId)}
                   className="hover:shadow-lg transition-shadow duration-200 h-110"
                 />
               ) : (
                 <SummaryCard
                   key={card.id}
                   summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
-                  onClick={() => handleSummaryClick(card.summary.id)}
+                  onClick={() => void handleSummaryClick(card.summary.id)}
                   onDismiss={() => void handleSummaryDismiss(card.summary.id)}
                   className="hover:shadow-lg transition-shadow duration-200 h-110"
                 />

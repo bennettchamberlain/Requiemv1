@@ -21,10 +21,11 @@ interface Props {
   insight: FragmentType<typeof INSIGHT_CARD_FRAGMENT>;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
   onDismiss?: () => void;
+  isSeen?: boolean;
   className?: string;
 }
 
-export function InsightCard({ insight, onClick, onDismiss, className }: Props) {
+export function InsightCard({ insight, onClick, onDismiss, isSeen = false, className }: Props) {
   const data = useFragment(INSIGHT_CARD_FRAGMENT, insight);
 
   const description = (
@@ -64,6 +65,7 @@ export function InsightCard({ insight, onClick, onDismiss, className }: Props) {
       onClick={onClick}
       onDismiss={onDismiss}
       dismissLabel="Dismiss insight"
+      showUnseenIndicator={!isSeen}
       className={cn('border-l-4 border-l-blue-500', className)}
     />
   );

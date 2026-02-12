@@ -32,9 +32,6 @@ export function SummaryCard({ summary, onClick, onDismiss, className }: Props) {
   const description = (
     <div className="flex flex-col gap-3">
       <div className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-        {!data.seen && (
-          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">New</span>
-        )}
         <span className="px-2 py-0.5 rounded bg-muted">{data.periodType}</span>
         <span className="px-2 py-0.5 rounded bg-muted">{data.activityCounts.total} activities</span>
       </div>
@@ -57,6 +54,7 @@ export function SummaryCard({ summary, onClick, onDismiss, className }: Props) {
       onClick={onClick}
       onDismiss={onDismiss}
       dismissLabel="Dismiss summary"
+      showUnseenIndicator={!data.seen}
       className={className}
     />
   );

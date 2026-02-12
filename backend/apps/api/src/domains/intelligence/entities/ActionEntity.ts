@@ -35,6 +35,9 @@ export class ActionEntity {
   @Column({ type: 'boolean', default: false })
   seen!: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  dismissed!: boolean;
+
   @Column({ type: 'text', name: 'thread_id', nullable: true })
   threadId!: string;
 
@@ -61,6 +64,7 @@ export class ActionEntity {
       priority: entity.priority,
       metadata: entity.metadata,
       seen: entity.seen ?? false,
+      dismissed: entity.dismissed ?? false,
       threadId: entity.threadId,
       thread: entity.thread ? ThreadEntity.toEgressType(entity.thread) : undefined,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,

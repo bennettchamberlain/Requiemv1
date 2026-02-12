@@ -18,6 +18,7 @@ interface Props {
   onExpand?: MouseEventHandler;
   onDismiss?: MouseEventHandler<HTMLButtonElement>;
   dismissLabel?: string;
+  showUnseenIndicator?: boolean;
 }
 
 export function BentoCard({
@@ -32,6 +33,7 @@ export function BentoCard({
   onExpand,
   onDismiss,
   dismissLabel = 'Dismiss card',
+  showUnseenIndicator = false,
 }: Props) {
   const { isMobile } = useDeviceLayout();
 
@@ -88,6 +90,14 @@ export function BentoCard({
     </Button>
   ) : null;
 
+  const unseenIndicator = showUnseenIndicator ? (
+    <span
+      className="absolute left-3 top-3 z-30 h-2.5 w-2.5 rounded-full bg-primary/35"
+      aria-label="New item"
+      title="New item"
+    />
+  ) : null;
+
   if (isMobile) {
     return (
       <div
@@ -98,6 +108,7 @@ export function BentoCard({
         )}
         onClick={handleClick}
       >
+        {unseenIndicator}
         {dismissButton}
         {imageUrl && (
           <div
@@ -159,13 +170,14 @@ export function BentoCard({
         )}
         onClick={handleClick}
       >
+        {unseenIndicator}
         {dismissButton}
         <div className="flex w-full justify-between content-start">
           <h1 className="text-2xl font-semibold">{title}</h1>
 
           {(tags?.length ?? 0) > 0 && (
             <div>
-              <div className="flex flex-wrap gap-1 justify-end">
+              <div className={cn('flex flex-wrap gap-1 justify-end', onDismiss && 'pr-10')}>
                 {tags.map((tag) => (
                   <Tag key={tag} text={tag} />
                 ))}
@@ -210,6 +222,7 @@ export function BentoCard({
       )}
       onClick={handleClick}
     >
+      {unseenIndicator}
       {dismissButton}
       <div className="flex flex-col flex-1 gap-4 justify-between p-4">
         <div>
@@ -240,7 +253,12 @@ export function BentoCard({
 
       <div className="flex flex-col w-50 justify-between content-end text-right relative overflow-hidden rounded-tr-lg rounded-br-lg select-none">
         {(tags?.length ?? 0) > 0 && (
-          <div className="flex flex-wrap gap-1 justify-end relative z-10 p-4 [background-image:radial-gradient(circle_at_top_right,_rgba(255,255,255,0.9),_rgba(255,255,255,0.1))]">
+          <div
+            className={cn(
+              'flex flex-wrap gap-1 justify-end relative z-10 p-4 [background-image:radial-gradient(circle_at_top_right,_rgba(255,255,255,0.9),_rgba(255,255,255,0.1))]',
+              onDismiss && 'pr-12',
+            )}
+          >
             {tags.map((tag) => (
               <Tag key={tag} text={tag} />
             ))}

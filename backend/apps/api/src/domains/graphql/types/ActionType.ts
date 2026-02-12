@@ -46,6 +46,9 @@ export class ActionType implements Node, Taggable {
   @Field(() => Boolean)
   seen!: boolean;
 
+  @Field(() => Boolean)
+  dismissed!: boolean;
+
   @Field(() => Int, { nullable: true, description: 'Priority/relevance level 1-10' })
   priority!: number | null;
 
@@ -72,6 +75,7 @@ export class ActionType implements Node, Taggable {
       text: action.text,
       imageUrl: action.imageUrl,
       seen: action.seen ?? false,
+      dismissed: action.dismissed ?? false,
       priority: action.priority,
       metadata: {
         seen: Boolean(metadata.seen),
