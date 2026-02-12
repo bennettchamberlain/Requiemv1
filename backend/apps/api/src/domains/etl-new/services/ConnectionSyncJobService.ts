@@ -4,14 +4,8 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
-import { EventService } from '@ci/domains/events';
 
 import { ConnectionSyncJobEntity } from '../entities/ConnectionSyncJobEntity';
-import {
-  ConnectionSyncJobCreatedEvent,
-  ConnectionSyncJobUpdatedEvent,
-  ConnectionSyncJobDeletedEvent,
-} from '../events';
 import {
   type ConnectionSyncJob,
   type CreateConnectionSyncJobDto,
@@ -24,7 +18,6 @@ export class ConnectionSyncJobService {
   constructor(
     @InjectRepository(ConnectionSyncJobEntity)
     private readonly connectionSyncJobRepository: Repository<ConnectionSyncJobEntity>,
-    private readonly eventService: EventService,
   ) {}
 
   async create(context: UserServiceContext, data: CreateConnectionSyncJobDto): Promise<ConnectionSyncJob> {
@@ -42,10 +35,6 @@ export class ConnectionSyncJobService {
     });
 
     const result = await this.connectionSyncJobRepository.save(SyncJob);
-
-    await this.eventService.send(ConnectionSyncJobCreatedEvent, {
-      connectionSyncJobId: result.id,
-    });
 
     return ConnectionSyncJobEntity.toEgressType(result);
   }
@@ -184,10 +173,6 @@ export class ConnectionSyncJobService {
     if (SyncJob) {
       Object.assign(SyncJob, updateData);
       await this.connectionSyncJobRepository.save(SyncJob);
-
-      await this.eventService.send(ConnectionSyncJobUpdatedEvent, {
-        connectionSyncJobId: id,
-      });
     } else {
       return null;
     }
@@ -216,10 +201,6 @@ export class ConnectionSyncJobService {
       }),
     });
 
-    await this.eventService.send(ConnectionSyncJobDeletedEvent, {
-      connectionSyncJobId: id,
-    });
-
     return true;
   }
 
@@ -229,10 +210,6 @@ export class ConnectionSyncJobService {
     status: 'success' | 'failed',
     error?: Record<string, unknown>,
   ): Promise<ConnectionSyncJob | null> {
-    await this.eventService.send(ConnectionSyncJobUpdatedEvent, {
-      connectionSyncJobId: id,
-    });
-
     return this.update(context, id, {
       status,
       completedAt: new Date(),
