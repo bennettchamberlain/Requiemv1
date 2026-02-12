@@ -1,5 +1,11 @@
 import type { IndexableEntity } from '@ci/domains/search-next';
 
+export enum FileVariant {
+  ORIGINAL = 'original',
+  PREVIEW = 'preview',
+  THUMBNAIL = 'thumbnail',
+}
+
 export interface FileQuery {
   filePath?: string;
   mimeType?: string;
@@ -16,6 +22,11 @@ export interface FileQuery {
   fileHash?: string;
   size?: number;
   user?: { id: string };
+}
+
+export interface CreateFileDto extends Express.Multer.File {
+  variant?: FileVariant;
+  parentId?: string | null;
 }
 
 export interface UpdateFileDto {

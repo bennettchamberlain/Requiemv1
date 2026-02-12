@@ -1,14 +1,4 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
-
-import { UserEntity, type User } from '@ci/domains/user';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity({ schema: 'ci', name: 'files' })
 export class FileEntity {
@@ -54,12 +44,14 @@ export class FileEntity {
   @Column({ type: 'bigint', name: 'file_size_bytes' })
   size!: number;
 
-  @Column({ type: 'boolean', name: 'analysis_completed', default: false })
-  analysisCompleted!: boolean;
+  @Column({ type: 'text', name: 'variant', nullable: true })
+  variant!: string | null;
 
-  @ManyToOne(() => UserEntity, { nullable: true })
-  @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  @Column({ type: 'text', name: 'parent_id', nullable: true })
+  parentId!: string | null;
+
+  @Column({ type: 'text', name: 'user_id' })
+  userId?: string;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
@@ -83,16 +75,14 @@ export class FileEntity {
       bucket: entity.bucket,
       contentType: entity.contentType,
       size: entity.size,
-      analysisCompleted: entity.analysisCompleted,
+      variant: entity.variant,
+      parentId: entity.parentId,
+      userId: entity.userId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
-      user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
     };
   }
 }
 
-export type File = Readonly<Omit<FileEntity, 'user'>> & {
-  user?: User;
-};
-
+export type File = Readonly<FileEntity>;
 export type SignedFile = File & { readonly url: string };

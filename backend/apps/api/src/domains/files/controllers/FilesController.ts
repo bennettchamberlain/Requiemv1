@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+
 import {
   BadRequestException,
   Controller,
@@ -19,7 +21,12 @@ export class FilesController {
 
   @UseGuards(JwtAuthGuard)
   @Post('upload')
-  @UseInterceptors(FilesInterceptor('files', undefined, { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FilesInterceptor('files', undefined, {
+      dest: tmpdir(),
+      limits: { fileSize: 10 * 1024 * 1024 * 1024 },
+    }),
+  )
   async upload(@Context() context: RequestContext, @UploadedFiles() files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');

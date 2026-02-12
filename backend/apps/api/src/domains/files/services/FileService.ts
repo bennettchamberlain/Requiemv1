@@ -1,4 +1,7 @@
-import { createHmac } from 'crypto';
+import { createHash } from 'crypto';
+import { createReadStream, unlink } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'stream/promises';
 
 import {
   S3Client,
@@ -8,24 +11,20 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, NotFoundException, NotImplementedException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
-import {
-  SYSTEM_USER,
-  type RequestContext,
-  type ServiceContext,
-  type UserServiceContext,
-} from '@ci/common/context';
+import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 import { FileUploadedEvent } from '@ci/domains/files/events';
 
 import { SignedFile, FileEntity } from '../entities/FileEntity';
-import type { FileQuery, UpdateFileDto } from '../types';
+import type { CreateFileDto, FileQuery } from '../types';
+import { FileVariant } from '../types';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -89,17 +88,17 @@ export class FileService implements OnModuleInit {
     }
   }
 
-  async create(context: UserServiceContext, file: Express.Multer.File): Promise<SignedFile> {
+  async create(context: UserServiceContext, file: CreateFileDto): Promise<SignedFile> {
     const fileId = uuidv7();
     const fileKey = uuidv4();
     const bucket = config.staticfiles.bucket;
 
-    // Construct S3 path for file_path (required field)
-    const filePath = `s3://${bucket}/${fileKey}`;
+    const s3FilePath = `s3://${bucket}/${fileKey}`;
+    const fileHash = await this.getFileHash(file);
 
     const entity = this.fileRepository.create({
       id: fileId,
-      filePath: filePath,
+      filePath: s3FilePath,
       filename: file.originalname,
       storageType: 'cloud', // S3/Minio is cloud storage
       storageProvider: 's3',
@@ -109,22 +108,32 @@ export class FileService implements OnModuleInit {
       originalName: file.originalname,
       contentType: file.mimetype,
       size: file.size,
-      fileHash: createHmac('sha256', config.auth.session.fieldPepper).update(file.buffer).digest('hex'),
-      user: {
-        id: context.userId,
-      },
+      fileHash: fileHash,
+      variant: file.variant ?? FileVariant.ORIGINAL,
+      userId: context.userId,
+      parentId: file.parentId ?? null,
     });
 
     const result = await this.fileRepository.save(entity);
 
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: result.bucket ?? config.staticfiles.bucket,
-        Key: result.key!,
-        Body: file.buffer,
-        ContentType: result.contentType,
-      }),
-    );
+    try {
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: result.bucket ?? config.staticfiles.bucket,
+          Key: result.key!,
+          Body: file.buffer ?? createReadStream(file.path),
+          ContentType: result.contentType,
+        }),
+      );
+    } finally {
+      if (file.path) {
+        unlink(file.path, (err) => {
+          if (err) {
+            this.logger.error(`Failed to delete temporary file ${file.path}`, err);
+          }
+        });
+      }
+    }
 
     return this.signFile(result);
   }
@@ -133,15 +142,12 @@ export class FileService implements OnModuleInit {
     const result = await this.fileRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
       order: {
         createdAt: 'DESC',
       },
-      relations: ['user'],
     });
 
     return this.signFiles(result);
@@ -152,12 +158,9 @@ export class FileService implements OnModuleInit {
       where: {
         id,
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
-      relations: ['user'],
     });
 
     if (result == null) {
@@ -176,12 +179,9 @@ export class FileService implements OnModuleInit {
       where: {
         id: In(ids),
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
-      relations: ['user'],
     });
 
     const signedFiles = await this.signFiles(entities);
@@ -191,43 +191,19 @@ export class FileService implements OnModuleInit {
     return ids.map((id) => map.get(id) ?? null);
   }
 
-  async update(context: ServiceContext, id: string, data: UpdateFileDto): Promise<SignedFile | null> {
-    const result = await this.fileRepository.update(
-      {
-        id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
-      },
-      data,
-    );
-
-    if (result.affected === 0) {
-      return null;
-    }
-
-    return this.findById(context, id);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async remove(context: ServiceContext, fileId: string): Promise<void> {
-    throw new NotImplementedException();
-  }
-
   async upload(context: UserServiceContext, file: Express.Multer.File): Promise<SignedFile> {
     const created = await this.create(context, file);
 
     await this.eventService.send(FileUploadedEvent, {
       fileId: created.id,
       userId: context.userId,
+      inventoryCapture: false,
     });
 
     return created;
   }
 
-  async getFileContent(context: RequestContext, key: string): Promise<Uint8Array> {
+  async getFileContent(context: ServiceContext, key: string): Promise<Uint8Array> {
     const response = await this.s3.send(
       new GetObjectCommand({
         Bucket: config.staticfiles.bucket,
@@ -242,8 +218,25 @@ export class FileService implements OnModuleInit {
     throw new Error(`S3 object body was empty for key: ${key}`);
   }
 
+  async getFileStream(context: ServiceContext, key: string): Promise<Readable> {
+    const response = await this.s3.send(
+      new GetObjectCommand({
+        Bucket: config.staticfiles.bucket,
+        Key: key,
+      }),
+    );
+
+    if (!response.Body) {
+      throw new Error(`S3 object body was empty for key: ${key}`);
+    }
+
+    // AWS SDK v3 SdkStream implements Symbol.asyncIterator, so we can
+    // wrap it in a Node Readable without unsafe casts or web-stream mismatches.
+    return Readable.from(response.Body as AsyncIterable<Uint8Array>);
+  }
+
   async upsertExternal(
-    context: RequestContext,
+    context: UserServiceContext,
     input: {
       externalId: string;
       provider: string;
@@ -280,7 +273,7 @@ export class FileService implements OnModuleInit {
     let entity = await this.fileRepository.findOne({
       where: {
         cloudFileId: input.externalId,
-        user: { id: userId },
+        userId,
       },
     });
 
@@ -288,7 +281,7 @@ export class FileService implements OnModuleInit {
       entity = await this.fileRepository.findOne({
         where: {
           filePath: filePath,
-          user: { id: userId },
+          userId,
         },
       });
     }
@@ -333,7 +326,7 @@ export class FileService implements OnModuleInit {
         originalName: input.filename,
         contentType: input.mimeType,
         size: normalizedSize,
-        user: { id: userId },
+        userId: userId,
       });
     }
 
@@ -347,9 +340,7 @@ export class FileService implements OnModuleInit {
     return this.fileRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
         ...query,
       },
@@ -391,5 +382,21 @@ export class FileService implements OnModuleInit {
     const parsed = new URL(url);
 
     return parsed.pathname + parsed.search;
+  }
+
+  private async getFileHash(file: Express.Multer.File) {
+    if (file.buffer) {
+      return createHash('sha256').update(file.buffer).digest('hex');
+    }
+
+    if (file.path) {
+      const hash = createHash('sha256');
+
+      await pipeline(createReadStream(file.path), hash);
+
+      return hash.digest('hex');
+    }
+
+    throw new Error('File has no readable contents, cannot compute hash');
   }
 }

@@ -65,6 +65,14 @@ export class InventoryListener {
 
   @OnEvent(FileUploadedEvent, { queue: 'inventory' })
   async handleFileUploaded(payload: FileUploadedPayload) {
+    if (!payload.inventoryCapture) {
+      this.logger.log('File uploaded without inventory capture enabled, skipping processing', {
+        fileId: payload.fileId,
+      });
+
+      return;
+    }
+
     const serviceContext = toServiceContext({
       userId: payload.userId,
     });

@@ -37,13 +37,7 @@ import { SavedSearchService } from './services/SavedSearchService';
 })
 export class FilesModule {}
 
-// Entities
-export { FileEntity, SavedSearchEntity };
-
-// Services
-export { FileService, SavedSearchService };
-
-//Types
+export { FileEntity, FileService, SavedSearchEntity, SavedSearchService };
 export type { File, SignedFile, SavedSearch };
 export {
   FileCreatedEvent,
@@ -61,3 +55,4 @@ export {
   type SavedSearchUpdatedPayload,
   type SavedSearchDeletedPayload,
 } from './events';
+export { FileVariant } from './types';
