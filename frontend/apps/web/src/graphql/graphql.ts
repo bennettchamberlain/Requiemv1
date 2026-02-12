@@ -492,7 +492,6 @@ export type FileEdge = Edge & {
 
 export type FileType = Node & Taggable & {
   __typename?: 'FileType';
-  analysisCompleted: Scalars['Boolean']['output'];
   contentType: Scalars['String']['output'];
   createdAt: Scalars['DateTime']['output'];
   filename: Scalars['String']['output'];

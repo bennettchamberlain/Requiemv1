@@ -419,7 +419,6 @@ type FileEdge implements Edge {
 }
 
 type FileType implements Node & Taggable {
-  analysisCompleted: Boolean!
   contentType: String!
   createdAt: DateTime!
   filename: String!

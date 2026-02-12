@@ -159,10 +159,6 @@ export class InventoryListener {
       });
     }
 
-    await this.fileService.update(serviceContext, payload.fileId, {
-      analysisCompleted: true,
-    });
-
     this.logger.log('Inventory processing completed');
   }
 

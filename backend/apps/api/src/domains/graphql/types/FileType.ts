@@ -35,9 +35,6 @@ export class FileType implements Node, Taggable {
   @Field(() => String)
   url!: string;
 
-  @Field(() => Boolean)
-  analysisCompleted!: boolean;
-
   @Field(() => ItemConnection, { nullable: true, complexity: 5 })
   items?: ItemConnection | null;
 
@@ -60,7 +57,6 @@ export class FileType implements Node, Taggable {
       contentType: file.contentType,
       size: Number(file.size),
       url: file.url,
-      analysisCompleted: file.analysisCompleted,
       tags: [], // Hydrated by resolver
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
