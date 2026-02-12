@@ -1,17 +1,21 @@
-import { Injectable } from '@nestjs/common';
-import { CronExpression } from '@nestjs/schedule';
+import {Injectable} from '@nestjs/common';
+import {CronExpression} from '@nestjs/schedule';
 
-import { LoggerService } from '@ci/common/logging';
-import { Cron } from '@ci/common/schedule';
-import { ConnectionService } from '@ci/domains/connections';
+import {OnEvent, EventService} from "@ci/domains/events";
+import {SYSTEM_USER,} from '@ci/common/context';
+import {LoggerService} from '@ci/common/logging';
+import {Cron} from '@ci/common/schedule';
+import {ConnectionService} from '@ci/domains/connections';
 
-import { ConnectionSyncJobService } from '../services/ConnectionSyncJobService';
+import {ConnectionSyncJobService} from '../services/ConnectionSyncJobService';
+import {ConnectionSyncJobExecuteEvent} from '../events';
 
 @Injectable()
 export class SyncOrchestrator {
   constructor(
     private readonly connectionService: ConnectionService,
     private readonly connectionSyncJobService: ConnectionSyncJobService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(SyncOrchestrator.name);
@@ -157,5 +161,83 @@ export class SyncOrchestrator {
         }
       });
     });
+  }
+
+  /**
+   * This method finds sync jobs that are ready to be run (status pending) and executes them.
+   * It will only execute one endpoint job per connection to avoid rate limits.
+   * It will also limit itself to 5 total jobs in progress to avoid overwhelming the system.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async executeSyncJobs(): Promise<void> {
+    console.log('executing sync jobs');
+    const pendingSyncJobs = await this.connectionSyncJobService.search(
+      { userId: SYSTEM_USER },
+      {
+        status: 'pending',
+      },
+    );
+
+    console.log('pendingSyncJobs', pendingSyncJobs)
+
+    const inProgressSyncJobs = await this.connectionSyncJobService.search(
+      { userId: SYSTEM_USER },
+      {
+        status: 'in_progress',
+      },
+    );
+    console.log('inProgressSyncJobs', inProgressSyncJobs)
+
+    const connectionsToRun = new Set<string>();
+    const syncJobsToRun = new Set<string>();
+
+    for (const syncJob of inProgressSyncJobs) {
+      connectionsToRun.add(syncJob.connectionId);
+    }
+
+    for (const syncJob of pendingSyncJobs) {
+      if (connectionsToRun.has(syncJob.connectionId)) {
+        continue;
+      } else {
+        connectionsToRun.add(syncJob.connectionId);
+        syncJobsToRun.add(syncJob.id);
+      }
+
+      if (syncJobsToRun.size + inProgressSyncJobs.length >= 5) {
+        break;
+      }
+    }
+
+    console.log('syncJobsToRun', syncJobsToRun)
+
+    for (const jobId of syncJobsToRun) {
+      await this.eventService.send(ConnectionSyncJobExecuteEvent, {
+        connectionSyncJobId: jobId,
+      })
+    }
+  }
+
+  @OnEvent(ConnectionSyncJobExecuteEvent)
+  async handleSyncJobExecuteEvent(payload: { connectionSyncJobId: string }): Promise<void> {
+    const syncJob = await this.connectionSyncJobService.findById(
+      { userId: SYSTEM_USER },
+      payload.connectionSyncJobId,
+    );
+
+    if (!syncJob) {
+      this.logger.error('Sync job not found for execution', {
+        connectionSyncJobId: payload.connectionSyncJobId,
+      });
+
+      return;
+    }
+
+    await this.connectionSyncJobService.update(
+      { userId: SYSTEM_USER },
+      syncJob.id,
+      {
+        status: 'in_progress',
+      },
+    );
   }
 }

@@ -223,7 +223,10 @@ export class ConnectionSyncJobService {
   ): Promise<ConnectionSyncJobEntity[]> {
     let executable = this.connectionSyncJobRepository
       .createQueryBuilder('syncJob')
-      .where('user_id = :userId', { userId: context.userId });
+
+    if (context.userId !== SYSTEM_USER) {
+      executable = executable.where('user_id = :userId', { userId: context.userId });
+    }
 
     if (query.connectionId) {
       executable = executable.andWhere('connection_id = :connectionId', { connectionId: query.connectionId });
@@ -251,7 +254,7 @@ export class ConnectionSyncJobService {
       }
     }
 
-    executable = executable.orderBy('updated_at', 'DESC');
+    executable = executable.orderBy('updated_at', 'ASC');
 
     return executable.getMany();
   }
