@@ -108,17 +108,14 @@ export class DrivePromotionService {
       return;
     }
 
-    await this.fileService.upsertExternal(
+    await this.fileService.create(
       { userId },
       {
-        externalId: fileId,
-        provider: 'google_drive',
         filename: fileName,
-        mimeType,
-        url: webViewLink,
-        size: file.size ?? null,
-        modifiedAt: file.modifiedTime ?? null,
-        storageAccount: file.owners?.[0]?.emailAddress ?? null,
+        contentType: mimeType,
+        externalId: webViewLink,
+        size: file.size ? Number(file.size) : null,
+        externalUpdatedAt: file.modifiedTime ? new Date(file.modifiedTime) : null,
       },
     );
 
