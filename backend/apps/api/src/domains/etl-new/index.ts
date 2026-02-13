@@ -25,7 +25,7 @@ import { EventsModule } from '@ci/domains/events';
 import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
-import { EndpointServiceMap } from "./services/EndpointServiceMap";
+import { EndpointServiceMap } from './services/EndpointServiceMap';
 
 /**
  * @internal

@@ -222,8 +222,7 @@ export class ConnectionSyncJobService {
     context: ServiceContext,
     query: SearchConnectionSyncJobDto,
   ): Promise<ConnectionSyncJobEntity[]> {
-    let executable = this.connectionSyncJobRepository
-      .createQueryBuilder('syncJob')
+    let executable = this.connectionSyncJobRepository.createQueryBuilder('syncJob');
 
     if (context.userId !== SYSTEM_USER) {
       executable = executable.where('user_id = :userId', { userId: context.userId });

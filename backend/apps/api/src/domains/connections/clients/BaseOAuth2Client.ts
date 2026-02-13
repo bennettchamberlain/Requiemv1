@@ -155,12 +155,6 @@ export abstract class BaseOAuth2Client extends BaseClient {
       grant_type: 'refresh_token',
     });
 
-    console.log('refreshing access token', connection)
-
-    console.log('tokenParams', tokenParams)
-
-    console.log('tokenEndpoint', this.tokenEndpoint)
-
     const tokenResponse = await fetch(this.tokenEndpoint, {
       method: 'POST',
       headers: {
@@ -169,8 +163,6 @@ export abstract class BaseOAuth2Client extends BaseClient {
       },
       body: tokenParams.toString(),
     });
-
-    console.log('tokenResponse', tokenResponse)
 
     if (!tokenResponse.ok) {
       let errorDetails;

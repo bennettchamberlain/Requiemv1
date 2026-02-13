@@ -1,15 +1,15 @@
-import {Injectable} from '@nestjs/common';
-import {CronExpression} from '@nestjs/schedule';
+import { Injectable } from '@nestjs/common';
+import { CronExpression } from '@nestjs/schedule';
 
-import {OnEvent, EventService} from "@ci/domains/events";
-import {SYSTEM_USER,} from '@ci/common/context';
-import {LoggerService} from '@ci/common/logging';
-import {Cron} from '@ci/common/schedule';
-import {ConnectionService, ClientFactory} from '@ci/domains/connections';
+import { SYSTEM_USER } from '@ci/common/context';
+import { LoggerService } from '@ci/common/logging';
+import { Cron } from '@ci/common/schedule';
+import { ConnectionService, ClientFactory } from '@ci/domains/connections';
+import { OnEvent, EventService } from '@ci/domains/events';
 
-import {ConnectionSyncJobService} from '../services/ConnectionSyncJobService';
-import {ConnectionSyncJobExecuteEvent} from '../events';
-import { EndpointServiceMap } from "../services/EndpointServiceMap";
+import { ConnectionSyncJobExecuteEvent } from '../events';
+import { ConnectionSyncJobService } from '../services/ConnectionSyncJobService';
+import { EndpointServiceMap } from '../services/EndpointServiceMap';
 
 @Injectable()
 export class SyncOrchestrator {
@@ -73,14 +73,31 @@ export class SyncOrchestrator {
               },
             );
           } else {
-            const pendingOrInProgress = existingIncrementalSyncs.some((sync) => sync.status === 'pending' || sync.status === 'in_progress');
+            const pendingOrInProgress = existingIncrementalSyncs.some(
+              (sync) =>
+                sync.status === 'pending' ||
+                (sync.status === 'in_progress' &&
+                  new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000),
+            );
             const successes = existingIncrementalSyncs.filter((sync) => sync.status === 'success');
+            const stalledInProgress = existingIncrementalSyncs.filter(
+              (sync) =>
+                sync.status === 'in_progress' &&
+                new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000,
+            );
 
-            if (pendingOrInProgress) {
-              return;
+            if (stalledInProgress) {
+              stalledInProgress.forEach(async (sync) => {
+                await this.connectionSyncJobService.markAsCompleted(
+                  { userId: connection.userId },
+                  sync.id,
+                  'failed',
+                  { error: 'Sync job stalled in progress' },
+                );
+              });
             }
 
-            if (successes.length > 0) {
+            if (successes.length > 0 && (!pendingOrInProgress || stalledInProgress.length > 0)) {
               const success0 = successes[0];
               await this.connectionSyncJobService.create(
                 { userId: connection.userId },
@@ -108,8 +125,6 @@ export class SyncOrchestrator {
             },
           );
 
-          console.log('existingHistoricalSync', existingHistoricalSyncs)
-
           if (existingHistoricalSyncs.length === 0) {
             await this.connectionSyncJobService.create(
               { userId: connection.userId },
@@ -122,8 +137,29 @@ export class SyncOrchestrator {
               },
             );
           } else {
-            const pendingOrInProgress = existingHistoricalSyncs.some((sync) => sync.status === 'pending' || sync.status === 'in_progress');
+            const pendingOrInProgress = existingHistoricalSyncs.some(
+              (sync) =>
+                sync.status === 'pending' ||
+                (sync.status === 'in_progress' &&
+                  new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000),
+            );
             const successes = existingHistoricalSyncs.filter((sync) => sync.status === 'success');
+            const stalledInProgress = existingHistoricalSyncs.filter(
+              (sync) =>
+                sync.status === 'in_progress' &&
+                new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000,
+            );
+
+            if (stalledInProgress.length > 0) {
+              stalledInProgress.forEach(async (sync) => {
+                await this.connectionSyncJobService.markAsCompleted(
+                  { userId: connection.userId },
+                  sync.id,
+                  'failed',
+                  { error: 'Sync job stalled in progress' },
+                );
+              });
+            }
 
             if (pendingOrInProgress) {
               return;
@@ -180,7 +216,6 @@ export class SyncOrchestrator {
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async executeSyncJobs(): Promise<void> {
-    console.log('executing sync jobs');
     const pendingSyncJobs = await this.connectionSyncJobService.search(
       { userId: SYSTEM_USER },
       {
@@ -188,15 +223,12 @@ export class SyncOrchestrator {
       },
     );
 
-    console.log('pendingSyncJobs', pendingSyncJobs)
-
     const inProgressSyncJobs = await this.connectionSyncJobService.search(
       { userId: SYSTEM_USER },
       {
         status: 'in_progress',
       },
     );
-    console.log('inProgressSyncJobs', inProgressSyncJobs)
 
     const connectionsToRun = new Set<string>();
     const syncJobsToRun = new Set<string>();
@@ -218,12 +250,10 @@ export class SyncOrchestrator {
       }
     }
 
-    console.log('syncJobsToRun', syncJobsToRun)
-
     for (const jobId of syncJobsToRun) {
       await this.eventService.send(ConnectionSyncJobExecuteEvent, {
         connectionSyncJobId: jobId,
-      })
+      });
     }
   }
 
@@ -242,18 +272,11 @@ export class SyncOrchestrator {
       return;
     }
 
-    await this.connectionSyncJobService.update(
-      { userId: SYSTEM_USER },
-      syncJob.id,
-      {
-        status: 'in_progress',
-      },
-    );
+    await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
+      status: 'in_progress',
+    });
 
-    const connection = await this.connectionService.findById(
-      { userId: SYSTEM_USER },
-      syncJob.connectionId,
-    );
+    const connection = await this.connectionService.findById({ userId: SYSTEM_USER }, syncJob.connectionId);
 
     if (!connection) {
       this.logger.error('Connection not found for sync job execution', {
@@ -261,14 +284,11 @@ export class SyncOrchestrator {
         connectionSyncJobId: syncJob.id,
       });
 
-      await this.connectionSyncJobService.markAsCompleted(
-        { userId: SYSTEM_USER },
-        syncJob.id,
-        'failed',
-        { error: 'Connection not found' },
-      );
+      await this.connectionSyncJobService.markAsCompleted({ userId: SYSTEM_USER }, syncJob.id, 'failed', {
+        error: 'Connection not found',
+      });
 
-      return
+      return;
     }
 
     if (!connection.provider) {
@@ -277,12 +297,9 @@ export class SyncOrchestrator {
         connectionSyncJobId: syncJob.id,
       });
 
-      await this.connectionSyncJobService.markAsCompleted(
-        { userId: SYSTEM_USER },
-        syncJob.id,
-        'failed',
-        { error: 'Provider not found for connection' },
-      );
+      await this.connectionSyncJobService.markAsCompleted({ userId: SYSTEM_USER }, syncJob.id, 'failed', {
+        error: 'Provider not found for connection',
+      });
 
       return;
     }
@@ -298,12 +315,9 @@ export class SyncOrchestrator {
         endpointName: syncJob.endpointName,
       });
 
-      await this.connectionSyncJobService.markAsCompleted(
-        { userId: SYSTEM_USER },
-        syncJob.id,
-        'failed',
-        { error: 'No service function found for provider and endpoint' },
-      );
+      await this.connectionSyncJobService.markAsCompleted({ userId: SYSTEM_USER }, syncJob.id, 'failed', {
+        error: 'No service function found for provider and endpoint',
+      });
 
       return;
     }
@@ -313,31 +327,25 @@ export class SyncOrchestrator {
         connection: connection!,
         client,
         nextCursor: syncJob.cursor!,
-        historical: syncJob.type === 'historical'
+        historical: syncJob.type === 'historical',
       });
 
-      await this.connectionSyncJobService.update(
-        {userId: SYSTEM_USER},
-        syncJob.id,
-        {
-          data: results.data,
-          nextCursor: results.nextCursor || {},
-          error: undefined,
-          status: 'success'
-        },
-      );
-    } catch(err) {
+      await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
+        data: results.data,
+        nextCursor: results.nextCursor || {},
+        error: undefined,
+        status: 'success',
+        completedAt: new Date(),
+      });
+    } catch (err) {
       this.logger.error('Error executing sync job', {
         connectionSyncJobId: syncJob.id,
         error: err instanceof Error ? err.message : 'Unknown error',
       });
 
-      await this.connectionSyncJobService.markAsCompleted(
-        { userId: SYSTEM_USER },
-        syncJob.id,
-        'failed',
-        { error: err },
-      );
+      await this.connectionSyncJobService.markAsCompleted({ userId: SYSTEM_USER }, syncJob.id, 'failed', {
+        error: err,
+      });
     }
   }
 }
