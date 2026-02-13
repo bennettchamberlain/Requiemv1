@@ -7,6 +7,7 @@ import request from 'supertest';
 
 import { ContextService } from '@ci/common/context';
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
+import { LoggingModule } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import { FilesModule } from '..';
@@ -36,7 +37,7 @@ describe('File routes', () => {
     ];
 
     let moduleBuilder = Test.createTestingModule({
-      imports: [FilesModule],
+      imports: [FilesModule, LoggingModule],
       providers: [
         {
           provide: APP_GUARD,
@@ -48,7 +49,9 @@ describe('File routes', () => {
       .useClass(MockJwtAuthGuard)
       .overrideProvider(FileService)
       .useValue({
-        upload: jest.fn(),
+        upload: jest.fn().mockResolvedValue({ id: 'test-file-id' }),
+        getFileHash: jest.fn().mockResolvedValue('test-hash'),
+        findByHash: jest.fn().mockResolvedValue(null),
       })
       .overrideProvider(EventService)
       .useValue({});
