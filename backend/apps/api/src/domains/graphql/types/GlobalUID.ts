@@ -7,7 +7,6 @@ type ResourceType =
   | 'connection'
   | 'content'
   | 'event'
-  | 'fact'
   | 'file'
   | 'item'
   | 'message'

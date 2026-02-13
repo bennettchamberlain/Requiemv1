@@ -35,7 +35,7 @@ import type { ToolExecutionContext } from '../../core/types';
 const DatabaseSearchInputSchema = z.object({
   query: z.string().min(1).max(500),
   searchMode: z.enum(['semantic', 'keyword', 'hybrid', 'auto']).optional(),
-  scopes: z.array(z.enum(['entities', 'facts', 'documents', 'messages'])).optional(),
+  scopes: z.array(z.enum(['entities', 'documents', 'messages'])).optional(),
   entityTypes: z.array(z.string()).optional(),
   includeRelationships: z.boolean().optional(),
   maxResults: z.number().int().min(1).max(100).optional(),
@@ -61,7 +61,7 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchResu
     name: 'databaseSearch',
     description:
       'Search across all your personal data using natural language or keywords. ' +
-      'Searches entities (people, places, concepts), facts, documents, and conversation messages. ' +
+      'Searches entities (people, places, concepts), documents, and conversation messages. ' +
       'Use this for broad searches like "find everything about coffee" or "when did I last visit Paris". ' +
       'For specific graph queries like "my family members", use readKnowledge instead. ' +
       'For precise entity lookups, use readKnowledge with filters.',

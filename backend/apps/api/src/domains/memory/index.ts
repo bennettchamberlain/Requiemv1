@@ -31,7 +31,6 @@ import { type Communication, CommunicationEntity } from './entities/Communicatio
 import { type Concept, ConceptEntity } from './entities/ConceptEntity';
 import { ContentEntity } from './entities/ContentEntity';
 import { type Event, EventEntity } from './entities/EventEntity';
-import { type Fact, FactEntity } from './entities/FactEntity';
 import { FileEntity } from './entities/FileEntity';
 import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { type Item, type InventoryCondition, ItemEntity } from './entities/ItemEntity';
@@ -44,7 +43,6 @@ import { CommunicationService } from './services/CommunicationService';
 import { ConceptService } from './services/ConceptService';
 import { ContentService } from './services/ContentService';
 import { EventService } from './services/EventService';
-import { FactService } from './services/FactService';
 import { FileService } from './services/FileService';
 import { GraphEventService } from './services/GraphEventService';
 import { GraphQueryService } from './services/GraphQueryService';
@@ -75,7 +73,6 @@ import { UserContextService } from './services/UserContextService';
       BrowserActivityEntity,
       UserEntity,
       RelationshipEntity,
-      FactEntity,
     ]),
     UserModule,
     EventsModule,
@@ -86,7 +83,6 @@ import { UserContextService } from './services/UserContextService';
     CommunicationService,
     ContentService,
     EventService,
-    FactService,
     GraphEventService,
     GraphUtilityService,
     GraphQueryService,
@@ -104,7 +100,6 @@ import { UserContextService } from './services/UserContextService';
     CommunicationService,
     ContentService,
     EventService,
-    FactService,
     GraphEventService,
     ItemService,
     PersonService,
@@ -138,7 +133,6 @@ export {
   ContentService,
   EventService,
   CommunicationService,
-  FactService,
   GraphEventService,
   ItemService,
   PersonService,
@@ -153,5 +147,5 @@ export {
 
 export type { Content } from './entities/ContentEntity';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
-export type { Concept, Event, Fact, Item, InventoryCondition, Person, Communication, Place };
+export type { Concept, Event, Item, InventoryCondition, Person, Communication, Place };
 export { CommunicationDirection, CommunicationType } from './types';
