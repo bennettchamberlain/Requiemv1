@@ -459,24 +459,6 @@ export type EventTypeParticipantsArgs = {
   last?: InputMaybe<Scalars['Int']['input']>;
 };
 
-export type FactConnection = Connection & {
-  __typename?: 'FactConnection';
-  edges: Array<FactEdge>;
-  pageInfo: PageInfo;
-  totalCount: Scalars['Int']['output'];
-};
-
-export type FactEdge = Edge & {
-  __typename?: 'FactEdge';
-  cursor: Scalars['String']['output'];
-  node: FactType;
-};
-
-export type FactType = Node & {
-  __typename?: 'FactType';
-  id: Scalars['ID']['output'];
-};
-
 export type FileConnection = Connection & {
   __typename?: 'FileConnection';
   edges: Array<FileEdge>;
@@ -968,8 +950,6 @@ export type Query = {
   contents: ContentConnection;
   event?: Maybe<EventType>;
   events: EventConnection;
-  fact?: Maybe<FactType>;
-  facts: FactConnection;
   file?: Maybe<FileType>;
   files: FileConnection;
   item?: Maybe<ItemType>;
@@ -1097,19 +1077,6 @@ export type QueryEventArgs = {
 
 
 export type QueryEventsArgs = {
-  after?: InputMaybe<Scalars['String']['input']>;
-  before?: InputMaybe<Scalars['String']['input']>;
-  first?: InputMaybe<Scalars['Int']['input']>;
-  last?: InputMaybe<Scalars['Int']['input']>;
-};
-
-
-export type QueryFactArgs = {
-  id: Scalars['ID']['input'];
-};
-
-
-export type QueryFactsArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;

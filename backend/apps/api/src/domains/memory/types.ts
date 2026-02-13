@@ -367,7 +367,6 @@ export interface CreateCommunicationDto {
   participants_metadata?: Record<string, unknown>;
   subject?: string;
   content: string;
-  content_embedding?: number[];
   attachments?: unknown[];
   duration_seconds?: number;
   sentiment_score?: number;
@@ -392,7 +391,6 @@ export const createCommunicationSchema = z.object({
   participants_metadata: z.record(z.unknown()).optional(),
   subject: z.string().optional(),
   content: z.string(),
-  content_embedding: z.array(z.number()).optional(),
   attachments: z.array(z.unknown()).optional(),
   duration_seconds: z.number().optional(),
   sentiment_score: z.number().optional(),
@@ -417,7 +415,6 @@ export interface UpdateCommunicationDto {
   participants_metadata?: Record<string, unknown>;
   subject?: string;
   content: string;
-  content_embedding?: number[];
   attachments?: unknown[];
   duration_seconds?: number;
   sentiment_score?: number;
@@ -442,7 +439,6 @@ export const updateCommunicationSchema = z.object({
   participants_metadata: z.record(z.unknown()).optional(),
   subject: z.string().optional(),
   content: z.string().optional(),
-  content_embedding: z.array(z.number()).optional(),
   attachments: z.array(z.unknown()).optional(),
   duration_seconds: z.number().optional(),
   sentiment_score: z.number().optional(),

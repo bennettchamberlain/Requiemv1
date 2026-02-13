@@ -53,17 +53,6 @@ export class CommunicationEntity {
   @Column({ type: 'double precision', nullable: true, name: 'urgency_score' })
   urgencyScore!: number | null;
 
-  @Column({
-    type: 'text',
-    nullable: true,
-    transformer: {
-      to: (v: number[] | null) => (v ? `[${v.join(',')}]` : null),
-      from: (v: string | null) => (v ? v.slice(1, -1).split(',').map(Number) : null),
-    },
-    name: 'content_embedding',
-  })
-  contentEmbedding!: number[] | null;
-
   @Column({ type: 'text', nullable: true })
   category!: string | null;
 
@@ -104,7 +93,6 @@ export class CommunicationEntity {
       sentimentScore: entity.sentimentScore,
       importanceScore: entity.importanceScore,
       urgencyScore: entity.urgencyScore,
-      contentEmbedding: entity.contentEmbedding,
       category: entity.category,
       summary: entity.summary,
       tags: entity.tags,

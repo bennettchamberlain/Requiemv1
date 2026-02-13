@@ -23,16 +23,6 @@ export class GraphNodeEntity {
   @Column({ type: 'jsonb', nullable: true })
   dossier!: Record<string, unknown> | null;
 
-  @Column({
-    type: 'text',
-    nullable: true,
-    transformer: {
-      to: (v: number[] | null) => (v ? `[${v.join(',')}]` : null),
-      from: (v: string | null) => (v ? v.slice(1, -1).split(',').map(Number) : null),
-    },
-  })
-  embedding!: number[] | null;
-
   @Column({ type: 'text', nullable: true })
   search_content!: string | null;
 

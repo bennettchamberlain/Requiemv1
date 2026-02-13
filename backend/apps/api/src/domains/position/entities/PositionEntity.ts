@@ -18,7 +18,7 @@ export interface RelativeOrientation {
   [key: string]: number | undefined;
 }
 
-@Entity({ schema: 'ci', name: 'positions' })
+@Entity({ schema: 'ci', name: 'position' })
 export class PositionEntity {
   @Column({ type: 'uuid' })
   id!: string;
@@ -100,17 +100,6 @@ export class PositionEntity {
   @Column({ type: 'jsonb', default: '{}', name: 'relative_orientation' })
   relativeOrientation!: RelativeOrientation | Record<string, unknown>;
 
-  @Column({
-    type: 'text',
-    nullable: true,
-    transformer: {
-      to: (v: number[] | null) => (v ? `[${v.join(',')}]` : null),
-      from: (v: string | null) => (v ? v.slice(1, -1).split(',').map(Number) : null),
-    },
-    name: 'location_embedding',
-  })
-  locationEmbedding?: number[] | null;
-
   @Column({ type: 'boolean', default: false, name: 'is_private' })
   isPrivate!: boolean;
 
@@ -157,7 +146,6 @@ export class PositionEntity {
       referenceEntityId: entity.referenceEntityId ?? undefined,
       relativeCoordinates: entity.relativeCoordinates,
       relativeOrientation: entity.relativeOrientation,
-      locationEmbedding: entity.locationEmbedding ?? undefined,
       isPrivate: entity.isPrivate,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
       device: entity.device ? DeviceEntity.toEgressType(entity.device) : undefined,

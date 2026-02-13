@@ -473,7 +473,6 @@ export class PositionService {
       entity.referenceEntityId = row.reference_entity_id as string | null;
       entity.relativeCoordinates = (row.relative_coordinates as Record<string, unknown>) || {};
       entity.relativeOrientation = (row.relative_orientation as Record<string, unknown>) || {};
-      entity.locationEmbedding = this.parseLocationEmbedding(row.location_embedding);
       entity.isPrivate = (row.is_private as boolean) ?? false;
 
       return PositionEntity.toEgressType(entity);
@@ -504,22 +503,6 @@ export class PositionService {
           coordinates: [lon, lat],
         };
       }
-    }
-
-    return null;
-  }
-
-  private parseLocationEmbedding(embedding: unknown): number[] | null {
-    if (!embedding) {
-      return null;
-    }
-
-    if (typeof embedding === 'string') {
-      return embedding.slice(1, -1).split(',').map(Number);
-    }
-
-    if (Array.isArray(embedding)) {
-      return embedding as number[];
     }
 
     return null;
