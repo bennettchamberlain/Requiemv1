@@ -1,8 +1,10 @@
+import { unlink } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import {
   BadRequestException,
   Controller,
+  Logger,
   Post,
   UploadedFiles,
   UseGuards,
@@ -34,6 +36,58 @@ export class FilesController {
 
     const serviceContext = toServiceContext(context);
 
-    return await Promise.all(files.map((file) => this.fileService.upload(serviceContext, file)));
+    try {
+      const filesWithHashes = await Promise.all(
+        files.map(async (file) => ({
+          file,
+          hash: await this.fileService.getFileHash({
+            buffer: file.buffer,
+            path: file.path,
+          }),
+        })),
+      );
+
+      const uniqueByHash = new Map<string, Express.Multer.File>();
+
+      for (const { file, hash } of filesWithHashes) {
+        if (hash && !uniqueByHash.has(hash)) {
+          uniqueByHash.set(hash, file);
+        } else if (!hash) {
+          uniqueByHash.set(file.originalname + Date.now(), file);
+        }
+      }
+
+      const entities = await Promise.all(
+        Array.from(uniqueByHash.entries()).map(async ([hash, file]) => {
+          const existing = await this.fileService.findByHash(serviceContext, hash);
+
+          if (existing) {
+            return existing;
+          }
+
+          return this.fileService.upload(serviceContext, {
+            filename: file.originalname,
+            contentType: file.mimetype,
+            size: file.size,
+            buffer: file.buffer,
+            path: file.path,
+          });
+        }),
+      );
+
+      return entities.map((entity) => ({
+        id: entity.id,
+      }));
+    } finally {
+      for (const file of files) {
+        if (file.path) {
+          unlink(file.path, (err) => {
+            if (err) {
+              Logger.error(`Failed to delete temporary file ${file.path}`, FilesController.name);
+            }
+          });
+        }
+      }
+    }
   }
 }

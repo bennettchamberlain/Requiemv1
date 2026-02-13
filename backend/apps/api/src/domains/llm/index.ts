@@ -28,6 +28,7 @@ import { ToolsModule } from '@ci/domains/tools';
 
 import { OllamaController } from './controllers/OllamaController';
 import { AnswerInferenceCron } from './cron/AnswerInferenceCron';
+import { ImageDescriptionListener } from './listeners/ImageDescriptionListener';
 import { InventoryListener } from './listeners/InventoryListener';
 import { OllamaService } from './services/OllamaService';
 
@@ -36,7 +37,13 @@ import { OllamaService } from './services/OllamaService';
  */
 @Module({
   imports: [ConversationModule, EventsModule, FilesModule, IntelligenceModule, MemoryModule, ToolsModule],
-  providers: [AnswerInferenceCron, AnswerInferenceCron, InventoryListener, OllamaService],
+  providers: [
+    AnswerInferenceCron,
+    AnswerInferenceCron,
+    ImageDescriptionListener,
+    InventoryListener,
+    OllamaService,
+  ],
   controllers: [OllamaController],
   exports: [],
 })

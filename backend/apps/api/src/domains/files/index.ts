@@ -22,7 +22,7 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesController } from './controllers/FilesController';
 import { FileEntity, type File, type SignedFile } from './entities/FileEntity';
 import { SavedSearchEntity, type SavedSearch } from './entities/SavedSearchEntity';
-import { ThumbnailGenerationListener } from './listeners/ThumbnailGenerationListener';
+import { ImageDownscalingListener } from './listeners/ImageDownscalingListener';
 import { FileService } from './services/FileService';
 import { SavedSearchService } from './services/SavedSearchService';
 
@@ -31,7 +31,7 @@ import { SavedSearchService } from './services/SavedSearchService';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([FileEntity, SavedSearchEntity]), EventsModule],
-  providers: [FileService, SavedSearchService, ThumbnailGenerationListener],
+  providers: [FileService, SavedSearchService, ImageDownscalingListener],
   controllers: [FilesController],
   exports: [FileService, SavedSearchService],
 })
@@ -44,6 +44,7 @@ export {
   FileUpdatedEvent,
   FileUploadedEvent,
   FileRemovedEvent,
+  PreviewGeneratedEvent,
   SavedSearchCreatedEvent,
   SavedSearchUpdatedEvent,
   SavedSearchDeletedEvent,
@@ -51,6 +52,7 @@ export {
   type FileUpdatedPayload,
   type FileUploadedPayload,
   type FileDeletedPayload,
+  type PreviewGeneratedPayload,
   type SavedSearchCreatedPayload,
   type SavedSearchUpdatedPayload,
   type SavedSearchDeletedPayload,
