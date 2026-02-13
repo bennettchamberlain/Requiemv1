@@ -88,7 +88,7 @@ export interface OneDriveFileEntity {
 
 @Injectable()
 export class MicrosoftClient extends BaseOAuth2Client {
-  constructor(protected readonly logger: LoggerService) {
+  constructor(readonly logger: LoggerService) {
     super();
     this.logger.setContext(MicrosoftClient.name);
   }

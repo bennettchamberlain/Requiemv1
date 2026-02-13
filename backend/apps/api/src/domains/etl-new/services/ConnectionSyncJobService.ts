@@ -31,6 +31,7 @@ export class ConnectionSyncJobService {
       endpointName: data.endpointName,
       status: data.status ?? 'pending',
       type: data.type,
+      cursor: data.cursor || {},
       properties: data.properties ?? null,
     });
 
@@ -254,7 +255,7 @@ export class ConnectionSyncJobService {
       }
     }
 
-    executable = executable.orderBy('updated_at', 'ASC');
+    executable = executable.orderBy('updated_at', 'DESC');
 
     return executable.getMany();
   }

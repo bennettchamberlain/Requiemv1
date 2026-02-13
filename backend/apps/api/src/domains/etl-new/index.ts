@@ -25,6 +25,7 @@ import { EventsModule } from '@ci/domains/events';
 import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
+import { EndpointServiceMap } from "./services/EndpointServiceMap";
 
 /**
  * @internal
@@ -35,7 +36,7 @@ import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
     ConnectionsModule,
     EventsModule,
   ],
-  providers: [ConnectionSyncJobService, SyncOrchestrator],
+  providers: [ConnectionSyncJobService, EndpointServiceMap, SyncOrchestrator],
   exports: [ConnectionSyncJobService],
 })
 export class EtlNewModule {}
