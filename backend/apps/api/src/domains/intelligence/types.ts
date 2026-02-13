@@ -8,6 +8,7 @@ export interface CreateActionDto {
   priority?: number;
   threadId: string;
   seen?: boolean;
+  dismissed?: boolean;
 }
 
 export interface CreateAnswerDto {

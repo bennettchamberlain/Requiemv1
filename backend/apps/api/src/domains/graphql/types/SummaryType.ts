@@ -78,6 +78,9 @@ export class SummaryType implements Node {
   @Field(() => Boolean)
   seen!: boolean;
 
+  @Field(() => Boolean)
+  dismissed!: boolean;
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -109,6 +112,7 @@ export class SummaryType implements Node {
       moodIndicators: source.moodIndicators,
       confidenceScore: source.confidenceScore,
       seen: source.seen,
+      dismissed: source.dismissed ?? false,
       createdAt: source.createdAt,
       updatedAt: source.updatedAt,
     };
