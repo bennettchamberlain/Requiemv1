@@ -162,6 +162,36 @@ type ConnectionEdge implements Edge {
   node: ConnectionType!
 }
 
+type ConnectionSyncJobConnection implements Connection {
+  edges: [ConnectionSyncJobEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ConnectionSyncJobEdge implements Edge {
+  cursor: String!
+  node: ConnectionSyncJobType!
+}
+
+type ConnectionSyncJobType implements Node {
+  completedAt: DateTime
+  connection: ConnectionType
+  connectionId: ID!
+  createdAt: DateTime!
+  cursor: JSON
+  data: JSON!
+  endpointName: String!
+  error: JSON
+  id: ID!
+  jobId: ID
+  nextCursor: JSON
+  properties: JSON
+  status: String!
+  type: String!
+  updatedAt: DateTime!
+  userId: ID!
+}
+
 type ConnectionType implements Node {
   active: Boolean!
   activeEndpoints: [String!]!
@@ -230,6 +260,26 @@ input CreateConnectionInput {
 
 type CreateConnectionPayload {
   connection: ConnectionType
+  success: Boolean!
+}
+
+input CreateConnectionSyncJobInput {
+  connectionId: ID!
+  cursor: JSON
+  data: JSON
+  endpointName: String!
+  error: JSON
+  id: ID
+  jobId: ID
+  nextCursor: JSON
+  properties: JSON
+  status: String
+  type: String!
+  userId: ID!
+}
+
+type CreateConnectionSyncJobPayload {
+  connectionSyncJob: ConnectionSyncJobType
   success: Boolean!
 }
 
@@ -530,6 +580,7 @@ type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
   createConnection(input: CreateConnectionInput!): CreateConnectionPayload!
+  createConnectionSyncJob(input: CreateConnectionSyncJobInput!): CreateConnectionSyncJobPayload!
   createContent(input: CreateContentInput!): ContentType!
   createEvent(input: CreateEventInput!): EventType!
   createItem(input: CreateItemInput!): CreateItemPayload!
@@ -541,6 +592,7 @@ type Mutation {
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
@@ -568,6 +620,7 @@ type Mutation {
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
   updateConnection(input: UpdateConnectionInput!): UpdateConnectionPayload!
+  updateConnectionSyncJob(input: UpdateConnectionSyncJobInput!): UpdateConnectionSyncJobPayload!
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
   updateItem(input: UpdateItemInput!): UpdateItemPayload!
@@ -710,6 +763,8 @@ type Query {
   concept(id: ID!): ConceptType
   concepts(after: String, before: String, first: Int, last: Int): ConceptConnection!
   connection(id: ID!): ConnectionType
+  connectionSyncJob(id: ID!): ConnectionSyncJobType
+  connectionSyncJobs(after: String, before: String, connectionId: ID, first: Int, last: Int): ConnectionSyncJobConnection!
   connections(after: String, before: String, first: Int, last: Int): ConnectionConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
@@ -967,6 +1022,25 @@ input UpdateConnectionInput {
 
 type UpdateConnectionPayload {
   connection: ConnectionType
+  success: Boolean!
+}
+
+input UpdateConnectionSyncJobInput {
+  completedAt: DateTime
+  cursor: JSON
+  data: JSON
+  endpointName: String
+  error: JSON
+  id: ID!
+  jobId: ID
+  nextCursor: JSON
+  properties: JSON
+  status: String
+  type: String
+}
+
+type UpdateConnectionSyncJobPayload {
+  connectionSyncJob: ConnectionSyncJobType
   success: Boolean!
 }
 

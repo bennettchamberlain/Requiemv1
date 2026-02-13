@@ -206,6 +206,39 @@ export type ConnectionEdge = Edge & {
   node: ConnectionType;
 };
 
+export type ConnectionSyncJobConnection = Connection & {
+  __typename?: 'ConnectionSyncJobConnection';
+  edges: Array<ConnectionSyncJobEdge>;
+  pageInfo: PageInfo;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type ConnectionSyncJobEdge = Edge & {
+  __typename?: 'ConnectionSyncJobEdge';
+  cursor: Scalars['String']['output'];
+  node: ConnectionSyncJobType;
+};
+
+export type ConnectionSyncJobType = Node & {
+  __typename?: 'ConnectionSyncJobType';
+  completedAt?: Maybe<Scalars['DateTime']['output']>;
+  connection?: Maybe<ConnectionType>;
+  connectionId: Scalars['ID']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  cursor?: Maybe<Scalars['JSON']['output']>;
+  data: Scalars['JSON']['output'];
+  endpointName: Scalars['String']['output'];
+  error?: Maybe<Scalars['JSON']['output']>;
+  id: Scalars['ID']['output'];
+  jobId?: Maybe<Scalars['ID']['output']>;
+  nextCursor?: Maybe<Scalars['JSON']['output']>;
+  properties?: Maybe<Scalars['JSON']['output']>;
+  status: Scalars['String']['output'];
+  type: Scalars['String']['output'];
+  updatedAt: Scalars['DateTime']['output'];
+  userId: Scalars['ID']['output'];
+};
+
 export type ConnectionType = Node & {
   __typename?: 'ConnectionType';
   active: Scalars['Boolean']['output'];
@@ -280,6 +313,27 @@ export type CreateConnectionInput = {
 export type CreateConnectionPayload = {
   __typename?: 'CreateConnectionPayload';
   connection?: Maybe<ConnectionType>;
+  success: Scalars['Boolean']['output'];
+};
+
+export type CreateConnectionSyncJobInput = {
+  connectionId: Scalars['ID']['input'];
+  cursor?: InputMaybe<Scalars['JSON']['input']>;
+  data?: InputMaybe<Scalars['JSON']['input']>;
+  endpointName: Scalars['String']['input'];
+  error?: InputMaybe<Scalars['JSON']['input']>;
+  id?: InputMaybe<Scalars['ID']['input']>;
+  jobId?: InputMaybe<Scalars['ID']['input']>;
+  nextCursor?: InputMaybe<Scalars['JSON']['input']>;
+  properties?: InputMaybe<Scalars['JSON']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
+  type: Scalars['String']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+export type CreateConnectionSyncJobPayload = {
+  __typename?: 'CreateConnectionSyncJobPayload';
+  connectionSyncJob?: Maybe<ConnectionSyncJobType>;
   success: Scalars['Boolean']['output'];
 };
 
@@ -609,6 +663,7 @@ export type Mutation = {
   createAnswer: AnswerType;
   createConcept: CreateConceptPayload;
   createConnection: CreateConnectionPayload;
+  createConnectionSyncJob: CreateConnectionSyncJobPayload;
   createContent: ContentType;
   createEvent: EventType;
   createItem: CreateItemPayload;
@@ -620,6 +675,7 @@ export type Mutation = {
   createSavedSearch: CreateSavedSearchPayload;
   deleteConcept: DeleteByIdPayload;
   deleteConnection: DeleteByIdPayload;
+  deleteConnectionSyncJob: DeleteByIdPayload;
   deleteItem: DeleteByIdPayload;
   deleteNote: DeleteByIdPayload;
   deletePerson: DeleteByIdPayload;
@@ -643,6 +699,7 @@ export type Mutation = {
   updateAnswer?: Maybe<AnswerType>;
   updateConcept: UpdateConceptPayload;
   updateConnection: UpdateConnectionPayload;
+  updateConnectionSyncJob: UpdateConnectionSyncJobPayload;
   updateContent?: Maybe<ContentType>;
   updateEvent?: Maybe<EventType>;
   updateItem: UpdateItemPayload;
@@ -667,6 +724,11 @@ export type MutationCreateConceptArgs = {
 
 export type MutationCreateConnectionArgs = {
   input: CreateConnectionInput;
+};
+
+
+export type MutationCreateConnectionSyncJobArgs = {
+  input: CreateConnectionSyncJobInput;
 };
 
 
@@ -721,6 +783,11 @@ export type MutationDeleteConceptArgs = {
 
 
 export type MutationDeleteConnectionArgs = {
+  input: DeleteByIdInput;
+};
+
+
+export type MutationDeleteConnectionSyncJobArgs = {
   input: DeleteByIdInput;
 };
 
@@ -817,6 +884,11 @@ export type MutationUpdateConceptArgs = {
 
 export type MutationUpdateConnectionArgs = {
   input: UpdateConnectionInput;
+};
+
+
+export type MutationUpdateConnectionSyncJobArgs = {
+  input: UpdateConnectionSyncJobInput;
 };
 
 
@@ -1011,6 +1083,8 @@ export type Query = {
   concept?: Maybe<ConceptType>;
   concepts: ConceptConnection;
   connection?: Maybe<ConnectionType>;
+  connectionSyncJob?: Maybe<ConnectionSyncJobType>;
+  connectionSyncJobs: ConnectionSyncJobConnection;
   connections: ConnectionConnection;
   content?: Maybe<ContentType>;
   contents: ContentConnection;
@@ -1117,6 +1191,20 @@ export type QueryConceptsArgs = {
 
 export type QueryConnectionArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryConnectionSyncJobArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type QueryConnectionSyncJobsArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  connectionId?: InputMaybe<Scalars['ID']['input']>;
+  first?: InputMaybe<Scalars['Int']['input']>;
+  last?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -1598,6 +1686,26 @@ export type UpdateConnectionPayload = {
   success: Scalars['Boolean']['output'];
 };
 
+export type UpdateConnectionSyncJobInput = {
+  completedAt?: InputMaybe<Scalars['DateTime']['input']>;
+  cursor?: InputMaybe<Scalars['JSON']['input']>;
+  data?: InputMaybe<Scalars['JSON']['input']>;
+  endpointName?: InputMaybe<Scalars['String']['input']>;
+  error?: InputMaybe<Scalars['JSON']['input']>;
+  id: Scalars['ID']['input'];
+  jobId?: InputMaybe<Scalars['ID']['input']>;
+  nextCursor?: InputMaybe<Scalars['JSON']['input']>;
+  properties?: InputMaybe<Scalars['JSON']['input']>;
+  status?: InputMaybe<Scalars['String']['input']>;
+  type?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateConnectionSyncJobPayload = {
+  __typename?: 'UpdateConnectionSyncJobPayload';
+  connectionSyncJob?: Maybe<ConnectionSyncJobType>;
+  success: Scalars['Boolean']['output'];
+};
+
 export type UpdateContentInput = {
   externalId?: InputMaybe<Scalars['String']['input']>;
   id: Scalars['ID']['input'];
@@ -1952,6 +2060,13 @@ export type DeleteConnectionMutationVariables = Exact<{
 
 
 export type DeleteConnectionMutation = { __typename?: 'Mutation', deleteConnection: { __typename?: 'DeleteByIdPayload', success: boolean, deletedId?: string | null } };
+
+export type GetConnectionSyncJobsQueryVariables = Exact<{
+  connectionId: Scalars['ID']['input'];
+}>;
+
+
+export type GetConnectionSyncJobsQuery = { __typename?: 'Query', connectionSyncJobs: { __typename?: 'ConnectionSyncJobConnection', totalCount: number, edges: Array<{ __typename?: 'ConnectionSyncJobEdge', cursor: string, node: { __typename?: 'ConnectionSyncJobType', id: string, cursor?: any | null, endpointName: string, nextCursor?: any | null, connectionId: string, status: string, type: string, createdAt: any, updatedAt: any, completedAt?: any | null, error?: any | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, hasPreviousPage: boolean, startCursor?: string | null, endCursor?: string | null } } };
 
 export type GetConnectionsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -2365,6 +2480,7 @@ export const GetConnectionsLightDocument = {"kind":"Document","definitions":[{"k
 export const GetConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetConnection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"connection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"active"}},{"kind":"Field","name":{"kind":"Name","value":"schedule"}},{"kind":"Field","name":{"kind":"Name","value":"tokenExpiry"}},{"kind":"Field","name":{"kind":"Name","value":"syncState"}},{"kind":"Field","name":{"kind":"Name","value":"activeEndpoints"}},{"kind":"Field","name":{"kind":"Name","value":"providerId"}},{"kind":"Field","name":{"kind":"Name","value":"needsReauth"}},{"kind":"Field","name":{"kind":"Name","value":"externalId"}},{"kind":"Field","name":{"kind":"Name","value":"provider"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"endpoints"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetConnectionQuery, GetConnectionQueryVariables>;
 export const UpdateConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateConnection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateConnectionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateConnection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"connection"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"active"}},{"kind":"Field","name":{"kind":"Name","value":"schedule"}},{"kind":"Field","name":{"kind":"Name","value":"tokenExpiry"}},{"kind":"Field","name":{"kind":"Name","value":"syncState"}},{"kind":"Field","name":{"kind":"Name","value":"activeEndpoints"}},{"kind":"Field","name":{"kind":"Name","value":"providerId"}},{"kind":"Field","name":{"kind":"Name","value":"needsReauth"}},{"kind":"Field","name":{"kind":"Name","value":"externalId"}},{"kind":"Field","name":{"kind":"Name","value":"provider"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"endpoints"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<UpdateConnectionMutation, UpdateConnectionMutationVariables>;
 export const DeleteConnectionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteConnection"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteByIdInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteConnection"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"deletedId"}}]}}]}}]} as unknown as DocumentNode<DeleteConnectionMutation, DeleteConnectionMutationVariables>;
+export const GetConnectionSyncJobsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetConnectionSyncJobs"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"connectionId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"connectionSyncJobs"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"connectionId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"connectionId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cursor"}},{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"cursor"}},{"kind":"Field","name":{"kind":"Name","value":"endpointName"}},{"kind":"Field","name":{"kind":"Name","value":"nextCursor"}},{"kind":"Field","name":{"kind":"Name","value":"connectionId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}},{"kind":"Field","name":{"kind":"Name","value":"error"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}},{"kind":"Field","name":{"kind":"Name","value":"hasPreviousPage"}},{"kind":"Field","name":{"kind":"Name","value":"startCursor"}},{"kind":"Field","name":{"kind":"Name","value":"endCursor"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}}]}}]}}]} as unknown as DocumentNode<GetConnectionSyncJobsQuery, GetConnectionSyncJobsQueryVariables>;
 export const GetConnectionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetConnections"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"connections"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cursor"}},{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"active"}},{"kind":"Field","name":{"kind":"Name","value":"schedule"}},{"kind":"Field","name":{"kind":"Name","value":"tokenExpiry"}},{"kind":"Field","name":{"kind":"Name","value":"syncState"}},{"kind":"Field","name":{"kind":"Name","value":"activeEndpoints"}},{"kind":"Field","name":{"kind":"Name","value":"providerId"}},{"kind":"Field","name":{"kind":"Name","value":"needsReauth"}},{"kind":"Field","name":{"kind":"Name","value":"externalId"}},{"kind":"Field","name":{"kind":"Name","value":"provider"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"endpoints"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}},{"kind":"Field","name":{"kind":"Name","value":"hasPreviousPage"}},{"kind":"Field","name":{"kind":"Name","value":"startCursor"}},{"kind":"Field","name":{"kind":"Name","value":"endCursor"}}]}},{"kind":"Field","name":{"kind":"Name","value":"totalCount"}}]}}]}}]} as unknown as DocumentNode<GetConnectionsQuery, GetConnectionsQueryVariables>;
 export const GetContentDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetContent"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"content"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"text"}},{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]} as unknown as DocumentNode<GetContentQuery, GetContentQueryVariables>;
 export const GetEventDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetEvent"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"event"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}},{"kind":"Field","name":{"kind":"Name","value":"location"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"properties"}}]}},{"kind":"Field","name":{"kind":"Name","value":"organizer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"participants"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetEventQuery, GetEventQueryVariables>;

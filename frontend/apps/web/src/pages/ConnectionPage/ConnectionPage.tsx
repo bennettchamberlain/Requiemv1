@@ -47,6 +47,14 @@ export interface Connection {
   lastSyncedAt?: string;
 }
 
+interface EndpointStatus {
+  [endpointName: string]: {
+    lastSuccess?: Date;
+    lastFailure?: Date;
+    error?: Record<string, unknown>;
+  };
+}
+
 export const EditConnectFormSchema = s.object({
   endpoints: s.array(s.string()).nullable().default(null),
 });
@@ -115,6 +123,36 @@ const DELETE_CONNECTION = gql(`
   }
 `);
 
+const GET_CONNECTION_SYNC_JOBS = gql(`
+  query GetConnectionSyncJobs($connectionId: ID!) {
+    connectionSyncJobs(connectionId: $connectionId) {
+      edges {
+        cursor
+        node {
+          id
+          cursor
+          endpointName
+          nextCursor
+          connectionId
+          status
+          type
+          createdAt
+          updatedAt
+          completedAt
+          error
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+      totalCount
+    }
+  }
+`);
+
 export function ConnectionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -137,7 +175,35 @@ export function ConnectionPage() {
     },
   });
 
+  const { data: syncJobData } = useQuery(GET_CONNECTION_SYNC_JOBS, {
+    variables: {
+      connectionId: GlobalUID.encode('connection', id!),
+    },
+  });
+
+  console.log('syncJobData', syncJobData);
+
   const connection = data?.connection;
+  const syncJobs = syncJobData?.connectionSyncJobs.edges.map((edge) => edge.node) || [];
+
+  const endpointStatus: EndpointStatus = {};
+
+  for (const syncJob of syncJobs) {
+    if (!endpointStatus[syncJob.endpointName]) {
+      endpointStatus[syncJob.endpointName] = {};
+    }
+
+    if (syncJob.status === 'success' && !endpointStatus[syncJob.endpointName].lastSuccess) {
+      endpointStatus[syncJob.endpointName].lastSuccess = new Date(syncJob.completedAt);
+    }
+
+    if (syncJob.status === 'failed' && !endpointStatus[syncJob.endpointName].lastFailure) {
+      endpointStatus[syncJob.endpointName].lastFailure = new Date(syncJob.completedAt);
+      endpointStatus[syncJob.endpointName].error = syncJob.error;
+    }
+  }
+
+  console.log('endpointStatus', endpointStatus);
 
   const [updateConnection] = useMutation(UPDATE_CONNECTION);
 
@@ -401,6 +467,33 @@ export function ConnectionPage() {
                 </div>
               </div>
             )}
+
+            {Object.keys(endpointStatus).length > 0 &&
+              Object.entries(endpointStatus).map(([endpointName, status]) => {
+                const errorMessage =
+                  // @ts-expect-error  Errors can vary in shape, so we try a few different paths for where it could be
+                  status.error?.error?.details?.message || status.error?.error || 'Unknown error';
+
+                return (status.lastFailure && !status.lastSuccess) ||
+                  (status.lastFailure && status.lastSuccess && status.lastFailure > status.lastSuccess) ? (
+                  <div
+                    key={endpointName}
+                    className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4 flex items-start gap-3"
+                  >
+                    <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0 text-red-600 dark:text-red-500" />
+                    <div>
+                      <h3 className="font-medium text-red-900 dark:text-red-100">
+                        Issue with {endpointName} Endpoint
+                      </h3>
+                      <p className="text-sm text-red-800 dark:text-red-200">
+                        The last sync attempt for this endpoint failed on{' '}
+                        {status.lastFailure?.toLocaleString()}.
+                      </p>
+                      <p className="text-sm text-red-800 dark:text-red-200">Error logs: {errorMessage}</p>
+                    </div>
+                  </div>
+                ) : null;
+              })}
           </Card.Content>
         </Card>
       </PageContent>
