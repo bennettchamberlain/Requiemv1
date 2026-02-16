@@ -31,6 +31,7 @@ export class ConnectionSyncJobService {
       endpointName: data.endpointName,
       status: data.status ?? 'pending',
       type: data.type,
+      cursor: data.cursor || {},
       properties: data.properties ?? null,
     });
 
@@ -221,9 +222,11 @@ export class ConnectionSyncJobService {
     context: ServiceContext,
     query: SearchConnectionSyncJobDto,
   ): Promise<ConnectionSyncJobEntity[]> {
-    let executable = this.connectionSyncJobRepository
-      .createQueryBuilder('syncJob')
-      .where('user_id = :userId', { userId: context.userId });
+    let executable = this.connectionSyncJobRepository.createQueryBuilder('syncJob');
+
+    if (context.userId !== SYSTEM_USER) {
+      executable = executable.where('user_id = :userId', { userId: context.userId });
+    }
 
     if (query.connectionId) {
       executable = executable.andWhere('connection_id = :connectionId', { connectionId: query.connectionId });

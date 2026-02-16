@@ -150,7 +150,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
     const tokenParams = new URLSearchParams({
       client_id: this.clientId,
       client_secret: this.clientSecret,
-      scope: this.scopes.join(' '),
+      scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
       refresh_token: connection.refreshToken,
       grant_type: 'refresh_token',
     });

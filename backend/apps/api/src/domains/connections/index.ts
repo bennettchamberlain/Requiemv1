@@ -61,6 +61,7 @@ export { ClientFactory } from './clients';
 export { FacebookClient, GoogleClient, MicrosoftClient };
 
 // Types
+export type { BaseClient } from './clients/BaseClient';
 export type { Connection } from './entities/ConnectionEntity';
 export type { Provider } from './entities/ProviderEntity';
 export type { SyncResponse } from './clients/types';
