@@ -976,7 +976,9 @@ export type ProviderEdge = Edge & {
 
 export type ProviderEndpointType = {
   __typename?: 'ProviderEndpointType';
+  TTL: Scalars['Float']['output'];
   description: Scalars['String']['output'];
+  iterationType: Scalars['String']['output'];
   name: Scalars['String']['output'];
 };
 

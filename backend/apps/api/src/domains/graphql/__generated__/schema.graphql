@@ -678,7 +678,9 @@ type ProviderEdge implements Edge {
 }
 
 type ProviderEndpointType {
+  TTL: Float!
   description: String!
+  iterationType: String!
   name: String!
 }
 

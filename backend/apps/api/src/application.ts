@@ -25,6 +25,7 @@ import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
+import { EtlNewModule } from '@ci/domains/etl-new';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
@@ -65,6 +66,7 @@ import { UserModule } from '@ci/domains/user';
     ConnectionsModule,
     DeviceModule,
     EtlModule,
+    EtlNewModule,
     EventsModule,
     FilesModule,
     GraphModule,
