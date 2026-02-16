@@ -47,6 +47,9 @@ export class SummaryEntity {
   @Column({ type: 'boolean', default: false })
   seen!: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  dismissed!: boolean;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -92,6 +95,7 @@ export class SummaryEntity {
       confidenceScore: entity.confidenceScore,
       metadata: entity.metadata,
       seen: entity.seen ?? false,
+      dismissed: entity.dismissed ?? false,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       // Computed fields

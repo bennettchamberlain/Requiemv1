@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
@@ -56,5 +56,29 @@ export class SummaryResolver {
     const entity = await this.summaryService.findById(serviceContext, id);
 
     return entity ? SummaryType.toType(entity) : null;
+  }
+
+  @Mutation(() => SummaryType, { nullable: true, description: 'Mark a summary as seen' })
+  async markSummaryAsSeen(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<SummaryType | null> {
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('summary', gid);
+    const updated = await this.summaryService.update(serviceContext, id, { seen: true });
+
+    return updated ? SummaryType.toType(updated) : null;
+  }
+
+  @Mutation(() => SummaryType, { nullable: true, description: 'Mark a summary as dismissed' })
+  async markSummaryAsDismissed(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<SummaryType | null> {
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('summary', gid);
+    const updated = await this.summaryService.update(serviceContext, id, { dismissed: true });
+
+    return updated ? SummaryType.toType(updated) : null;
   }
 }

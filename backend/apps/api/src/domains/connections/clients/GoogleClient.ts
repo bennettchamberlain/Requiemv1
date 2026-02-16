@@ -18,7 +18,7 @@ import type { SyncResponse } from './types';
 
 @Injectable()
 export class GoogleClient extends BaseOAuth2Client {
-  constructor(protected readonly logger: LoggerService) {
+  constructor(readonly logger: LoggerService) {
     super();
     this.logger.setContext(GoogleClient.name);
   }
