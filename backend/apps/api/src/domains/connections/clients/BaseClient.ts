@@ -5,7 +5,7 @@ import type { Connection } from '../entities/ConnectionEntity';
 import type { SyncResponse, TokenExchange } from './types';
 
 export abstract class BaseClient {
-  protected abstract readonly logger: LoggerService;
+  abstract readonly logger: LoggerService;
 
   abstract getAuthorizationUrl(connection: Connection): Promise<string>;
 

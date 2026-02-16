@@ -5,6 +5,7 @@ type ResourceType =
   | 'communication'
   | 'concept'
   | 'connection'
+  | 'connectionSyncJob'
   | 'content'
   | 'event'
   | 'fact'

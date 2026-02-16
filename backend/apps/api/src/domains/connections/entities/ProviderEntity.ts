@@ -3,6 +3,8 @@ import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } fro
 export interface ProviderEndpoint {
   name: string;
   description: string;
+  iterationType: string;
+  TTL?: number;
 }
 
 export interface ProviderTheme {

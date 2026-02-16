@@ -10,7 +10,7 @@ import type { SyncResponse } from './types';
 
 @Injectable()
 export class FacebookClient extends BaseOAuth2Client {
-  constructor(protected readonly logger: LoggerService) {
+  constructor(readonly logger: LoggerService) {
     super();
     this.logger.setContext(FacebookClient.name);
   }

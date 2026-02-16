@@ -13,10 +13,32 @@ type ActionEdge implements Edge {
   node: ActionType!
 }
 
+"""Metadata associated with an action"""
+type ActionMetadataType {
+  """Context explaining why this action is relevant"""
+  context: String
+
+  """Name of related person if applicable"""
+  relatedPerson: String
+
+  """Whether the user has seen/interacted with this action"""
+  seen: Boolean!
+
+  """Type of action: conversation_starter or time_suggestion"""
+  type: String
+}
+
 type ActionType implements Node & Taggable {
   createdAt: DateTime!
+  dismissed: Boolean!
   id: ID!
   imageUrl: String
+
+  """Action metadata including seen status"""
+  metadata: ActionMetadataType!
+
+  """Priority/relevance level 1-10"""
+  priority: Int
   seen: Boolean!
   tags: [EntityTagType!]!
   text: String!
@@ -140,6 +162,36 @@ type ConnectionEdge implements Edge {
   node: ConnectionType!
 }
 
+type ConnectionSyncJobConnection implements Connection {
+  edges: [ConnectionSyncJobEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ConnectionSyncJobEdge implements Edge {
+  cursor: String!
+  node: ConnectionSyncJobType!
+}
+
+type ConnectionSyncJobType implements Node {
+  completedAt: DateTime
+  connection: ConnectionType
+  connectionId: ID!
+  createdAt: DateTime!
+  cursor: JSON
+  data: JSON!
+  endpointName: String!
+  error: JSON
+  id: ID!
+  jobId: ID
+  nextCursor: JSON
+  properties: JSON
+  status: String!
+  type: String!
+  updatedAt: DateTime!
+  userId: ID!
+}
+
 type ConnectionType implements Node {
   active: Boolean!
   activeEndpoints: [String!]!
@@ -208,6 +260,26 @@ input CreateConnectionInput {
 
 type CreateConnectionPayload {
   connection: ConnectionType
+  success: Boolean!
+}
+
+input CreateConnectionSyncJobInput {
+  connectionId: ID!
+  cursor: JSON
+  data: JSON
+  endpointName: String!
+  error: JSON
+  id: ID
+  jobId: ID
+  nextCursor: JSON
+  properties: JSON
+  status: String
+  type: String!
+  userId: ID!
+}
+
+type CreateConnectionSyncJobPayload {
+  connectionSyncJob: ConnectionSyncJobType
   success: Boolean!
 }
 
@@ -510,6 +582,7 @@ type Mutation {
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
   createConnection(input: CreateConnectionInput!): CreateConnectionPayload!
+  createConnectionSyncJob(input: CreateConnectionSyncJobInput!): CreateConnectionSyncJobPayload!
   createContent(input: CreateContentInput!): ContentType!
   createEvent(input: CreateEventInput!): EventType!
   createItem(input: CreateItemInput!): CreateItemPayload!
@@ -521,11 +594,24 @@ type Mutation {
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
+
+  """Mark an action as dismissed"""
+  markActionAsDismissed(id: ID!): ActionType
+
+  """Mark an action as seen"""
+  markActionAsSeen(id: ID!): ActionType
+
+  """Mark a summary as dismissed"""
+  markSummaryAsDismissed(id: ID!): SummaryType
+
+  """Mark a summary as seen"""
+  markSummaryAsSeen(id: ID!): SummaryType
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
@@ -536,6 +622,7 @@ type Mutation {
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
   updateConnection(input: UpdateConnectionInput!): UpdateConnectionPayload!
+  updateConnectionSyncJob(input: UpdateConnectionSyncJobInput!): UpdateConnectionSyncJobPayload!
   updateContent(input: UpdateContentInput!): ContentType
   updateEvent(input: UpdateEventInput!): EventType
   updateItem(input: UpdateItemInput!): UpdateItemPayload!
@@ -646,7 +733,9 @@ type ProviderEdge implements Edge {
 }
 
 type ProviderEndpointType {
+  TTL: Float!
   description: String!
+  iterationType: String!
   name: String!
 }
 
@@ -676,6 +765,8 @@ type Query {
   concept(id: ID!): ConceptType
   concepts(after: String, before: String, first: Int, last: Int): ConceptConnection!
   connection(id: ID!): ConnectionType
+  connectionSyncJob(id: ID!): ConnectionSyncJobType
+  connectionSyncJobs(after: String, before: String, connectionId: ID, first: Int, last: Int): ConnectionSyncJobConnection!
   connections(after: String, before: String, first: Int, last: Int): ConnectionConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
@@ -683,6 +774,9 @@ type Query {
   events(after: String, before: String, first: Int, last: Int): EventConnection!
   fact(id: ID!): FactType
   facts(after: String, before: String, first: Int, last: Int): FactConnection!
+
+  """Get actions for the feed, prioritizing unseen actions"""
+  feedActions(limit: Int! = 5): [ActionType!]!
   file(id: ID!): FileType
   files(after: String, before: String, first: Int, last: Int): FileConnection!
   item(id: ID!): ItemType
@@ -818,6 +912,7 @@ type SummaryType implements Node {
   confidenceScore: Float
   createdAt: DateTime!
   dailyRhythm: [String!]
+  dismissed: Boolean!
   id: ID!
   insights: [InsightItemType!]!
   keyAccomplishments: [String!]
@@ -929,6 +1024,25 @@ input UpdateConnectionInput {
 
 type UpdateConnectionPayload {
   connection: ConnectionType
+  success: Boolean!
+}
+
+input UpdateConnectionSyncJobInput {
+  completedAt: DateTime
+  cursor: JSON
+  data: JSON
+  endpointName: String
+  error: JSON
+  id: ID!
+  jobId: ID
+  nextCursor: JSON
+  properties: JSON
+  status: String
+  type: String
+}
+
+type UpdateConnectionSyncJobPayload {
+  connectionSyncJob: ConnectionSyncJobType
   success: Boolean!
 }
 

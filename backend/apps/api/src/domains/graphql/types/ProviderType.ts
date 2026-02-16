@@ -12,6 +12,12 @@ export class ProviderEndpointType {
 
   @Field(() => String)
   description!: string;
+
+  @Field(() => String)
+  iterationType!: string;
+
+  @Field(() => Number)
+  TTL?: number;
 }
 
 @ObjectType()

@@ -14,6 +14,7 @@ export interface CreateSummaryDto {
   confidenceScore?: number | null;
   metadata?: Record<string, unknown> | null;
   seen?: boolean;
+  dismissed?: boolean;
 }
 
 export interface UpdateSummaryDto {
@@ -25,4 +26,5 @@ export interface UpdateSummaryDto {
   confidenceScore?: number | null;
   metadata?: Record<string, unknown> | null;
   seen?: boolean;
+  dismissed?: boolean;
 }

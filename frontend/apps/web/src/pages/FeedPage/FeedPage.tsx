@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 
 import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Breadcrumb, cn } from '@ci/shadcn';
@@ -7,16 +7,21 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useActionListService } from '@/api';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
+import { type FragmentType } from '@/graphql';
 import { useModalControls } from '@/hooks';
 
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
 
 import { FeedModal } from './FeedModal';
+import type { INSIGHT_CARD_FRAGMENT } from './InsightCard';
+import { InsightCard } from './InsightCard';
+import type { SUMMARY_CARD_FRAGMENT } from './SummaryCard';
 import { SummaryCard } from './SummaryCard';
 import { useSummariesService } from './useSummariesService';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
+const DISMISSED_INSIGHTS_STORAGE_KEY = 'feed:dismissed-insights:v1';
 
 export function FeedPage() {
   usePageTitle('Feed - Companion Intelligence');
@@ -25,12 +30,104 @@ export function FeedPage() {
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
-  const [{ data: actions, loading, error }] = useActionListService();
-  const [{ data: summaries, loading: summariesLoading, error: summariesError }] = useSummariesService();
+  const [{ data: actions, loading, error }, { markActionAsSeen, markActionAsDismissed }] =
+    useActionListService(5);
+  const [
+    { data: summaries, loading: summariesLoading, error: summariesError },
+    { markSummaryAsSeen, markSummaryAsDismissed },
+  ] = useSummariesService(10);
+  const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
+  const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
+  const [dismissedInsightIds, setDismissedInsightIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DISMISSED_INSIGHTS_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return;
+      }
+
+      setDismissedInsightIds(new Set(parsed.filter((value): value is string => typeof value === 'string')));
+    } catch {
+      setDismissedInsightIds(new Set());
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(DISMISSED_INSIGHTS_STORAGE_KEY, JSON.stringify(Array.from(dismissedInsightIds)));
+  }, [dismissedInsightIds]);
+
+  const visibleActions = useMemo(
+    () => actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id)),
+    [actions, dismissedActionIds],
+  );
+  const visibleSummaries = useMemo(
+    () => summaries.filter((summary) => !summary.dismissed && !dismissedSummaryIds.has(summary.id)),
+    [summaries, dismissedSummaryIds],
+  );
+  const visibleInsights = useMemo(
+    () =>
+      visibleSummaries.flatMap((summary) =>
+        summary.insights
+          .map((insight, idx) => ({
+            id: `${summary.id}:${idx}`,
+            summarySeen: summary.seen,
+            insight,
+          }))
+          .filter((item) => !dismissedInsightIds.has(item.id)),
+      ),
+    [dismissedInsightIds, visibleSummaries],
+  );
+  const mixedInsightSummaryCards = useMemo(() => {
+    const mixed: Array<
+      | {
+          kind: 'insight';
+          id: string;
+          insightId: string;
+          isSeen: boolean;
+          insight: (typeof visibleInsights)[number]['insight'];
+        }
+      | {
+          kind: 'summary';
+          id: string;
+          summary: (typeof visibleSummaries)[number];
+        }
+    > = [];
+    const max = Math.max(visibleInsights.length, visibleSummaries.length);
+
+    for (let index = 0; index < max; index += 1) {
+      const insight = visibleInsights[index];
+      if (insight) {
+        mixed.push({
+          kind: 'insight',
+          id: `insight:${insight.id}`,
+          insightId: insight.id,
+          isSeen: insight.summarySeen,
+          insight: insight.insight,
+        });
+      }
+
+      const summary = visibleSummaries[index];
+      if (summary) {
+        mixed.push({
+          kind: 'summary',
+          id: `summary:${summary.id}`,
+          summary,
+        });
+      }
+    }
+
+    return mixed;
+  }, [visibleInsights, visibleSummaries]);
 
   const selectedActionIndex = useMemo(
-    () => actions.findIndex((item) => item.id === actionId),
-    [actions, actionId],
+    () => visibleActions.findIndex((item) => item.id === actionId),
+    [visibleActions, actionId],
   );
 
   const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls({
@@ -43,15 +140,41 @@ export function FeedPage() {
     } else {
       closeModal();
     }
-  }, [selectedActionIndex, openModal]);
+  }, [closeModal, openModal, selectedActionIndex]);
 
   const handleCardClick = useCallback(
-    (id: string) => {
+    async (id: string) => {
       navigate(`/feed/${id}`, { replace: true });
       openModal();
+      await markActionAsSeen(id);
     },
-    [navigate, openModal],
+    [markActionAsSeen, navigate, openModal],
   );
+
+  const handleActionDismiss = useCallback(
+    async (id: string) => {
+      setDismissedActionIds((prev) => new Set(prev).add(id));
+
+      if (actionId === id) {
+        navigate('/feed', { replace: true });
+      }
+
+      await markActionAsDismissed(id);
+    },
+    [actionId, markActionAsDismissed, navigate],
+  );
+
+  const handleSummaryDismiss = useCallback(
+    async (id: string) => {
+      setDismissedSummaryIds((prev) => new Set(prev).add(id));
+      await markSummaryAsDismissed(id);
+    },
+    [markSummaryAsDismissed],
+  );
+
+  const handleInsightDismiss = useCallback((insightId: string) => {
+    setDismissedInsightIds((prev) => new Set(prev).add(insightId));
+  }, []);
 
   const handleModalClose = useCallback(() => {
     navigate('/feed', { replace: true });
@@ -59,10 +182,11 @@ export function FeedPage() {
   }, [navigate, closeModal]);
 
   const handleSummaryClick = useCallback(
-    (encodedId: string) => {
+    async (encodedId: string) => {
+      await markSummaryAsSeen(encodedId);
       navigate(`/insights/${GlobalUID.parse('summary', encodedId)}`);
     },
-    [navigate],
+    [markSummaryAsSeen, navigate],
   );
 
   if (loading) {
@@ -94,7 +218,7 @@ export function FeedPage() {
         <Carousel {...carouselProps}>
           {!loading &&
             !error &&
-            actions.map((action) => (
+            visibleActions.map((action) => (
               <BentoCard
                 key={action.id}
                 title={action.title}
@@ -105,14 +229,30 @@ export function FeedPage() {
                 }
                 tags={action.tags}
                 imageUrl={action.imageUrl}
-                onClick={() => handleCardClick(action.id)}
-                className={cn(!action.seen && 'ring-2 ring-primary/40')}
+                onClick={() => void handleCardClick(action.id)}
+                onDismiss={() => void handleActionDismiss(action.id)}
+                dismissLabel="Dismiss action"
+                showUnseenIndicator={!action.seen}
               />
             ))}
 
-          {summaries.map((summary) => (
-            <SummaryCard key={summary.id} summary={summary} onClick={() => handleSummaryClick(summary.id)} />
-          ))}
+          {mixedInsightSummaryCards.map((card) =>
+            card.kind === 'insight' ? (
+              <InsightCard
+                key={card.id}
+                insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
+                isSeen={card.isSeen}
+                onDismiss={() => handleInsightDismiss(card.insightId)}
+              />
+            ) : (
+              <SummaryCard
+                key={card.id}
+                summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
+                onClick={() => void handleSummaryClick(card.summary.id)}
+                onDismiss={() => void handleSummaryDismiss(card.summary.id)}
+              />
+            ),
+          )}
         </Carousel>
 
         {(summariesLoading || summariesError) && (
@@ -158,7 +298,7 @@ export function FeedPage() {
         <Carousel {...carouselProps} initialIndex={selectedActionIndex}>
           {!loading &&
             !error &&
-            actions.map((action) => (
+            visibleActions.map((action) => (
               <BentoCard
                 key={action.id}
                 title={action.title}
@@ -169,16 +309,16 @@ export function FeedPage() {
                 }
                 tags={action.tags}
                 imageUrl={action.imageUrl}
-                onClick={() => handleCardClick(action.id)}
-                className={cn(
-                  'hover:shadow-lg transition-shadow duration-200',
-                  !action.seen && 'ring-2 ring-primary/40',
-                )}
+                onClick={() => void handleCardClick(action.id)}
+                onDismiss={() => void handleActionDismiss(action.id)}
+                dismissLabel="Dismiss action"
+                showUnseenIndicator={!action.seen}
+                className="hover:shadow-lg transition-shadow duration-200"
               />
             ))}
         </Carousel>
 
-        <h2 className="text-2xl font-bold text-foreground">Insights</h2>
+        <h2 className="text-2xl font-bold text-foreground">Insights & Summaries</h2>
 
         <div className="space-y-3">
           {(summariesLoading || summariesError) && (
@@ -190,14 +330,25 @@ export function FeedPage() {
           )}
 
           <Carousel {...carouselProps}>
-            {summaries.map((summary) => (
-              <SummaryCard
-                key={summary.id}
-                summary={summary}
-                onClick={() => handleSummaryClick(summary.id)}
-                className="hover:shadow-lg transition-shadow duration-200 h-110"
-              />
-            ))}
+            {mixedInsightSummaryCards.map((card) =>
+              card.kind === 'insight' ? (
+                <InsightCard
+                  key={card.id}
+                  insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
+                  isSeen={card.isSeen}
+                  onDismiss={() => handleInsightDismiss(card.insightId)}
+                  className="hover:shadow-lg transition-shadow duration-200 h-110"
+                />
+              ) : (
+                <SummaryCard
+                  key={card.id}
+                  summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
+                  onClick={() => void handleSummaryClick(card.summary.id)}
+                  onDismiss={() => void handleSummaryDismiss(card.summary.id)}
+                  className="hover:shadow-lg transition-shadow duration-200 h-110"
+                />
+              ),
+            )}
           </Carousel>
         </div>
       </PageContent>
