@@ -10,6 +10,7 @@ import { CommunicationResult } from './results/CommunicationResult';
 import { ConceptResult } from './results/ConceptResult';
 import { ContentResult } from './results/ContentResult';
 import { EventResult } from './results/EventResult';
+import { FileResult } from './results/FileResult';
 import { ItemResult } from './results/ItemResult';
 import { NoteResult } from './results/NoteResult';
 import { PersonResult } from './results/PersonResult';
@@ -58,6 +59,12 @@ export function SearchModal({ open, onClose }: Props) {
             return {
               id: item.id,
               content: <EventResult event={item} />,
+            };
+
+          case 'FileType':
+            return {
+              id: item.id,
+              content: <FileResult file={item} />,
             };
 
           case 'ItemType':

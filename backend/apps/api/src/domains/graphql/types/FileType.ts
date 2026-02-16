@@ -39,7 +39,7 @@ export class FileType implements Node, Taggable {
   // requisite tweaking. Just want don't to lose context.
   @Directive('@cacheControl(maxAge: 60)')
   @Field(() => String, { nullable: true })
-  url!: string | null;
+  sourceUrl!: string | null;
 
   @Field(() => ItemConnection, { nullable: true, complexity: 5 })
   items?: ItemConnection | null;
@@ -64,7 +64,7 @@ export class FileType implements Node, Taggable {
       title: file.title,
       description: file.description,
       externalId: file.externalId,
-      url: file.url,
+      sourceUrl: file.url,
       tags: [], // Hydrated by resolver
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,

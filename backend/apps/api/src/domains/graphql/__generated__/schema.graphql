@@ -428,10 +428,10 @@ type FileType implements Node & Taggable {
   items(after: String, before: String, first: Int, last: Int): ItemConnection
   previewUrl: String
   size: Float
+  sourceUrl: String
   tags: [EntityTagType!]!
   title: String
   updatedAt: DateTime!
-  url: String
 }
 
 type InsightItemType {

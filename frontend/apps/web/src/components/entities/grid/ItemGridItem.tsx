@@ -1,4 +1,4 @@
-import { type MouseEvent } from 'react';
+import { type MouseEvent, useMemo } from 'react';
 
 import { ItemIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
@@ -12,7 +12,7 @@ export const ITEM_FRAGMENT = gql(`
     description
     file {
       id
-      url
+      sourceUrl
     }
   }
 `);
@@ -24,6 +24,10 @@ interface Props {
 
 export function ItemGridItem({ item, onClick }: Props) {
   const data = useFragment(ITEM_FRAGMENT, item);
+
+  const url = useMemo(() => {
+    return data.file?.sourceUrl ? `/static${data.file.sourceUrl}` : undefined;
+  }, [data.file?.sourceUrl]);
 
   return (
     <EntityGridItem onClick={onClick}>
@@ -39,7 +43,7 @@ export function ItemGridItem({ item, onClick }: Props) {
         {data.file && (
           <div className="rounded-sm overflow-hidden min-h-0 grow">
             <img
-              src={data.file.url}
+              src={url}
               alt={data.name ? `${data.name} image` : 'Item image'}
               className="object-cover w-full h-full"
             />

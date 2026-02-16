@@ -18,7 +18,7 @@ interface InventoryItem {
   model: string;
   currentValue: number;
   file: {
-    url: string;
+    sourceUrl: string;
   } | null;
 }
 
@@ -35,7 +35,7 @@ const GET_INVENTORY_ITEMS = gql`
           model
           currentValue
           file {
-            url
+            sourceUrl
           }
         }
       }
@@ -84,9 +84,9 @@ export function InventoryPage() {
               onClick={() => setSelectedItem(item)}
             >
               <div className="aspect-square bg-stone-100 dark:bg-zinc-800 relative overflow-hidden">
-                {item.file?.url ? (
+                {item.file?.sourceUrl ? (
                   <img
-                    src={`/static${item.file.url}`}
+                    src={`/static${item.file.sourceUrl}`}
                     alt={item.name}
                     className="w-full h-full object-cover"
                   />
