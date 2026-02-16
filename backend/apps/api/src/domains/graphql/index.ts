@@ -7,6 +7,7 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
+import { EtlNewModule } from '@ci/domains/etl-new';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
@@ -17,6 +18,7 @@ import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
 
 import { GraphQLController } from './controllers/GraphQLController';
+import { ConnectionLoader } from './loaders/ConnectionLoader';
 import { EventLoader } from './loaders/EventLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
@@ -34,6 +36,7 @@ import { BrowserActivityResolver } from './resolvers/BrowserActivityResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { ConceptResolver } from './resolvers/ConceptResolver';
 import { ConnectionResolver } from './resolvers/ConnectionResolver';
+import { ConnectionSyncJobResolver } from './resolvers/ConnectionSyncJobResolver';
 import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FactResolver } from './resolvers/FactResolver';
@@ -66,6 +69,7 @@ import { UserResolver } from './resolvers/UserResolver';
     BrowserActivityModule,
     ConnectionsModule,
     ConversationModule,
+    EtlNewModule,
     FilesModule,
     GraphModule,
     IntelligenceModule,
@@ -81,7 +85,9 @@ import { UserResolver } from './resolvers/UserResolver';
     CommunicationResolver,
     ComplexityPlugin,
     ConceptResolver,
+    ConnectionLoader,
     ConnectionResolver,
+    ConnectionSyncJobResolver,
     ContentResolver,
     NodeResolver,
     NoteResolver,
