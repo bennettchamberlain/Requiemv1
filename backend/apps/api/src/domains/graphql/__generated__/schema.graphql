@@ -664,9 +664,6 @@ type Query {
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
   event(id: ID!): EventType
   events(after: String, before: String, first: Int, last: Int): EventConnection!
-  feedActions(limit: Int! = 5): [ActionType!]!
-  fact(id: ID!): FactType
-  facts(after: String, before: String, first: Int, last: Int): FactConnection!
   file(id: ID!): FileType
   files(after: String, before: String, first: Int, last: Int): FileConnection!
   item(id: ID!): ItemType
