@@ -8,7 +8,7 @@ import { FileService, PreviewGeneratedEvent, type PreviewGeneratedPayload } from
 
 import { OllamaService } from '../services/OllamaService';
 
-const MODEL = 'llama3.2-vision:11b';
+const DEFAULT_MODEL = 'llama3.2-vision:11b';
 
 const PROMPT = `
   Analyze this image and provide a title and description.
@@ -74,9 +74,10 @@ export class ImageDescriptionListener {
 
     const fileContent = await this.fileService.getFileContent(serviceContext, thumbnail.key);
     const base64Image = Buffer.from(fileContent).toString('base64');
+    const model = payload.model ?? DEFAULT_MODEL;
 
     this.logger.log('Starting LLM chat for image description', {
-      model: MODEL,
+      model,
       previewId: payload.previewId,
       parentFileId: thumbnail.parentId,
     });
@@ -91,7 +92,7 @@ export class ImageDescriptionListener {
         },
       ],
       {
-        model: MODEL,
+        model,
         enableTools: false,
         format: 'json',
       },

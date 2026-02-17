@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
 import { fetchJson, useDeviceLayout } from '@ci/common';
-import { Dialog, cn, Button, Popover } from '@ci/shadcn';
+import { Dialog, cn, Button, Popover, useToast } from '@ci/shadcn';
 import { Send, Settings, X } from '@ci/shadcn/icons';
 
 import { useUploadFile } from '@/api';
@@ -21,15 +21,24 @@ interface Props {
 
 type MobileCaptureMode = 'photo' | 'video' | 'inventory';
 
+interface ModelCapabilitiesResponse {
+  vision: boolean;
+}
+
 export function CaptureModal({ open = false, onClose }: Props) {
   const [{ authToken }] = useAuth();
   const [{ selectedModel }] = useModel();
+  const { toast } = useToast();
 
   const { isMobile } = useDeviceLayout();
 
   const [files, setFiles] = useState<FileData[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [mobileCaptureMode, setMobileCaptureMode] = useState<MobileCaptureMode>('photo');
+  const [selectedModelSupportsVision, setSelectedModelSupportsVision] = useState<boolean | null>(null);
+  const [isCheckingModelCapabilities, setIsCheckingModelCapabilities] = useState(false);
+  const [capabilityCheckFailed, setCapabilityCheckFailed] = useState(false);
+  const modelVisionSupportCacheRef = useRef<Map<string, boolean>>(new Map());
 
   const [{ files: fileData }, { upload, reset: resetUploader }] = useUploadFile();
 
@@ -58,20 +67,121 @@ export function CaptureModal({ open = false, onClose }: Props) {
     }
   }, [open]);
 
+  useEffect(() => {
+    if (authToken == null || selectedModel == null) {
+      setSelectedModelSupportsVision(null);
+      setCapabilityCheckFailed(false);
+      setIsCheckingModelCapabilities(false);
+
+      return;
+    }
+
+    const cachedSupport = modelVisionSupportCacheRef.current.get(selectedModel);
+
+    if (cachedSupport != null) {
+      setSelectedModelSupportsVision(cachedSupport);
+      setCapabilityCheckFailed(false);
+      setIsCheckingModelCapabilities(false);
+
+      return;
+    }
+
+    let canceled = false;
+
+    setSelectedModelSupportsVision(null);
+    setCapabilityCheckFailed(false);
+    setIsCheckingModelCapabilities(true);
+
+    (async () => {
+      try {
+        const query = new URLSearchParams({ model: selectedModel }).toString();
+
+        const response = await fetchJson<ModelCapabilitiesResponse>(`/api/llm/models/capabilities?${query}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        if (canceled) {
+          return;
+        }
+
+        modelVisionSupportCacheRef.current.set(selectedModel, response.vision);
+        setSelectedModelSupportsVision(response.vision);
+      } catch {
+        if (canceled) {
+          return;
+        }
+
+        setCapabilityCheckFailed(true);
+        setSelectedModelSupportsVision(false);
+      } finally {
+        if (!canceled) {
+          setIsCheckingModelCapabilities(false);
+        }
+      }
+    })();
+
+    return () => {
+      canceled = true;
+    };
+  }, [authToken, selectedModel]);
+
+  const ensureImageModelSupported = useCallback((): boolean => {
+    if (selectedModel == null) {
+      toast.error('Select a model before capturing images.');
+
+      return false;
+    }
+
+    if (capabilityCheckFailed) {
+      toast.error('Unable to verify model image support right now. Try again.');
+
+      return false;
+    }
+
+    if (isCheckingModelCapabilities || selectedModelSupportsVision == null) {
+      toast.error('Checking selected model capabilities. Try again in a moment.');
+
+      return false;
+    }
+
+    if (!selectedModelSupportsVision) {
+      toast.error('Selected model does not support image input. Choose a vision model.');
+
+      return false;
+    }
+
+    return true;
+  }, [capabilityCheckFailed, isCheckingModelCapabilities, selectedModel, selectedModelSupportsVision, toast]);
+
   const handleCapturedMedia = useCallback(
     async (file: File) => {
-      upload([file]);
+      if (file.type.startsWith('image/') && !ensureImageModelSupported()) {
+        return;
+      }
+
+      upload([file], {
+        model: selectedModel ?? undefined,
+      });
     },
-    [upload],
+    [ensureImageModelSupported, selectedModel, upload],
   );
 
   const handleMobileFrameCaptured = useCallback(
     async (file: File) => {
+      if (!ensureImageModelSupported()) {
+        return;
+      }
+
       upload([file], {
         inventoryCapture: mobileCaptureMode === 'inventory',
+        model: selectedModel ?? undefined,
       });
     },
-    [upload, mobileCaptureMode],
+    [ensureImageModelSupported, mobileCaptureMode, selectedModel, upload],
   );
 
   const createFileThread = useCallback(async () => {

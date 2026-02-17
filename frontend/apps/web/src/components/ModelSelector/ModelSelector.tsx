@@ -1,5 +1,5 @@
 import { Select, Toggle } from '@ci/shadcn';
-import { Brain, Wrench } from '@ci/shadcn/icons';
+import { Brain, Eye, Wrench } from '@ci/shadcn/icons';
 
 import { useModel } from '@/hooks';
 
@@ -25,7 +25,15 @@ export function ModelSelector({ withToggles = false }: Props) {
       <Select.Content>
         {activeModels.map((model) => (
           <Select.Item key={model.model} value={model.model}>
-            {model.model}
+            <div className="flex w-full items-center justify-between gap-2">
+              <span className="truncate">{model.model}</span>
+
+              <span className="ml-3 flex items-center gap-1 text-muted-foreground">
+                {model.thinking === true && <Brain className="size-3.5" aria-label="Supports thinking" />}
+                {model.tools === true && <Wrench className="size-3.5" aria-label="Supports tools" />}
+                {model.vision === true && <Eye className="size-3.5" aria-label="Supports vision" />}
+              </span>
+            </div>
           </Select.Item>
         ))}
       </Select.Content>

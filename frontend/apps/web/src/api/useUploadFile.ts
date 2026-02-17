@@ -8,6 +8,7 @@ import type { File as FileData } from './types';
 
 interface UploadOptions {
   inventoryCapture?: boolean;
+  model?: string;
 }
 
 type ReturnType = [
@@ -43,6 +44,10 @@ export function useUploadFile(): ReturnType {
 
       if (options.inventoryCapture) {
         formData.append('inventoryCapture', 'true');
+      }
+
+      if (options.model) {
+        formData.append('model', options.model);
       }
 
       let success = false;

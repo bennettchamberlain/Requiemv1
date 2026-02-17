@@ -24,6 +24,7 @@ export type UploadFileDto = Omit<
   'variant' | 'title' | 'description' | 'externalId' | 'parentId' | 'externalCreatedAt' | 'externalUpdatedAt'
 > & {
   inventoryCapture?: boolean;
+  model?: string;
 };
 
 export type UpdateFileDto = Pick<CreateFileDto, 'title' | 'description' | 'externalUpdatedAt'>;

@@ -34,12 +34,14 @@ export class FilesController {
     @Context() context: RequestContext,
     @UploadedFiles() files: Express.Multer.File[],
     @Body('inventoryCapture') inventoryCapture?: string | boolean,
+    @Body('model') model?: string,
   ) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
 
     const shouldCaptureInventory = inventoryCapture === true || inventoryCapture === 'true';
+    const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : undefined;
 
     const serviceContext = toServiceContext(context);
 
@@ -73,6 +75,7 @@ export class FilesController {
             buffer: file.buffer,
             path: file.path,
             inventoryCapture: shouldCaptureInventory,
+            model: selectedModel,
           });
         }),
       );

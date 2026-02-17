@@ -298,7 +298,7 @@ export class FileService implements OnModuleInit {
   }
 
   async upload(context: UserServiceContext, file: UploadFileDto): Promise<SignedFile> {
-    const { inventoryCapture = false, ...uploadData } = file;
+    const { inventoryCapture = false, model, ...uploadData } = file;
     const hash = await this.getFileHash(uploadData);
 
     if (hash) {
@@ -314,6 +314,7 @@ export class FileService implements OnModuleInit {
             fileId: existing.id,
             userId: context.userId,
             inventoryCapture: true,
+            model,
           });
         }
 
@@ -330,6 +331,7 @@ export class FileService implements OnModuleInit {
       fileId: created.id,
       userId: context.userId,
       inventoryCapture,
+      model,
     });
 
     return created;
