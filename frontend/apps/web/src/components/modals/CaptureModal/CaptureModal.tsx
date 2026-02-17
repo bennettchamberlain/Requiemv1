@@ -176,12 +176,17 @@ export function CaptureModal({ open = false, onClose }: Props) {
         return;
       }
 
-      upload([file], {
-        inventoryCapture: mobileCaptureMode === 'inventory',
+      const inventoryCapture = mobileCaptureMode === 'inventory';
+      const uploaded = await upload([file], {
+        inventoryCapture,
         model: selectedModel ?? undefined,
       });
+
+      if (inventoryCapture && uploaded) {
+        toast.success('Inventory analysis started. This may take a moment.');
+      }
     },
-    [ensureImageModelSupported, mobileCaptureMode, selectedModel, upload],
+    [ensureImageModelSupported, mobileCaptureMode, selectedModel, toast, upload],
   );
 
   const createFileThread = useCallback(async () => {
