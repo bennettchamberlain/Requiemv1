@@ -26,7 +26,6 @@ export async function syncYouTubeActivities({
       });
 
       const publishedBefore = (nextCursor.publishedBefore as string) || connection.createdAt.toISOString();
-      console.log('publishedBefore', nextCursor.publishedBefore, connection.createdAt.toISOString());
 
       const params = new URLSearchParams({
         part: 'snippet,contentDetails',
