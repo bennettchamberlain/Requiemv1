@@ -6,6 +6,10 @@ import { useAuth } from '@/hooks';
 
 import type { File as FileData } from './types';
 
+interface UploadOptions {
+  inventoryCapture?: boolean;
+}
+
 type ReturnType = [
   {
     files: FileData[];
@@ -13,7 +17,7 @@ type ReturnType = [
     error: unknown | null;
   },
   {
-    upload: (file: File[]) => void;
+    upload: (files: File[], options?: UploadOptions) => Promise<boolean>;
     reset: () => void;
   },
 ];
@@ -26,7 +30,7 @@ export function useUploadFile(): ReturnType {
   const [error, setError] = useState<unknown | null>(null);
 
   const upload = useCallback(
-    async (files: File[]) => {
+    async (files: File[], options: UploadOptions = {}) => {
       setFiles([]);
       setError(null);
       setLoading(true);
@@ -36,6 +40,10 @@ export function useUploadFile(): ReturnType {
       files.forEach((file) => {
         formData.append('files', file);
       });
+
+      if (options.inventoryCapture) {
+        formData.append('inventoryCapture', 'true');
+      }
 
       let success = false;
 

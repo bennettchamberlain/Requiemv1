@@ -298,7 +298,8 @@ export class FileService implements OnModuleInit {
   }
 
   async upload(context: UserServiceContext, file: UploadFileDto): Promise<SignedFile> {
-    const hash = await this.getFileHash(file);
+    const { inventoryCapture = false, ...uploadData } = file;
+    const hash = await this.getFileHash(uploadData);
 
     if (hash) {
       const existing = await this.findByHash(context, hash);
@@ -308,19 +309,27 @@ export class FileService implements OnModuleInit {
           existingFileId: existing.id,
         });
 
+        if (inventoryCapture) {
+          await this.eventService.send(FileUploadedEvent, {
+            fileId: existing.id,
+            userId: context.userId,
+            inventoryCapture: true,
+          });
+        }
+
         return existing;
       }
     }
 
     const created = await this.create(context, {
-      ...file,
+      ...uploadData,
       variant: FileVariant.ORIGINAL,
     });
 
     await this.eventService.send(FileUploadedEvent, {
       fileId: created.id,
       userId: context.userId,
-      inventoryCapture: false,
+      inventoryCapture,
     });
 
     return created;

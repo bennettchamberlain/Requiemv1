@@ -8,7 +8,7 @@ import { FileService, PreviewGeneratedEvent, type PreviewGeneratedPayload } from
 
 import { OllamaService } from '../services/OllamaService';
 
-const MODEL = 'llama3.2-vision:latest';
+const MODEL = 'llama3.2-vision:11b';
 
 const PROMPT = `
   Analyze this image and provide a title and description.

@@ -19,6 +19,8 @@ interface Props {
   onClose?: () => void;
 }
 
+type MobileCaptureMode = 'photo' | 'video' | 'inventory';
+
 export function CaptureModal({ open = false, onClose }: Props) {
   const [{ authToken }] = useAuth();
   const [{ selectedModel }] = useModel();
@@ -27,6 +29,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
   const [files, setFiles] = useState<FileData[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [mobileCaptureMode, setMobileCaptureMode] = useState<MobileCaptureMode>('photo');
 
   const [{ files: fileData }, { upload, reset: resetUploader }] = useUploadFile();
 
@@ -40,24 +43,35 @@ export function CaptureModal({ open = false, onClose }: Props) {
   const handleClose = useCallback(() => {
     setFiles([]);
     setThreadId(null);
+    setMobileCaptureMode('photo');
     resetUploader();
     stopChatRequest();
 
     onClose?.();
-  }, [onClose]);
+  }, [onClose, resetUploader, stopChatRequest]);
 
   useEffect(() => {
     if (!open) {
       setFiles([]);
       setThreadId(null);
+      setMobileCaptureMode('photo');
     }
   }, [open]);
 
-  const handleMediaCaptured = useCallback(
+  const handleCapturedMedia = useCallback(
     async (file: File) => {
       upload([file]);
     },
     [upload],
+  );
+
+  const handleMobileFrameCaptured = useCallback(
+    async (file: File) => {
+      upload([file], {
+        inventoryCapture: mobileCaptureMode === 'inventory',
+      });
+    },
+    [upload, mobileCaptureMode],
   );
 
   const createFileThread = useCallback(async () => {
@@ -150,13 +164,16 @@ export function CaptureModal({ open = false, onClose }: Props) {
           </div>
 
           <Camera
-            onFrameCaptured={handleMediaCaptured}
-            onRecordingFinished={handleMediaCaptured}
+            onFrameCaptured={handleMobileFrameCaptured}
+            onRecordingFinished={handleCapturedMedia}
             className="h-full"
           >
             <Camera.Feed />
             <div className="absolute w-full bottom-0">
-              <Camera.MobileControls onSelectLastCapture={handleSelectLastCapture} />
+              <Camera.MobileControls
+                onSelectLastCapture={handleSelectLastCapture}
+                onRecordingModeChange={setMobileCaptureMode}
+              />
             </div>
           </Camera>
         </InlineModal>
@@ -229,8 +246,8 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
         {files.length === 0 && (
           <Camera
-            onFrameCaptured={handleMediaCaptured}
-            onRecordingFinished={handleMediaCaptured}
+            onFrameCaptured={handleCapturedMedia}
+            onRecordingFinished={handleCapturedMedia}
             className="h-full"
           >
             <Camera.Information />

@@ -50,7 +50,7 @@ const PROMPT = `
   For estimated_value, provide a rough number in USD based on visual condition. If unknown, use 0.
 `;
 
-const MODEL = 'llama3.2-vision:latest';
+const MODEL = 'llama3.2-vision:11b';
 
 @Injectable()
 export class InventoryListener {

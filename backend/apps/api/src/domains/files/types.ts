@@ -22,7 +22,9 @@ export interface CreateFileDto extends Partial<Pick<Express.Multer.File, 'path' 
 export type UploadFileDto = Omit<
   CreateFileDto,
   'variant' | 'title' | 'description' | 'externalId' | 'parentId' | 'externalCreatedAt' | 'externalUpdatedAt'
->;
+> & {
+  inventoryCapture?: boolean;
+};
 
 export type UpdateFileDto = Pick<CreateFileDto, 'title' | 'description' | 'externalUpdatedAt'>;
 
