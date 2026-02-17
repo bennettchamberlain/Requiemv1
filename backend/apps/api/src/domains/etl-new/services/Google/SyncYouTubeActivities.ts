@@ -25,14 +25,14 @@ export async function syncYouTubeActivities({
         nextCursor,
       });
 
-      let publishedBefore = nextCursor.publishedBefore as string || connection.createdAt.toISOString();
+      const publishedBefore = (nextCursor.publishedBefore as string) || connection.createdAt.toISOString();
       console.log('publishedBefore', nextCursor.publishedBefore, connection.createdAt.toISOString());
 
       const params = new URLSearchParams({
         part: 'snippet,contentDetails',
         maxResults: '50',
         mine: 'true',
-        publishedBefore: publishedBefore
+        publishedBefore: publishedBefore,
       });
 
       if (nextCursor.pageToken) {
@@ -52,9 +52,7 @@ export async function syncYouTubeActivities({
 
       return {
         data: { items: activities },
-        nextCursor: nextPageToken
-          ? { pageToken: nextPageToken, publishedBefore }
-          : {},
+        nextCursor: nextPageToken ? { pageToken: nextPageToken, publishedBefore } : {},
       };
     } else {
       client.logger.log('Performing historical YouTube Likes sync', {
@@ -62,13 +60,13 @@ export async function syncYouTubeActivities({
         nextCursor,
       });
 
-      const publishedAfter = nextCursor.publishedAfter as string || connection.createdAt.toISOString();
+      const publishedAfter = (nextCursor.publishedAfter as string) || connection.createdAt.toISOString();
 
       const params = new URLSearchParams({
         part: 'snippet,contentDetails',
         maxResults: '50',
         mine: 'true',
-        publishedAfter
+        publishedAfter,
       });
 
       if (nextCursor.pageToken) {
@@ -88,7 +86,7 @@ export async function syncYouTubeActivities({
 
       return {
         data: { items: activities },
-        nextCursor: { publishedAfter: new Date().toISOString() }
+        nextCursor: { publishedAfter: new Date().toISOString() },
       };
     }
   } catch (err) {

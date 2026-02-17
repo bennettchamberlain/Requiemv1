@@ -38,8 +38,6 @@ export async function syncCalendar({
         params.set('pageToken', nextCursor.pageToken as string);
       }
 
-      console.log('historical params', params)
-
       const endpoint = `/calendar/v3/calendars/primary/events?${params.toString()}`;
       const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
       const events = (response.items as CalendarEvent[]) || [];
@@ -70,21 +68,17 @@ export async function syncCalendar({
       });
 
       const params = new URLSearchParams({
-        maxResults: '10',
+        maxResults: '200',
         showDeleted: 'true',
         singleEvents: 'true',
-        timeMin: connection.createdAt.toISOString()
       });
-
-      if (nextCursor.pageToken) {
-        params.set('pageToken', nextCursor.pageToken as string);
-      }
 
       if (nextCursor.syncToken) {
         params.set('syncToken', nextCursor.syncToken as string);
+      } else if (nextCursor.pageToken) {
+        params.set('pageToken', nextCursor.pageToken as string);
+        params.set('timeMin', connection.createdAt.toISOString());
       }
-
-      console.log('incremental params', params)
 
       const endpoint = `/calendar/v3/calendars/primary/events?${params.toString()}`;
       const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
@@ -101,11 +95,15 @@ export async function syncCalendar({
         data: {
           items: events,
         },
-        nextCursor: nextSyncToken ? {
-          syncToken: nextSyncToken,
-        } : nextPageToken ? {
-          pageToken: nextPageToken,
-        } : {},
+        nextCursor: nextSyncToken
+          ? {
+              syncToken: nextSyncToken,
+            }
+          : nextPageToken
+            ? {
+                pageToken: nextPageToken,
+              }
+            : {},
       };
     }
   } catch (err) {
@@ -116,4 +114,3 @@ export async function syncCalendar({
     throw err;
   }
 }
-

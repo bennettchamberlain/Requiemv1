@@ -11,7 +11,6 @@ export async function syncYouTubeLikes({
   connection,
   client,
   nextCursor,
-  historical = true,
 }: {
   connection: Connection;
   client: BaseClient;
@@ -27,7 +26,7 @@ export async function syncYouTubeLikes({
     const params = new URLSearchParams({
       part: 'snippet,contentDetails',
       maxResults: '50',
-      myRating: 'like'
+      myRating: 'like',
     });
 
     if (nextCursor.pageToken) {
@@ -47,9 +46,7 @@ export async function syncYouTubeLikes({
 
     return {
       data: { items: likes },
-      nextCursor: nextPageToken
-        ? { pageToken: nextPageToken }
-        : {},
+      nextCursor: nextPageToken ? { pageToken: nextPageToken } : {},
     };
   } catch (err) {
     client.logger.error('Error during YouTube Likes sync', {
@@ -59,4 +56,3 @@ export async function syncYouTubeLikes({
     throw err;
   }
 }
-

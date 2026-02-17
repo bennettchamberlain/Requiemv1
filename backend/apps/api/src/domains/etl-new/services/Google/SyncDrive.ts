@@ -58,31 +58,15 @@ export async function syncDrive({
         hasNextPage: !!nextPageToken,
       });
 
-      // If this is the last page, fetch startPageToken for incremental sync
-      if (!nextPageToken) {
-        const tokenResp = (await client.request(connection, `/drive/v3/changes/startPageToken`)) as Record<
-          string,
-          unknown
-        >;
-        const startPageToken = String(tokenResp.startPageToken || '');
-
-        return {
-          data: {
-            files,
-          },
-          nextCursor: {
-            startPageToken,
-          },
-        };
-      }
-
       return {
         data: {
           files,
         },
-        nextCursor: {
-          pageToken: nextPageToken,
-        },
+        nextCursor: nextPageToken
+          ? {
+              pageToken: nextPageToken,
+            }
+          : {},
       };
     } else {
       client.logger.log('Performing incremental Drive sync', {
@@ -90,8 +74,14 @@ export async function syncDrive({
         nextCursor,
       });
 
+      let startPageToken = nextCursor.startPageToken as string | undefined;
+
       if (!nextCursor.startPageToken) {
-        throw new Error('Incremental sync requires a startPageToken');
+        const tokenResp = (await client.request(connection, `/drive/v3/changes/startPageToken`)) as Record<
+          string,
+          unknown
+        >;
+        startPageToken = String(tokenResp.startPageToken || '');
       }
 
       const fieldsChanges =
@@ -102,7 +92,7 @@ export async function syncDrive({
         includeRemoved: 'true',
         restrictToMyDrive: 'true',
         fields: fieldsChanges,
-        pageToken: nextCursor.startPageToken as string,
+        pageToken: String(startPageToken),
       });
 
       const endpoint = `/drive/v3/changes?${params.toString()}`;
@@ -139,4 +129,3 @@ export async function syncDrive({
     throw err;
   }
 }
-

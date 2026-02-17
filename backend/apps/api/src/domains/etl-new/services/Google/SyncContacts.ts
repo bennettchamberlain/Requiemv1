@@ -12,7 +12,6 @@ export async function syncContacts({
   connection,
   client,
   nextCursor,
-  historical = false,
 }: {
   connection: Connection;
   client: BaseClient;
@@ -78,16 +77,17 @@ export async function syncContacts({
       connectionId: connection.id,
       contactCount: connections.length,
       hasNextPage: !!nextPageToken,
-      hasNextSyncToken: !!nextSyncToken
+      hasNextSyncToken: !!nextSyncToken,
     });
 
     return {
       data: { contacts: connections },
-      nextCursor: nextSyncToken ? { syncToken: nextSyncToken } : nextPageToken
-        ? { pageToken: nextPageToken }
-        : {},
+      nextCursor: nextSyncToken
+        ? { syncToken: nextSyncToken }
+        : nextPageToken
+          ? { pageToken: nextPageToken }
+          : {},
     };
-
   } catch (err) {
     client.logger.error('Error during Contacts sync', {
       connectionId: connection.id,
@@ -96,4 +96,3 @@ export async function syncContacts({
     throw err;
   }
 }
-

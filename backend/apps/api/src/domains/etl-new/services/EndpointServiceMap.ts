@@ -7,10 +7,11 @@ import { syncCalendar } from '../services/Google/SyncCalendar';
 import { syncContacts } from '../services/Google/SyncContacts';
 import { syncDrive } from '../services/Google/SyncDrive';
 import { syncGmail } from '../services/Google/SyncGmail';
+
+import { syncYouTubeActivities } from './Google/SyncYouTubeActivities';
+import { syncYouTubeLikes } from './Google/SyncYouTubeLikes';
 import { syncYouTubePlaylists } from './Google/SyncYouTubePlaylists';
-import { syncYouTubeLikes } from "./Google/SyncYouTubeLikes";
-import { syncYouTubeSubscriptions } from "./Google/SyncYouTubeSubscriptions";
-import { syncYouTubeActivities } from "./Google/SyncYouTubeActivities";
+import { syncYouTubeSubscriptions } from './Google/SyncYouTubeSubscriptions';
 
 const ENDPOINT_SERVICE_MAP: {
   [providerName: string]: {

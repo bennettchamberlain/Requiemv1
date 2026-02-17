@@ -6,7 +6,7 @@ interface YouTubeResponse {
   pageInfo: {
     totalResults: number;
     resultsPerPage: number;
-  }
+  };
   [key: string]: unknown;
 }
 interface YouTubeItem {
@@ -21,7 +21,6 @@ export async function syncYouTubePlaylists({
   connection,
   client,
   nextCursor,
-  historical = true,
 }: {
   connection: Connection;
   client: BaseClient;
@@ -52,8 +51,8 @@ export async function syncYouTubePlaylists({
     for (const playlist of playlists) {
       //We fully paginate each playlist, which does not run much risk of hitting rate limits.
       //But each syncJob only processes one page of playlists.
-      const playlistItems = await fetchAllPlaylistItems({ connection, playlist, client })
-      playlist.items = playlistItems as YouTubeItem[] || [];
+      const playlistItems = await fetchAllPlaylistItems({ connection, playlist, client });
+      playlist.items = (playlistItems as YouTubeItem[]) || [];
     }
 
     client.logger.log('YouTube playlists sync completed', {
@@ -64,9 +63,7 @@ export async function syncYouTubePlaylists({
 
     return {
       data: { items: playlists },
-      nextCursor: nextPageToken
-        ? { pageToken: nextPageToken }
-        : {},
+      nextCursor: nextPageToken ? { pageToken: nextPageToken } : {},
     };
   } catch (err) {
     client.logger.error('Error during YouTube Playlists sync', {
@@ -77,21 +74,19 @@ export async function syncYouTubePlaylists({
   }
 }
 
-async function fetchAllPlaylistItems(
-  {
-    connection,
-    playlist,
-    client,
-    items = [],
-    pageToken,
-   }: {
-     connection: Connection;
-     playlist: YouTubeItem;
-     client: BaseClient;
-     items?: YouTubeItem[];
-     pageToken?: string;
-   }
-): Promise<YouTubeItem[]> {
+async function fetchAllPlaylistItems({
+  connection,
+  playlist,
+  client,
+  items = [],
+  pageToken,
+}: {
+  connection: Connection;
+  playlist: YouTubeItem;
+  client: BaseClient;
+  items?: YouTubeItem[];
+  pageToken?: string;
+}): Promise<YouTubeItem[]> {
   const itemsParams = new URLSearchParams({
     part: 'snippet,contentDetails',
     maxResults: '50',
@@ -108,5 +103,13 @@ async function fetchAllPlaylistItems(
 
   items = items.concat(playlistItemsResponse.items);
 
-  return playlistItemsResponse.nextPageToken ? await fetchAllPlaylistItems({ connection, playlist, items, client, pageToken: playlistItemsResponse.nextPageToken }) : items;
+  return playlistItemsResponse.nextPageToken
+    ? await fetchAllPlaylistItems({
+        connection,
+        playlist,
+        items,
+        client,
+        pageToken: playlistItemsResponse.nextPageToken,
+      })
+    : items;
 }

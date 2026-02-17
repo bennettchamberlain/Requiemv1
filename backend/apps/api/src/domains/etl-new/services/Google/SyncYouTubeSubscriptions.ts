@@ -11,7 +11,6 @@ export async function syncYouTubeSubscriptions({
   connection,
   client,
   nextCursor,
-  historical = false,
 }: {
   connection: Connection;
   client: BaseClient;
@@ -47,9 +46,7 @@ export async function syncYouTubeSubscriptions({
 
     return {
       data: { items: subscriptions },
-      nextCursor: nextPageToken
-        ? { pageToken: nextPageToken }
-        : {},
+      nextCursor: nextPageToken ? { pageToken: nextPageToken } : {},
     };
   } catch (err) {
     client.logger.error('Error during YouTube Subscriptions sync', {
@@ -59,4 +56,3 @@ export async function syncYouTubeSubscriptions({
     throw err;
   }
 }
-

@@ -277,7 +277,7 @@ export class SyncOrchestrator {
     });
 
     let connection = await this.connectionService.findById({ userId: SYSTEM_USER }, syncJob.connectionId);
-    console.log('connection for syncJob', connection)
+    console.log('connection for syncJob', connection);
 
     if (!connection) {
       this.logger.error('Connection not found for sync job execution', {
