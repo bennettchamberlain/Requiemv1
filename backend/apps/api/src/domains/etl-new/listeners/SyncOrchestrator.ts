@@ -276,7 +276,8 @@ export class SyncOrchestrator {
       status: 'in_progress',
     });
 
-    const connection = await this.connectionService.findById({ userId: SYSTEM_USER }, syncJob.connectionId);
+    let connection = await this.connectionService.findById({ userId: SYSTEM_USER }, syncJob.connectionId);
+    console.log('connection for syncJob', connection)
 
     if (!connection) {
       this.logger.error('Connection not found for sync job execution', {
@@ -304,8 +305,29 @@ export class SyncOrchestrator {
       return;
     }
 
-    const client = this.clientFactory.getClientByProviderId(connection.provider.id);
-    const providerName = connection.provider.name;
+    const { refreshToken, tokenExpiry } = connection;
+    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
+
+    if (refreshToken && tokenExpiry && new Date(tokenExpiry) < new Date()) {
+      let newCredentials;
+      const refreshCredentials = await client.refreshAccessToken(connection);
+
+      //Some providers explicitly return null for refreshToken, which was overwriting the
+      //existing refreshToken. Strip it out in those cases.
+      if (refreshCredentials.refreshToken == null) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { refreshToken, ...stripped } = refreshCredentials;
+        newCredentials = stripped;
+      } else {
+        newCredentials = { ...refreshCredentials };
+      }
+
+      connection = await this.connectionService.update({ userId: connection.userId }, connection.id, {
+        ...newCredentials,
+      });
+    }
+
+    const providerName = connection!.provider!.name;
 
     const serviceFunction = this.endpointServiceMap.getSyncFunction(providerName!, syncJob.endpointName);
 

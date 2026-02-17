@@ -143,6 +143,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
   }
 
   async refreshAccessToken(connection: Connection): Promise<TokenExchange> {
+    console.log('refreshAccessToken', connection)
     if (!connection.refreshToken) {
       throw new BadRequestException('No refresh token available');
     }

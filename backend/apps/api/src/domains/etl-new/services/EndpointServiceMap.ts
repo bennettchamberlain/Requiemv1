@@ -3,7 +3,14 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/logging';
 import type { BaseClient, Connection } from '@ci/domains/connections';
 
+import { syncCalendar } from '../services/Google/SyncCalendar';
+import { syncContacts } from '../services/Google/SyncContacts';
+import { syncDrive } from '../services/Google/SyncDrive';
 import { syncGmail } from '../services/Google/SyncGmail';
+import { syncYouTubePlaylists } from './Google/SyncYouTubePlaylists';
+import { syncYouTubeLikes } from "./Google/SyncYouTubeLikes";
+import { syncYouTubeSubscriptions } from "./Google/SyncYouTubeSubscriptions";
+import { syncYouTubeActivities } from "./Google/SyncYouTubeActivities";
 
 const ENDPOINT_SERVICE_MAP: {
   [providerName: string]: {
@@ -22,6 +29,13 @@ const ENDPOINT_SERVICE_MAP: {
 } = {
   Google: {
     Gmail: syncGmail,
+    Calendar: syncCalendar,
+    Drive: syncDrive,
+    Contacts: syncContacts,
+    'YouTube Activities': syncYouTubeActivities,
+    'YouTube Likes': syncYouTubeLikes,
+    'YouTube Playlists': syncYouTubePlaylists,
+    'YouTube Subscriptions': syncYouTubeSubscriptions,
   },
 };
 

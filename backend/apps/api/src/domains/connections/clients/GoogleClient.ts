@@ -33,7 +33,10 @@ export class GoogleClient extends BaseOAuth2Client {
     Calendar: ['calendar.readonly'],
     Gmail: ['gmail.readonly'],
     Drive: ['drive.readonly'],
-    YouTube: ['youtube'],
+    'YouTube Activities': ['youtube'],
+    'YouTube Likes': ['youtube'],
+    'YouTube Playlists': ['youtube'],
+    'YouTube Subscriptions': ['youtube'],
     Contacts: ['contacts'],
     default: ['userinfo.profile'],
   };
@@ -55,12 +58,13 @@ export class GoogleClient extends BaseOAuth2Client {
   };
 
   protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+    console.log('getScopesFromActiveEndpoints', activeEndpoints)
     const scopesSet = new Set<string>(
       this.endpointScopeMap['default'].map((scope) => `https://www.googleapis.com/auth/${scope}`),
     );
 
     activeEndpoints.forEach((endpoint) => {
-      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
+      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap] || [];
       scopes.forEach((scope) => scopesSet.add(`https://www.googleapis.com/auth/${scope}`));
     });
 
