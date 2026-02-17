@@ -14,9 +14,9 @@ const FileGridItemFragment = gql(`
   fragment FileGridItemFragment on FileType {
     id
     filename
-    originalName
     contentType
-    url
+    sourceUrl
+    previewUrl
     createdAt
   }
 `);
@@ -39,17 +39,21 @@ function FileGridItem({ file: fileMasked }: { file: FragmentType<typeof FileGrid
   const isImage = file.contentType.startsWith('image/');
   const isVideo = file.contentType.startsWith('video/');
 
-  const url = useMemo(() => {
-    return file.url ? `/static/${file.url}` : undefined;
-  }, [file.url]);
+  const sourceUrl = useMemo(() => {
+    return file.sourceUrl ? `/static${file.sourceUrl}` : undefined;
+  }, [file.sourceUrl]);
+
+  const previewUrl = useMemo(() => {
+    return file.previewUrl ? `/static${file.previewUrl}` : undefined;
+  }, [file.previewUrl]);
 
   if (isImage) {
     return (
       <div className="relative group aspect-square bg-muted rounded-lg overflow-hidden border border-border">
-        <img src={url} alt={file.originalName} className="w-full h-full object-cover" />
+        <img src={previewUrl} alt={file.filename || ''} className="w-full h-full object-cover" />
         <a
-          href={url}
-          download={file.originalName}
+          href={sourceUrl}
+          download={file.filename}
           target="_blank"
           rel="noopener noreferrer"
           className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
@@ -63,22 +67,22 @@ function FileGridItem({ file: fileMasked }: { file: FragmentType<typeof FileGrid
   if (isVideo) {
     return (
       <div className="relative group aspect-square bg-muted rounded-lg overflow-hidden border border-border">
-        <video src={url} className="w-full h-full object-cover" controls />
+        <video src={sourceUrl} className="w-full h-full object-cover" controls />
       </div>
     );
   }
 
   return (
     <a
-      href={url}
-      download={file.originalName}
+      href={sourceUrl}
+      download={file.filename}
       target="_blank"
       rel="noopener noreferrer"
       className="flex flex-col items-center justify-center aspect-square bg-muted rounded-lg p-4 hover:bg-muted/80 transition-colors border border-border group relative"
     >
       <FileIcon className="w-12 h-12 mb-2 text-muted-foreground" />
       <span className="text-sm text-center truncate w-full px-2 font-medium text-foreground">
-        {file.originalName}
+        {file.filename}
       </span>
       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white rounded-lg">
         <Download className="w-6 h-6" />

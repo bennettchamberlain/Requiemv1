@@ -491,17 +491,19 @@ type FileEdge implements Edge {
 }
 
 type FileType implements Node & Taggable {
-  analysisCompleted: Boolean!
   contentType: String!
   createdAt: DateTime!
-  filename: String!
+  description: String
+  externalId: String
+  filename: String
   id: ID!
   items(after: String, before: String, first: Int, last: Int): ItemConnection
-  originalName: String!
-  size: Float!
+  previewUrl: String
+  size: Float
+  sourceUrl: String
   tags: [EntityTagType!]!
+  title: String
   updatedAt: DateTime!
-  url: String!
 }
 
 type InsightItemType {

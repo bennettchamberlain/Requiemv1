@@ -1,12 +1,9 @@
-import { createHmac } from 'crypto';
-import { Readable } from 'node:stream';
 import { buffer } from 'node:stream/consumers';
 
 import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
-import config from '@ci/configuration';
 import { ConnectionService } from '@ci/domains/connections';
 import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
 import { FileService as FileStorageService } from '@ci/domains/files';
@@ -136,31 +133,23 @@ export class OneDrivePromotionService {
       }
 
       const buff = fileDetails.content.raw ? fileDetails.content.raw : Buffer.from('');
-      const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buff).digest('hex');
 
       const existingFiles = await this.fileStorageService.search(
         { userId },
         {
+          filename: fileDetails.content.name,
           contentType: fileDetails.content.file?.mimeType,
           size: fileDetails.content.size,
-          fileHash: fileHash,
-          filename: fileDetails.content.name,
         },
       );
 
       if (existingFiles.length === 0) {
-        await this.fileStorageService.upload(
+        await this.fileStorageService.create(
           { userId },
           {
-            fieldname: 'attachment', //Multer requires this, but it's not actually used in our logic
-            originalname: fileDetails.content.name, //Multer requires this, but it's not actually used in our logic
-            mimetype: fileDetails.content.file?.mimeType,
-            size: fileDetails.content.size,
-            encoding: 'base64',
-            destination: '',
-            stream: '' as unknown as Readable,
             filename: fileDetails.content.name,
-            path: '',
+            contentType: fileDetails.content.file?.mimeType,
+            size: fileDetails.content.size,
             buffer: buff,
           },
         );

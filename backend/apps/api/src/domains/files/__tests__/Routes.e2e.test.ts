@@ -7,6 +7,7 @@ import request from 'supertest';
 
 import { ContextService } from '@ci/common/context';
 import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
+import { LoggingModule } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import { FilesModule } from '..';
@@ -36,7 +37,7 @@ describe('File routes', () => {
     ];
 
     let moduleBuilder = Test.createTestingModule({
-      imports: [FilesModule],
+      imports: [FilesModule, LoggingModule],
       providers: [
         {
           provide: APP_GUARD,
@@ -48,10 +49,9 @@ describe('File routes', () => {
       .useClass(MockJwtAuthGuard)
       .overrideProvider(FileService)
       .useValue({
-        findById: jest.fn().mockResolvedValue(null),
-        findAll: jest.fn().mockResolvedValue([]),
-        generatePresignedLink: jest.fn().mockResolvedValue('/foo'),
-        upload: jest.fn(),
+        upload: jest.fn().mockResolvedValue({ id: 'test-file-id' }),
+        getFileHash: jest.fn().mockResolvedValue('test-hash'),
+        findByHash: jest.fn().mockResolvedValue(null),
       })
       .overrideProvider(EventService)
       .useValue({});
@@ -95,10 +95,6 @@ describe('File routes', () => {
       return request(app.getHttpServer()).get('/files/foo').expect(404);
     });
 
-    it('should return a 200 for GET → /files', async () => {
-      return request(app.getHttpServer()).get('/files').expect(200);
-    });
-
     it('should return a 201 for POST → /files/upload', async () => {
       const buffer = Buffer.from('Hello, world!');
 
@@ -106,16 +102,6 @@ describe('File routes', () => {
         .post('/files/upload')
         .attach('files', buffer, 'hello.txt')
         .expect(201);
-    });
-
-    it('should return a 200 for GET → /files/3207432f-0d07-44d6-8d56-412f5f873ec2', async () => {
-      return request(app.getHttpServer()).get('/files/3207432f-0d07-44d6-8d56-412f5f873ec2').expect(200);
-    });
-
-    it('should return a 200 for POST → /files/3207432f-0d07-44d6-8d56-412f5f873ec2/presign', async () => {
-      return request(app.getHttpServer())
-        .post('/files/3207432f-0d07-44d6-8d56-412f5f873ec2/presign')
-        .expect(200);
     });
   });
 
@@ -130,22 +116,8 @@ describe('File routes', () => {
       return request(app.getHttpServer()).get('/files/foo').expect(404);
     });
 
-    it('should return a 401 for GET → /files', async () => {
-      return request(app.getHttpServer()).get('/files').expect(401);
-    });
-
     it('should return a 401 for POST → /files/upload', async () => {
       return request(app.getHttpServer()).post('/files/upload').expect(401);
-    });
-
-    it('should return a 401 for GET → /files/3207432f-0d07-44d6-8d56-412f5f873ec2', async () => {
-      return request(app.getHttpServer()).get('/files/3207432f-0d07-44d6-8d56-412f5f873ec2').expect(401);
-    });
-
-    it('should return a 401 for POST → /files/3207432f-0d07-44d6-8d56-412f5f873ec2/presign', async () => {
-      return request(app.getHttpServer())
-        .post('/files/3207432f-0d07-44d6-8d56-412f5f873ec2/presign')
-        .expect(401);
     });
   });
 });

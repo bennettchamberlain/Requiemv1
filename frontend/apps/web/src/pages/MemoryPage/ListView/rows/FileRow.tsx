@@ -1,4 +1,4 @@
-import { type MouseEvent } from 'react';
+import { type MouseEvent, useMemo } from 'react';
 
 import { FileIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
@@ -8,7 +8,7 @@ import { SearchTable } from '../SearchTable';
 export const FILE_FRAGMENT = gql(`
   fragment TableFileRowData on FileType {
     id
-    url
+    sourceUrl
   }
 `);
 
@@ -20,6 +20,10 @@ interface Props {
 export function FileRow({ file, onClick }: Props) {
   const data = useFragment(FILE_FRAGMENT, file);
 
+  const url = useMemo(() => {
+    return data.sourceUrl ? `/static${data.sourceUrl}` : undefined;
+  }, [data.sourceUrl]);
+
   return (
     <SearchTable.Row onClick={onClick}>
       <SearchTable.Cell className="align-middle w-0 px-2.5">
@@ -28,7 +32,7 @@ export function FileRow({ file, onClick }: Props) {
 
       <SearchTable.Cell className="align-middle w-100">File ID: {data.id}</SearchTable.Cell>
 
-      <SearchTable.Cell className="align-middle">{data.url}</SearchTable.Cell>
+      <SearchTable.Cell className="align-middle">{url}</SearchTable.Cell>
     </SearchTable.Row>
   );
 }

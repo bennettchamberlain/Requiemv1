@@ -1,20 +1,12 @@
-import { createHmac } from 'crypto';
-import { Readable } from 'stream';
-
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
-import config from '@ci/configuration';
-import { FileService, FileEntity } from '@ci/domains/files';
+import { FileService } from '@ci/domains/files';
 
 @Injectable()
 export class FacebookPromotionUtils {
   constructor(
     private readonly fileService: FileService,
-    @InjectRepository(FileEntity)
-    private readonly fileRepository: Repository<FileEntity>,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(FacebookPromotionUtils.name);
@@ -45,83 +37,32 @@ export class FacebookPromotionUtils {
       const contentType =
         response.headers.get('content-type') || (mediaType === 'image' ? 'image/jpeg' : 'video/mp4');
 
-      // Check if file already exists by hash or cloudFileId
-      const fileHash = createHmac('sha256', config.auth.session.fieldPepper).update(buffer).digest('hex');
-      const existingFiles = await this.fileService.search(
-        { userId },
-        {
-          fileHash: fileHash,
-          contentType: contentType,
-        },
-      );
+      const fileHash = await this.fileService.getFileHash({ buffer });
+      const existingFile = fileHash ? await this.fileService.findByHash({ userId }, fileHash) : null;
 
-      // Also check by cloudFileId (Facebook ID)
-      if (existingFiles.length === 0) {
-        const existingByCloudId = await this.fileService.search(
-          { userId },
-          {
-            cloudFileId: externalId,
-            storageProvider: 'facebook',
-          },
-        );
-        if (existingByCloudId.length > 0) {
-          existingFiles.push(...existingByCloudId);
-        }
-      }
-
-      if (existingFiles.length > 0) {
-        this.logger.debug('File already exists, skipping upload', {
-          fileId: existingFiles[0].id,
-          url,
-        });
-
-        return {
-          id: existingFiles[0].id,
-          contentType: existingFiles[0].contentType,
-        };
-      }
-
-      // Create a multer-like file object
       const fileExtension = this.getFileExtension(contentType, url);
       const fullFilename = filename.includes('.') ? filename : `${filename}.${fileExtension}`;
 
-      // Create a Readable stream from the buffer
-      const stream = Readable.from(buffer);
-
-      const multerFile: Express.Multer.File = {
-        fieldname: 'file',
-        originalname: fullFilename,
-        encoding: '7bit',
-        mimetype: contentType,
-        size: buffer.length,
-        buffer,
-        destination: '',
-        filename: fullFilename,
-        path: '',
-        stream,
-      };
-
-      // Upload to S3/MinIO
-      const fileRecord = await this.fileService.upload({ userId }, multerFile);
-
-      // Update file record with Facebook metadata (cloudFileId and storageProvider)
-      const fileEntity = await this.fileRepository.findOne({
-        where: { id: fileRecord.id },
-      });
-
-      if (fileEntity) {
-        fileEntity.cloudFileId = externalId;
-        fileEntity.storageProvider = 'facebook';
-        await this.fileRepository.save(fileEntity);
-        this.logger.debug('Updated file record with Facebook metadata', {
-          fileId: fileRecord.id,
-          cloudFileId: externalId,
-        });
+      if (existingFile) {
+        return {
+          id: existingFile.id,
+          contentType: existingFile.contentType,
+        };
       }
 
+      const file = await this.fileService.upload(
+        { userId },
+        {
+          filename: fullFilename,
+          contentType,
+          size: buffer.length,
+          buffer,
+        },
+      );
+
       return {
-        id: fileRecord.id,
-        contentType: fileRecord.contentType,
+        id: file.id,
+        contentType: file.contentType,
       };
     } catch (error) {
       this.logger.error('Error downloading and saving file', {

@@ -96,7 +96,7 @@ export class FileSearchIndexListener {
       return;
     }
 
-    if (file.user?.id == null) {
+    if (file.userId == null) {
       this.logger.warn('File has no associated user, cannot index');
 
       return;
@@ -111,7 +111,7 @@ export class FileSearchIndexListener {
 
       await this.embeddingService.upsert(
         {
-          userId: file.user.id,
+          userId: file.userId,
         },
         {
           entityType: 'file',
@@ -130,7 +130,7 @@ export class FileSearchIndexListener {
     } else {
       await this.vectorService.upsert(
         {
-          userId: file.user.id,
+          userId: file.userId,
         },
         {
           entityType: 'file',
@@ -146,18 +146,20 @@ export class FileSearchIndexListener {
   private getSearchFile(file: File): WeightedText[] {
     const parts: WeightedText[] = [];
 
-    const filenameWithoutExt = file.filename?.split('.')[0];
-    if (filenameWithoutExt) {
-      parts.push({ text: filenameWithoutExt, weight: 10 });
+    if (file.title) {
+      parts.push({ text: file.title, weight: 10 });
     }
 
-    const originalNameWithoutExt = file.originalName?.split('.')[0];
-    if (originalNameWithoutExt) {
-      parts.push({ text: originalNameWithoutExt, weight: 10 });
+    if (file.description) {
+      parts.push({ text: file.description, weight: 5 });
+    }
+
+    if (file.filename) {
+      parts.push({ text: file.filename, weight: 3 });
     }
 
     if (file.contentType) {
-      parts.push({ text: file.contentType, weight: 3 });
+      parts.push({ text: file.contentType, weight: 1 });
     }
 
     return parts;
@@ -180,8 +182,9 @@ export class FileSearchIndexListener {
       parts.add(normalized);
     };
 
-    push(file.filename?.split('.')[0] ?? null);
-    push(file.originalName?.split('.')[0] ?? null);
+    push(file.title ?? null);
+    push(file.description ?? null);
+    push(file.filename ?? null);
     push(file.contentType ?? null);
 
     const result = Array.from(parts).join(' ');

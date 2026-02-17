@@ -354,8 +354,16 @@ userpw: ## Change a user's password
 
 .PHONY: chatreset
 chatreset: ## Reset John Smith's demo threads
-	@printf "🧼 Resetting John Smith's demo threads...\n\n"
+	@printf "🧹 Resetting John Smith's demo threads...\n\n"
 
 	@cd backend/apps/api && yarn db:chatreset
+
+	@printf "\n"
+
+.PHONY: filereset
+filereset: ## Clear all files from the system
+	@printf "🧹 Clearing all files from the system...\n\n"
+
+	@cd backend/apps/api && yarn db:filereset
 
 	@printf "\n"

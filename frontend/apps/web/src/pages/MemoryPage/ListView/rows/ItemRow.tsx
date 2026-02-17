@@ -12,7 +12,7 @@ export const ITEM_FRAGMENT = gql(`
     description
     file {
       id
-      url
+      sourceUrl
     }
   }
 `);

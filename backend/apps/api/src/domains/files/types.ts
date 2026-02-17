@@ -1,26 +1,30 @@
 import type { IndexableEntity } from '@ci/domains/search-next';
 
-export interface FileQuery {
-  filePath?: string;
-  mimeType?: string;
-  filename?: string;
-  storageType?: string;
-  storageProvider?: string;
-  cloudFileId?: string;
-  storageAccount?: string;
-  modifiedAtSource?: Date | undefined;
-  bucket?: string;
-  key?: string;
-  originalName?: string;
-  contentType?: string;
-  fileHash?: string;
-  size?: number;
-  user?: { id: string };
+export enum FileVariant {
+  ORIGINAL = 'ORIGINAL',
+  PREVIEW = 'PREVIEW',
+  THUMBNAIL = 'THUMBNAIL',
 }
 
-export interface UpdateFileDto {
-  analysisCompleted?: boolean;
+export interface CreateFileDto extends Partial<Pick<Express.Multer.File, 'path' | 'buffer'>> {
+  filename?: string | null;
+  contentType?: string | null;
+  size?: number | null;
+  variant?: FileVariant;
+  title?: string | null;
+  description?: string | null;
+  externalId?: string | null;
+  parentId?: string | null;
+  externalCreatedAt?: Date | null;
+  externalUpdatedAt?: Date | null;
 }
+
+export type UploadFileDto = Omit<
+  CreateFileDto,
+  'variant' | 'title' | 'description' | 'externalId' | 'parentId' | 'externalCreatedAt' | 'externalUpdatedAt'
+>;
+
+export type UpdateFileDto = Pick<CreateFileDto, 'title' | 'description' | 'externalUpdatedAt'>;
 
 export interface CreateSavedSearchDto {
   id?: string;

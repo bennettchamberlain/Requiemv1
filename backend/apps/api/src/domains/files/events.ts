@@ -9,6 +9,7 @@ export const FileCreatedEvent = 'file.created';
 export const FileUpdatedEvent = 'file.updated';
 export const FileUploadedEvent = 'file.uploaded';
 export const FileRemovedEvent = 'file.deleted';
+export const PreviewGeneratedEvent = 'preview.generated';
 
 /**
  * Event payload of the event {@link FileCreatedEvent}.
@@ -25,6 +26,7 @@ export type FileUploadedPayload = {
   /** The identifier of the newly created user */
   fileId: string;
   userId: string;
+  inventoryCapture: boolean;
 };
 
 /**
@@ -49,10 +51,16 @@ export type FileDeletedPayload = {
   fileId: string;
 };
 
+export type PreviewGeneratedPayload = {
+  userId: string;
+  previewId: string;
+};
+
 defineEvent<FileCreatedPayload>(FileCreatedEvent);
 defineEvent<FileUpdatedPayload>(FileUpdatedEvent);
 defineEvent<FileUploadedPayload>(FileUploadedEvent);
 defineEvent<FileDeletedPayload>(FileRemovedEvent);
+defineEvent<PreviewGeneratedPayload>(PreviewGeneratedEvent);
 
 declare module '@ci/domains/events/registry' {
   interface EventRegistry {
@@ -60,6 +68,7 @@ declare module '@ci/domains/events/registry' {
     [FileUpdatedEvent]: FileUpdatedPayload;
     [FileUploadedEvent]: FileUploadedPayload;
     [FileRemovedEvent]: FileDeletedPayload;
+    [PreviewGeneratedEvent]: PreviewGeneratedPayload;
   }
 }
 

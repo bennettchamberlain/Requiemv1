@@ -15,7 +15,7 @@ interface InventoryItem {
   model: string;
   currentValue: number;
   file: {
-    url: string;
+    sourceUrl: string;
   } | null;
 }
 
@@ -204,7 +204,7 @@ export function InventoryItemModal({ open, onClose, item, create = false }: Prop
     },
   });
 
-  const imageUrl = item?.file?.url ? `/static${item.file.url}` : null;
+  const imageUrl = item?.file?.sourceUrl ? `/static${item.file.sourceUrl}` : null;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>

@@ -19,6 +19,7 @@ const SEARCH_QUERY = gql(`
           ...SearchResultConceptData
           ...SearchResultContentData
           ...SearchResultEventData
+          ...SearchResultFileData
           ...SearchResultItemData
           ...SearchResultNoteData
           ...SearchResultPersonData
@@ -40,7 +41,7 @@ export function useSearchService({
   const { data, loading, error } = useQuery(SEARCH_QUERY, {
     variables: {
       query: searchQuery,
-      excludeTypes: ['answer', 'browser-activity', 'file'],
+      excludeTypes: ['answer', 'browser-activity'],
     },
   });
 
