@@ -17,12 +17,22 @@ export const ITEM_FRAGMENT = gql(`
   }
 `);
 
+export interface ItemInventoryPreview {
+  id: string;
+  name: string;
+  description: string | null;
+  file: {
+    sourceUrl: string;
+  } | null;
+}
+
 interface Props {
   item: FragmentType<typeof ITEM_FRAGMENT>;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
+  onSelectInventoryItem?: (item: ItemInventoryPreview) => void;
 }
 
-export function ItemGridItem({ item, onClick }: Props) {
+export function ItemGridItem({ item, onClick, onSelectInventoryItem }: Props) {
   const data = useFragment(ITEM_FRAGMENT, item);
 
   const url = useMemo(() => {
@@ -30,7 +40,17 @@ export function ItemGridItem({ item, onClick }: Props) {
   }, [data.file?.sourceUrl]);
 
   return (
-    <EntityGridItem onClick={onClick}>
+    <EntityGridItem
+      onClick={(e) => {
+        onSelectInventoryItem?.({
+          id: data.id,
+          name: data.name ?? '',
+          description: data.description ?? null,
+          file: data.file?.sourceUrl ? { sourceUrl: data.file.sourceUrl } : null,
+        });
+        onClick?.(e);
+      }}
+    >
       <EntityGridItem.Header>
         <ItemIcon className="shrink-0" />
 
