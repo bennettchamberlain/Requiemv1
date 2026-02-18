@@ -16,14 +16,14 @@ import { BaseOAuth2Client } from './BaseOAuth2Client';
 import type { SyncResponse } from './types';
 
 const OUTLOOK_SKIP_REGEX = /skip=(\d+)(&?)/;
-const ONEDRIVE_ETAG_REGEX =
-  /^"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}),[0-9]"$/;
+export const ONEDRIVE_ETAG_REGEX =
+  /^"{?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})}?,[0-9]"$/;
 
 const MAIL_PAGE_SIZE = 50;
 const CALENDAR_PAGE_SIZE = 50;
 const ONEDRIVE_PAGE_SIZE = 50;
 
-interface Calendar {
+export interface Calendar {
   id: string;
   name: string;
   isDefaultCalendar: boolean;
@@ -32,6 +32,7 @@ interface Calendar {
     name: string;
     address: string;
   };
+  events?: unknown[];
 }
 
 export interface OneDriveUser {
@@ -52,6 +53,7 @@ export interface OneDrivePageEntity {
   lastModifiedBy: {
     user: OneDriveUser;
   };
+  file?: Record<string, unknown>;
   content?: OneDriveFileEntity;
 }
 
@@ -483,7 +485,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
       const nextLinkUrl = nextLink ? new URL(nextLink) : null;
       const endpoint = nextLinkUrl
         ? nextLinkUrl.pathname + nextLinkUrl.search + nextLinkUrl.hash
-        : `/v1.0/drive/list/items?$filter=contentType%2fname+eq+%27Document%27&$orderby=lastModifiedDateTime&top=${ONEDRIVE_PAGE_SIZE}`;
+        : `/v1.0/drive/list/items?$filter=contentType%2fname+eq+%27Document%27&$orderby=lastModifiedDateTime%20desc&top=${ONEDRIVE_PAGE_SIZE}`;
 
       const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       const files = (response.value as OneDrivePageEntity[]) || [];
