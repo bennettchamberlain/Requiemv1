@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 
 import { GlobalUID, ErrorPage, LoadingPage, Portal, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Breadcrumb, cn } from '@ci/shadcn';
+import { Breadcrumb, cn, useToast } from '@ci/shadcn';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { useActionListService } from '@/api';
@@ -16,8 +16,10 @@ import { Carousel } from '../../components/Carousel';
 import { FeedModal } from './FeedModal';
 import type { INSIGHT_CARD_FRAGMENT } from './InsightCard';
 import { InsightCard } from './InsightCard';
+import { QuestionCard } from './QuestionCard';
 import type { SUMMARY_CARD_FRAGMENT } from './SummaryCard';
 import { SummaryCard } from './SummaryCard';
+import { useFeedQuestionService, type FeedQuestion } from './useFeedQuestionService';
 import { useSummariesService } from './useSummariesService';
 
 type CarouselProps = Partial<ComponentProps<typeof Carousel>>;
@@ -27,6 +29,7 @@ export function FeedPage() {
   usePageTitle('Feed - Companion Intelligence');
 
   const { isMobile } = useDeviceLayout();
+  const { toast } = useToast();
   const navigate = useNavigate();
 
   const { id: actionId } = useParams<{ id?: string }>();
@@ -36,6 +39,10 @@ export function FeedPage() {
     { data: summaries, loading: summariesLoading, error: summariesError },
     { markSummaryAsSeen, markSummaryAsDismissed },
   ] = useSummariesService(10);
+  const [
+    { question, submitting: questionSubmitting, error: questionError },
+    { submitAnswer: submitQuestionAnswer },
+  ] = useFeedQuestionService();
   const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
   const [dismissedSummaryIds, setDismissedSummaryIds] = useState<Set<string>>(new Set());
   const [dismissedInsightIds, setDismissedInsightIds] = useState<Set<string>>(new Set());
@@ -61,6 +68,14 @@ export function FeedPage() {
   useEffect(() => {
     localStorage.setItem(DISMISSED_INSIGHTS_STORAGE_KEY, JSON.stringify(Array.from(dismissedInsightIds)));
   }, [dismissedInsightIds]);
+
+  useEffect(() => {
+    if (questionError == null) {
+      return;
+    }
+
+    toast.error('We could not load or submit a question right now.');
+  }, [questionError, toast]);
 
   const visibleActions = useMemo(
     () => actions.filter((action) => !action.dismissed && !dismissedActionIds.has(action.id)),
@@ -129,6 +144,40 @@ export function FeedPage() {
     () => visibleActions.findIndex((item) => item.id === actionId),
     [visibleActions, actionId],
   );
+  const selectedActionCardIndex = useMemo(() => {
+    if (selectedActionIndex < 0) {
+      return selectedActionIndex;
+    }
+
+    if (!question || selectedActionIndex <= 0) {
+      return selectedActionIndex;
+    }
+
+    return selectedActionIndex + 1;
+  }, [question, selectedActionIndex]);
+  const actionCards = useMemo(() => {
+    const cards = visibleActions.map((action) => ({
+      kind: 'action' as const,
+      id: action.id,
+      action,
+    }));
+
+    if (!question) {
+      return cards;
+    }
+
+    const questionCard = {
+      kind: 'question' as const,
+      id: `question:${question.id}`,
+      question,
+    };
+
+    if (cards.length === 0) {
+      return [questionCard];
+    }
+
+    return [cards[0], questionCard, ...cards.slice(1)];
+  }, [question, visibleActions]);
 
   const [{ isOpen: isModalOpen }, { open: openModal, close: closeModal }] = useModalControls({
     open: selectedActionIndex >= 0,
@@ -188,6 +237,15 @@ export function FeedPage() {
     },
     [markSummaryAsSeen, navigate],
   );
+  const handleQuestionSubmit = useCallback(
+    async ({ questionId, text }: { questionId: string; text: string }) => {
+      return submitQuestionAnswer({
+        questionId,
+        text,
+      });
+    },
+    [submitQuestionAnswer],
+  );
 
   if (loading) {
     return (
@@ -210,7 +268,7 @@ export function FeedPage() {
       className: 'h-full -mx-2',
       containerClassName: 'h-full',
       slideClassName: 'h-full px-2',
-      initialIndex: selectedActionIndex,
+      initialIndex: selectedActionCardIndex,
     } satisfies CarouselProps;
 
     return (
@@ -218,23 +276,32 @@ export function FeedPage() {
         <Carousel {...carouselProps}>
           {!loading &&
             !error &&
-            visibleActions.map((action) => (
-              <BentoCard
-                key={action.id}
-                title={action.title}
-                description={
-                  <div className="prose dark:prose-invert">
-                    <Markdown>{action.text}</Markdown>
-                  </div>
-                }
-                tags={action.tags}
-                imageUrl={action.imageUrl}
-                onClick={() => void handleCardClick(action.id)}
-                onDismiss={() => void handleActionDismiss(action.id)}
-                dismissLabel="Dismiss action"
-                showUnseenIndicator={!action.seen}
-              />
-            ))}
+            actionCards.map((card) =>
+              card.kind === 'question' ? (
+                <QuestionCard
+                  key={card.id}
+                  question={card.question as FeedQuestion}
+                  submitting={questionSubmitting}
+                  onSubmit={handleQuestionSubmit}
+                />
+              ) : (
+                <BentoCard
+                  key={card.id}
+                  title={card.action.title}
+                  description={
+                    <div className="prose dark:prose-invert">
+                      <Markdown>{card.action.text}</Markdown>
+                    </div>
+                  }
+                  tags={card.action.tags}
+                  imageUrl={card.action.imageUrl}
+                  onClick={() => void handleCardClick(card.action.id)}
+                  onDismiss={() => void handleActionDismiss(card.action.id)}
+                  dismissLabel="Dismiss action"
+                  showUnseenIndicator={!card.action.seen}
+                />
+              ),
+            )}
 
           {mixedInsightSummaryCards.map((card) =>
             card.kind === 'insight' ? (
@@ -295,27 +362,37 @@ export function FeedPage() {
       <PageContent>
         <h2 className="text-2xl font-bold text-foreground">Actions</h2>
 
-        <Carousel {...carouselProps} initialIndex={selectedActionIndex}>
+        <Carousel {...carouselProps} initialIndex={selectedActionCardIndex}>
           {!loading &&
             !error &&
-            visibleActions.map((action) => (
-              <BentoCard
-                key={action.id}
-                title={action.title}
-                description={
-                  <div className="prose dark:prose-invert">
-                    <Markdown>{action.text}</Markdown>
-                  </div>
-                }
-                tags={action.tags}
-                imageUrl={action.imageUrl}
-                onClick={() => void handleCardClick(action.id)}
-                onDismiss={() => void handleActionDismiss(action.id)}
-                dismissLabel="Dismiss action"
-                showUnseenIndicator={!action.seen}
-                className="hover:shadow-lg transition-shadow duration-200"
-              />
-            ))}
+            actionCards.map((card) =>
+              card.kind === 'question' ? (
+                <QuestionCard
+                  key={card.id}
+                  question={card.question as FeedQuestion}
+                  submitting={questionSubmitting}
+                  onSubmit={handleQuestionSubmit}
+                  className="hover:shadow-lg transition-shadow duration-200"
+                />
+              ) : (
+                <BentoCard
+                  key={card.id}
+                  title={card.action.title}
+                  description={
+                    <div className="prose dark:prose-invert">
+                      <Markdown>{card.action.text}</Markdown>
+                    </div>
+                  }
+                  tags={card.action.tags}
+                  imageUrl={card.action.imageUrl}
+                  onClick={() => void handleCardClick(card.action.id)}
+                  onDismiss={() => void handleActionDismiss(card.action.id)}
+                  dismissLabel="Dismiss action"
+                  showUnseenIndicator={!card.action.seen}
+                  className="hover:shadow-lg transition-shadow duration-200"
+                />
+              ),
+            )}
         </Carousel>
 
         <h2 className="text-2xl font-bold text-foreground">Insights & Summaries</h2>
