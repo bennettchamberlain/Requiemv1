@@ -16,7 +16,7 @@ BEGIN
     FOR r IN (
         SELECT schemaname, tablename
         FROM pg_tables
-        WHERE schemaname IN ('ci', 'ci_search')
+        WHERE schemaname IN ('ci', 'ci_search', 'ci_etl')
           AND tablename NOT IN ('providers', 'questions', 'users', 'entities')
     ) LOOP
         EXECUTE 'TRUNCATE ' || quote_ident(r.schemaname) || '.' || quote_ident(r.tablename) || ' CASCADE;';
