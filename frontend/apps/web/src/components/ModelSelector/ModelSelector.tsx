@@ -1,4 +1,6 @@
-import { Select, Toggle } from '@ci/shadcn';
+import { useCallback } from 'react';
+
+import { Select, Toggle, useToast } from '@ci/shadcn';
 import { Brain, Eye, Wrench } from '@ci/shadcn/icons';
 
 import { useModel } from '@/hooks';
@@ -8,10 +10,40 @@ interface Props {
 }
 
 export function ModelSelector({ withToggles = false }: Props) {
+  const { toast } = useToast();
+
   const [
     { selectedModel, thinkingEnabled, toolsEnabled, activeModels, error },
     { selectModel, toggleThinking, toggleTools },
   ] = useModel();
+
+  const selectedModelConfig = activeModels.find((model) => model.model === selectedModel) ?? null;
+
+  const handleToggleTools = useCallback(
+    (pressed: boolean) => {
+      if (pressed && selectedModelConfig?.tools === false) {
+        toast.error('Selected model does not support tools.');
+
+        return;
+      }
+
+      toggleTools();
+    },
+    [selectedModelConfig?.tools, toast, toggleTools],
+  );
+
+  const handleToggleThinking = useCallback(
+    (pressed: boolean) => {
+      if (pressed && selectedModelConfig?.thinking === false) {
+        toast.error('Selected model does not support thinking.');
+
+        return;
+      }
+
+      toggleThinking();
+    },
+    [selectedModelConfig?.thinking, toast, toggleThinking],
+  );
 
   if (error) {
     return null;
@@ -49,7 +81,7 @@ export function ModelSelector({ withToggles = false }: Props) {
       <div className="flex flex-row items-center mr-2 gap-1">
         <Toggle
           pressed={toolsEnabled}
-          onPressedChange={toggleTools}
+          onPressedChange={handleToggleTools}
           size="sm"
           variant="outline"
           aria-label="Toggle tools"
@@ -58,7 +90,7 @@ export function ModelSelector({ withToggles = false }: Props) {
         </Toggle>
         <Toggle
           pressed={thinkingEnabled}
-          onPressedChange={toggleThinking}
+          onPressedChange={handleToggleThinking}
           size="sm"
           variant="outline"
           aria-label="Toggle thinking"
