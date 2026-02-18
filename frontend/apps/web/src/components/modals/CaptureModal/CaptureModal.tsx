@@ -19,7 +19,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type MobileCaptureMode = 'photo' | 'video' | 'inventory';
+type CaptureMode = 'photo' | 'video' | 'inventory';
 
 interface ModelCapabilitiesResponse {
   vision: boolean;
@@ -34,7 +34,8 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
   const [files, setFiles] = useState<FileData[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [mobileCaptureMode, setMobileCaptureMode] = useState<MobileCaptureMode>('photo');
+  const [mobileCaptureMode, setMobileCaptureMode] = useState<CaptureMode>('photo');
+  const [desktopCaptureMode, setDesktopCaptureMode] = useState<CaptureMode>('photo');
   const [selectedModelSupportsVision, setSelectedModelSupportsVision] = useState<boolean | null>(null);
   const [isCheckingModelCapabilities, setIsCheckingModelCapabilities] = useState(false);
   const [capabilityCheckFailed, setCapabilityCheckFailed] = useState(false);
@@ -53,6 +54,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
     setFiles([]);
     setThreadId(null);
     setMobileCaptureMode('photo');
+    setDesktopCaptureMode('photo');
     resetUploader();
     stopChatRequest();
 
@@ -64,6 +66,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
       setFiles([]);
       setThreadId(null);
       setMobileCaptureMode('photo');
+      setDesktopCaptureMode('photo');
     }
   }, [open]);
 
@@ -159,15 +162,23 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
   const handleCapturedMedia = useCallback(
     async (file: File) => {
-      if (file.type.startsWith('image/') && !ensureImageModelSupported()) {
+      const isImage = file.type.startsWith('image/');
+
+      if (isImage && !ensureImageModelSupported()) {
         return;
       }
 
-      upload([file], {
+      const inventoryCapture = isImage && desktopCaptureMode === 'inventory';
+      const uploaded = await upload([file], {
+        inventoryCapture,
         model: selectedModel ?? undefined,
       });
+
+      if (inventoryCapture && uploaded) {
+        toast.success('Inventory analysis started. This may take a moment.');
+      }
     },
-    [ensureImageModelSupported, selectedModel, upload],
+    [desktopCaptureMode, ensureImageModelSupported, selectedModel, toast, upload],
   );
 
   const handleMobileFrameCaptured = useCallback(
@@ -367,7 +378,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
           >
             <Camera.Information />
             <Camera.Feed />
-            <Camera.DesktopControls />
+            <Camera.DesktopControls onRecordingModeChange={setDesktopCaptureMode} />
           </Camera>
         )}
 
