@@ -96,7 +96,7 @@ export function MobileControls({ onSelectLastCapture, onRecordingModeChange }: P
           <div
             className={cn(
               'absolute inset-1.5 rounded-2xl transform transition-radius transition-transform duration-100 ease-in-out group-active:scale-[.95] will-change-transform',
-              recordingMode === 'photo' ? 'bg-white' : 'bg-red-500',
+              recordingMode === 'video' ? 'bg-red-500' : 'bg-white',
               recordingMode === 'video' && isRecording ? 'rounded-xl scale-[0.5]' : 'rounded-full',
             )}
           ></div>
