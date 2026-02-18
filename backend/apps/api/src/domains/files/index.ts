@@ -22,7 +22,7 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesController } from './controllers/FilesController';
 import { FileEntity, type File, type SignedFile } from './entities/FileEntity';
 import { SavedSearchEntity, type SavedSearch } from './entities/SavedSearchEntity';
-import { ImageDownscalingListener } from './listeners/ImageDownscalingListener';
+import { FilePreviewGenerationListener } from './listeners/FilePreviewGenerationListener';
 import { FileService } from './services/FileService';
 import { SavedSearchService } from './services/SavedSearchService';
 
@@ -31,7 +31,7 @@ import { SavedSearchService } from './services/SavedSearchService';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([FileEntity, SavedSearchEntity]), EventsModule],
-  providers: [FileService, SavedSearchService, ImageDownscalingListener],
+  providers: [FileService, SavedSearchService, FilePreviewGenerationListener],
   controllers: [FilesController],
   exports: [FileService, SavedSearchService],
 })
