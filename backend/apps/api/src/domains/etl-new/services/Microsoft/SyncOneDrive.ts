@@ -1,18 +1,10 @@
-import type {
-  BaseClient,
-  Connection,
+import {
+  type BaseClient,
+  type Connection,
   type OneDrivePageEntity,
   type OneDriveFileEntity,
   ONEDRIVE_ETAG_REGEX,
 } from '@ci/domains/connections';
-
-interface DriveFile {
-  id: string;
-  name?: string;
-  mimeType?: string;
-  modifiedTime?: string;
-  [key: string]: unknown;
-}
 
 const ONEDRIVE_PAGE_SIZE = 50;
 

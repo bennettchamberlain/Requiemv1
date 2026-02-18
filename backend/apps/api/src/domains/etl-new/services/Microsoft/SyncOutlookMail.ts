@@ -1,29 +1,11 @@
 import type {
   BaseClient,
   Connection,
-  type OneDrivePageEntity,
-  type OneDriveFileEntity,
-  ONEDRIVE_ETAG_REGEX,
+  OutlookAttachment,
+  OutlookMailMessageEntity,
 } from '@ci/domains/connections';
 
-interface DriveFile {
-  id: string;
-  name?: string;
-  mimeType?: string;
-  modifiedTime?: string;
-  [key: string]: unknown;
-}
-
-interface DriveChange {
-  fileId: string;
-  file?: DriveFile;
-  removed?: boolean;
-  [key: string]: unknown;
-}
-
-const MAIL_PAGE_SIZE = 50;
-const CALENDAR_PAGE_SIZE = 50;
-const ONEDRIVE_PAGE_SIZE = 50;
+const MAIL_PAGE_SIZE = 1;
 
 export async function syncOutlookMail({
   connection,
@@ -38,45 +20,47 @@ export async function syncOutlookMail({
 }): Promise<{ data: Record<string, unknown>; nextCursor?: Record<string, unknown> }> {
   try {
     if (historical) {
-      client.logger.log('Performing historical OneDrive sync', {
+      client.logger.log('Performing historical Outlook Mail sync', {
         connectionId: connection.id,
         nextCursor,
       });
 
       let nextLink: string | undefined = nextCursor?.nextLink ? String(nextCursor.nextLink) : undefined;
-      const nextLinkUrl = nextLink ? new URL(nextLink) : null;
 
-      const endpoint = nextLinkUrl
-        ? nextLinkUrl.pathname + nextLinkUrl.search + nextLinkUrl.hash
-        : `/v1.0/drive/list/items?$filter=contentType%2fname+eq+%27Document%27&$orderby=lastModifiedDateTime%20desc&top=${ONEDRIVE_PAGE_SIZE}`;
+      const endpoint =
+        nextLink ||
+        `/v1.0/me/messages?%24filter=receivedDateTime%20lt%20${connection.createdAt.toISOString()}%20and%20(body%2fcontent+ne+null%20or%20hasAttachments+eq+true)&=orderBy+receivedDateTime+desc&%24top=${MAIL_PAGE_SIZE}`;
 
       const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
-      const files = (response.value as OneDrivePageEntity[]) || [];
+      const messages = (response.value as OutlookMailMessageEntity[]) || [];
       nextLink = response['@odata.nextLink'] as string | undefined;
 
-      const filteredFiles = [];
-      for (const file of files) {
-        const fileEtag = ONEDRIVE_ETAG_REGEX.exec(file.eTag);
-        try {
-          file.content = (await client.request(
-            connection,
-            `/v1.0/drive/items/${fileEtag![1]}`,
-          )) as OneDriveFileEntity;
-          filteredFiles.push(file);
-        } catch (err) {
-          console.log('Could not fetch file, skipping', err);
+      // We could use $expand on the messages call to get attachments, but that will always return the full contentBytes
+      // of every attachment, which makes the whole call very slow and the payload very large
+      for (const message of messages) {
+        if (message.hasAttachments) {
+          try {
+            message.attachments = (
+              (await client.request(
+                connection,
+                `/v1.0/me/messages/${message.id}/attachments?$select=id,lastModifiedDateTime,name,contentType,size,isInline&top=100`,
+              )) as { value: OutlookAttachment[] }
+            ).value;
+          } catch (err) {
+            console.log('Could not fetch attachments, skipping', err);
+          }
         }
       }
 
       client.logger.log('Drive historical sync call completed', {
         connectionId: connection.id,
-        fileCount: files.length,
+        messageCount: messages.length,
         hasNextPage: !!nextLink,
       });
 
       return {
         data: {
-          files,
+          messages,
         },
         nextCursor: nextLink
           ? {
@@ -85,62 +69,63 @@ export async function syncOutlookMail({
           : {},
       };
     } else {
-      client.logger.log('Performing incremental OneDrive sync', {
+      client.logger.log('Performing incremental Outlook Mail sync', {
         connectionId: connection.id,
         nextCursor,
       });
 
-      let deltaLink: string | undefined = nextCursor?.deltaLink ? String(nextCursor.deltaLink) : undefined;
-      const deltaLinkUrl = deltaLink ? new URL(deltaLink) : null;
+      let receivedDateTime: string | undefined = nextCursor?.receivedDateTime
+        ? (nextCursor.receivedDateTime as string)
+        : undefined;
 
-      const params = new URLSearchParams({
-        top: String(ONEDRIVE_PAGE_SIZE),
-      });
+      if (!receivedDateTime) {
+        receivedDateTime = connection.createdAt.toISOString();
+      }
 
-      const endpoint = deltaLinkUrl
-        ? deltaLinkUrl.pathname + deltaLinkUrl.search + deltaLinkUrl.hash
-        : `/v1.0/me/drive/root/delta?${params.toString()}`;
-
+      const endpoint = `/v1.0/me/messages?%24filter=receivedDateTime%20gt%20${receivedDateTime}%20and%20(body%2fcontent+ne+null%20or%20hasAttachments+eq+true)&orderBy+receivedDateTime+asc&%24top=${MAIL_PAGE_SIZE}`;
       const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
-      let files = (response.value as OneDrivePageEntity[]) || [];
+      const messages = (response.value as OutlookMailMessageEntity[]) || [];
 
-      deltaLink = response['@odata.deltaLink'] as string | undefined;
-
-      const filteredFiles = [];
-      files = files.filter((file) => file.file); // Filter out folders and other non-file items
-
-      for (const file of files) {
-        const fileEtag = ONEDRIVE_ETAG_REGEX.exec(file.eTag);
-        try {
-          file.content = (await client.request(
-            connection,
-            `/v1.0/drive/items/${fileEtag![1]}`,
-          )) as OneDriveFileEntity;
-          filteredFiles.push(file);
-        } catch (err) {
-          console.log('Could not fetch file, skipping', err);
+      // We could use $expand on the messages call to get attachments, but that will always return the full contentBytes
+      // of every attachment, which makes the whole call very slow and the payload very large
+      for (const message of messages) {
+        if (message.hasAttachments) {
+          try {
+            message.attachments = (
+              (await client.request(
+                connection,
+                `/v1.0/me/messages/${message.id}/attachments?$select=id,lastModifiedDateTime,name,contentType,size,isInline&top=100`,
+              )) as { value: OutlookAttachment[] }
+            ).value;
+          } catch (err) {
+            console.log('Could not fetch attachments, skipping', err);
+          }
         }
       }
 
       client.logger.log('Drive incremental sync call completed', {
         connectionId: connection.id,
-        fileCount: files.length,
-        hasNextPage: !!deltaLink,
+        messageCount: messages.length,
       });
 
+      // Annoyingly, Microsoft's API does not always exactly respect the greater than filter.
+      //If there's one message with receivedDateTime 2026-02-18T21:38:25Z, and you use that for filtering with gt,
+      //it returns that message on the next call. So the solution is to add one second to the date in order to make
+      //sure that message is not returned again.
       return {
         data: {
-          files: filteredFiles,
+          messages,
         },
-        nextCursor: deltaLink
-          ? {
-              deltaLink: deltaLink,
-            }
-          : {},
+        nextCursor: {
+          receivedDateTime:
+            messages.length > 0
+              ? new Date(new Date(messages[messages.length - 1].receivedDateTime).getTime() + 1000)
+              : new Date().toISOString(),
+        },
       };
     }
   } catch (err) {
-    client.logger.error('Error during Drive sync', {
+    client.logger.error('Error during Outlook Mail sync', {
       connectionId: connection.id,
       error: err instanceof Error ? err.message : 'Unknown error',
     });

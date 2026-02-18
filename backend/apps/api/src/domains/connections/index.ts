@@ -60,12 +60,18 @@ export { ClientFactory } from './clients';
 // Clients
 export { FacebookClient, GoogleClient, MicrosoftClient };
 
-//Constants
-export { ONEDRIVE_ETAG_REGEX } from './clients/MicrosoftClient';
-
 // Types
 export type { BaseClient } from './clients/BaseClient';
 export type { Connection } from './entities/ConnectionEntity';
 export type { Provider } from './entities/ProviderEntity';
-export type { SyncResponse } from './clients/types';
-export type { Calendar, OneDrivePageEntity, OneDriveFileEntity } from './clients/MicrosoftClient';
+export type {
+  SyncResponse,
+  Calendar,
+  CalendarEvent,
+  OneDrivePageEntity,
+  OneDriveFileEntity,
+  OutlookMailMessageEntity,
+  OutlookAttachment,
+} from './clients/types';
+
+export { OUTLOOK_SKIP_REGEX, ONEDRIVE_ETAG_REGEX } from './clients/constants';

@@ -1,4 +1,10 @@
-import type { BaseClient, Connection, type Calendar } from '@ci/domains/connections';
+import type {
+  BaseClient,
+  Connection,
+  Calendar,
+  CalendarEvent,
+  OutlookAttachment,
+} from '@ci/domains/connections';
 
 const CALENDAR_PAGE_SIZE = 1;
 
@@ -50,8 +56,23 @@ export async function syncOutlookCalendar({
             throw e;
           }
 
-          const events = (response.value as unknown[]) || [];
+          const events = (response.value as CalendarEvent[]) || [];
           nextPageLink = response['@odata.nextLink'] as string | undefined;
+
+          for (const event of events) {
+            if (event.hasAttachments) {
+              try {
+                event.attachments = (
+                  (await client.request(
+                    connection,
+                    `/v1.0/me/calendars/${calendar.id}/events/${event.id}/attachments?$select=id,lastModifiedDateTime,name,contentType,size,isInline&top=100`,
+                  )) as { value: OutlookAttachment[] }
+                ).value;
+              } catch (err) {
+                console.log('Could not fetch attachments, skipping', err);
+              }
+            }
+          }
 
           client.logger.log('Calendar events full sync page completed', {
             connectionId: connection.id,
@@ -136,7 +157,24 @@ export async function syncOutlookCalendar({
           throw e;
         }
 
-        calendar.events = (response.value as unknown[]) || [];
+        const events = (response.value as CalendarEvent[]) || [];
+
+        for (const event of events) {
+          if (event.hasAttachments) {
+            try {
+              event.attachments = (
+                (await client.request(
+                  connection,
+                  `/v1.0/me/calendars/${calendar.id}/events/${event.id}/attachments?$select=id,lastModifiedDateTime,name,contentType,size,isInline&top=100`,
+                )) as { value: OutlookAttachment[] }
+              ).value;
+            } catch (err) {
+              console.log('Could not fetch attachments, skipping', err);
+            }
+          }
+        }
+
+        calendar.events = events;
         nextDeltaLink = response['@odata.deltaLink'] as string;
 
         nextDeltaLinks[calendar.id] = nextDeltaLink;
