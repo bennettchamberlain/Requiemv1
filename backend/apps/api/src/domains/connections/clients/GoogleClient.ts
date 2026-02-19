@@ -33,8 +33,11 @@ export class GoogleClient extends BaseOAuth2Client {
     Calendar: ['calendar.readonly'],
     Gmail: ['gmail.readonly'],
     Drive: ['drive.readonly'],
-    YouTube: ['youtube'],
-    Contacts: ['contacts'],
+    'YouTube Activities': ['youtube.readonly'],
+    'YouTube Likes': ['youtube.readonly'],
+    'YouTube Playlists': ['youtube.readonly'],
+    'YouTube Subscriptions': ['youtube.readonly'],
+    Contacts: ['contacts.readonly'],
     default: ['userinfo.profile'],
   };
 
@@ -42,8 +45,8 @@ export class GoogleClient extends BaseOAuth2Client {
     'gmail.readonly',
     'calendar.readonly',
     'drive.readonly',
-    'youtube',
-    'contacts',
+    'youtube.readonly',
+    'contacts.readonly',
   ];
 
   protected readonly scopes = this.scopeNames.map((scope) => `https://www.googleapis.com/auth/${scope}`);
@@ -60,7 +63,7 @@ export class GoogleClient extends BaseOAuth2Client {
     );
 
     activeEndpoints.forEach((endpoint) => {
-      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap];
+      const scopes = this.endpointScopeMap[endpoint as keyof typeof this.endpointScopeMap] || [];
       scopes.forEach((scope) => scopesSet.add(`https://www.googleapis.com/auth/${scope}`));
     });
 
