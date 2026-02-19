@@ -1,20 +1,5 @@
 import type { BaseClient, Connection, FacebookPost } from '@ci/domains/connections';
 
-interface DriveFile {
-  id: string;
-  name?: string;
-  mimeType?: string;
-  modifiedTime?: string;
-  [key: string]: unknown;
-}
-
-interface DriveChange {
-  fileId: string;
-  file?: DriveFile;
-  removed?: boolean;
-  [key: string]: unknown;
-}
-
 export async function syncDrive({
   connection,
   client,
@@ -76,9 +61,14 @@ export async function syncDrive({
         since: nextCursor.since
       });
 
-      const endpoint = `/v21.0/me/posts?${params.toString()}`;
-      const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
-      const posts = (response.data as FacebookPost[]) || [];
+      const posts: FacebookPost[] = [];
+      let nextLink
+      do {
+        const endpoint = `/v21.0/me/posts?${params.toString()}`;
+        const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
+        posts = posts.concat(response.data as FacebookPost[] || []);
+        nextLink = response.paging?.next as string | undefined;
+      } while (nextLink != null)
 
       client.logger.log('Facebook Posts historical sync call completed', {
         connectionId: connection.id,
@@ -91,9 +81,7 @@ export async function syncDrive({
           posts,
         },
         nextCursor: {
-          since: posts.length > 0
-            ? (new Date(new Date(messages[messages.length - 1].created_time).getTime() + 1000).getTime()) / 1000
-            : new Date().getTime(),
+          since: new Date().getTime(),
         }
       };
     }
