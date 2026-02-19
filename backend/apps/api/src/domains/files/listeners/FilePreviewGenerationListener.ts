@@ -1,4 +1,9 @@
+import { createWriteStream, promises as fs } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
 import { Injectable } from '@nestjs/common';
+import ffmpeg from 'fluent-ffmpeg';
 import sharp from 'sharp';
 
 import { toServiceContext, UserServiceContext } from '@ci/common/context';
@@ -12,6 +17,7 @@ import { FileVariant } from '../types';
 
 const PREVIEW_MAX_DIMENSION = 300;
 const IMAGE_MIME_PREFIX = 'image/';
+const VIDEO_MIME_PREFIX = 'video/';
 
 @Injectable()
 export class FilePreviewGenerationListener {
@@ -66,6 +72,8 @@ export class FilePreviewGenerationListener {
 
     if (file.contentType.startsWith(IMAGE_MIME_PREFIX)) {
       buffer = await this.generateImagePreview(context, fileWithKey);
+    } else if (file.contentType.startsWith(VIDEO_MIME_PREFIX)) {
+      buffer = await this.generateVideoPreview(context, fileWithKey);
     } else {
       this.logger.log('File type not supported, skipping preview generation', {
         fileId: payload.fileId,
@@ -120,5 +128,46 @@ export class FilePreviewGenerationListener {
     stream.pipe(transformer);
 
     return transformer.toBuffer();
+  }
+
+  private async generateVideoPreview(
+    context: UserServiceContext,
+    file: RequiredFields<File, 'key', true>,
+  ): Promise<Buffer> {
+    const stream = await this.fileService.getFileStream(context, file.key);
+    const tempInput = join(tmpdir(), `ci-preview-${crypto.randomUUID()}`);
+    const tempOutput = `${tempInput}-frame.jpg`;
+
+    try {
+      // Write stream to temp file so ffmpeg can seek (required for most video containers)
+      await new Promise<void>((resolve, reject) => {
+        const ws = createWriteStream(tempInput);
+        stream.pipe(ws);
+        ws.on('finish', () => resolve());
+        ws.on('error', (err) => reject(err));
+      });
+
+      // Extract a single frame
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(tempInput)
+          .frames(1)
+          .output(tempOutput)
+          .on('end', () => resolve())
+          .on('error', (err: Error) => reject(err))
+          .run();
+      });
+
+      const frame = await fs.readFile(tempOutput);
+
+      return sharp(frame)
+        .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
+          fit: 'inside',
+        })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+    } finally {
+      await fs.unlink(tempInput).catch(() => {});
+      await fs.unlink(tempOutput).catch(() => {});
+    }
   }
 }
