@@ -179,14 +179,16 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/files"
-          element={
-            <ProtectedRoute>
-              <FilesPage />
-            </ProtectedRoute>
-          }
-        />
+        {isFeatureEnabled('files.page') && (
+          <Route
+            path="/files"
+            element={
+              <ProtectedRoute>
+                <FilesPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
 
         <Route
           path="/chat/:id?"

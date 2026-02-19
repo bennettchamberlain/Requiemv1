@@ -77,7 +77,8 @@
     "enable.inventory.page": false,
     "advanced.theme.tab": false,
     "new.insights.page": false,
-    "require.signup.codes": true
+    "require.signup.codes": true,
+    "files.page": false
   },
   "environment": {
     "database.query.logging": false
