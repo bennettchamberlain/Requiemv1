@@ -43,6 +43,7 @@ export function useSearchService({
       query: searchQuery,
       excludeTypes: ['answer', 'browser-activity'],
     },
+    fetchPolicy: 'cache-and-network',
   });
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);

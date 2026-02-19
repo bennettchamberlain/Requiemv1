@@ -35,9 +35,7 @@ export class FileType implements Node, Taggable {
   @Field(() => String, { nullable: true })
   externalId!: string | null;
 
-  // This doesn't seem to do anything yet, but set up for future caching after
-  // requisite tweaking. Just want don't to lose context.
-  @Directive('@cacheControl(maxAge: 60)')
+  @Directive('@cacheControl(maxAge: 3600)')
   @Field(() => String, { nullable: true })
   sourceUrl!: string | null;
 

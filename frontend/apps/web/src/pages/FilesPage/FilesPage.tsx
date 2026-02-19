@@ -209,6 +209,7 @@ export function FilesPage() {
 
   const { data, loading } = useQuery(GET_FILES, {
     variables: { first: 50 },
+    fetchPolicy: 'cache-and-network',
   });
 
   if (loading) {
