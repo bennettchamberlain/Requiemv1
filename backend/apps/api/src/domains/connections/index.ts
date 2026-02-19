@@ -64,4 +64,14 @@ export { FacebookClient, GoogleClient, MicrosoftClient };
 export type { BaseClient } from './clients/BaseClient';
 export type { Connection } from './entities/ConnectionEntity';
 export type { Provider } from './entities/ProviderEntity';
-export type { SyncResponse } from './clients/types';
+export type {
+  SyncResponse,
+  Calendar,
+  CalendarEvent,
+  OneDrivePageEntity,
+  OneDriveFileEntity,
+  OutlookMailMessageEntity,
+  OutlookAttachment,
+} from './clients/types';
+
+export { OUTLOOK_SKIP_REGEX, ONEDRIVE_ETAG_REGEX } from './clients/constants';

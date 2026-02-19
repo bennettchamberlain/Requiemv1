@@ -1,5 +1,3 @@
-import type { Buffer } from 'node:buffer';
-
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
@@ -13,78 +11,12 @@ import type {
 import type { Connection } from '../entities/ConnectionEntity';
 
 import { BaseOAuth2Client } from './BaseOAuth2Client';
-import type { SyncResponse } from './types';
-
-const OUTLOOK_SKIP_REGEX = /skip=(\d+)(&?)/;
-const ONEDRIVE_ETAG_REGEX =
-  /^"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}),[0-9]"$/;
+import { OUTLOOK_SKIP_REGEX, ONEDRIVE_ETAG_REGEX } from './constants';
+import type { SyncResponse, Calendar, OneDrivePageEntity, OneDriveFileEntity } from './types';
 
 const MAIL_PAGE_SIZE = 50;
 const CALENDAR_PAGE_SIZE = 50;
 const ONEDRIVE_PAGE_SIZE = 50;
-
-interface Calendar {
-  id: string;
-  name: string;
-  isDefaultCalendar: boolean;
-  changeKey: string;
-  owner: {
-    name: string;
-    address: string;
-  };
-}
-
-export interface OneDriveUser {
-  email: string;
-  displayName: string;
-}
-
-export interface OneDrivePageEntity {
-  '@odata.etag': string;
-  createdDateTime: string;
-  eTag: string;
-  id: string;
-  lastModifiedDateTime: string;
-  webUrl: string;
-  createdBy: {
-    user: OneDriveUser;
-  };
-  lastModifiedBy: {
-    user: OneDriveUser;
-  };
-  content?: OneDriveFileEntity;
-}
-
-export interface OneDriveFileEntity {
-  '@microsoft.graph.downloadUrl': string;
-  createdDateTime: string;
-  eTag: string;
-  id: string;
-  lastModifiedDateTime: string;
-  name: string;
-  webUrl: string;
-  size: number;
-  createdBy: {
-    user: OneDriveUser;
-  };
-  lastModifiedBy: {
-    user: OneDriveUser;
-  };
-  file: {
-    mimeType: string;
-    hashes: {
-      [key: string]: string;
-    };
-  };
-  image?: {
-    height: number;
-    width: number;
-  };
-  photo?: {
-    orientation?: number;
-  };
-  raw?: Buffer;
-}
 
 @Injectable()
 export class MicrosoftClient extends BaseOAuth2Client {
@@ -483,7 +415,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
       const nextLinkUrl = nextLink ? new URL(nextLink) : null;
       const endpoint = nextLinkUrl
         ? nextLinkUrl.pathname + nextLinkUrl.search + nextLinkUrl.hash
-        : `/v1.0/drive/list/items?$filter=contentType%2fname+eq+%27Document%27&$orderby=lastModifiedDateTime&top=${ONEDRIVE_PAGE_SIZE}`;
+        : `/v1.0/drive/list/items?$filter=contentType%2fname+eq+%27Document%27&$orderby=lastModifiedDateTime%20desc&top=${ONEDRIVE_PAGE_SIZE}`;
 
       const response = (await this.request(connection, endpoint)) as Record<string, unknown>;
       const files = (response.value as OneDrivePageEntity[]) || [];

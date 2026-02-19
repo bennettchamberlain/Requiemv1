@@ -4,8 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
-import { ConnectionService } from '@ci/domains/connections';
-import { OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections/clients/MicrosoftClient';
+import { ConnectionService, OneDrivePageEntity, OneDriveFileEntity } from '@ci/domains/connections';
 import { FileService as FileStorageService } from '@ci/domains/files';
 import { EventService as MemoryEventService } from '@ci/domains/memory';
 

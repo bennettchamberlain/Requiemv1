@@ -12,6 +12,9 @@ import { syncYouTubeActivities } from './Google/SyncYouTubeActivities';
 import { syncYouTubeLikes } from './Google/SyncYouTubeLikes';
 import { syncYouTubePlaylists } from './Google/SyncYouTubePlaylists';
 import { syncYouTubeSubscriptions } from './Google/SyncYouTubeSubscriptions';
+import { syncOneDrive } from './Microsoft/SyncOneDrive';
+import { syncOutlookCalendar } from './Microsoft/SyncOutlookCalendar';
+import { syncOutlookMail } from './Microsoft/SyncOutlookMail';
 
 const ENDPOINT_SERVICE_MAP: {
   [providerName: string]: {
@@ -37,6 +40,11 @@ const ENDPOINT_SERVICE_MAP: {
     'YouTube Likes': syncYouTubeLikes,
     'YouTube Playlists': syncYouTubePlaylists,
     'YouTube Subscriptions': syncYouTubeSubscriptions,
+  },
+  Microsoft: {
+    OneDrive: syncOneDrive,
+    'Outlook Mail': syncOutlookMail,
+    Calendar: syncOutlookCalendar,
   },
 };
 
