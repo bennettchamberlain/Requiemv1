@@ -149,14 +149,16 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/inventory"
-          element={
-            <ProtectedRoute>
-              <InventoryPage />
-            </ProtectedRoute>
-          }
-        />
+        {isFeatureEnabled('enable.inventory.page') && (
+          <Route
+            path="/inventory"
+            element={
+              <ProtectedRoute>
+                <InventoryPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
 
         <Route
           path="/insights"

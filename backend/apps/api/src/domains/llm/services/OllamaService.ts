@@ -60,8 +60,29 @@ export class OllamaService {
   async getAvailableModels(context: RequestContext): Promise<OllamaModel[]> {
     const result = await this.ollama.list();
     const models = result.models.map((model) => this.parseOllamaModel(model.name));
+    const visibleModels = models.filter((model) => !INTERNAL_MODELS.has(model.name));
 
-    return models.filter((model) => !INTERNAL_MODELS.has(model.name));
+    return await Promise.all(
+      visibleModels.map(async (model) => {
+        const capabilities = await this.fetchModelCapabilities(model.model, {
+          throwOnError: false,
+        });
+
+        return {
+          ...model,
+          capabilities,
+          vision: capabilities.includes('vision'),
+          tools: capabilities.includes('tools'),
+          thinking: capabilities.includes('thinking'),
+        };
+      }),
+    );
+  }
+
+  async getModelCapabilities(context: RequestContext, requestedModel: string): Promise<string[]> {
+    await this.validateModel(context, requestedModel);
+
+    return await this.fetchModelCapabilities(requestedModel);
   }
 
   async generateStream(
@@ -415,13 +436,44 @@ export class OllamaService {
     };
   }
 
-  private async validateModel(context: RequestContext, requestedModel: string) {
-    const availableModels = await this.getAvailableModels(context);
-
-    const validModel = availableModels.find((availableModel) => availableModel.model === requestedModel);
+  private async validateModel(_context: RequestContext, requestedModel: string) {
+    const result = await this.ollama.list();
+    const validModel = result.models.find((model) => model.name === requestedModel);
 
     if (!validModel) {
       throw new Error(`Invalid model specified: ${requestedModel}`);
+    }
+  }
+
+  private async fetchModelCapabilities(
+    requestedModel: string,
+    options: { throwOnError?: boolean } = {},
+  ): Promise<string[]> {
+    const { throwOnError = true } = options;
+
+    try {
+      const response = (await this.ollama.show({ model: requestedModel })) as {
+        capabilities?: unknown;
+      };
+
+      if (!Array.isArray(response.capabilities)) {
+        return [];
+      }
+
+      return response.capabilities
+        .filter((capability): capability is string => typeof capability === 'string')
+        .map((capability) => capability.toLowerCase());
+    } catch (error) {
+      if (throwOnError) {
+        throw error;
+      }
+
+      this.logger.warn('Failed to fetch Ollama model capabilities while listing models', {
+        model: requestedModel,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return [];
     }
   }
 }

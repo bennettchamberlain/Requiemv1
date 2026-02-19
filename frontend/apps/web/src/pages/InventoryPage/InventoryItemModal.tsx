@@ -2,19 +2,20 @@ import { useEffect, useState } from 'react';
 
 import { useMutation, type Reference, isReference } from '@apollo/client';
 import { Button, Dialog, Input, Label, Textarea, cn } from '@ci/shadcn';
+import { Link } from 'react-router-dom';
 
 import { gql } from '@/graphql';
 import { GET_ITEM } from '@/pages/ItemPage/ItemPage';
 
-interface InventoryItem {
+export interface InventoryItem {
   id: string;
   name: string;
-  category: string;
-  description: string;
-  brand: string;
-  model: string;
-  currentValue: number;
-  file: {
+  category?: string | null;
+  description?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  currentValue?: number | null;
+  file?: {
     sourceUrl: string;
   } | null;
 }
@@ -24,6 +25,7 @@ interface Props {
   onClose: () => void;
   item: InventoryItem | null;
   create: boolean;
+  detailPagePath?: string;
 }
 
 const CREATE_INVENTORY_ITEM = gql(`
@@ -68,18 +70,18 @@ const UPDATE_INVENTORY_ITEM = gql(`
   }
 `);
 
-export function InventoryItemModal({ open, onClose, item, create = false }: Props) {
+export function InventoryItemModal({ open, onClose, item, create = false, detailPagePath }: Props) {
   const [formData, setFormData] = useState<Partial<InventoryItem>>({});
 
   useEffect(() => {
     if (item) {
       setFormData({
-        name: item.name,
-        category: item.category,
-        description: item.description,
-        brand: item.brand,
-        model: item.model,
-        currentValue: item.currentValue,
+        name: item.name ?? '',
+        category: item.category ?? '',
+        description: item.description ?? '',
+        brand: item.brand ?? '',
+        model: item.model ?? '',
+        currentValue: item.currentValue ?? 0,
       });
     }
   }, [item]);
@@ -205,6 +207,7 @@ export function InventoryItemModal({ open, onClose, item, create = false }: Prop
   });
 
   const imageUrl = item?.file?.sourceUrl ? `/static${item.file.sourceUrl}` : null;
+  const showDetailLink = !create && Boolean(detailPagePath);
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -288,6 +291,11 @@ export function InventoryItemModal({ open, onClose, item, create = false }: Prop
           </div>
         </div>
         <Dialog.Footer className="flex gap-2 justify-end">
+          {showDetailLink && (
+            <Button asChild type="button" variant="outline">
+              <Link to={detailPagePath!}>View details</Link>
+            </Button>
+          )}
           <Button
             type="button"
             variant="destructive"

@@ -85,6 +85,7 @@ export class ImageDownscalingListener {
     await this.eventService.send(PreviewGeneratedEvent, {
       userId: payload.userId,
       previewId: preview.id,
+      model: payload.model,
     });
 
     this.logger.log('Generated preview', {

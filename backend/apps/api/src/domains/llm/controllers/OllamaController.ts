@@ -6,6 +6,7 @@ import {
   Inject,
   NotFoundException,
   Post,
+  Query,
   Res,
   UseGuards,
   forwardRef,
@@ -37,6 +38,9 @@ const promptSchema = z.object({
   enableThinking: z.boolean().default(true),
   fileIds: z.array(z.string()).optional(), // File IDs to attach to this message
 });
+const modelCapabilitiesSchema = z.object({
+  model: z.string().min(1),
+});
 
 interface SystemPromptOptions {
   leadingAssistantMessages?: OllamaMessage[];
@@ -65,6 +69,21 @@ export class OllamaController {
   @Get('models')
   async listModels(@Context() context: RequestContext) {
     return await this.ollamaService.getAvailableModels(context);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('models/capabilities')
+  async getModelCapabilities(
+    @Context() context: RequestContext,
+    @Query(new ValidationPipe(modelCapabilitiesSchema)) query: z.infer<typeof modelCapabilitiesSchema>,
+  ) {
+    const capabilities = await this.ollamaService.getModelCapabilities(context, query.model);
+
+    return {
+      model: query.model,
+      capabilities,
+      vision: capabilities.includes('vision'),
+    };
   }
 
   @UseGuards(JwtAuthGuard)

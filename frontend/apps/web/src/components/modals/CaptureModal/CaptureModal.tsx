@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { Camera } from '@ci/capture';
 import { fetchJson, useDeviceLayout } from '@ci/common';
-import { Dialog, cn, Button, Popover } from '@ci/shadcn';
+import { Dialog, cn, Button, Popover, useToast } from '@ci/shadcn';
 import { Send, Settings, X } from '@ci/shadcn/icons';
 
 import { useUploadFile } from '@/api';
@@ -19,14 +19,27 @@ interface Props {
   onClose?: () => void;
 }
 
+type CaptureMode = 'photo' | 'video' | 'inventory';
+
+interface ModelCapabilitiesResponse {
+  vision: boolean;
+}
+
 export function CaptureModal({ open = false, onClose }: Props) {
   const [{ authToken }] = useAuth();
   const [{ selectedModel }] = useModel();
+  const { toast } = useToast();
 
   const { isMobile } = useDeviceLayout();
 
   const [files, setFiles] = useState<FileData[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [mobileCaptureMode, setMobileCaptureMode] = useState<CaptureMode>('photo');
+  const [desktopCaptureMode, setDesktopCaptureMode] = useState<CaptureMode>('photo');
+  const [selectedModelSupportsVision, setSelectedModelSupportsVision] = useState<boolean | null>(null);
+  const [isCheckingModelCapabilities, setIsCheckingModelCapabilities] = useState(false);
+  const [capabilityCheckFailed, setCapabilityCheckFailed] = useState(false);
+  const modelVisionSupportCacheRef = useRef<Map<string, boolean>>(new Map());
 
   const [{ files: fileData }, { upload, reset: resetUploader }] = useUploadFile();
 
@@ -40,24 +53,151 @@ export function CaptureModal({ open = false, onClose }: Props) {
   const handleClose = useCallback(() => {
     setFiles([]);
     setThreadId(null);
+    setMobileCaptureMode('photo');
+    setDesktopCaptureMode('photo');
     resetUploader();
     stopChatRequest();
 
     onClose?.();
-  }, [onClose]);
+  }, [onClose, resetUploader, stopChatRequest]);
 
   useEffect(() => {
     if (!open) {
       setFiles([]);
       setThreadId(null);
+      setMobileCaptureMode('photo');
+      setDesktopCaptureMode('photo');
     }
   }, [open]);
 
-  const handleMediaCaptured = useCallback(
+  useEffect(() => {
+    if (authToken == null || selectedModel == null) {
+      setSelectedModelSupportsVision(null);
+      setCapabilityCheckFailed(false);
+      setIsCheckingModelCapabilities(false);
+
+      return;
+    }
+
+    const cachedSupport = modelVisionSupportCacheRef.current.get(selectedModel);
+
+    if (cachedSupport != null) {
+      setSelectedModelSupportsVision(cachedSupport);
+      setCapabilityCheckFailed(false);
+      setIsCheckingModelCapabilities(false);
+
+      return;
+    }
+
+    let canceled = false;
+
+    setSelectedModelSupportsVision(null);
+    setCapabilityCheckFailed(false);
+    setIsCheckingModelCapabilities(true);
+
+    (async () => {
+      try {
+        const query = new URLSearchParams({ model: selectedModel }).toString();
+
+        const response = await fetchJson<ModelCapabilitiesResponse>(`/api/llm/models/capabilities?${query}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        if (canceled) {
+          return;
+        }
+
+        modelVisionSupportCacheRef.current.set(selectedModel, response.vision);
+        setSelectedModelSupportsVision(response.vision);
+      } catch {
+        if (canceled) {
+          return;
+        }
+
+        setCapabilityCheckFailed(true);
+        setSelectedModelSupportsVision(false);
+      } finally {
+        if (!canceled) {
+          setIsCheckingModelCapabilities(false);
+        }
+      }
+    })();
+
+    return () => {
+      canceled = true;
+    };
+  }, [authToken, selectedModel]);
+
+  const ensureImageModelSupported = useCallback((): boolean => {
+    if (selectedModel == null) {
+      toast.error('Select a model before capturing images.');
+
+      return false;
+    }
+
+    if (capabilityCheckFailed) {
+      toast.error('Unable to verify model image support right now. Try again.');
+
+      return false;
+    }
+
+    if (isCheckingModelCapabilities || selectedModelSupportsVision == null) {
+      toast.error('Checking selected model capabilities. Try again in a moment.');
+
+      return false;
+    }
+
+    if (!selectedModelSupportsVision) {
+      toast.error('Selected model does not support image input. Choose a vision model.');
+
+      return false;
+    }
+
+    return true;
+  }, [capabilityCheckFailed, isCheckingModelCapabilities, selectedModel, selectedModelSupportsVision, toast]);
+
+  const handleCapturedMedia = useCallback(
     async (file: File) => {
-      upload([file]);
+      const isImage = file.type.startsWith('image/');
+
+      if (isImage && !ensureImageModelSupported()) {
+        return;
+      }
+
+      const inventoryCapture = isImage && desktopCaptureMode === 'inventory';
+      const uploaded = await upload([file], {
+        inventoryCapture,
+        model: selectedModel ?? undefined,
+      });
+
+      if (inventoryCapture && uploaded) {
+        toast.success('Inventory analysis started. This may take a moment.');
+      }
     },
-    [upload],
+    [desktopCaptureMode, ensureImageModelSupported, selectedModel, toast, upload],
+  );
+
+  const handleMobileFrameCaptured = useCallback(
+    async (file: File) => {
+      if (!ensureImageModelSupported()) {
+        return;
+      }
+
+      const inventoryCapture = mobileCaptureMode === 'inventory';
+      const uploaded = await upload([file], {
+        inventoryCapture,
+        model: selectedModel ?? undefined,
+      });
+
+      if (inventoryCapture && uploaded) {
+        toast.success('Inventory analysis started. This may take a moment.');
+      }
+    },
+    [ensureImageModelSupported, mobileCaptureMode, selectedModel, toast, upload],
   );
 
   const createFileThread = useCallback(async () => {
@@ -150,13 +290,16 @@ export function CaptureModal({ open = false, onClose }: Props) {
           </div>
 
           <Camera
-            onFrameCaptured={handleMediaCaptured}
-            onRecordingFinished={handleMediaCaptured}
+            onFrameCaptured={handleMobileFrameCaptured}
+            onRecordingFinished={handleCapturedMedia}
             className="h-full"
           >
             <Camera.Feed />
             <div className="absolute w-full bottom-0">
-              <Camera.MobileControls onSelectLastCapture={handleSelectLastCapture} />
+              <Camera.MobileControls
+                onSelectLastCapture={handleSelectLastCapture}
+                onRecordingModeChange={setMobileCaptureMode}
+              />
             </div>
           </Camera>
         </InlineModal>
@@ -229,13 +372,13 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
         {files.length === 0 && (
           <Camera
-            onFrameCaptured={handleMediaCaptured}
-            onRecordingFinished={handleMediaCaptured}
+            onFrameCaptured={handleCapturedMedia}
+            onRecordingFinished={handleCapturedMedia}
             className="h-full"
           >
             <Camera.Information />
             <Camera.Feed />
-            <Camera.DesktopControls />
+            <Camera.DesktopControls onRecordingModeChange={setDesktopCaptureMode} />
           </Camera>
         )}
 

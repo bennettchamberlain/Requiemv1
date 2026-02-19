@@ -27,6 +27,7 @@ export type FileUploadedPayload = {
   fileId: string;
   userId: string;
   inventoryCapture: boolean;
+  model?: string;
 };
 
 /**
@@ -54,6 +55,7 @@ export type FileDeletedPayload = {
 export type PreviewGeneratedPayload = {
   userId: string;
   previewId: string;
+  model?: string;
 };
 
 defineEvent<FileCreatedPayload>(FileCreatedEvent);

@@ -42,6 +42,7 @@
     "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION",
     "pinned.demo.models": "ENABLE_PINNED_DEMO_MODELS",
     "enable.system.prompt": "ENABLE_SYSTEM_PROMPT",
+    "enable.inventory.page": "ENABLE_INVENTORY_PAGE",
     "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB",
     "new.insights.page": "ENABLE_NEW_INSIGHTS_PAGE",
     "require.signup.codes": "ENABLE_REQUIRE_SIGNUP_CODES"

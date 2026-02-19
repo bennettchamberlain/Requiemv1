@@ -50,7 +50,7 @@ const PROMPT = `
   For estimated_value, provide a rough number in USD based on visual condition. If unknown, use 0.
 `;
 
-const MODEL = 'llama3.2-vision:latest';
+const DEFAULT_MODEL = 'llama3.2-vision:11b';
 
 @Injectable()
 export class InventoryListener {
@@ -106,9 +106,10 @@ export class InventoryListener {
 
     const fileContent = await this.fileService.getFileContent(serviceContext, file.key);
     const base64Image = Buffer.from(fileContent).toString('base64');
+    const model = payload.model ?? DEFAULT_MODEL;
 
     this.logger.log('Starting LLM chat', {
-      model: MODEL,
+      model,
     });
 
     const response = await this.ollamaService.chat(
@@ -121,7 +122,7 @@ export class InventoryListener {
         },
       ],
       {
-        model: MODEL,
+        model,
         enableTools: false,
         format: 'json',
       },

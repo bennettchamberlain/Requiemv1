@@ -10,9 +10,13 @@ import {
   FolderSearch2,
 } from '@ci/shadcn/icons';
 
+import { useFeatures } from '@/common/feature';
+
 import { NavLink } from './NavLink';
 
 export function SecondaryNavigation() {
+  const { isFeatureEnabled } = useFeatures();
+
   return (
     <nav className="flex flex-col gap-2 p-2">
       <Tooltip.Provider>
@@ -40,9 +44,11 @@ export function SecondaryNavigation() {
           <NotebookPen className="h-6 w-6" strokeWidth={1.25} />
         </NavLink>
 
-        <NavLink to="/inventory" label="Inventory">
-          <Package className="h-6 w-6" strokeWidth={1.25} />
-        </NavLink>
+        {isFeatureEnabled('enable.inventory.page') && (
+          <NavLink to="/inventory" label="Inventory">
+            <Package className="h-6 w-6" strokeWidth={1.25} />
+          </NavLink>
+        )}
 
         <NavLink to="/files" label="Files">
           <HardDrive className="h-6 w-6" strokeWidth={1.25} />

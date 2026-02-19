@@ -2,6 +2,7 @@ import { unlink } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import {
+  Body,
   BadRequestException,
   Controller,
   Logger,
@@ -29,10 +30,18 @@ export class FilesController {
       limits: { fileSize: 10 * 1024 * 1024 * 1024 },
     }),
   )
-  async upload(@Context() context: RequestContext, @UploadedFiles() files: Express.Multer.File[]) {
+  async upload(
+    @Context() context: RequestContext,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('inventoryCapture') inventoryCapture?: string | boolean,
+    @Body('model') model?: string,
+  ) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
+
+    const shouldCaptureInventory = inventoryCapture === true || inventoryCapture === 'true';
+    const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : undefined;
 
     const serviceContext = toServiceContext(context);
 
@@ -58,19 +67,15 @@ export class FilesController {
       }
 
       const entities = await Promise.all(
-        Array.from(uniqueByHash.entries()).map(async ([hash, file]) => {
-          const existing = await this.fileService.findByHash(serviceContext, hash);
-
-          if (existing) {
-            return existing;
-          }
-
+        Array.from(uniqueByHash.entries()).map(async ([, file]) => {
           return this.fileService.upload(serviceContext, {
             filename: file.originalname,
             contentType: file.mimetype,
             size: file.size,
             buffer: file.buffer,
             path: file.path,
+            inventoryCapture: shouldCaptureInventory,
+            model: selectedModel,
           });
         }),
       );

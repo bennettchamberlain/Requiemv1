@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
@@ -12,17 +14,20 @@ import {
   EventGridItem,
   FileGridItem,
   ItemGridItem,
+  type ItemInventoryPreview,
   NoteGridItem,
   PersonGridItem,
   PlaceGridItem,
   ThreadGridItem,
 } from '@/components/entities';
+import { InventoryItemModal, type InventoryItem } from '@/pages/InventoryPage/InventoryItemModal';
 import { Empty } from '@/pages/MemoryPage/Components';
 
 import { useEntityService } from '../useEntityService';
 
 export function GalleryView() {
   const navigate = useNavigate();
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
 
   const [{ data }] = useEntityService();
 
@@ -36,122 +41,135 @@ export function GalleryView() {
     );
   }
 
+  const openInventoryModal = (item: ItemInventoryPreview) => {
+    setSelectedInventoryItem({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      file: item.file,
+    });
+  };
+
   return (
-    <EntityGrid className="p-4 pt-0">
-      {data.map((item) => {
-        switch (item.__typename) {
-          case 'AnswerType':
-            return <AnswerGridItem key={item.id} answer={item} onClick={() => {}} />;
+    <>
+      <EntityGrid className="p-4 pt-0">
+        {data.map((item) => {
+          switch (item.__typename) {
+            case 'AnswerType':
+              return <AnswerGridItem key={item.id} answer={item} onClick={() => {}} />;
 
-          case 'BrowserActivityType':
-            return <BrowserActivityGridItem key={item.id} browserActivity={item} onClick={() => {}} />;
+            case 'BrowserActivityType':
+              return <BrowserActivityGridItem key={item.id} browserActivity={item} onClick={() => {}} />;
 
-          case 'CommunicationType':
-            return (
-              <CommunicationGridItem
-                key={item.id}
-                communication={item}
-                onClick={() => {
-                  navigate(`/communications/${GlobalUID.parse('communication', item.id)}`);
-                }}
-              />
-            );
+            case 'CommunicationType':
+              return (
+                <CommunicationGridItem
+                  key={item.id}
+                  communication={item}
+                  onClick={() => {
+                    navigate(`/communications/${GlobalUID.parse('communication', item.id)}`);
+                  }}
+                />
+              );
 
-          case 'ConceptType':
-            return (
-              <ConceptGridItem
-                key={item.id}
-                concept={item}
-                onClick={() => {
-                  navigate(`/concepts/${GlobalUID.parse('concept', item.id)}`);
-                }}
-              />
-            );
+            case 'ConceptType':
+              return (
+                <ConceptGridItem
+                  key={item.id}
+                  concept={item}
+                  onClick={() => {
+                    navigate(`/concepts/${GlobalUID.parse('concept', item.id)}`);
+                  }}
+                />
+              );
 
-          case 'ContentType':
-            return (
-              <ContentGridItem
-                key={item.id}
-                content={item}
-                onClick={() => {
-                  navigate(`/content/${GlobalUID.parse('content', item.id)}`);
-                }}
-              />
-            );
+            case 'ContentType':
+              return (
+                <ContentGridItem
+                  key={item.id}
+                  content={item}
+                  onClick={() => {
+                    navigate(`/content/${GlobalUID.parse('content', item.id)}`);
+                  }}
+                />
+              );
 
-          case 'EventType':
-            return (
-              <EventGridItem
-                key={item.id}
-                event={item}
-                onClick={() => {
-                  navigate(`/events/${GlobalUID.parse('event', item.id)}`);
-                }}
-              />
-            );
+            case 'EventType':
+              return (
+                <EventGridItem
+                  key={item.id}
+                  event={item}
+                  onClick={() => {
+                    navigate(`/events/${GlobalUID.parse('event', item.id)}`);
+                  }}
+                />
+              );
 
-          case 'FileType':
-            return <FileGridItem key={item.id} file={item} />;
+            case 'FileType':
+              return <FileGridItem key={item.id} file={item} />;
 
-          case 'ItemType':
-            return (
-              <ItemGridItem
-                key={item.id}
-                item={item}
-                onClick={() => {
-                  navigate(`/items/${GlobalUID.parse('item', item.id)}`);
-                }}
-              />
-            );
+            case 'ItemType':
+              return <ItemGridItem key={item.id} item={item} onSelectInventoryItem={openInventoryModal} />;
 
-          case 'NoteType':
-            return (
-              <NoteGridItem
-                key={item.id}
-                note={item}
-                onClick={() => {
-                  navigate(`/notes/${GlobalUID.parse('note', item.id)}`);
-                }}
-              />
-            );
+            case 'NoteType':
+              return (
+                <NoteGridItem
+                  key={item.id}
+                  note={item}
+                  onClick={() => {
+                    navigate(`/notes/${GlobalUID.parse('note', item.id)}`);
+                  }}
+                />
+              );
 
-          case 'PersonType':
-            return (
-              <PersonGridItem
-                key={item.id}
-                person={item}
-                onClick={() => {
-                  navigate(`/people/${GlobalUID.parse('person', item.id)}`);
-                }}
-              />
-            );
+            case 'PersonType':
+              return (
+                <PersonGridItem
+                  key={item.id}
+                  person={item}
+                  onClick={() => {
+                    navigate(`/people/${GlobalUID.parse('person', item.id)}`);
+                  }}
+                />
+              );
 
-          case 'PlaceType':
-            return (
-              <PlaceGridItem
-                key={item.id}
-                place={item}
-                onClick={() => {
-                  navigate(`/places/${GlobalUID.parse('place', item.id)}`);
-                }}
-              />
-            );
+            case 'PlaceType':
+              return (
+                <PlaceGridItem
+                  key={item.id}
+                  place={item}
+                  onClick={() => {
+                    navigate(`/places/${GlobalUID.parse('place', item.id)}`);
+                  }}
+                />
+              );
 
-          case 'ThreadType':
-            return (
-              <ThreadGridItem
-                key={item.id}
-                thread={item}
-                onClick={() => {
-                  navigate(`/chat/${GlobalUID.parse('thread', item.id)}`);
-                }}
-              />
-            );
+            case 'ThreadType':
+              return (
+                <ThreadGridItem
+                  key={item.id}
+                  thread={item}
+                  onClick={() => {
+                    navigate(`/chat/${GlobalUID.parse('thread', item.id)}`);
+                  }}
+                />
+              );
 
-          default:
-            return null;
+            default:
+              return null;
+          }
+        })}
+      </EntityGrid>
+
+      <InventoryItemModal
+        open={selectedInventoryItem != null}
+        onClose={() => setSelectedInventoryItem(null)}
+        item={selectedInventoryItem}
+        create={false}
+        detailPagePath={
+          selectedInventoryItem ? `/items/${GlobalUID.parse('item', selectedInventoryItem.id)}` : undefined
         }
-      })}
-    </EntityGrid>
+      />
+    </>
   );
 }

@@ -11,6 +11,10 @@ interface Model {
   namespace: string | null;
   name: string;
   tag: string | null;
+  capabilities?: string[];
+  vision?: boolean;
+  tools?: boolean;
+  thinking?: boolean;
 }
 
 type Value = [
