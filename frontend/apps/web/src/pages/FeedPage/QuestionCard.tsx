@@ -21,7 +21,7 @@ export function QuestionCard({ question, submitting, onSubmit, className }: Prop
   useEffect(() => {
     setAnswer('');
     setError(null);
-  }, [question.id]);
+  }, [question.presentationId]);
 
   const containerClassName = useMemo(
     () =>
