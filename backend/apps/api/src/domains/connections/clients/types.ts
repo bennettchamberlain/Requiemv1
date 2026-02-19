@@ -168,3 +168,48 @@ export interface OutlookMailMessageEntity {
   }>;
   attachments?: OutlookAttachment[];
 }
+
+export interface FacebookPost {
+  id: string;
+  created_time: string;
+  link: string;
+  type: string;
+  full_picture?: string;
+  picture?: string;
+  attachments?: {
+    data: Array<{
+      target?: {
+        id: string;
+        url: string;
+      };
+      type: string;
+      url: string;
+      media?: {
+        image?: {
+          height: number;
+          src: string;
+          width: number;
+        };
+        source?: string;
+      };
+      subattachments?: {
+        data: Array<{
+          media?: {
+            image?: {
+              height: number;
+              src: string;
+              width: number;
+            };
+            source: string;
+          };
+          target?: {
+            id: string;
+            url: string;
+          };
+          type?: string;
+          url?: string;
+        }>;
+      };
+    }>;
+  };
+}
