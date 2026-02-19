@@ -11,7 +11,12 @@ import { GraphQueryService } from '../services/GraphQueryService';
 import { GraphUtilityService } from '../services/GraphUtilityService';
 import { UserContextService } from '../services/UserContextService';
 
-const getNodeDetailsSchema = z.object({ entityId: z.string() });
+const getNodeDetailsSchema = z.object({
+  entityId: z.string(),
+  maxDepth: z.coerce.number().int().min(1).max(5).optional(),
+  maxNodes: z.coerce.number().int().min(1).max(250).optional(),
+  maxEdges: z.coerce.number().int().min(1).max(500).optional(),
+});
 const graphSearchSchema = z.object({
   query: z.string().min(1),
   limit: z.coerce.number().int().positive().max(50).optional(),
@@ -178,22 +183,51 @@ export class GraphController {
       throw new NotFoundException(`Node ${query.entityId} not found`);
     }
 
-    const relationships = await this.graphQuery.getRelationships(ownerId, {
-      entityIds: [node.entity_id],
+    const maxDepth = query.maxDepth ?? 1;
+    const maxNodes = query.maxNodes ?? 100;
+    const maxEdges = query.maxEdges ?? 250;
+
+    const traversal = await this.graphQuery.traverseGraph(ownerId, [node.entity_id], {
       direction: 'both',
-      includeInactive: true,
+      maxDepth,
+      maxNodes,
+      maxEdges,
     });
+
+    const traversalNodes = Array.from(traversal.nodes.values());
+    const relationships = traversal.edges;
 
     const neighborIds = new Set<string>();
     for (const rel of relationships) {
+      if (rel.from_entity_id !== node.entity_id && rel.to_entity_id !== node.entity_id) {
+        continue;
+      }
+
       const otherId = rel.from_entity_id === node.entity_id ? rel.to_entity_id : rel.from_entity_id;
       neighborIds.add(otherId);
     }
 
-    const neighborNodes = neighborIds.size
-      ? await this.graphQuery.getNodesByIds(ownerId, Array.from(neighborIds))
-      : [];
-    const neighborMap = new Map(neighborNodes.map((n) => [n.entity_id, n]));
+    const neighborMap = new Map(traversalNodes.map((n) => [n.entity_id, n]));
+
+    const subgraph = {
+      nodes: traversalNodes.map((graphNode) => ({
+        id: graphNode.entity_id,
+        entity_id: graphNode.entity_id,
+        entity_type: graphNode.entity_type,
+        name: graphNode.name,
+        description: graphNode.description,
+        properties: graphNode.properties ?? {},
+      })),
+      links: relationships.map((rel) => ({
+        id: rel.relationship_id,
+        relationship_id: rel.relationship_id,
+        source: rel.from_entity_id,
+        target: rel.to_entity_id,
+        relationship_type: rel.relationship_type,
+        strength: rel.strength ?? 0.5,
+        properties: rel.properties ?? {},
+      })),
+    };
 
     return {
       success: true,
@@ -206,29 +240,36 @@ export class GraphController {
         createdAt: node.created_at,
         updatedAt: node.updated_at,
       },
-      relationships: relationships.map((rel) => {
-        const isOutbound = rel.from_entity_id === node.entity_id;
-        const otherId = isOutbound ? rel.to_entity_id : rel.from_entity_id;
-        const otherNode = neighborMap.get(otherId) ?? null;
+      relationships: relationships
+        .map((rel) => {
+          if (rel.from_entity_id !== node.entity_id && rel.to_entity_id !== node.entity_id) {
+            return null;
+          }
 
-        return {
-          relationshipId: rel.relationship_id,
-          relationshipType: rel.relationship_type,
-          direction: isOutbound ? 'outbound' : 'inbound',
-          strength: rel.strength,
-          isBidirectional: rel.is_bidirectional,
-          properties: rel.properties ?? {},
-          otherEntity: otherNode
-            ? {
-                entityId: otherNode.entity_id,
-                entityType: otherNode.entity_type,
-                name: otherNode.name,
-                description: otherNode.description,
-                properties: otherNode.properties ?? {},
-              }
-            : null,
-        };
-      }),
+          const isOutbound = rel.from_entity_id === node.entity_id;
+          const otherId = isOutbound ? rel.to_entity_id : rel.from_entity_id;
+          const otherNode = neighborMap.get(otherId) ?? null;
+
+          return {
+            relationshipId: rel.relationship_id,
+            relationshipType: rel.relationship_type,
+            direction: isOutbound ? 'outbound' : 'inbound',
+            strength: rel.strength,
+            isBidirectional: rel.is_bidirectional,
+            properties: rel.properties ?? {},
+            otherEntity: otherNode
+              ? {
+                  entityId: otherNode.entity_id,
+                  entityType: otherNode.entity_type,
+                  name: otherNode.name,
+                  description: otherNode.description,
+                  properties: otherNode.properties ?? {},
+                }
+              : null,
+          };
+        })
+        .filter((rel): rel is NonNullable<typeof rel> => rel !== null),
+      subgraph,
     };
   }
 }

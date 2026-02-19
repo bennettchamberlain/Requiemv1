@@ -9,11 +9,15 @@ import { ForceGraph } from '@/components/ForceGraph';
 
 interface Props {
   entityId: string;
+  maxDepth?: number;
+  nodeLimit?: number;
 }
 
-export function EntityGraph({ entityId }: Props) {
+export function EntityGraph({ entityId, maxDepth = 1, nodeLimit = 25 }: Props) {
   const { data, loading } = useNodeGraphService({
     entityId,
+    maxDepth,
+    nodeLimit,
     skip: !entityId,
   });
 

@@ -46,6 +46,13 @@ const ALLOWED_TYPES = {
   place: ['LIVES_IN', 'STUDIES_AT', 'WORKS_AT', 'LIVES_NEAR', 'VISITED', 'OWNS'],
   thread: ['CREATED'],
 };
+const MIN_HOP_DEPTH = 1;
+const MAX_HOP_DEPTH = 5;
+const DEFAULT_HOP_DEPTH = 2;
+const MIN_NODE_LIMIT = 10;
+const MAX_NODE_LIMIT = 100;
+const NODE_LIMIT_STEP = 5;
+const DEFAULT_NODE_LIMIT = 25;
 
 const GET_PERSON = gql(`
   query GetPerson($id: ID!) {
@@ -64,6 +71,8 @@ const GET_PERSON = gql(`
 export function PersonPage() {
   const { id } = useParams<{ id: string }>();
   const [addRelationshipModalOpen, setAddRelationshipModalOpen] = useState(false);
+  const [hopDepth, setHopDepth] = useState(DEFAULT_HOP_DEPTH);
+  const [nodeLimit, setNodeLimit] = useState(DEFAULT_NODE_LIMIT);
 
   const { data, loading } = useQuery(GET_PERSON, {
     variables: {
@@ -95,6 +104,54 @@ export function PersonPage() {
             <h1 className="text-2xl font-bold">{person.name}</h1>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-md border border-border/60 bg-background/60 px-2 py-1">
+              <span className="text-xs text-muted-foreground">Hops</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                disabled={hopDepth <= MIN_HOP_DEPTH}
+                onClick={() => setHopDepth((prev) => Math.max(MIN_HOP_DEPTH, prev - 1))}
+                aria-label="Decrease hop depth"
+              >
+                -
+              </Button>
+              <span className="w-5 text-center text-sm font-medium">{hopDepth}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                disabled={hopDepth >= MAX_HOP_DEPTH}
+                onClick={() => setHopDepth((prev) => Math.min(MAX_HOP_DEPTH, prev + 1))}
+                aria-label="Increase hop depth"
+              >
+                +
+              </Button>
+            </div>
+            <div className="flex items-center gap-1 rounded-md border border-border/60 bg-background/60 px-2 py-1">
+              <span className="text-xs text-muted-foreground">Nodes</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                disabled={nodeLimit <= MIN_NODE_LIMIT}
+                onClick={() => setNodeLimit((prev) => Math.max(MIN_NODE_LIMIT, prev - NODE_LIMIT_STEP))}
+                aria-label="Decrease node limit"
+              >
+                -
+              </Button>
+              <span className="w-8 text-center text-sm font-medium">{nodeLimit}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0"
+                disabled={nodeLimit >= MAX_NODE_LIMIT}
+                onClick={() => setNodeLimit((prev) => Math.min(MAX_NODE_LIMIT, prev + NODE_LIMIT_STEP))}
+                aria-label="Increase node limit"
+              >
+                +
+              </Button>
+            </div>
             <Tooltip>
               <Tooltip.Trigger asChild>
                 <Button
@@ -123,7 +180,7 @@ export function PersonPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <EntityGraph entityId={id!} />
+            <EntityGraph entityId={id!} maxDepth={hopDepth} nodeLimit={nodeLimit} />
           </div>
 
           <Card className="p-0">
