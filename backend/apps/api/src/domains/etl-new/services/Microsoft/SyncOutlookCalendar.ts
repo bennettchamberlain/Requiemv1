@@ -6,7 +6,7 @@ import type {
   OutlookAttachment,
 } from '@ci/domains/connections';
 
-const CALENDAR_PAGE_SIZE = 1;
+const CALENDAR_PAGE_SIZE = 50;
 
 export async function syncOutlookCalendar({
   connection,

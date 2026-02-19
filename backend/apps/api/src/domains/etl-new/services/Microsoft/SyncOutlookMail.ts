@@ -5,7 +5,7 @@ import type {
   OutlookMailMessageEntity,
 } from '@ci/domains/connections';
 
-const MAIL_PAGE_SIZE = 1;
+const MAIL_PAGE_SIZE = 50;
 
 export async function syncOutlookMail({
   connection,
