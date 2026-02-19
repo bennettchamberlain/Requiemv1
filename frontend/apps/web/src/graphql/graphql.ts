@@ -1072,6 +1072,8 @@ export type Query = {
   contents: ContentConnection;
   event?: Maybe<EventType>;
   events: EventConnection;
+  /** Get actions for the feed, prioritizing unseen actions */
+  feedActions: Array<ActionType>;
   file?: Maybe<FileType>;
   files: FileConnection;
   item?: Maybe<ItemType>;
@@ -1217,6 +1219,11 @@ export type QueryEventsArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryFeedActionsArgs = {
+  limit?: Scalars['Int']['input'];
 };
 
 
