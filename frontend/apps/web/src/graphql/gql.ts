@@ -66,8 +66,10 @@ type Documents = {
     "\n  query GetSummaries($first: Int) {\n    summaries(first: $first) {\n      edges {\n        node {\n          id\n          title\n          periodType\n          seen\n          dismissed\n          summaryText\n          keyInsights\n          tags\n          activityCounts {\n            total\n          }\n          insights {\n            title\n            summaryText\n            keyActions\n            relevanceScore\n            tags\n            relatedEntityIds\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n      }\n      totalCount\n    }\n  }\n": typeof types.GetSummariesDocument,
     "\n  mutation MarkSummaryAsSeen($id: ID!) {\n    markSummaryAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": typeof types.MarkSummaryAsSeenDocument,
     "\n  mutation MarkSummaryAsDismissed($id: ID!) {\n    markSummaryAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": typeof types.MarkSummaryAsDismissedDocument,
-    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    contentType\n    sourceUrl\n    previewUrl\n    createdAt\n  }\n": typeof types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetFilesDocument,
+    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    contentType\n    sourceUrl\n    previewUrl\n    createdAt\n  }\n": typeof types.FileGridItemFragmentFragmentDoc,
+    "\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n": typeof types.GetFilePreviewDocument,
+    "\n  query GetFileMedia($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n    }\n  }\n": typeof types.GetFileMediaDocument,
     "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": typeof types.CreateItemDocument,
     "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": typeof types.UpdateItemDocument,
     "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                ": typeof types.NewItemFragmentDoc,
@@ -159,8 +161,10 @@ const documents: Documents = {
     "\n  query GetSummaries($first: Int) {\n    summaries(first: $first) {\n      edges {\n        node {\n          id\n          title\n          periodType\n          seen\n          dismissed\n          summaryText\n          keyInsights\n          tags\n          activityCounts {\n            total\n          }\n          insights {\n            title\n            summaryText\n            keyActions\n            relevanceScore\n            tags\n            relatedEntityIds\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n      }\n      totalCount\n    }\n  }\n": types.GetSummariesDocument,
     "\n  mutation MarkSummaryAsSeen($id: ID!) {\n    markSummaryAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": types.MarkSummaryAsSeenDocument,
     "\n  mutation MarkSummaryAsDismissed($id: ID!) {\n    markSummaryAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": types.MarkSummaryAsDismissedDocument,
-    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    contentType\n    sourceUrl\n    previewUrl\n    createdAt\n  }\n": types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetFilesDocument,
+    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    contentType\n    sourceUrl\n    previewUrl\n    createdAt\n  }\n": types.FileGridItemFragmentFragmentDoc,
+    "\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n": types.GetFilePreviewDocument,
+    "\n  query GetFileMedia($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n    }\n  }\n": types.GetFileMediaDocument,
     "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": types.CreateItemDocument,
     "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": types.UpdateItemDocument,
     "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                ": types.NewItemFragmentDoc,
@@ -413,11 +417,19 @@ export function gql(source: "\n  mutation MarkSummaryAsDismissed($id: ID!) {\n  
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    contentType\n    sourceUrl\n    previewUrl\n    createdAt\n  }\n"): (typeof documents)["\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    contentType\n    sourceUrl\n    previewUrl\n    createdAt\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"];
+export function gql(source: "\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetFileMedia($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n    }\n  }\n"): (typeof documents)["\n  query GetFileMedia($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
