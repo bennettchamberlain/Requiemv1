@@ -213,3 +213,72 @@ export interface FacebookPost {
     }>;
   };
 }
+
+export interface FacebookLike {
+  id: string;
+  name: string;
+  category: string;
+  link: string;
+  created_time: string;
+  cover?: {
+    cover_id: string;
+    offset_x: number;
+    offset_y: number;
+    source: string;
+    id: string;
+  };
+}
+
+export interface FacebookFriend {
+  id: string;
+  name: string;
+  picture?: {
+    height: number;
+    width: number;
+    url: string;
+    is_silhouette: boolean;
+  };
+}
+
+export interface FacebookPhoto {
+  id: string;
+  name?: string;
+  created_time: string;
+  images: Array<{
+    height: number;
+    width: number;
+    source: string;
+  }>;
+  link: string;
+  picture?: string;
+  place?: {
+    name: string;
+    location: {
+      city?: string;
+      country?: string;
+      latitude?: number;
+      longitude?: number;
+      state?: string;
+      street?: string;
+      zip?: string;
+    };
+  };
+}
+
+export interface FacebookVideo {
+  id: string;
+  title?: string;
+  description?: string;
+  created_time: string;
+  source: string;
+  permalink_url: string;
+  length: number;
+  thumbnails?: {
+    data: Array<{
+      id: string;
+      uri: string;
+      height: number;
+      width: number;
+    }>;
+  };
+}

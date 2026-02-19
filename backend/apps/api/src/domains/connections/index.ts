@@ -72,7 +72,11 @@ export type {
   OneDriveFileEntity,
   OutlookMailMessageEntity,
   OutlookAttachment,
-  FacebookPost
+  FacebookFriend,
+  FacebookLike,
+  FacebookPhoto,
+  FacebookPost,
+  FacebookVideo,
 } from './clients/types';
 
 export { OUTLOOK_SKIP_REGEX, ONEDRIVE_ETAG_REGEX } from './clients/constants';

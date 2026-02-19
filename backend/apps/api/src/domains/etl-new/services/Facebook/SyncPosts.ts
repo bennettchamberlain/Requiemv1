@@ -1,6 +1,6 @@
 import type { BaseClient, Connection, FacebookPost } from '@ci/domains/connections';
 
-export async function syncDrive({
+export async function syncPosts({
   connection,
   client,
   nextCursor,
@@ -25,10 +25,15 @@ export async function syncDrive({
         fields: fieldsList,
       });
 
-      const endpoint = nextCursor.nextLink || `/v21.0/me/posts?${params.toString()}`;
-      const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
-      const posts = (response.data as FacebookPost[]) || [];
-      const nextLink = response.paging?.next as string | undefined;
+      const endpoint = nextCursor.nextLink
+        ? String(nextCursor.nextLink)
+        : `/v21.0/me/posts?${params.toString()}`;
+      const response = (await client.request(connection, endpoint)) as {
+        data: FacebookPost[];
+        paging?: { next: string; previous: string };
+      };
+      const posts = response.data || [];
+      const nextLink = response.paging?.next;
 
       client.logger.log('Facebook Posts historical sync call completed', {
         connectionId: connection.id,
@@ -42,8 +47,8 @@ export async function syncDrive({
         },
         nextCursor: nextLink
           ? {
-            nextLink,
-          }
+              nextLink,
+            }
           : {},
       };
     } else {
@@ -55,22 +60,25 @@ export async function syncDrive({
       const fieldsList =
         'id,message,created_time,story,link,type,full_picture,picture,attachments{media,subattachments}';
 
-      const since = nextCursor.since || (connection.createdAt.getTime() / 1000).toString();
+      const since = nextCursor.since ? (nextCursor.since as string) : connection.createdAt.toISOString();
       const params = new URLSearchParams({
         fields: fieldsList,
-        since: nextCursor.since
+        since,
       });
 
-      const posts: FacebookPost[] = [];
-      let nextLink
+      let posts: FacebookPost[] = [];
+      let nextLink;
       do {
-        const endpoint = `/v21.0/me/posts?${params.toString()}`;
-        const response = (await client.request(connection, endpoint)) as Record<string, unknown>;
-        posts = posts.concat(response.data as FacebookPost[] || []);
-        nextLink = response.paging?.next as string | undefined;
-      } while (nextLink != null)
+        const endpoint = nextLink ? String(nextLink) : `/v21.0/me/posts?${params.toString()}`;
+        const response = (await client.request(connection, endpoint)) as {
+          data: FacebookPost[];
+          paging?: { next: string; previous: string };
+        };
+        posts = posts.concat(response.data || []);
+        nextLink = response.paging?.next;
+      } while (nextLink != null);
 
-      client.logger.log('Facebook Posts historical sync call completed', {
+      client.logger.log('Facebook Posts Incremental sync call completed', {
         connectionId: connection.id,
         fileCount: posts.length,
         hasNextPage: !!nextLink,
@@ -81,12 +89,12 @@ export async function syncDrive({
           posts,
         },
         nextCursor: {
-          since: new Date().getTime(),
-        }
+          since: new Date().toISOString(),
+        },
       };
     }
   } catch (err) {
-    client.logger.error('Error during Drive sync', {
+    client.logger.error('Error during Facebook Posts sync', {
       connectionId: connection.id,
       error: err instanceof Error ? err.message : 'Unknown error',
     });
