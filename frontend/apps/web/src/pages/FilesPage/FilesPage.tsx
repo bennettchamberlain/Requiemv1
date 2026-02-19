@@ -8,10 +8,8 @@ import { Link } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
+import { FileModal } from './FileModal';
 import { GridItem } from './GridItem';
-import { ImagePreviewModal } from './ImagePreviewModal';
-// import { MediaModal } from './MediaModal';
-import type { FileSelection } from './types';
 
 const GET_FILES = gql(`
   query GetFiles($first: Int, $after: String) {
@@ -28,14 +26,14 @@ const GET_FILES = gql(`
 
 export function FilesPage() {
   usePageTitle('Files - Companion Intelligence');
-  const [selectedFile, setSelectedFile] = useState<FileSelection | null>(null);
+
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   const { data, loading } = useQuery(GET_FILES, {
     variables: { first: 50 },
     fetchPolicy: 'cache-and-network',
   });
 
-  const handleSelect = useCallback((file: FileSelection) => setSelectedFile(file), []);
   const handleClose = useCallback(() => setSelectedFile(null), []);
 
   if (loading) {
@@ -65,14 +63,12 @@ export function FilesPage() {
       <PageContent>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {files.map((file) => (
-            <GridItem key={file.id} file={file} onSelect={handleSelect} />
+            <GridItem key={file.id} file={file} onSelect={setSelectedFile} />
           ))}
         </div>
 
-        <ImagePreviewModal fileId={selectedFile?.id ?? null} onClose={handleClose} />
+        <FileModal fileId={selectedFile ?? null} onClose={handleClose} />
       </PageContent>
-
-      {/* <MediaModal fileId={selectedFile?.id ?? null} onClose={handleClose} /> */}
     </>
   );
 }
