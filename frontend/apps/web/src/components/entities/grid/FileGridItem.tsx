@@ -15,7 +15,7 @@ export const FILE_FRAGMENT = gql(`
 
 interface Props {
   file: FragmentType<typeof FILE_FRAGMENT>;
-  onClick?: (id: string, e: MouseEvent<HTMLDivElement>) => void;
+  onClick?: (e: MouseEvent<HTMLDivElement>) => void;
 }
 
 export function FileGridItem({ file, onClick }: Props) {
@@ -26,7 +26,7 @@ export function FileGridItem({ file, onClick }: Props) {
   }, [data.previewUrl]);
 
   return (
-    <EntityGridItem className="relative p-0" onClick={(e) => onClick?.(data.id, e)}>
+    <EntityGridItem className="relative p-0" onClick={onClick}>
       <div className="rounded-md overflow-hidden min-h-0 grow inset-0">
         {url && <img src={url} alt={data.filename || ''} className="w-full h-full object-cover" />}
 

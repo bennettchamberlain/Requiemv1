@@ -4,6 +4,7 @@ import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
+import { FileModal } from '@/components/modals/FileModal';
 import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
 import { Empty } from '@/pages/MemoryPage/Components';
 
@@ -25,7 +26,11 @@ import { SearchTable } from './SearchTable';
 
 export function ListView() {
   const navigate = useNavigate();
+
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
+  const [activeItem, setActiveItem] = useState<string | null>(null);
+
+  const clearActiveItem = () => setActiveItem(null);
 
   const [{ data }] = useEntityService();
 
@@ -105,7 +110,7 @@ export function ListView() {
                 );
 
               case 'FileType':
-                return <FileRow key={item.id} file={item} />;
+                return <FileRow key={item.id} file={item} onClick={() => setActiveItem(item.id)} />;
 
               case 'ItemType':
                 return <ItemRow key={item.id} item={item} onSelectInventoryItem={openInventoryModal} />;
@@ -160,6 +165,8 @@ export function ListView() {
           })}
         </SearchTable.RowGroup>
       </SearchTable>
+
+      <FileModal fileId={activeItem ?? null} onClose={clearActiveItem} />
 
       <InventoryItemModal
         open={selectedInventoryItem != null}
