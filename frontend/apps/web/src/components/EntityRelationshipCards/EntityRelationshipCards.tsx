@@ -20,6 +20,7 @@ type RelationshipCard = {
   otherEntityName: string;
   otherEntityType: string;
   otherEntityTags: string[];
+  relationshipDetails: Array<{ label: string; value: string }>;
 };
 
 interface Props {
@@ -70,12 +71,106 @@ const GET_NODE_TAGS = apolloGql`
   }
 `;
 
+const IGNORED_RELATIONSHIP_PROPERTIES = new Set([
+  'id',
+  'relationship_id',
+  'relationshipId',
+  'source',
+  'target',
+  'from_entity_id',
+  'to_entity_id',
+  'created_at',
+  'updated_at',
+]);
+
 function formatRelationshipLabel(value: string): string {
   return value
     .toLowerCase()
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+function formatPropertyLabel(key: string): string {
+  return key
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .split(' ')
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatPropertyValue(value: unknown): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    return trimmed.length > 48 ? `${trimmed.slice(0, 45)}...` : trimmed;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const items = value
+      .filter(
+        (item): item is string | number | boolean =>
+          typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean',
+      )
+      .map((item) => String(item).trim())
+      .filter((item) => item.length > 0);
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    const displayItems = items.slice(0, 3);
+    const suffix = items.length > 3 ? ` +${items.length - 3}` : '';
+
+    return `${displayItems.join(', ')}${suffix}`;
+  }
+
+  return null;
+}
+
+function extractRelationshipDetails(
+  properties: Record<string, unknown> | undefined,
+): Array<{ label: string; value: string }> {
+  if (!properties) {
+    return [];
+  }
+
+  const details: Array<{ label: string; value: string }> = [];
+
+  for (const [key, value] of Object.entries(properties)) {
+    if (IGNORED_RELATIONSHIP_PROPERTIES.has(key)) {
+      continue;
+    }
+
+    const formattedValue = formatPropertyValue(value);
+    if (!formattedValue) {
+      continue;
+    }
+
+    details.push({
+      label: formatPropertyLabel(key),
+      value: formattedValue,
+    });
+
+    if (details.length >= 2) {
+      break;
+    }
+  }
+
+  return details;
 }
 
 function shuffleItems<T>(items: T[]): T[] {
@@ -244,6 +339,7 @@ export function EntityRelationshipCards({ entityId }: Props) {
           otherEntityName: otherNode?.name ?? 'Unnamed Entity',
           otherEntityType: otherNode?.entity_type ?? 'unknown',
           otherEntityTags: extractTagsFromProperties(otherNode?.properties),
+          relationshipDetails: extractRelationshipDetails(link.properties),
         };
       });
   }, [data, entityId]);
@@ -321,6 +417,44 @@ export function EntityRelationshipCards({ entityId }: Props) {
     return null;
   }
 
+  const renderCardContent = (card: RelationshipCard, tags: string[]) => (
+    <Card.Content className="p-3 flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            {formatRelationshipLabel(card.relationshipType)}
+          </p>
+          <p className="text-sm font-semibold leading-tight line-clamp-2">{card.otherEntityName}</p>
+        </div>
+        <div className="flex max-w-[45%] flex-col items-end gap-1 text-right">
+          <p className="text-xs text-muted-foreground uppercase">{card.otherEntityType}</p>
+          {tags.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-1">
+              {tags.map((tag) => (
+                <Tag
+                  key={`${card.relationshipId}-${tag}`}
+                  text={tag}
+                  className="h-5 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide"
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {card.relationshipDetails.length > 0 && (
+        <div className="border-t border-border/50 pt-2 flex flex-wrap gap-x-3 gap-y-1">
+          {card.relationshipDetails.map((detail) => (
+            <p key={`${card.relationshipId}-${detail.label}`} className="text-xs leading-tight">
+              <span className="text-muted-foreground">{detail.label}:</span>{' '}
+              <span className="text-foreground/85">{detail.value}</span>
+            </p>
+          ))}
+        </div>
+      )}
+    </Card.Content>
+  );
+
   return (
     <div ref={containerRef} className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -354,30 +488,7 @@ export function EntityRelationshipCards({ entityId }: Props) {
             if (!detailPath) {
               return (
                 <Card key={card.relationshipId} className="p-0 min-h-[96px]">
-                  <Card.Content className="p-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {formatRelationshipLabel(card.relationshipType)}
-                      </p>
-                      <p className="text-sm font-semibold leading-tight line-clamp-2">
-                        {card.otherEntityName}
-                      </p>
-                    </div>
-                    <div className="flex max-w-[45%] flex-col items-end gap-1 text-right">
-                      <p className="text-xs text-muted-foreground uppercase">{card.otherEntityType}</p>
-                      {tags.length > 0 && (
-                        <div className="flex flex-wrap justify-end gap-1">
-                          {tags.map((tag) => (
-                            <Tag
-                              key={`${card.relationshipId}-${tag}`}
-                              text={tag}
-                              className="h-5 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide"
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </Card.Content>
+                  {renderCardContent(card, tags)}
                 </Card>
               );
             }
@@ -385,30 +496,7 @@ export function EntityRelationshipCards({ entityId }: Props) {
             return (
               <Link key={card.relationshipId} to={detailPath} className="block">
                 <Card className="p-0 min-h-[96px] transition-colors hover:bg-accent/40">
-                  <Card.Content className="p-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {formatRelationshipLabel(card.relationshipType)}
-                      </p>
-                      <p className="text-sm font-semibold leading-tight line-clamp-2">
-                        {card.otherEntityName}
-                      </p>
-                    </div>
-                    <div className="flex max-w-[45%] flex-col items-end gap-1 text-right">
-                      <p className="text-xs text-muted-foreground uppercase">{card.otherEntityType}</p>
-                      {tags.length > 0 && (
-                        <div className="flex flex-wrap justify-end gap-1">
-                          {tags.map((tag) => (
-                            <Tag
-                              key={`${card.relationshipId}-${tag}`}
-                              text={tag}
-                              className="h-5 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide"
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </Card.Content>
+                  {renderCardContent(card, tags)}
                 </Card>
               </Link>
             );
