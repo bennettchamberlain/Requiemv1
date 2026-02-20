@@ -143,6 +143,7 @@ export class FilePreviewGenerationListener {
       await new Promise<void>((resolve, reject) => {
         const ws = createWriteStream(tempInput);
         stream.pipe(ws);
+        stream.on('error', (err) => reject(err));
         ws.on('finish', () => resolve());
         ws.on('error', (err) => reject(err));
       });
