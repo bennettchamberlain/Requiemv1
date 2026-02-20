@@ -1915,6 +1915,7 @@ export type GetNodeTagsForRelationshipCardQuery = { __typename?: 'Query', node?:
     | { __typename: 'BrowserActivityType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'CommunicationType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'ConceptType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
+    | { __typename: 'ConnectionSyncJobType' }
     | { __typename: 'ConnectionType' }
     | { __typename: 'ContentType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'EntityTagType' }
