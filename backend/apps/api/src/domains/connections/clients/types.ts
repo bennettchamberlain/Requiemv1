@@ -282,3 +282,30 @@ export interface FacebookVideo {
     }>;
   };
 }
+
+export interface GmailMessage {
+  id?: string;
+  threadId?: string;
+  labelIds?: string[];
+  snippet?: string;
+  payload?: {
+    headers?: Array<{
+      name: string;
+      value: string;
+    }>;
+    body?: {
+      size?: number;
+      data?: string;
+    };
+    parts?: Array<{
+      mimeType?: string;
+      body?: {
+        size?: number;
+        data?: string;
+      };
+    }>;
+  };
+  sizeEstimate?: number;
+  historyId?: string;
+  internalDate?: string;
+}

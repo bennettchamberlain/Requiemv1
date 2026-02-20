@@ -39,6 +39,7 @@ export interface CreateConnectionSyncJobDto {
   nextCursor?: Record<string, unknown> | null;
   properties?: Record<string, unknown> | null;
   error?: Record<string, unknown> | null;
+  lastTransformed?: Date | null | undefined;
 }
 
 export interface UpdateConnectionSyncJobDto {
@@ -52,6 +53,7 @@ export interface UpdateConnectionSyncJobDto {
   properties?: Record<string, unknown> | undefined;
   error?: Record<string, unknown> | undefined;
   completedAt?: Date | undefined;
+  lastTransformed?: Date | null | undefined;
 }
 
 export interface SearchConnectionSyncJobDto {
@@ -62,6 +64,7 @@ export interface SearchConnectionSyncJobDto {
   status?: JobStatus;
   type?: string;
   properties?: Record<string, unknown> | null;
+  lastTransformed?: Date | null | undefined;
 }
 
 export const createConnectionSyncJobSchema = z.object({
@@ -90,4 +93,5 @@ export const updateConnectionSyncJobSchema = z.object({
   properties: z.record(z.unknown()).nullable().optional(),
   error: z.record(z.unknown()).nullable().optional(),
   completedAt: z.string().datetime().nullable().optional(),
+  lastTransformed: z.string().datetime().nullable().optional(),
 });

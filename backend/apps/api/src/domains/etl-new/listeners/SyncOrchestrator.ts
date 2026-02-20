@@ -7,7 +7,7 @@ import { Cron } from '@ci/common/schedule';
 import { ConnectionService, ClientFactory } from '@ci/domains/connections';
 import { OnEvent, EventService } from '@ci/domains/events';
 
-import { ConnectionSyncJobExecuteEvent } from '../events';
+import { ConnectionSyncJobExecuteEvent, ConnectionSyncJobTransformEvent } from '../events';
 import { ConnectionSyncJobService } from '../services/ConnectionSyncJobService';
 import { EndpointServiceMap } from '../services/EndpointServiceMap';
 
@@ -366,6 +366,29 @@ export class SyncOrchestrator {
 
       await this.connectionSyncJobService.markAsCompleted({ userId: SYSTEM_USER }, syncJob.id, 'failed', {
         error: err,
+      });
+    }
+  }
+
+  /**
+   * This method finds sync jobs that need to be transformed, retrieves their data, then
+   * calls the appropriate transformation function based on the connection and endpoint.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async executeSyncJobs(): Promise<void> {
+    let syncJobsToTransform = await this.connectionSyncJobService.search(
+      {userId: SYSTEM_USER},
+      {
+        status: 'success',
+        lastTransformed: null,
+      },
+    );
+
+
+
+    for (const jobId of syncJobsToTransform) {
+      await this.eventService.send(ConnectionSyncJobTransformEvent, {
+        connectionSyncJobId: jobId,
       });
     }
   }
