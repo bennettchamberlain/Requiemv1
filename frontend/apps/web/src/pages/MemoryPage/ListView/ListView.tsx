@@ -4,7 +4,7 @@ import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
-import { InventoryItemModal, type InventoryItem } from '@/pages/InventoryPage/InventoryItemModal';
+import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
 import { Empty } from '@/pages/MemoryPage/Components';
 
 import { useEntityService } from '../useEntityService';

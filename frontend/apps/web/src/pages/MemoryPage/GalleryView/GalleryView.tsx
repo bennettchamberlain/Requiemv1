@@ -20,7 +20,7 @@ import {
   PlaceGridItem,
   ThreadGridItem,
 } from '@/components/entities';
-import { InventoryItemModal, type InventoryItem } from '@/pages/InventoryPage/InventoryItemModal';
+import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
 import { Empty } from '@/pages/MemoryPage/Components';
 
 import { useEntityService } from '../useEntityService';

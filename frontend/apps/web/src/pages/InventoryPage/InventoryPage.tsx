@@ -6,8 +6,7 @@ import { Breadcrumb } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-
-import { InventoryItemModal } from './InventoryItemModal';
+import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
 
 interface InventoryItem {
   id: string;
