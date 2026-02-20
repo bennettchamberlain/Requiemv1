@@ -8,6 +8,7 @@ import { useParams, Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
 import { EntityGraph } from '@/components/EntityGraph';
+import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { ConceptIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { TagInput } from '@/components/TagInput';
@@ -116,6 +117,8 @@ export function ConceptPage() {
             </Card.Content>
           </Card>
         </div>
+
+        <EntityRelationshipCards entityId={id!} />
       </PageContent>
     );
   }
