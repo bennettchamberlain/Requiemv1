@@ -6,9 +6,9 @@ import { Breadcrumb } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { FileModal } from '@/components/modals/FileModal';
 import { gql } from '@/graphql';
 
-import { FileModal } from './FileModal';
 import { GridItem } from './GridItem';
 
 const GET_FILES = gql(`
