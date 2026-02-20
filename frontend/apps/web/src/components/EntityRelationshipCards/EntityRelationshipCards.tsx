@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { gql as apolloGql, useApolloClient } from '@apollo/client';
+import { GlobalUID } from '@ci/common';
 import { Card } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { useNodeGraphService } from '@/api/useNodeGraphService';
+import { Tag } from '@/components/Tag';
 
 const CARD_MIN_WIDTH = 180;
 const CARD_GAP_PX = 12;
@@ -16,11 +19,56 @@ type RelationshipCard = {
   otherEntityId: string;
   otherEntityName: string;
   otherEntityType: string;
+  otherEntityTags: string[];
 };
 
 interface Props {
   entityId: string;
 }
+
+type GlobalResourceType =
+  | 'action'
+  | 'answer'
+  | 'browser-activity'
+  | 'communication'
+  | 'concept'
+  | 'connection'
+  | 'content'
+  | 'event'
+  | 'fact'
+  | 'file'
+  | 'item'
+  | 'message'
+  | 'note'
+  | 'person'
+  | 'place'
+  | 'provider'
+  | 'question'
+  | 'saved-search'
+  | 'summary'
+  | 'tag'
+  | 'thread'
+  | 'user';
+
+type NodeTagsResponse = {
+  node?: {
+    __typename?: string;
+    tags?: Array<{ label?: string | null } | null> | null;
+  } | null;
+};
+
+const GET_NODE_TAGS = apolloGql`
+  query GetNodeTagsForRelationshipCard($id: ID!) {
+    node(id: $id) {
+      __typename
+      ... on Taggable {
+        tags {
+          label
+        }
+      }
+    }
+  }
+`;
 
 function formatRelationshipLabel(value: string): string {
   return value
@@ -80,9 +128,76 @@ function getEntityDetailPath(entityType: string, entityId: string): string | nul
   }
 }
 
+function extractTagsFromProperties(properties: Record<string, unknown> | undefined): string[] {
+  if (!properties) {
+    return [];
+  }
+
+  const candidateKeys = ['tags', 'tagLabels', 'tag_labels', 'tagNames', 'tag_names'];
+
+  for (const key of candidateKeys) {
+    const value = properties[key];
+
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    }
+  }
+
+  return [];
+}
+
+function normalizeGraphEntityType(entityType: string): string {
+  return entityType.toLowerCase().replace(/_/g, '-');
+}
+
+function toGlobalResourceType(entityType: string): GlobalResourceType | null {
+  const normalized = normalizeGraphEntityType(entityType);
+
+  switch (normalized) {
+    case 'action':
+    case 'answer':
+    case 'browser-activity':
+    case 'communication':
+    case 'concept':
+    case 'connection':
+    case 'content':
+    case 'event':
+    case 'fact':
+    case 'file':
+    case 'item':
+    case 'message':
+    case 'note':
+    case 'person':
+    case 'place':
+    case 'provider':
+    case 'question':
+    case 'saved-search':
+    case 'summary':
+    case 'tag':
+    case 'thread':
+    case 'user':
+      return normalized;
+    default:
+      return null;
+  }
+}
+
+function getEntityLookupKey(entityType: string, entityId: string): string {
+  return `${normalizeGraphEntityType(entityType)}:${entityId}`;
+}
+
 export function EntityRelationshipCards({ entityId }: Props) {
+  const apolloClient = useApolloClient();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [visibleCardCount, setVisibleCardCount] = useState(DEFAULT_VISIBLE_CARDS);
+  const [tagsByEntityKey, setTagsByEntityKey] = useState<Record<string, string[]>>({});
 
   const { data, loading } = useNodeGraphService({
     entityId,
@@ -128,12 +243,79 @@ export function EntityRelationshipCards({ entityId }: Props) {
           otherEntityId,
           otherEntityName: otherNode?.name ?? 'Unnamed Entity',
           otherEntityType: otherNode?.entity_type ?? 'unknown',
+          otherEntityTags: extractTagsFromProperties(otherNode?.properties),
         };
       });
   }, [data, entityId]);
 
   const shuffledCards = useMemo(() => shuffleItems(relationshipCards), [relationshipCards]);
-  const visibleCards = shuffledCards.slice(0, visibleCardCount);
+  const visibleCards = useMemo(
+    () => shuffledCards.slice(0, visibleCardCount),
+    [shuffledCards, visibleCardCount],
+  );
+
+  useEffect(() => {
+    if (visibleCards.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadTags = async () => {
+      const results = await Promise.all(
+        visibleCards.map(async (card) => {
+          const resourceType = toGlobalResourceType(card.otherEntityType);
+          if (!resourceType) {
+            return {
+              key: getEntityLookupKey(card.otherEntityType, card.otherEntityId),
+              labels: [],
+            };
+          }
+
+          try {
+            const gid = GlobalUID.encode(resourceType, card.otherEntityId);
+            const response = await apolloClient.query<NodeTagsResponse>({
+              query: GET_NODE_TAGS,
+              variables: { id: gid },
+              fetchPolicy: 'cache-first',
+            });
+            const labels = (response.data?.node?.tags ?? [])
+              .map((tag) => tag?.label?.trim() ?? '')
+              .filter((label): label is string => label.length > 0);
+
+            return { key: getEntityLookupKey(card.otherEntityType, card.otherEntityId), labels };
+          } catch {
+            return {
+              key: getEntityLookupKey(card.otherEntityType, card.otherEntityId),
+              labels: [],
+            };
+          }
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      setTagsByEntityKey((prev) => {
+        const next = { ...prev };
+
+        for (const result of results) {
+          if (result.labels.length > 0) {
+            next[result.key] = result.labels;
+          }
+        }
+
+        return next;
+      });
+    };
+
+    void loadTags();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apolloClient, visibleCards]);
 
   if (!loading && relationshipCards.length === 0) {
     return null;
@@ -166,16 +348,35 @@ export function EntityRelationshipCards({ entityId }: Props) {
         {!loading &&
           visibleCards.map((card) => {
             const detailPath = getEntityDetailPath(card.otherEntityType, card.otherEntityId);
+            const lookupKey = getEntityLookupKey(card.otherEntityType, card.otherEntityId);
+            const tags = (tagsByEntityKey[lookupKey] ?? card.otherEntityTags).slice(0, 3);
 
             if (!detailPath) {
               return (
                 <Card key={card.relationshipId} className="p-0 min-h-[96px]">
-                  <Card.Content className="p-3 flex flex-col gap-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {formatRelationshipLabel(card.relationshipType)}
-                    </p>
-                    <p className="text-sm font-semibold leading-tight line-clamp-2">{card.otherEntityName}</p>
-                    <p className="text-xs text-muted-foreground uppercase">{card.otherEntityType}</p>
+                  <Card.Content className="p-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        {formatRelationshipLabel(card.relationshipType)}
+                      </p>
+                      <p className="text-sm font-semibold leading-tight line-clamp-2">
+                        {card.otherEntityName}
+                      </p>
+                    </div>
+                    <div className="flex max-w-[45%] flex-col items-end gap-1 text-right">
+                      <p className="text-xs text-muted-foreground uppercase">{card.otherEntityType}</p>
+                      {tags.length > 0 && (
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {tags.map((tag) => (
+                            <Tag
+                              key={`${card.relationshipId}-${tag}`}
+                              text={tag}
+                              className="h-5 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide"
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </Card.Content>
                 </Card>
               );
@@ -184,12 +385,29 @@ export function EntityRelationshipCards({ entityId }: Props) {
             return (
               <Link key={card.relationshipId} to={detailPath} className="block">
                 <Card className="p-0 min-h-[96px] transition-colors hover:bg-accent/40">
-                  <Card.Content className="p-3 flex flex-col gap-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {formatRelationshipLabel(card.relationshipType)}
-                    </p>
-                    <p className="text-sm font-semibold leading-tight line-clamp-2">{card.otherEntityName}</p>
-                    <p className="text-xs text-muted-foreground uppercase">{card.otherEntityType}</p>
+                  <Card.Content className="p-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        {formatRelationshipLabel(card.relationshipType)}
+                      </p>
+                      <p className="text-sm font-semibold leading-tight line-clamp-2">
+                        {card.otherEntityName}
+                      </p>
+                    </div>
+                    <div className="flex max-w-[45%] flex-col items-end gap-1 text-right">
+                      <p className="text-xs text-muted-foreground uppercase">{card.otherEntityType}</p>
+                      {tags.length > 0 && (
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {tags.map((tag) => (
+                            <Tag
+                              key={`${card.relationshipId}-${tag}`}
+                              text={tag}
+                              className="h-5 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide"
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </Card.Content>
                 </Card>
               </Link>
