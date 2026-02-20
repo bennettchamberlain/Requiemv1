@@ -30,7 +30,7 @@ type Documents = {
     "\n  fragment ConceptGridItemData on ConceptType {\n    id\n    name\n    description\n  }\n": typeof types.ConceptGridItemDataFragmentDoc,
     "\n  fragment ContentGridItemData on ContentType {\n    id\n    title\n    text\n  }\n": typeof types.ContentGridItemDataFragmentDoc,
     "\n  fragment EventGridItemData on EventType {\n    id\n    title\n    description\n  }\n": typeof types.EventGridItemDataFragmentDoc,
-    "\n  fragment FileGridItemData on FileType {\n    id\n    sourceUrl\n  }\n": typeof types.FileGridItemDataFragmentDoc,
+    "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n": typeof types.FileGridItemDataFragmentDoc,
     "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": typeof types.ItemGridItemDataFragmentDoc,
     "\n  fragment NoteGridItemData on NoteType {\n    id\n    title\n    content\n  }\n": typeof types.NoteGridItemDataFragmentDoc,
     "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n  }\n": typeof types.PersonGridItemDataFragmentDoc,
@@ -124,7 +124,7 @@ const documents: Documents = {
     "\n  fragment ConceptGridItemData on ConceptType {\n    id\n    name\n    description\n  }\n": types.ConceptGridItemDataFragmentDoc,
     "\n  fragment ContentGridItemData on ContentType {\n    id\n    title\n    text\n  }\n": types.ContentGridItemDataFragmentDoc,
     "\n  fragment EventGridItemData on EventType {\n    id\n    title\n    description\n  }\n": types.EventGridItemDataFragmentDoc,
-    "\n  fragment FileGridItemData on FileType {\n    id\n    sourceUrl\n  }\n": types.FileGridItemDataFragmentDoc,
+    "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n": types.FileGridItemDataFragmentDoc,
     "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": types.ItemGridItemDataFragmentDoc,
     "\n  fragment NoteGridItemData on NoteType {\n    id\n    title\n    content\n  }\n": types.NoteGridItemDataFragmentDoc,
     "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n  }\n": types.PersonGridItemDataFragmentDoc,
@@ -271,7 +271,7 @@ export function gql(source: "\n  fragment EventGridItemData on EventType {\n    
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment FileGridItemData on FileType {\n    id\n    sourceUrl\n  }\n"): (typeof documents)["\n  fragment FileGridItemData on FileType {\n    id\n    sourceUrl\n  }\n"];
+export function gql(source: "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n"): (typeof documents)["\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
