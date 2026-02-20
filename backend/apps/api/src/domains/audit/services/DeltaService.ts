@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
@@ -8,6 +8,14 @@ import { LoggerService } from '@ci/common/logging';
 
 import { type Delta, DeltaEntity } from '../entities/DeltaEntity';
 import type { CreateDeltaDto, FindDeltasOptions, UpdateDeltasSummaryDto } from '../types';
+
+interface FindEntityEvolutionOptions {
+  changeType?: DeltaEntity['changeType'];
+  unsummarizedOnly?: boolean;
+  since?: Date;
+  until?: Date;
+  limit?: number;
+}
 
 @Injectable()
 export class DeltaService {
@@ -117,6 +125,52 @@ export class DeltaService {
       entityId,
       limit,
     });
+  }
+
+  async findEvolutionForEntity(
+    context: ServiceContext,
+    entityId: string,
+    options: FindEntityEvolutionOptions = {},
+  ): Promise<Delta[]> {
+    const query = this.deltaRepository.createQueryBuilder('delta');
+
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('delta.ownerUserId = :userId', { userId: context.userId });
+    }
+
+    query.andWhere(
+      new Brackets((qb) => {
+        qb.where('delta.entityId = :entityId', { entityId })
+          .orWhere('delta.fromEntityId = :entityId', { entityId })
+          .orWhere('delta.toEntityId = :entityId', { entityId });
+      }),
+    );
+
+    if (options.changeType) {
+      query.andWhere('delta.changeType = :changeType', { changeType: options.changeType });
+    }
+
+    if (options.unsummarizedOnly) {
+      query.andWhere('delta.summaryId IS NULL');
+    }
+
+    if (options.since) {
+      query.andWhere('delta.changedAt >= :since', { since: options.since });
+    }
+
+    if (options.until) {
+      query.andWhere('delta.changedAt <= :until', { until: options.until });
+    }
+
+    query.orderBy('delta.changedAt', 'DESC');
+
+    if (options.limit) {
+      query.take(options.limit);
+    }
+
+    const results = await query.getMany();
+
+    return results.map((entity) => DeltaEntity.toEgressType(entity));
   }
 
   async findDeltasForRelationship(

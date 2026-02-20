@@ -7,6 +7,7 @@ import { Pencil, Link as LinkIcon } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
+import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { PersonIcon } from '@/components/icons';
@@ -221,6 +222,7 @@ export function PersonPage() {
         </div>
 
         <EntityRelationshipCards entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} />
       </PageContent>
     );
   }
