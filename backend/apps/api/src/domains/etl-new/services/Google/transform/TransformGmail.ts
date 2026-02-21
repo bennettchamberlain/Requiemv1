@@ -1,13 +1,16 @@
-import {CommunicationDirection, CommunicationService, CommunicationType} from "@ci/domains/memory";
-import {ConnectionService} from "@ci/domains/connections";
-import {PromoteService} from "@ci/domains/promote/services/PromoteService";
-import {TagService} from "@ci/domains/search-next";
-import {LoggerService} from "@ci/common/logging";
-import { GmailMessage } from '@ci/domains/connections';
-import {parseDate} from "@ci/domains/promote/util";
+import { Injectable } from '@nestjs/common';
+
+import { LoggerService } from '@ci/common/logging';
+import { type Connection, ConnectionService, GmailMessage, EmailParticipant } from '@ci/domains/connections';
+import { CommunicationDirection, CommunicationService, CommunicationType } from '@ci/domains/memory';
+import { PromoteService } from '@ci/domains/promote';
+import { TagService } from '@ci/domains/search-next';
+
+import { ConnectionSyncJob } from '../../../types';
+import { parseDate } from '../../../util';
 
 @Injectable()
-export class GmailPromotionService {
+export class GmailTransformService {
   constructor(
     private readonly communicationService: CommunicationService,
     private readonly connectionService: ConnectionService,
@@ -15,39 +18,60 @@ export class GmailPromotionService {
     private readonly tagService: TagService,
     private readonly logger: LoggerService,
   ) {
-    this.logger.setContext(GmailPromotionService.name);
+    this.logger.setContext(GmailTransformService.name);
   }
 
-  async transformGmailMessages(userId: string, data: { messages: GmailMessage[] }): Promise<void> {
+  async transformGmail({
+    connection,
+    syncJob,
+  }: {
+    connection: Connection;
+    syncJob: ConnectionSyncJob;
+  }): Promise<void> {
+    const { id: syncJobId, userId, data } = syncJob;
+
     try {
       this.logger.log('Starting Gmail message transformation', {
         userId,
-        connectionId,
       });
 
-      await Promise.all(data.messages.map((message) => await processMessage(message, userId)));
+      const messages = (data.messages as GmailMessage[]) || [];
+      await Promise.all(
+        messages.map(
+          async (message) =>
+            await this.processMessage({
+              message,
+              connectionId: connection.id,
+              userId,
+            }),
+        ),
+      );
 
       this.logger.log('Gmail message promotion completed', {
         userId,
-        connectionId,
         processedCount: messages.length,
       });
+    } catch (error: unknown) {
+      this.logger.error('Error promoting Gmail messages', {
+        userId,
+        syncJobId,
+        connectionId: connection.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
     }
-  } catch (error) {
-    this.logger.error('Error promoting Gmail messages', {
-      userId,
-      connectionId,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-    throw error;
   }
 
-  private async processMessage(
-    message: GmailMessage,
-    userId: string,
-    connectionId: string,
-  ): Promise<void> {
+  private async processMessage({
+    message,
+    userId,
+    connectionId,
+  }: {
+    message: GmailMessage;
+    userId: string;
+    connectionId: string;
+  }): Promise<void> {
     try {
       const messageDetails = this.extractMessageDetails(message);
 

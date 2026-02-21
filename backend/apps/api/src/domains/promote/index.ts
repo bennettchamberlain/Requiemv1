@@ -107,3 +107,5 @@ import { PromoteService } from './services/PromoteService';
   ],
 })
 export class PromoteModule {}
+
+export { PromoteService };

@@ -309,3 +309,9 @@ export interface GmailMessage {
   historyId?: string;
   internalDate?: string;
 }
+
+export interface EmailParticipant {
+  email: string;
+  name: string;
+  type: 'from' | 'to' | 'cc' | 'bcc';
+}

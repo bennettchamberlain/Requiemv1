@@ -33,7 +33,7 @@ export class PromoteController {
     this.logger.setContext(PromoteController.name);
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_HOUR)
   async promoteApiLogs(): Promise<void> {
     const featureEnabled = await this.featureService.isFeatureEnabled('scheduled.entity.promotion');
 

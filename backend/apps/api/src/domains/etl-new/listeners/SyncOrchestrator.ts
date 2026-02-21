@@ -375,20 +375,79 @@ export class SyncOrchestrator {
    * calls the appropriate transformation function based on the connection and endpoint.
    */
   @Cron(CronExpression.EVERY_MINUTE)
-  async executeSyncJobs(): Promise<void> {
-    let syncJobsToTransform = await this.connectionSyncJobService.search(
-      {userId: SYSTEM_USER},
-      {
-        status: 'success',
-        lastTransformed: null,
-      },
+  async executeTransformJobs(): Promise<void> {
+    const syncJobsToTransform = (
+      await this.connectionSyncJobService.search(
+        { userId: SYSTEM_USER },
+        {
+          status: 'success',
+          lastTransformed: null,
+        },
+      )
+    ).slice(0, 10);
+
+    for (const { id } of syncJobsToTransform) {
+      await this.eventService.send(ConnectionSyncJobTransformEvent, {
+        connectionSyncJobId: id,
+      });
+    }
+  }
+
+  @OnEvent(ConnectionSyncJobTransformEvent, { queue: 'etl' })
+  async handleSyncJobTransformEvent(payload: { connectionSyncJobId: string }): Promise<void> {
+    const syncJob = await this.connectionSyncJobService.findById(
+      { userId: SYSTEM_USER },
+      payload.connectionSyncJobId,
     );
 
+    if (!syncJob) {
+      this.logger.error('Sync job not found for transformation', {
+        connectionSyncJobId: payload.connectionSyncJobId,
+      });
 
+      return;
+    }
 
-    for (const jobId of syncJobsToTransform) {
-      await this.eventService.send(ConnectionSyncJobTransformEvent, {
-        connectionSyncJobId: jobId,
+    const connection = await this.connectionService.findById({ userId: SYSTEM_USER }, syncJob.connectionId);
+
+    if (!connection) {
+      this.logger.error('Connection not found for transformation', {
+        connectionSyncJobId: payload.connectionSyncJobId,
+      });
+
+      return;
+    }
+
+    const providerName = connection!.provider!.name;
+
+    const serviceFunction = this.endpointServiceMap.getTransformFunction(providerName!, syncJob.endpointName);
+
+    if (!serviceFunction) {
+      this.logger.error('No service function found for provider and endpoint', {
+        providerName,
+        endpointName: syncJob.endpointName,
+      });
+
+      return;
+    }
+
+    try {
+      await serviceFunction({
+        syncJob,
+        connection,
+      });
+
+      await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
+        lastTransformed: new Date(),
+      });
+
+      await this.logger.log('Successfully transformed sync job', {
+        connectionSyncJobId: syncJob.id,
+      });
+    } catch (err) {
+      this.logger.error('Error executing sync job', {
+        connectionSyncJobId: syncJob.id,
+        error: err instanceof Error ? err.message : 'Unknown error',
       });
     }
   }

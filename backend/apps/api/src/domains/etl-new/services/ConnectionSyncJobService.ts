@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository,  } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
@@ -162,6 +162,10 @@ export class ConnectionSyncJobService {
       updateData.completedAt = data.completedAt;
     }
 
+    if (data.lastTransformed !== undefined) {
+      updateData.lastTransformed = data.lastTransformed;
+    }
+
     const SyncJob = await this.connectionSyncJobRepository.findOne({
       where: {
         id,
@@ -259,7 +263,9 @@ export class ConnectionSyncJobService {
     }
 
     if (query.lastTransformed != null) {
-      executable = executable.andWhere('last_transformed >= :lastTransformed', { lastTransformed: query.lastTransformed });
+      executable = executable.andWhere('last_transformed >= :lastTransformed', {
+        lastTransformed: query.lastTransformed,
+      });
     }
 
     executable = executable.orderBy('updated_at', 'DESC');

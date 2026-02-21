@@ -21,11 +21,15 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EventsModule } from '@ci/domains/events';
+import { MemoryModule } from '@ci/domains/memory';
+import { PromoteModule } from '@ci/domains/promote';
+import { SearchNextModule } from '@ci/domains/search-next';
 
 import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
 import { EndpointServiceMap } from './services/EndpointServiceMap';
+import { GmailTransformService } from './services/Google/transform/TransformGmail';
 
 /**
  * @internal
@@ -35,8 +39,11 @@ import { EndpointServiceMap } from './services/EndpointServiceMap';
     TypeOrmModule.forFeature([ConnectionEntity, ConnectionSyncJobEntity]),
     ConnectionsModule,
     EventsModule,
+    MemoryModule,
+    PromoteModule,
+    SearchNextModule,
   ],
-  providers: [ConnectionSyncJobService, EndpointServiceMap, SyncOrchestrator],
+  providers: [ConnectionSyncJobService, EndpointServiceMap, SyncOrchestrator, GmailTransformService],
   exports: [ConnectionSyncJobService],
 })
 export class EtlNewModule {}
