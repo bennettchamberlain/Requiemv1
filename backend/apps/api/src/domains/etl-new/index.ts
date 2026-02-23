@@ -21,6 +21,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ConnectionsModule, ConnectionEntity } from '@ci/domains/connections';
 import { EventsModule } from '@ci/domains/events';
+import { FilesModule } from '@ci/domains/files';
+import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 import { PromoteModule } from '@ci/domains/promote';
 import { SearchNextModule } from '@ci/domains/search-next';
@@ -30,6 +32,13 @@ import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
 import { EndpointServiceMap } from './services/EndpointServiceMap';
 import { GmailTransformService } from './services/Google/transform/TransformGmail';
+import { GoogleCalendarTransformService } from './services/Google/transform/TransformGoogleCalendar';
+import { GoogleContactsTransformService } from './services/Google/transform/TransformGoogleContacts';
+import { GoogleDriveTransformService } from './services/Google/transform/TransformGoogleDrive';
+import { YouTubeActivitiesTransformService } from './services/Google/transform/TransformYouTubeActivities';
+import { YouTubeLikesTransformService } from './services/Google/transform/TransformYouTubeLikes';
+import { YouTubePlaylistsTransformService } from './services/Google/transform/TransformYouTubePlaylists';
+import { YouTubeSubscriptionsTransformService } from './services/Google/transform/TransformYouTubeSubscriptions';
 
 /**
  * @internal
@@ -39,11 +48,25 @@ import { GmailTransformService } from './services/Google/transform/TransformGmai
     TypeOrmModule.forFeature([ConnectionEntity, ConnectionSyncJobEntity]),
     ConnectionsModule,
     EventsModule,
+    FilesModule,
+    GraphModule,
     MemoryModule,
     PromoteModule,
     SearchNextModule,
   ],
-  providers: [ConnectionSyncJobService, EndpointServiceMap, SyncOrchestrator, GmailTransformService],
+  providers: [
+    ConnectionSyncJobService,
+    EndpointServiceMap,
+    SyncOrchestrator,
+    GmailTransformService,
+    GoogleCalendarTransformService,
+    GoogleContactsTransformService,
+    GoogleDriveTransformService,
+    YouTubeActivitiesTransformService,
+    YouTubeLikesTransformService,
+    YouTubePlaylistsTransformService,
+    YouTubeSubscriptionsTransformService,
+  ],
   exports: [ConnectionSyncJobService],
 })
 export class EtlNewModule {}

@@ -423,7 +423,7 @@ export class SyncOrchestrator {
     const serviceFunction = this.endpointServiceMap.getTransformFunction(providerName!, syncJob.endpointName);
 
     if (!serviceFunction) {
-      this.logger.error('No service function found for provider and endpoint', {
+      this.logger.error('No service function found for provider and endpoint transform', {
         providerName,
         endpointName: syncJob.endpointName,
       });
