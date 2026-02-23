@@ -1,72 +1,74 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
-import type { BaseClient, Connection } from '@ci/domains/connections';
 
-import { syncFriends } from '../services/Facebook/SyncFriends';
-import { syncLikes } from '../services/Facebook/SyncLikes';
-import { syncPhotos } from '../services/Facebook/SyncPhotos';
-import { syncPosts } from '../services/Facebook/SyncPosts';
-import { syncVideos } from '../services/Facebook/SyncVideos';
-import { syncCalendar } from '../services/Google/SyncCalendar';
-import { syncContacts } from '../services/Google/SyncContacts';
-import { syncDrive } from '../services/Google/SyncDrive';
-import { syncGmail } from '../services/Google/SyncGmail';
+import { EndpointServiceMapInterface } from '../types';
 
-import { syncYouTubeActivities } from './Google/SyncYouTubeActivities';
-import { syncYouTubeLikes } from './Google/SyncYouTubeLikes';
-import { syncYouTubePlaylists } from './Google/SyncYouTubePlaylists';
-import { syncYouTubeSubscriptions } from './Google/SyncYouTubeSubscriptions';
+import { syncFriends } from './Facebook/SyncFriends';
+import { syncLikes } from './Facebook/SyncLikes';
+import { syncPhotos } from './Facebook/SyncPhotos';
+import { syncPosts } from './Facebook/SyncPosts';
+import { syncVideos } from './Facebook/SyncVideos';
+import { syncCalendar } from './Google/sync/SyncCalendar';
+import { syncContacts } from './Google/sync/SyncContacts';
+import { syncDrive } from './Google/sync/SyncDrive';
+import { syncGmail } from './Google/sync/SyncGmail';
+import { syncYouTubeActivities } from './Google/sync/SyncYouTubeActivities';
+import { syncYouTubeLikes } from './Google/sync/SyncYouTubeLikes';
+import { syncYouTubePlaylists } from './Google/sync/SyncYouTubePlaylists';
+import { syncYouTubeSubscriptions } from './Google/sync/SyncYouTubeSubscriptions';
+import { GmailTransformService } from './Google/transform/TransformGmail';
 import { syncOneDrive } from './Microsoft/SyncOneDrive';
 import { syncOutlookCalendar } from './Microsoft/SyncOutlookCalendar';
 import { syncOutlookMail } from './Microsoft/SyncOutlookMail';
 
-const ENDPOINT_SERVICE_MAP: {
-  [providerName: string]: {
-    [endpointName: string]: ({
-      connection,
-      client,
-      nextCursor,
-      historical,
-    }: {
-      connection: Connection;
-      client: BaseClient;
-      nextCursor: Record<string, unknown>;
-      historical: boolean;
-    }) => Promise<{ data: Record<string, unknown>; nextCursor?: Record<string, unknown> }>;
-  };
-} = {
-  Google: {
-    Gmail: syncGmail,
-    Calendar: syncCalendar,
-    Drive: syncDrive,
-    Contacts: syncContacts,
-    'YouTube Activities': syncYouTubeActivities,
-    'YouTube Likes': syncYouTubeLikes,
-    'YouTube Playlists': syncYouTubePlaylists,
-    'YouTube Subscriptions': syncYouTubeSubscriptions,
-  },
-  Microsoft: {
-    OneDrive: syncOneDrive,
-    'Outlook Mail': syncOutlookMail,
-    Calendar: syncOutlookCalendar,
-  },
-  Facebook: {
-    Friends: syncFriends,
-    Likes: syncLikes,
-    Photos: syncPhotos,
-    Posts: syncPosts,
-    Videos: syncVideos,
-  },
-};
-
 @Injectable()
 export class EndpointServiceMap {
-  constructor(private readonly logger: LoggerService) {
+  private endpointServiceMap: EndpointServiceMapInterface;
+
+  constructor(
+    private readonly logger: LoggerService,
+    private readonly gmailTransformService: GmailTransformService,
+  ) {
     this.logger.setContext(EndpointServiceMap.name);
+    this.endpointServiceMap = {
+      sync: {
+        Google: {
+          Gmail: syncGmail,
+          Calendar: syncCalendar,
+          Drive: syncDrive,
+          Contacts: syncContacts,
+          'YouTube Activities': syncYouTubeActivities,
+          'YouTube Likes': syncYouTubeLikes,
+          'YouTube Playlists': syncYouTubePlaylists,
+          'YouTube Subscriptions': syncYouTubeSubscriptions,
+        },
+        Microsoft: {
+          OneDrive: syncOneDrive,
+          'Outlook Mail': syncOutlookMail,
+          Calendar: syncOutlookCalendar,
+        },
+        Facebook: {
+          Friends: syncFriends,
+          Likes: syncLikes,
+          Photos: syncPhotos,
+          Posts: syncPosts,
+          Videos: syncVideos,
+        },
+      },
+      transform: {
+        Google: {
+          Gmail: this.gmailTransformService.transformGmail.bind(this.gmailTransformService),
+        },
+      },
+    };
   }
 
   getSyncFunction(providerName: string, endpointName: string) {
-    return ENDPOINT_SERVICE_MAP[providerName]?.[endpointName];
+    return this.endpointServiceMap.sync[providerName]?.[endpointName];
+  }
+
+  getTransformFunction(providerName: string, endpointName: string) {
+    return this.endpointServiceMap.transform[providerName]?.[endpointName];
   }
 }

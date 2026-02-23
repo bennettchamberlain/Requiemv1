@@ -162,6 +162,10 @@ export class ConnectionSyncJobService {
       updateData.completedAt = data.completedAt;
     }
 
+    if (data.lastTransformed !== undefined) {
+      updateData.lastTransformed = data.lastTransformed;
+    }
+
     const SyncJob = await this.connectionSyncJobRepository.findOne({
       where: {
         id,
@@ -252,6 +256,16 @@ export class ConnectionSyncJobService {
       for (const [key, val] of Object.entries(query.properties)) {
         executable = executable.andWhere(`item.properties->>'${key}' = :${key}`, { [key]: val });
       }
+    }
+
+    if (query.lastTransformed === null) {
+      executable = executable.andWhere('last_transformed IS NULL');
+    }
+
+    if (query.lastTransformed != null) {
+      executable = executable.andWhere('last_transformed >= :lastTransformed', {
+        lastTransformed: query.lastTransformed,
+      });
     }
 
     executable = executable.orderBy('updated_at', 'DESC');

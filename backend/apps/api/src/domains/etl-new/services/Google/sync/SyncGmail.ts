@@ -1,4 +1,4 @@
-import type { BaseClient, Connection } from '@ci/domains/connections';
+import type { BaseClient, Connection, GmailMessage } from '@ci/domains/connections';
 
 interface message {
   id: string;
@@ -153,12 +153,9 @@ async function fetchMessage(
   connection: Connection,
   client: BaseClient,
   messageId: string,
-): Promise<Record<string, unknown>> {
+): Promise<GmailMessage> {
   try {
-    return (await client.request(connection, `/gmail/v1/users/me/messages/${messageId}`)) as Record<
-      string,
-      unknown
-    >;
+    return (await client.request(connection, `/gmail/v1/users/me/messages/${messageId}`)) as GmailMessage;
   } catch (err) {
     client.logger.error('Error fetching Gmail message', {
       connectionId: connection.id,

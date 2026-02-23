@@ -64,6 +64,9 @@ export class ConnectionSyncJobEntity {
   @Column({ type: 'timestamptz', nullable: true, name: 'completed_at' })
   completedAt!: Date | null;
 
+  @Column({ type: 'timestamptz', nullable: true, name: 'last_transformed' })
+  lastTransformed!: Date | null;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;
@@ -89,6 +92,7 @@ export class ConnectionSyncJobEntity {
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       completedAt: entity.completedAt,
+      lastTransformed: entity.lastTransformed,
       user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
       connection: entity.connection ? ConnectionEntity.toEgressType(entity.connection) : undefined,
     };

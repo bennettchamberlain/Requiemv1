@@ -77,6 +77,8 @@ export type {
   FacebookPhoto,
   FacebookPost,
   FacebookVideo,
+  GmailMessage,
+  EmailParticipant,
 } from './clients/types';
 
 export { OUTLOOK_SKIP_REGEX, ONEDRIVE_ETAG_REGEX } from './clients/constants';
