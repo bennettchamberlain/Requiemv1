@@ -6,8 +6,7 @@ import { Breadcrumb } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-
-import { InventoryItemModal } from './InventoryItemModal';
+import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
 
 interface InventoryItem {
   id: string;
@@ -46,7 +45,10 @@ const GET_INVENTORY_ITEMS = gql`
 export function InventoryPage() {
   usePageTitle('Inventory - Companion Intelligence');
 
-  const { data, loading } = useQuery(GET_INVENTORY_ITEMS);
+  const { data, loading } = useQuery(GET_INVENTORY_ITEMS, {
+    fetchPolicy: 'cache-and-network',
+  });
+
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   const items: InventoryItem[] = data?.items?.edges?.map((edge: { node: InventoryItem }) => edge.node) || [];

@@ -20,13 +20,17 @@ import {
   PlaceGridItem,
   ThreadGridItem,
 } from '@/components/entities';
-import { InventoryItemModal, type InventoryItem } from '@/pages/InventoryPage/InventoryItemModal';
-import { Empty } from '@/pages/MemoryPage/Components';
+import { FileModal } from '@/components/modals/FileModal';
+import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
 
+import { Empty } from '../Components';
 import { useEntityService } from '../useEntityService';
 
 export function GalleryView() {
   const navigate = useNavigate();
+
+  const [activeItem, setActiveItem] = useState<string | null>(null);
+
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
 
   const [{ data }] = useEntityService();
@@ -40,6 +44,8 @@ export function GalleryView() {
       />
     );
   }
+
+  const clearActiveItem = () => setActiveItem(null);
 
   const openInventoryModal = (item: ItemInventoryPreview) => {
     setSelectedInventoryItem({
@@ -106,7 +112,7 @@ export function GalleryView() {
               );
 
             case 'FileType':
-              return <FileGridItem key={item.id} file={item} />;
+              return <FileGridItem key={item.id} file={item} onClick={() => setActiveItem(item.id)} />;
 
             case 'ItemType':
               return <ItemGridItem key={item.id} item={item} onSelectInventoryItem={openInventoryModal} />;
@@ -160,6 +166,8 @@ export function GalleryView() {
           }
         })}
       </EntityGrid>
+
+      <FileModal fileId={activeItem ?? null} onClose={clearActiveItem} />
 
       <InventoryItemModal
         open={selectedInventoryItem != null}

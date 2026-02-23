@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type RequestContext } from '@ci/common/context';
+import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
 import {
   FileService as FileStorageService,
@@ -20,6 +21,7 @@ export class FileService {
     private readonly fileService: FileStorageService,
     @InjectRepository(FileEntity)
     private readonly fileRepository: Repository<FileEntity>,
+    private readonly logger: LoggerService,
   ) {}
 
   async create(context: RequestContext, data: CreateFileDto): Promise<{ entity: FileEntity }> {
@@ -53,6 +55,14 @@ export class FileService {
   @OnEvent(FileUploadedEvent)
   async handleFileUploaded(payload: FileUploadedPayload) {
     const file = await this.fileService.findById({ userId: payload.userId }, payload.fileId);
+
+    if (file == null) {
+      this.logger.warn('File not found, skipping entity creation', {
+        fileId: payload.fileId,
+      });
+
+      return;
+    }
 
     const existingEntity = await this.fileRepository
       .createQueryBuilder('entity')

@@ -8,7 +8,8 @@ import { EntityGridItem } from './EntityGridItem';
 export const FILE_FRAGMENT = gql(`
   fragment FileGridItemData on FileType {
     id
-    sourceUrl
+    filename
+    previewUrl
   }
 `);
 
@@ -21,16 +22,25 @@ export function FileGridItem({ file, onClick }: Props) {
   const data = useFragment(FILE_FRAGMENT, file);
 
   const url = useMemo(() => {
-    return data.sourceUrl ? `/static${data.sourceUrl}` : undefined;
-  }, [data.sourceUrl]);
+    return data.previewUrl ? `/static${data.previewUrl}` : undefined;
+  }, [data.previewUrl]);
 
   return (
     <EntityGridItem className="relative p-0" onClick={onClick}>
       <div className="rounded-md overflow-hidden min-h-0 grow inset-0">
-        <div className="rounded-tl-md absolute w-full flex flex-wrap gap-1 z-10 p-3 [background-image:radial-gradient(circle_at_top_left,_rgba(255,255,255,0.9),_rgba(255,255,255,0.1))]">
-          <FileIcon className="shrink-0" />
-        </div>
-        <img src={url} className="object-cover w-full h-full" />
+        {url && <img src={url} alt={data.filename || ''} className="w-full h-full object-cover" />}
+
+        {!url && (
+          <>
+            <div className="absolute p-2 px-3 bottom-0 w-full text-sm truncate text-muted-foreground">
+              {data.filename}
+            </div>
+
+            <div className="flex flex-col items-center justify-center w-full h-full gap-2 p-4">
+              <FileIcon className="h-10 w-10 text-muted-foreground" />
+            </div>
+          </>
+        )}
       </div>
     </EntityGridItem>
   );

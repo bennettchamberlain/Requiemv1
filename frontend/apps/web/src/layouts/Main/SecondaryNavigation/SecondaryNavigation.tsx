@@ -50,9 +50,11 @@ export function SecondaryNavigation() {
           </NavLink>
         )}
 
-        <NavLink to="/files" label="Files">
-          <HardDrive className="h-6 w-6" strokeWidth={1.25} />
-        </NavLink>
+        {isFeatureEnabled('files.page') && (
+          <NavLink to="/files" label="Files">
+            <HardDrive className="h-6 w-6" strokeWidth={1.25} />
+          </NavLink>
+        )}
       </Tooltip.Provider>
     </nav>
   );

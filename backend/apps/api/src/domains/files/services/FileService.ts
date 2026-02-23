@@ -11,7 +11,7 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, type FindOptionsWhere } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
@@ -181,7 +181,7 @@ export class FileService implements OnModuleInit {
     return this.signFiles(result);
   }
 
-  async findById(context: ServiceContext, id: string): Promise<SignedFile> {
+  async findById(context: ServiceContext, id: string): Promise<SignedFile | null> {
     const result = await this.fileRepository.findOne({
       where: {
         id,
@@ -191,11 +191,7 @@ export class FileService implements OnModuleInit {
       },
     });
 
-    if (result == null) {
-      throw new NotFoundException();
-    }
-
-    return this.signFile(result);
+    return result ? this.signFile(result) : null;
   }
 
   async findByIds(context: ServiceContext, ids: string[]): Promise<(SignedFile | null)[]> {
@@ -369,7 +365,7 @@ export class FileService implements OnModuleInit {
     return Readable.from(response.Body as AsyncIterable<Uint8Array>);
   }
 
-  async update(context: ServiceContext, id: string, data: UpdateFileDto): Promise<SignedFile> {
+  async update(context: ServiceContext, id: string, data: UpdateFileDto): Promise<SignedFile | null> {
     await this.fileRepository.update(
       {
         id,

@@ -95,6 +95,7 @@ export const ConfigSchema = z.object({
     'advanced.theme.tab': booleanStringSchema,
     'new.insights.page': booleanStringSchema,
     'require.signup.codes': booleanStringSchema,
+    'files.page': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
