@@ -3,6 +3,11 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/logging';
 import type { BaseClient, Connection } from '@ci/domains/connections';
 
+import { syncFriends } from '../services/Facebook/SyncFriends';
+import { syncLikes } from '../services/Facebook/SyncLikes';
+import { syncPhotos } from '../services/Facebook/SyncPhotos';
+import { syncPosts } from '../services/Facebook/SyncPosts';
+import { syncVideos } from '../services/Facebook/SyncVideos';
 import { syncCalendar } from '../services/Google/SyncCalendar';
 import { syncContacts } from '../services/Google/SyncContacts';
 import { syncDrive } from '../services/Google/SyncDrive';
@@ -45,6 +50,13 @@ const ENDPOINT_SERVICE_MAP: {
     OneDrive: syncOneDrive,
     'Outlook Mail': syncOutlookMail,
     Calendar: syncOutlookCalendar,
+  },
+  Facebook: {
+    Friends: syncFriends,
+    Likes: syncLikes,
+    Photos: syncPhotos,
+    Posts: syncPosts,
+    Videos: syncVideos,
   },
 };
 
