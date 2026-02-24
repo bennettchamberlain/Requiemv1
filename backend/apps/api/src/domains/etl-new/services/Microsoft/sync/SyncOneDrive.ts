@@ -90,7 +90,7 @@ export async function syncOneDrive({
       deltaLink = response['@odata.deltaLink'] as string | undefined;
 
       const filteredFiles = [];
-      files = files.filter((file) => file.file); // Filter out folders and other non-file items
+      files = files.filter((file) => file.file && new Date(file.lastModifiedDateTime) > connection.createdAt); // Filter out folders and other non-file items
 
       for (const file of files) {
         const fileEtag = ONEDRIVE_ETAG_REGEX.exec(file.eTag);
