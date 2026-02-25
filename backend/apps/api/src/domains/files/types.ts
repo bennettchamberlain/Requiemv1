@@ -10,6 +10,8 @@ export interface CreateFileDto extends Partial<Pick<Express.Multer.File, 'path' 
   filename?: string | null;
   contentType?: string | null;
   size?: number | null;
+  height?: number | null;
+  width?: number | null;
   variant?: FileVariant;
   title?: string | null;
   description?: string | null;

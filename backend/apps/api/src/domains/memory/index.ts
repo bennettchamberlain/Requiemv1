@@ -154,4 +154,9 @@ export {
 export type { Content } from './entities/ContentEntity';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
 export type { Concept, Event, Fact, Item, InventoryCondition, Person, Communication, Place };
-export { CommunicationDirection, CommunicationType } from './types';
+export {
+  CommunicationDirection,
+  CommunicationType,
+  CreateCommunicationDto,
+  UpdateCommunicationDto,
+} from './types';

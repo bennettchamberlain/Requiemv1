@@ -79,7 +79,7 @@ export async function syncOutlookCalendar({
             hasNextPage: !!nextPageLink,
           });
 
-          calendarEvents.push(events);
+          calendarEvents.push(...events);
         } while (nextPageLink);
 
         calendar.events = calendarEvents;

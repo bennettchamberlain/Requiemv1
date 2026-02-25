@@ -25,9 +25,12 @@ import { YouTubeActivitiesTransformService } from './Google/transform/TransformY
 import { YouTubeLikesTransformService } from './Google/transform/TransformYouTubeLikes';
 import { YouTubePlaylistsTransformService } from './Google/transform/TransformYouTubePlaylists';
 import { YouTubeSubscriptionsTransformService } from './Google/transform/TransformYouTubeSubscriptions';
-import { syncOneDrive } from './Microsoft/SyncOneDrive';
-import { syncOutlookCalendar } from './Microsoft/SyncOutlookCalendar';
-import { syncOutlookMail } from './Microsoft/SyncOutlookMail';
+import { syncOneDrive } from './Microsoft/sync/SyncOneDrive';
+import { syncOutlookCalendar } from './Microsoft/sync/SyncOutlookCalendar';
+import { syncOutlookMail } from './Microsoft/sync/SyncOutlookMail';
+import { OneDriveTransformService } from './Microsoft/transform/TransformOneDrive';
+import { OutlookCalendarTransformService } from './Microsoft/transform/TransformOutlookCalendar';
+import { OutlookMailTransformService } from './Microsoft/transform/TransformOutlookMail';
 
 @Injectable()
 export class EndpointServiceMap {
@@ -43,6 +46,9 @@ export class EndpointServiceMap {
     private readonly youTubeLikesTransformService: YouTubeLikesTransformService,
     private readonly youTubePlaylistsTransformService: YouTubePlaylistsTransformService,
     private readonly youTubeSubscriptionsTransformService: YouTubeSubscriptionsTransformService,
+    private readonly oneDriveTransformService: OneDriveTransformService,
+    private readonly outlookCalendarTransformService: OutlookCalendarTransformService,
+    private readonly outlookMailTransformService: OutlookMailTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -93,6 +99,15 @@ export class EndpointServiceMap {
             this.youTubeSubscriptionsTransformService.transformYouTubeSubscriptions.bind(
               this.youTubeSubscriptionsTransformService,
             ),
+        },
+        Microsoft: {
+          OneDrive: this.oneDriveTransformService.transformOneDrive.bind(this.oneDriveTransformService),
+          'Outlook Mail': this.outlookMailTransformService.transformOutlookMail.bind(
+            this.outlookMailTransformService,
+          ),
+          Calendar: this.outlookCalendarTransformService.transformOutlookCalendar.bind(
+            this.outlookCalendarTransformService,
+          ),
         },
       },
     };

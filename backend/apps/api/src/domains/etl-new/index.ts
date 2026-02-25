@@ -24,8 +24,8 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
-import { PromoteModule } from '@ci/domains/promote';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { UserModule } from '@ci/domains/user';
 
 import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { SyncOrchestrator } from './listeners/SyncOrchestrator';
@@ -39,6 +39,10 @@ import { YouTubeActivitiesTransformService } from './services/Google/transform/T
 import { YouTubeLikesTransformService } from './services/Google/transform/TransformYouTubeLikes';
 import { YouTubePlaylistsTransformService } from './services/Google/transform/TransformYouTubePlaylists';
 import { YouTubeSubscriptionsTransformService } from './services/Google/transform/TransformYouTubeSubscriptions';
+import { OneDriveTransformService } from './services/Microsoft/transform/TransformOneDrive';
+import { OutlookCalendarTransformService } from './services/Microsoft/transform/TransformOutlookCalendar';
+import { OutlookMailTransformService } from './services/Microsoft/transform/TransformOutlookMail';
+import { PromoteService } from './services/PromoteService';
 
 /**
  * @internal
@@ -51,12 +55,13 @@ import { YouTubeSubscriptionsTransformService } from './services/Google/transfor
     FilesModule,
     GraphModule,
     MemoryModule,
-    PromoteModule,
     SearchNextModule,
+    UserModule,
   ],
   providers: [
     ConnectionSyncJobService,
     EndpointServiceMap,
+    PromoteService,
     SyncOrchestrator,
     GmailTransformService,
     GoogleCalendarTransformService,
@@ -66,6 +71,9 @@ import { YouTubeSubscriptionsTransformService } from './services/Google/transfor
     YouTubeLikesTransformService,
     YouTubePlaylistsTransformService,
     YouTubeSubscriptionsTransformService,
+    OneDriveTransformService,
+    OutlookCalendarTransformService,
+    OutlookMailTransformService,
   ],
   exports: [ConnectionSyncJobService],
 })

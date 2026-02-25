@@ -3,11 +3,11 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection, ConnectionService, GmailMessage, EmailParticipant } from '@ci/domains/connections';
 import { CommunicationDirection, CommunicationService, CommunicationType } from '@ci/domains/memory';
-import { PromoteService } from '@ci/domains/promote';
 import { TagService } from '@ci/domains/search-next';
 
 import { ConnectionSyncJob } from '../../../types';
 import { parseDate } from '../../../util';
+import { PromoteService } from '../../PromoteService';
 
 @Injectable()
 export class GmailTransformService {

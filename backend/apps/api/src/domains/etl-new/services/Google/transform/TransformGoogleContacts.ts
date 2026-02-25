@@ -6,9 +6,9 @@ import { LoggerService } from '@ci/common/logging';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
 import { RelationshipService } from '@ci/domains/graph';
 import { PersonService } from '@ci/domains/memory';
-import { PromoteService } from '@ci/domains/promote';
 
 import { ConnectionSyncJob } from '../../../types';
+import { PromoteService } from '../../PromoteService';
 
 interface GoogleContact {
   resourceName?: string;
