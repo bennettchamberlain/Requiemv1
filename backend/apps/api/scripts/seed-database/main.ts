@@ -8,7 +8,6 @@ import { EtlModule } from '@ci/domains/etl';
 import { EventService, LocalEventService } from '@ci/domains/events';
 import { GraphQLModule } from '@ci/domains/graphql';
 import { LLMModule } from '@ci/domains/llm';
-import { PromoteModule } from '@ci/domains/promote';
 import { SpeechModule } from '@ci/domains/speech';
 import { ToolsModule } from '@ci/domains/tools';
 
@@ -62,8 +61,6 @@ const logger = new LoggerService();
     .overrideModule(GraphQLModule)
     .useModule(class {})
     .overrideModule(LLMModule)
-    .useModule(class {})
-    .overrideModule(PromoteModule)
     .useModule(class {})
     .overrideModule(SpeechModule)
     .useModule(class {})

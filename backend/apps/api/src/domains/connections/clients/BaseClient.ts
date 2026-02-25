@@ -2,7 +2,7 @@ import type { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
-import type { SyncResponse, TokenExchange } from './types';
+import type { TokenExchange } from './types';
 
 export abstract class BaseClient {
   abstract readonly logger: LoggerService;
@@ -14,8 +14,6 @@ export abstract class BaseClient {
   abstract refreshAccessToken(connection: Connection): Promise<TokenExchange>;
 
   abstract request<T>(connection: Connection, endpoint: string, options?: RequestInit): Promise<T>;
-
-  abstract sync(connection: Connection): Promise<SyncResponse[]>;
 
   abstract getAccountIdentifier(connection: Connection): Promise<string>;
 }

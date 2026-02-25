@@ -7,7 +7,7 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
-import { EtlNewModule } from '@ci/domains/etl-new';
+import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
@@ -70,7 +70,7 @@ import { UserResolver } from './resolvers/UserResolver';
     BrowserActivityModule,
     ConnectionsModule,
     ConversationModule,
-    EtlNewModule,
+    EtlModule,
     FilesModule,
     GraphModule,
     IntelligenceModule,

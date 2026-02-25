@@ -26,7 +26,6 @@ import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
-import { EtlNewModule } from '@ci/domains/etl-new';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
@@ -37,7 +36,6 @@ import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
 import { PositionModule } from '@ci/domains/position';
-import { PromoteModule } from '@ci/domains/promote';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SpeechModule } from '@ci/domains/speech';
@@ -67,7 +65,6 @@ import { UserModule } from '@ci/domains/user';
     ConnectionsModule,
     DeviceModule,
     EtlModule,
-    EtlNewModule,
     EventsModule,
     FilesModule,
     GraphModule,
@@ -79,7 +76,6 @@ import { UserModule } from '@ci/domains/user';
     ToolsModule,
     MemoryModule,
     NotesModule,
-    PromoteModule,
     SearchIngressModule,
     SearchNextModule,
     SpeechModule,
