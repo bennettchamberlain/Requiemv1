@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   HttpCode,
   Post,
   Req,
   Res,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import parseDuration from 'parse-duration';
@@ -16,10 +18,14 @@ import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
+import { CsrfGuard } from '../guards/CsrfGuard';
 import { AuthService } from '../services/AuthService';
+import { CsrfService } from '../services/CsrfService';
 import { JwtPayload, LoginDto } from '../types';
 
 const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
+
+const CSRF_COOKIE_NAME = config.auth.cookies.csrfTokenName;
 
 const localStrategySchema = z.object({
   username: z.string(),
@@ -31,10 +37,25 @@ export class SessionController {
   constructor(
     private readonly userService: UserService,
     private readonly authService: AuthService,
+    private readonly csrfService: CsrfService,
   ) {}
+
+  /**
+   * Issue a pre-auth CSRF token cookie. The frontend should call this before
+   * submitting the login form and include the token as an `X-CSRF-Token`
+   * header on the POST /authenticate request.
+   */
+  @Get('csrf')
+  @HttpCode(204)
+  issueCsrfToken(@Res({ passthrough: true }) res: Response) {
+    const token = this.csrfService.generateToken();
+
+    this.setCsrfCookie(res, token);
+  }
 
   @Post()
   @HttpCode(200)
+  @UseGuards(CsrfGuard)
   async login(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -52,6 +73,7 @@ export class SessionController {
     );
 
     const accessToken = await this.authService.issueAccessToken(user.id);
+    const csrfToken = this.csrfService.generateToken();
 
     res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
       httpOnly: true,
@@ -61,6 +83,8 @@ export class SessionController {
       maxAge: COOKIE_MAX_AGE,
     });
 
+    this.setCsrfCookie(res, csrfToken);
+
     return {
       accessToken,
     };
@@ -68,6 +92,7 @@ export class SessionController {
 
   @Post('refresh')
   @HttpCode(200)
+  @UseGuards(CsrfGuard)
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = this.getSessionToken(req);
     const payload = this.validateSessionToken(token);
@@ -101,6 +126,10 @@ export class SessionController {
         path: '/',
         maxAge: COOKIE_MAX_AGE,
       });
+
+      const csrfToken = this.csrfService.generateToken();
+
+      this.setCsrfCookie(res, csrfToken);
     }
 
     return {
@@ -128,6 +157,8 @@ export class SessionController {
       sameSite: 'lax',
       path: '/',
     });
+
+    this.clearCsrfCookie(res);
   }
 
   private getSessionToken(req: Request) {
@@ -144,5 +175,23 @@ export class SessionController {
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
+  }
+
+  private setCsrfCookie(res: Response, token: string): void {
+    res.cookie(CSRF_COOKIE_NAME, token, {
+      httpOnly: false,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+    });
+  }
+
+  private clearCsrfCookie(res: Response): void {
+    res.clearCookie(CSRF_COOKIE_NAME, {
+      httpOnly: false,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+    });
   }
 }

@@ -6,6 +6,27 @@ import { useNavigate } from 'react-router-dom';
 
 const authChannel = new BroadcastChannel('auth');
 
+const CSRF_COOKIE_NAME = 'csrfToken';
+
+function getCsrfToken(): string | undefined {
+  const match = document.cookie.split('; ').find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
+
+  return match?.split('=').slice(1).join('=');
+}
+
+function withCsrfHeader(headers?: HeadersInit): HeadersInit {
+  const token = getCsrfToken();
+
+  if (!token) {
+    return headers ?? {};
+  }
+
+  return {
+    ...headers,
+    'X-CSRF-Token': token,
+  };
+}
+
 interface JwtPayload {
   sub: string;
   iat: number;
@@ -49,9 +70,16 @@ function useAuth(): ReturnValue {
       setLoginError(null);
 
       try {
+        // Obtain a pre-auth CSRF token before submitting credentials
+        await fetch('/api/authenticate/csrf', {
+          credentials: 'include',
+        });
+
         const data: AuthResponse = await fetchJson('/api/authenticate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: withCsrfHeader({
+            'Content-Type': 'application/json',
+          }),
           credentials: 'include',
           body: JSON.stringify({
             username: email,
@@ -75,6 +103,7 @@ function useAuth(): ReturnValue {
     try {
       const response = await fetch('/api/authenticate/logout', {
         method: 'POST',
+        headers: withCsrfHeader(),
         credentials: 'include',
       });
 
@@ -100,9 +129,16 @@ function useAuth(): ReturnValue {
       setLoginError(null);
 
       try {
+        // Obtain a pre-auth CSRF token before submitting signup
+        await fetch('/api/authenticate/csrf', {
+          credentials: 'include',
+        });
+
         const data: AuthResponse = await fetchJson('/api/signup', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: withCsrfHeader({
+            'Content-Type': 'application/json',
+          }),
           credentials: 'include',
           body: JSON.stringify({
             name,
@@ -130,6 +166,7 @@ function useAuth(): ReturnValue {
     try {
       const data: AuthResponse = await fetchJson('/api/authenticate/refresh', {
         method: 'POST',
+        headers: withCsrfHeader(),
         credentials: 'include',
       });
 
@@ -145,6 +182,7 @@ function useAuth(): ReturnValue {
       try {
         const data: AuthResponse = await fetchJson('/api/authenticate/refresh', {
           method: 'POST',
+          headers: withCsrfHeader(),
           credentials: 'include',
         });
 

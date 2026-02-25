@@ -38,8 +38,12 @@ export const ConfigSchema = z.object({
       duration: z.string(),
       refreshGracePeriod: z.string(),
     }),
+    csrf: z.object({
+      secret: z.string(),
+    }),
     cookies: z.object({
       sessionTokenName: z.string(),
+      csrfTokenName: z.string(),
     }),
     providers: z.object({
       google: z.object({

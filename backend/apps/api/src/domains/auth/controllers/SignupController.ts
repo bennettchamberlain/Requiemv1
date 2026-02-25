@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import parseDuration from 'parse-duration';
 import { z } from 'zod';
@@ -9,11 +9,15 @@ import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
+import { CsrfGuard } from '../guards/CsrfGuard';
 import { AuthService } from '../services/AuthService';
+import { CsrfService } from '../services/CsrfService';
 import { SignupCodeService } from '../services/SignupCodeService';
 import { SignupDto } from '../types';
 
 const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
+
+const CSRF_COOKIE_NAME = config.auth.cookies.csrfTokenName;
 
 const signupSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -29,9 +33,11 @@ export class SignupController {
     private readonly authService: AuthService,
     private readonly signupCodeService: SignupCodeService,
     private readonly featureService: FeatureService,
+    private readonly csrfService: CsrfService,
   ) {}
 
   @Post('signup')
+  @UseGuards(CsrfGuard)
   async signup(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -89,8 +95,22 @@ export class SignupController {
       maxAge: COOKIE_MAX_AGE,
     });
 
+    // Issue a fresh CSRF token for authenticated requests (e.g. /refresh)
+    const csrfToken = this.csrfService.generateToken();
+
+    this.setCsrfCookie(res, csrfToken);
+
     return {
       accessToken,
     };
+  }
+
+  private setCsrfCookie(res: Response, token: string): void {
+    res.cookie(CSRF_COOKIE_NAME, token, {
+      httpOnly: false,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+    });
   }
 }
