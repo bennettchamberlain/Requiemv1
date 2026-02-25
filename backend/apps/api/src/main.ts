@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
 
 import { App } from '@ci/application';
 import { LoggerService } from '@ci/common/logging';
@@ -13,6 +14,7 @@ import config from '@ci/configuration';
   const logger = await app.resolve(LoggerService);
 
   app.useLogger(logger);
+  app.use(cookieParser());
 
   const express = app.getHttpAdapter().getInstance();
 

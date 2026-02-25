@@ -8,6 +8,9 @@
     "session": {
       "fieldPepper": "AUTH_SESSION_PEPPER"
     },
+    "cookies": {
+      "sessionTokenName": "AUTH_COOKIE_SESSION_TOKEN_NAME"
+    },
     "oauth": {
       "callbackUrl": "OAUTH_CALLBACK_URL"
     }

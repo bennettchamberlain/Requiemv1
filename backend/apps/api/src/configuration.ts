@@ -37,6 +37,9 @@ export const ConfigSchema = z.object({
       fieldPepper: z.string(),
       duration: z.string(),
     }),
+    cookies: z.object({
+      sessionTokenName: z.string(),
+    }),
     providers: z.object({
       google: z.object({
         id: z.string(),
