@@ -33,7 +33,6 @@ export const ConfigSchema = z.object({
       refreshTokenExpiration: z.string(),
     }),
     session: z.object({
-      saltRounds: z.number(),
       fieldPepper: z.string(),
       duration: z.string(),
       refreshGracePeriod: z.string(),
