@@ -4,18 +4,18 @@ import { Navigate } from 'react-router-dom';
 import { useAuth, useCurrentUser } from '@/hooks';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const [{ expired, loading: authLoading }] = useAuth();
+  const [{ expired, authToken, loading: authLoading }] = useAuth();
   const { user, loading: userLoading } = useCurrentUser();
-
-  if (expired) {
-    return <Navigate to="/login" />;
-  }
 
   if (authLoading || userLoading) {
     return <LoadingPage />;
   }
 
-  if (!user) {
+  if (authToken && !expired && !user) {
+    return <LoadingPage />;
+  }
+
+  if (expired || !user) {
     return <Navigate to="/login" />;
   }
 

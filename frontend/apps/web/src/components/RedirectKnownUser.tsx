@@ -4,14 +4,18 @@ import { Navigate } from 'react-router-dom';
 import { useAuth, useCurrentUser } from '@/hooks';
 
 export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
-  const [{ expired, loading: authLoading }] = useAuth();
+  const [{ expired, authToken, loading: authLoading }] = useAuth();
   const { user, loading: userLoading } = useCurrentUser();
+
+  if (authLoading || userLoading) {
+    return <LoadingPage />;
+  }
 
   if (expired) {
     return children;
   }
 
-  if (authLoading || userLoading) {
+  if (authToken && !user) {
     return <LoadingPage />;
   }
 
