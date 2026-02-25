@@ -78,7 +78,7 @@ export class SessionController {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    const newSessionToken = await this.authService.rotateSessionToken(
+    const { sessionToken } = await this.authService.rotateSessionToken(
       userId,
       token,
       this.authService.getSessionMetadata(req),
@@ -86,13 +86,22 @@ export class SessionController {
 
     const accessToken = await this.authService.issueAccessToken(userId);
 
-    res.cookie(config.auth.cookies.sessionTokenName, newSessionToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: COOKIE_MAX_AGE,
-    });
+    // If we obtain a new session token from calling `rotateSessionToken` then
+    // we conclude that we have not matched a grace-period rotation and must set
+    // a new cookie value.
+    //
+    // Otherwise we have a grace-period match and we avoid setting a new cookie.
+    // The browser keeps the cookie from the first concurrent request that
+    // performed the real rotation.
+    if (sessionToken) {
+      res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: COOKIE_MAX_AGE,
+      });
+    }
 
     return {
       accessToken,

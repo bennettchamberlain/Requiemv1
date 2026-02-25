@@ -36,6 +36,7 @@ export const ConfigSchema = z.object({
       saltRounds: z.number(),
       fieldPepper: z.string(),
       duration: z.string(),
+      refreshGracePeriod: z.string(),
     }),
     cookies: z.object({
       sessionTokenName: z.string(),
