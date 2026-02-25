@@ -195,6 +195,8 @@ export interface UpdateContentDto {
   };
 }
 
+export type SearchContentDto = UpdateContentDto;
+
 export interface CreatePlaceDto {
   id?: string;
   entity_type?: string;

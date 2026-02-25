@@ -31,6 +31,12 @@ import { ConnectionSyncJobEntity } from './entities/ConnectionSyncJobEntity';
 import { SyncOrchestrator } from './listeners/SyncOrchestrator';
 import { ConnectionSyncJobService } from './services/ConnectionSyncJobService';
 import { EndpointServiceMap } from './services/EndpointServiceMap';
+import { FacebookFriendsTransformService } from './services/Facebook/transform/TransformFacebookFriends';
+import { FacebookLikesTransformService } from './services/Facebook/transform/TransformFacebookLikes';
+import { FacebookPhotosTransformService } from './services/Facebook/transform/TransformFacebookPhotos';
+import { FacebookPostsTransformService } from './services/Facebook/transform/TransformFacebookPosts';
+import { FacebookProfileTransformService } from './services/Facebook/transform/TransformFacebookProfile';
+import { FacebookVideosTransformService } from './services/Facebook/transform/TransformFacebookVideos';
 import { GmailTransformService } from './services/Google/transform/TransformGmail';
 import { GoogleCalendarTransformService } from './services/Google/transform/TransformGoogleCalendar';
 import { GoogleContactsTransformService } from './services/Google/transform/TransformGoogleContacts';
@@ -63,6 +69,12 @@ import { PromoteService } from './services/PromoteService';
     EndpointServiceMap,
     PromoteService,
     SyncOrchestrator,
+    FacebookFriendsTransformService,
+    FacebookLikesTransformService,
+    FacebookPhotosTransformService,
+    FacebookPostsTransformService,
+    FacebookProfileTransformService,
+    FacebookVideosTransformService,
     GmailTransformService,
     GoogleCalendarTransformService,
     GoogleContactsTransformService,

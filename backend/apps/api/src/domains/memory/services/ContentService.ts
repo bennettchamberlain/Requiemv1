@@ -8,7 +8,7 @@ import { EventService } from '@ci/domains/events';
 import { ContentCreatedEvent, ContentRemovedEvent, ContentUpdatedEvent } from '@ci/domains/memory/events';
 
 import { Content, ContentEntity } from '../entities/ContentEntity';
-import { CreateContentDto, UpdateContentDto } from '../types';
+import { CreateContentDto, SearchContentDto, UpdateContentDto } from '../types';
 
 @Injectable()
 export class ContentService {
@@ -30,7 +30,9 @@ export class ContentService {
         const content = await this.contentRepository.create({
           ...item,
           id,
-          externalId: `content_${id}`,
+          externalId: item.external_id ?? undefined,
+          sourceUrl: item.source_url ?? undefined,
+          sourceData: item.source_data ?? undefined,
           user: {
             id: context.userId,
           },
@@ -176,5 +178,50 @@ export class ContentService {
     });
 
     return true;
+  }
+
+  async search(context: ServiceContext, filters: SearchContentDto): Promise<Content[]> {
+    const whereClause: Record<string, unknown> = {
+      ...(context.userId !== SYSTEM_USER && {
+        user: {
+          id: context.userId,
+        },
+      }),
+    };
+
+    if (filters.type !== undefined) {
+      whereClause.type = filters.type;
+    }
+
+    if (filters.title !== undefined) {
+      whereClause.title = filters.title;
+    }
+
+    if (filters.text !== undefined) {
+      whereClause.text = filters.text;
+    }
+
+    if (filters.url !== undefined) {
+      whereClause.url = filters.url;
+    }
+
+    if (filters.mimetype !== undefined) {
+      whereClause.mimetype = filters.mimetype;
+    }
+
+    if (filters.external_id !== undefined) {
+      whereClause.externalId = filters.external_id;
+    }
+
+    if (filters.source_url !== undefined) {
+      whereClause.sourceUrl = filters.source_url;
+    }
+
+    const entities = await this.contentRepository.find({
+      where: whereClause,
+      relations: ['user'],
+    });
+
+    return entities.map((entity) => ContentEntity.toEgressType(entity));
   }
 }
