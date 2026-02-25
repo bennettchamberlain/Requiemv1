@@ -26,6 +26,7 @@ export class ContentService {
     return Promise.all(
       dataArray.map(async (item) => {
         const id = item.id ?? uuidv7();
+        console.log('creating content', { id, ...item });
 
         const content = await this.contentRepository.create({
           ...item,

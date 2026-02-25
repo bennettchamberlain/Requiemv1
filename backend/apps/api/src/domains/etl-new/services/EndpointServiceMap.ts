@@ -18,6 +18,13 @@ import { syncYouTubeLikes } from './Google/sync/SyncYouTubeLikes';
 import { syncYouTubePlaylists } from './Google/sync/SyncYouTubePlaylists';
 import { syncYouTubeSubscriptions } from './Google/sync/SyncYouTubeSubscriptions';
 import { GmailTransformService } from './Google/transform/TransformGmail';
+import { GoogleCalendarTransformService } from './Google/transform/TransformGoogleCalendar';
+import { GoogleContactsTransformService } from './Google/transform/TransformGoogleContacts';
+import { GoogleDriveTransformService } from './Google/transform/TransformGoogleDrive';
+import { YouTubeActivitiesTransformService } from './Google/transform/TransformYouTubeActivities';
+import { YouTubeLikesTransformService } from './Google/transform/TransformYouTubeLikes';
+import { YouTubePlaylistsTransformService } from './Google/transform/TransformYouTubePlaylists';
+import { YouTubeSubscriptionsTransformService } from './Google/transform/TransformYouTubeSubscriptions';
 import { syncOneDrive } from './Microsoft/SyncOneDrive';
 import { syncOutlookCalendar } from './Microsoft/SyncOutlookCalendar';
 import { syncOutlookMail } from './Microsoft/SyncOutlookMail';
@@ -29,6 +36,13 @@ export class EndpointServiceMap {
   constructor(
     private readonly logger: LoggerService,
     private readonly gmailTransformService: GmailTransformService,
+    private readonly googleCalendarTransformService: GoogleCalendarTransformService,
+    private readonly googleContactsTransformService: GoogleContactsTransformService,
+    private readonly googleDriveTransformService: GoogleDriveTransformService,
+    private readonly youTubeActivitiesTransformService: YouTubeActivitiesTransformService,
+    private readonly youTubeLikesTransformService: YouTubeLikesTransformService,
+    private readonly youTubePlaylistsTransformService: YouTubePlaylistsTransformService,
+    private readonly youTubeSubscriptionsTransformService: YouTubeSubscriptionsTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -59,6 +73,26 @@ export class EndpointServiceMap {
       transform: {
         Google: {
           Gmail: this.gmailTransformService.transformGmail.bind(this.gmailTransformService),
+          Calendar: this.googleCalendarTransformService.transformGoogleCalendar.bind(
+            this.googleCalendarTransformService,
+          ),
+          Contacts: this.googleContactsTransformService.transformGoogleContacts.bind(
+            this.googleContactsTransformService,
+          ),
+          Drive: this.googleDriveTransformService.transformGoogleDrive.bind(this.googleDriveTransformService),
+          'YouTube Activities': this.youTubeActivitiesTransformService.transformYouTubeActivities.bind(
+            this.youTubeActivitiesTransformService,
+          ),
+          'YouTube Likes': this.youTubeLikesTransformService.transformYouTubeLikes.bind(
+            this.youTubeLikesTransformService,
+          ),
+          'YouTube Playlists': this.youTubePlaylistsTransformService.transformYouTubePlaylists.bind(
+            this.youTubePlaylistsTransformService,
+          ),
+          'YouTube Subscriptions':
+            this.youTubeSubscriptionsTransformService.transformYouTubeSubscriptions.bind(
+              this.youTubeSubscriptionsTransformService,
+            ),
         },
       },
     };
