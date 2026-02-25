@@ -1,7 +1,7 @@
 import { Field, ID, InputType } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
-import { JobStatus } from '@ci/domains/etl-new';
+import { JobStatus } from '@ci/domains/etl';
 
 @InputType()
 export class CreateConnectionSyncJobInput {

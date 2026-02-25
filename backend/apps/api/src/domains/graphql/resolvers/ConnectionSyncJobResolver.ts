@@ -3,7 +3,7 @@ import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nest
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { ConnectionSyncJobService } from '@ci/domains/etl-new';
+import { ConnectionSyncJobService } from '@ci/domains/etl';
 
 import { ConnectionLoader } from '../loaders/ConnectionLoader';
 import { ConnectionSyncJobConnection } from '../types/ConnectionSyncJobConnection';
