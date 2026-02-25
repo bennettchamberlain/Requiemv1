@@ -4,11 +4,17 @@ import { LoggerService } from '@ci/common/logging';
 
 import { EndpointServiceMapInterface } from '../types';
 
-import { syncFriends } from './Facebook/SyncFriends';
-import { syncLikes } from './Facebook/SyncLikes';
-import { syncPhotos } from './Facebook/SyncPhotos';
-import { syncPosts } from './Facebook/SyncPosts';
-import { syncVideos } from './Facebook/SyncVideos';
+import { syncFriends } from './Facebook/sync/SyncFriends';
+import { syncLikes } from './Facebook/sync/SyncLikes';
+import { syncPhotos } from './Facebook/sync/SyncPhotos';
+import { syncPosts } from './Facebook/sync/SyncPosts';
+import { syncVideos } from './Facebook/sync/SyncVideos';
+import { FacebookFriendsTransformService } from './Facebook/transform/TransformFacebookFriends';
+import { FacebookLikesTransformService } from './Facebook/transform/TransformFacebookLikes';
+import { FacebookPhotosTransformService } from './Facebook/transform/TransformFacebookPhotos';
+import { FacebookPostsTransformService } from './Facebook/transform/TransformFacebookPosts';
+import { FacebookProfileTransformService } from './Facebook/transform/TransformFacebookProfile';
+import { FacebookVideosTransformService } from './Facebook/transform/TransformFacebookVideos';
 import { syncCalendar } from './Google/sync/SyncCalendar';
 import { syncContacts } from './Google/sync/SyncContacts';
 import { syncDrive } from './Google/sync/SyncDrive';
@@ -38,6 +44,12 @@ export class EndpointServiceMap {
 
   constructor(
     private readonly logger: LoggerService,
+    private readonly facebookFriendsTransformService: FacebookFriendsTransformService,
+    private readonly facebookLikesTransformService: FacebookLikesTransformService,
+    private readonly facebookPhotosTransformService: FacebookPhotosTransformService,
+    private readonly facebookPostsTransformService: FacebookPostsTransformService,
+    private readonly facebookProfileTransformService: FacebookProfileTransformService,
+    private readonly facebookVideosTransformService: FacebookVideosTransformService,
     private readonly gmailTransformService: GmailTransformService,
     private readonly googleCalendarTransformService: GoogleCalendarTransformService,
     private readonly googleContactsTransformService: GoogleContactsTransformService,
@@ -77,6 +89,14 @@ export class EndpointServiceMap {
         },
       },
       transform: {
+        Facebook: {
+          Friends: this.facebookFriendsTransformService.transform.bind(this.facebookFriendsTransformService),
+          Likes: this.facebookLikesTransformService.transform.bind(this.facebookLikesTransformService),
+          Photos: this.facebookPhotosTransformService.transform.bind(this.facebookPhotosTransformService),
+          Posts: this.facebookPostsTransformService.transform.bind(this.facebookPostsTransformService),
+          Profile: this.facebookProfileTransformService.transform.bind(this.facebookProfileTransformService),
+          Videos: this.facebookVideosTransformService.transform.bind(this.facebookVideosTransformService),
+        },
         Google: {
           Gmail: this.gmailTransformService.transformGmail.bind(this.gmailTransformService),
           Calendar: this.googleCalendarTransformService.transformGoogleCalendar.bind(
