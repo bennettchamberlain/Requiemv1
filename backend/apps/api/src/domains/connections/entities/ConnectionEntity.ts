@@ -6,11 +6,42 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  type ValueTransformer,
 } from 'typeorm';
 
+import { encrypt, decrypt, isEncrypted } from '@ci/common/crypto';
+import config from '@ci/configuration';
 import { UserEntity, type User } from '@ci/domains/user';
 
 import { ProviderEntity, type Provider } from './ProviderEntity';
+
+/**
+ * TypeORM value transformer that encrypts values with AES-256-GCM before
+ * writing to the database and decrypts them when reading. Handles nullable
+ * columns and gracefully decrypts legacy plaintext values during the
+ * migration window.
+ */
+const encryptedColumnTransformer: ValueTransformer = {
+  to(value: string | null): string | null {
+    if (value == null) {
+      return null;
+    }
+
+    return encrypt(value, config.auth.encryption.fieldKey);
+  },
+  from(value: string | null): string | null {
+    if (value == null) {
+      return null;
+    }
+
+    // Gracefully handle legacy plaintext values (pre-migration rows)
+    if (!isEncrypted(value)) {
+      return value;
+    }
+
+    return decrypt(value, config.auth.encryption.fieldKey);
+  },
+};
 
 @Entity({ schema: 'ci', name: 'connections' })
 export class ConnectionEntity {
@@ -26,10 +57,10 @@ export class ConnectionEntity {
   @Column({ type: 'text', nullable: true })
   schedule!: string | null;
 
-  @Column({ type: 'text', nullable: true, name: 'access_token' })
+  @Column({ type: 'text', nullable: true, name: 'access_token', transformer: encryptedColumnTransformer })
   accessToken!: string | null;
 
-  @Column({ type: 'text', nullable: true, name: 'refresh_token' })
+  @Column({ type: 'text', nullable: true, name: 'refresh_token', transformer: encryptedColumnTransformer })
   refreshToken!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true, name: 'token_expiry' })

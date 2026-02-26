@@ -40,6 +40,11 @@ export const ConfigSchema = z.object({
     csrf: z.object({
       secret: z.string(),
     }),
+    encryption: z.object({
+      fieldKey: z
+        .string()
+        .regex(/^[0-9A-Fa-f]{64}$/, 'fieldKey must be a 64-character hex string (256 bits)'),
+    }),
     cookies: z.object({
       sessionTokenName: z.string(),
       csrfTokenName: z.string(),
