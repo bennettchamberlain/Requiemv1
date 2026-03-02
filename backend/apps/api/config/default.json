@@ -21,7 +21,7 @@
       "duration": "7d"
     },
     "cookies": {
-      "sessionTokenName": "CI_sessionToken"
+      "sessionTokenName": "sessionToken"
     },
     "providers": {
       "google": {
