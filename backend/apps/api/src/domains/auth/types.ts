@@ -26,3 +26,7 @@ export interface SessionMetadata {
 export interface UpdateSignupCodeDto {
   used?: boolean;
 }
+
+export interface RotationResult {
+  sessionToken: string | null;
+}

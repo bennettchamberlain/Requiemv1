@@ -12,9 +12,10 @@ import { v7 as uuidv7 } from 'uuid';
 import config from '@ci/configuration';
 
 import { SessionEntity } from '../entities/SessionEntity';
-import type { JwtPayload, SessionMetadata } from '../types';
+import type { JwtPayload, RotationResult, SessionMetadata } from '../types';
 
 const SESSION_EXPIRES_IN = parseDuration(config.auth.session.duration) ?? 0;
+const REFRESH_GRACE_PERIOD = parseDuration(config.auth.session.refreshGracePeriod) ?? 0;
 
 @Injectable()
 export class AuthService {
@@ -56,20 +57,34 @@ export class AuthService {
     });
   }
 
-  async rotateSessionToken(userId: string, token: string, meta: SessionMetadata): Promise<string> {
-    const session = await this.findSession(userId, token, meta);
+  async rotateSessionToken(userId: string, token: string, meta: SessionMetadata): Promise<RotationResult> {
+    const { session, graceMatch } = await this.findSession(userId, token, meta);
+
+    // Token matched the previous (pre-rotation) hash within the grace window.
+    // Don't rotate again, just signal the caller to issue an access token
+    // without setting a new session cookie. This handles N concurrent
+    // refreshes.
+    if (graceMatch) {
+      return {
+        sessionToken: null,
+      };
+    }
 
     const nextToken = this.generateSessionToken(userId);
 
+    session.previous_token = session.token;
     session.token = await bcrypt.hash(nextToken, config.auth.session.saltRounds);
+    session.rotated_at = new Date();
 
     await this.sessionRepository.save(session);
 
-    return nextToken;
+    return {
+      sessionToken: nextToken,
+    };
   }
 
   async invalidateSession(userId: string, token: string, meta: SessionMetadata): Promise<void> {
-    const session = await this.findSession(userId, token, meta);
+    const { session } = await this.findSession(userId, token, meta);
 
     await this.sessionRepository.delete({
       id: session.id,
@@ -93,7 +108,11 @@ export class AuthService {
     };
   }
 
-  private async findSession(userId: string, token: string, data: SessionMetadata): Promise<SessionEntity> {
+  private async findSession(
+    userId: string,
+    token: string,
+    data: SessionMetadata,
+  ): Promise<{ session: SessionEntity; graceMatch: boolean }> {
     const now = new Date();
     const hashedIp = this.digest(data.ip);
     const hashedUserAgent = this.digest(data.userAgent);
@@ -109,13 +128,38 @@ export class AuthService {
       },
     });
 
-    const session = existingSessions.find((session) => bcrypt.compareSync(token, session.token));
+    // Check for a primary match where token matches the current session hash.
+    const currentMatch = existingSessions.find((s) => bcrypt.compareSync(token, s.token));
 
-    if (!session) {
-      throw new UnauthorizedException('Invalid session');
+    if (currentMatch) {
+      return {
+        session: currentMatch,
+        graceMatch: false,
+      };
     }
 
-    return session;
+    // Check for a grace-period match where the token matches the previous hash
+    // and the rotation happened within the configurable grace window.
+    if (REFRESH_GRACE_PERIOD > 0) {
+      const graceDeadline = new Date(now.getTime() - REFRESH_GRACE_PERIOD);
+
+      const graceMatch = existingSessions.find(
+        (s) =>
+          s.previous_token != null &&
+          s.rotated_at != null &&
+          s.rotated_at > graceDeadline &&
+          bcrypt.compareSync(token, s.previous_token),
+      );
+
+      if (graceMatch) {
+        return {
+          session: graceMatch,
+          graceMatch: true,
+        };
+      }
+    }
+
+    throw new UnauthorizedException('Invalid session');
   }
 
   private generateSessionToken(userId: string) {

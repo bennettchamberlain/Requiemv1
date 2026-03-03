@@ -21,7 +21,7 @@ const mockAuthService = {
   issueAccessToken: jest.fn().mockReturnValue('access-token-value'),
   getSessionMetadata: jest.fn().mockReturnValue({ ip: '127.0.0.1', userAgent: 'test' }),
   validateSessionToken: jest.fn().mockReturnValue({ sub: 'user-1' }),
-  rotateSessionToken: jest.fn().mockResolvedValue('rotated-session-token'),
+  rotateSessionToken: jest.fn().mockResolvedValue({ sessionToken: 'rotated-session-token' }),
   invalidateSession: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -72,7 +72,7 @@ describe('SessionController', () => {
     mockAuthService.issueSessionToken.mockResolvedValue('session-token-value');
     mockAuthService.issueAccessToken.mockReturnValue('access-token-value');
     mockAuthService.validateSessionToken.mockReturnValue({ sub: 'user-1' });
-    mockAuthService.rotateSessionToken.mockResolvedValue('rotated-session-token');
+    mockAuthService.rotateSessionToken.mockResolvedValue({ sessionToken: 'rotated-session-token' });
   });
 
   describe('POST /authenticate (login)', () => {
@@ -171,6 +171,19 @@ describe('SessionController', () => {
         .post('/authenticate/refresh')
         .set('Cookie', [`${COOKIE_NAME}=session-token-value`])
         .expect(401);
+    });
+
+    it('should not set a session cookie on grace-period match', async () => {
+      mockAuthService.rotateSessionToken.mockResolvedValue({ sessionToken: null });
+
+      const response = await request(app.getHttpServer())
+        .post('/authenticate/refresh')
+        .set('Cookie', [`${COOKIE_NAME}=old-session-token`])
+        .expect(200);
+
+      const cookies = parseCookies(response);
+      expect(cookies[COOKIE_NAME]).toBeUndefined();
+      expect(response.body).toEqual({ accessToken: 'access-token-value' });
     });
   });
 

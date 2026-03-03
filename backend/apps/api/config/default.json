@@ -18,7 +18,8 @@
     "session": {
       "saltRounds": 4,
       "fieldPepper": "AUTH_SESSION_PEPPER",
-      "duration": "7d"
+      "duration": "7d",
+      "refreshGracePeriod": "30s"
     },
     "cookies": {
       "sessionTokenName": "sessionToken"
