@@ -48,6 +48,7 @@ import { NoteResolver } from './resolvers/NoteResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { ProviderResolver } from './resolvers/ProviderResolver';
+import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { RelationshipResolver } from './resolvers/RelationshipResolver';
 import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
@@ -106,6 +107,7 @@ import { UserResolver } from './resolvers/UserResolver';
     PlaceResolver,
     PreviewLoader,
     ProviderResolver,
+    ProviderKeyResolver,
     ProviderLoader,
     QuestionLoader,
     QuestionResolver,

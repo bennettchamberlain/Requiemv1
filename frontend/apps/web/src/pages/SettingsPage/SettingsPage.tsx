@@ -11,8 +11,6 @@ import {
   Save,
   Eye,
   EyeOff,
-  CheckCircle,
-  AlertCircle,
   Info,
 } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
@@ -20,6 +18,22 @@ import { Link } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { ModelSelector } from '@/components/ModelSelector';
 import { ColorPicker, TexturePicker } from '@/components/ThemePicker';
+import { gql } from '@/graphql';
+
+const GET_PROVIDERS = gql(`
+  query GetProviders {
+    providers {
+    edges {
+      cursor
+      node {
+        id
+        name
+        description
+        logoUrl
+      }
+    }
+  }
+`);
 
 interface SettingsState {
   // Data Storage
@@ -27,11 +41,20 @@ interface SettingsState {
   backupFrequency: string;
   cacheSize: string;
 
-  // API Keys
-  metaKey: string;
-  openaiKey: string;
-  githubToken: string;
-  slackToken: string;
+  oauth: {
+    google: {
+      clientId: string;
+      secretKey: string;
+    };
+    microsoft: {
+      clientId: string;
+      secretKey: string;
+    };
+    facebook: {
+      clientId: string;
+      secretKey: string;
+    };
+  }
 
   // LLM Behavior
   modelSelection: string;
@@ -60,11 +83,20 @@ export function SettingsPage() {
     backupFrequency: 'daily',
     cacheSize: '2048',
 
-    // API Keys defaults (masked)
-    metaKey: 'meta-***********************************',
-    openaiKey: 'sk-***********************************',
-    githubToken: 'ghp_********************************',
-    slackToken: 'xoxb-***************************',
+    oauth: {
+      google: {
+        clientId: '',
+        secretKey: '',
+      },
+      microsoft: {
+        clientId: '',
+        secretKey: '',
+      },
+      facebook: {
+        clientId: '',
+        secretKey: '',
+      }
+    },
 
     // LLM Behavior defaults
     modelSelection: 'qwen3:8b',
@@ -85,16 +117,41 @@ export function SettingsPage() {
   });
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({
-    metaKey: false,
-    openaiKey: false,
-    githubToken: false,
-    slackToken: false,
+    googleClientId: false,
+    googleSecretKey: false,
+    microsoftClientId: false,
+    microsoftSecretKey: false,
+    facebookClientId: false,
+    facebookSecretKey: false,
   });
 
   const [unsavedChanges, setUnsavedChanges] = useState(false);
 
-  const updateSetting = (key: keyof SettingsState, value: string | boolean) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
+  const { data, loading: queryLoading } = useQuery(GET_PROVIDERS, {
+    skip: !id,
+  });
+
+  const updateSetting = (key: string, value: string | boolean) => {
+    console.log('updateSetting', key, value);
+    setSettings((prev) => {
+      const keys = key.split('.');
+      if (keys.length === 1) {
+        return { ...prev, [key]: value };
+      }
+
+      // Deep clone and update nested value
+      const updated = { ...prev };
+      let current: any = updated;
+
+      for (let i = 0; i < keys.length - 1; i++) {
+        current[keys[i]] = { ...current[keys[i]] };
+        current = current[keys[i]];
+      }
+
+      current[keys[keys.length - 1]] = value;
+      return updated;
+    });
+    console.log('new settings', settings)
     setUnsavedChanges(true);
   };
 
@@ -361,113 +418,111 @@ export function SettingsPage() {
             <Card.Header>
               <Card.Title className="flex items-center gap-2">
                 <Key className="h-5 w-5" />
-                API Keys & Tokens
+                OAuth Provider Tokens
               </Card.Title>
-              <Card.Description>Manage your personal access tokens and API credentials</Card.Description>
+              <Card.Description>Use your own OAuth app's credentials for connecting to Google, Facebook, Microsoft, etc.</Card.Description>
             </Card.Header>
             <Card.Content className="space-y-4">
               <div className="grid gap-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="meta">Meta API Key</Label>
+                  <Label htmlFor="googleClientId">Google Client ID</Label>
                   <div className="flex gap-2">
                     <Input
                       id="meta"
-                      type={showKeys.metaKey ? 'text' : 'password'}
-                      value={settings.metaKey}
-                      onChange={(e) => updateSetting('metaKey', e.target.value)}
+                      type={showKeys.googleClientId ? 'text' : 'password'}
+                      value={settings.oauth.google.clientId}
+                      onChange={(e) => updateSetting('oauth.google.clientId', e.target.value)}
                       className="flex-1"
                     />
-                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('metaKey')}>
-                      {showKeys.metaKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('googleClientId')}>
+                      {showKeys.googleClientId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-sm text-muted-foreground">Connected</span>
-                    <Badge variant="secondary">Valid</Badge>
-                  </div>
                 </div>
-
+              </div>
+              <div className="grid gap-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="google">Google API Key</Label>
+                  <Label htmlFor="googleClientId">Google Secret Key</Label>
                   <div className="flex gap-2">
                     <Input
-                      id="google"
-                      type={showKeys.openaiKey ? 'text' : 'password'}
-                      value={settings.openaiKey}
-                      onChange={(e) => updateSetting('openaiKey', e.target.value)}
+                      id="meta"
+                      type={showKeys.googleSecretKey ? 'text' : 'password'}
+                      value={settings.oauth.google.secretKey}
+                      onChange={(e) => updateSetting('oauth.google.secretKey', e.target.value)}
                       className="flex-1"
                     />
-                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('openaiKey')}>
-                      {showKeys.openaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('googleSecretKey')}>
+                      {showKeys.googleSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-sm text-muted-foreground">Connected</span>
-                    <Badge variant="secondary">Valid</Badge>
-                  </div>
                 </div>
-
+              </div>
+              <div className="grid gap-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="github">GitHub Personal Access Token</Label>
+                  <Label htmlFor="googleClientId">Microsoft Client ID</Label>
                   <div className="flex gap-2">
                     <Input
-                      id="github"
-                      type={showKeys.githubToken ? 'text' : 'password'}
-                      value={settings.githubToken}
-                      onChange={(e) => updateSetting('githubToken', e.target.value)}
+                      id="meta"
+                      type={showKeys.microsoftClientId ? 'text' : 'password'}
+                      value={settings.oauth.microsoft.clientId}
+                      onChange={(e) => updateSetting('oauth.microsoft.clientId', e.target.value)}
                       className="flex-1"
                     />
-                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('githubToken')}>
-                      {showKeys.githubToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('microsoftClientId')}>
+                      {showKeys.microsoftClientId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-sm text-muted-foreground">Connected</span>
-                    <Badge variant="secondary">Valid</Badge>
-                  </div>
                 </div>
-
+              </div>
+              <div className="grid gap-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="slack">Slack Bot Token</Label>
+                  <Label htmlFor="googleClientId">Microsoft Secret Key</Label>
                   <div className="flex gap-2">
                     <Input
-                      id="slack"
-                      type={showKeys.slackToken ? 'text' : 'password'}
-                      value={settings.slackToken}
-                      onChange={(e) => updateSetting('slackToken', e.target.value)}
+                      id="meta"
+                      type={showKeys.microsoftSecretKey ? 'text' : 'password'}
+                      value={settings.oauth.microsoft.secretKey}
+                      onChange={(e) => updateSetting('oauth.microsoft.secretKey', e.target.value)}
                       className="flex-1"
                     />
-                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('slackToken')}>
-                      {showKeys.slackToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('microsoftSecretKey')}>
+                      {showKeys.microsoftSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-yellow-500" />
-                    <span className="text-sm text-muted-foreground">Needs refresh</span>
-                    <Badge variant="outline">Expired</Badge>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="googleClientId">Facebook Client ID</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="meta"
+                      type={showKeys.facebookClientId ? 'text' : 'password'}
+                      value={settings.oauth.facebook.clientId}
+                      onChange={(e) => updateSetting('oauth.facebook.clientId', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('facebookClientId')}>
+                      {showKeys.facebookClientId ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                   </div>
                 </div>
-
-                <Label htmlFor="spotify">Spotify API Key</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="spotify"
-                    type={showKeys.openaiKey ? 'text' : 'password'}
-                    value={settings.openaiKey}
-                    onChange={(e) => updateSetting('openaiKey', e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('openaiKey')}>
-                    {showKeys.openaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-muted-foreground">Connected</span>
-                  <Badge variant="secondary">Valid</Badge>
+              </div>
+              <div className="grid gap-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="googleClientId">Facebook Secret Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="meta"
+                      type={showKeys.facebookSecretKey ? 'text' : 'password'}
+                      value={settings.oauth.facebook.secretKey}
+                      onChange={(e) => updateSetting('oauth.facebook.secretKey', e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="icon" onClick={() => toggleKeyVisibility('facebookSecretKey')}>
+                      {showKeys.facebookSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Card.Content>
