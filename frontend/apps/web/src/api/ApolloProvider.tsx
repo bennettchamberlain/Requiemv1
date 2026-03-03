@@ -16,9 +16,7 @@ export function ApolloProvider({ children }: { children: ReactNode }) {
 
   const tokenRef = useRef(authToken);
 
-  useEffect(() => {
-    tokenRef.current = authToken;
-  }, [authToken]);
+  tokenRef.current = authToken;
 
   const client = useMemo(() => {
     const httpLink = createHttpLink({

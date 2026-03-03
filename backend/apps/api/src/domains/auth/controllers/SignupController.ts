@@ -1,15 +1,19 @@
-import { BadRequestException, Body, Controller, Post, Req } from '@nestjs/common';
-import { Request } from 'express';
+import { BadRequestException, Body, Controller, Post, Req, Res } from '@nestjs/common';
+import { Request, Response } from 'express';
+import parseDuration from 'parse-duration';
 import { z } from 'zod';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { ValidationPipe } from '@ci/common/pipes';
+import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { SignupCodeService } from '../services/SignupCodeService';
 import { SignupDto } from '../types';
+
+const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
 
 const signupSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -28,7 +32,11 @@ export class SignupController {
   ) {}
 
   @Post('signup')
-  async signup(@Req() req: Request, @Body(new ValidationPipe(signupSchema)) input: SignupDto) {
+  async signup(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body(new ValidationPipe(signupSchema)) input: SignupDto,
+  ) {
     const { name, email, password, signup_code } = input;
 
     const isSignupCodeRequired = await this.featureService.isFeatureEnabled('require.signup.codes');
@@ -73,8 +81,15 @@ export class SignupController {
 
     const accessToken = await this.authService.issueAccessToken(user.id);
 
+    res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: COOKIE_MAX_AGE,
+    });
+
     return {
-      sessionToken,
       accessToken,
     };
   }

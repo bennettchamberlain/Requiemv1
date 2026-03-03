@@ -10,7 +10,7 @@ export default {
 
   transformIgnorePatterns: [
     // Ignore .yarn/cache packages EXCEPT ESM-only ones that require transformation
-    '\\.yarn/cache/(?!(p-limit|yocto-queue)-npm-)',
+    '\\.yarn/cache/(?!(p-limit|yocto-queue|parse-duration)-npm-)',
     '\\.pnp\\.cjs$',
   ],
 

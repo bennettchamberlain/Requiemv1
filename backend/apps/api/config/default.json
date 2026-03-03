@@ -20,6 +20,9 @@
       "fieldPepper": "AUTH_SESSION_PEPPER",
       "duration": "7d"
     },
+    "cookies": {
+      "sessionTokenName": "sessionToken"
+    },
     "providers": {
       "google": {
         "id": "0198779b-182c-716e-9275-b81d99a47fdb"

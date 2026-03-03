@@ -5,16 +5,21 @@ import {
   HttpCode,
   Post,
   Req,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
+import parseDuration from 'parse-duration';
 import { z } from 'zod';
 
 import { ValidationPipe } from '@ci/common/pipes';
+import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { JwtPayload, LoginDto } from '../types';
+
+const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
 
 const localStrategySchema = z.object({
   username: z.string(),
@@ -30,7 +35,11 @@ export class SessionController {
 
   @Post()
   @HttpCode(200)
-  async login(@Req() req: Request, @Body(new ValidationPipe(localStrategySchema)) input: LoginDto) {
+  async login(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body(new ValidationPipe(localStrategySchema)) input: LoginDto,
+  ) {
     const user = await this.userService.validatePassword(input.username, input.password);
 
     if (user == null) {
@@ -44,15 +53,22 @@ export class SessionController {
 
     const accessToken = await this.authService.issueAccessToken(user.id);
 
+    res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: COOKIE_MAX_AGE,
+    });
+
     return {
-      sessionToken,
       accessToken,
     };
   }
 
   @Post('refresh')
   @HttpCode(200)
-  async refresh(@Req() req: Request) {
+  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = this.getSessionToken(req);
     const payload = this.validateSessionToken(token);
     const userId = payload.sub;
@@ -70,15 +86,22 @@ export class SessionController {
 
     const accessToken = await this.authService.issueAccessToken(userId);
 
+    res.cookie(config.auth.cookies.sessionTokenName, newSessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: COOKIE_MAX_AGE,
+    });
+
     return {
-      sessionToken: newSessionToken,
       accessToken,
     };
   }
 
   @Post('logout')
   @HttpCode(204)
-  async logout(@Req() req: Request) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = this.getSessionToken(req);
     const payload = this.validateSessionToken(token);
     const userId = payload.sub;
@@ -89,21 +112,24 @@ export class SessionController {
     }
 
     await this.authService.invalidateSession(userId, token, this.authService.getSessionMetadata(req));
+
+    res.clearCookie(config.auth.cookies.sessionTokenName, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+    });
   }
 
   private getSessionToken(req: Request) {
-    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
-
-    if (!authHeader) {
-      throw new UnauthorizedException('No token provided');
-    } else if (Array.isArray(authHeader)) {
-      throw new BadRequestException('Multiple authorization headers');
-    }
-
-    return authHeader.replace(/^Bearer /, '').trim();
+    return req.cookies?.[config.auth.cookies.sessionTokenName];
   }
 
-  private validateSessionToken(token: string): JwtPayload {
+  private validateSessionToken(token: string | null | undefined): JwtPayload {
+    if (token == null) {
+      throw new BadRequestException('No token provided');
+    }
+
     try {
       return this.authService.validateSessionToken(token);
     } catch {
