@@ -18,7 +18,7 @@ import config from '@ci/configuration';
 
   const express = app.getHttpAdapter().getInstance();
 
-  express.set('trust proxy', true);
+  express.set('trust proxy', 1);
   express.disable('x-powered-by');
 
   app.enableShutdownHooks();
