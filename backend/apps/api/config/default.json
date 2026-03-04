@@ -24,7 +24,7 @@
       "secret": "AUTH_CSRF_TOKEN_SECRET"
     },
     "encryption": {
-      "fieldKey": "AUTH_FIELD_ENCRYPTION_KEY"
+      "fieldKey": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     "cookies": {
       "sessionTokenName": "sessionToken",
