@@ -3,7 +3,6 @@ import { createHmac } from 'crypto';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import bcrypt from 'bcrypt';
 import type { Request } from 'express';
 import parseDuration from 'parse-duration';
 import { MoreThan, Repository } from 'typeorm';
@@ -31,7 +30,7 @@ export class AuthService {
     const token = this.generateSessionToken(userId);
     const expiresAt = new Date(now + SESSION_EXPIRES_IN);
 
-    const hashedToken = await bcrypt.hash(token, config.auth.session.saltRounds);
+    const hashedToken = this.digest(token);
     const hashedIp = this.digest(meta.ip);
     const hashedUserAgent = this.digest(meta.userAgent);
 
@@ -73,7 +72,7 @@ export class AuthService {
     const nextToken = this.generateSessionToken(userId);
 
     session.previous_token = session.token;
-    session.token = await bcrypt.hash(nextToken, config.auth.session.saltRounds);
+    session.token = this.digest(nextToken);
     session.rotated_at = new Date();
 
     await this.sessionRepository.save(session);
@@ -116,9 +115,11 @@ export class AuthService {
     const now = new Date();
     const hashedIp = this.digest(data.ip);
     const hashedUserAgent = this.digest(data.userAgent);
+    const hashedToken = this.digest(token);
 
-    const existingSessions = await this.sessionRepository.find({
+    const match = await this.sessionRepository.findOne({
       where: {
+        token: hashedToken,
         ip: hashedIp,
         user_agent: hashedUserAgent,
         expires_at: MoreThan(now),
@@ -128,12 +129,9 @@ export class AuthService {
       },
     });
 
-    // Check for a primary match where token matches the current session hash.
-    const currentMatch = existingSessions.find((s) => bcrypt.compareSync(token, s.token));
-
-    if (currentMatch) {
+    if (match) {
       return {
-        session: currentMatch,
+        session: match,
         graceMatch: false,
       };
     }
@@ -143,13 +141,18 @@ export class AuthService {
     if (REFRESH_GRACE_PERIOD > 0) {
       const graceDeadline = new Date(now.getTime() - REFRESH_GRACE_PERIOD);
 
-      const graceMatch = existingSessions.find(
-        (s) =>
-          s.previous_token != null &&
-          s.rotated_at != null &&
-          s.rotated_at > graceDeadline &&
-          bcrypt.compareSync(token, s.previous_token),
-      );
+      const graceMatch = await this.sessionRepository.findOne({
+        where: {
+          previous_token: hashedToken,
+          rotated_at: MoreThan(graceDeadline),
+          ip: hashedIp,
+          user_agent: hashedUserAgent,
+          expires_at: MoreThan(now),
+          user: {
+            id: userId,
+          },
+        },
+      });
 
       if (graceMatch) {
         return {
@@ -173,11 +176,20 @@ export class AuthService {
     });
   }
 
-  private digest(value?: string) {
+  private digest(value: string): string;
+
+  private digest(value: string | null | undefined): string | undefined;
+
+  private digest(value?: string | null) {
     if (value == null) {
-      return value;
+      return undefined;
     }
 
+    // Keyed HMAC mitigates pre-computation attacks against low-entropy fields
+    // (IP addresses, user agents). For high-entropy session tokens, the pepper
+    // is defense-in-depth; plain SHA-256 would suffice but peppering adds
+    // marginal cost so we're simplifying code by using the same digest function
+    // for all fields.
     return createHmac('sha256', config.auth.session.fieldPepper).update(value).digest('hex');
   }
 }
