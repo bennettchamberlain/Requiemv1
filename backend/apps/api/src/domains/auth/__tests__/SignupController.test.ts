@@ -10,6 +10,7 @@ import { UserService } from '@ci/domains/user';
 
 import { SignupController } from '../controllers/SignupController';
 import { AuthService } from '../services/AuthService';
+import { CsrfService } from '../services/CsrfService';
 import { SignupCodeService } from '../services/SignupCodeService';
 
 import { parseCookies } from './utils/parseCookies';
@@ -38,6 +39,12 @@ const mockFeatureService = {
   isFeatureEnabled: jest.fn().mockResolvedValue(false),
 };
 
+const mockCsrfService = {
+  generateToken: jest.fn().mockReturnValue('csrf-token'),
+  validateToken: jest.fn(),
+  verifyToken: jest.fn().mockReturnValue(true),
+};
+
 @Module({
   controllers: [SignupController],
   providers: [
@@ -45,6 +52,7 @@ const mockFeatureService = {
     { provide: UserService, useValue: mockUserService },
     { provide: SignupCodeService, useValue: mockSignupCodeService },
     { provide: FeatureService, useValue: mockFeatureService },
+    { provide: CsrfService, useValue: mockCsrfService },
   ],
 })
 class TestModule implements NestModule {

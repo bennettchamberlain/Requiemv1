@@ -21,8 +21,12 @@
       "duration": "7d",
       "refreshGracePeriod": "30s"
     },
+    "csrf": {
+      "secret": "AUTH_CSRF_TOKEN_SECRET"
+    },
     "cookies": {
-      "sessionTokenName": "sessionToken"
+      "sessionTokenName": "sessionToken",
+      "csrfTokenName": "csrfToken"
     },
     "providers": {
       "google": {
