@@ -29,32 +29,43 @@ import { ConnectionsController } from './controllers/ConnectionsController';
 import { ProvidersController } from './controllers/ProvidersController';
 import { ConnectionEntity } from './entities/ConnectionEntity';
 import { ProviderEntity } from './entities/ProviderEntity';
+import { ProviderKeyEntity } from './entities/ProviderKeyEntity';
 import { ConnectionService } from './services/ConnectionService';
+import { ProviderKeyService } from './services/ProviderKeyService';
 import { ProviderService } from './services/ProviderService';
 
 /**
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([ConnectionEntity, ProviderEntity]), EventsModule],
+  imports: [TypeOrmModule.forFeature([ConnectionEntity, ProviderEntity, ProviderKeyEntity]), EventsModule],
   providers: [
     ClientFactory,
     FacebookClient,
     GoogleClient,
     ConnectionService,
     ProviderService,
+    ProviderKeyService,
     MicrosoftClient,
   ],
   controllers: [ConnectionsController, ProvidersController],
-  exports: [ClientFactory, ConnectionService, ProviderService, FacebookClient, GoogleClient, MicrosoftClient],
+  exports: [
+    ClientFactory,
+    ConnectionService,
+    ProviderService,
+    ProviderKeyService,
+    FacebookClient,
+    GoogleClient,
+    MicrosoftClient,
+  ],
 })
 export class ConnectionsModule {}
 
 // Entities
-export { ConnectionEntity, ProviderEntity };
+export { ConnectionEntity, ProviderEntity, ProviderKeyEntity };
 
 // Services
-export { ConnectionService, ProviderService };
+export { ConnectionService, ProviderService, ProviderKeyService };
 export { ClientFactory } from './clients';
 
 // Clients
@@ -64,6 +75,7 @@ export { FacebookClient, GoogleClient, MicrosoftClient };
 export type { BaseClient } from './clients/BaseClient';
 export type { Connection } from './entities/ConnectionEntity';
 export type { Provider } from './entities/ProviderEntity';
+export type { ProviderKey } from './entities/ProviderKeyEntity';
 export type {
   Calendar,
   CalendarEvent,
