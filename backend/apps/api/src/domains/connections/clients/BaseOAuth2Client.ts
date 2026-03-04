@@ -16,15 +16,15 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   protected abstract scopes: string[];
 
-  protected abstract clientId: string;
-
-  protected abstract clientSecret: string;
-
   protected abstract extraAuthParams: Record<string, string>;
 
   protected abstract endpointScopeMap: Record<string, string[]>;
 
   protected abstract getScopesFromActiveEndpoints(activeEndpoints: string[]): string;
+
+  abstract getClientId(connection: Connection): Promise<string>;
+
+  abstract getClientSecret(connection: Connection): Promise<string>;
 
   abstract getAccountIdentifier(connection: Connection): Promise<string>;
 
@@ -78,7 +78,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   async getAuthorizationUrl(connection: Connection): Promise<string> {
     const params = new URLSearchParams({
-      client_id: this.clientId,
+      client_id: await this.getClientId(connection),
       redirect_uri: config.auth.oauth.callbackUrl,
       response_type: 'code',
       scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
@@ -89,11 +89,11 @@ export abstract class BaseOAuth2Client extends BaseClient {
     return `${this.authorizationEndpoint}?${params.toString()}`;
   }
 
-  async exchangeAuthorizationCode(code: string): Promise<TokenExchange> {
+  async exchangeAuthorizationCode(connection: Connection, code: string): Promise<TokenExchange> {
     const tokenParams = new URLSearchParams({
       code,
-      client_id: this.clientId,
-      client_secret: this.clientSecret,
+      client_id: await this.getClientId(connection),
+      client_secret: await this.getClientSecret(connection),
       redirect_uri: config.auth.oauth.callbackUrl,
       grant_type: 'authorization_code',
     });
@@ -148,8 +148,8 @@ export abstract class BaseOAuth2Client extends BaseClient {
     }
 
     const tokenParams = new URLSearchParams({
-      client_id: this.clientId,
-      client_secret: this.clientSecret,
+      client_id: await this.getClientId(connection),
+      client_secret: await this.getClientSecret(connection),
       scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
       refresh_token: connection.refreshToken,
       grant_type: 'refresh_token',

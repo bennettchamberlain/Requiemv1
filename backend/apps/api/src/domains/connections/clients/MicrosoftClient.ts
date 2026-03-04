@@ -3,12 +3,16 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
+import { ProviderKeyService } from '../services/ProviderKeyService';
 
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 @Injectable()
 export class MicrosoftClient extends BaseOAuth2Client {
-  constructor(readonly logger: LoggerService) {
+  constructor(
+    readonly logger: LoggerService,
+    private readonly providerKeyService: ProviderKeyService,
+  ) {
     super();
     this.logger.setContext(MicrosoftClient.name);
   }
@@ -41,30 +45,46 @@ export class MicrosoftClient extends BaseOAuth2Client {
     return scopesSet.size > 0 ? Array.from(scopesSet).join(' ') : '';
   }
 
-  protected get clientId() {
+  getClientId(connection: Connection): Promise<string> {
     const clientIdVariable = 'MICROSOFT_CLIENT_ID';
-    const clientId = process.env[clientIdVariable];
+    const clientIdFromEnv = process.env[clientIdVariable];
 
-    if (!clientId) {
-      this.logger.error(`Expected environment variable ${clientIdVariable} not specified`);
+    return this.providerKeyService.findAll({ userId: connection.userId }).then((keys) => {
+      const key = keys.find((key) => key.providerId === connection.providerId);
 
-      throw new Error('Client id not configured for provider');
-    }
+      const clientId = key ? key.clientId : clientIdFromEnv;
 
-    return clientId;
+      if (!clientId) {
+        this.logger.error(
+          `No custom providerKey for Microsoft and expected environment variable ${clientIdVariable} not specified`,
+        );
+
+        throw new Error('Client id not configured for provider');
+      }
+
+      return clientId;
+    });
   }
 
-  protected get clientSecret() {
+  getClientSecret(connection: Connection): Promise<string> {
     const clientSecretVariable = 'MICROSOFT_CLIENT_SECRET';
-    const clientSecret = process.env[clientSecretVariable];
+    const clientSecretFromEnv = process.env[clientSecretVariable];
 
-    if (!clientSecret) {
-      this.logger.error(`Expected environment variable ${clientSecretVariable} not specified`);
+    return this.providerKeyService.findAll({ userId: connection.userId }).then((keys) => {
+      const key = keys.find((key) => key.providerId === connection.providerId);
 
-      throw new Error('Client secret not configured for provider');
-    }
+      const clientSecret = key ? key.clientSecret : clientSecretFromEnv;
 
-    return clientSecret;
+      if (!clientSecret) {
+        this.logger.error(
+          `No custom providerKey for Microsoft and expected environment variable ${clientSecretVariable} not specified`,
+        );
+
+        throw new Error('Client secret not configured for provider');
+      }
+
+      return clientSecret;
+    });
   }
 
   getAccountIdentifier(connection: Connection): Promise<string> {

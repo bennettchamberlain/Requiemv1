@@ -201,7 +201,7 @@ export class ConnectionsController {
       throw new InternalServerErrorException();
     }
 
-    const tokenExchange = await client.exchangeAuthorizationCode(code);
+    const tokenExchange = await client.exchangeAuthorizationCode(connection, code);
 
     await this.update(context, connectionId, {
       ...tokenExchange,
