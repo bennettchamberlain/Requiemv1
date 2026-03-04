@@ -8,4 +8,3 @@ export class UpdateProviderKeyInput {
   @Field(() => String, { nullable: true })
   clientSecret?: string;
 }
-

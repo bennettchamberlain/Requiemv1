@@ -31,8 +31,8 @@ import { ConnectionEntity } from './entities/ConnectionEntity';
 import { ProviderEntity } from './entities/ProviderEntity';
 import { ProviderKeyEntity } from './entities/ProviderKeyEntity';
 import { ConnectionService } from './services/ConnectionService';
-import { ProviderService } from './services/ProviderService';
 import { ProviderKeyService } from './services/ProviderKeyService';
+import { ProviderService } from './services/ProviderService';
 
 /**
  * @internal

@@ -30,7 +30,7 @@ export class ProviderKeyResolver {
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
       ...pagination,
-      getId: (entity) => GlobalUID.encode('providerKey', entity.id),
+      getId: (entity) => GlobalUID.encode('provider-key', entity.id),
     });
 
     const edges: ProviderKeyEdge[] = slice.map((entity) => {
@@ -104,4 +104,3 @@ export class ProviderKeyResolver {
     return this.providerKeyService.delete(serviceContext, decodedId);
   }
 }
-

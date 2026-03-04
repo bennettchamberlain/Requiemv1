@@ -11,4 +11,3 @@ export class CreateProviderKeyInput {
   @Field(() => String)
   clientSecret!: string;
 }
-

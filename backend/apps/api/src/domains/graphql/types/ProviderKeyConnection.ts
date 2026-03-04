@@ -15,4 +15,3 @@ export class ProviderKeyConnection implements Connection {
   @Field(() => Int)
   totalCount!: number;
 }
-

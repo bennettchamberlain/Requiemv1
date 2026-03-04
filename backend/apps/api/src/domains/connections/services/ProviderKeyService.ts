@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
-import { genUUIDv7 } from '@ci/common/utils';
 
 import { ProviderKeyEntity, type ProviderKey } from '../entities/ProviderKeyEntity';
 
@@ -34,10 +34,7 @@ export class ProviderKeyService {
   }
 
   async findById(context: ServiceContext, id: string): Promise<ProviderKey | null> {
-    const where =
-      context.userId === SYSTEM_USER
-        ? { id }
-        : { id, userId: context.userId };
+    const where = context.userId === SYSTEM_USER ? { id } : { id, userId: context.userId };
 
     const entity = await this.providerKeyRepository.findOne({ where });
 
@@ -45,10 +42,7 @@ export class ProviderKeyService {
   }
 
   async findByIds(context: ServiceContext, ids: string[]): Promise<(ProviderKey | null)[]> {
-    const where =
-      context.userId === SYSTEM_USER
-        ? { id: In(ids) }
-        : { id: In(ids), userId: context.userId };
+    const where = context.userId === SYSTEM_USER ? { id: In(ids) } : { id: In(ids), userId: context.userId };
 
     const entities = await this.providerKeyRepository.find({ where });
 
@@ -57,30 +51,13 @@ export class ProviderKeyService {
     return ids.map((id) => map.get(id) ?? null);
   }
 
-  async findByProviderAndUser(
-    context: ServiceContext,
-    providerId: string,
-    userId: string,
-  ): Promise<ProviderKey | null> {
-    // Only allow if SYSTEM_USER or requesting own keys
-    if (context.userId !== SYSTEM_USER && context.userId !== userId) {
-      return null;
-    }
-
-    const entity = await this.providerKeyRepository.findOne({
-      where: { providerId, userId },
-    });
-
-    return entity ? ProviderKeyEntity.toEgressType(entity) : null;
-  }
-
   async create(context: ServiceContext, data: CreateProviderKeyDto): Promise<ProviderKey> {
     const entity = this.providerKeyRepository.create({
-      id: genUUIDv7(),
+      id: uuidv7(),
       providerId: data.providerId,
       clientId: data.clientId,
       clientSecret: data.clientSecret,
-      userId: context.userId,
+      userId: context.userId as string,
     });
 
     await this.providerKeyRepository.save(entity);
@@ -122,4 +99,3 @@ export class ProviderKeyService {
     return true;
   }
 }
-

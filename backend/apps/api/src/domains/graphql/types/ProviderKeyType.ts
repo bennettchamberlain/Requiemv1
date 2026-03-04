@@ -36,7 +36,7 @@ export class ProviderKeyType {
     return {
       __typename: ProviderKeyType.name,
       __source: providerKey,
-      id: GlobalUID.encode('providerKey', providerKey.id),
+      id: GlobalUID.encode('provider-key', providerKey.id),
       providerId: GlobalUID.encode('provider', providerKey.providerId),
       clientId: providerKey.clientId,
       clientSecret: providerKey.clientSecret,
@@ -46,4 +46,3 @@ export class ProviderKeyType {
     };
   }
 }
-

@@ -11,4 +11,3 @@ export class ProviderKeyEdge implements Edge {
   @Field(() => ProviderKeyType)
   node!: ProviderKeyType;
 }
-
