@@ -238,8 +238,6 @@ export function SettingsPage() {
   }, [providersData, providerKeysData]);
 
   const updateSetting = (key: string, value: string | boolean) => {
-    console.log('updateSetting', key, value);
-
     let updatedSettings: SettingsState = settings;
 
     setSettings((prev) => {
@@ -474,14 +472,12 @@ export function SettingsPage() {
 
   const handleSave = () => {
     // Demo: simulate saving
-    console.log('Saving settings:', settings);
     setUnsavedChanges(false);
     // In real implementation, this would make API call
   };
 
   const handleReset = () => {
     // Demo: simulate reset to defaults
-    console.log('Resetting to defaults');
     setUnsavedChanges(false);
   };
 
