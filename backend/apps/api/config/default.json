@@ -23,6 +23,9 @@
     "csrf": {
       "secret": "AUTH_CSRF_TOKEN_SECRET"
     },
+    "encryption": {
+      "fieldKey": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
     "cookies": {
       "sessionTokenName": "sessionToken",
       "csrfTokenName": "csrfToken"

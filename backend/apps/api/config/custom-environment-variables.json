@@ -11,6 +11,9 @@
     "csrf": {
       "secret": "AUTH_CSRF_TOKEN_SECRET"
     },
+    "encryption": {
+      "fieldKey": "AUTH_FIELD_ENCRYPTION_KEY"
+    },
     "oauth": {
       "callbackUrl": "OAUTH_CALLBACK_URL"
     }
