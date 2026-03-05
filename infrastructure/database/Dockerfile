@@ -58,8 +58,18 @@ RUN mkdir -p /var/lib/apt/lists/partial && \
 # Copy compiled extensions from builder
 COPY --from=builder /tmp/install/ /
 
+# Install secrets-aware entrypoint wrapper
+COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
+
 # Switch back to postgres user
 USER postgres
+
+ENV PGDATA=/home/postgres/pgdata/data \
+    DEFAULT_USERNAME=postgres \
+    DEFAULT_DATABASE=postgres
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["postgres"]
 
 # Expose PostgreSQL port
 EXPOSE 5432

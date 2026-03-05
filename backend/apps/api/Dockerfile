@@ -52,10 +52,11 @@ COPY backend/apps/api/dist ./backend/apps/api/dist
 COPY backend/apps/api/config ./backend/apps/api/config
 COPY backend/apps/api/db ./backend/apps/api/db
 COPY backend/apps/api/bin ./backend/apps/api/bin
+COPY --chmod=755 backend/apps/api/entrypoint.sh ./backend/apps/api/entrypoint.sh
 
 WORKDIR /app/backend/apps/api
 
 EXPOSE 3030
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "./entrypoint.sh"]
 CMD ["node", "dist/src/main.js"]

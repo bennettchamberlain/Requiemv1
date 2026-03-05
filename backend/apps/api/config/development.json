@@ -1,1 +1,19 @@
-{}
+{
+  "db": {
+    "host": "localhost"
+  },
+  "staticfiles": {
+    "storageUrl": "http://localhost:9000"
+  },
+  "services": {
+    "ollama": {
+      "host": "http://localhost:11434"
+    },
+    "stt": {
+      "host": "http://localhost:9001"
+    },
+    "tts": {
+      "host": "http://localhost:9002"
+    }
+  }
+}

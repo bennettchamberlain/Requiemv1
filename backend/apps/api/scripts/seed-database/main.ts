@@ -6,6 +6,7 @@ import { MultiBar, Presets } from 'cli-progress';
 import { LoggerService } from '@ci/common/logging';
 import { EtlModule } from '@ci/domains/etl';
 import { EventService, LocalEventService } from '@ci/domains/events';
+import { FileService } from '@ci/domains/files';
 import { GraphQLModule } from '@ci/domains/graphql';
 import { LLMModule } from '@ci/domains/llm';
 import { SpeechModule } from '@ci/domains/speech';
@@ -56,6 +57,8 @@ const logger = new LoggerService();
     })
     .overrideProvider(EventService)
     .useClass(LocalEventService)
+    .overrideProvider(FileService)
+    .useValue({})
     .overrideModule(EtlModule)
     .useModule(class {})
     .overrideModule(GraphQLModule)
