@@ -49,6 +49,10 @@ import { OneDriveTransformService } from './services/Microsoft/transform/Transfo
 import { OutlookCalendarTransformService } from './services/Microsoft/transform/TransformOutlookCalendar';
 import { OutlookMailTransformService } from './services/Microsoft/transform/TransformOutlookMail';
 import { PromoteService } from './services/PromoteService';
+import { SpotifyPlaylistsTransformService } from './services/Spotify/transform/TransformPlaylists';
+import { SpotifyRecentlyPlayedTransformService } from './services/Spotify/transform/TransformRecentlyPlayed';
+import { SpotifySavedTracksTransformService } from './services/Spotify/transform/TransformSavedTracks';
+import { SpotifyTopArtistsTransformService } from './services/Spotify/transform/TransformTopArtists';
 
 /**
  * @internal
@@ -86,6 +90,10 @@ import { PromoteService } from './services/PromoteService';
     OneDriveTransformService,
     OutlookCalendarTransformService,
     OutlookMailTransformService,
+    SpotifyRecentlyPlayedTransformService,
+    SpotifyPlaylistsTransformService,
+    SpotifySavedTracksTransformService,
+    SpotifyTopArtistsTransformService,
   ],
   exports: [ConnectionSyncJobService],
 })
