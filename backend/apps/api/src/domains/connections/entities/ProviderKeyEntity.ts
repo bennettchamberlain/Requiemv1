@@ -1,5 +1,7 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
+import { encryptedColumnTransformer } from '@ci/common/crypto/field-encryption';
+
 @Entity({ schema: 'ci', name: 'provider_keys' })
 export class ProviderKeyEntity {
   @PrimaryColumn({ type: 'uuid' })
@@ -8,10 +10,10 @@ export class ProviderKeyEntity {
   @Column({ type: 'uuid', name: 'provider_id' })
   providerId!: string;
 
-  @Column({ type: 'text', name: 'client_id' })
+  @Column({ type: 'text', name: 'client_id', transformer: encryptedColumnTransformer })
   clientId!: string;
 
-  @Column({ type: 'text', name: 'client_secret' })
+  @Column({ type: 'text', name: 'client_secret', transformer: encryptedColumnTransformer })
   clientSecret!: string;
 
   @Column({ type: 'uuid', name: 'user_id' })

@@ -29,24 +29,11 @@ const GET_PROVIDERS = gql(`
           name
           description
           logoUrl
-        }
-      }
-    }
-  }
-`);
-
-const GET_PROVIDER_KEYS = gql(`
-  query GetProviderKeys {
-    providerKeys {
-      edges {
-        node {
-          id
-          providerId
-          clientId
-          clientSecret
-          userId
-          createdAt
-          updatedAt
+          providerKeys {
+            id
+            clientId
+            clientSecret
+          }
         }
       }
     }
@@ -187,24 +174,17 @@ export function SettingsPage() {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
 
   const { data: providersData } = useQuery(GET_PROVIDERS);
-  const { data: providerKeysData } = useQuery(GET_PROVIDER_KEYS);
   const [createProviderKey] = useMutation(CREATE_PROVIDER_KEY);
   const [updateProviderKey] = useMutation(UPDATE_PROVIDER_KEY);
   const [deleteProviderKey] = useMutation(DELETE_PROVIDER_KEY);
 
   // Load provider keys when data is available
   useEffect(() => {
-    if (!providersData || !providerKeysData) {
+    if (!providersData) {
       return;
     }
 
     const providers: Provider[] = providersData.providers.edges.map((edge: { node: Provider }) => edge.node);
-    const providerKeys: ProviderKey[] = providerKeysData.providerKeys.edges.map(
-      (edge: { node: ProviderKey }) => edge.node,
-    );
-
-    // Map provider names to lowercase for matching
-    const providerMap = new Map(providers.map((p) => [p.id, p.name?.toLowerCase()]));
 
     const newOriginalValues: Record<string, { clientId: string; clientSecret: string }> = {
       google: { clientId: '', clientSecret: '' },
@@ -215,18 +195,22 @@ export function SettingsPage() {
     setSettings((prev) => {
       const newSettings = { ...prev };
 
-      providerKeys.forEach((key) => {
-        const providerName = providerMap.get(key.providerId) as string;
-        if (providerName && newSettings.oauth[providerName as keyof typeof newSettings.oauth]) {
+      providers.forEach((provider) => {
+        const providerName = provider.name?.toLowerCase();
+        if (
+          providerName &&
+          provider.providerKeys &&
+          newSettings.oauth[providerName as keyof typeof newSettings.oauth]
+        ) {
           newSettings.oauth[providerName as keyof typeof newSettings.oauth] = {
-            providerKeyId: key.id,
-            clientId: key.clientId,
-            clientSecret: key.clientSecret,
+            providerKeyId: provider.providerKeys.id,
+            clientId: provider.providerKeys.clientId,
+            clientSecret: provider.providerKeys.clientSecret,
           };
           // Store original values
           newOriginalValues[providerName] = {
-            clientId: key.clientId,
-            clientSecret: key.clientSecret,
+            clientId: provider.providerKeys.clientId,
+            clientSecret: provider.providerKeys.clientSecret,
           };
         }
       });
@@ -235,7 +219,7 @@ export function SettingsPage() {
     });
 
     setOriginalValues(newOriginalValues);
-  }, [providersData, providerKeysData]);
+  }, [providersData]);
 
   const updateSetting = (key: string, value: string | boolean) => {
     let updatedSettings: SettingsState = settings;
