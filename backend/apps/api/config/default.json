@@ -47,21 +47,22 @@
   },
   "db": {
     "type": "postgres",
-    "host": "127.0.0.1",
+    "host": "database",
     "port": 5432,
-    "database": "companion_intel",
-    "username": "POSTGRES_USERNAME",
-    "password": "POSTGRES_PASSWORD"
+    "database": "companion",
+    "username": "companion",
+    "password": "DATABASE_PASSWORD",
+    "logging": false
   },
   "staticfiles": {
-    "storageUrl": "http://localhost:9000",
+    "storageUrl": "http://object-store:9000",
     "region": "us-east-1",
     "bucket": "companion",
     "auth": {
-      "signatureUrl": "http://minio:9000",
+      "signatureUrl": "http://object-store:9000",
       "signatureTTL": 3600,
-      "accessKeyId": "S3_ACCESS_KEY_ID",
-      "secretAccessKey": "S3_SECRET_ACCESS_KEY"
+      "accessKeyId": "OBJECT_STORE_USERNAME",
+      "secretAccessKey": "OBJECT_STORE_PASSWORD"
     }
   },
   "graphql": {
@@ -69,13 +70,13 @@
   },
   "services": {
     "ollama": {
-      "host": "http://localhost:11434"
+      "host": "http://host.docker.internal:11434"
     },
     "stt": {
-      "host": "http://localhost:9001"
+      "host": "http://stt-service:9001"
     },
     "tts": {
-      "host": "http://localhost:9002"
+      "host": "http://tts-service:9002"
     }
   },
   "features": {
