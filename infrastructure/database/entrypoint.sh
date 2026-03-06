@@ -44,14 +44,13 @@ export POSTGRES_DB="$DATABASE"
 
 fail=0
 
-if [ -z "$POSTGRES_USER" ]; then
-  echo "Error: USERNAME is not set."
+if [ -z "$POSTGRES_DB" ]; then
+  echo "Warning: DATABASE is not set, defaulting to '$POSTGRES_USER'."
   echo ""
-  echo "Please set the database admin username in one of the following ways:"
+  echo "To set explicitly:"
   echo ""
-  echo "  1. Add DATABASE_ADMIN_USERNAME to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the USERNAME environment variable directly"
-  fail=1
+  echo "  1. Add DATABASE_ADMIN_NAME to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the DATABASE environment variable directly"
 fi
 
 if [ -z "$POSTGRES_PASSWORD" ]; then
@@ -64,13 +63,14 @@ if [ -z "$POSTGRES_PASSWORD" ]; then
   fail=1
 fi
 
-if [ -z "$POSTGRES_DB" ]; then
-  echo "Warning: DATABASE is not set, defaulting to '$POSTGRES_USER'."
+if [ -z "$POSTGRES_USER" ]; then
+  echo "Error: USERNAME is not set."
   echo ""
-  echo "To set explicitly:"
+  echo "Please set the database admin username in one of the following ways:"
   echo ""
-  echo "  1. Add DATABASE_ADMIN_NAME to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the DATABASE environment variable directly"
+  echo "  1. Add DATABASE_ADMIN_USERNAME to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the USERNAME environment variable directly"
+  fail=1
 fi
 
 [ "$fail" -eq 1 ] && exit 1

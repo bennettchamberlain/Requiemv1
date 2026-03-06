@@ -48,23 +48,23 @@ export AUTH_SESSION_PEPPER AUTH_FIELD_ENCRYPTION_KEY AUTH_CSRF_TOKEN_SECRET
 
 fail=0
 
-if [ -z "$DATABASE_PASSWORD" ]; then
-  echo "Error: DATABASE_PASSWORD is not set."
+if [ -z "$AUTH_CSRF_TOKEN_SECRET" ]; then
+  echo "Error: AUTH_CSRF_TOKEN_SECRET is not set."
   echo ""
-  echo "Please set the database password in one of the following ways:"
+  echo "Please set the CSRF token secret in one of the following ways:"
   echo ""
-  echo "  1. Add DATABASE_PASSWORD to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the DATABASE_PASSWORD environment variable directly"
+  echo "  1. Add AUTH_CSRF_TOKEN_SECRET to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the AUTH_CSRF_TOKEN_SECRET environment variable directly"
   fail=1
 fi
 
-if [ -z "$AUTH_TOKEN_SECRET" ]; then
-  echo "Error: AUTH_TOKEN_SECRET is not set."
+if [ -z "$AUTH_FIELD_ENCRYPTION_KEY" ]; then
+  echo "Error: AUTH_FIELD_ENCRYPTION_KEY is not set."
   echo ""
-  echo "Please set the JWT access token secret in one of the following ways:"
+  echo "Please set the field encryption key in one of the following ways:"
   echo ""
-  echo "  1. Add AUTH_TOKEN_SECRET to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the AUTH_TOKEN_SECRET environment variable directly"
+  echo "  1. Add AUTH_FIELD_ENCRYPTION_KEY to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the AUTH_FIELD_ENCRYPTION_KEY environment variable directly"
   fail=1
 fi
 
@@ -78,13 +78,53 @@ if [ -z "$AUTH_REFRESH_TOKEN_SECRET" ]; then
   fail=1
 fi
 
-if [ -z "$AUTH_FIELD_ENCRYPTION_KEY" ]; then
-  echo "Error: AUTH_FIELD_ENCRYPTION_KEY is not set."
+if [ -z "$AUTH_SESSION_PEPPER" ]; then
+  echo "Error: AUTH_SESSION_PEPPER is not set."
   echo ""
-  echo "Please set the field encryption key in one of the following ways:"
+  echo "Please set the session pepper in one of the following ways:"
   echo ""
-  echo "  1. Add AUTH_FIELD_ENCRYPTION_KEY to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the AUTH_FIELD_ENCRYPTION_KEY environment variable directly"
+  echo "  1. Add AUTH_SESSION_PEPPER to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the AUTH_SESSION_PEPPER environment variable directly"
+  fail=1
+fi
+
+if [ -z "$AUTH_TOKEN_SECRET" ]; then
+  echo "Error: AUTH_TOKEN_SECRET is not set."
+  echo ""
+  echo "Please set the JWT access token secret in one of the following ways:"
+  echo ""
+  echo "  1. Add AUTH_TOKEN_SECRET to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the AUTH_TOKEN_SECRET environment variable directly"
+  fail=1
+fi
+
+if [ -z "$DATABASE_PASSWORD" ]; then
+  echo "Error: DATABASE_PASSWORD is not set."
+  echo ""
+  echo "Please set the database password in one of the following ways:"
+  echo ""
+  echo "  1. Add DATABASE_PASSWORD to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the DATABASE_PASSWORD environment variable directly"
+  fail=1
+fi
+
+if [ -z "$OBJECT_STORE_PASSWORD" ]; then
+  echo "Error: OBJECT_STORE_PASSWORD is not set."
+  echo ""
+  echo "Please set the object storage password in one of the following ways:"
+  echo ""
+  echo "  1. Add OBJECT_STORE_PASSWORD to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the OBJECT_STORE_PASSWORD environment variable directly"
+  fail=1
+fi
+
+if [ -z "$OBJECT_STORE_USERNAME" ]; then
+  echo "Error: OBJECT_STORE_USERNAME is not set."
+  echo ""
+  echo "Please set the object storage username in one of the following ways:"
+  echo ""
+  echo "  1. Add OBJECT_STORE_USERNAME to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the OBJECT_STORE_USERNAME environment variable directly"
   fail=1
 fi
 

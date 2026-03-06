@@ -56,6 +56,16 @@ export PGPASSWORD="$ADMIN_PASSWORD"
 
 fail=0
 
+if [ -z "$ADMIN_PASSWORD" ]; then
+  echo "Error: ADMIN_PASSWORD is not set."
+  echo ""
+  echo "Please set the superuser password in one of the following ways:"
+  echo ""
+  echo "  1. Add DATABASE_ADMIN_PASSWORD to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the ADMIN_PASSWORD environment variable directly"
+  fail=1
+fi
+
 if [ -z "$ADMIN_USERNAME" ]; then
   echo "Error: ADMIN_USERNAME is not set."
   echo ""
@@ -66,13 +76,23 @@ if [ -z "$ADMIN_USERNAME" ]; then
   fail=1
 fi
 
-if [ -z "$ADMIN_PASSWORD" ]; then
-  echo "Error: ADMIN_PASSWORD is not set."
+if [ -z "$COMPANION_PASSWORD" ]; then
+  echo "Error: COMPANION_PASSWORD is not set."
   echo ""
-  echo "Please set the superuser password in one of the following ways:"
+  echo "Please set the application database password in one of the following ways:"
   echo ""
-  echo "  1. Add DATABASE_ADMIN_PASSWORD to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the ADMIN_PASSWORD environment variable directly"
+  echo "  1. Add DATABASE_PASSWORD to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the COMPANION_PASSWORD environment variable directly"
+  fail=1
+fi
+
+if [ -z "$ORCHESTRATOR_PASSWORD" ]; then
+  echo "Error: ORCHESTRATOR_PASSWORD is not set."
+  echo ""
+  echo "Please set the orchestrator database password in one of the following ways:"
+  echo ""
+  echo "  1. Add ORCHESTRATOR_DATABASE_PASSWORD to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the ORCHESTRATOR_PASSWORD environment variable directly"
   fail=1
 fi
 

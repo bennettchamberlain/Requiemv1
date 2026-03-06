@@ -40,16 +40,6 @@ export MINIO_ROOT_PASSWORD="$PASSWORD"
 
 fail=0
 
-if [ -z "$MINIO_ROOT_USER" ]; then
-  echo "Error: USERNAME is not set."
-  echo ""
-  echo "Please set the object storage username in one of the following ways:"
-  echo ""
-  echo "  1. Add OBJECT_STORE_USERNAME to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the USERNAME environment variable directly"
-  fail=1
-fi
-
 if [ -z "$MINIO_ROOT_PASSWORD" ]; then
   echo "Error: PASSWORD is not set."
   echo ""
@@ -57,6 +47,16 @@ if [ -z "$MINIO_ROOT_PASSWORD" ]; then
   echo ""
   echo "  1. Add OBJECT_STORE_PASSWORD to the secrets file at $SECRETS_FILE, or"
   echo "  2. Set the PASSWORD environment variable directly"
+  fail=1
+fi
+
+if [ -z "$MINIO_ROOT_USER" ]; then
+  echo "Error: USERNAME is not set."
+  echo ""
+  echo "Please set the object storage username in one of the following ways:"
+  echo ""
+  echo "  1. Add OBJECT_STORE_USERNAME to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the USERNAME environment variable directly"
   fail=1
 fi
 

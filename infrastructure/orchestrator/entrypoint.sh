@@ -55,16 +55,6 @@ export VISIBILITY_DBNAME="$VISIBILITY_DATABASE_NAME"
 
 fail=0
 
-if [ -z "$POSTGRES_USER" ]; then
-  echo "Error: DATABASE_USERNAME is not set."
-  echo ""
-  echo "Please set the database username in one of the following ways:"
-  echo ""
-  echo "  1. Add ORCHESTRATOR_DATABASE_USERNAME to the secrets file at $SECRETS_FILE, or"
-  echo "  2. Set the DATABASE_USERNAME environment variable directly"
-  fail=1
-fi
-
 if [ -z "$POSTGRES_PWD" ]; then
   echo "Error: DATABASE_PASSWORD is not set."
   echo ""
@@ -72,6 +62,16 @@ if [ -z "$POSTGRES_PWD" ]; then
   echo ""
   echo "  1. Add ORCHESTRATOR_DATABASE_PASSWORD to the secrets file at $SECRETS_FILE, or"
   echo "  2. Set the DATABASE_PASSWORD environment variable directly"
+  fail=1
+fi
+
+if [ -z "$POSTGRES_USER" ]; then
+  echo "Error: DATABASE_USERNAME is not set."
+  echo ""
+  echo "Please set the database username in one of the following ways:"
+  echo ""
+  echo "  1. Add ORCHESTRATOR_DATABASE_USERNAME to the secrets file at $SECRETS_FILE, or"
+  echo "  2. Set the DATABASE_USERNAME environment variable directly"
   fail=1
 fi
 
