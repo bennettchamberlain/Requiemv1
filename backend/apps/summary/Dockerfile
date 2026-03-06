@@ -29,4 +29,24 @@ USER memorizer
 # Expose API port
 EXPOSE 8001
 
+# ──────────────────────────────────────────────────
+# Environment Variables
+#
+# Secrets are loaded from a shared secrets file or
+# from environment variables set by Docker Compose.
+# Non-secret config (models, etc.) lives in src/config.py.
+#
+# Required (no default — will not start without these):
+#   DATABASE_PASSWORD          PostgreSQL password (if DATABASE_URL not set)
+#
+# Optional:
+#   DATABASE_HOST              PostgreSQL host [database]
+#   DATABASE_NAME              PostgreSQL database name [companion]
+#   DATABASE_PORT              PostgreSQL port [5432]
+#   DATABASE_URL               Full connection string (overrides individual DB vars)
+#   DATABASE_USERNAME          PostgreSQL username [companion]
+#   LLM_API_KEY                API key for remote LLM providers (not needed for Ollama)
+#   SECRETS_FILE               Path to secrets file [/run/secrets/.env.secrets]
+# ──────────────────────────────────────────────────
+
 CMD ["./entrypoint.sh"]

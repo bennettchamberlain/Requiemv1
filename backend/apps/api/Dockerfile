@@ -58,5 +58,27 @@ WORKDIR /app/backend/apps/api
 
 EXPOSE 3030
 
+# ──────────────────────────────────────────────────
+# Environment Variables
+#
+# Secrets are loaded from a shared secrets file or
+# from environment variables set by Docker Compose.
+# Non-secret config (hosts, ports) lives in the
+# application layer (config/default.json).
+#
+# Required (no default — will not start without these):
+#   AUTH_CSRF_TOKEN_SECRET     CSRF token signing secret
+#   AUTH_FIELD_ENCRYPTION_KEY  Symmetric key for field-level encryption
+#   AUTH_REFRESH_TOKEN_SECRET  JWT refresh token signing secret
+#   AUTH_SESSION_PEPPER        Pepper for session hash derivation
+#   AUTH_TOKEN_SECRET          JWT access token signing secret
+#   DATABASE_PASSWORD          PostgreSQL password
+#   OBJECT_STORE_PASSWORD      MinIO / S3 secret key
+#   OBJECT_STORE_USERNAME      MinIO / S3 access key
+#
+# Optional:
+#   SECRETS_FILE               Path to secrets file [/run/secrets/.env.secrets]
+# ──────────────────────────────────────────────────
+
 ENTRYPOINT ["/usr/bin/tini", "--", "./entrypoint.sh"]
 CMD ["node", "dist/src/main.js"]

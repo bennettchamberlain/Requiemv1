@@ -64,6 +64,21 @@ COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 # Switch back to postgres user
 USER postgres
 
+# ──────────────────────────────────────────────────
+# Environment Variables
+#
+# Secrets are loaded from a shared secrets file or
+# from environment variables set by Docker Compose.
+#
+# Required (no default — will not start without these):
+#   PASSWORD                   PostgreSQL superuser password
+#
+# Optional:
+#   DATABASE                   Initial database name [postgres]
+#   SECRETS_FILE               Path to secrets file [/run/secrets/.env.secrets]
+#   USERNAME                   PostgreSQL superuser name [postgres]
+# ──────────────────────────────────────────────────
+
 ENV PGDATA=/home/postgres/pgdata/data \
     DEFAULT_USERNAME=postgres \
     DEFAULT_DATABASE=postgres
