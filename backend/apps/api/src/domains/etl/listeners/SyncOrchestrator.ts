@@ -214,7 +214,7 @@ export class SyncOrchestrator {
    * It will only execute one endpoint job per connection to avoid rate limits.
    * It will also limit itself to 5 total jobs in progress to avoid overwhelming the system.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_30_SECONDS)
   async executeSyncJobs(): Promise<void> {
     const pendingSyncJobs = await this.connectionSyncJobService.search(
       { userId: SYSTEM_USER },

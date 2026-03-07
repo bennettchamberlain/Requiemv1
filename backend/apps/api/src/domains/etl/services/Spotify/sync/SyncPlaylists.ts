@@ -90,6 +90,7 @@ export async function syncPlaylists({
               playlistId: (playlist as { id?: string }).id,
               error: error instanceof Error ? error.message : 'Unknown error',
             });
+
             // Return playlist without tracks if fetching fails
             return playlist;
           }
@@ -124,4 +125,3 @@ export async function syncPlaylists({
     throw err;
   }
 }
-

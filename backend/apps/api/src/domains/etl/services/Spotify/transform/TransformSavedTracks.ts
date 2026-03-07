@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, EventService } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -13,6 +13,7 @@ import type { SpotifyPlaylistTrackItem } from './types';
 export class SpotifySavedTracksTransformService {
   constructor(
     private readonly contentService: ContentService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(SpotifySavedTracksTransformService.name);
@@ -62,32 +63,52 @@ export class SpotifySavedTracksTransformService {
             external_id: track.id,
           });
 
+          console.log('existing track', existingTrack);
           if (existingTrack.length > 0) {
             this.logger.debug('Track already exists, skipping', {
               trackId: track.id,
               trackName: track.name,
             });
             skippedCount++;
-            continue;
+          } else {
+            // Create new content entry for the track
+            await this.contentService.create(context, {
+              title: track.name,
+              type: 'Music',
+              url: track.external_urls?.spotify || '',
+              external_id: track.id,
+              source_url: track.external_urls?.spotify || '',
+              source_data: {
+                album: track.album,
+                artists: track.artists,
+                duration_ms: track.duration_ms,
+                explicit: track.explicit,
+                popularity: track.popularity,
+                preview_url: track.preview_url,
+                uri: track.uri,
+                played_at: trackItem.played_at,
+                context: trackItem.context,
+              },
+            });
           }
 
-          // Create new content entry for the track
-          await this.contentService.create(context, {
-            title: track.name,
-            type: 'Music',
-            url: track.external_urls?.spotify || '',
-            external_id: track.id,
-            source_url: track.external_urls?.spotify || '',
-            source_data: {
-              album: track.album,
-              artists: track.artists,
+          console.log('creating event for track', track);
+          const addedAt = trackItem.added_at!;
+          await this.eventService.create(context, {
+            title: `Saved track ${track.name}`,
+            description: `Saved ${track.name} by ${track.artists!.map((artist) => artist.name).join(', ')} on Spotify at ${trackItem.added_at}`,
+            event_type: 'favorite',
+            start_time: new Date(addedAt),
+            duration_minutes: 0,
+            metadata: {
+              track_id: track.id,
+              album: track.album?.name,
+              artists: track.artists?.map((artist) => artist.name),
               duration_ms: track.duration_ms,
               explicit: track.explicit,
               popularity: track.popularity,
               preview_url: track.preview_url,
               uri: track.uri,
-              played_at: trackItem.played_at,
-              context: trackItem.context,
             },
           });
 
@@ -125,4 +146,3 @@ export class SpotifySavedTracksTransformService {
     }
   }
 }
-

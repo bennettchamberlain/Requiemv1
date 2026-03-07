@@ -15,7 +15,7 @@ export async function syncSavedTracks({
       nextCursor,
     });
 
-    const endpoint = nextCursor.nextUrl ? String(nextCursor.nextUrl) : `/v1/me/tracks?limit=50`;
+    const endpoint = nextCursor.nextUrl ? String(nextCursor.nextUrl) : `/v1/me/tracks?limit=1`;
 
     const response = (await client.request(connection, endpoint)) as {
       items: unknown[];
@@ -50,4 +50,3 @@ export async function syncSavedTracks({
     throw err;
   }
 }
-

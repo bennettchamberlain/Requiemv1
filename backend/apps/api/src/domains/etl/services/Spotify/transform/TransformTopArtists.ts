@@ -75,11 +75,9 @@ export class SpotifyTopArtistsTransformService {
 
             try {
               // Search for existing genre concept nodes
-              const existingNodes = await this.graphUtilityService.searchNodesByText(
-                userId,
-                trimmedGenre,
-                { limit: 5 },
-              );
+              const existingNodes = await this.graphUtilityService.searchNodesByText(userId, trimmedGenre, {
+                limit: 5,
+              });
 
               // Check if any of the results are an exact match for the genre
               const exactMatch = existingNodes.find(
@@ -187,4 +185,3 @@ export class SpotifyTopArtistsTransformService {
     }
   }
 }
-

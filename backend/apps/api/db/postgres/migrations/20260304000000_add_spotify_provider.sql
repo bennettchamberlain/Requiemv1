@@ -7,8 +7,8 @@ VALUES (
   'https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/Spotify_Logo_RGB_Green.png',
   '[
     { "name": "Recently Played", "description": "Sync your recently played tracks.", "iterationType": "historical,incremental", "TTL": null },
-    { "name": "Playlists", "description": "Sync your playlists and their tracks.", "iterationType": "historical,incremental", "TTL": null },
-    { "name": "Saved Tracks", "description": "Sync your saved (liked) tracks.", "iterationType": "historical,incremental", "TTL": null },
+    { "name": "Playlists", "description": "Sync your playlists and their tracks.", "iterationType": "historical", "TTL": 86400 },
+    { "name": "Saved Tracks", "description": "Sync your saved (liked) tracks.", "iterationType": "historical", "TTL": 86400 },
     { "name": "Top Artists", "description": "Sync your top artists.", "iterationType": "historical", "TTL": 86400 }
   ]'::jsonb
 )

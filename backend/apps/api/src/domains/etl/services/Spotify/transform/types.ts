@@ -41,7 +41,7 @@ export interface SpotifyTrack {
   }>;
   available_markets?: string[];
   disc_number?: number;
-  duration_ms?: number;
+  duration_ms: number;
   explicit?: boolean;
   external_ids?: {
     isrc?: string;
@@ -70,6 +70,7 @@ export interface SpotifyTrack {
 export interface SpotifyPlaylistTrackItem {
   track: SpotifyTrack;
   played_at?: string;
+  added_at?: string;
   context?: {
     type?: string;
     href?: string;
@@ -136,4 +137,3 @@ export interface SpotifyArtist {
   type: string;
   uri: string;
 }
-

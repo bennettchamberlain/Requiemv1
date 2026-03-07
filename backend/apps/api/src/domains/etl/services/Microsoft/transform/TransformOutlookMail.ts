@@ -80,7 +80,6 @@ export class OutlookMailTransformService {
     connection: Connection;
     syncJob: ConnectionSyncJob;
   }): Promise<void> {
-    console.log('transform outlook mail', syncJob);
     const { id: syncJobId, userId, data } = syncJob;
 
     try {

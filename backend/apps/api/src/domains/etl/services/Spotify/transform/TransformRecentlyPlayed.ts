@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, EventService } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -13,6 +13,7 @@ import type { SpotifyPlaylistTrackItem } from './types';
 export class SpotifyRecentlyPlayedTransformService {
   constructor(
     private readonly contentService: ContentService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(SpotifyRecentlyPlayedTransformService.name);
@@ -68,26 +69,45 @@ export class SpotifyRecentlyPlayedTransformService {
               trackName: track.name,
             });
             skippedCount++;
-            continue;
+          } else {
+            // Create new content entry for the track
+            await this.contentService.create(context, {
+              title: track.name,
+              type: 'Music',
+              url: track.external_urls?.spotify || '',
+              external_id: track.id,
+              source_url: track.external_urls?.spotify || '',
+              source_data: {
+                album: track.album,
+                artists: track.artists,
+                duration_ms: track.duration_ms,
+                explicit: track.explicit,
+                popularity: track.popularity,
+                preview_url: track.preview_url,
+                uri: track.uri,
+                played_at: trackItem.played_at,
+                context: trackItem.context,
+              },
+            });
           }
 
-          // Create new content entry for the track
-          await this.contentService.create(context, {
-            title: track.name,
-            type: 'Music',
-            url: track.external_urls?.spotify || '',
-            external_id: track.id,
-            source_url: track.external_urls?.spotify || '',
-            source_data: {
-              album: track.album,
-              artists: track.artists,
+          const playedAt = trackItem.played_at!;
+          await this.eventService.create(context, {
+            title: `Played ${track.name}`,
+            description: `Played ${track.name} by ${track.artists!.map((artist) => artist.name).join(', ')} on Spotify at ${trackItem.played_at}`,
+            event_type: 'played_music',
+            start_time: new Date(new Date(playedAt).getTime() - track.duration_ms),
+            end_time: new Date(playedAt),
+            duration_minutes: Math.round(track.duration_ms / 60000),
+            metadata: {
+              track_id: track.id,
+              album: track.album?.name,
+              artists: track.artists?.map((artist) => artist.name),
               duration_ms: track.duration_ms,
               explicit: track.explicit,
               popularity: track.popularity,
               preview_url: track.preview_url,
               uri: track.uri,
-              played_at: trackItem.played_at,
-              context: trackItem.context,
             },
           });
 
@@ -125,4 +145,3 @@ export class SpotifyRecentlyPlayedTransformService {
     }
   }
 }
-
