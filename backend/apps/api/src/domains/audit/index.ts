@@ -9,6 +9,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { GraphModule } from '@ci/domains/graph';
 
+import { AuditController } from './controllers/AuditController';
 import { DeltaEntity } from './entities/DeltaEntity';
 import { DeltaService } from './services/DeltaService';
 import { DeltaEntitySubscriber } from './subscribers/DeltaEntitySubscriber';
@@ -18,6 +19,7 @@ import { DeltaEntitySubscriber } from './subscribers/DeltaEntitySubscriber';
     TypeOrmModule.forFeature([DeltaEntity]),
     GraphModule, // For NodeEntity and RelationshipEntity used by the subscriber
   ],
+  controllers: [AuditController],
   providers: [DeltaService, DeltaEntitySubscriber],
   exports: [DeltaService],
 })

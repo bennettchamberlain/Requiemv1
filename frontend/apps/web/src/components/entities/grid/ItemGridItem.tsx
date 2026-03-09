@@ -1,4 +1,4 @@
-import { type MouseEvent } from 'react';
+import { type MouseEvent, useMemo } from 'react';
 
 import { ItemIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
@@ -12,21 +12,45 @@ export const ITEM_FRAGMENT = gql(`
     description
     file {
       id
-      url
+      sourceUrl
     }
   }
 `);
 
+export interface ItemInventoryPreview {
+  id: string;
+  name: string;
+  description: string | null;
+  file: {
+    sourceUrl: string;
+  } | null;
+}
+
 interface Props {
   item: FragmentType<typeof ITEM_FRAGMENT>;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
+  onSelectInventoryItem?: (item: ItemInventoryPreview) => void;
 }
 
-export function ItemGridItem({ item, onClick }: Props) {
+export function ItemGridItem({ item, onClick, onSelectInventoryItem }: Props) {
   const data = useFragment(ITEM_FRAGMENT, item);
 
+  const url = useMemo(() => {
+    return data.file?.sourceUrl ? `/static${data.file.sourceUrl}` : undefined;
+  }, [data.file?.sourceUrl]);
+
   return (
-    <EntityGridItem onClick={onClick}>
+    <EntityGridItem
+      onClick={(e) => {
+        onSelectInventoryItem?.({
+          id: data.id,
+          name: data.name ?? '',
+          description: data.description ?? null,
+          file: data.file?.sourceUrl ? { sourceUrl: data.file.sourceUrl } : null,
+        });
+        onClick?.(e);
+      }}
+    >
       <EntityGridItem.Header>
         <ItemIcon className="shrink-0" />
 
@@ -39,7 +63,7 @@ export function ItemGridItem({ item, onClick }: Props) {
         {data.file && (
           <div className="rounded-sm overflow-hidden min-h-0 grow">
             <img
-              src={data.file.url}
+              src={url}
               alt={data.name ? `${data.name} image` : 'Item image'}
               className="object-cover w-full h-full"
             />

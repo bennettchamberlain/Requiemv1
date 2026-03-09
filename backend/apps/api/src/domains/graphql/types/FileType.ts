@@ -17,26 +17,27 @@ export class FileType implements Node, Taggable {
   @Field(() => ID)
   id!: string;
 
-  @Field(() => String)
-  filename!: string;
-
-  @Field(() => String)
-  originalName!: string;
+  @Field(() => String, { nullable: true })
+  filename!: string | null;
 
   @Field(() => String)
   contentType!: string;
 
-  @Field(() => Float)
-  size!: number;
+  @Field(() => Float, { nullable: true })
+  size!: number | null;
 
-  // This doesn't seem to do anything yet, but set up for future caching after
-  // requisite tweaking. Just want don't to lose context.
-  @Directive('@cacheControl(maxAge: 60)')
-  @Field(() => String)
-  url!: string;
+  @Field(() => String, { nullable: true })
+  title!: string | null;
 
-  @Field(() => Boolean)
-  analysisCompleted!: boolean;
+  @Field(() => String, { nullable: true })
+  description!: string | null;
+
+  @Field(() => String, { nullable: true })
+  externalId!: string | null;
+
+  @Directive('@cacheControl(maxAge: 3600)')
+  @Field(() => String, { nullable: true })
+  sourceUrl!: string | null;
 
   @Field(() => ItemConnection, { nullable: true, complexity: 5 })
   items?: ItemConnection | null;
@@ -56,11 +57,12 @@ export class FileType implements Node, Taggable {
       __source: file,
       id: GlobalUID.encode('file', file.id),
       filename: file.filename,
-      originalName: file.originalName,
       contentType: file.contentType,
-      size: Number(file.size),
-      url: file.url,
-      analysisCompleted: file.analysisCompleted,
+      size: file.size ? Number(file.size) : null,
+      title: file.title,
+      description: file.description,
+      externalId: file.externalId,
+      sourceUrl: file.url,
       tags: [], // Hydrated by resolver
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,

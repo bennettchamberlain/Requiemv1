@@ -5,9 +5,22 @@ GREEN=\033[0;32m
 YELLOW=\033[0;33m
 RESET=\033[0m
 
-export API_REPO ?= ci/companion-api
-export WEBSERVER_REPO ?= ci/companion-server
-export TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+export API_REPO ?= ci/api
+export DATABASE_REPO ?= ci/database
+export GATEWAY_REPO ?= ci/gateway
+export OBJECT_STORE_REPO ?= ci/object-store
+export ORCHESTRATOR_REPO ?= ci/orchestrator
+export SETUP_SECRETS_REPO ?= ci/setup-secrets
+export SETUP_DATABASE_REPO ?= ci/setup-database
+export SETUP_ORCHESTRATOR_REPO ?= ci/setup-orchestrator
+export STT_REPO ?= ci/stt-service
+export SUMMARY_REPO ?= ci/summary-service
+export TTS_REPO ?= ci/tts-service
+
+export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
+
+# Helper: expands to "-t repo:tag" only when TAG is non-empty
+versioned_tag = $(if $(TAG),-t $(1):$(TAG))
 
 define BANNER
    ______                                  _
@@ -35,67 +48,142 @@ help: ## List make commands with their descriptions
 
 .PHONY: reset
 reset: ## Reset the local development environment
-	@printf "🧹 Resetting local development environment INCLUDING DATABASE DATA...\n\n"
+	@printf "🧹 Resetting Docker environment INCLUDING ALL DATA...\n\n"
 
-	@COMPOSE_CONTAINERS=$$(docker compose ps -aq 2>/dev/null); \
-	if [ -n "$$COMPOSE_CONTAINERS" ]; then \
-		printf "► Stopping existing containers...\n\n"; \
-		docker stop $$COMPOSE_CONTAINERS 2>/dev/null || true; \
-		printf "\n► Removing containers...\n\n"; \
-		docker rm -f $$COMPOSE_CONTAINERS 2>/dev/null || true; \
-		printf "\n"; \
+	@$(MAKE) stop
+
+	@if tmux has-session -t companion 2>/dev/null; then \
+		printf "\n➤ Killing tmux dev session...\n\n"; \
+		tmux kill-session -t companion; \
 	fi
 
-	@docker compose down -v --remove-orphans 2>/dev/null || true
+	@printf "\n➤ Removing project volumes...\n\n"
+	@docker volume ls -q --filter "name=ci-server_" | xargs -r docker volume rm -f 2>/dev/null || true
 
-	@COMPOSE_CONTAINERS=$$(docker compose ps -aq 2>/dev/null); \
-	if [ -n "$$COMPOSE_CONTAINERS" ]; then \
-		printf "\n► Removing remaining containers...\n\n"; \
-		docker rm -f $$COMPOSE_CONTAINERS 2>/dev/null || true; \
-		printf "\n"; \
-	fi
+	@printf "\n➤ Removing project images...\n\n"
+	@docker images --format '{{.Repository}}:{{.Tag}}' | grep '^ci/' | xargs -r docker rmi -f 2>/dev/null || true
 
-	@printf "► Removing Docker volumes...\n\n"
-	@COMPOSE_VOLUMES="postgres-data minio-data stt-service-models stt-service-cache tts-service-models tts-service-cache"; \
-	for vol in $$COMPOSE_VOLUMES; do \
-		docker volume ls -q | grep "^ci-server_$$vol$$" | xargs -r docker volume rm -f 2>/dev/null || true; \
-	done; \
-
-	@printf "\n► Removing Docker images...\n\n"
-	@docker rmi -f ci/companion-server ci/companion-api ci/postgres ci/stt-service ci/summary-service ci/tts-service ci/nginx 2>/dev/null || true
-
-	@printf "\n► Pruning Docker networks...\n\n"
+	@printf "\n➤ Pruning unused networks...\n\n"
 	@docker network prune --force 2>/dev/null || true
 
-.PHONY: build
-build: ## Build the application
-	@printf "🧱 Building the application...\n\n"
+	@printf "\n$(GREEN)✓$(RESET) Reset complete.\n\n"
 
-	@printf "► Building PostgreSQL image...\n\n"
-	@docker compose build postgres
+.PHONY: build-local
+build-local: ## Build Docker images for local development
+	@printf "🧱 Building local images...\n\n"
 
-	@printf "\n► Building Speech-to-text service image...\n\n"
-	@docker compose build stt-service
+	@printf "➤ Building database setup image...\n\n"
+	@docker build -f infrastructure/setup-database/Dockerfile $(call versioned_tag,$(SETUP_DATABASE_REPO)) -t $(SETUP_DATABASE_REPO):latest infrastructure/setup-database
 
-	@printf "\n► Building Text-to-speech service image...\n\n"
-	@docker compose build tts-service
+	@printf "\n➤ Building database image...\n\n"
+	@docker build -f infrastructure/database/Dockerfile $(call versioned_tag,$(DATABASE_REPO)) -t $(DATABASE_REPO):latest infrastructure/database
 
-	@printf "\n► Building Summary service image...\n\n"
-	@docker compose build summary-service
+	@printf "\n➤ Building object store image...\n\n"
+	@docker build -f infrastructure/object-store/Dockerfile $(call versioned_tag,$(OBJECT_STORE_REPO)) -t $(OBJECT_STORE_REPO):latest infrastructure/object-store
 
-	@printf "\n► Compiling API...\n\n"
+	@printf "\n➤ Building orchestrator setup image...\n\n"
+	@docker build -f infrastructure/setup-orchestrator/Dockerfile $(call versioned_tag,$(SETUP_ORCHESTRATOR_REPO)) -t $(SETUP_ORCHESTRATOR_REPO):latest infrastructure/setup-orchestrator
+
+	@printf "\n➤ Building orchestrator image...\n\n"
+	@docker build -f infrastructure/orchestrator/Dockerfile $(call versioned_tag,$(ORCHESTRATOR_REPO)) -t $(ORCHESTRATOR_REPO):latest infrastructure/orchestrator
+
+	@printf "\n➤ Building speech-to-text service image...\n\n"
+	@docker build -f backend/apps/stt/Dockerfile $(call versioned_tag,$(STT_REPO)) -t $(STT_REPO):latest backend/apps/stt
+
+	@printf "\n➤ Building summary service image...\n\n"
+	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
+
+	@printf "\n➤ Building text-to-speech service image...\n\n"
+	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
+
+	@printf "\n"
+
+.PHONY: build-staging
+build-staging: ## Build Docker images for staging deployment
+	@printf "🧱 Building staging images...\n\n"
+
+	@printf "➤ Compiling API...\n\n"
 	@cd backend/apps/api && yarn clean && yarn build
 
-	@printf "\n► Building API image...\n\n"
-	@docker build -f backend/apps/api/Dockerfile -t $(API_REPO):latest .
-
-	@printf "\n► Compiling web frontend...\n\n"
+	@printf "\n➤ Compiling web frontend...\n\n"
 	@cd frontend/apps/web && yarn clean && yarn build
 
-	@printf "\n► Building webserver image...\n\n"
-	@docker build -f infrastructure/nginx/Dockerfile.staging -t $(WEBSERVER_REPO):latest .
+	@printf "\n➤ Building API image...\n\n"
+	@docker build -f backend/apps/api/Dockerfile $(call versioned_tag,$(API_REPO)) -t $(API_REPO):latest .
 
-	@printf "\nApplication successfully built.\n\n"
+	@printf "\n➤ Building database setup image...\n\n"
+	@docker build -f infrastructure/setup-database/Dockerfile $(call versioned_tag,$(SETUP_DATABASE_REPO)) -t $(SETUP_DATABASE_REPO):latest infrastructure/setup-database
+
+	@printf "\n➤ Building database image...\n\n"
+	@docker build -f infrastructure/database/Dockerfile $(call versioned_tag,$(DATABASE_REPO)) -t $(DATABASE_REPO):latest infrastructure/database
+
+	@printf "\n➤ Building gateway image...\n\n"
+	@docker build -f infrastructure/gateway/Dockerfile $(call versioned_tag,$(GATEWAY_REPO)) -t $(GATEWAY_REPO):latest .
+
+	@printf "\n➤ Building object store image...\n\n"
+	@docker build -f infrastructure/object-store/Dockerfile $(call versioned_tag,$(OBJECT_STORE_REPO)) -t $(OBJECT_STORE_REPO):latest infrastructure/object-store
+
+	@printf "\n➤ Building orchestrator setup image...\n\n"
+	@docker build -f infrastructure/setup-orchestrator/Dockerfile $(call versioned_tag,$(SETUP_ORCHESTRATOR_REPO)) -t $(SETUP_ORCHESTRATOR_REPO):latest infrastructure/setup-orchestrator
+
+	@printf "\n➤ Building orchestrator image...\n\n"
+	@docker build -f infrastructure/orchestrator/Dockerfile $(call versioned_tag,$(ORCHESTRATOR_REPO)) -t $(ORCHESTRATOR_REPO):latest infrastructure/orchestrator
+
+	@printf "\n➤ Building speech-to-text service image...\n\n"
+	@docker build -f backend/apps/stt/Dockerfile $(call versioned_tag,$(STT_REPO)) -t $(STT_REPO):latest backend/apps/stt
+
+	@printf "\n➤ Building summary service image...\n\n"
+	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
+
+	@printf "\n➤ Building text-to-speech service image...\n\n"
+	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
+
+	@printf "\n"
+
+.PHONY: build-production
+build-production: ## Build the application
+	@printf "🧱 Building production images...\n\n"
+
+	@printf "➤ Compiling API...\n\n"
+	@cd backend/apps/api && yarn clean && yarn build
+
+	@printf "\n➤ Compiling web frontend...\n\n"
+	@cd frontend/apps/web && yarn clean && yarn build
+
+	@printf "\n➤ Building API image...\n\n"
+	@docker build -f backend/apps/api/Dockerfile $(call versioned_tag,$(API_REPO)) -t $(API_REPO):latest .
+
+	@printf "\n➤ Building database setup image...\n\n"
+	@docker build -f infrastructure/setup-database/Dockerfile $(call versioned_tag,$(SETUP_DATABASE_REPO)) -t $(SETUP_DATABASE_REPO):latest infrastructure/setup-database
+
+	@printf "\n➤ Building database image...\n\n"
+	@docker build -f infrastructure/database/Dockerfile $(call versioned_tag,$(DATABASE_REPO)) -t $(DATABASE_REPO):latest infrastructure/database
+
+	@printf "\n➤ Building gateway image...\n\n"
+	@docker build -f infrastructure/gateway/Dockerfile $(call versioned_tag,$(GATEWAY_REPO)) -t $(GATEWAY_REPO):latest .
+
+	@printf "\n➤ Building object store image...\n\n"
+	@docker build -f infrastructure/object-store/Dockerfile $(call versioned_tag,$(OBJECT_STORE_REPO)) -t $(OBJECT_STORE_REPO):latest infrastructure/object-store
+
+	@printf "\n➤ Building orchestrator setup image...\n\n"
+	@docker build -f infrastructure/setup-orchestrator/Dockerfile $(call versioned_tag,$(SETUP_ORCHESTRATOR_REPO)) -t $(SETUP_ORCHESTRATOR_REPO):latest infrastructure/setup-orchestrator
+
+	@printf "\n➤ Building orchestrator image...\n\n"
+	@docker build -f infrastructure/orchestrator/Dockerfile $(call versioned_tag,$(ORCHESTRATOR_REPO)) -t $(ORCHESTRATOR_REPO):latest infrastructure/orchestrator
+
+	@printf "\n➤ Building setup secrets image...\n\n"
+	@docker build -f infrastructure/setup-secrets/Dockerfile $(call versioned_tag,$(SETUP_SECRETS_REPO)) -t $(SETUP_SECRETS_REPO):latest infrastructure/setup-secrets
+
+	@printf "\n➤ Building speech-to-text service image...\n\n"
+	@docker build -f backend/apps/stt/Dockerfile $(call versioned_tag,$(STT_REPO)) -t $(STT_REPO):latest backend/apps/stt
+
+	@printf "\n➤ Building summary service image...\n\n"
+	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
+
+	@printf "\n➤ Building text-to-speech service image...\n\n"
+	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
+
+	@printf "\n"
 
 .PHONY: dbclear
 dbclear: ## Clear the data stored in the PostgreSQL database
@@ -267,7 +355,7 @@ install: ## Install project dependencies
 	@printf "\n"
 
 .PHONY: local
-local: dev-health init stop ## Run the local deployment
+local: dev-health init build-local stop ## Run the local deployment
 	@printf "⌨️ Starting local services...\n\n"
 
 	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d --remove-orphans
@@ -285,7 +373,7 @@ migrate: ## Run database migrations
 	@printf "\nMigrations successfully run.\n\n"
 
 .PHONY: production
-production: health init build stop ## Run the production deployment
+production: health init build-production stop ## Run the production deployment
 	@printf "🚀 Starting production services...\n\n"
 
 	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production up -d --remove-orphans
@@ -300,8 +388,24 @@ seed: ## Seed database with John Smith user and demo data
 
 	@printf "\nDatabase successfully seeded. 🌳\n\n"
 
+.PHONY: seed-production
+seed-production: ## Seed production database via ephemeral proxy
+	@printf "🌱 Seeding production database...\n\n"
+
+	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile tooling up -d dbproxy >/dev/null 2>&1
+	@CONNSTR=$$(docker compose -f docker-compose.yml -f docker-compose.production.yml --profile tooling run --rm dbconnstr 2>/dev/null) && \
+	DATABASE_HOST=localhost DATABASE_PORT=5432 \
+	DATABASE_USERNAME=$$(echo "$$CONNSTR" | sed 's|postgresql://\([^:]*\):.*|\1|') \
+	DATABASE_PASSWORD=$$(echo "$$CONNSTR" | sed 's|postgresql://[^:]*:\([^@]*\)@.*|\1|') \
+	sh -c 'cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts'; \
+	EXIT=$$?; \
+	docker compose -f docker-compose.yml -f docker-compose.production.yml --profile tooling stop dbproxy >/dev/null 2>&1; \
+	exit $$EXIT
+
+	@printf "\nDatabase successfully seeded. 🌳\n\n"
+
 .PHONY: staging
-staging: health init build stop ## Run the staging deployment
+staging: health init build-staging stop ## Run the staging deployment
 	@printf "🎭 Starting staging services...\n\n"
 
 	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging up -d --remove-orphans
@@ -310,8 +414,9 @@ staging: health init build stop ## Run the staging deployment
 
 .PHONY: stop
 stop: ## Stop all running services
-	@printf "🛑 Stopping all running services... "
+	@printf "➤ Stopping all running services... "
 
+	@docker compose -f docker-compose.yml --profile tooling down 2>/dev/null || true
 	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local down 2>/dev/null || true
 	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging down 2>/dev/null || true
 	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production down 2>/dev/null || true
@@ -354,8 +459,16 @@ userpw: ## Change a user's password
 
 .PHONY: chatreset
 chatreset: ## Reset John Smith's demo threads
-	@printf "🧼 Resetting John Smith's demo threads...\n\n"
+	@printf "🧹 Resetting John Smith's demo threads...\n\n"
 
 	@cd backend/apps/api && yarn db:chatreset
+
+	@printf "\n"
+
+.PHONY: filereset
+filereset: ## Clear all files from the system
+	@printf "🧹 Clearing all files from the system...\n\n"
+
+	@cd backend/apps/api && yarn db:filereset
 
 	@printf "\n"

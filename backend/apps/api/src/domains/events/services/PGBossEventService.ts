@@ -263,19 +263,25 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
           jobId: job.id,
         };
 
-        this.logger.log(`Executing job for event ${name} in queue ${queue}`, userId ? { userId } : undefined);
+        this.logger.log('Executing job', {
+          eventName: name,
+          queue,
+          ...(userId ? { userId } : {}),
+        });
 
         const done = () => {
-          this.logger.log(`Completed job ${job.id} for event ${name}`);
+          this.logger.log('Completed job');
           resolve();
         };
 
         const fail = (reason: unknown) => {
-          this.logger.error(
-            `Failed job ${job.id} for event ${name}`,
-            reason instanceof Error ? reason : new Error(String(reason)),
-          );
+          this.logger.error('Failed job', reason instanceof Error ? reason : new Error(String(reason)));
           reject(reason instanceof Error ? reason : new Error(String(reason)));
+        };
+
+        const skip = () => {
+          this.logger.log('No listeners found, skipping job');
+          resolve();
         };
 
         const queueSpecificEventName = `${name}:${queue}`;
@@ -283,8 +289,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
         if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
           this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail });
         } else {
-          this.logger.log(`No listeners for event ${name} in queue ${queue}`);
-          resolve();
+          skip();
         }
       });
     });

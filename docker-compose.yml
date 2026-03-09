@@ -1,46 +1,8 @@
 services:
-  ##################
-  # INFRASTRUCTURE #
-  ##################
-
-  iframely:
-    image: jolt/iframely:latest
-    networks:
-      - ci
-    restart: unless-stopped
+  database:
+    image: ci/database
     volumes:
-      - ./infrastructure/iframely/config.js:/iframely/config.js
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-    profiles: [ "local", "staging", "production" ]
-
-  minio:
-    image: minio/minio
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
-    volumes:
-      - minio-data:/data
-    networks:
-      - ci
-    command: server /data
-    restart: unless-stopped
-    profiles: [ "local", "staging", "production" ]
-
-  postgres:
-    build:
-      context: ./infrastructure/postgres
-      dockerfile: Dockerfile
-    image: ci/postgres
-    environment:
-      POSTGRES_USER: ${POSTGRES_USERNAME}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      PGDATA: /home/postgres/pgdata/data
-    volumes:
-      - postgres-data:/home/postgres/pgdata/data
+      - db-data:/home/postgres/pgdata/data
     networks:
       - ci
     restart: unless-stopped
@@ -51,101 +13,129 @@ services:
       retries: 5
     profiles: [ "local", "staging", "production" ]
 
-  temporal:
-    image: temporalio/auto-setup:1.25.1
-    environment:
-      - DB=postgres12_pgx
-      - DB_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USERNAME}
-      - POSTGRES_PWD=${POSTGRES_PASSWORD}
-      - POSTGRES_SEEDS=postgres
+  object-store:
+    image: ci/object-store
     volumes:
-      - ./infrastructure/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+      - object-data:/data/objects
     networks:
       - ci
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
-  ########################
-  # FIRST-PARTY SERVICES #
-  ########################
+  orchestrator:
+    image: ci/orchestrator
+    networks:
+      - ci
+    depends_on:
+      setup-orchestrator:
+        condition: service_completed_successfully
+      database:
+         condition: service_healthy
+    restart: unless-stopped
+    profiles: [ "local", "staging", "production" ]
 
   stt-service:
-    build:
-      context: ./backend/apps/stt
-      dockerfile: Dockerfile
     image: ci/stt-service
     volumes:
       - stt-service-models:/app/models
       - stt-service-cache:/root/.cache
-    environment:
-      - PYTHONPATH=/app
-    networks:
-      - ci
-    restart: unless-stopped
-    profiles: [ "local", "staging", "production" ]
-
-  tts-service:
-    build:
-      context: ./backend/apps/tts
-      dockerfile: Dockerfile
-    image: ci/tts-service
-    volumes:
-      - tts-service-models:/app/models
-      - tts-service-cache:/root/.cache
-    environment:
-      - PYTHONPATH=/app
     networks:
       - ci
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
   summary-service:
-    build:
-      context: ./backend/apps/summary
-      dockerfile: Dockerfile
     image: ci/summary-service
-    pull_policy: build
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@postgres:5432/companion_intel
-      - LLM_API_BASE=${LLM_API_BASE:-http://host.docker.internal:11434/v1}
-      - LLM_API_KEY=${LLM_API_KEY:-ollama}
-      - LLM_DEFAULT_CHAT_MODEL=${LLM_DEFAULT_CHAT_MODEL}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_NAMESPACE=default
     extra_hosts:
       - host.docker.internal:host-gateway
     networks:
       - ci
     depends_on:
-      - postgres
-      - temporal
+      database:
+        condition: service_healthy
+      orchestrator:
+        condition: service_started
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
-  ##############################
-  # THIRD-PARTY MANAGEMENT UIs #
-  ##############################
+  tts-service:
+    image: ci/tts-service
+    volumes:
+      - tts-service-models:/app/models
+      - tts-service-cache:/root/.cache
+    networks:
+      - ci
+    restart: unless-stopped
+    profiles: [ "local", "staging", "production" ]
 
-  temporal-ui:
+  #############
+  # EPHEMERAL #
+  #############
+
+  setup-database:
+    image: ci/setup-database
+    networks:
+      - ci
+    restart: "no"
+    depends_on:
+      database:
+        condition: service_healthy
+    profiles: [ "local", "staging", "production" ]
+
+  setup-orchestrator:
+    image: ci/setup-orchestrator
+    networks:
+      - ci
+    restart: "no"
+    depends_on:
+      setup-database:
+        condition: service_completed_successfully
+      database:
+         condition: service_healthy
+    profiles: [ "local", "staging", "production" ]
+
+  #########
+  # TOOLS #
+  #########
+
+  dbconnstr:
+    image: alpine
+    volumes:
+      - secrets:/run/secrets:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -a
+        source /run/secrets/.env.secrets 2>/dev/null
+        set +a
+        echo "postgresql://$${DATABASE_USERNAME}:$${DATABASE_PASSWORD}@localhost:5432/$${DATABASE_NAME}"
+    profiles: [ "tooling" ]
+
+  dbproxy:
+    image: alpine/socat
+    command: TCP-LISTEN:5432,fork,reuseaddr TCP:database:5432
+    ports:
+      - 5432:5432
+    networks:
+      - ci
+    profiles: [ "tooling" ]
+
+  orchestrator-ui:
     image: temporalio/ui:2.31.2
     ports:
       - 8080:8080
     environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+      - TEMPORAL_ADDRESS=orchestrator:7233
     networks:
       - ci
     restart: unless-stopped
     profiles: [ "tooling" ]
 
 volumes:
-  minio-data:
-  postgres-data:
+  db-data:
+  object-data:
+  secrets:
   stt-service-models:
   stt-service-cache:
   tts-service-models:

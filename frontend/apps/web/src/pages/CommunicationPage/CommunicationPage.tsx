@@ -7,6 +7,7 @@ import { Pencil, User } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
+import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { CommunicationIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Tag } from '@/components/Tag';
@@ -167,6 +168,8 @@ export function CommunicationPage() {
             </Card.Content>
           </Card>
         </div>
+
+        <EntityEvolutionPanel entityId={id!} />
       </PageContent>
     );
   }

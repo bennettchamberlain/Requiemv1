@@ -1,6 +1,5 @@
-import { type MouseEvent } from 'react';
+import { type MouseEvent, useMemo } from 'react';
 
-import { FileIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
 
 import { SearchTable } from '../SearchTable';
@@ -8,7 +7,10 @@ import { SearchTable } from '../SearchTable';
 export const FILE_FRAGMENT = gql(`
   fragment TableFileRowData on FileType {
     id
-    url
+    filename
+    title
+    previewUrl
+    contentType
   }
 `);
 
@@ -20,26 +22,21 @@ interface Props {
 export function FileRow({ file, onClick }: Props) {
   const data = useFragment(FILE_FRAGMENT, file);
 
+  const url = useMemo(() => {
+    return data.previewUrl ? `/static${data.previewUrl}` : undefined;
+  }, [data.previewUrl]);
+
   return (
     <SearchTable.Row onClick={onClick}>
-      <SearchTable.Cell className="align-middle w-0 px-2.5">
-        <FileIcon />
+      <SearchTable.Cell className="align-middle w-15 px-2.5">
+        <img src={url} alt={data.filename || ''} className="h-6 w-6 rounded object-cover bg-muted" />
       </SearchTable.Cell>
 
-      <SearchTable.Cell className="align-middle w-100">File ID: {data.id}</SearchTable.Cell>
+      <SearchTable.Cell className="align-middle w-100">{data.title}</SearchTable.Cell>
 
-      <SearchTable.Cell className="align-middle">{data.url}</SearchTable.Cell>
+      <SearchTable.Cell className="align-middle">
+        {data.filename} <span className="text-muted-foreground pl-2">{data.contentType}</span>
+      </SearchTable.Cell>
     </SearchTable.Row>
   );
-}
-
-{
-  /* <SearchTable.Row className="relative p-0" onClick={onClick}>
-      <div className="rounded-md overflow-hidden min-h-0 grow inset-0">
-        <div className="rounded-tl-md absolute w-full flex flex-wrap gap-1 z-10 p-3 [background-image:radial-gradient(circle_at_top_left,_rgba(255,255,255,0.9),_rgba(255,255,255,0.1))]">
-          <File size={24} strokeWidth={1} />
-        </div>
-        <img src={data.url} className="object-cover w-full h-full" />
-      </div>
-    </SearchTable.Row> */
 }

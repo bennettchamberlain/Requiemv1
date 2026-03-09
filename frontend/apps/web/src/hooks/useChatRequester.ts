@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { useToast } from '@ci/shadcn';
+
 import type { FormData } from '@/components/Chat';
 
 import { useAuth } from './useAuth';
@@ -26,7 +28,8 @@ type ReturnType = [
 
 export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
   const [{ authToken }] = useAuth();
-  const [{ selectedModel, thinkingEnabled, toolsEnabled }] = useModel();
+  const [{ selectedModel, thinkingEnabled, toolsEnabled, activeModels }] = useModel();
+  const { toast } = useToast();
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -39,6 +42,20 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
   const submit = useCallback(
     async (data: FormData) => {
       if (!data.message.trim()) {
+        return false;
+      }
+
+      const selectedModelConfig = activeModels.find((model) => model.model === selectedModel) ?? null;
+
+      if (toolsEnabled && selectedModelConfig?.tools === false) {
+        toast.error('Selected model does not support tools. Disable tools or choose another model.');
+
+        return false;
+      }
+
+      if (thinkingEnabled && selectedModelConfig?.thinking === false) {
+        toast.error('Selected model does not support thinking. Disable thinking or choose another model.');
+
         return false;
       }
 
@@ -123,7 +140,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
       return success;
     },
-    [authToken, selectedModel, threadId, onNewThread, toolsEnabled, thinkingEnabled],
+    [activeModels, authToken, selectedModel, threadId, onNewThread, toolsEnabled, thinkingEnabled, toast],
   );
 
   const stop = useCallback(() => {

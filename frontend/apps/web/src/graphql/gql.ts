@@ -23,6 +23,7 @@ type Documents = {
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": typeof types.MarkActionAsDismissedDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
+    "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n": typeof types.GetNodeTagsForRelationshipCardDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": typeof types.ActionGridItemDataFragmentDoc,
     "\n  fragment AnswerGridItemData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.AnswerGridItemDataFragmentDoc,
     "\n  fragment BrowserActivityGridItemData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": typeof types.BrowserActivityGridItemDataFragmentDoc,
@@ -30,8 +31,8 @@ type Documents = {
     "\n  fragment ConceptGridItemData on ConceptType {\n    id\n    name\n    description\n  }\n": typeof types.ConceptGridItemDataFragmentDoc,
     "\n  fragment ContentGridItemData on ContentType {\n    id\n    title\n    text\n  }\n": typeof types.ContentGridItemDataFragmentDoc,
     "\n  fragment EventGridItemData on EventType {\n    id\n    title\n    description\n  }\n": typeof types.EventGridItemDataFragmentDoc,
-    "\n  fragment FileGridItemData on FileType {\n    id\n    url\n  }\n": typeof types.FileGridItemDataFragmentDoc,
-    "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n": typeof types.ItemGridItemDataFragmentDoc,
+    "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n": typeof types.FileGridItemDataFragmentDoc,
+    "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": typeof types.ItemGridItemDataFragmentDoc,
     "\n  fragment NoteGridItemData on NoteType {\n    id\n    title\n    content\n  }\n": typeof types.NoteGridItemDataFragmentDoc,
     "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n  }\n": typeof types.PersonGridItemDataFragmentDoc,
     "\n  fragment PlaceGridItemData on PlaceType {\n    id\n    name\n    description\n  }\n": typeof types.PlaceGridItemDataFragmentDoc,
@@ -39,16 +40,21 @@ type Documents = {
     "\n  mutation CreateConcept($input: CreateConceptInput!) {\n    createConcept(input: $input) {\n      success\n      concept {\n        id\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreateConceptDocument,
     "\n  mutation CreatePerson($input: CreatePersonInput!) {\n    createPerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n": typeof types.CreatePersonDocument,
     "\n  mutation CreateRelationship($input: CreateRelationshipInput!) {\n    createRelationship(input: $input) {\n      success\n      relationship {\n        id\n        fromNodeId\n        fromNodeType\n        toNodeId\n        toNodeType\n        type\n        properties\n        isBidirectional\n        startDate\n        endDate\n      }\n    }\n  }\n": typeof types.CreateRelationshipDocument,
+    "\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n": typeof types.GetFilePreviewDocument,
+    "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": typeof types.CreateItemDocument,
+    "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": typeof types.UpdateItemDocument,
+    "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                ": typeof types.NewItemFragmentDoc,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": typeof types.SearchResultCommunicationDataFragmentDoc,
     "\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n": typeof types.SearchResultConceptDataFragmentDoc,
     "\n  fragment SearchResultContentData on ContentType {\n    id\n    title\n  }\n": typeof types.SearchResultContentDataFragmentDoc,
     "\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n": typeof types.SearchResultEventDataFragmentDoc,
+    "\n  fragment SearchResultFileData on FileType {\n    id\n    filename\n    previewUrl\n  }\n": typeof types.SearchResultFileDataFragmentDoc,
     "\n  fragment SearchResultItemData on ItemType {\n    id\n    name\n  }\n": typeof types.SearchResultItemDataFragmentDoc,
     "\n  fragment SearchResultNoteData on NoteType {\n    id\n    title\n  }\n": typeof types.SearchResultNoteDataFragmentDoc,
     "\n  fragment SearchResultPersonData on PersonType {\n    id\n    name\n    description\n  }\n": typeof types.SearchResultPersonDataFragmentDoc,
     "\n  fragment SearchResultPlaceData on PlaceType {\n    id\n    name\n  }\n": typeof types.SearchResultPlaceDataFragmentDoc,
     "\n  fragment SearchResultThreadData on ThreadType {\n    id\n    name\n    description\n  }\n": typeof types.SearchResultThreadDataFragmentDoc,
-    "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n": typeof types.SearchBoxQueryDocument,
+    "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultFileData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n": typeof types.SearchBoxQueryDocument,
     "\n  query GetUserData {\n    me {\n      id\n      name\n      email\n      onboarded\n\n      entity {\n        id\n      }\n    }\n  }\n": typeof types.GetUserDataDocument,
     "\n  query GetCommunication($id: ID!) {\n    communication(id: $id) {\n      id\n      type\n      subject\n      preview\n      content\n\n      from {\n        id\n        name\n      }\n\n      to {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetCommunicationDocument,
     "\n  query GetConcept($id: ID!) {\n    concept(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetConceptDocument,
@@ -65,12 +71,9 @@ type Documents = {
     "\n  query GetSummaries($first: Int) {\n    summaries(first: $first) {\n      edges {\n        node {\n          id\n          title\n          periodType\n          seen\n          dismissed\n          summaryText\n          keyInsights\n          tags\n          activityCounts {\n            total\n          }\n          insights {\n            title\n            summaryText\n            keyActions\n            relevanceScore\n            tags\n            relatedEntityIds\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n      }\n      totalCount\n    }\n  }\n": typeof types.GetSummariesDocument,
     "\n  mutation MarkSummaryAsSeen($id: ID!) {\n    markSummaryAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": typeof types.MarkSummaryAsSeenDocument,
     "\n  mutation MarkSummaryAsDismissed($id: ID!) {\n    markSummaryAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": typeof types.MarkSummaryAsDismissedDocument,
-    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": typeof types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetFilesDocument,
-    "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": typeof types.CreateItemDocument,
-    "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": typeof types.UpdateItemDocument,
-    "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                ": typeof types.NewItemFragmentDoc,
-    "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetInventoryItemsDocument,
+    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    previewUrl\n  }\n": typeof types.FileGridItemFragmentFragmentDoc,
+    "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            sourceUrl\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetInventoryItemsDocument,
     "\n  query GetItem($id: ID!) {\n    item(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetItemDocument,
     "\n  fragment TimelineBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n    actionType\n    duration\n    time\n  }\n": typeof types.TimelineBrowserActivityCardDataFragmentDoc,
     "\n  fragment TimelineCommunicationCardData on CommunicationType {\n    id\n    subject\n    preview\n    communicationContent: content\n    time\n    type\n    direction\n    from {\n      id\n      name\n    }\n    to {\n      edges {\n        node {\n          id\n          name\n        }\n      }\n    }\n  }\n": typeof types.TimelineCommunicationCardDataFragmentDoc,
@@ -83,8 +86,8 @@ type Documents = {
     "\n  fragment TableConceptRowData on ConceptType {\n    id\n    name\n    description\n  }\n": typeof types.TableConceptRowDataFragmentDoc,
     "\n  fragment TableContentRowData on ContentType {\n    id\n    title\n    text\n  }\n": typeof types.TableContentRowDataFragmentDoc,
     "\n  fragment TableEventRowData on EventType {\n    id\n    title\n    description\n  }\n": typeof types.TableEventRowDataFragmentDoc,
-    "\n  fragment TableFileRowData on FileType {\n    id\n    url\n  }\n": typeof types.TableFileRowDataFragmentDoc,
-    "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n": typeof types.TableItemRowDataFragmentDoc,
+    "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n": typeof types.TableFileRowDataFragmentDoc,
+    "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": typeof types.TableItemRowDataFragmentDoc,
     "\n  fragment TableNoteRowData on NoteType {\n    id\n    title\n    content\n  }\n": typeof types.TableNoteRowDataFragmentDoc,
     "\n  fragment TablePersonRowData on PersonType {\n    id\n    name\n    description\n  }\n": typeof types.TablePersonRowDataFragmentDoc,
     "\n  fragment TablePlaceRowData on PlaceType {\n    id\n    name\n    description\n  }\n": typeof types.TablePlaceRowDataFragmentDoc,
@@ -105,6 +108,11 @@ type Documents = {
     "\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": typeof types.UpdateSavedSearchDocument,
     "\n  fragment SavedSearchGridItemFragment on SavedSearchType {\n    id\n    name\n    description\n    query\n    entityTypes\n    tags\n  }\n": typeof types.SavedSearchGridItemFragmentFragmentDoc,
     "\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetSavedSearchesDocument,
+    "\n  query GetProviders {\n    providers {\n      edges {\n        cursor\n        node {\n          id\n          name\n          description\n          logoUrl\n        }\n      }\n    }\n  }\n": typeof types.GetProvidersDocument,
+    "\n  query GetProviderKeys {\n    providerKeys {\n      edges {\n        node {\n          id\n          providerId\n          clientId\n          clientSecret\n          userId\n          createdAt\n          updatedAt\n        }\n      }\n    }\n  }\n": typeof types.GetProviderKeysDocument,
+    "\n  mutation CreateProviderKey($input: CreateProviderKeyInput!) {\n    createProviderKey(input: $input) {\n      id\n      providerId\n      clientId\n      clientSecret\n      userId\n    }\n  }\n": typeof types.CreateProviderKeyDocument,
+    "\n  mutation UpdateProviderKey($id: ID!, $input: UpdateProviderKeyInput!) {\n    updateProviderKey(id: $id, input: $input) {\n      id\n      clientId\n      clientSecret\n    }\n  }\n": typeof types.UpdateProviderKeyDocument,
+    "\n  mutation DeleteProviderKey($id: ID!) {\n    deleteProviderKey(id: $id)\n  }\n": typeof types.DeleteProviderKeyDocument,
     "\n  query GetSummary($id: ID!) {\n    summary(id: $id) {\n      id\n      title\n      periodType\n      periodStart\n      periodEnd\n      summaryText\n      keyInsights\n      notableEvents\n      anomalies\n      tags\n      activityCounts {\n        total\n        browserActivity\n        communications\n        files\n        events\n        messages\n        screenCaptures\n        apiLogs\n        positions\n        activities\n        measurements\n      }\n      dailyRhythm\n      productivityPatterns\n      socialInteractions\n      keyAccomplishments\n      moodIndicators\n      confidenceScore\n      createdAt\n      updatedAt\n    }\n  }\n": typeof types.GetSummaryDocument,
     "\n  query GetTag($id: ID!) {\n    tag(id: $id) {\n      id\n      label\n      description\n\n      entities {\n        edges {\n          node {\n            __typename\n\n            ... on Node {\n              id\n            }\n\n            ...ActionGridItemData\n            ...BrowserActivityGridItemData\n            ...CommunicationGridItemData\n            ...ConceptGridItemData\n            ...ContentGridItemData\n            ...EventGridItemData\n            ...FileGridItemData\n            ...NoteGridItemData\n            ...ItemGridItemData\n            ...PersonGridItemData\n            ...PlaceGridItemData\n            ...ThreadGridItemData\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetTagDocument,
     "\n  query GetTags {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n        }\n      }\n    }\n  }\n": typeof types.GetTagsDocument,
@@ -115,6 +123,7 @@ const documents: Documents = {
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": types.MarkActionAsDismissedDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
+    "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n": types.GetNodeTagsForRelationshipCardDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": types.ActionGridItemDataFragmentDoc,
     "\n  fragment AnswerGridItemData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.AnswerGridItemDataFragmentDoc,
     "\n  fragment BrowserActivityGridItemData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": types.BrowserActivityGridItemDataFragmentDoc,
@@ -122,8 +131,8 @@ const documents: Documents = {
     "\n  fragment ConceptGridItemData on ConceptType {\n    id\n    name\n    description\n  }\n": types.ConceptGridItemDataFragmentDoc,
     "\n  fragment ContentGridItemData on ContentType {\n    id\n    title\n    text\n  }\n": types.ContentGridItemDataFragmentDoc,
     "\n  fragment EventGridItemData on EventType {\n    id\n    title\n    description\n  }\n": types.EventGridItemDataFragmentDoc,
-    "\n  fragment FileGridItemData on FileType {\n    id\n    url\n  }\n": types.FileGridItemDataFragmentDoc,
-    "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n": types.ItemGridItemDataFragmentDoc,
+    "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n": types.FileGridItemDataFragmentDoc,
+    "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": types.ItemGridItemDataFragmentDoc,
     "\n  fragment NoteGridItemData on NoteType {\n    id\n    title\n    content\n  }\n": types.NoteGridItemDataFragmentDoc,
     "\n  fragment PersonGridItemData on PersonType {\n    id\n    name\n    description\n  }\n": types.PersonGridItemDataFragmentDoc,
     "\n  fragment PlaceGridItemData on PlaceType {\n    id\n    name\n    description\n  }\n": types.PlaceGridItemDataFragmentDoc,
@@ -131,16 +140,21 @@ const documents: Documents = {
     "\n  mutation CreateConcept($input: CreateConceptInput!) {\n    createConcept(input: $input) {\n      success\n      concept {\n        id\n        name\n        description\n      }\n    }\n  }\n": types.CreateConceptDocument,
     "\n  mutation CreatePerson($input: CreatePersonInput!) {\n    createPerson(input: $input) {\n      success\n      person {\n        id\n        name\n        description\n      }\n    }\n  }\n": types.CreatePersonDocument,
     "\n  mutation CreateRelationship($input: CreateRelationshipInput!) {\n    createRelationship(input: $input) {\n      success\n      relationship {\n        id\n        fromNodeId\n        fromNodeType\n        toNodeId\n        toNodeType\n        type\n        properties\n        isBidirectional\n        startDate\n        endDate\n      }\n    }\n  }\n": types.CreateRelationshipDocument,
+    "\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n": types.GetFilePreviewDocument,
+    "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": types.CreateItemDocument,
+    "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": types.UpdateItemDocument,
+    "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                ": types.NewItemFragmentDoc,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": types.SearchResultCommunicationDataFragmentDoc,
     "\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n": types.SearchResultConceptDataFragmentDoc,
     "\n  fragment SearchResultContentData on ContentType {\n    id\n    title\n  }\n": types.SearchResultContentDataFragmentDoc,
     "\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n": types.SearchResultEventDataFragmentDoc,
+    "\n  fragment SearchResultFileData on FileType {\n    id\n    filename\n    previewUrl\n  }\n": types.SearchResultFileDataFragmentDoc,
     "\n  fragment SearchResultItemData on ItemType {\n    id\n    name\n  }\n": types.SearchResultItemDataFragmentDoc,
     "\n  fragment SearchResultNoteData on NoteType {\n    id\n    title\n  }\n": types.SearchResultNoteDataFragmentDoc,
     "\n  fragment SearchResultPersonData on PersonType {\n    id\n    name\n    description\n  }\n": types.SearchResultPersonDataFragmentDoc,
     "\n  fragment SearchResultPlaceData on PlaceType {\n    id\n    name\n  }\n": types.SearchResultPlaceDataFragmentDoc,
     "\n  fragment SearchResultThreadData on ThreadType {\n    id\n    name\n    description\n  }\n": types.SearchResultThreadDataFragmentDoc,
-    "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n": types.SearchBoxQueryDocument,
+    "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultFileData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n": types.SearchBoxQueryDocument,
     "\n  query GetUserData {\n    me {\n      id\n      name\n      email\n      onboarded\n\n      entity {\n        id\n      }\n    }\n  }\n": types.GetUserDataDocument,
     "\n  query GetCommunication($id: ID!) {\n    communication(id: $id) {\n      id\n      type\n      subject\n      preview\n      content\n\n      from {\n        id\n        name\n      }\n\n      to {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetCommunicationDocument,
     "\n  query GetConcept($id: ID!) {\n    concept(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetConceptDocument,
@@ -157,12 +171,9 @@ const documents: Documents = {
     "\n  query GetSummaries($first: Int) {\n    summaries(first: $first) {\n      edges {\n        node {\n          id\n          title\n          periodType\n          seen\n          dismissed\n          summaryText\n          keyInsights\n          tags\n          activityCounts {\n            total\n          }\n          insights {\n            title\n            summaryText\n            keyActions\n            relevanceScore\n            tags\n            relatedEntityIds\n          }\n        }\n      }\n      pageInfo {\n        hasNextPage\n      }\n      totalCount\n    }\n  }\n": types.GetSummariesDocument,
     "\n  mutation MarkSummaryAsSeen($id: ID!) {\n    markSummaryAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": types.MarkSummaryAsSeenDocument,
     "\n  mutation MarkSummaryAsDismissed($id: ID!) {\n    markSummaryAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": types.MarkSummaryAsDismissedDocument,
-    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n": types.FileGridItemFragmentFragmentDoc,
     "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetFilesDocument,
-    "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": types.CreateItemDocument,
-    "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n": types.UpdateItemDocument,
-    "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                ": types.NewItemFragmentDoc,
-    "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n": types.GetInventoryItemsDocument,
+    "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    previewUrl\n  }\n": types.FileGridItemFragmentFragmentDoc,
+    "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            sourceUrl\n          }\n        }\n      }\n    }\n  }\n": types.GetInventoryItemsDocument,
     "\n  query GetItem($id: ID!) {\n    item(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetItemDocument,
     "\n  fragment TimelineBrowserActivityCardData on BrowserActivityType {\n    id\n    title\n    url\n    actionType\n    duration\n    time\n  }\n": types.TimelineBrowserActivityCardDataFragmentDoc,
     "\n  fragment TimelineCommunicationCardData on CommunicationType {\n    id\n    subject\n    preview\n    communicationContent: content\n    time\n    type\n    direction\n    from {\n      id\n      name\n    }\n    to {\n      edges {\n        node {\n          id\n          name\n        }\n      }\n    }\n  }\n": types.TimelineCommunicationCardDataFragmentDoc,
@@ -175,8 +186,8 @@ const documents: Documents = {
     "\n  fragment TableConceptRowData on ConceptType {\n    id\n    name\n    description\n  }\n": types.TableConceptRowDataFragmentDoc,
     "\n  fragment TableContentRowData on ContentType {\n    id\n    title\n    text\n  }\n": types.TableContentRowDataFragmentDoc,
     "\n  fragment TableEventRowData on EventType {\n    id\n    title\n    description\n  }\n": types.TableEventRowDataFragmentDoc,
-    "\n  fragment TableFileRowData on FileType {\n    id\n    url\n  }\n": types.TableFileRowDataFragmentDoc,
-    "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n": types.TableItemRowDataFragmentDoc,
+    "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n": types.TableFileRowDataFragmentDoc,
+    "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n": types.TableItemRowDataFragmentDoc,
     "\n  fragment TableNoteRowData on NoteType {\n    id\n    title\n    content\n  }\n": types.TableNoteRowDataFragmentDoc,
     "\n  fragment TablePersonRowData on PersonType {\n    id\n    name\n    description\n  }\n": types.TablePersonRowDataFragmentDoc,
     "\n  fragment TablePlaceRowData on PlaceType {\n    id\n    name\n    description\n  }\n": types.TablePlaceRowDataFragmentDoc,
@@ -197,6 +208,11 @@ const documents: Documents = {
     "\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": types.UpdateSavedSearchDocument,
     "\n  fragment SavedSearchGridItemFragment on SavedSearchType {\n    id\n    name\n    description\n    query\n    entityTypes\n    tags\n  }\n": types.SavedSearchGridItemFragmentFragmentDoc,
     "\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetSavedSearchesDocument,
+    "\n  query GetProviders {\n    providers {\n      edges {\n        cursor\n        node {\n          id\n          name\n          description\n          logoUrl\n        }\n      }\n    }\n  }\n": types.GetProvidersDocument,
+    "\n  query GetProviderKeys {\n    providerKeys {\n      edges {\n        node {\n          id\n          providerId\n          clientId\n          clientSecret\n          userId\n          createdAt\n          updatedAt\n        }\n      }\n    }\n  }\n": types.GetProviderKeysDocument,
+    "\n  mutation CreateProviderKey($input: CreateProviderKeyInput!) {\n    createProviderKey(input: $input) {\n      id\n      providerId\n      clientId\n      clientSecret\n      userId\n    }\n  }\n": types.CreateProviderKeyDocument,
+    "\n  mutation UpdateProviderKey($id: ID!, $input: UpdateProviderKeyInput!) {\n    updateProviderKey(id: $id, input: $input) {\n      id\n      clientId\n      clientSecret\n    }\n  }\n": types.UpdateProviderKeyDocument,
+    "\n  mutation DeleteProviderKey($id: ID!) {\n    deleteProviderKey(id: $id)\n  }\n": types.DeleteProviderKeyDocument,
     "\n  query GetSummary($id: ID!) {\n    summary(id: $id) {\n      id\n      title\n      periodType\n      periodStart\n      periodEnd\n      summaryText\n      keyInsights\n      notableEvents\n      anomalies\n      tags\n      activityCounts {\n        total\n        browserActivity\n        communications\n        files\n        events\n        messages\n        screenCaptures\n        apiLogs\n        positions\n        activities\n        measurements\n      }\n      dailyRhythm\n      productivityPatterns\n      socialInteractions\n      keyAccomplishments\n      moodIndicators\n      confidenceScore\n      createdAt\n      updatedAt\n    }\n  }\n": types.GetSummaryDocument,
     "\n  query GetTag($id: ID!) {\n    tag(id: $id) {\n      id\n      label\n      description\n\n      entities {\n        edges {\n          node {\n            __typename\n\n            ... on Node {\n              id\n            }\n\n            ...ActionGridItemData\n            ...BrowserActivityGridItemData\n            ...CommunicationGridItemData\n            ...ConceptGridItemData\n            ...ContentGridItemData\n            ...EventGridItemData\n            ...FileGridItemData\n            ...NoteGridItemData\n            ...ItemGridItemData\n            ...PersonGridItemData\n            ...PlaceGridItemData\n            ...ThreadGridItemData\n          }\n        }\n      }\n    }\n  }\n": types.GetTagDocument,
     "\n  query GetTags {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n        }\n      }\n    }\n  }\n": types.GetTagsDocument,
@@ -239,6 +255,10 @@ export function gql(source: "\n  mutation UntagEntities($input: TagEntitiesInput
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n"): (typeof documents)["\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -267,11 +287,11 @@ export function gql(source: "\n  fragment EventGridItemData on EventType {\n    
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment FileGridItemData on FileType {\n    id\n    url\n  }\n"): (typeof documents)["\n  fragment FileGridItemData on FileType {\n    id\n    url\n  }\n"];
+export function gql(source: "\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n"): (typeof documents)["\n  fragment FileGridItemData on FileType {\n    id\n    filename\n    previewUrl\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n"): (typeof documents)["\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n"];
+export function gql(source: "\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n"): (typeof documents)["\n  fragment ItemGridItemData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -303,6 +323,22 @@ export function gql(source: "\n  mutation CreateRelationship($input: CreateRelat
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  query GetFilePreview($id: ID!) {\n    file(id: $id) {\n      id\n      filename\n      contentType\n      sourceUrl\n      previewUrl\n      createdAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                "): (typeof documents)["\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                "];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n"): (typeof documents)["\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -316,6 +352,10 @@ export function gql(source: "\n  fragment SearchResultContentData on ContentType
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n"): (typeof documents)["\n  fragment SearchResultEventData on EventType {\n    id\n    title\n    startTime\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  fragment SearchResultFileData on FileType {\n    id\n    filename\n    previewUrl\n  }\n"): (typeof documents)["\n  fragment SearchResultFileData on FileType {\n    id\n    filename\n    previewUrl\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -339,7 +379,7 @@ export function gql(source: "\n  fragment SearchResultThreadData on ThreadType {
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n"];
+export function gql(source: "\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultFileData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!]) {\n    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes }) {\n      edges {\n        node {\n          __typename\n\n          ... on Node {\n            id\n          }\n\n          ...SearchResultCommunicationData\n          ...SearchResultConceptData\n          ...SearchResultContentData\n          ...SearchResultEventData\n          ...SearchResultFileData\n          ...SearchResultItemData\n          ...SearchResultNoteData\n          ...SearchResultPersonData\n          ...SearchResultPlaceData\n          ...SearchResultThreadData\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -407,27 +447,15 @@ export function gql(source: "\n  mutation MarkSummaryAsDismissed($id: ID!) {\n  
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n"): (typeof documents)["\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    originalName\n    contentType\n    url\n    createdAt\n  }\n"];
-/**
- * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
 export function gql(source: "\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetFiles($first: Int, $after: String) {\n    files(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...FileGridItemFragment\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation CreateItem($input: CreateItemInput!) {\n    createItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"];
+export function gql(source: "\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    previewUrl\n  }\n"): (typeof documents)["\n  fragment FileGridItemFragment on FileType {\n    id\n    filename\n    previewUrl\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateItem($input: UpdateItemInput!) {\n    updateItem(input: $input) {\n      item {\n        id\n        name\n        category\n        description\n        brand\n        model\n        currentValue\n        tags {\n          id\n          label\n        }\n      }\n      success\n    }\n  }\n"];
-/**
- * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function gql(source: "\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                "): (typeof documents)["\n                  fragment NewItem on ItemType {\n                    id\n                    name\n                    category\n                    description\n                    brand\n                    model\n                    currentValue\n                  }\n                "];
-/**
- * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function gql(source: "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            url\n          }\n        }\n      }\n    }\n  }\n"];
+export function gql(source: "\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            sourceUrl\n          }\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetInventoryItems {\n    items {\n      edges {\n        node {\n          id\n          name\n          category\n          description\n          brand\n          model\n          currentValue\n          file {\n            sourceUrl\n          }\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -479,11 +507,11 @@ export function gql(source: "\n  fragment TableEventRowData on EventType {\n    
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment TableFileRowData on FileType {\n    id\n    url\n  }\n"): (typeof documents)["\n  fragment TableFileRowData on FileType {\n    id\n    url\n  }\n"];
+export function gql(source: "\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n"): (typeof documents)["\n  fragment TableFileRowData on FileType {\n    id\n    filename\n    title\n    previewUrl\n    contentType\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n"): (typeof documents)["\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      url\n    }\n  }\n"];
+export function gql(source: "\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n"): (typeof documents)["\n  fragment TableItemRowData on ItemType {\n    id\n    name\n    description\n    file {\n      id\n      sourceUrl\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -564,6 +592,26 @@ export function gql(source: "\n  fragment SavedSearchGridItemFragment on SavedSe
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetProviders {\n    providers {\n      edges {\n        cursor\n        node {\n          id\n          name\n          description\n          logoUrl\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetProviders {\n    providers {\n      edges {\n        cursor\n        node {\n          id\n          name\n          description\n          logoUrl\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetProviderKeys {\n    providerKeys {\n      edges {\n        node {\n          id\n          providerId\n          clientId\n          clientSecret\n          userId\n          createdAt\n          updatedAt\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetProviderKeys {\n    providerKeys {\n      edges {\n        node {\n          id\n          providerId\n          clientId\n          clientSecret\n          userId\n          createdAt\n          updatedAt\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation CreateProviderKey($input: CreateProviderKeyInput!) {\n    createProviderKey(input: $input) {\n      id\n      providerId\n      clientId\n      clientSecret\n      userId\n    }\n  }\n"): (typeof documents)["\n  mutation CreateProviderKey($input: CreateProviderKeyInput!) {\n    createProviderKey(input: $input) {\n      id\n      providerId\n      clientId\n      clientSecret\n      userId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation UpdateProviderKey($id: ID!, $input: UpdateProviderKeyInput!) {\n    updateProviderKey(id: $id, input: $input) {\n      id\n      clientId\n      clientSecret\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateProviderKey($id: ID!, $input: UpdateProviderKeyInput!) {\n    updateProviderKey(id: $id, input: $input) {\n      id\n      clientId\n      clientSecret\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteProviderKey($id: ID!) {\n    deleteProviderKey(id: $id)\n  }\n"): (typeof documents)["\n  mutation DeleteProviderKey($id: ID!) {\n    deleteProviderKey(id: $id)\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

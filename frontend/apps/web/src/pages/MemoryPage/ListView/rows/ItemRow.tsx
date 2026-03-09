@@ -12,23 +12,43 @@ export const ITEM_FRAGMENT = gql(`
     description
     file {
       id
-      url
+      sourceUrl
     }
   }
 `);
 
+export interface ItemInventoryPreview {
+  id: string;
+  name: string;
+  description: string | null;
+  file: {
+    sourceUrl: string;
+  } | null;
+}
+
 interface Props {
   item: FragmentType<typeof ITEM_FRAGMENT>;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
+  onSelectInventoryItem?: (item: ItemInventoryPreview) => void;
 }
 
-export function ItemRow({ item, onClick }: Props) {
+export function ItemRow({ item, onClick, onSelectInventoryItem }: Props) {
   const data = useFragment(ITEM_FRAGMENT, item);
 
   // TODO: Handle picture expansion.
 
   return (
-    <SearchTable.Row onClick={onClick}>
+    <SearchTable.Row
+      onClick={(e) => {
+        onSelectInventoryItem?.({
+          id: data.id,
+          name: data.name ?? '',
+          description: data.description ?? null,
+          file: data.file?.sourceUrl ? { sourceUrl: data.file.sourceUrl } : null,
+        });
+        onClick?.(e);
+      }}
+    >
       <SearchTable.Cell className="align-middle w-0 px-2.5">
         <ItemIcon />
       </SearchTable.Cell>

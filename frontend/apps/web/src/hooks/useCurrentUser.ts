@@ -2,6 +2,8 @@ import { useQuery } from '@apollo/client';
 
 import { gql } from '@/graphql';
 
+import { useAuth } from './useAuth';
+
 const USER_DATA_QUERY = gql(`
   query GetUserData {
     me {
@@ -18,9 +20,16 @@ const USER_DATA_QUERY = gql(`
 `);
 
 export function useCurrentUser() {
-  const { data, loading, error, refetch } = useQuery(USER_DATA_QUERY);
+  const [{ authToken }] = useAuth();
 
-  const user = data?.me || null;
+  const { data, loading, error, refetch } = useQuery(USER_DATA_QUERY, {
+    skip: !authToken,
+  });
 
-  return { user, loading, error, refetch };
+  return {
+    user: data?.me || null,
+    loading: loading || (!!authToken && !data && !error),
+    error,
+    refetch,
+  };
 }

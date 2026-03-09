@@ -20,11 +20,11 @@ import { useUploadFile } from '@/api';
 import { AddPersonModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
+import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
 import { SearchModal } from '@/components/modals/SearchModal';
 import { UploadModal } from '@/components/modals/UploadModal';
 import { useModalControls } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
-import { InventoryItemModal } from '@/pages/InventoryPage/InventoryItemModal';
 
 import { NavUser } from './NavUser';
 

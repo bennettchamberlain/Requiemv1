@@ -1,65 +1,51 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
-
-import { UserEntity, type User } from '@ci/domains/user';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn } from 'typeorm';
 
 @Entity({ schema: 'ci', name: 'files' })
 export class FileEntity {
-  @PrimaryColumn({ type: 'uuid', name: 'file_id' })
+  @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
-  @Column({ type: 'text', name: 'file_path' })
-  filePath!: string;
+  @Column({ type: 'text', name: 'filename', nullable: true })
+  filename!: string | null;
 
-  @Column({ type: 'text', name: 'filename' })
-  filename!: string;
-
-  @Column({ type: 'text', name: 'storage_type' })
-  storageType!: string;
-
-  @Column({ type: 'text', name: 'storage_provider', nullable: true })
-  storageProvider!: string | null;
-
-  @Column({ type: 'text', name: 'cloud_file_id', nullable: true })
-  cloudFileId!: string | null;
-
-  @Column({ type: 'text', name: 'storage_account', nullable: true })
-  storageAccount!: string | null;
-
-  @Column({ type: 'timestamptz', name: 'modified_at_source' })
-  modifiedAtSource!: Date;
-
-  @Column({ type: 'text', nullable: true })
-  bucket!: string | null;
-
-  @Column({ type: 'uuid', nullable: true })
-  key!: string | null;
-
-  @Column({ type: 'text', name: 'original_filename' })
-  originalName!: string;
-
-  @Column({ type: 'text', name: 'mime_type' })
+  @Column({ type: 'text', name: 'content_type' })
   contentType!: string;
 
-  @Column({ type: 'text', name: 'file_hash' })
-  fileHash!: string | null;
+  @Column({ type: 'bigint', nullable: true })
+  size!: number | null;
 
-  @Column({ type: 'bigint', name: 'file_size_bytes' })
-  size!: number;
+  @Column({ type: 'integer', name: 'width', nullable: true })
+  width!: number | null;
 
-  @Column({ type: 'boolean', name: 'analysis_completed', default: false })
-  analysisCompleted!: boolean;
+  @Column({ type: 'integer', name: 'height', nullable: true })
+  height!: number | null;
 
-  @ManyToOne(() => UserEntity, { nullable: true })
-  @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  @Column({ type: 'text' })
+  variant!: string;
+
+  @Column({ type: 'text', name: 'title', nullable: true })
+  title!: string | null;
+
+  @Column({ type: 'text', name: 'description', nullable: true })
+  description!: string | null;
+
+  @Column({ type: 'text', name: 'bucket', nullable: true })
+  bucket!: string | null;
+
+  @Column({ type: 'uuid', name: 'key', nullable: true })
+  key!: string | null;
+
+  @Column({ type: 'text', name: 'hash', nullable: true })
+  hash!: string | null;
+
+  @Column({ type: 'text', name: 'external_id', nullable: true })
+  externalId!: string | null;
+
+  @Column({ type: 'uuid', name: 'parent_id', nullable: true })
+  parentId!: string | null;
+
+  @Column({ type: 'text', name: 'user_id' })
+  userId!: string;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
@@ -67,32 +53,40 @@ export class FileEntity {
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt!: Date;
 
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at', nullable: true })
+  deletedAt!: Date | null;
+
+  @Column({ type: 'text', name: 'external_created_at', nullable: true })
+  externalCreatedAt!: Date | null;
+
+  @Column({ type: 'timestamptz', name: 'external_updated_at', nullable: true })
+  externalUpdatedAt!: Date | null;
+
   static toEgressType(entity: FileEntity): File {
     return {
       id: entity.id,
-      originalName: entity.originalName,
-      fileHash: entity.fileHash,
-      key: entity.key,
-      filePath: entity.filePath,
+      userId: entity.userId,
+      parentId: entity.parentId,
+      variant: entity.variant,
       filename: entity.filename,
-      storageType: entity.storageType,
-      storageProvider: entity.storageProvider,
-      storageAccount: entity.storageAccount,
-      cloudFileId: entity.cloudFileId,
-      modifiedAtSource: entity.modifiedAtSource,
-      bucket: entity.bucket,
       contentType: entity.contentType,
       size: entity.size,
-      analysisCompleted: entity.analysisCompleted,
+      width: entity.width,
+      height: entity.height,
+      title: entity.title,
+      description: entity.description,
+      bucket: entity.bucket,
+      key: entity.key,
+      hash: entity.hash,
+      externalId: entity.externalId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
-      user: entity.user ? UserEntity.toEgressType(entity.user) : undefined,
+      deletedAt: entity.deletedAt,
+      externalCreatedAt: entity.externalCreatedAt,
+      externalUpdatedAt: entity.externalUpdatedAt,
     };
   }
 }
 
-export type File = Readonly<Omit<FileEntity, 'user'>> & {
-  user?: User;
-};
-
-export type SignedFile = File & { readonly url: string };
+export type File = Readonly<FileEntity>;
+export type SignedFile = File & { readonly url: string | null };

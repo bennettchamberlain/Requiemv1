@@ -7,7 +7,7 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
-import { EtlNewModule } from '@ci/domains/etl-new';
+import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
@@ -24,6 +24,7 @@ import { FileItemsLoader } from './loaders/FileItemsLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { PersonLoader } from './loaders/PersonLoader';
 import { PlaceLoader } from './loaders/PlaceLoader';
+import { PreviewLoader } from './loaders/PreviewLoader';
 import { ProviderLoader } from './loaders/ProviderLoader';
 import { QuestionLoader } from './loaders/QuestionLoader';
 import { TagLoader } from './loaders/TagLoader';
@@ -45,6 +46,7 @@ import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
+import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
 import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { RelationshipResolver } from './resolvers/RelationshipResolver';
@@ -68,7 +70,7 @@ import { UserResolver } from './resolvers/UserResolver';
     BrowserActivityModule,
     ConnectionsModule,
     ConversationModule,
-    EtlNewModule,
+    EtlModule,
     FilesModule,
     GraphModule,
     IntelligenceModule,
@@ -101,7 +103,9 @@ import { UserResolver } from './resolvers/UserResolver';
     PersonResolver,
     PlaceLoader,
     PlaceResolver,
+    PreviewLoader,
     ProviderResolver,
+    ProviderKeyResolver,
     ProviderLoader,
     QuestionLoader,
     QuestionResolver,

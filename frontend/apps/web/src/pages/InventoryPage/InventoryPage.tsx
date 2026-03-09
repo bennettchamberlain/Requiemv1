@@ -6,8 +6,7 @@ import { Breadcrumb } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-
-import { InventoryItemModal } from './InventoryItemModal';
+import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
 
 interface InventoryItem {
   id: string;
@@ -18,7 +17,7 @@ interface InventoryItem {
   model: string;
   currentValue: number;
   file: {
-    url: string;
+    sourceUrl: string;
   } | null;
 }
 
@@ -35,7 +34,7 @@ const GET_INVENTORY_ITEMS = gql`
           model
           currentValue
           file {
-            url
+            sourceUrl
           }
         }
       }
@@ -46,7 +45,10 @@ const GET_INVENTORY_ITEMS = gql`
 export function InventoryPage() {
   usePageTitle('Inventory - Companion Intelligence');
 
-  const { data, loading } = useQuery(GET_INVENTORY_ITEMS);
+  const { data, loading } = useQuery(GET_INVENTORY_ITEMS, {
+    fetchPolicy: 'cache-and-network',
+  });
+
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   const items: InventoryItem[] = data?.items?.edges?.map((edge: { node: InventoryItem }) => edge.node) || [];
@@ -84,9 +86,9 @@ export function InventoryPage() {
               onClick={() => setSelectedItem(item)}
             >
               <div className="aspect-square bg-stone-100 dark:bg-zinc-800 relative overflow-hidden">
-                {item.file?.url ? (
+                {item.file?.sourceUrl ? (
                   <img
-                    src={`/static${item.file.url}`}
+                    src={`/static${item.file.sourceUrl}`}
                     alt={item.name}
                     className="w-full h-full object-cover"
                   />

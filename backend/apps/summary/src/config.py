@@ -16,29 +16,27 @@ def _require_env(name: str) -> str:
 
 
 def _llm_model_from_env() -> str:
-    model = os.getenv("SUMMARY_LLM_MODEL") or os.getenv("LLM_DEFAULT_CHAT_MODEL") or os.getenv("LLM_MODEL")
-    if not model:
-        raise ValueError("Set SUMMARY_LLM_MODEL or LLM_DEFAULT_CHAT_MODEL for the summary service")
+    model = os.getenv("SUMMARY_LLM_MODEL") or os.getenv("LLM_DEFAULT_CHAT_MODEL") or os.getenv("LLM_MODEL", "qwen/qwen3-vl-30b")
     return model
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
+
     # Database Configuration
     database_url: str = Field(default_factory=lambda: _require_env("DATABASE_URL"))
-    
+
     # LLM Configuration
-    llm_api_base: str = Field(default_factory=lambda: os.getenv("LLM_API_BASE", "http://localhost:11434/v1"))
+    llm_api_base: str = Field(default_factory=lambda: os.getenv("LLM_API_BASE", "http://host.docker.internal:11434/v1"))
     llm_api_key: str = Field(default_factory=lambda: os.getenv("LLM_API_KEY", "ollama"))
     llm_model: str = Field(default_factory=_llm_model_from_env)
     llm_temperature: float = 0.3
     llm_max_tokens: int = 2000
-    
+
     # Embedding Configuration
-    embedding_model: str = Field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "nomic-embed-text"))
+    embedding_model: str = Field(default_factory=lambda: os.getenv("EMBEDDING_MODEL") or os.getenv("LLM_DEFAULT_EMBEDDING_MODEL", "nomic-embed-text"))
     embedding_dimensions: int = Field(default_factory=lambda: int(os.getenv("EMBEDDING_DIMENSIONS", 768)))
-    
+
     # Agent Configuration
     agent_name: str = Field(default_factory=lambda: os.getenv("SUMMARY_AGENT_NAME", "summary-agent"))
     agent_version: str = Field(default_factory=lambda: os.getenv("SUMMARY_AGENT_VERSION", "1.0.0"))
@@ -71,7 +69,7 @@ class Settings(BaseSettings):
     debug_prompts: bool = Field(default_factory=lambda: os.getenv("SUMMARY_DEBUG_PROMPTS", "false").lower() == "true")
 
     # Temporal Configuration
-    temporal_address: str = Field(default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "localhost:7233"))
+    temporal_address: str = Field(default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "orchestrator:7233"))
     temporal_namespace: str = Field(default_factory=lambda: os.getenv("TEMPORAL_NAMESPACE", "default"))
 
     # Task Queue Configuration (shared across all systems)

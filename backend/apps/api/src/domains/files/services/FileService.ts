@@ -1,4 +1,7 @@
-import { createHmac } from 'crypto';
+import { createHash } from 'crypto';
+import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'stream/promises';
 
 import {
   S3Client,
@@ -8,24 +11,19 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, NotFoundException, NotImplementedException, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, type FindOptionsWhere } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
-import {
-  SYSTEM_USER,
-  type RequestContext,
-  type ServiceContext,
-  type UserServiceContext,
-} from '@ci/common/context';
+import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
-import { FileUploadedEvent } from '@ci/domains/files/events';
+import { FileUpdatedEvent, FileUploadedEvent } from '@ci/domains/files/events';
 
 import { SignedFile, FileEntity } from '../entities/FileEntity';
-import type { FileQuery, UpdateFileDto } from '../types';
+import { FileVariant, type CreateFileDto, type UpdateFileDto, type UploadFileDto } from '../types';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -89,42 +87,112 @@ export class FileService implements OnModuleInit {
     }
   }
 
+  async create(context: UserServiceContext, file: CreateFileDto): Promise<SignedFile> {
+    if (file.externalId) {
+      const existing = await this.findByExternalId(context, file.externalId);
+
+      if (existing) {
+        this.logger.debug('File with same external ID already exists', {
+          existingFileId: existing.id,
+        });
+
+        return existing;
+      }
+    }
+
+    const hash = await this.getFileHash(file);
+
+    if (hash) {
+      const existing = await this.findByHash(context, hash);
+
+      if (existing) {
+        this.logger.debug('File with same hash already exists', {
+          existingFileId: existing.id,
+        });
+
+        return existing;
+      }
+    }
+
+    const bucket = file.externalId ? null : config.staticfiles.bucket;
+    const key = bucket ? uuidv4() : null;
+
+    const entity = this.fileRepository.create({
+      id: uuidv7(),
+      filename: file.filename,
+      contentType: file.contentType ?? 'application/octet-stream',
+      size: file.size,
+      width: file.width ?? null,
+      height: file.height ?? null,
+      variant: file.variant ?? FileVariant.ORIGINAL,
+      title: file.title ?? null,
+      description: file.description ?? null,
+      externalId: file.externalId ?? null,
+      bucket,
+      key,
+      hash,
+      parentId: file.parentId,
+      userId: context.userId,
+      externalCreatedAt: file.externalCreatedAt,
+      externalUpdatedAt: file.externalUpdatedAt,
+    });
+
+    const result = await this.fileRepository.save(entity);
+
+    if (file.externalId == null) {
+      const putOptions = {
+        Bucket: result.bucket!,
+        Key: result.key!,
+        ContentType: result.contentType,
+      };
+
+      if (file.buffer) {
+        await this.s3.send(
+          new PutObjectCommand({
+            ...putOptions,
+            Body: file.buffer,
+          }),
+        );
+      } else if (file.path) {
+        await this.s3.send(
+          new PutObjectCommand({
+            ...putOptions,
+            Body: createReadStream(file.path),
+          }),
+        );
+      }
+    }
+
+    return this.signFile(result);
+  }
+
   async findAll(context: ServiceContext): Promise<SignedFile[]> {
     const result = await this.fileRepository.find({
       where: {
+        variant: FileVariant.ORIGINAL,
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
       order: {
         createdAt: 'DESC',
       },
-      relations: ['user'],
     });
 
     return this.signFiles(result);
   }
 
-  async findById(context: ServiceContext, id: string): Promise<SignedFile> {
+  async findById(context: ServiceContext, id: string): Promise<SignedFile | null> {
     const result = await this.fileRepository.findOne({
       where: {
         id,
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
-      relations: ['user'],
     });
 
-    if (result == null) {
-      throw new NotFoundException();
-    }
-
-    return this.signFile(result);
+    return result ? this.signFile(result) : null;
   }
 
   async findByIds(context: ServiceContext, ids: string[]): Promise<(SignedFile | null)[]> {
@@ -136,12 +204,9 @@ export class FileService implements OnModuleInit {
       where: {
         id: In(ids),
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
       },
-      relations: ['user'],
     });
 
     const signedFiles = await this.signFiles(entities);
@@ -151,77 +216,125 @@ export class FileService implements OnModuleInit {
     return ids.map((id) => map.get(id) ?? null);
   }
 
-  async update(context: ServiceContext, id: string, data: UpdateFileDto): Promise<SignedFile | null> {
-    const result = await this.fileRepository.update(
-      {
-        id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
+  async findByHash(context: UserServiceContext, fileHash: string): Promise<SignedFile | null> {
+    const result = await this.fileRepository.findOne({
+      where: {
+        hash: fileHash,
+        userId: context.userId,
       },
-      data,
-    );
+    });
 
-    if (result.affected === 0) {
+    if (result == null) {
       return null;
     }
 
-    return this.findById(context, id);
+    return this.signFile(result);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async remove(context: ServiceContext, fileId: string): Promise<void> {
-    throw new NotImplementedException();
-  }
-
-  async upload(context: UserServiceContext, file: Express.Multer.File): Promise<SignedFile> {
-    const fileId = uuidv7();
-    const fileKey = uuidv4();
-    const bucket = config.staticfiles.bucket;
-
-    // Construct S3 path for file_path (required field)
-    const filePath = `s3://${bucket}/${fileKey}`;
-
-    const entity = this.fileRepository.create({
-      id: fileId,
-      filePath: filePath,
-      filename: file.originalname,
-      storageType: 'cloud', // S3/Minio is cloud storage
-      storageProvider: 's3',
-      modifiedAtSource: new Date(), // Upload time as modification time
-      bucket,
-      key: fileKey,
-      originalName: file.originalname,
-      contentType: file.mimetype,
-      size: file.size,
-      fileHash: createHmac('sha256', config.auth.session.fieldPepper).update(file.buffer).digest('hex'),
-      user: {
-        id: context.userId,
+  async findByExternalId(context: UserServiceContext, externalId: string): Promise<SignedFile | null> {
+    const result = await this.fileRepository.findOne({
+      where: {
+        externalId,
+        userId: context.userId,
       },
     });
 
-    const result = await this.fileRepository.save(entity);
+    if (result == null) {
+      return null;
+    }
 
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: result.bucket ?? config.staticfiles.bucket,
-        Key: result.key!,
-        Body: file.buffer,
-        ContentType: result.contentType,
-      }),
-    );
-
-    await this.eventService.send(FileUploadedEvent, {
-      fileId: result.id,
-      userId: context.userId,
-    });
-
-    return this.signFile(entity);
+    return this.signFile(result);
   }
 
-  async getFileContent(context: RequestContext, key: string): Promise<Uint8Array> {
+  async findVariantByParentId(
+    context: ServiceContext,
+    id: string,
+    variant: FileVariant,
+  ): Promise<SignedFile | null> {
+    const result = await this.fileRepository.findOne({
+      where: {
+        parentId: id,
+        variant,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    if (result == null) {
+      return null;
+    }
+
+    return this.signFile(result);
+  }
+
+  async findVariantsByParentIds(
+    context: ServiceContext,
+    parentIds: string[],
+    variant: FileVariant,
+  ): Promise<(SignedFile | null)[]> {
+    if (parentIds.length === 0) {
+      return [];
+    }
+
+    const entities = await this.fileRepository.find({
+      where: {
+        parentId: In(parentIds),
+        variant,
+        ...(context.userId !== SYSTEM_USER && {
+          userId: context.userId,
+        }),
+      },
+    });
+
+    const signedFiles = await this.signFiles(entities);
+
+    const map = new Map(signedFiles.map((file) => [file.parentId, file]));
+
+    return parentIds.map((id) => map.get(id) ?? null);
+  }
+
+  async upload(context: UserServiceContext, file: UploadFileDto): Promise<SignedFile> {
+    const { inventoryCapture = false, model, ...uploadData } = file;
+    const hash = await this.getFileHash(uploadData);
+
+    if (hash) {
+      const existing = await this.findByHash(context, hash);
+
+      if (existing) {
+        this.logger.debug('File with same hash already exists, skipping upload', {
+          existingFileId: existing.id,
+        });
+
+        if (inventoryCapture) {
+          await this.eventService.send(FileUploadedEvent, {
+            fileId: existing.id,
+            userId: context.userId,
+            inventoryCapture: true,
+            model,
+          });
+        }
+
+        return existing;
+      }
+    }
+
+    const created = await this.create(context, {
+      ...uploadData,
+      variant: FileVariant.ORIGINAL,
+    });
+
+    await this.eventService.send(FileUploadedEvent, {
+      fileId: created.id,
+      userId: context.userId,
+      inventoryCapture,
+      model,
+    });
+
+    return created;
+  }
+
+  async getFileContent(context: ServiceContext, key: string): Promise<Uint8Array> {
     const response = await this.s3.send(
       new GetObjectCommand({
         Bucket: config.staticfiles.bucket,
@@ -236,151 +349,62 @@ export class FileService implements OnModuleInit {
     throw new Error(`S3 object body was empty for key: ${key}`);
   }
 
-  async generatePresignedLink(context: ServiceContext, id: string): Promise<string> {
-    const result = await this.fileRepository.findOne({
-      where: {
+  async getFileStream(context: ServiceContext, key: string): Promise<Readable> {
+    const response = await this.s3.send(
+      new GetObjectCommand({
+        Bucket: config.staticfiles.bucket,
+        Key: key,
+      }),
+    );
+
+    if (!response.Body) {
+      throw new Error(`S3 object body was empty for key: ${key}`);
+    }
+
+    // AWS SDK v3 SdkStream implements Symbol.asyncIterator, so we can
+    // wrap it in a Node Readable without unsafe casts or web-stream mismatches.
+    return Readable.from(response.Body as AsyncIterable<Uint8Array>);
+  }
+
+  async update(context: ServiceContext, id: string, data: UpdateFileDto): Promise<SignedFile | null> {
+    await this.fileRepository.update(
+      {
         id,
-        ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
-        }),
+        ...(context.userId !== SYSTEM_USER && { userId: context.userId }),
       },
-    });
+      data,
+    );
 
-    if (result == null) {
-      throw new NotFoundException();
-    }
+    await this.eventService.send(FileUpdatedEvent, { fileId: id });
 
-    if (!result.bucket || !result.key) {
-      return result.filePath;
-    }
-
-    const command = new GetObjectCommand({
-      Bucket: result.bucket ?? config.staticfiles.bucket,
-      Key: result.key!,
-      ResponseContentType: result.contentType,
-    });
-
-    const url = await getSignedUrl(this.signatureS3, command, {
-      expiresIn: config.staticfiles.auth.signatureTTL,
-    });
-
-    return this.getKeyAndQuery(url);
+    return this.findById(context, id);
   }
 
-  async upsertExternal(
-    context: RequestContext,
-    input: {
-      externalId: string;
-      provider: string;
-      filename: string;
-      mimeType: string;
-      url?: string | null;
-      size?: number | string | null;
-      modifiedAt?: string | Date | null;
-      storageAccount?: string | null;
-    },
-  ): Promise<SignedFile> {
-    const userId = context.userId;
-
-    if (!userId) {
-      throw new Error('User ID is required to store external files');
-    }
-
-    const provider = input.provider || 'external';
-    const filePath = input.url ?? `external://${provider}/${input.externalId}`;
-    const modifiedAt =
-      input.modifiedAt instanceof Date
-        ? input.modifiedAt
-        : input.modifiedAt
-          ? new Date(input.modifiedAt)
-          : new Date();
-    const rawSize =
-      typeof input.size === 'string'
-        ? Number.parseInt(input.size, 10)
-        : typeof input.size === 'number'
-          ? input.size
-          : 0;
-    const normalizedSize = Number.isFinite(rawSize) ? rawSize : 0;
-
-    let entity = await this.fileRepository.findOne({
-      where: {
-        cloudFileId: input.externalId,
-        user: { id: userId },
-      },
-    });
-
-    if (!entity) {
-      entity = await this.fileRepository.findOne({
-        where: {
-          filePath: filePath,
-          user: { id: userId },
-        },
-      });
-    }
-
-    if (entity) {
-      this.logger.debug('Updating external file metadata', {
-        userId,
-        provider,
-        externalId: input.externalId,
-        filePath,
-      });
-      entity.filename = input.filename;
-      entity.originalName = input.filename;
-      entity.contentType = input.mimeType;
-      entity.size = normalizedSize;
-      entity.modifiedAtSource = modifiedAt;
-      entity.storageType = 'cloud';
-      entity.storageProvider = provider;
-      entity.cloudFileId = input.externalId;
-      entity.storageAccount = input.storageAccount ?? entity.storageAccount ?? null;
-      entity.bucket = null;
-      entity.key = entity.key ?? uuidv7();
-      entity.filePath = filePath;
-    } else {
-      this.logger.debug('Creating external file record', {
-        userId,
-        provider,
-        externalId: input.externalId,
-        filePath,
-      });
-      entity = this.fileRepository.create({
-        id: uuidv7(),
-        filePath: filePath,
-        filename: input.filename,
-        storageType: 'cloud',
-        storageProvider: provider,
-        cloudFileId: input.externalId,
-        storageAccount: input.storageAccount ?? null,
-        modifiedAtSource: modifiedAt,
-        bucket: null,
-        key: uuidv7(),
-        originalName: input.filename,
-        contentType: input.mimeType,
-        size: normalizedSize,
-        user: { id: userId },
-      });
-    }
-
-    const saved = await this.fileRepository.save(entity);
-    this.logger.debug('Upserted external file', { id: saved.id, userId, externalId: input.externalId });
-
-    return this.signFile(saved);
-  }
-
-  async search(context: ServiceContext, query: FileQuery): Promise<FileEntity[]> {
+  async search(context: ServiceContext, query: FindOptionsWhere<FileEntity>): Promise<FileEntity[]> {
     return this.fileRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
-          user: {
-            id: context.userId,
-          },
+          userId: context.userId,
         }),
         ...query,
       },
     });
+  }
+
+  async getFileHash(file: CreateFileDto): Promise<string | null> {
+    if (file.buffer) {
+      return createHash('sha256').update(file.buffer).digest('hex');
+    }
+
+    if (file.path) {
+      const hash = createHash('sha256');
+
+      await pipeline(createReadStream(file.path), hash);
+
+      return hash.digest('hex');
+    }
+
+    return null;
   }
 
   private async signFiles(files: FileEntity[]): Promise<SignedFile[]> {
@@ -391,10 +415,10 @@ export class FileService implements OnModuleInit {
     const bucket = file.bucket;
     const key = file.key;
 
-    if (!bucket || !key) {
+    if (bucket == null || key == null) {
       return {
         ...FileEntity.toEgressType(file),
-        url: file.filePath,
+        url: file.externalId,
       };
     }
 
@@ -408,15 +432,11 @@ export class FileService implements OnModuleInit {
       expiresIn: config.staticfiles.auth.signatureTTL,
     });
 
+    const parsedUrl = new URL(url);
+
     return {
       ...FileEntity.toEgressType(file),
-      url: this.getKeyAndQuery(url),
+      url: parsedUrl.pathname + parsedUrl.search,
     };
-  }
-
-  private getKeyAndQuery(url: string): string {
-    const parsed = new URL(url);
-
-    return parsed.pathname + parsed.search;
   }
 }

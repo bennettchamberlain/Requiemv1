@@ -364,6 +364,12 @@ input CreatePlaceInput {
   uploaded: Boolean
 }
 
+input CreateProviderKeyInput {
+  clientId: String!
+  clientSecret: String!
+  providerId: ID!
+}
+
 input CreateQuestionInput {
   category: String!
   text: String!
@@ -476,17 +482,19 @@ type FileEdge implements Edge {
 }
 
 type FileType implements Node & Taggable {
-  analysisCompleted: Boolean!
   contentType: String!
   createdAt: DateTime!
-  filename: String!
+  description: String
+  externalId: String
+  filename: String
   id: ID!
   items(after: String, before: String, first: Int, last: Int): ItemConnection
-  originalName: String!
-  size: Float!
+  previewUrl: String
+  size: Float
+  sourceUrl: String
   tags: [EntityTagType!]!
+  title: String
   updatedAt: DateTime!
-  url: String!
 }
 
 type InsightItemType {
@@ -572,6 +580,7 @@ type Mutation {
   createNote(input: CreateNoteInput!): CreateNotePayload!
   createPerson(input: CreatePersonInput!): CreatePersonPayload!
   createPlace(input: CreatePlaceInput!): PlaceType!
+  createProviderKey(input: CreateProviderKeyInput!): ProviderKeyType!
   createQuestion(input: CreateQuestionInput!): QuestionType!
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
@@ -581,6 +590,7 @@ type Mutation {
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
 
@@ -612,6 +622,7 @@ type Mutation {
   updateNote(input: UpdateNoteInput!): UpdateNotePayload!
   updatePerson(input: UpdatePersonInput!): UpdatePersonPayload!
   updatePlace(input: UpdatePlaceInput!): PlaceType
+  updateProviderKey(id: ID!, input: UpdateProviderKeyInput!): ProviderKeyType
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateRelationship(input: UpdateRelationshipInput!): UpdateRelationshipPayload!
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
@@ -722,6 +733,27 @@ type ProviderEndpointType {
   name: String!
 }
 
+type ProviderKeyConnection implements Connection {
+  edges: [ProviderKeyEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProviderKeyEdge implements Edge {
+  cursor: String!
+  node: ProviderKeyType!
+}
+
+type ProviderKeyType implements Node {
+  clientId: String!
+  clientSecret: String!
+  createdAt: DateTime!
+  id: ID!
+  providerId: ID!
+  updatedAt: DateTime!
+  userId: ID!
+}
+
 type ProviderThemeType {
   backgroundColor: String
   borderColor: String
@@ -771,6 +803,8 @@ type Query {
   place(id: ID!): PlaceType
   places(after: String, before: String, first: Int, last: Int): PlaceConnection!
   provider(id: ID!): ProviderType
+  providerKey(id: ID!): ProviderKeyType
+  providerKeys(after: String, before: String, first: Int, last: Int): ProviderKeyConnection!
   providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
@@ -1112,6 +1146,11 @@ input UpdatePlaceInput {
   tracked: Boolean
   type: String
   uploaded: Boolean
+}
+
+input UpdateProviderKeyInput {
+  clientId: String
+  clientSecret: String
 }
 
 input UpdateQuestionInput {

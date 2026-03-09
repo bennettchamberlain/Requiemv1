@@ -7,6 +7,7 @@ import { Pencil, User } from '@ci/shadcn/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
+import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EventIcon, PlaceIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
@@ -187,6 +188,8 @@ export function EventPage() {
               </Card>
             )}
         </div>
+
+        <EntityEvolutionPanel entityId={id!} />
       </PageContent>
     );
   }

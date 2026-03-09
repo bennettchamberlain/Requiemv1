@@ -1,9 +1,11 @@
+import { unlink } from 'node:fs';
+import { tmpdir } from 'node:os';
+
 import {
+  Body,
   BadRequestException,
   Controller,
-  Get,
-  HttpCode,
-  Param,
+  Logger,
   Post,
   UploadedFiles,
   UseGuards,
@@ -21,44 +23,76 @@ export class FilesController {
   constructor(private readonly fileService: FileService) {}
 
   @UseGuards(JwtAuthGuard)
-  @Get()
-  findAll(@Context() context: RequestContext) {
-    const serviceContext = toServiceContext(context);
-
-    return this.fileService.findAll(serviceContext);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get(':id')
-  findOne(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = toServiceContext(context);
-
-    return this.fileService.findById(serviceContext, id);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':id/presign')
-  @HttpCode(200)
-  async getPresignedLink(@Context() context: RequestContext, @Param('id') id: string) {
-    const serviceContext = toServiceContext(context);
-
-    const url = await this.fileService.generatePresignedLink(serviceContext, id);
-
-    return {
-      url,
-    };
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Post('upload')
-  @UseInterceptors(FilesInterceptor('files', undefined, { limits: { fileSize: 10 * 1024 * 1024 * 1024 } }))
-  async upload(@Context() context: RequestContext, @UploadedFiles() files: Express.Multer.File[]) {
+  @UseInterceptors(
+    FilesInterceptor('files', undefined, {
+      dest: tmpdir(),
+      limits: { fileSize: 10 * 1024 * 1024 * 1024 },
+    }),
+  )
+  async upload(
+    @Context() context: RequestContext,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('inventoryCapture') inventoryCapture?: string | boolean,
+    @Body('model') model?: string,
+  ) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
 
+    const shouldCaptureInventory = inventoryCapture === true || inventoryCapture === 'true';
+    const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : undefined;
+
     const serviceContext = toServiceContext(context);
 
-    return await Promise.all(files.map((file) => this.fileService.upload(serviceContext, file)));
+    try {
+      const filesWithHashes = await Promise.all(
+        files.map(async (file) => ({
+          file,
+          hash: await this.fileService.getFileHash({
+            buffer: file.buffer,
+            path: file.path,
+          }),
+        })),
+      );
+
+      const uniqueByHash = new Map<string, Express.Multer.File>();
+
+      for (const { file, hash } of filesWithHashes) {
+        if (hash && !uniqueByHash.has(hash)) {
+          uniqueByHash.set(hash, file);
+        } else if (!hash) {
+          uniqueByHash.set(file.originalname + Date.now(), file);
+        }
+      }
+
+      const entities = await Promise.all(
+        Array.from(uniqueByHash.entries()).map(async ([, file]) => {
+          return this.fileService.upload(serviceContext, {
+            filename: file.originalname,
+            contentType: file.mimetype,
+            size: file.size,
+            buffer: file.buffer,
+            path: file.path,
+            inventoryCapture: shouldCaptureInventory,
+            model: selectedModel,
+          });
+        }),
+      );
+
+      return entities.map((entity) => ({
+        id: entity.id,
+      }));
+    } finally {
+      for (const file of files) {
+        if (file.path) {
+          unlink(file.path, (err) => {
+            if (err) {
+              Logger.error(`Failed to delete temporary file ${file.path}`, FilesController.name);
+            }
+          });
+        }
+      }
+    }
   }
 }

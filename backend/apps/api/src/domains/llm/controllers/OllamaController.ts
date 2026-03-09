@@ -6,6 +6,7 @@ import {
   Inject,
   NotFoundException,
   Post,
+  Query,
   Res,
   UseGuards,
   forwardRef,
@@ -37,6 +38,9 @@ const promptSchema = z.object({
   enableThinking: z.boolean().default(true),
   fileIds: z.array(z.string()).optional(), // File IDs to attach to this message
 });
+const modelCapabilitiesSchema = z.object({
+  model: z.string().min(1),
+});
 
 interface SystemPromptOptions {
   leadingAssistantMessages?: OllamaMessage[];
@@ -65,6 +69,21 @@ export class OllamaController {
   @Get('models')
   async listModels(@Context() context: RequestContext) {
     return await this.ollamaService.getAvailableModels(context);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('models/capabilities')
+  async getModelCapabilities(
+    @Context() context: RequestContext,
+    @Query(new ValidationPipe(modelCapabilitiesSchema)) query: z.infer<typeof modelCapabilitiesSchema>,
+  ) {
+    const capabilities = await this.ollamaService.getModelCapabilities(context, query.model);
+
+    return {
+      model: query.model,
+      capabilities,
+      vision: capabilities.includes('vision'),
+    };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -229,10 +248,12 @@ export class OllamaController {
   }
 
   private async resolveMessage(context: RequestContext, message: Message): Promise<OllamaMessage> {
+    const serviceContext = toServiceContext(context);
+
     const images = message.files
       ? await Promise.all(
           message.files
-            .map((file) => (file.key ? this.fileService.getFileContent(context, file.key) : null))
+            .map((file) => (file.key ? this.fileService.getFileContent(serviceContext, file.key) : null))
             .filter((value): value is Promise<Uint8Array> => value !== null),
         )
       : [];
@@ -328,8 +349,9 @@ export class OllamaController {
    * Build system prompt with pre-hydrated user context
    */
   private async buildSystemPrompt(context: RequestContext, options?: SystemPromptOptions): Promise<string> {
-    const basePrompt = `You are a helpful AI assistant with access to various tools and information about the user.
-
+    const basePrompt = `You are Companion, a helpful AI assistant with access to various tools and information about the user.
+    You are designed to take in various data sources that the user connects you to (via connections) and help the user with not just everyday tasks, but with their pursuit of happiness.
+    
 Your capabilities:
 - You can query the user's knowledge graph to find information about their preferences, family, and relationships
 - You can compose multiple tool calls in sequence to answer complex questions

@@ -293,8 +293,8 @@ function hasContent(content: string) {
 }
 
 function extractTitle(content: string) {
-  const div = document.createElement('div');
-  div.innerHTML = content;
+  const doc = new DOMParser().parseFromString(content, 'text/html');
+  const div = doc.body;
 
   const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();

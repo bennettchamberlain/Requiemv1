@@ -15,6 +15,7 @@ type ResourceType =
   | 'person'
   | 'place'
   | 'provider'
+  | 'provider-key'
   | 'question'
   | 'saved-search'
   | 'summary'

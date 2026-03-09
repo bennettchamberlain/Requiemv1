@@ -149,14 +149,16 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/inventory"
-          element={
-            <ProtectedRoute>
-              <InventoryPage />
-            </ProtectedRoute>
-          }
-        />
+        {isFeatureEnabled('enable.inventory.page') && (
+          <Route
+            path="/inventory"
+            element={
+              <ProtectedRoute>
+                <InventoryPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
 
         <Route
           path="/insights"
@@ -177,14 +179,16 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/files"
-          element={
-            <ProtectedRoute>
-              <FilesPage />
-            </ProtectedRoute>
-          }
-        />
+        {isFeatureEnabled('files.page') && (
+          <Route
+            path="/files"
+            element={
+              <ProtectedRoute>
+                <FilesPage />
+              </ProtectedRoute>
+            }
+          />
+        )}
 
         <Route
           path="/chat/:id?"

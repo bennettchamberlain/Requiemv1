@@ -82,6 +82,7 @@ function useEntityService({
       includeTypes: includeTypes?.map((type) => type.toLowerCase()) || [],
       excludeTypes: excludeTypes?.map((type) => type.toLowerCase()) || [],
     },
+    fetchPolicy: 'cache-and-network',
   });
 
   const [activeEntity, setActiveEntity] = useState<EntityItem | null>(null);

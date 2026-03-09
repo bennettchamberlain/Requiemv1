@@ -18,6 +18,12 @@ export class SessionEntity {
   @Column({ type: 'text' })
   token!: string;
 
+  @Column({ type: 'text', nullable: true })
+  previous_token!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  rotated_at!: Date | null;
+
   @Column({ type: 'text' })
   ip!: string;
 

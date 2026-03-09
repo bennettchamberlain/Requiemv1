@@ -16,9 +16,19 @@
       "refreshTokenExpiration": "7d"
     },
     "session": {
-      "saltRounds": 4,
       "fieldPepper": "AUTH_SESSION_PEPPER",
-      "duration": "7d"
+      "duration": "7d",
+      "refreshGracePeriod": "30s"
+    },
+    "csrf": {
+      "secret": "AUTH_CSRF_TOKEN_SECRET"
+    },
+    "encryption": {
+      "fieldKey": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "cookies": {
+      "sessionTokenName": "sessionToken",
+      "csrfTokenName": "csrfToken"
     },
     "providers": {
       "google": {
@@ -37,21 +47,22 @@
   },
   "db": {
     "type": "postgres",
-    "host": "127.0.0.1",
+    "host": "database",
     "port": 5432,
-    "database": "companion_intel",
-    "username": "POSTGRES_USERNAME",
-    "password": "POSTGRES_PASSWORD"
+    "database": "companion",
+    "username": "companion",
+    "password": "DATABASE_PASSWORD",
+    "logging": false
   },
   "staticfiles": {
-    "storageUrl": "http://localhost:9000",
+    "storageUrl": "http://object-store:9000",
     "region": "us-east-1",
     "bucket": "companion",
     "auth": {
-      "signatureUrl": "http://minio:9000",
-      "signatureTTL": 60,
-      "accessKeyId": "S3_ACCESS_KEY_ID",
-      "secretAccessKey": "S3_SECRET_ACCESS_KEY"
+      "signatureUrl": "http://object-store:9000",
+      "signatureTTL": 3600,
+      "accessKeyId": "OBJECT_STORE_USERNAME",
+      "secretAccessKey": "OBJECT_STORE_PASSWORD"
     }
   },
   "graphql": {
@@ -59,13 +70,13 @@
   },
   "services": {
     "ollama": {
-      "host": "http://localhost:11434"
+      "host": "http://host.docker.internal:11434"
     },
     "stt": {
-      "host": "http://localhost:9001"
+      "host": "http://stt-service:9001"
     },
     "tts": {
-      "host": "http://localhost:9002"
+      "host": "http://tts-service:9002"
     }
   },
   "features": {
@@ -74,9 +85,11 @@
     "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
     "enable.system.prompt": true,
+    "enable.inventory.page": false,
     "advanced.theme.tab": false,
     "new.insights.page": false,
-    "require.signup.codes": true
+    "require.signup.codes": true,
+    "files.page": false
   },
   "environment": {
     "database.query.logging": false
