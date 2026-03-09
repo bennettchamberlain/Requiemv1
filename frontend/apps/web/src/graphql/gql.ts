@@ -23,6 +23,7 @@ type Documents = {
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": typeof types.MarkActionAsDismissedDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
+    "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n": typeof types.GetNodeTagsForRelationshipCardDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": typeof types.ActionGridItemDataFragmentDoc,
     "\n  fragment AnswerGridItemData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.AnswerGridItemDataFragmentDoc,
     "\n  fragment BrowserActivityGridItemData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": typeof types.BrowserActivityGridItemDataFragmentDoc,
@@ -122,6 +123,7 @@ const documents: Documents = {
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": types.MarkActionAsDismissedDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
+    "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n": types.GetNodeTagsForRelationshipCardDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": types.ActionGridItemDataFragmentDoc,
     "\n  fragment AnswerGridItemData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.AnswerGridItemDataFragmentDoc,
     "\n  fragment BrowserActivityGridItemData on BrowserActivityType {\n    id\n    title\n    url\n  }\n": types.BrowserActivityGridItemDataFragmentDoc,
@@ -250,6 +252,10 @@ export function gql(source: "\n  mutation TagEntities($input: TagEntitiesInput!)
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

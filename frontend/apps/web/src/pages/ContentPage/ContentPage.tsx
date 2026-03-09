@@ -7,7 +7,9 @@ import { Pencil } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
+import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
+import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { ContentIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { TagInput } from '@/components/TagInput';
@@ -118,6 +120,9 @@ export function ContentPage() {
             </Card.Content>
           </Card>
         </div>
+
+        <EntityRelationshipCards entityId={id!} />
+        <EntityEvolutionPanel entityId={id!} />
       </PageContent>
     );
   }
