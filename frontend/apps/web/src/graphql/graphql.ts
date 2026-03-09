@@ -1105,7 +1105,7 @@ export type ProviderType = Node & {
   id: Scalars['ID']['output'];
   logoUrl?: Maybe<Scalars['String']['output']>;
   name?: Maybe<Scalars['String']['output']>;
-  providerKeys: ProviderKeyType;
+  providerKeys?: Maybe<ProviderKeyType>;
   theme?: Maybe<ProviderThemeType>;
 };
 
@@ -2443,7 +2443,7 @@ export type GetSavedSearchesQuery = { __typename?: 'Query', savedSearches: { __t
 export type GetProvidersQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetProvidersQuery = { __typename?: 'Query', providers: { __typename?: 'ProviderConnection', edges: Array<{ __typename?: 'ProviderEdge', cursor: string, node: { __typename?: 'ProviderType', id: string, name?: string | null, description?: string | null, logoUrl?: string | null, providerKeys: { __typename?: 'ProviderKeyType', id: string, clientId: string, clientSecret: string } } }> } };
+export type GetProvidersQuery = { __typename?: 'Query', providers: { __typename?: 'ProviderConnection', edges: Array<{ __typename?: 'ProviderEdge', cursor: string, node: { __typename?: 'ProviderType', id: string, name?: string | null, description?: string | null, logoUrl?: string | null, providerKeys?: { __typename?: 'ProviderKeyType', id: string, clientId: string, clientSecret: string } | null } }> } };
 
 export type CreateProviderKeyMutationVariables = Exact<{
   input: CreateProviderKeyInput;
