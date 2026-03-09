@@ -1956,13 +1956,13 @@ export type GetNodeTagsForRelationshipCardQuery = { __typename?: 'Query', node?:
     | { __typename: 'ContentType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'EntityTagType' }
     | { __typename: 'EventType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
-    | { __typename: 'FactType' }
     | { __typename: 'FileType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'ItemType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'MessageType' }
     | { __typename: 'NoteType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'PersonType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'PlaceType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
+    | { __typename: 'ProviderKeyType' }
     | { __typename: 'ProviderType' }
     | { __typename: 'QuestionType' }
     | { __typename: 'RelationshipType' }
