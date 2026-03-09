@@ -1969,6 +1969,7 @@ export type GetNodeTagsForRelationshipCardQuery = { __typename?: 'Query', node?:
     | { __typename: 'NoteType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'PersonType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
     | { __typename: 'PlaceType', tags: Array<{ __typename?: 'EntityTagType', label: string }> }
+    | { __typename: 'ProviderKeyType' }
     | { __typename: 'ProviderType' }
     | { __typename: 'QuestionType' }
     | { __typename: 'RelationshipType' }
