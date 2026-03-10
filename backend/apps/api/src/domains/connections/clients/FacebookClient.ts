@@ -3,12 +3,16 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
+import { ProviderKeyService } from '../services/ProviderKeyService';
 
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 @Injectable()
 export class FacebookClient extends BaseOAuth2Client {
-  constructor(readonly logger: LoggerService) {
+  constructor(
+    readonly logger: LoggerService,
+    private readonly providerKeyService: ProviderKeyService,
+  ) {
     super();
     this.logger.setContext(FacebookClient.name);
   }
@@ -41,30 +45,36 @@ export class FacebookClient extends BaseOAuth2Client {
 
   protected readonly extraAuthParams = {};
 
-  protected get clientId() {
+  getClientCredentials(connection: Connection): Promise<{ clientId: string; clientSecret: string }> {
     const clientIdVariable = 'FACEBOOK_CLIENT_ID';
-    const clientId = process.env[clientIdVariable];
-
-    if (!clientId) {
-      this.logger.error(`Expected environment variable ${clientIdVariable} not specified`);
-
-      throw new Error('Client id not configured for provider');
-    }
-
-    return clientId;
-  }
-
-  protected get clientSecret() {
     const clientSecretVariable = 'FACEBOOK_CLIENT_SECRET';
-    const clientSecret = process.env[clientSecretVariable];
+    const clientIdFromEnv = process.env[clientIdVariable];
+    const clientSecretFromEnv = process.env[clientSecretVariable];
 
-    if (!clientSecret) {
-      this.logger.error(`Expected environment variable ${clientSecretVariable} not specified`);
+    return this.providerKeyService
+      .findByProviderId({ userId: connection.userId }, connection.id)
+      .then((keys) => {
+        const clientId = keys ? keys.clientId : clientIdFromEnv;
+        const clientSecret = keys ? keys.clientSecret : clientSecretFromEnv;
 
-      throw new Error('Client secret not configured for provider');
-    }
+        if (!clientId) {
+          this.logger.error(
+            `No custom providerKey for Google and expected environment variable ${clientIdVariable} not specified`,
+          );
 
-    return clientSecret;
+          throw new Error('Client id not configured for provider');
+        }
+
+        if (!clientSecret) {
+          this.logger.error(
+            `No custom providerKey for Google and expected environment variable ${clientSecretVariable} not specified`,
+          );
+
+          throw new Error('Client secret not configured for provider');
+        }
+
+        return { clientId, clientSecret };
+      });
   }
 
   protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {

@@ -25,6 +25,7 @@ import { ItemFileLoader } from './loaders/ItemFileLoader';
 import { PersonLoader } from './loaders/PersonLoader';
 import { PlaceLoader } from './loaders/PlaceLoader';
 import { PreviewLoader } from './loaders/PreviewLoader';
+import { ProviderKeyLoader } from './loaders/ProviderKeyLoader';
 import { ProviderLoader } from './loaders/ProviderLoader';
 import { QuestionLoader } from './loaders/QuestionLoader';
 import { TagLoader } from './loaders/TagLoader';
@@ -107,6 +108,7 @@ import { UserResolver } from './resolvers/UserResolver';
     PlaceResolver,
     PreviewLoader,
     ProviderResolver,
+    ProviderKeyLoader,
     ProviderKeyResolver,
     ProviderLoader,
     QuestionLoader,

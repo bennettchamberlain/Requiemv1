@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
+import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
 
 import { ProviderKeyEntity, type ProviderKey } from '../entities/ProviderKeyEntity';
 
@@ -49,6 +49,14 @@ export class ProviderKeyService {
     const map = new Map(entities.map((entity) => [entity.id, ProviderKeyEntity.toEgressType(entity)]));
 
     return ids.map((id) => map.get(id) ?? null);
+  }
+
+  async findByProviderId(context: UserServiceContext, providerId: string): Promise<ProviderKey | null> {
+    const where = { providerId, userId: context.userId };
+
+    const entity = await this.providerKeyRepository.findOne({ where });
+
+    return entity ? ProviderKeyEntity.toEgressType(entity) : null;
   }
 
   async create(context: ServiceContext, data: CreateProviderKeyDto): Promise<ProviderKey> {

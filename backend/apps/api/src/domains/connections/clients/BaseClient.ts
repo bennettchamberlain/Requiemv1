@@ -9,7 +9,7 @@ export abstract class BaseClient {
 
   abstract getAuthorizationUrl(connection: Connection): Promise<string>;
 
-  abstract exchangeAuthorizationCode(code: string): Promise<TokenExchange>;
+  abstract exchangeAuthorizationCode(connection: Connection, code: string): Promise<TokenExchange>;
 
   abstract refreshAccessToken(connection: Connection): Promise<TokenExchange>;
 

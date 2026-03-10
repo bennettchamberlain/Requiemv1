@@ -1,5 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
+import type { ValueTransformer } from 'typeorm';
+
+import config from '@ci/configuration';
+
 /**
  * AES-256-GCM field-level encryption for sensitive database columns.
  *
@@ -70,3 +74,31 @@ export function decrypt(ciphertext: string, hexKey: string): string {
 export function isEncrypted(value: string): boolean {
   return value.startsWith(PREFIX);
 }
+
+/**
+ * TypeORM value transformer that encrypts values with AES-256-GCM before
+ * writing to the database and decrypts them when reading. Handles nullable
+ * columns and gracefully decrypts legacy plaintext values during the
+ * migration window.
+ */
+export const encryptedColumnTransformer: ValueTransformer = {
+  to(value: string | null): string | null {
+    if (value == null) {
+      return null;
+    }
+
+    return encrypt(value, config.auth.encryption.fieldKey);
+  },
+  from(value: string | null): string | null {
+    if (value == null) {
+      return null;
+    }
+
+    // Gracefully handle legacy plaintext values (pre-migration rows)
+    if (!isEncrypted(value)) {
+      return value;
+    }
+
+    return decrypt(value, config.auth.encryption.fieldKey);
+  },
+};

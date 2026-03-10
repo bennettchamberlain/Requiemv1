@@ -16,6 +16,15 @@ export interface Provider {
     name: string;
     description: string;
   }[];
+  readonly providerKeys?: ProviderKeys | null;
+}
+
+export interface ProviderKeys {
+  readonly id: string;
+  readonly providerId: string;
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly userId: string;
 }
 
 export interface Connection {

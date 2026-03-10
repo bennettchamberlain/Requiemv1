@@ -748,17 +748,6 @@ type ProviderEndpointType {
   name: String!
 }
 
-type ProviderKeyConnection implements Connection {
-  edges: [ProviderKeyEdge!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
-type ProviderKeyEdge implements Edge {
-  cursor: String!
-  node: ProviderKeyType!
-}
-
 type ProviderKeyType implements Node {
   clientId: String!
   clientSecret: String!
@@ -780,6 +769,7 @@ type ProviderType implements Node {
   id: ID!
   logoUrl: String
   name: String
+  providerKeys: ProviderKeyType
   theme: ProviderThemeType
 }
 
@@ -820,8 +810,6 @@ type Query {
   place(id: ID!): PlaceType
   places(after: String, before: String, first: Int, last: Int): PlaceConnection!
   provider(id: ID!): ProviderType
-  providerKey(id: ID!): ProviderKeyType
-  providerKeys(after: String, before: String, first: Int, last: Int): ProviderKeyConnection!
   providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
