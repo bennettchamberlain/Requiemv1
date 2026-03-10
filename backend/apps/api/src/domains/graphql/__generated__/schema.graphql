@@ -470,21 +470,6 @@ type EventType implements Node & Taggable {
   title: String
 }
 
-type FactConnection implements Connection {
-  edges: [FactEdge!]!
-  pageInfo: PageInfo!
-  totalCount: Int!
-}
-
-type FactEdge implements Edge {
-  cursor: String!
-  node: FactType!
-}
-
-type FactType implements Node {
-  id: ID!
-}
-
 type FileConnection implements Connection {
   edges: [FileEdge!]!
   pageInfo: PageInfo!
@@ -792,8 +777,6 @@ type Query {
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
   event(id: ID!): EventType
   events(after: String, before: String, first: Int, last: Int): EventConnection!
-  fact(id: ID!): FactType
-  facts(after: String, before: String, first: Int, last: Int): FactConnection!
 
   """Get actions for the feed, prioritizing unseen actions"""
   feedActions(limit: Int! = 5): [ActionType!]!

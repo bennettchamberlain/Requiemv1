@@ -170,10 +170,6 @@ export class CommunicationService {
       updateData.urgencyScore = data.urgency_score;
     }
 
-    if (data.content_embedding) {
-      updateData.contentEmbedding = data.content_embedding;
-    }
-
     if (data.category) {
       updateData.category = data.category;
     }

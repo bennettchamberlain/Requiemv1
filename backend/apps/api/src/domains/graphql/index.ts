@@ -41,7 +41,6 @@ import { ConnectionResolver } from './resolvers/ConnectionResolver';
 import { ConnectionSyncJobResolver } from './resolvers/ConnectionSyncJobResolver';
 import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
-import { FactResolver } from './resolvers/FactResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
@@ -97,7 +96,6 @@ import { UserResolver } from './resolvers/UserResolver';
     AnswerResolver,
     EventLoader,
     EventResolver,
-    FactResolver,
     FileItemsLoader,
     FileResolver,
     ItemFileLoader,

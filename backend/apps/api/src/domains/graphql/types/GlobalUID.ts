@@ -8,7 +8,6 @@ type ResourceType =
   | 'connectionSyncJob'
   | 'content'
   | 'event'
-  | 'fact'
   | 'file'
   | 'item'
   | 'message'

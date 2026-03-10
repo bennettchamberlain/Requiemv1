@@ -35,3 +35,9 @@ AGENTS.md
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+.beads/
+
+backend/apps/hbpe/src/ci/model/__pycache__/
+
+backend/apps/hbpe/src/ci/tokenizer/__pycache__/
