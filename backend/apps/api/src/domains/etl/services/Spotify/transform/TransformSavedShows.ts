@@ -110,7 +110,7 @@ export class SpotifySavedShowsTransformService {
           // Create event for saving the show
           if (showItem.added_at) {
             await this.eventService.create(context, {
-              title: `Saved show ${show.name}`,
+              title: `Saved ${existingShowIsAudiobook.length > 0 ? 'audiobook' : 'show'} ${show.name}`,
               description: `Saved ${show.name} on Spotify at ${showItem.added_at}`,
               event_type: 'favorite',
               start_time: new Date(showItem.added_at),

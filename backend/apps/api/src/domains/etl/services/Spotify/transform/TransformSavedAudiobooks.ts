@@ -81,6 +81,19 @@ export class SpotifySavedAudiobooksTransformService {
             await this.contentService.update(context, existingAudiobookFromShows[0].id, {
               type: 'Audiobook',
             });
+
+            const events = await this.eventService.search(context, {
+              eventType: 'favorite',
+              title: `Saved show ${audiobook.name}`,
+            });
+
+            await Promise.all(
+              events.map(async (event) => {
+                await this.eventService.update(context, event.id, {
+                  title: event.title.replace('show', 'audiobook'),
+                });
+              }),
+            );
           } else {
             // Create new content entry for the audiobook
             await this.contentService.create(context, {
