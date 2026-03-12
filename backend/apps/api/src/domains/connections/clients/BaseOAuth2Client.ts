@@ -34,7 +34,6 @@ export abstract class BaseOAuth2Client extends BaseClient {
     const endpointSplitOnProtocol = /^(https:\/\/[^/]+)(\/.*)?$/.exec(endpoint);
     const baseUrl = endpointSplitOnProtocol ? endpointSplitOnProtocol[1] : this.baseUrl;
     const path = endpointSplitOnProtocol ? endpointSplitOnProtocol[2] || '' : endpoint;
-    console.log('oauth request', baseUrl, path);
     const response = await fetch(`${baseUrl}${path}`, {
       ...options,
       headers: {

@@ -63,7 +63,6 @@ export class SpotifySavedTracksTransformService {
             external_id: track.id,
           });
 
-          console.log('existing track', existingTrack);
           if (existingTrack.length > 0) {
             this.logger.debug('Track already exists, skipping', {
               trackId: track.id,

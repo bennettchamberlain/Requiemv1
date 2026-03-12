@@ -50,7 +50,6 @@ export class SpotifySavedAudiobooksTransformService {
       let skippedCount = 0;
 
       for (const audiobook of audiobooks) {
-        console.log('audiobook to transform', audiobook);
         if (!audiobook || !audiobook.id) {
           continue;
         }
@@ -62,7 +61,6 @@ export class SpotifySavedAudiobooksTransformService {
             external_id: audiobook.id,
           });
 
-          console.log('existing audiobook', audiobook.id, existingAudiobook);
           //Audiobooks are technically stored as shows in the Spotify API, so they show
           //up in both Saved Shows and Saved Audiobooks. But in Saved Shows, they are
           //listed as type 'show', while the audiobooks endpoint returns them as type 'audiobook.
@@ -72,7 +70,6 @@ export class SpotifySavedAudiobooksTransformService {
             type: 'Show',
             external_id: audiobook.id,
           });
-          console.log('existingAudiobookFromShows', audiobook.id, existingAudiobookFromShows);
 
           if (existingAudiobook.length > 0) {
             this.logger.debug('Audiobook already exists, skipping', {
