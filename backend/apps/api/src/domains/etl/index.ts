@@ -51,6 +51,9 @@ import { OutlookMailTransformService } from './services/Microsoft/transform/Tran
 import { PromoteService } from './services/PromoteService';
 import { SpotifyPlaylistsTransformService } from './services/Spotify/transform/TransformPlaylists';
 import { SpotifyRecentlyPlayedTransformService } from './services/Spotify/transform/TransformRecentlyPlayed';
+import { SpotifySavedAudiobooksTransformService } from './services/Spotify/transform/TransformSavedAudiobooks';
+import { SpotifySavedEpisodesTransformService } from './services/Spotify/transform/TransformSavedEpisodes';
+import { SpotifySavedShowsTransformService } from './services/Spotify/transform/TransformSavedShows';
 import { SpotifySavedTracksTransformService } from './services/Spotify/transform/TransformSavedTracks';
 import { SpotifyTopArtistsTransformService } from './services/Spotify/transform/TransformTopArtists';
 
@@ -92,6 +95,9 @@ import { SpotifyTopArtistsTransformService } from './services/Spotify/transform/
     OutlookMailTransformService,
     SpotifyRecentlyPlayedTransformService,
     SpotifyPlaylistsTransformService,
+    SpotifySavedAudiobooksTransformService,
+    SpotifySavedEpisodesTransformService,
+    SpotifySavedShowsTransformService,
     SpotifySavedTracksTransformService,
     SpotifyTopArtistsTransformService,
   ],

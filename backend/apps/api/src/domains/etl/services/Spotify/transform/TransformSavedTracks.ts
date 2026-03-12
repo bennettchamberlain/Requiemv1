@@ -92,7 +92,6 @@ export class SpotifySavedTracksTransformService {
             });
           }
 
-          console.log('creating event for track', track);
           const addedAt = trackItem.added_at!;
           await this.eventService.create(context, {
             title: `Saved track ${track.name}`,

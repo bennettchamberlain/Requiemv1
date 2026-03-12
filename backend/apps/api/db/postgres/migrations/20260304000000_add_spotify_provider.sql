@@ -9,6 +9,9 @@ VALUES (
     { "name": "Recently Played", "description": "Sync your recently played tracks.", "iterationType": "historical,incremental", "TTL": null },
     { "name": "Playlists", "description": "Sync your playlists and their tracks.", "iterationType": "historical", "TTL": 86400 },
     { "name": "Saved Tracks", "description": "Sync your saved (liked) tracks.", "iterationType": "historical", "TTL": 86400 },
+    { "name": "Saved Shows", "description": "Sync your saved podcast shows.", "iterationType": "historical", "TTL": 86400 },
+    { "name": "Saved Episodes", "description": "Sync your saved podcast episodes.", "iterationType": "historical", "TTL": 86400 },
+    { "name": "Saved Audiobooks", "description": "Sync your saved audiobooks.", "iterationType": "historical", "TTL": 86400 },
     { "name": "Top Artists", "description": "Sync your top artists.", "iterationType": "historical", "TTL": 86400 }
   ]'::jsonb
 )

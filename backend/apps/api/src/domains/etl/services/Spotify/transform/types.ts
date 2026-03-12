@@ -137,3 +137,133 @@ export interface SpotifyArtist {
   type: string;
   uri: string;
 }
+
+export interface SpotifyShow {
+  added_at?: string;
+  show: {
+    copyrights?: Array<{
+      text: string;
+      type: string;
+    }>;
+    description: string;
+    html_description?: string;
+    explicit: boolean;
+    external_urls: {
+      spotify: string;
+    };
+    href: string;
+    id: string;
+    images: Array<{
+      url: string;
+      height: number;
+      width: number;
+    }>;
+    is_externally_hosted?: boolean;
+    languages?: string[];
+    media_type: string;
+    name: string;
+    type: string;
+    uri: string;
+    total_episodes?: number;
+  };
+}
+
+export interface SpotifyEpisode {
+  added_at?: string;
+  episode: {
+    audio_preview_url?: string;
+    description: string;
+    html_description?: string;
+    duration_ms: number;
+    explicit: boolean;
+    external_urls: {
+      spotify: string;
+    };
+    href: string;
+    id: string;
+    images: Array<{
+      url: string;
+      height: number;
+      width: number;
+    }>;
+    is_externally_hosted?: boolean;
+    is_playable: boolean;
+    language?: string;
+    languages?: string[];
+    name: string;
+    release_date: string;
+    release_date_precision: string;
+    resume_point?: {
+      fully_played: boolean;
+      resume_position_ms: number;
+    };
+    type: string;
+    uri: string;
+    restrictions?: {
+      reason: string;
+    };
+    show: {
+      available_markets?: string[];
+      copyrights?: Array<{
+        text: string;
+        type: string;
+      }>;
+      description: string;
+      html_description?: string;
+      explicit: boolean;
+      external_urls: {
+        spotify: string;
+      };
+      href: string;
+      id: string;
+      images: Array<{
+        url: string;
+        height: number;
+        width: number;
+      }>;
+      is_externally_hosted?: boolean;
+      languages?: string[];
+      media_type: string;
+      name: string;
+      publisher: string;
+      type: string;
+      uri: string;
+      total_episodes?: number;
+    };
+  };
+}
+
+export interface SpotifyAudiobook {
+  authors: Array<{
+    name: string;
+  }>;
+  available_markets?: string[];
+  copyrights?: Array<{
+    text: string;
+    type: string;
+  }>;
+  description: string;
+  html_description?: string;
+  edition?: string;
+  explicit: boolean;
+  external_urls: {
+    spotify: string;
+  };
+  href: string;
+  id: string;
+  images: Array<{
+    url: string;
+    height: number;
+    width: number;
+  }>;
+  languages?: string[];
+  media_type: string;
+  name: string;
+  narrators: Array<{
+    name: string;
+  }>;
+  publisher: string;
+  type: string;
+  uri: string;
+  total_chapters?: number;
+}

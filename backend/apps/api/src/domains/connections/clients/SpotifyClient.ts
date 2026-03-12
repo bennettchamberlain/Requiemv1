@@ -26,6 +26,9 @@ export class SpotifyClient extends BaseOAuth2Client {
   protected readonly endpointScopeMap = {
     'Recently Played': ['user-read-recently-played'],
     Playlists: ['playlist-read-private', 'playlist-read-collaborative'],
+    'Saved Audiobooks': ['user-library-read'],
+    'Saved Episodes': ['user-library-read'],
+    'Saved Shows': ['user-library-read'],
     'Saved Tracks': ['user-library-read'],
     'Top Artists': ['user-top-read'],
     'Top Tracks': ['user-top-read'],
