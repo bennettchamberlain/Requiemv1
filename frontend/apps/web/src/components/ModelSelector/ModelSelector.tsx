@@ -13,7 +13,7 @@ export function ModelSelector({ withToggles = false }: Props) {
   const { toast } = useToast();
 
   const [
-    { selectedModel, thinkingEnabled, toolsEnabled, activeModels, error },
+    { selectedModel, thinkingSupported, thinkingEnabled, toolsSupported, toolsEnabled, activeModels, error },
     { selectModel, toggleThinking, toggleTools },
   ] = useModel();
 
@@ -85,6 +85,8 @@ export function ModelSelector({ withToggles = false }: Props) {
           size="sm"
           variant="outline"
           aria-label="Toggle tools"
+          disabled={!toolsSupported}
+          className={!toolsSupported ? 'opacity-50 cursor-not-allowed' : ''}
         >
           <Wrench />
         </Toggle>
@@ -94,6 +96,8 @@ export function ModelSelector({ withToggles = false }: Props) {
           size="sm"
           variant="outline"
           aria-label="Toggle thinking"
+          disabled={!thinkingSupported}
+          className={!thinkingSupported ? 'opacity-50 cursor-not-allowed' : ''}
         >
           <Brain />
         </Toggle>

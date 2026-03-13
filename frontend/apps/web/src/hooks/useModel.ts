@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { createHookContext, fetchJson } from '@ci/common';
 
@@ -20,7 +20,9 @@ interface Model {
 type Value = [
   {
     selectedModel: string | null;
+    thinkingSupported: boolean;
     thinkingEnabled: boolean;
+    toolsSupported: boolean;
     toolsEnabled: boolean;
     activeModels: Model[];
     loading: boolean;
@@ -55,8 +57,18 @@ function useModel(): Value {
       } else {
         localStorage.removeItem(ACTIVE_MODEL_KEY);
       }
+
+      const selected = activeModels.find((m) => m.model === model);
+
+      if (!selected?.thinking) {
+        setThinkingEnabled(false);
+      }
+
+      if (!selected?.tools) {
+        setToolsEnabled(false);
+      }
     },
-    [setSelectedModel],
+    [activeModels],
   );
 
   const toggleThinking = useCallback(() => setThinkingEnabled((current) => !current), []);
@@ -79,11 +91,23 @@ function useModel(): Value {
       setActiveModels(data);
 
       const persistedModel = localStorage.getItem(ACTIVE_MODEL_KEY);
-      const selectedModel = data.find((model) => model.model === persistedModel)
-        ? persistedModel
-        : (data[0].model ?? null);
+      const model = data.find((m) => m.model === persistedModel) ? persistedModel : (data[0].model ?? null);
 
-      selectModel(selectedModel);
+      setSelectedModel(model);
+
+      if (model) {
+        localStorage.setItem(ACTIVE_MODEL_KEY, model);
+      }
+
+      const selected = data.find((m) => m.model === model);
+
+      if (!selected?.thinking) {
+        setThinkingEnabled(false);
+      }
+
+      if (!selected?.tools) {
+        setToolsEnabled(false);
+      }
     } catch (error: unknown) {
       setError(error as Error);
     } finally {
@@ -107,10 +131,22 @@ function useModel(): Value {
     })();
   }, [authToken, fetchModels, expired]);
 
+  const thinkingSupported = useMemo(
+    () => activeModels.find((model) => model.model === selectedModel)?.thinking ?? false,
+    [activeModels, selectedModel],
+  );
+
+  const toolsSupported = useMemo(
+    () => activeModels.find((model) => model.model === selectedModel)?.tools ?? false,
+    [activeModels, selectedModel],
+  );
+
   return [
     {
       selectedModel,
+      thinkingSupported,
       thinkingEnabled,
+      toolsSupported,
       toolsEnabled,
       activeModels,
       loading,
