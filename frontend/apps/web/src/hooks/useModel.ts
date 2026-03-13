@@ -43,36 +43,23 @@ function useModel(): Value {
   const [activeModels, setActiveModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
-  const [toolsEnabled, setToolsEnabled] = useState<boolean>(true);
-  const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(true);
+  const [toolsPreferred, setToolsPreferred] = useState<boolean>(true);
+  const [thinkingPreferred, setThinkingPreferred] = useState<boolean>(true);
 
   const initialRequestRef = useRef<boolean>(false);
 
-  const selectModel = useCallback(
-    (model: string | null) => {
-      setSelectedModel(model);
+  const selectModel = useCallback((model: string | null) => {
+    setSelectedModel(model);
 
-      if (model) {
-        localStorage.setItem(ACTIVE_MODEL_KEY, model);
-      } else {
-        localStorage.removeItem(ACTIVE_MODEL_KEY);
-      }
+    if (model) {
+      localStorage.setItem(ACTIVE_MODEL_KEY, model);
+    } else {
+      localStorage.removeItem(ACTIVE_MODEL_KEY);
+    }
+  }, []);
 
-      const selected = activeModels.find((m) => m.model === model);
-
-      if (!selected?.thinking) {
-        setThinkingEnabled(false);
-      }
-
-      if (!selected?.tools) {
-        setToolsEnabled(false);
-      }
-    },
-    [activeModels],
-  );
-
-  const toggleThinking = useCallback(() => setThinkingEnabled((current) => !current), []);
-  const toggleTools = useCallback(() => setToolsEnabled((current) => !current), []);
+  const toggleThinking = useCallback(() => setThinkingPreferred((current) => !current), []);
+  const toggleTools = useCallback(() => setToolsPreferred((current) => !current), []);
 
   const fetchModels = useCallback(async () => {
     setActiveModels([]);
@@ -97,16 +84,6 @@ function useModel(): Value {
 
       if (model) {
         localStorage.setItem(ACTIVE_MODEL_KEY, model);
-      }
-
-      const selected = data.find((m) => m.model === model);
-
-      if (!selected?.thinking) {
-        setThinkingEnabled(false);
-      }
-
-      if (!selected?.tools) {
-        setToolsEnabled(false);
       }
     } catch (error: unknown) {
       setError(error as Error);
@@ -140,6 +117,9 @@ function useModel(): Value {
     () => activeModels.find((model) => model.model === selectedModel)?.tools ?? false,
     [activeModels, selectedModel],
   );
+
+  const thinkingEnabled = thinkingPreferred && thinkingSupported;
+  const toolsEnabled = toolsPreferred && toolsSupported;
 
   return [
     {
