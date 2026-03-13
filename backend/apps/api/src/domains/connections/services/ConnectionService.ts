@@ -175,12 +175,14 @@ export class ConnectionService {
           refreshToken: IsNull(), // No refresh token
           tokenExpiry: MoreThan(new Date()), // Token must not be expired
           provider: { id: Not(IsNull()) }, // Must have a valid provider
+          needsReauth: false, // Must not require reauth
         },
         {
           active: true,
           accessToken: Not(IsNull()), // Must have an access token
           refreshToken: Not(IsNull()), //If there's a refresh token, then an expired access token can be refreshed
           provider: { id: Not(IsNull()) }, // Must have a valid provider
+          needsReauth: false, // Must not require reauth
         },
       ],
       relations: ['user', 'provider'],

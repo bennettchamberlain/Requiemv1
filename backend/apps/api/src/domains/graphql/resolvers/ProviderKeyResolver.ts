@@ -3,7 +3,7 @@ import { Args, ID, Mutation, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtAuthGuard } from '@ci/common/guards';
-import { ProviderKeyService } from '@ci/domains/connections';
+import { ConnectionService, ProviderKeyService } from '@ci/domains/connections';
 
 import { CreateProviderKeyInput } from '../inputs/CreateProviderKeyInput';
 import { UpdateProviderKeyInput } from '../inputs/UpdateProviderKeyInput';
@@ -13,7 +13,10 @@ import { ProviderKeyType } from '../types/ProviderKeyType';
 @UseGuards(JwtAuthGuard)
 @Resolver()
 export class ProviderKeyResolver {
-  constructor(private readonly providerKeyService: ProviderKeyService) {}
+  constructor(
+    private readonly providerKeyService: ProviderKeyService,
+    private readonly connectionService: ConnectionService,
+  ) {}
 
   @Mutation(() => ProviderKeyType)
   async createProviderKey(
@@ -27,6 +30,17 @@ export class ProviderKeyResolver {
       providerId,
       clientId: input.clientId,
       clientSecret: input.clientSecret,
+    });
+
+    const existingConnections = await this.connectionService.search(serviceContext, {
+      providerId,
+      active: true,
+    });
+
+    await existingConnections.forEach(async (connection) => {
+      await this.connectionService.update(serviceContext, connection.id, {
+        needsReauth: true,
+      });
     });
 
     return ProviderKeyType.toType(entity);
@@ -43,6 +57,17 @@ export class ProviderKeyResolver {
 
     const entity = await this.providerKeyService.update(serviceContext, decodedId, input);
 
+    const existingConnections = await this.connectionService.search(serviceContext, {
+      providerId: entity!.providerId,
+      active: true,
+    });
+
+    await existingConnections.forEach(async (connection) => {
+      await this.connectionService.update(serviceContext, connection.id, {
+        needsReauth: true,
+      });
+    });
+
     return entity ? ProviderKeyType.toType(entity) : null;
   }
 
@@ -53,6 +78,19 @@ export class ProviderKeyResolver {
   ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
     const { id: decodedId } = GlobalUID.decode(id);
+
+    const entity = await this.providerKeyService.findById(serviceContext, decodedId);
+
+    const existingConnections = await this.connectionService.search(serviceContext, {
+      providerId: entity!.providerId,
+      active: true,
+    });
+
+    await existingConnections.forEach(async (connection) => {
+      await this.connectionService.update(serviceContext, connection.id, {
+        needsReauth: true,
+      });
+    });
 
     return this.providerKeyService.delete(serviceContext, decodedId);
   }
