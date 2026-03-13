@@ -7,9 +7,10 @@ import { useModel } from '@/hooks';
 
 interface Props {
   withToggles?: boolean;
+  visionOnly?: boolean;
 }
 
-export function ModelSelector({ withToggles = false }: Props) {
+export function ModelSelector({ withToggles = false, visionOnly = false }: Props) {
   const { toast } = useToast();
 
   const [
@@ -17,6 +18,7 @@ export function ModelSelector({ withToggles = false }: Props) {
     { selectModel, toggleThinking, toggleTools },
   ] = useModel();
 
+  const models = visionOnly ? activeModels.filter((model) => model.vision === true) : activeModels;
   const selectedModelConfig = activeModels.find((model) => model.model === selectedModel) ?? null;
 
   const handleToggleTools = useCallback(
@@ -55,7 +57,7 @@ export function ModelSelector({ withToggles = false }: Props) {
         <Select.Value placeholder="Active model" />
       </Select.Trigger>
       <Select.Content>
-        {activeModels.map((model) => (
+        {models.map((model) => (
           <Select.Item key={model.model} value={model.model}>
             <div className="flex w-full items-center justify-between gap-2">
               <span className="truncate">{model.model}</span>

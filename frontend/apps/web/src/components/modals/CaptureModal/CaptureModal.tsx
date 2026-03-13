@@ -317,7 +317,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
                 </Button>
               </Popover.Trigger>
               <Popover.Content className="p-2 relative left-2 w-auto">
-                <ModelSelector withToggles />
+                <ModelSelector withToggles visionOnly />
               </Popover.Content>
             </Popover>
           </div>
@@ -361,7 +361,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
           <Dialog.Title className="flex-1">Upload Images and Videos</Dialog.Title>
           <Dialog.Description className="hidden">Capture audio or video and upload to CI</Dialog.Description>
 
-          <ModelSelector withToggles />
+          <ModelSelector withToggles visionOnly />
 
           <div className="flex items-center justify-end">
             <Button variant="ghost" size="icon" onClick={handleClose}>
