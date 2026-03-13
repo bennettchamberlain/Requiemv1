@@ -7,17 +7,30 @@ import { useModel } from '@/hooks';
 
 interface Props {
   withToggles?: boolean;
+  visionOnly?: boolean;
 }
 
-export function ModelSelector({ withToggles = false }: Props) {
+export function ModelSelector({ withToggles = false, visionOnly = false }: Props) {
   const { toast } = useToast();
 
   const [
-    { selectedModel, thinkingEnabled, toolsEnabled, activeModels, error },
-    { selectModel, toggleThinking, toggleTools },
+    {
+      selectedModel,
+      selectedVisionModel,
+      thinkingSupported,
+      thinkingEnabled,
+      toolsSupported,
+      toolsEnabled,
+      activeModels,
+      error,
+    },
+    { selectModel, selectVisionModel, toggleThinking, toggleTools },
   ] = useModel();
 
-  const selectedModelConfig = activeModels.find((model) => model.model === selectedModel) ?? null;
+  const currentModel = visionOnly ? selectedVisionModel : selectedModel;
+  const handleSelectModel = visionOnly ? selectVisionModel : selectModel;
+  const models = visionOnly ? activeModels.filter((model) => model.vision === true) : activeModels;
+  const selectedModelConfig = activeModels.find((model) => model.model === currentModel) ?? null;
 
   const handleToggleTools = useCallback(
     (pressed: boolean) => {
@@ -50,12 +63,12 @@ export function ModelSelector({ withToggles = false }: Props) {
   }
 
   const selector = (
-    <Select value={selectedModel ?? undefined} onValueChange={selectModel}>
+    <Select value={currentModel ?? undefined} onValueChange={handleSelectModel}>
       <Select.Trigger className="w-[150px]">
         <Select.Value placeholder="Active model" />
       </Select.Trigger>
       <Select.Content>
-        {activeModels.map((model) => (
+        {models.map((model) => (
           <Select.Item key={model.model} value={model.model}>
             <div className="flex w-full items-center justify-between gap-2">
               <span className="truncate">{model.model}</span>
@@ -85,6 +98,8 @@ export function ModelSelector({ withToggles = false }: Props) {
           size="sm"
           variant="outline"
           aria-label="Toggle tools"
+          disabled={!toolsSupported}
+          className={!toolsSupported ? 'opacity-50 cursor-not-allowed' : ''}
         >
           <Wrench />
         </Toggle>
@@ -94,6 +109,8 @@ export function ModelSelector({ withToggles = false }: Props) {
           size="sm"
           variant="outline"
           aria-label="Toggle thinking"
+          disabled={!thinkingSupported}
+          className={!thinkingSupported ? 'opacity-50 cursor-not-allowed' : ''}
         >
           <Brain />
         </Toggle>
