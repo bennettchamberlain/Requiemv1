@@ -5,6 +5,7 @@ import { createHookContext, fetchJson } from '@ci/common';
 import { useAuth } from './useAuth';
 
 const ACTIVE_MODEL_KEY = 'activeModel';
+const ACTIVE_VISION_MODEL_KEY = 'activeVisionModel';
 
 interface Model {
   model: string;
@@ -20,6 +21,7 @@ interface Model {
 type Value = [
   {
     selectedModel: string | null;
+    selectedVisionModel: string | null;
     thinkingSupported: boolean;
     thinkingEnabled: boolean;
     toolsSupported: boolean;
@@ -30,6 +32,7 @@ type Value = [
   },
   {
     selectModel: (model: string | null) => void;
+    selectVisionModel: (model: string | null) => void;
     toggleThinking: () => void;
     toggleTools: () => void;
     refetch: () => void;
@@ -40,6 +43,7 @@ function useModel(): Value {
   const [{ authToken, expired }] = useAuth();
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [selectedVisionModel, setSelectedVisionModel] = useState<string | null>(null);
   const [activeModels, setActiveModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
@@ -48,13 +52,36 @@ function useModel(): Value {
 
   const initialRequestRef = useRef<boolean>(false);
 
-  const selectModel = useCallback((model: string | null) => {
-    setSelectedModel(model);
+  const selectModel = useCallback(
+    (model: string | null) => {
+      setSelectedModel(model);
+
+      if (model) {
+        localStorage.setItem(ACTIVE_MODEL_KEY, model);
+      } else {
+        localStorage.removeItem(ACTIVE_MODEL_KEY);
+      }
+
+      const selected = activeModels.find((m) => m.model === model);
+
+      if (selected?.vision) {
+        setSelectedVisionModel(model);
+
+        if (model) {
+          localStorage.setItem(ACTIVE_VISION_MODEL_KEY, model);
+        }
+      }
+    },
+    [activeModels],
+  );
+
+  const selectVisionModel = useCallback((model: string | null) => {
+    setSelectedVisionModel(model);
 
     if (model) {
-      localStorage.setItem(ACTIVE_MODEL_KEY, model);
+      localStorage.setItem(ACTIVE_VISION_MODEL_KEY, model);
     } else {
-      localStorage.removeItem(ACTIVE_MODEL_KEY);
+      localStorage.removeItem(ACTIVE_VISION_MODEL_KEY);
     }
   }, []);
 
@@ -84,6 +111,18 @@ function useModel(): Value {
 
       if (model) {
         localStorage.setItem(ACTIVE_MODEL_KEY, model);
+      }
+
+      const visionModels = data.filter((m) => m.vision === true);
+      const persistedVisionModel = localStorage.getItem(ACTIVE_VISION_MODEL_KEY);
+      const visionModel = visionModels.find((m) => m.model === persistedVisionModel)
+        ? persistedVisionModel
+        : (visionModels[0]?.model ?? null);
+
+      setSelectedVisionModel(visionModel);
+
+      if (visionModel) {
+        localStorage.setItem(ACTIVE_VISION_MODEL_KEY, visionModel);
       }
     } catch (error: unknown) {
       setError(error as Error);
@@ -124,6 +163,7 @@ function useModel(): Value {
   return [
     {
       selectedModel,
+      selectedVisionModel,
       thinkingSupported,
       thinkingEnabled,
       toolsSupported,
@@ -134,6 +174,7 @@ function useModel(): Value {
     },
     {
       selectModel,
+      selectVisionModel,
       toggleThinking,
       toggleTools,
       refetch: fetchModels,

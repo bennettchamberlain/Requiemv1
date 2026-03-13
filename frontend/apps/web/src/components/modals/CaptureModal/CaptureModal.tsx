@@ -27,7 +27,7 @@ interface ModelCapabilitiesResponse {
 
 export function CaptureModal({ open = false, onClose }: Props) {
   const [{ authToken }] = useAuth();
-  const [{ selectedModel }] = useModel();
+  const [{ selectedVisionModel: selectedModel }] = useModel();
   const { toast } = useToast();
 
   const { isMobile } = useDeviceLayout();

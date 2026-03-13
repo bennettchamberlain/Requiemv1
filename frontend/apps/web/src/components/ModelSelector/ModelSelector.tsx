@@ -14,12 +14,23 @@ export function ModelSelector({ withToggles = false, visionOnly = false }: Props
   const { toast } = useToast();
 
   const [
-    { selectedModel, thinkingSupported, thinkingEnabled, toolsSupported, toolsEnabled, activeModels, error },
-    { selectModel, toggleThinking, toggleTools },
+    {
+      selectedModel,
+      selectedVisionModel,
+      thinkingSupported,
+      thinkingEnabled,
+      toolsSupported,
+      toolsEnabled,
+      activeModels,
+      error,
+    },
+    { selectModel, selectVisionModel, toggleThinking, toggleTools },
   ] = useModel();
 
+  const currentModel = visionOnly ? selectedVisionModel : selectedModel;
+  const handleSelectModel = visionOnly ? selectVisionModel : selectModel;
   const models = visionOnly ? activeModels.filter((model) => model.vision === true) : activeModels;
-  const selectedModelConfig = activeModels.find((model) => model.model === selectedModel) ?? null;
+  const selectedModelConfig = activeModels.find((model) => model.model === currentModel) ?? null;
 
   const handleToggleTools = useCallback(
     (pressed: boolean) => {
@@ -52,7 +63,7 @@ export function ModelSelector({ withToggles = false, visionOnly = false }: Props
   }
 
   const selector = (
-    <Select value={selectedModel ?? undefined} onValueChange={selectModel}>
+    <Select value={currentModel ?? undefined} onValueChange={handleSelectModel}>
       <Select.Trigger className="w-[150px]">
         <Select.Value placeholder="Active model" />
       </Select.Trigger>
