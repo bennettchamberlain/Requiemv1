@@ -1,10 +1,15 @@
-## COPYRIGHT COMPANION INTELLIGENCE - LIFESCOPE INC
 
-## DO NOT DISTRIBUTE
+
+# CI Digital Memory Server
+### Personal Database for Companion Intelligence
+
+#### COPYRIGHT COMPANION INTELLIGENCE - LIFESCOPE INC
+
+#### DO NOT DISTRIBUTE
 
 ## PRIVATE AND CONFIDENTIAL
 
-# CI Server - Front + Back End API + Web Monorepo
+Front + Back End API + Web Monorepo
 
 This repository serves as the web interface to the Companion Intelligence server.
 
