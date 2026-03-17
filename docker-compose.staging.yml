@@ -49,6 +49,10 @@ services:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
 
+  summary-service:
+    environment:
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+
   #############
   # EPHEMERAL #
   #############
