@@ -3,24 +3,38 @@ import { gql, useQuery } from '@apollo/client';
 const FEED_BADGE_ACTION_LIMIT = 5;
 const FEED_BADGE_SUMMARY_LIMIT = 10;
 
-const GET_FEED_BADGE_COUNT = gql(`
+const FEED_BADGE_ACTION_FRAGMENT = gql`
+  fragment FeedBadgeAction on ActionType {
+    id
+    seen
+    dismissed
+  }
+`;
+
+const FEED_BADGE_SUMMARY_FRAGMENT = gql`
+  fragment FeedBadgeSummary on SummaryType {
+    id
+    seen
+    dismissed
+  }
+`;
+
+const GET_FEED_BADGE_COUNT = gql`
   query GetFeedBadgeCount($actionLimit: Int, $summaryFirst: Int) {
     feedActions(limit: $actionLimit) {
-      id
-      seen
-      dismissed
+      ...FeedBadgeAction
     }
     summaries(first: $summaryFirst) {
       edges {
         node {
-          id
-          seen
-          dismissed
+          ...FeedBadgeSummary
         }
       }
     }
   }
-`);
+  ${FEED_BADGE_ACTION_FRAGMENT}
+  ${FEED_BADGE_SUMMARY_FRAGMENT}
+`;
 
 interface FeedBadgeActionNode {
   id: string;
