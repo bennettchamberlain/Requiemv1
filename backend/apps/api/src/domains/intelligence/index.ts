@@ -30,9 +30,11 @@ import { EventsModule } from '@ci/domains/events';
 import { ActionsController } from './controllers/ActionsController';
 import { AnswersController } from './controllers/AnswersController';
 import { QuestionsController } from './controllers/QuestionsController';
+import { FeedQueueCron } from './cron/FeedQueueCron';
 import { type Action, ActionEntity } from './entities/ActionEntity';
 import { type Answer, AnswerEntity } from './entities/AnswerEntity';
 import { type Question, QuestionEntity } from './entities/QuestionEntity';
+import { FeedQueuePopulationListener } from './listeners/FeedQueuePopulationListener';
 import { ActionService } from './services/ActionService';
 import { AnswerService } from './services/AnswerService';
 import { QuestionService } from './services/QuestionService';
@@ -42,7 +44,7 @@ import { QuestionService } from './services/QuestionService';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([ActionEntity, AnswerEntity, QuestionEntity]), EventsModule],
-  providers: [ActionService, AnswerService, QuestionService],
+  providers: [ActionService, AnswerService, QuestionService, FeedQueueCron, FeedQueuePopulationListener],
   controllers: [ActionsController, AnswersController, QuestionsController],
   exports: [ActionService, AnswerService, QuestionService],
 })
