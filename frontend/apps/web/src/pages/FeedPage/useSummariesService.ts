@@ -135,6 +135,7 @@ export function useSummariesService(first?: number) {
 
   const markSummaryAsSeen = async (id: string) => {
     await markSeenMutation({ variables: { id } });
+    await refetch();
   };
 
   const markSummaryAsDismissed = async (id: string) => {

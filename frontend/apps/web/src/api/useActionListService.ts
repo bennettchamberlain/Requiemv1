@@ -104,6 +104,7 @@ export function useActionListService(limit: number = 5) {
   const markActionAsSeen = async (actionId: string) => {
     const gid = btoa(`action:${actionId}`);
     await markAsSeen({ variables: { id: gid } });
+    await refetch();
   };
 
   const markActionAsDismissed = async (actionId: string) => {

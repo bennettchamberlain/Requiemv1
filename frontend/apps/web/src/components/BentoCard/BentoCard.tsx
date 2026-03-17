@@ -2,7 +2,7 @@ import { type MouseEvent, type MouseEventHandler, type ReactNode, useCallback } 
 
 import { useDeviceLayout } from '@ci/common';
 import { Button, cn } from '@ci/shadcn';
-import { X } from '@ci/shadcn/icons';
+import { MessagesSquare, ThumbsDown, ThumbsUp, X } from '@ci/shadcn/icons';
 
 import { Tag } from '@/components/Tag';
 
@@ -13,6 +13,9 @@ interface Props {
   imageUrl?: string;
   className?: string;
   onClick?: MouseEventHandler;
+  onLike?: MouseEventHandler;
+  onDislike?: MouseEventHandler;
+  onExpand?: MouseEventHandler;
   onDismiss?: MouseEventHandler<HTMLButtonElement>;
   dismissLabel?: string;
   showUnseenIndicator?: boolean;
@@ -25,6 +28,9 @@ export function BentoCard({
   imageUrl,
   className,
   onClick,
+  onLike,
+  onDislike,
+  onExpand,
   onDismiss,
   dismissLabel = 'Dismiss card',
   showUnseenIndicator = false,
@@ -36,6 +42,30 @@ export function BentoCard({
       onClick?.(e);
     },
     [onClick],
+  );
+
+  const handleLike = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      onLike?.(e);
+    },
+    [onLike],
+  );
+
+  const handleDislike = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      onDislike?.(e);
+    },
+    [onDislike],
+  );
+
+  const handleExpand = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      onExpand?.(e);
+    },
+    [onExpand],
   );
 
   const handleDismiss = useCallback(
@@ -62,7 +92,7 @@ export function BentoCard({
 
   const unseenIndicator = showUnseenIndicator ? (
     <span
-      className="pointer-events-none absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
+      className="absolute left-3 top-3 z-30 h-2.5 w-2.5 rounded-full bg-primary/35"
       aria-label="New item"
       title="New item"
     />
@@ -107,6 +137,26 @@ export function BentoCard({
         <div className="flex-1 overflow-y-auto">
           <div>{description}</div>
         </div>
+
+        <div className="flex gap-4 justify-between">
+          <div className="flex flex-row gap-3 content-between">
+            <Button className="bg-stone-50 cursor-pointer w-12 h-12" variant="outline" onClick={handleLike}>
+              <ThumbsUp className="w-12 h-12" />
+            </Button>
+
+            <Button
+              className="bg-stone-50 cursor-pointer w-12 h-12"
+              variant="outline"
+              onClick={handleDislike}
+            >
+              <ThumbsDown className="w-12 h-12" />
+            </Button>
+          </div>
+
+          <Button className="bg-stone-50 cursor-pointer w-12 h-12" variant="outline" onClick={handleExpand}>
+            <MessagesSquare className="w-12 h-12" />
+          </Button>
+        </div>
       </div>
     );
   }
@@ -136,9 +186,29 @@ export function BentoCard({
           )}
         </div>
 
-        <div className="relative flex-1 overflow-hidden">
-          <div className="h-full overflow-hidden">{description}</div>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-card" />
+        <div className="flex-1 overflow-hidden">
+          <div>{description}</div>
+        </div>
+
+        <div className="flex gap-4 justify-between">
+          <div className="flex flex-row gap-2 content-between">
+            <Button className="bg-stone-50 cursor-pointer" variant="outline" size="icon" onClick={handleLike}>
+              <ThumbsUp />
+            </Button>
+
+            <Button
+              className="bg-stone-50 cursor-pointer"
+              variant="outline"
+              size="icon"
+              onClick={handleDislike}
+            >
+              <ThumbsDown />
+            </Button>
+          </div>
+
+          <Button className="bg-stone-50 cursor-pointer" size="icon" variant="outline" onClick={handleExpand}>
+            <MessagesSquare />
+          </Button>
         </div>
       </div>
     );
@@ -159,9 +229,25 @@ export function BentoCard({
           <h1 className="text-2xl font-semibold">{title}</h1>
         </div>
 
-        <div className="relative flex-1 overflow-hidden">
-          <div className="h-full overflow-hidden">{description}</div>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-card" />
+        <div className="flex-1 overflow-hidden">
+          <div>{description}</div>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2">
+            <Button className="bg-stone-50 cursor-pointer" variant="outline" size="icon" onClick={handleLike}>
+              <ThumbsUp />
+            </Button>
+
+            <Button
+              className="bg-stone-50 cursor-pointer"
+              variant="outline"
+              size="icon"
+              onClick={handleDislike}
+            >
+              <ThumbsDown />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -182,7 +268,11 @@ export function BentoCard({
         {/* We're relying on flexbox to space this correctly, so we need to render an empty div if there are no tags to render the button at the bottom. */}
         {tags?.length === 0 && <div></div>}
 
-        <div className="relative z-10 p-4" />
+        <div className="relative z-10 text-right justify-end p-4">
+          <Button className="bg-stone-50 cursor-pointer" size="icon" variant="outline" onClick={handleExpand}>
+            <MessagesSquare />
+          </Button>
+        </div>
 
         {/* We're passing in an `imageUrl` (at least for now) because we're adding these classes to make it look "right".
         We could use a ReactNode, but consider this a shortcut for now. Feel free to update if the same design goals can be met. */}
