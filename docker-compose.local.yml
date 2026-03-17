@@ -40,6 +40,8 @@ services:
   summary-service:
     ports:
       - 8001:8001
+    environment:
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
 
   tts-service:
     ports:
