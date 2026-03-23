@@ -59,7 +59,6 @@ export function PromptsPage() {
         throw new Error('Authentication token not found');
       }
 
-      console.log('AnswersPage: Making API request to http://dev.companionintelligence.com/api/answers');
       const response = await fetch('/api/answers', {
         headers: {
           Authorization: `Bearer ${authToken}`,

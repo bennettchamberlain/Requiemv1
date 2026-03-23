@@ -1,7 +1,7 @@
 {
   "host": "0.0.0.0",
   "port": 3030,
-  "hostname": "dev.companionintelligence.com",
+  "hostname": "memory.ci.localhost",
   "logging": {
     "level": "info"
   },
@@ -42,7 +42,7 @@
       }
     },
     "oauth": {
-      "callbackUrl": "https://dev.companionintelligence.com/oauth/callback"
+      "callbackUrl": "https://memory.ci.localhost/oauth/callback"
     }
   },
   "db": {
