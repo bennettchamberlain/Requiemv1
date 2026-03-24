@@ -497,6 +497,33 @@ type FileType implements Node & Taggable {
   updatedAt: DateTime!
 }
 
+"""One 30-minute forecast bucket from the HBPE histogram"""
+type ForecastBucketType {
+  bucketIndex: Int!
+  l0Probs: [ProbabilityEntryType!]!
+  l1Probs: [ProbabilityEntryType!]!
+  l2Probs: [ProbabilityEntryType!]
+  q10: Float!
+  q50: Float!
+  q90: Float!
+
+  """ISO-8601 start time for this bucket"""
+  startTime: String!
+}
+
+"""48-bucket HBPE day-ahead forecast"""
+type ForecastType {
+  buckets: [ForecastBucketType!]!
+
+  """ISO-8601 timestamp when this forecast was generated"""
+  generatedAt: String!
+
+  """
+  Forecast horizon, e.g. "48h"
+  """
+  horizon: String!
+}
+
 type InsightItemType {
   keyActions: [String!]!
   relatedEntityIds: [String!]
@@ -715,6 +742,12 @@ type PlaceType implements Node & Taggable {
   uploaded: Boolean
 }
 
+"""A single label→probability entry from the HBPE histogram"""
+type ProbabilityEntryType {
+  label: String!
+  probability: Float!
+}
+
 type ProviderConnection implements Connection {
   edges: [ProviderEdge!]!
   pageInfo: PageInfo!
@@ -782,6 +815,9 @@ type Query {
   feedActions(limit: Int! = 5): [ActionType!]!
   file(id: ID!): FileType
   files(after: String, before: String, first: Int, last: Int): FileConnection!
+
+  """Fetch the HBPE day-ahead forecast histogram"""
+  forecast(horizon: String = "24h"): ForecastType
   item(id: ID!): ItemType
   items(after: String, before: String, first: Int, last: Int): ItemConnection!
   me: UserType
