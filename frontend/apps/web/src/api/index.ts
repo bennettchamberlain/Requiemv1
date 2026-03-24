@@ -1,4 +1,6 @@
 export { useActionService } from './useActionService';
+export { useForecastService } from './useForecastService';
+export type { ForecastBucket, ForecastResponse, ProbabilityEntry } from './useForecastService';
 export { useActionListService } from './useActionListService';
 export { useThreadService } from './useThreadService';
 export { useUploadFile } from './useUploadFile';
