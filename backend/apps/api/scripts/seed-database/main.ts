@@ -19,6 +19,7 @@ import { seedAnswers } from './seed-answers';
 import { seedCommunications } from './seed-communications';
 import { seedConcepts } from './seed-concepts';
 import { seedEvents } from './seed-events';
+import { seedHbpe } from './seed-hbpe';
 import { seedItems } from './seed-items';
 import { seedMessages } from './seed-messages';
 import { seedNotes } from './seed-notes';
@@ -134,6 +135,7 @@ const logger = new LoggerService();
     await seedCommunications(module, multibar);
     await seedRelationships(module, multibar);
     await seedSummaries(module, multibar);
+    await seedHbpe(module, multibar);
   } catch (err) {
     error = err as Error;
   }
