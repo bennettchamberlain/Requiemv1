@@ -9,6 +9,7 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       STT_HOST: http://stt-service:9001
       TTS_HOST: http://tts-service:9002
+      HBPE_HOST: http://hbpe-service:8002
     networks:
       - ci
     extra_hosts:
@@ -83,3 +84,14 @@ services:
   setup-orchestrator:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
+
+  minio:
+    ports:
+      - 9000:9000
+
+  hbpe-service:
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video

@@ -93,6 +93,35 @@ services:
       database:
          condition: service_healthy
     profiles: [ "local", "staging", "production" ]
+  hbpe-service:
+    build:
+      context: ./backend/apps/hbpe
+      dockerfile: Dockerfile.rocm
+    image: ci/hbpe-service
+    pull_policy: build
+    environment:
+      - PYTHONPATH=/app/src
+      - DATABASE_URL=postgresql://companion:${DATABASE_PASSWORD}@database:5432/companion
+      - TEMPORAL_ADDRESS=orchestrator:7233
+      - TEMPORAL_NAMESPACE=default
+      - HBPE_TASK_QUEUE=hbpe
+      - MODELS_DIR=/app/models
+      - TOKEN_CORPUS_DIR=/app/data/token_corpus
+      - HF_HOME=/app/models/hf_cache
+    volumes:
+      - hbpe-models:/app/models
+      - hbpe-corpus:/app/data
+    networks:
+      - ci
+    depends_on:
+      - database
+      - orchestrator
+    restart: unless-stopped
+    profiles: [ "staging", "production" ]
+
+  ##############################
+  # THIRD-PARTY MANAGEMENT UIs #
+  ##############################
 
   #########
   # TOOLS #
@@ -140,6 +169,8 @@ volumes:
   stt-service-cache:
   tts-service-models:
   tts-service-cache:
+  hbpe-models:
+  hbpe-corpus:
 
 networks:
   ci:
