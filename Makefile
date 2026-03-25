@@ -19,6 +19,8 @@ export TTS_REPO ?= ci/tts-service
 
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
+PROJECT_NAME := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
+
 # Helper: expands to "-t repo:tag" only when TAG is non-empty
 versioned_tag = $(if $(TAG),-t $(1):$(TAG))
 
@@ -57,14 +59,19 @@ reset: ## Reset the local development environment
 		tmux kill-session -t companion; \
 	fi
 
-	@printf "\n➤ Removing project volumes...\n\n"
-	@docker volume ls -q --filter "name=ci-server_" | xargs -r docker volume rm -f 2>/dev/null || true
+	@VOLS=$$(docker volume ls -q --filter "name=$(PROJECT_NAME)"); \
+	if [ -n "$$VOLS" ]; then \
+		printf "\n➤ Removing project volumes...\n"; \
+		printf "$$VOLS\n"; \
+		echo "$$VOLS" | xargs docker volume rm -f >/dev/null 2>&1 || true; \
+	fi
 
-	@printf "\n➤ Removing project images...\n\n"
-	@docker images --format '{{.Repository}}:{{.Tag}}' | grep '^ci/' | xargs -r docker rmi -f 2>/dev/null || true
-
-	@printf "\n➤ Pruning unused networks...\n\n"
-	@docker network prune --force 2>/dev/null || true
+	@NETS=$$(docker network ls -q --filter "name=$(PROJECT_NAME)"); \
+	if [ -n "$$NETS" ]; then \
+		printf "\n➤ Removing project networks...\n"; \
+		printf "$$NETS\n"; \
+		echo "$$NETS" | xargs docker network rm -f >/dev/null 2>&1 || true; \
+	fi
 
 	@printf "\n$(GREEN)✓$(RESET) Reset complete.\n\n"
 
@@ -311,17 +318,6 @@ health: ## Check the repository for prerequisites
 		exit 1; \
 	fi
 
-.PHONY: dev-health
-dev-health: health ## Check the repository for prerequisites including development DNS resolutions
-	@HOST=dev.companionintelligence.com; \
-	IP=$$(ping -c 1 -W 1 $$HOST | grep -oE '\(([0-9:.]+)\)' | head -n1 | tr -d '()'); \
-	if [ "$$IP" = "127.0.0.1" ] || [ "$$IP" = "::1" ]; then \
-		printf "$(GREEN)✓$(RESET) $$HOST resolves to localhost ($$IP)\n\n"; \
-	else \
-		printf "$(RED)✗$(RESET) $$HOST resolves to $$IP (not localhost)\n\n"; \
-		exit 1; \
-	fi
-
 .PHONY: init
 init: ## Initialize repository after checkout
 	@printf "🏗️ Initializing repository...\n\n"
@@ -355,7 +351,7 @@ install: ## Install project dependencies
 	@printf "\n"
 
 .PHONY: local
-local: dev-health init build-local stop ## Run the local deployment
+local: health init build-local stop ## Run the local deployment
 	@printf "⌨️ Starting local services...\n\n"
 
 	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d --remove-orphans
