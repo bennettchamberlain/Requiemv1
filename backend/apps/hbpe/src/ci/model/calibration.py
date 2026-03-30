@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from ci.config import settings

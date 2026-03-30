@@ -11,8 +11,6 @@ Implements the scheduling half of T5.0 (CI-Server-1wz).
 """
 from __future__ import annotations
 
-import logging
-
 import structlog
 from temporalio.client import Client, Schedule, ScheduleActionStartWorkflow, ScheduleSpec
 

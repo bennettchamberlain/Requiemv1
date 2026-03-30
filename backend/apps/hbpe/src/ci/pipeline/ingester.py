@@ -70,14 +70,14 @@ class EventIngester:
         """
         try:
             import asyncpg
-            await self._asyncpg_loop()
+            await self._asyncpg_loop(asyncpg)
         except ImportError:
             log.warning("asyncpg not installed — falling back to polling ingester")
             await self._polling_loop()
 
-    async def _asyncpg_loop(self) -> None:
+    async def _asyncpg_loop(self, asyncpg) -> None:
         from ci.config import settings
-        conn = await __import__("asyncpg").connect(settings.database_url)
+        conn = await asyncpg.connect(settings.database_url)
         try:
             for ch in CHANNELS:
                 await conn.add_listener(ch, self._on_notify)
@@ -111,12 +111,12 @@ class EventIngester:
                             )
                             return cur.fetchall()
 
-                rows = await asyncio.get_event_loop().run_in_executor(None, _query)
+                rows = await asyncio.get_running_loop().run_in_executor(None, _query)
                 for row in rows:
                     self._dispatch(str(row["user_id"]), str(row["date"]))
                 last_check = datetime.utcnow()
-            except Exception as exc:
-                log.warning("Polling ingester error: %s", exc)
+            except Exception:
+                log.exception("Polling ingester error")
 
     def _on_notify(self, _conn, _pid, channel: str, payload: str) -> None:
         """asyncpg notification callback (called from event loop)."""
@@ -177,7 +177,7 @@ class EventIngester:
                 ser = TokenSerializer()
                 n = ser.serialize_day(user_id, d)
                 log.info("Re-serialised %d tokens for user=%s date=%s", n, user_id[:8], d)
-            except Exception as exc:
-                log.warning("Re-serialise failed: %s", exc)
+            except Exception:
+                log.exception("Re-serialise failed for user=%s date=%s", user_id[:8], d)
 
-        await asyncio.get_event_loop().run_in_executor(None, _run)
+        await asyncio.get_running_loop().run_in_executor(None, _run)

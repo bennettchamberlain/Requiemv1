@@ -98,11 +98,10 @@ class SummaryTokenizer:
                 _store_summary_label(row["summary_id"], l0, l1_id)
                 labeled += 1
 
-            except Exception as exc:
-                log.error(
-                    "SummaryTokenizer.label_day: summary %s failed: %s",
+            except Exception:
+                log.exception(
+                    "SummaryTokenizer.label_day failed: summary_id=%s",
                     row["summary_id"],
-                    exc,
                 )
 
         log.info(
