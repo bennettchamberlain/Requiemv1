@@ -575,6 +575,30 @@ export type FileTypeItemsArgs = {
   last?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/** One 30-minute forecast bucket from the HBPE histogram */
+export type ForecastBucketType = {
+  __typename?: 'ForecastBucketType';
+  bucketIndex: Scalars['Int']['output'];
+  l0Probs: Array<ProbabilityEntryType>;
+  l1Probs: Array<ProbabilityEntryType>;
+  l2Probs?: Maybe<Array<ProbabilityEntryType>>;
+  q10: Scalars['Float']['output'];
+  q50: Scalars['Float']['output'];
+  q90: Scalars['Float']['output'];
+  /** ISO-8601 start time for this bucket */
+  startTime: Scalars['String']['output'];
+};
+
+/** 48-bucket HBPE day-ahead forecast */
+export type ForecastType = {
+  __typename?: 'ForecastType';
+  buckets: Array<ForecastBucketType>;
+  /** ISO-8601 timestamp when this forecast was generated */
+  generatedAt: Scalars['String']['output'];
+  /** Forecast horizon, e.g. "48h" */
+  horizon: Scalars['String']['output'];
+};
+
 export type InsightItemType = {
   __typename?: 'InsightItemType';
   keyActions: Array<Scalars['String']['output']>;
@@ -1042,6 +1066,13 @@ export type PlaceType = Node & Taggable & {
   uploaded?: Maybe<Scalars['Boolean']['output']>;
 };
 
+/** A single label→probability entry from the HBPE histogram */
+export type ProbabilityEntryType = {
+  __typename?: 'ProbabilityEntryType';
+  label: Scalars['String']['output'];
+  probability: Scalars['Float']['output'];
+};
+
 export type ProviderConnection = Connection & {
   __typename?: 'ProviderConnection';
   edges: Array<ProviderEdge>;
@@ -1115,6 +1146,8 @@ export type Query = {
   feedActions: Array<ActionType>;
   file?: Maybe<FileType>;
   files: FileConnection;
+  /** Fetch the HBPE day-ahead forecast histogram */
+  forecast?: Maybe<ForecastType>;
   item?: Maybe<ItemType>;
   items: ItemConnection;
   me?: Maybe<UserType>;
@@ -1276,6 +1309,11 @@ export type QueryFilesArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
   last?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryForecastArgs = {
+  horizon?: InputMaybe<Scalars['String']['input']>;
 };
 
 
