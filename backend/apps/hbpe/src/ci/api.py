@@ -41,6 +41,7 @@ def _default_user_id() -> Optional[str]:
         from ci.data_client import get_first_user_id
         return get_first_user_id()
     except Exception:
+        log.debug("Could not determine default user ID", exc_info=True)
         return None
 
 
@@ -62,8 +63,8 @@ async def lifespan(app: FastAPI):
         try:
             _get_or_create_engine(uid)
             log.info("Pre-loaded InferenceEngine for user %s", uid[:8])
-        except Exception as exc:
-            log.warning("Could not pre-load engine: %s", exc)
+        except Exception:
+            log.exception("Could not pre-load default inference engine")
 
     # Start event ingester
     from ci.pipeline.ingester import EventIngester
@@ -114,9 +115,9 @@ async def histogram(
         return JSONResponse(content=result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
+    except Exception:
         log.exception("Histogram generation failed")
-        raise HTTPException(status_code=500, detail=f"Internal error: {exc}")
+        raise HTTPException(status_code=500, detail="Internal error")
 
 
 @app.post("/invalidate/{date_str}")

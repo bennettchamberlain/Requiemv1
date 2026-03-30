@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 
 from ci.config import settings
 from ci.model.calibration import _build_full_batch

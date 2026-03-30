@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import logging
 
-import psycopg2.extras
-
 from ci.config import settings
 from ci.database import get_conn
 

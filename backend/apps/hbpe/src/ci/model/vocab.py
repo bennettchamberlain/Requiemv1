@@ -12,8 +12,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-import psycopg2.extras
-
 from ci.database import get_conn
 from ci.tokenizer.vocab_registry import L0_CLASSES
 
