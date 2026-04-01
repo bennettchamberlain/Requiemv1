@@ -169,7 +169,6 @@ This is the CI Server repository for Companion Intelligence, a Yarn workspace mo
 - Node.js (version in `.nvmrc`)
 - Docker & Docker Compose
 - Ollama with required models
-- Host entry: `dev.companionintelligence.com → 127.0.0.1`
 
 ### Services
 - PostgreSQL: Database and job queue

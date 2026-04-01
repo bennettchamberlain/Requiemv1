@@ -9,7 +9,7 @@ function getAllowedHosts(): string[] {
   const hostname = process.env.HOSTNAME;
 
   if (!hostname) {
-    return ['dev.companionintelligence.com', 'alpha.companionintel.com'];
+    return ['memory.ci.localhost'];
   }
 
   try {
