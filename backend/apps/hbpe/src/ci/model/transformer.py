@@ -20,7 +20,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from ci.model.vocab import MASK_IDX, PAD_IDX
+from ci.model.vocab import PAD_IDX
 
 # Default hyperparameters — small by design for a 90-day corpus
 D_MODEL   = 64

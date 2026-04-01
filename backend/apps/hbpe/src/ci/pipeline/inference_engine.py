@@ -38,10 +38,9 @@ import numpy as np
 
 from ci.config import settings
 from ci.model.calibration import _build_full_batch
-from ci.model.dataset import TokenStreamDataset
 from ci.model.vocab import (
     L0_CLASSES, PAD_IDX, SOD_IDX, EOD_IDX,
-    Vocab, build_l0_vocab, build_l1_vocab,
+    build_l0_vocab, build_l1_vocab,
 )
 
 log = logging.getLogger(__name__)
@@ -59,13 +58,10 @@ _SPECIAL_IDX = {PAD_IDX, SOD_IDX, EOD_IDX}
 class _PyTorchSession:
     """Wraps HMTModel with the same run() interface as onnxruntime.InferenceSession."""
 
-    def __init__(self, model, l0_vsize: int, l1_vsize: int) -> None:
-        import torch
-        self._model   = model
-        self._l0_vsize = l0_vsize
-        self._l1_vsize = l1_vsize
+    def __init__(self, model) -> None:
+        self._model = model
 
-    def run(self, output_names, inputs: dict) -> tuple[np.ndarray, np.ndarray]:
+    def run(self, _output_names, inputs: dict) -> tuple[np.ndarray, np.ndarray]:
         import torch
         with torch.no_grad():
             t = torch.from_numpy(inputs["token_ids"])
@@ -127,9 +123,6 @@ class InferenceEngine:
         ckpt_dir  = Path(settings.models_dir) / "hmt"
         int8_path = ckpt_dir / "hmt_int8.onnx"
         fp32_path = ckpt_dir / "hmt_fp32.onnx"
-        l0_vsize  = len(self._l0_vocab)
-        l1_vsize  = len(self._l1_vocab)
-
         for path in (int8_path, fp32_path):
             if path.exists():
                 try:
@@ -160,7 +153,7 @@ class InferenceEngine:
             merge_adapter(model)
         model.eval()
         log.info("Inference engine using PyTorch fallback")
-        return _PyTorchSession(model, l0_vsize, l1_vsize)
+        return _PyTorchSession(model)
 
     def _load_temperature(self) -> float:
         import torch

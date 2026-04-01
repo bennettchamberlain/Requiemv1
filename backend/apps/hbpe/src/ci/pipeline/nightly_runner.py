@@ -65,8 +65,8 @@ async def label_unlabeled(user_id: str) -> dict:
                 labeled_events += 1
                 if result.get("is_new_l1"):
                     new_labels += 1
-            except Exception as exc:
-                log.error("label_unlabeled: event %s failed: %s", row["event_id"], exc)
+            except Exception:
+                log.exception("label_unlabeled event failed: event_id=%s", row["event_id"])
                 errors += 1
 
         # ── Unlabeled content ────────────────────────────────────────────────
@@ -83,8 +83,8 @@ async def label_unlabeled(user_id: str) -> dict:
                 labeled_content += 1
                 if result.get("is_new_l1") or result.get("is_new_l2"):
                     new_labels += 1
-            except Exception as exc:
-                log.error("label_unlabeled: content %s failed: %s", row["content_id"], exc)
+            except Exception:
+                log.exception("label_unlabeled content failed: content_id=%s", row["content_id"])
                 errors += 1
 
         return {
@@ -276,5 +276,5 @@ async def _safe_execute(coro, step_name: str):
     try:
         return {"status": "ok", "result": await coro}
     except Exception as exc:
-        log.error("Nightly step %s failed: %s", step_name, exc)
+        log.exception("Nightly step %s failed", step_name)
         return {"status": "error", "error": str(exc)}
