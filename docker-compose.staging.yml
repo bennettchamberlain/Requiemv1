@@ -85,10 +85,6 @@ services:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
 
-  minio:
-    ports:
-      - 9000:9000
-
   hbpe-service:
     devices:
       - /dev/kfd

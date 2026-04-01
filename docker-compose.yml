@@ -93,6 +93,7 @@ services:
       database:
          condition: service_healthy
     profiles: [ "local", "staging", "production" ]
+
   hbpe-service:
     build:
       context: ./backend/apps/hbpe

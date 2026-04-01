@@ -61,7 +61,6 @@ services:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
 
-
   hbpe-service:
     build:
       context: ./backend/apps/hbpe
