@@ -14,6 +14,20 @@ import { ToolsModule } from '@ci/domains/tools';
 
 import { App } from '../../src/application';
 
+import * as actionsData from './data/actions';
+import * as communicationsData from './data/communications';
+import * as conceptsData from './data/concepts';
+import * as contentData from './data/content';
+import * as eventsData from './data/events';
+import * as hbpeData from './data/hbpe';
+import * as itemsData from './data/items';
+import * as messagesData from './data/messages';
+import * as notesData from './data/notes';
+import * as placesData from './data/places';
+import * as summariesData from './data/summaries';
+import * as threadsData from './data/threads';
+import * as usersData from './data/users';
+import { findMaxDate, shiftDatesInObject } from './date-shifter';
 import { seedActions } from './seed-actions';
 import { seedAnswers } from './seed-answers';
 import { seedCommunications } from './seed-communications';
@@ -115,6 +129,33 @@ const logger = new LoggerService();
     },
     Presets.shades_classic,
   );
+
+  const allData = [
+    actionsData,
+    communicationsData,
+    conceptsData,
+    contentData,
+    eventsData,
+    hbpeData,
+    itemsData,
+    messagesData,
+    notesData,
+    placesData,
+    summariesData,
+    threadsData,
+    usersData,
+  ];
+
+  const maxDate = findMaxDate(allData);
+  if (maxDate) {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const deltaMs = yesterday.getTime() - maxDate.getTime();
+    logger.log(
+      `Shifting seed data by ${Math.round(deltaMs / (24 * 60 * 60 * 1000))} days to align max date ${maxDate.toISOString()} with ${yesterday.toISOString()}`,
+      'SeedDatabase',
+    );
+    shiftDatesInObject(allData, deltaMs);
+  }
 
   try {
     await seedUsers(module, multibar);
