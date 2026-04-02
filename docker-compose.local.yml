@@ -74,7 +74,7 @@ services:
       - MODELS_DIR=/app/models
       - TOKEN_CORPUS_DIR=/app/data/token_corpus
       - HF_HOME=/app/models/hf_cache
-      - API_URL=http://application:3000
+      - API_URL=http://host.docker.internal:3000
       - API_JWT_SECRET=${AUTH_JWT_AUTHTOKENSECRET}
     volumes:
       - hbpe-models:/app/models

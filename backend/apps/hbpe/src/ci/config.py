@@ -83,9 +83,9 @@ class Settings(BaseSettings):
 
     # ── App GraphQL API ───────────────────────────────────────────────────────
     # Set API_URL to the base URL of the main application service (e.g.
-    # http://application:3000).  graphql_client.py posts to {api_url}/graphql.
+    # http://api:3000).  graphql_client.py posts to {api_url}/graphql.
     api_url: str = Field(
-        default_factory=lambda: os.getenv("API_URL", "http://application:3000")
+        default_factory=lambda: os.getenv("API_URL", "http://api:3000")
     )
     # Shared JWT secret — must match AUTH_JWT_AUTHTOKENSECRET in the app.
     # HBPE self-signs service JWTs with this secret so the app accepts them.
