@@ -39,6 +39,9 @@
       },
       "facebook": {
         "id": "dbb8002f-12da-4cd9-b02b-37db7791a900"
+      },
+      "spotify": {
+        "id": "019cbaf2-d789-7723-aada-7e3d709663f5"
       }
     },
     "oauth": {

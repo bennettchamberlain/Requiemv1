@@ -218,6 +218,23 @@ export function ConnectPage() {
               }
             />
             <Card
+              logo="/branding/spotify/logo.svg"
+              background="bg-green-500"
+              border="border-green-400"
+              text="Connect Spotify to track your music listening habits, playlists, and audio memories. Coming soon."
+              onClick={() => navigate('/providers/019cbaf2-d789-7723-aada-7e3d709663f5')}
+              subtext={
+                connectionsCount['019cbaf2-d789-7723-aada-7e3d709663f5'] === 1
+                  ? `1 Connection`
+                  : connectionsCount['019cbaf2-d789-7723-aada-7e3d709663f5'] > 1
+                    ? `${connectionsCount['019cbaf2-d789-7723-aada-7e3d709663f5']} Connections`
+                    : undefined
+              }
+              className={
+                connectionsCount['019cbaf2-d789-7723-aada-7e3d709663f5'] > 0 ? 'bg-green-200' : undefined
+              }
+            />
+            <Card
               logo="/branding/discord/logo.svg"
               background="bg-indigo-500"
               border="border-indigo-400"
@@ -257,13 +274,6 @@ export function ConnectPage() {
               background="bg-purple-600"
               border="border-purple-500"
               text="Sync Slack to capture your team communications, channels, and workspace activity. Coming soon."
-              disabled
-            />
-            <Card
-              logo="/branding/spotify/logo.svg"
-              background="bg-green-500"
-              border="border-green-400"
-              text="Connect Spotify to track your music listening habits, playlists, and audio memories. Coming soon."
               disabled
             />
             <Card
