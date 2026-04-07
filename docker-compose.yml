@@ -68,6 +68,22 @@ services:
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
+
+
+  hbpe-service:
+    image: ci/hbpe-service
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+      - ci
+    depends_on:
+      database:
+        condition: service_healthy
+      orchestrator:
+        condition: service_started
+    restart: unless-stopped
+    profiles: [ "local", "staging", "production" ]
+
   #############
   # EPHEMERAL #
   #############

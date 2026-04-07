@@ -41,6 +41,12 @@ services:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
 
+  hbpe-service:
+    ports:
+      - 8003:8003
+    environment:
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+
   tts-service:
     ports:
       - 9002:9002
