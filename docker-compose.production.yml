@@ -67,6 +67,13 @@ services:
       generate-secrets:
         condition: service_completed_successfully
 
+  hbpe-service:
+    volumes:
+      - secrets:/run/secrets:ro
+    depends_on:
+      generate-secrets:
+        condition: service_completed_successfully
+
   #############
   # EPHEMERAL #
   #############

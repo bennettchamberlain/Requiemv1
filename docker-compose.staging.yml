@@ -54,6 +54,10 @@ services:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
 
+  hbpe-service:
+    environment:
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+
   #############
   # EPHEMERAL #
   #############
