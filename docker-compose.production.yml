@@ -30,21 +30,6 @@ services:
       - 8642:8642
     volumes:
       - ./infrastructure/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-  api:
-    image: ci/companion-api:latest
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: postgres
-      S3_URL: http://minio:9000
-      OLLAMA_HOST: http://host.docker.internal:11434
-      STT_HOST: http://stt-service:9001
-      TTS_HOST: http://tts-service:9002
-      HBPE_HOST: http://hbpe-service:8002
-    networks:
-      - ci
-    restart: unless-stopped
-    profiles: [ "production" ]
 
   object-store:
     volumes:
@@ -73,6 +58,11 @@ services:
     depends_on:
       generate-secrets:
         condition: service_completed_successfully
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
 
   #############
   # EPHEMERAL #
@@ -107,10 +97,3 @@ services:
   setup-orchestrator:
     volumes:
       - secrets:/run/secrets:ro
-
-  hbpe-service:
-    devices:
-      - /dev/kfd
-      - /dev/dri
-    group_add:
-      - video

@@ -57,6 +57,11 @@ services:
   hbpe-service:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
 
   #############
   # EPHEMERAL #
