@@ -32,6 +32,9 @@ export class ProviderEntity {
   @Column({ type: 'text', name: 'auth_type', nullable: true })
   authType!: string | null;
 
+  @Column({ type: 'text', name: 'openid_key_link', nullable: true })
+  openidKeyLink!: string | null;
+
   @Column({ type: 'jsonb', default: '{}' })
   theme!: ProviderTheme;
 
@@ -53,6 +56,7 @@ export class ProviderEntity {
         borderColor: entity.theme.borderColor ?? null,
       },
       authType: entity.authType ?? null,
+      openidKeyLink: entity.openidKeyLink ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

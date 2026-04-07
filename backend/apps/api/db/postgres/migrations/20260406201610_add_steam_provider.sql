@@ -1,5 +1,5 @@
 -- migrate:up
-INSERT INTO ci.providers (id, name, description, logo_url, endpoints, auth_type)
+INSERT INTO ci.providers (id, name, description, logo_url, endpoints, auth_type, openid_key_link)
 VALUES (
   '019d6470-f9e1-720f-a3ce-299842abaece',
   'Steam',
@@ -10,7 +10,8 @@ VALUES (
     { "name": "Achievements", "description": "Sync your achievements.", "iterationType": "historical", "TTL": 86400 },
     { "name": "Friends", "description": "Sync your Steam friends.", "iterationType": "historical", "TTL": 86400 }
   ]'::jsonb,
-  'openid'
+  'openid',
+        'https://steamcommunity.com/dev/apikey'
 )
 ON CONFLICT (id) DO NOTHING;
 

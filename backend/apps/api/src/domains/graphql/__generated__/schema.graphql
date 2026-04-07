@@ -794,6 +794,7 @@ type ProviderType implements Node {
   id: ID!
   logoUrl: String
   name: String
+  openidKeyLink: String
   providerKeys: ProviderKeyType
   theme: ProviderThemeType
 }

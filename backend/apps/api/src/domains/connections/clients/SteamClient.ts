@@ -62,8 +62,10 @@ export class SteamClient extends BaseClient {
       'openid.return_to': config.auth.openid.callbackUrl,
       'openid.ns': 'http://specs.openid.net/auth/2.0',
       'openid.mode': 'checkid_setup',
-      'openid.realm': config.hostname,
-      'openid.claimed_id': config.hostname
+      'openid.assoc_type': 'HMAC-SHA1',
+      'openid.realm': `https://${config.hostname}`,
+      'openid.identity': `http://specs.openid.net/auth/2.0/identifier_select`,
+      'openid.claimed_id': `http://specs.openid.net/auth/2.0/identifier_select`
     });
 
     return `${this.authorizationEndpoint}?${params.toString()}`;

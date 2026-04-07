@@ -108,7 +108,7 @@ type Documents = {
     "\n  query GetPerson($id: ID!) {\n    person(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetPersonDocument,
     "\n  query GetPlace($id: ID!) {\n    place(id: $id) {\n      id\n      name\n      description\n      properties\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetPlaceDocument,
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": typeof types.ProviderEndpointsFragmentFragmentDoc,
-    "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": typeof types.GetProviderDocument,
+    "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": typeof types.GetProviderDocument,
     "\n  mutation DeleteSavedSearch($input: DeleteByIdInput!) {\n    deleteSavedSearch(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteSavedSearchDocument,
     "\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": typeof types.UpdateSavedSearchDocument,
     "\n  fragment SavedSearchGridItemFragment on SavedSearchType {\n    id\n    name\n    description\n    query\n    entityTypes\n    tags\n  }\n": typeof types.SavedSearchGridItemFragmentFragmentDoc,
@@ -212,7 +212,7 @@ const documents: Documents = {
     "\n  query GetPerson($id: ID!) {\n    person(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetPersonDocument,
     "\n  query GetPlace($id: ID!) {\n    place(id: $id) {\n      id\n      name\n      description\n      properties\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetPlaceDocument,
     "\n  fragment ProviderEndpointsFragment on ProviderType {\n    endpoints {\n      name\n      description\n    }\n  }\n": types.ProviderEndpointsFragmentFragmentDoc,
-    "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": types.GetProviderDocument,
+    "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n": types.GetProviderDocument,
     "\n  mutation DeleteSavedSearch($input: DeleteByIdInput!) {\n    deleteSavedSearch(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteSavedSearchDocument,
     "\n  mutation UpdateSavedSearch($input: UpdateSavedSearchInput!) {\n    updateSavedSearch(input: $input) {\n      success\n      savedSearch {\n        id\n        name\n        description\n        query\n        entityTypes\n        tags\n      }\n    }\n  }\n": types.UpdateSavedSearchDocument,
     "\n  fragment SavedSearchGridItemFragment on SavedSearchType {\n    id\n    name\n    description\n    query\n    entityTypes\n    tags\n  }\n": types.SavedSearchGridItemFragmentFragmentDoc,
@@ -603,7 +603,7 @@ export function gql(source: "\n  fragment ProviderEndpointsFragment on ProviderT
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n"): (typeof documents)["\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n"];
+export function gql(source: "\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n"): (typeof documents)["\n  query GetProvider($id: ID!) {\n    provider(id: $id) {\n      id\n      name\n      description\n      logoUrl\n      authType\n      openidKeyLink\n      theme {\n        backgroundColor\n        borderColor\n      }\n      ...ProviderEndpointsFragment\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

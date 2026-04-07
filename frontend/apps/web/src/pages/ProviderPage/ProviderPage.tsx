@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { usePageTitle, LoadingPage, GlobalUID } from '@ci/common';
-import { Button, Form, formDataResolver, cn, useForm, useToast, formDataSchema as s } from '@ci/shadcn';
-import { ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
+import { Button, Form, formDataResolver, cn, useForm, useToast, formDataSchema as s, Input, Label, Popover } from '@ci/shadcn';
+import { ChevronLeft, ChevronRight, Info } from '@ci/shadcn/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
@@ -22,6 +22,7 @@ const GET_PROVIDER = gql(`
       description
       logoUrl
       authType
+      openidKeyLink
       theme {
         backgroundColor
         borderColor
@@ -53,8 +54,12 @@ export function ProviderPage() {
 
   const provider = data?.provider;
 
-  const [{ authorizationUrl, loading: connectLoading, error, setEndpoints }, { connect }] =
+  const [{ authorizationUrl, loading: connectLoading, error, setEndpoints, apiKey, setApiKey }, { connect }] =
     useConnectService();
+
+  console.log('apiKey', apiKey)
+  const isOpenId = provider?.authType === 'openid';
+  const isConnectDisabled = isOpenId && (apiKey == null || apiKey.length === 0);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -166,12 +171,47 @@ export function ProviderPage() {
 
                   <div className="p-6">
                     <Endpoints provider={provider} setEndpoints={setEndpoints} />
+
+                    {isOpenId && (
+                      <div className="mt-6 space-y-2">
+                        <div className="flex items-center gap-1.5">
+                          <Label htmlFor="openid-api-key">Enter your {provider.name} OpenID API key</Label>
+                          {provider.openidKeyLink && (
+                            <Popover>
+                              <Popover.Trigger asChild>
+                                <button type="button" className="cursor-pointer text-muted-foreground hover:text-foreground">
+                                  <Info className="h-4 w-4" />
+                                </button>
+                              </Popover.Trigger>
+                              <Popover.Content className="text-sm">
+                                To get your API key, go to{' '}
+                                <a
+                                  href={provider.openidKeyLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline text-blue-500"
+                                >
+                                  {provider.openidKeyLink}
+                                </a>
+                              </Popover.Content>
+                            </Popover>
+                          )}
+                        </div>
+                        <Input
+                          id="openid-api-key"
+                          type="text"
+                          placeholder="API key"
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
 
-            <Button type="button" className="px-24" onClick={handleConnect}>
+            <Button type="button" className="px-24" onClick={handleConnect} disabled={isConnectDisabled}>
               Connect
             </Button>
           </div>
