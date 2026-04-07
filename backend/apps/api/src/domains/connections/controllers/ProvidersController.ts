@@ -71,42 +71,66 @@ export class ProvidersController {
       throw new InternalServerErrorException();
     }
 
-    const clientIdVariable = `${provider.name?.toUpperCase()}_CLIENT_ID`;
-    const clientSecretVariable = `${provider.name?.toUpperCase()}_CLIENT_SECRET`;
+    if (provider.authType === 'openid') {
+      const apiKey = input.apiKey;
 
-    // TODO:
-    //   These are stand-in variables for user settings with fallback defaults.
-    //   We need to eventually replace this with a more robust system where we're
-    //   POST-ing to a gateway with protected keys, or a local API endpoint with
-    //   user-specified key overrides.
-    const clientId = process.env[clientIdVariable];
-    const clientSecret = process.env[clientSecretVariable];
+      if (!apiKey) {
+        this.logger.log('Missing API key for OpenID connection');
 
-    if (!clientId) {
-      this.logger.error(`Expected environment variable ${clientIdVariable} not specified`);
+        throw new InternalServerErrorException('API key is required for OpenID provider');
+      }
 
-      throw new InternalServerErrorException('Client id not configured for provider');
+      const connection = await this.connectionService.create(serviceContext, {
+        providerId: provider.id,
+        name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
+        accessToken: apiKey,
+        schedule: '1 hour',
+        endpoints: input.endpoints,
+      });
+
+      const authorizationUrl = await client.getAuthorizationUrl(connection);
+
+      return {
+        authorizationUrl,
+      };
+    } else if (provider.authType === 'oauth2') {
+      const clientIdVariable = `${provider.name?.toUpperCase()}_CLIENT_ID`;
+      const clientSecretVariable = `${provider.name?.toUpperCase()}_CLIENT_SECRET`;
+
+      // TODO:
+      //   These are stand-in variables for user settings with fallback defaults.
+      //   We need to eventually replace this with a more robust system where we're
+      //   POST-ing to a gateway with protected keys, or a local API endpoint with
+      //   user-specified key overrides.
+      const clientId = process.env[clientIdVariable];
+      const clientSecret = process.env[clientSecretVariable];
+
+      if (!clientId) {
+        this.logger.error(`Expected environment variable ${clientIdVariable} not specified`);
+
+        throw new InternalServerErrorException('Client id not configured for provider');
+      }
+
+      if (!clientSecret) {
+        this.logger.error(`Expected environment variable ${clientSecretVariable} not specified`);
+
+        throw new InternalServerErrorException('Client secret not configured for provider');
+      }
+
+      const connection = await this.connectionService.create(serviceContext, {
+        providerId: provider.id,
+        name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
+        clientid: clientId,
+        clientsecret: clientSecret,
+        schedule: '1 hour',
+        endpoints: input.endpoints,
+      });
+
+      const authorizationUrl = await client.getAuthorizationUrl(connection);
+
+      return {
+        authorizationUrl,
+      };
     }
-
-    if (!clientSecret) {
-      this.logger.error(`Expected environment variable ${clientSecretVariable} not specified`);
-
-      throw new InternalServerErrorException('Client secret not configured for provider');
-    }
-
-    const connection = await this.connectionService.create(serviceContext, {
-      providerId: provider.id,
-      name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
-      clientid: clientId,
-      clientsecret: clientSecret,
-      schedule: '1 hour',
-      endpoints: input.endpoints,
-    });
-
-    const authorizationUrl = await client.getAuthorizationUrl(connection);
-
-    return {
-      authorizationUrl,
-    };
   }
 }

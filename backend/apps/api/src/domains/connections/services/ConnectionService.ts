@@ -16,12 +16,10 @@ export class ConnectionService {
   ) {}
 
   async create(context: UserServiceContext, data: CreateConnectionDto): Promise<Connection> {
-    const { providerId, ...rest } = data;
+    const { providerId, clientid, clientsecret, ...rest } = data;
 
     const sanitizedData = {
       ...rest,
-      clientid: rest.clientid?.trim(),
-      clientsecret: rest.clientsecret?.trim(),
     };
 
     const instance = this.connectionRepository.create({

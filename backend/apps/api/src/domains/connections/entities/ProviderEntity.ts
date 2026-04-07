@@ -29,6 +29,9 @@ export class ProviderEntity {
   @Column({ type: 'text', name: 'logo_url', nullable: true })
   logoUrl!: string | null;
 
+  @Column({ type: 'text', name: 'auth_type', nullable: true })
+  authType!: string | null;
+
   @Column({ type: 'jsonb', default: '{}' })
   theme!: ProviderTheme;
 
@@ -49,6 +52,7 @@ export class ProviderEntity {
         backgroundColor: entity.theme.backgroundColor ?? null,
         borderColor: entity.theme.borderColor ?? null,
       },
+      authType: entity.authType ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

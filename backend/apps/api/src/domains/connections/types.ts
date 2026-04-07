@@ -9,6 +9,7 @@ export interface CreateConnectionDto {
   name?: string;
   providerId: string;
   clientid?: string;
+  accessToken?: string;
   clientkey?: string;
   clientsecret?: string;
   schedule?: string;
@@ -30,9 +31,11 @@ export interface UpdateConnectionDto {
 }
 
 export interface connectProviderDto {
+  apiKey: string;
   endpoints: string[];
 }
 
 export const connectProviderSchema = z.object({
   endpoints: z.array(z.string()),
+  apiKey: z.string().optional()
 });

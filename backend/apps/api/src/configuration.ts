@@ -62,6 +62,12 @@ export const ConfigSchema = z.object({
       spotify: z.object({
         id: z.string(),
       }),
+      steam: z.object({
+        id: z.string(),
+      }),
+    }),
+    openid: z.object({
+      callbackUrl: z.string(),
     }),
     oauth: z.object({
       callbackUrl: z.string(),

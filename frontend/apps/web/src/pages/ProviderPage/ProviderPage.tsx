@@ -21,6 +21,7 @@ const GET_PROVIDER = gql(`
       name
       description
       logoUrl
+      authType
       theme {
         backgroundColor
         borderColor
