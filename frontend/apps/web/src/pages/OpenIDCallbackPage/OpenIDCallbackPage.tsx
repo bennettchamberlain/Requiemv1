@@ -20,6 +20,7 @@ export function OpenIDCallbackPage() {
   const identity = searchParams.get('openid.identity');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
+  const connectionId = searchParams.get('connection_id');
 
   // If we're not logged into the application we can't actually complete a connection.
   // This is an unlikely state, but possible.
@@ -42,6 +43,10 @@ export function OpenIDCallbackPage() {
   // If don't have required OpenID credentials we can't proceed, so just error out.
   if (!claimedId || !identity) {
     throw new Error('Missing OpenID credentials');
+  }
+
+  if (!connectionId) {
+    throw new Error('Missing Connection ID');
   }
 
   useEffect(() => {

@@ -251,6 +251,23 @@ export class ConnectionsController {
     const claimedId = params['openid.claimed_id'];
     const identity = params['openid.identity'];
     const opEndpoint = params['openid.op_endpoint'];
+    const connectionId = params['connection_id'];
+
+    const connection = await this.connectionService.findById(serviceContext, connectionId);
+
+    if (connection == null) {
+      this.logger.log('Performed a callback on `null` connection');
+
+      throw new NotFoundException();
+    }
+
+    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
+
+    if (client == null) {
+      this.logger.log('Performed a callback without an associated client');
+
+      throw new InternalServerErrorException();
+    }
 
     if (!claimedId || !identity || !opEndpoint) {
       this.logger.log('Missing required OpenID parameters');
@@ -300,30 +317,19 @@ export class ConnectionsController {
     // The connection was already created by ProvidersController.connect() when the user
     // initiated the OpenID flow — find it by looking for an inactive connection with
     // the Steam provider for this user.
-    const existingConnections = await this.connectionService.search(serviceContext, {
+    const existingConnection = await this.connectionService.search(serviceContext, {
+      providerId: connection!.providerId,
       active: true,
       externalId: steamId,
     });
 
-    if (existingConnections.length > 0) {
+    if (existingConnection.length > 0 && existingConnection.find((c) => c.id !== connectionId)) {
+      await this.connectionService.remove(serviceContext, connectionId);
       throw new ConflictException('A connection to that account already exists');
     }
 
-    // Find the pending (inactive) Steam connection that was created when the flow started
-    const pendingConnections = await this.connectionService.search(serviceContext, {
-      active: false,
-    });
-
-    // Find the most recent pending connection for a Steam/OpenID provider
-    const pendingConnection = pendingConnections.find((c) => c.provider?.authType === 'openid');
-
-    if (!pendingConnection) {
-      this.logger.log('No pending OpenID connection found for user');
-      throw new NotFoundException('No pending OpenID connection found');
-    }
-
     // Activate the connection and set the external ID to the Steam ID
-    await this.connectionService.update(serviceContext, pendingConnection.id, {
+    await this.connectionService.update(serviceContext, connectionId, {
       active: true,
       needsReauth: false,
       externalId: steamId,

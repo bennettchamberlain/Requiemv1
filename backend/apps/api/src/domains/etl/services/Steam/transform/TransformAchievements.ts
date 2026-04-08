@@ -53,6 +53,7 @@ export class SteamAchievementsTransformService {
       let contentCreatedCount = 0;
       let eventCreatedCount = 0;
       let skippedCount = 0;
+      let skippedEventCount = 0;
 
       for (const item of achievements) {
         const achievementName = item.achievement.name || item.achievement.apiname;
@@ -73,43 +74,58 @@ export class SteamAchievementsTransformService {
               gameName,
             });
             skippedCount++;
-            continue;
-          }
-
-          // Create Content entity for the achievement
-          await this.contentService.create(context, {
-            type: 'achievement',
-            title: achievementName,
-            text: achievementDescription,
-            external_id: externalId,
-            source_data: {
-              appid: item.appid,
-              gameName,
-              apiname: item.achievement.apiname,
-              unlocktime: item.achievement.unlocktime,
-            },
-          });
-
-          contentCreatedCount++;
-
-          // Create Event entity for the achievement unlock
-          if (item.achievement.unlocktime > 0) {
-            await this.eventService.create(context, {
-              title: `Earned achievement: ${achievementName}`,
-              description: `Earned achievement: ${achievementName} in ${gameName}`,
-              event_type: 'achievement_unlocked',
-              category: 'games',
-              source_type: 'ETL',
-              start_time: new Date(item.achievement.unlocktime * 1000),
-              metadata: {
+          } else {
+            // Create Content entity for the achievement
+            await this.contentService.create(context, {
+              type: 'achievement',
+              title: achievementName,
+              text: achievementDescription,
+              external_id: externalId,
+              source_data: {
                 appid: item.appid,
                 gameName,
-                achievementApiName: item.achievement.apiname,
-                achievementName,
+                apiname: item.achievement.apiname,
+                unlocktime: item.achievement.unlocktime,
               },
             });
 
-            eventCreatedCount++;
+            contentCreatedCount++;
+          }
+
+          // Create Event entity for the achievement unlock
+          if (item.achievement.unlocktime > 0) {
+            const existingEvents = await this.eventService.search(context, {
+              eventType: 'achievement_unlocked',
+              title: `Earned achievement: ${achievementName}`,
+              startTime: new Date(item.achievement.unlocktime * 1000),
+            });
+
+            if (existingEvents.length === 0) {
+              await this.eventService.create(context, {
+                title: `Earned achievement: ${achievementName}`,
+                description: `Earned achievement: ${achievementName} in ${gameName}`,
+                event_type: 'achievement_unlocked',
+                category: 'games',
+                source_type: 'ETL',
+                start_time: new Date(item.achievement.unlocktime * 1000),
+                metadata: {
+                  appid: item.appid,
+                  gameName,
+                  achievementApiName: item.achievement.apiname,
+                  achievementName,
+                },
+              });
+
+              eventCreatedCount++;
+            } else {
+              this.logger.debug('Game played event already exists, skipping', {
+                appid: item.appid,
+                name: item.achievement.name,
+                rtime_last_played: item.achievement.unlocktime,
+              });
+
+              skippedEventCount++;
+            }
           }
 
           this.logger.debug('Achievement transformed and stored', {
@@ -132,6 +148,7 @@ export class SteamAchievementsTransformService {
         contentCreated: contentCreatedCount,
         eventsCreated: eventCreatedCount,
         skipped: skippedCount,
+        skippedEvents: skippedEventCount,
       });
     } catch (error) {
       this.logger.error('Failed to transform Steam Achievements', {

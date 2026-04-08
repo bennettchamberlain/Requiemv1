@@ -197,7 +197,7 @@ export function ProviderPage() {
                                   <Info className="h-4 w-4" />
                                 </button>
                               </Popover.Trigger>
-                              <Popover.Content className="text-sm">
+                              <Popover.Content className="text-sm w-fit">
                                 To get your API key, go to{' '}
                                 <a
                                   href={provider.openidKeyLink}
