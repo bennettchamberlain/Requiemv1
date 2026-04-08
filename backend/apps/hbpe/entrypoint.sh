@@ -1,6 +1,49 @@
 #!/bin/bash
 set -e
 
+# ──────────────────────────────────────────────────
+# Secrets loading.
+# Priority: Shell env (DATABASE_URL)  >  Shell env (DATABASE_PASSWORD)
+#           >  Secrets file  >  fail
+# ──────────────────────────────────────────────────
+
+SECRETS_FILE="${SECRETS_FILE:-/run/secrets/.env.secrets}"
+
+get_secret() {
+  [ -f "$SECRETS_FILE" ] || return 0
+  while IFS='=' read -r key value; do
+    case "$key" in \#*|"") continue ;; esac
+    if [ "$key" = "$1" ]; then
+      printf '%s' "$value" | tr -d '\r'
+      return
+    fi
+  done < "$SECRETS_FILE"
+}
+
+if [ -z "$DATABASE_URL" ]; then
+  : "${DATABASE_HOST:=$(get_secret DATABASE_HOST)}"
+  : "${DATABASE_HOST:=database}"
+  : "${DATABASE_PORT:=$(get_secret DATABASE_PORT)}"
+  : "${DATABASE_PORT:=5432}"
+  : "${DATABASE_USERNAME:=$(get_secret DATABASE_USERNAME)}"
+  : "${DATABASE_USERNAME:=companion}"
+  : "${DATABASE_PASSWORD:=$(get_secret DATABASE_PASSWORD)}"
+  : "${DATABASE_NAME:=$(get_secret DATABASE_NAME)}"
+  : "${DATABASE_NAME:=companion}"
+
+  if [ -z "$DATABASE_PASSWORD" ]; then
+    echo "Error: DATABASE_PASSWORD is not set and DATABASE_URL was not provided."
+    echo "  1. Add DATABASE_PASSWORD to $SECRETS_FILE, or"
+    echo "  2. Set the DATABASE_PASSWORD environment variable, or"
+    echo "  3. Set DATABASE_URL to a full connection string"
+    exit 1
+  fi
+
+  DATABASE_URL="postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@${DATABASE_HOST}:${DATABASE_PORT}/${DATABASE_NAME}"
+fi
+
+export DATABASE_URL
+
 echo "Starting CI-HBPE services..."
 
 # Start the FastAPI histogram API in the background
