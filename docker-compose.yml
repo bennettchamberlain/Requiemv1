@@ -111,7 +111,7 @@ services:
       - TOKEN_CORPUS_DIR=/app/data/token_corpus
       - HF_HOME=/app/models/hf_cache
       - API_URL=http://api:3000
-      - API_JWT_SECRET=${AUTH_JWT_AUTHTOKENSECRET}
+      - API_JWT_SECRET=${AUTH_TOKEN_SECRET}
     volumes:
       - hbpe-models:/app/models
       - hbpe-corpus:/app/data
