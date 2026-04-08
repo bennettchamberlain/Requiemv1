@@ -27,13 +27,7 @@ export class SteamFriendsTransformService {
     this.logger.setContext(SteamFriendsTransformService.name);
   }
 
-  async transform({
-    connection,
-    syncJob,
-  }: {
-    connection: Connection;
-    syncJob: ConnectionSyncJob;
-  }) {
+  async transform({ connection, syncJob }: { connection: Connection; syncJob: ConnectionSyncJob }) {
     const { userId, data } = syncJob;
 
     this.logger.log('Starting Steam Friends transformation', {
@@ -159,4 +153,3 @@ export class SteamFriendsTransformService {
     }
   }
 }
-

@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
+import config from '@ci/configuration';
 
 import type { Connection } from '../entities/ConnectionEntity';
 import { ProviderKeyService } from '../services/ProviderKeyService';
 
 import { BaseClient } from './BaseClient';
 import type { TokenExchange } from './types';
-import config from '@ci/configuration';
 
 /**
  * Steam uses API key authentication rather than OAuth2.
@@ -57,7 +57,7 @@ export class SteamClient extends BaseClient {
     return (await response.json()) as T;
   }
 
-  async getAuthorizationUrl(_connection: Connection) {
+  async getAuthorizationUrl() {
     const params = new URLSearchParams({
       'openid.return_to': config.auth.openid.callbackUrl,
       'openid.ns': 'http://specs.openid.net/auth/2.0',
@@ -65,17 +65,17 @@ export class SteamClient extends BaseClient {
       'openid.assoc_type': 'HMAC-SHA1',
       'openid.realm': `https://${config.hostname}`,
       'openid.identity': `http://specs.openid.net/auth/2.0/identifier_select`,
-      'openid.claimed_id': `http://specs.openid.net/auth/2.0/identifier_select`
+      'openid.claimed_id': `http://specs.openid.net/auth/2.0/identifier_select`,
     });
 
     return `${this.authorizationEndpoint}?${params.toString()}`;
   }
 
-  async exchangeAuthorizationCode(_connection: Connection, _code: string): Promise<TokenExchange> {
+  async exchangeAuthorizationCode(): Promise<TokenExchange> {
     throw new Error('Steam does not use OAuth2 token exchange');
   }
 
-  async refreshAccessToken(_connection: Connection): Promise<TokenExchange> {
+  async refreshAccessToken(): Promise<TokenExchange> {
     // Steam API keys don't expire
     throw new Error('Steam API keys do not require refresh');
   }
@@ -101,4 +101,3 @@ export class SteamClient extends BaseClient {
     return apiKey;
   }
 }
-

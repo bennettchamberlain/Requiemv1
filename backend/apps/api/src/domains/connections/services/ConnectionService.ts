@@ -16,7 +16,7 @@ export class ConnectionService {
   ) {}
 
   async create(context: UserServiceContext, data: CreateConnectionDto): Promise<Connection> {
-    const { providerId, clientid, clientsecret, ...rest } = data;
+    const { providerId, ...rest } = data;
 
     const sanitizedData = {
       ...rest,
@@ -116,7 +116,14 @@ export class ConnectionService {
     const newScopes = endpoints
       ? endpoints.some((endpoint) => currentConnection.activeEndpoints.indexOf(endpoint) === -1)
       : false;
-    const needsReauth = endpoints ? (newScopes ? true : currentConnection.needsReauth) : rest.needsReauth;
+    const needsReauth =
+      currentConnection.provider!.authType === 'openid'
+        ? false
+        : endpoints
+          ? newScopes
+            ? true
+            : currentConnection.needsReauth
+          : rest.needsReauth;
     const result = await this.connectionRepository.update(
       {
         id,
@@ -181,6 +188,14 @@ export class ConnectionService {
           refreshToken: Not(IsNull()), //If there's a refresh token, then an expired access token can be refreshed
           provider: { id: Not(IsNull()) }, // Must have a valid provider
           needsReauth: false, // Must not require reauth
+        },
+        {
+          active: true,
+          accessToken: Not(IsNull()),
+          provider: {
+            id: Not(IsNull()),
+            authType: 'openid',
+          },
         },
       ],
       relations: ['user', 'provider'],

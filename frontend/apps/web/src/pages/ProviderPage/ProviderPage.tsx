@@ -1,8 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { usePageTitle, LoadingPage, GlobalUID } from '@ci/common';
-import { Button, Form, formDataResolver, cn, useForm, useToast, formDataSchema as s, Input, Label, Popover } from '@ci/shadcn';
+import {
+  Button,
+  Form,
+  formDataResolver,
+  cn,
+  useForm,
+  useToast,
+  formDataSchema as s,
+  Input,
+  Label,
+  Popover,
+} from '@ci/shadcn';
 import { ChevronLeft, ChevronRight, Info } from '@ci/shadcn/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -57,7 +68,7 @@ export function ProviderPage() {
   const [{ authorizationUrl, loading: connectLoading, error, setEndpoints, apiKey, setApiKey }, { connect }] =
     useConnectService();
 
-  console.log('apiKey', apiKey)
+  console.log('apiKey', apiKey);
   const isOpenId = provider?.authType === 'openid';
   const isConnectDisabled = isOpenId && (apiKey == null || apiKey.length === 0);
 
@@ -179,7 +190,10 @@ export function ProviderPage() {
                           {provider.openidKeyLink && (
                             <Popover>
                               <Popover.Trigger asChild>
-                                <button type="button" className="cursor-pointer text-muted-foreground hover:text-foreground">
+                                <button
+                                  type="button"
+                                  className="cursor-pointer text-muted-foreground hover:text-foreground"
+                                >
                                   <Info className="h-4 w-4" />
                                 </button>
                               </Popover.Trigger>
@@ -201,7 +215,7 @@ export function ProviderPage() {
                           id="openid-api-key"
                           type="text"
                           placeholder="API key"
-                          value={apiKey}
+                          value={apiKey || undefined}
                           onChange={(e) => setApiKey(e.target.value)}
                         />
                       </div>

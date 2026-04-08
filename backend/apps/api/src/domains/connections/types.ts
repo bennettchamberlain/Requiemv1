@@ -37,5 +37,5 @@ export interface connectProviderDto {
 
 export const connectProviderSchema = z.object({
   endpoints: z.array(z.string()),
-  apiKey: z.string().optional()
+  apiKey: z.string().optional(),
 });

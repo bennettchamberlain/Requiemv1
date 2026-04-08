@@ -109,4 +109,3 @@ export async function syncAchievements({
     throw err;
   }
 }
-

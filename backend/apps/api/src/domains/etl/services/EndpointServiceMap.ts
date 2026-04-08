@@ -203,9 +203,7 @@ export class EndpointServiceMap {
           Achievements: this.steamAchievementsTransformService.transform.bind(
             this.steamAchievementsTransformService,
           ),
-          Friends: this.steamFriendsTransformService.transform.bind(
-            this.steamFriendsTransformService,
-          ),
+          Friends: this.steamFriendsTransformService.transform.bind(this.steamFriendsTransformService),
         },
       },
     };

@@ -24,7 +24,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { ClientFactory, FacebookClient, GoogleClient, MicrosoftClient, SpotifyClient, SteamClient } from './clients';
+import {
+  ClientFactory,
+  FacebookClient,
+  GoogleClient,
+  MicrosoftClient,
+  SpotifyClient,
+  SteamClient,
+} from './clients';
 import { ConnectionsController } from './controllers/ConnectionsController';
 import { ProvidersController } from './controllers/ProvidersController';
 import { ConnectionEntity } from './entities/ConnectionEntity';

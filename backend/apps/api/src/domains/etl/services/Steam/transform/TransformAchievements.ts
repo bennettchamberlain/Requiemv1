@@ -29,13 +29,7 @@ export class SteamAchievementsTransformService {
     this.logger.setContext(SteamAchievementsTransformService.name);
   }
 
-  async transform({
-    connection,
-    syncJob,
-  }: {
-    connection: Connection;
-    syncJob: ConnectionSyncJob;
-  }) {
+  async transform({ connection, syncJob }: { connection: Connection; syncJob: ConnectionSyncJob }) {
     const { userId, data } = syncJob;
 
     this.logger.log('Starting Steam Achievements transformation', {
@@ -150,4 +144,3 @@ export class SteamAchievementsTransformService {
     }
   }
 }
-

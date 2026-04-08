@@ -14,7 +14,9 @@ type ReturnType = [
     loading: boolean;
     error: unknown | null;
     endpoints: string[];
+    apiKey: string | null;
     setEndpoints: (endpoints: string[]) => void;
+    setApiKey: (apiKey: string) => void;
   },
   {
     connect: (providerId: string) => Promise<void>;
@@ -37,7 +39,7 @@ export function useConnectService(): ReturnType {
       setError(null);
 
       try {
-        console.log('creating provider', endpoints, apiKey)
+        console.log('creating provider', endpoints, apiKey);
         const response = await fetchJson<ConnectResponse>(`/api/providers/${providerId}`, {
           method: 'POST',
           headers: {

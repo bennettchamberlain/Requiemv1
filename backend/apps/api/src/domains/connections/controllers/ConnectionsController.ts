@@ -251,7 +251,6 @@ export class ConnectionsController {
     const claimedId = params['openid.claimed_id'];
     const identity = params['openid.identity'];
     const opEndpoint = params['openid.op_endpoint'];
-    const returnTo = params['openid.return_to'];
 
     if (!claimedId || !identity || !opEndpoint) {
       this.logger.log('Missing required OpenID parameters');
@@ -316,9 +315,7 @@ export class ConnectionsController {
     });
 
     // Find the most recent pending connection for a Steam/OpenID provider
-    const pendingConnection = pendingConnections.find(
-      (c) => c.provider?.authType === 'openid',
-    );
+    const pendingConnection = pendingConnections.find((c) => c.provider?.authType === 'openid');
 
     if (!pendingConnection) {
       this.logger.log('No pending OpenID connection found for user');

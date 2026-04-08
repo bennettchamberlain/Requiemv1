@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, EventService } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -25,18 +25,13 @@ interface SteamGame {
 export class SteamOwnedGamesTransformService {
   constructor(
     private readonly contentService: ContentService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(SteamOwnedGamesTransformService.name);
   }
 
-  async transform({
-    connection,
-    syncJob,
-  }: {
-    connection: Connection;
-    syncJob: ConnectionSyncJob;
-  }) {
+  async transform({ connection, syncJob }: { connection: Connection; syncJob: ConnectionSyncJob }) {
     const { userId, data } = syncJob;
 
     this.logger.log('Starting Steam Owned Games transformation', {
@@ -58,7 +53,9 @@ export class SteamOwnedGamesTransformService {
       }
 
       let createdCount = 0;
+      let eventCreatedCount = 0;
       let skippedCount = 0;
+      let skippedEventCount = 0;
 
       for (const game of games) {
         try {
@@ -73,27 +70,63 @@ export class SteamOwnedGamesTransformService {
               name: game.name,
             });
             skippedCount++;
-            continue;
+          } else {
+            await this.contentService.create(context, {
+              type: 'game',
+              title: game.name,
+              url: `https://store.steampowered.com/app/${game.appid}`,
+              source_url: `https://http://media.steampowered.com/steamcommunity/public/images/apps/${game.appid}/${game.img_icon_url}.jpg`,
+              external_id: String(game.appid),
+              source_data: {
+                appid: game.appid,
+                playtime_forever: game.playtime_forever,
+                img_icon_url: game.img_icon_url,
+                playtime_windows_forever: game.playtime_windows_forever,
+                playtime_mac_forever: game.playtime_mac_forever,
+                playtime_linux_forever: game.playtime_linux_forever,
+                playtime_deck_forever: game.playtime_deck_forever,
+                rtime_last_played: game.rtime_last_played,
+              },
+            });
+
+            createdCount++;
           }
 
-          await this.contentService.create(context, {
-            type: 'game',
-            title: game.name,
-            url: `https://store.steampowered.com/app/${game.appid}`,
-            external_id: String(game.appid),
-            source_data: {
-              appid: game.appid,
-              playtime_forever: game.playtime_forever,
-              img_icon_url: game.img_icon_url,
-              playtime_windows_forever: game.playtime_windows_forever,
-              playtime_mac_forever: game.playtime_mac_forever,
-              playtime_linux_forever: game.playtime_linux_forever,
-              playtime_deck_forever: game.playtime_deck_forever,
-              rtime_last_played: game.rtime_last_played,
-            },
-          });
+          // Create Event for last played time
+          if (game.rtime_last_played && game.rtime_last_played !== 0) {
+            const existingEvents = await this.eventService.search(context, {
+              eventType: 'game_played',
+              title: `Played ${game.name}`,
+              startTime: new Date(game.rtime_last_played * 1000),
+            });
 
-          createdCount++;
+            if (existingEvents.length === 0) {
+              await this.eventService.create(context, {
+                title: `Played ${game.name}`,
+                description: `Played ${game.name} on Steam`,
+                event_type: 'game_played',
+                category: 'games',
+                source_type: 'ETL',
+                start_time: new Date(game.rtime_last_played * 1000),
+                metadata: {
+                  appid: game.appid,
+                  gameName: game.name,
+                  start_time: game.rtime_last_played,
+                  playtime_forever: game.playtime_forever,
+                },
+              });
+
+              eventCreatedCount++;
+            } else {
+              this.logger.debug('Game played event already exists, skipping', {
+                appid: game.appid,
+                name: game.name,
+                rtime_last_played: game.rtime_last_played,
+              });
+
+              skippedEventCount++;
+            }
+          }
 
           this.logger.debug('Game transformed and stored', {
             appid: game.appid,
@@ -113,7 +146,9 @@ export class SteamOwnedGamesTransformService {
         connectionId: connection.id,
         totalGames: games.length,
         gamesCreated: createdCount,
+        eventsCreated: eventCreatedCount,
         gamesSkipped: skippedCount,
+        eventsSkipped: skippedEventCount,
       });
     } catch (error) {
       this.logger.error('Failed to transform Steam Owned Games', {
@@ -126,4 +161,3 @@ export class SteamOwnedGamesTransformService {
     }
   }
 }
-
