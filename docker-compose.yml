@@ -70,20 +70,6 @@ services:
 
 
 
-  hbpe-service:
-    image: ci/hbpe-service
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    networks:
-      - ci
-    depends_on:
-      database:
-        condition: service_healthy
-      orchestrator:
-        condition: service_started
-    restart: unless-stopped
-    profiles: [ "local", "staging", "production" ]
-
   #############
   # EPHEMERAL #
   #############
@@ -117,7 +103,6 @@ services:
     pull_policy: build
     environment:
       - PYTHONPATH=/app/src
-      - DATABASE_URL=postgresql://companion:${DATABASE_PASSWORD}@database:5432/companion
       - TEMPORAL_ADDRESS=orchestrator:7233
       - TEMPORAL_NAMESPACE=default
       - HBPE_TASK_QUEUE=hbpe

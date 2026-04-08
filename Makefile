@@ -105,7 +105,7 @@ build-local: ## Build Docker images for local development
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
 	@printf "\n➤ Building HBPE service image...\n\n"
-	@docker build -f backend/apps/hbpe/Dockerfile $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
+	@docker build -f backend/apps/hbpe/Dockerfile.local $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
 	@printf "\n"
 
@@ -150,7 +150,7 @@ build-staging: ## Build Docker images for staging deployment
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
 	@printf "\n➤ Building HBPE service image...\n\n"
-	@docker build -f backend/apps/hbpe/Dockerfile $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
+	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
 	@printf "\n"
 
@@ -198,7 +198,7 @@ build-production: ## Build the application
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
 	@printf "\n➤ Building HBPE service image...\n\n"
-	@docker build -f backend/apps/hbpe/Dockerfile $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
+	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
 	@printf "\n"
 
