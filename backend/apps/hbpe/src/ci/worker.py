@@ -30,31 +30,44 @@ log = structlog.get_logger(__name__)
 
 async def main() -> None:
     log.info("connecting_temporal", address=settings.temporal_address)
-    client = await Client.connect(
-        settings.temporal_address,
-        namespace=settings.temporal_namespace,
-    )
 
-    # Register nightly schedule (idempotent — safe to call on every restart)
-    await setup_hbpe_schedules(client)
+    # Temporal registers the default namespace asynchronously after startup.
+    # Retry until it's available.
+    while True:
+        try:
+            client = await Client.connect(
+                settings.temporal_address,
+                namespace=settings.temporal_namespace,
+            )
 
-    worker = Worker(
-        client,
-        task_queue=settings.task_queue,
-        workflows=[NightlyHBPEWorkflow],
-        activities=[
-            label_unlabeled,
-            label_summary_tokens,
-            l1_stale_sweep,
-            l2_stale_sweep,
-            lora_fine_tune,
-            drift_detection,
-            cache_invalidation,
-        ],
-    )
+            # Register nightly schedule (idempotent — safe to call on every restart)
+            await setup_hbpe_schedules(client)
 
-    log.info("hbpe_worker_started", task_queue=settings.task_queue)
-    await worker.run()
+            worker = Worker(
+                client,
+                task_queue=settings.task_queue,
+                workflows=[NightlyHBPEWorkflow],
+                activities=[
+                    label_unlabeled,
+                    label_summary_tokens,
+                    l1_stale_sweep,
+                    l2_stale_sweep,
+                    lora_fine_tune,
+                    drift_detection,
+                    cache_invalidation,
+                ],
+            )
+
+            log.info("hbpe_worker_started", task_queue=settings.task_queue)
+            await worker.run()
+            break
+
+        except RuntimeError as e:
+            if "namespace" in str(e).lower() and "not found" in str(e).lower():
+                log.warning("temporal_namespace_not_ready", retry_in=5)
+                await asyncio.sleep(5)
+            else:
+                raise
 
 
 if __name__ == "__main__":
