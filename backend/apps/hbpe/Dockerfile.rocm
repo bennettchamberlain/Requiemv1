@@ -27,7 +27,7 @@ RUN pip3 install --no-cache-dir \
 
 # ── llama-cpp-python with HIP/ROCm (HIPBLAS) ──────────────────────────────────
 # Requires ROCm SDK on the host (mounted via /dev/kfd, /dev/dri).
-# CMAKE_ARGS enables the GGML HIP backend for Phi-3-mini inference.
+# CMAKE_ARGS enables the GGML HIP backend for Qwennference.
 RUN CMAKE_ARGS="-DGGML_HIPBLAS=ON" FORCE_CMAKE=1 \
     pip3 install --no-cache-dir "llama-cpp-python>=0.3.4"
 
