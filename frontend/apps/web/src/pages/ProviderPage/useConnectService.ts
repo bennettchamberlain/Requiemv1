@@ -39,14 +39,13 @@ export function useConnectService(): ReturnType {
       setError(null);
 
       try {
-        console.log('creating provider', endpoints, apiKey);
         const response = await fetchJson<ConnectResponse>(`/api/providers/${providerId}`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ endpoints: endpoints || [], apiKey }),
+          body: JSON.stringify({ endpoints: endpoints || [], apiKey: apiKey || undefined }),
         });
 
         setAuthorizationUrl(response.authorizationUrl);

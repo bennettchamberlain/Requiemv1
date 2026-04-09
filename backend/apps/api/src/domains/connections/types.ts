@@ -31,7 +31,7 @@ export interface UpdateConnectionDto {
 }
 
 export interface connectProviderDto {
-  apiKey: string;
+  apiKey?: string;
   endpoints: string[];
 }
 

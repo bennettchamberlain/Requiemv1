@@ -68,7 +68,6 @@ export function ProviderPage() {
   const [{ authorizationUrl, loading: connectLoading, error, setEndpoints, apiKey, setApiKey }, { connect }] =
     useConnectService();
 
-  console.log('apiKey', apiKey);
   const isOpenId = provider?.authType === 'openid';
   const isConnectDisabled = isOpenId && (apiKey == null || apiKey.length === 0);
 
