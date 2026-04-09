@@ -1,1 +1,1 @@
-# ci.inference — local model inference singletons (Phi-3-mini)
+# ci.inference — local model inference singletons 

@@ -25,7 +25,7 @@ CREATE TABLE hbpe.l1_clusters (
     keywords        TEXT[],                  -- TF-IDF top terms from event titles
     centroid        FLOAT8[],                -- 391-dim (7 scalar + 384 title embedding); NULL until first feature vector is assigned
     member_count    INTEGER NOT NULL DEFAULT 0,
-    naming_method   TEXT,                    -- ctfidf | phi3 | user
+    naming_method   TEXT,                    -- ctfidf | LLM | user
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
     last_active_at  TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -64,7 +64,7 @@ CREATE TABLE hbpe.vocab_naming_log (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     level           TEXT NOT NULL CHECK (level IN ('l1', 'l2')),
     cluster_id      UUID NOT NULL,
-    method          TEXT NOT NULL CHECK (method IN ('ctfidf', 'phi3', 'user')),
+    method          TEXT NOT NULL CHECK (method IN ('ctfidf', 'LLM', 'user')),
     input_keywords  TEXT[],
     proposed_label  TEXT,
     final_label     TEXT NOT NULL,
