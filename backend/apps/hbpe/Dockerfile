@@ -27,7 +27,7 @@ RUN pip3 install --no-cache-dir \
     torch==2.2.0 torchvision \
     --index-url https://download.pytorch.org/whl/cu121
 
-# 2. llama-cpp-python built with CUDA support for Phi-3-mini inference.
+# 2. llama-cpp-python for inference.
 #    CMAKE_ARGS enables the GGML CUDA backend.
 RUN CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 \
     pip3 install --no-cache-dir "llama-cpp-python>=0.2.56"
@@ -45,7 +45,7 @@ COPY src/ ./src/
 COPY entrypoint.sh ./
 
 # Persistent volumes for model artifacts and token corpus
-RUN mkdir -p /app/models/phi3 \
+RUN mkdir -p /app/models/qwen \
              /app/data/token_corpus \
              /app/data/artifacts
 
