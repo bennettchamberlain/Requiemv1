@@ -18,6 +18,7 @@ import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';
 import { ProviderService } from '../services/ProviderService';
 import { connectProviderDto, connectProviderSchema } from '../types';
+import { BaseOAuth2Client } from '@ci/domains/connections/clients/BaseOAuth2Client';
 
 @Controller('providers')
 export class ProvidersController {
@@ -105,26 +106,24 @@ export class ProvidersController {
       const clientId = process.env[clientIdVariable];
       const clientSecret = process.env[clientSecretVariable];
 
-      if (!clientId) {
-        this.logger.error(`Expected environment variable ${clientIdVariable} not specified`);
-
-        throw new InternalServerErrorException('Client id not configured for provider');
-      }
-
-      if (!clientSecret) {
-        this.logger.error(`Expected environment variable ${clientSecretVariable} not specified`);
-
-        throw new InternalServerErrorException('Client secret not configured for provider');
-      }
-
       const connection = await this.connectionService.create(serviceContext, {
         providerId: provider.id,
         name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
-        clientid: clientId,
-        clientsecret: clientSecret,
         schedule: '1 hour',
         endpoints: input.endpoints,
       });
+
+      try {
+        await (client as BaseOAuth2Client).getClientCredentials(connection);
+      } catch (err) {
+        this.logger.error('Failed to resolve client credentials', {
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+
+        throw new InternalServerErrorException(
+          err instanceof Error ? err.message : 'Client credentials not configured for provider',
+        );
+      }
 
       const authorizationUrl = await client.getAuthorizationUrl(connection);
 

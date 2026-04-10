@@ -46,7 +46,6 @@ export class MicrosoftClient extends BaseOAuth2Client {
   }
 
   getClientCredentials(connection: Connection): Promise<{ clientId: string; clientSecret: string }> {
-    console.log('getClientCredentials', connection);
     const clientIdVariable = 'MICROSOFT_CLIENT_ID';
     const clientSecretVariable = 'MICROSOFT_CLIENT_SECRET';
     const clientIdFromEnv = process.env[clientIdVariable];
@@ -55,7 +54,6 @@ export class MicrosoftClient extends BaseOAuth2Client {
     return this.providerKeyService
       .findByProviderId({ userId: connection.userId }, connection.provider!.id)
       .then((keys) => {
-        console.log('custom provider keys for', connection.provider!.id, keys);
         const clientId = keys ? keys.clientId : clientIdFromEnv;
         const clientSecret = keys ? keys.clientSecret : clientSecretFromEnv;
 
