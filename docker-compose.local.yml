@@ -58,3 +58,9 @@ services:
   setup-orchestrator:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
+
+volumes:
+  db-data:
+    name: ci-server-local-db-data
+  object-data:
+    name: ci-server-local-object-data

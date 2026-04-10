@@ -89,3 +89,9 @@ services:
   setup-orchestrator:
     volumes:
       - secrets:/run/secrets:ro
+
+volumes:
+  db-data:
+    name: ci-server-production-db-data
+  object-data:
+    name: ci-server-production-object-data
