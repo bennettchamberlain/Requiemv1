@@ -13,6 +13,12 @@ services:
       - ci
     extra_hosts:
       - host.docker.internal:host-gateway
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       migrate-database:
         condition: service_completed_successfully
@@ -35,6 +41,11 @@ services:
       - ./infrastructure/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - ci
+    depends_on:
+      api:
+        condition: service_healthy
+      object-store:
+        condition: service_healthy
     restart: unless-stopped
     profiles: [ "staging" ]
 
