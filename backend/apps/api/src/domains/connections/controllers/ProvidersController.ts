@@ -13,12 +13,12 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
+import { BaseOAuth2Client } from '@ci/domains/connections/clients/BaseOAuth2Client';
 
 import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';
 import { ProviderService } from '../services/ProviderService';
 import { connectProviderDto, connectProviderSchema } from '../types';
-import { BaseOAuth2Client } from '@ci/domains/connections/clients/BaseOAuth2Client';
 
 @Controller('providers')
 export class ProvidersController {
@@ -95,17 +95,6 @@ export class ProvidersController {
         authorizationUrl,
       };
     } else if (provider.authType === 'oauth2') {
-      const clientIdVariable = `${provider.name?.toUpperCase()}_CLIENT_ID`;
-      const clientSecretVariable = `${provider.name?.toUpperCase()}_CLIENT_SECRET`;
-
-      // TODO:
-      //   These are stand-in variables for user settings with fallback defaults.
-      //   We need to eventually replace this with a more robust system where we're
-      //   POST-ing to a gateway with protected keys, or a local API endpoint with
-      //   user-specified key overrides.
-      const clientId = process.env[clientIdVariable];
-      const clientSecret = process.env[clientSecretVariable];
-
       const connection = await this.connectionService.create(serviceContext, {
         providerId: provider.id,
         name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
