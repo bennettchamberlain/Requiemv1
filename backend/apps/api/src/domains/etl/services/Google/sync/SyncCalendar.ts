@@ -28,7 +28,7 @@ export async function syncCalendar({
       });
 
       const params = new URLSearchParams({
-        maxResults: '10',
+        maxResults: '200',
         showDeleted: 'true',
         singleEvents: 'true',
         timeMax: connection.createdAt.toISOString(),
@@ -57,8 +57,6 @@ export async function syncCalendar({
         },
         nextCursor: nextPageToken
           ? { pageToken: nextPageToken }
-          : nextSyncToken
-            ? { syncToken: nextSyncToken }
             : {},
       };
     } else {
