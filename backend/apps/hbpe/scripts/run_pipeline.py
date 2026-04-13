@@ -250,7 +250,7 @@ def step3_label_content(user_id: str) -> None:
         with get_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT c.id::text AS content_id, c.title, c.content_type
+                    SELECT c.id::text AS content_id, c.title, c.type AS content_type
                     FROM ci.content c
                     LEFT JOIN hbpe.l2_content_cluster lc ON lc.content_id = c.id
                     WHERE c.user_id = %s::uuid AND lc.content_id IS NULL
