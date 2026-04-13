@@ -59,7 +59,7 @@ def get_or_create_l1(user_id: str, l0_class: str, label: str) -> tuple[str, bool
     """
     Return (cluster_id, is_new) for a given L1 label.
 
-    Creates a new cluster with naming_method='qwen' if the label has never
+    Creates a new cluster with naming_method='LLM' if the label has never
     been seen before for this (user_id, l0_class) pair.
 
     is_new=True indicates the HMT vocabulary has grown and a retrain is needed.
@@ -90,7 +90,7 @@ def get_or_create_l1(user_id: str, l0_class: str, label: str) -> tuple[str, bool
             (cluster_id, user_id, l0_class, label, display_name,
              naming_method, is_active, member_count, centroid, created_at, updated_at)
         VALUES
-            (%s, %s::uuid, %s, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
+            (%s, %s::uuid, %s, %s, %s, 'LLM', TRUE, 0, NULL, NOW(), NOW())
     """
     try:
         with get_conn() as conn:
@@ -177,7 +177,7 @@ def get_or_create_l2(
             (cluster_id, user_id, l0_class, l1_cluster_id, label, display_name,
              naming_method, is_active, member_count, centroid, created_at, updated_at)
         VALUES
-            (%s, %s::uuid, %s, %s::uuid, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
+            (%s, %s::uuid, %s, %s::uuid, %s, %s, 'LLM', TRUE, 0, NULL, NOW(), NOW())
     """
     try:
         with get_conn() as conn:
