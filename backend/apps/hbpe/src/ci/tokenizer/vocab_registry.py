@@ -87,17 +87,17 @@ def get_or_create_l1(user_id: str, l0_class: str, label: str) -> tuple[str, bool
     display_name = label.replace("_", " ").title()
     sql_insert = """
         INSERT INTO hbpe.l1_clusters
-            (cluster_id, user_id, l0_class, label, display_name, keywords,
+            (cluster_id, user_id, l0_class, label, display_name,
              naming_method, is_active, member_count, centroid, created_at, updated_at)
         VALUES
-            (%s, %s::uuid, %s, %s, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
+            (%s, %s::uuid, %s, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
     """
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql_insert, (
                     cluster_id, str(user_id), l0_class,
-                    label, display_name, [],
+                    label, display_name,
                 ))
         log.info(
             "New L1 cluster: user=%s l0=%s label=%r → %s",
@@ -174,17 +174,17 @@ def get_or_create_l2(
     display_name = label.replace("_", " ").title()
     sql_insert = """
         INSERT INTO hbpe.l2_clusters
-            (cluster_id, user_id, l0_class, l1_cluster_id, label, display_name, keywords,
+            (cluster_id, user_id, l0_class, l1_cluster_id, label, display_name,
              naming_method, is_active, member_count, centroid, created_at, updated_at)
         VALUES
-            (%s, %s::uuid, %s, %s::uuid, %s, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
+            (%s, %s::uuid, %s, %s::uuid, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
     """
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql_insert, (
                     cluster_id, str(user_id), l0_class, str(l1_cluster_id),
-                    label, display_name, [],
+                    label, display_name,
                 ))
         log.info(
             "New L2 cluster: user=%s l0=%s l1=%s label=%r → %s",
