@@ -14,6 +14,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RequestContextMiddleware } from '@ci/common/context';
+import { HealthController } from '@ci/common/controllers/HealthController';
 import { FeatureModule } from '@ci/common/feature';
 import { GlobalExceptionsFilter } from '@ci/common/filters';
 import { IdFormatGuard } from '@ci/common/guards';
@@ -84,7 +85,7 @@ import { UserModule } from '@ci/domains/user';
     SummariesModule,
     UserModule,
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

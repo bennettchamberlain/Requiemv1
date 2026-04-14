@@ -15,6 +15,9 @@ services:
       - ci
     extra_hosts:
       - host.docker.internal:host-gateway
+    depends_on:
+      object-store:
+        condition: service_healthy
     restart: unless-stopped
     profiles: [ "local" ]
 
@@ -58,3 +61,9 @@ services:
   setup-orchestrator:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
+
+volumes:
+  db-data:
+    name: ci-server-local-db-data
+  object-data:
+    name: ci-server-local-object-data
