@@ -55,9 +55,7 @@ export async function syncCalendar({
         data: {
           items: events,
         },
-        nextCursor: nextPageToken
-          ? { pageToken: nextPageToken }
-            : {},
+        nextCursor: nextPageToken ? { pageToken: nextPageToken } : {},
       };
     } else {
       client.logger.log('Performing incremental Calendar sync', {
