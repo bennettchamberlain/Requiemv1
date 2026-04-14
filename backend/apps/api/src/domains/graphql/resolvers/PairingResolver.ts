@@ -1,4 +1,4 @@
-import { Mutation, Query, Resolver, Args } from '@nestjs/graphql';
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { PairingService } from '@ci/domains/pairing';
 
