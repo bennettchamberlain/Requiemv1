@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { createHookContext, fetchJson } from '@ci/common';
 import { jwtDecode } from 'jwt-decode';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const authChannel = new BroadcastChannel('auth');
 
@@ -53,6 +53,7 @@ type ReturnValue = [
 
 function useAuth(): ReturnValue {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<unknown | null>(null);
@@ -89,14 +90,15 @@ function useAuth(): ReturnValue {
 
         setAccessToken(data.accessToken);
 
-        navigate('/');
+        const returnTo = new URLSearchParams(location.search).get('returnTo');
+        navigate(returnTo ?? '/');
       } catch (err: unknown) {
         setLoginError(err);
       } finally {
         setLoginLoading(false);
       }
     },
-    [navigate],
+    [navigate, location.search],
   );
 
   const logout = useCallback(async () => {

@@ -613,6 +613,7 @@ type Mutation {
   removeEvent(id: String!): Boolean!
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
+  startPairing: StartPairingPayload!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
@@ -660,6 +661,17 @@ type PageInfo {
   hasNextPage: Boolean!
   hasPreviousPage: Boolean!
   startCursor: String
+}
+
+type PairingStatusPayload {
+  appletAccessToken: String
+  deviceId: String
+  errorMessage: String
+  status: String!
+  success: Boolean!
+  userEmail: String
+  userId: String
+  userName: String
 }
 
 type PersonConnection implements Connection {
@@ -791,6 +803,7 @@ type Query {
   node(id: ID!): Node
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
+  pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
   place(id: ID!): PlaceType
@@ -900,6 +913,14 @@ type SearchResultEdge {
 }
 
 union SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+
+type StartPairingPayload {
+  errorMessage: String
+  pairingPath: String
+  pairingToken: String
+  pollKey: String
+  success: Boolean!
+}
 
 type SummaryConnection implements Connection {
   edges: [SummaryEdge!]!

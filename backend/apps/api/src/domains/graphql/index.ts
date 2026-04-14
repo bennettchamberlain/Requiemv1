@@ -13,6 +13,7 @@ import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
+import { PairingModule } from '@ci/domains/pairing';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
@@ -45,6 +46,7 @@ import { FileResolver } from './resolvers/FileResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
+import { PairingResolver } from './resolvers/PairingResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
@@ -68,6 +70,7 @@ import { UserResolver } from './resolvers/UserResolver';
       introspection: true,
       graphiql: false,
     }),
+    PairingModule,
     BrowserActivityModule,
     ConnectionsModule,
     ConversationModule,
@@ -83,6 +86,7 @@ import { UserResolver } from './resolvers/UserResolver';
   ],
   providers: [
     ActionResolver,
+    PairingResolver,
     BrowserActivityResolver,
     CommunicationResolver,
     ComplexityPlugin,

@@ -44,6 +44,9 @@ const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const TagPage = lazy(() => import('@/pages/TagPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
+const AppletPairPage = lazy(() =>
+  import('@/pages/AppletPairPage').then((m) => ({ default: m.AppletPairPage })),
+);
 const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 
 function Providers({ children }: { children: ReactNode }) {
@@ -382,6 +385,8 @@ function AppRoutes() {
           />
         )}
       </Route>
+
+      <Route path="/pair" element={<AppletPairPage />} />
 
       {/* Fallback */}
       <Route path="*" element={<NotFoundPage />} />
