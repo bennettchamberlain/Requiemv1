@@ -35,6 +35,7 @@ import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
+import { ParsingModule } from '@ci/domains/parsing';
 import { PositionModule } from '@ci/domains/position';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
@@ -64,6 +65,7 @@ import { UserModule } from '@ci/domains/user';
     BrowserActivityModule,
     ConnectionsModule,
     DeviceModule,
+    ParsingModule,
     EtlModule,
     EventsModule,
     FilesModule,

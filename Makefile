@@ -16,6 +16,7 @@ export SETUP_ORCHESTRATOR_REPO ?= ci/setup-orchestrator
 export STT_REPO ?= ci/stt-service
 export SUMMARY_REPO ?= ci/summary-service
 export TTS_REPO ?= ci/tts-service
+export PARSER_REPO ?= ci/parser-service
 
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
@@ -103,6 +104,9 @@ build-local: ## Build Docker images for local development
 	@printf "\n➤ Building text-to-speech service image...\n\n"
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
+	@printf "\n➤ Building parser service image...\n\n"
+	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
+
 	@printf "\n"
 
 .PHONY: build-staging
@@ -144,6 +148,9 @@ build-staging: ## Build Docker images for staging deployment
 
 	@printf "\n➤ Building text-to-speech service image...\n\n"
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
+
+	@printf "\n➤ Building parser service image...\n\n"
+	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
 
 	@printf "\n"
 
@@ -189,6 +196,9 @@ build-production: ## Build the application
 
 	@printf "\n➤ Building text-to-speech service image...\n\n"
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
+
+	@printf "\n➤ Building parser service image...\n\n"
+	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
 
 	@printf "\n"
 

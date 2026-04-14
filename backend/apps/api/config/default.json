@@ -80,6 +80,9 @@
     },
     "tts": {
       "host": "http://tts-service:9002"
+    },
+    "parser": {
+      "host": "http://parser-service:8002"
     }
   },
   "features": {

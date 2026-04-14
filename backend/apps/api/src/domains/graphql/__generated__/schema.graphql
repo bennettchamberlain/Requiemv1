@@ -489,6 +489,9 @@ type FileType implements Node & Taggable {
   filename: String
   id: ID!
   items(after: String, before: String, first: Int, last: Int): ItemConnection
+  parseError: String
+  parseStatus: String
+  parsedAt: DateTime
   previewUrl: String
   size: Float
   sourceUrl: String

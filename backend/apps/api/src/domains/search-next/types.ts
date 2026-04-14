@@ -6,6 +6,7 @@ export const INDEXABLE_ENTITIES = [
   'content',
   'event',
   'file',
+  'file-chunk',
   'item',
   'note',
   'person',

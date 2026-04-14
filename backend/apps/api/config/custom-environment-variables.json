@@ -40,6 +40,9 @@
     },
     "tts": {
       "host": "TTS_HOST"
+    },
+    "parser": {
+      "host": "PARSER_HOST"
     }
   },
   "features": {
