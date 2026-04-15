@@ -25,9 +25,6 @@ PROJECT_NAME := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
 # Helper: expands to "-t repo:tag" only when TAG is non-empty
 versioned_tag = $(if $(TAG),-t $(1):$(TAG))
 
-# Include --profile hbpe only when ENABLE_HBPE=true (reads from .env if not already in environment)
-ENABLE_HBPE ?= $(shell grep -E '^ENABLE_HBPE=' .env 2>/dev/null | cut -d= -f2)
-HBPE_PROFILE := $(if $(filter true,$(ENABLE_HBPE)),--profile hbpe,)
 
 define BANNER
    ______                                  _
@@ -368,7 +365,7 @@ install: ## Install project dependencies
 local: health init build-local stop ## Run the local deployment
 	@printf "⌨️ Starting local services...\n\n"
 
-	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local $(HBPE_PROFILE) up -d --remove-orphans
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d --remove-orphans
 
 	@printf "\n"
 
@@ -386,7 +383,7 @@ migrate: ## Run database migrations
 production: health init build-production stop ## Run the production deployment
 	@printf "🚀 Starting production services...\n\n"
 
-	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production $(HBPE_PROFILE) up -d --remove-orphans
+	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production up -d --remove-orphans
 
 	@printf "\n"
 
@@ -418,7 +415,7 @@ seed-production: ## Seed production database via ephemeral proxy
 staging: health init build-staging stop ## Run the staging deployment
 	@printf "🎭 Starting staging services...\n\n"
 
-	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging $(HBPE_PROFILE) up -d --remove-orphans
+	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging up -d --remove-orphans
 
 	@printf "\n"
 
