@@ -47,10 +47,10 @@ export class SessionController {
    */
   @Get('csrf')
   @HttpCode(204)
-  issueCsrfToken(@Res({ passthrough: true }) res: Response) {
+  issueCsrfToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = this.csrfService.generateToken();
 
-    this.setCsrfCookie(res, token);
+    this.setCsrfCookie(req, res, token);
   }
 
   @Post()
@@ -77,13 +77,13 @@ export class SessionController {
 
     res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
       httpOnly: true,
-      secure: true,
+      secure: req.secure,
       sameSite: 'lax',
       path: '/',
       maxAge: COOKIE_MAX_AGE,
     });
 
-    this.setCsrfCookie(res, csrfToken);
+    this.setCsrfCookie(req, res, csrfToken);
 
     return {
       accessToken,
@@ -121,7 +121,7 @@ export class SessionController {
     if (sessionToken) {
       res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
         httpOnly: true,
-        secure: true,
+        secure: req.secure,
         sameSite: 'lax',
         path: '/',
         maxAge: COOKIE_MAX_AGE,
@@ -129,7 +129,7 @@ export class SessionController {
 
       const csrfToken = this.csrfService.generateToken();
 
-      this.setCsrfCookie(res, csrfToken);
+      this.setCsrfCookie(req, res, csrfToken);
     }
 
     return {
@@ -153,12 +153,12 @@ export class SessionController {
 
     res.clearCookie(config.auth.cookies.sessionTokenName, {
       httpOnly: true,
-      secure: true,
+      secure: req.secure,
       sameSite: 'lax',
       path: '/',
     });
 
-    this.clearCsrfCookie(res);
+    this.clearCsrfCookie(req, res);
   }
 
   private getSessionToken(req: Request) {
@@ -177,19 +177,19 @@ export class SessionController {
     }
   }
 
-  private setCsrfCookie(res: Response, token: string): void {
+  private setCsrfCookie(req: Request, res: Response, token: string): void {
     res.cookie(CSRF_COOKIE_NAME, token, {
       httpOnly: false,
-      secure: true,
+      secure: req.secure,
       sameSite: 'strict',
       path: '/',
     });
   }
 
-  private clearCsrfCookie(res: Response): void {
+  private clearCsrfCookie(req: Request, res: Response): void {
     res.clearCookie(CSRF_COOKIE_NAME, {
       httpOnly: false,
-      secure: true,
+      secure: req.secure,
       sameSite: 'strict',
       path: '/',
     });

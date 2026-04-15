@@ -93,14 +93,3 @@ services:
   setup-orchestrator:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
-
-  minio:
-    ports:
-      - 9000:9000
-
-  hbpe-service:
-    devices:
-      - /dev/kfd
-      - /dev/dri
-    group_add:
-      - video

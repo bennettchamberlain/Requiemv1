@@ -41,12 +41,6 @@ services:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
 
-  hbpe-service:
-    ports:
-      - 8003:8003
-    environment:
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-
   tts-service:
     ports:
       - 9002:9002
@@ -65,7 +59,6 @@ services:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
 
-
   hbpe-service:
     build:
       context: ./backend/apps/hbpe
@@ -81,8 +74,8 @@ services:
       - MODELS_DIR=/app/models
       - TOKEN_CORPUS_DIR=/app/data/token_corpus
       - HF_HOME=/app/models/hf_cache
-      - API_URL=http://application:3000
-      - API_JWT_SECRET=${AUTH_JWT_AUTHTOKENSECRET}
+      - API_URL=http://host.docker.internal:3000
+      - API_JWT_SECRET=${AUTH_TOKEN_SECRET}
     volumes:
       - hbpe-models:/app/models
       - hbpe-corpus:/app/data
