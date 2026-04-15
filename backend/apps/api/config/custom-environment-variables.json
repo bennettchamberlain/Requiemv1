@@ -55,7 +55,8 @@
     "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB",
     "new.insights.page": "ENABLE_NEW_INSIGHTS_PAGE",
     "require.signup.codes": "ENABLE_REQUIRE_SIGNUP_CODES",
-    "files.page": "ENABLE_FILES_PAGE"
+    "files.page": "ENABLE_FILES_PAGE",
+    "hbpe": "ENABLE_HBPE"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"
