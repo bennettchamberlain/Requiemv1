@@ -386,7 +386,7 @@ migrate: ## Run database migrations
 production: health init build-production stop ## Run the production deployment
 	@printf "🚀 Starting production services...\n\n"
 
-	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production up -d --remove-orphans
+	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production $(HBPE_PROFILE) up -d --remove-orphans
 
 	@printf "\n"
 
@@ -418,7 +418,7 @@ seed-production: ## Seed production database via ephemeral proxy
 staging: health init build-staging stop ## Run the staging deployment
 	@printf "🎭 Starting staging services...\n\n"
 
-	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging up -d --remove-orphans
+	@docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile staging $(HBPE_PROFILE) up -d --remove-orphans
 
 	@printf "\n"
 

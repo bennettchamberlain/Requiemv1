@@ -121,7 +121,7 @@ services:
       - database
       - orchestrator
     restart: unless-stopped
-    profiles: [ "staging", "production" ]
+    profiles: [ "hbpe" ]
 
   ##############################
   # THIRD-PARTY MANAGEMENT UIs #
