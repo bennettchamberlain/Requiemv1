@@ -3,8 +3,6 @@ services:
     image: ci/api
     volumes:
       - secrets:/run/secrets:ro
-    environment:
-      ENABLE_HBPE: ${ENABLE_HBPE:-false}
     networks:
       - ci
     extra_hosts:
