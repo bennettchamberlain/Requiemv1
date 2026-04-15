@@ -14,21 +14,10 @@ export async function seedHbpe(module: TestingModule, multibar: MultiBar) {
   for (const c of HBPE_L1_CLUSTERS) {
     await dataSource.query(
       `INSERT INTO hbpe.l1_clusters
-         (cluster_id, user_id, l0_class, label, display_name,
-          keywords, member_count, naming_method, is_active)
-       VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9)
+         (cluster_id, user_id, l0_class, label, member_count, naming_method, is_active)
+       VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
        ON CONFLICT (cluster_id) DO NOTHING`,
-      [
-        c.clusterId,
-        HBPE_USER_ID,
-        c.l0Class,
-        c.label,
-        c.displayName,
-        c.keywords,
-        c.memberCount,
-        c.namingMethod,
-        c.isActive,
-      ],
+      [c.clusterId, HBPE_USER_ID, c.l0Class, c.label, c.memberCount, c.namingMethod, c.isActive],
     );
     bar.increment();
   }

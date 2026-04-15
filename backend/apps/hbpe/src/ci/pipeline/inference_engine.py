@@ -102,16 +102,16 @@ class InferenceEngine:
         self._output_cache: dict[datetime.date, Optional[dict]] = {}
 
     def _load_l1_display_names(self) -> dict[str, str]:
-        """Load cluster_id → display_name mapping for human-readable L1 labels."""
+        """Load cluster_id → human-readable label mapping for L1 labels."""
         from ci.database import get_conn
         try:
             with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT cluster_id::text, display_name FROM hbpe.l1_clusters WHERE user_id = %s",
+                        "SELECT cluster_id::text, label FROM hbpe.l1_clusters WHERE user_id = %s",
                         (self.user_id,),
                     )
-                    return {row[0]: row[1] for row in cur.fetchall()}
+                    return {row[0]: row[1].replace("_", " ").title() for row in cur.fetchall()}
         except Exception as exc:
             log.warning("Could not load L1 display names: %s", exc)
             return {}
@@ -335,7 +335,7 @@ class InferenceEngine:
             if total > 0:
                 class_arr /= total
             l0_probs   = {cls: float(class_arr[i]) for i, cls in enumerate(l0_classes)}
-            # Top-10 L1 clusters by probability (keyed by human-readable display_name)
+            # Top-10 L1 clusters by probability (keyed by human-readable label)
             l1_arr     = bucket_l1_sum[b]
             top_l1_idx = np.argsort(l1_arr)[::-1][:10]
             l1_probs: dict[str, float] = {}

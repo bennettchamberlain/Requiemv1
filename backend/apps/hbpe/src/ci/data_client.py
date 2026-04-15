@@ -34,6 +34,10 @@ from ci.graphql_client import GraphQLUnavailable, decode_gid, gql, paginate
 
 log = logging.getLogger(__name__)
 
+# Circuit-breaker: once a connection-level failure is seen, skip GraphQL for
+# the remainder of the process rather than retrying on every date.
+_graphql_unreachable: bool = False
+
 
 # ── GraphQL query strings ──────────────────────────────────────────────────────
 
@@ -130,6 +134,7 @@ def get_token_events_for_day(user_id: str, date_str: str) -> list[dict]:
               AND e.is_deleted = FALSE
               AND e.start_time >= %s::date
               AND e.start_time <  (%s::date + INTERVAL '1 day')
+              AND e.start_time >= '2010-01-01'::timestamptz
             ORDER BY e.start_time
         )
         SELECT
@@ -263,14 +268,19 @@ def _fetch_summaries_for_date(user_id: str, date_str: str) -> list[dict]:
     period_type, since the summaries query has no filter arguments.
     Returns dicts with keys: summary_id, period_start, content.
     """
+    global _graphql_unreachable
     target = date.fromisoformat(date_str)
+
+    if _graphql_unreachable:
+        return _fetch_summaries_sql(user_id, date_str)
 
     try:
         all_nodes = paginate(_SUMMARIES_QUERY, ["summaries"], {}, user_id)
     except GraphQLUnavailable:
         return _fetch_summaries_sql(user_id, date_str)
     except Exception as exc:
-        log.warning("_fetch_summaries_for_date GraphQL failed: %s — falling back to SQL", exc)
+        log.warning("_fetch_summaries_for_date GraphQL failed: %s — falling back to SQL for remainder of run", exc)
+        _graphql_unreachable = True
         return _fetch_summaries_sql(user_id, date_str)
 
     result: list[dict] = []

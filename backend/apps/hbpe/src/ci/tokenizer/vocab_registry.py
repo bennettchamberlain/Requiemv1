@@ -59,7 +59,7 @@ def get_or_create_l1(user_id: str, l0_class: str, label: str) -> tuple[str, bool
     """
     Return (cluster_id, is_new) for a given L1 label.
 
-    Creates a new cluster with naming_method='qwen' if the label has never
+    Creates a new cluster with naming_method='LLM' if the label has never
     been seen before for this (user_id, l0_class) pair.
 
     is_new=True indicates the HMT vocabulary has grown and a retrain is needed.
@@ -84,20 +84,18 @@ def get_or_create_l1(user_id: str, l0_class: str, label: str) -> tuple[str, bool
 
     # Not found — insert
     cluster_id = str(uuid.uuid4())
-    display_name = label.replace("_", " ").title()
     sql_insert = """
         INSERT INTO hbpe.l1_clusters
-            (cluster_id, user_id, l0_class, label, display_name, keywords,
-             naming_method, is_active, member_count, centroid, created_at, updated_at)
+            (cluster_id, user_id, l0_class, label,
+             naming_method, is_active, member_count, created_at, updated_at)
         VALUES
-            (%s, %s::uuid, %s, %s, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
+            (%s, %s::uuid, %s, %s, 'LLM', TRUE, 0, NOW(), NOW())
     """
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql_insert, (
-                    cluster_id, str(user_id), l0_class,
-                    label, display_name, [],
+                    cluster_id, str(user_id), l0_class, label,
                 ))
         log.info(
             "New L1 cluster: user=%s l0=%s label=%r → %s",
@@ -149,7 +147,7 @@ def get_or_create_l2(
     """
     Return (cluster_id, is_new) for a given L2 label under a specific L1 cluster.
 
-    centroid is stored as NULL — embedding-based routing is no longer used.
+    centroid column has been removed — embedding-based routing is no longer used.
     """
     label = label.strip()
 
@@ -171,20 +169,18 @@ def get_or_create_l2(
                 return str(row[0]), False
 
     cluster_id = str(uuid.uuid4())
-    display_name = label.replace("_", " ").title()
     sql_insert = """
         INSERT INTO hbpe.l2_clusters
-            (cluster_id, user_id, l0_class, l1_cluster_id, label, display_name, keywords,
-             naming_method, is_active, member_count, centroid, created_at, updated_at)
+            (cluster_id, user_id, l0_class, l1_cluster_id, label,
+             naming_method, is_active, member_count, created_at, updated_at)
         VALUES
-            (%s, %s::uuid, %s, %s::uuid, %s, %s, %s, 'qwen', TRUE, 0, NULL, NOW(), NOW())
+            (%s, %s::uuid, %s, %s::uuid, %s, 'LLM', TRUE, 0, NOW(), NOW())
     """
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql_insert, (
-                    cluster_id, str(user_id), l0_class, str(l1_cluster_id),
-                    label, display_name, [],
+                    cluster_id, str(user_id), l0_class, str(l1_cluster_id), label,
                 ))
         log.info(
             "New L2 cluster: user=%s l0=%s l1=%s label=%r → %s",

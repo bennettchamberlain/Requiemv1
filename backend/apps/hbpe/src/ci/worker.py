@@ -29,6 +29,10 @@ log = structlog.get_logger(__name__)
 
 
 async def main() -> None:
+    # Init database connection pool early to fail fast
+    from ci.database import init_db
+    init_db()
+    
     log.info("connecting_temporal", address=settings.temporal_address)
 
     # Temporal registers the default namespace asynchronously after startup.

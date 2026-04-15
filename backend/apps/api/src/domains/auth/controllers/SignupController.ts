@@ -89,7 +89,7 @@ export class SignupController {
 
     res.cookie(config.auth.cookies.sessionTokenName, sessionToken, {
       httpOnly: true,
-      secure: true,
+      secure: req.secure,
       sameSite: 'lax',
       path: '/',
       maxAge: COOKIE_MAX_AGE,
@@ -98,17 +98,17 @@ export class SignupController {
     // Issue a fresh CSRF token for authenticated requests (e.g. /refresh)
     const csrfToken = this.csrfService.generateToken();
 
-    this.setCsrfCookie(res, csrfToken);
+    this.setCsrfCookie(req, res, csrfToken);
 
     return {
       accessToken,
     };
   }
 
-  private setCsrfCookie(res: Response, token: string): void {
+  private setCsrfCookie(req: Request, res: Response, token: string): void {
     res.cookie(CSRF_COOKIE_NAME, token, {
       httpOnly: false,
-      secure: true,
+      secure: req.secure,
       sameSite: 'strict',
       path: '/',
     });

@@ -7,20 +7,33 @@ environment variables without touching code.
 from __future__ import annotations
 
 import os
+from dotenv import load_dotenv
+
+_proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+load_dotenv(os.path.join(_proj_root, ".env.default"))
+load_dotenv(os.path.join(_proj_root, ".env"), override=True)
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _require_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
+def _get_database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+        
+    host = os.getenv("DATABASE_HOST", "localhost")
+    port = os.getenv("DATABASE_PORT", "5432")
+    user = os.getenv("DATABASE_USERNAME", "companion")
+    password = os.getenv("DATABASE_PASSWORD", "")
+    db = os.getenv("DATABASE_NAME", "companion")
+    
+    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
 
 class Settings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────────
-    database_url: str = Field(default_factory=lambda: _require_env("DATABASE_URL"))
+    database_url: str = Field(default_factory=_get_database_url)
 
     # ── Temporal ──────────────────────────────────────────────────────────────
     temporal_address: str = Field(
@@ -70,9 +83,9 @@ class Settings(BaseSettings):
 
     # ── App GraphQL API ───────────────────────────────────────────────────────
     # Set API_URL to the base URL of the main application service (e.g.
-    # http://application:3000).  graphql_client.py posts to {api_url}/graphql.
+    # http://api:3000).  graphql_client.py posts to {api_url}/graphql.
     api_url: str = Field(
-        default_factory=lambda: os.getenv("API_URL", "http://application:3000")
+        default_factory=lambda: os.getenv("API_URL", "http://api:3000")
     )
     # Shared JWT secret — must match AUTH_JWT_AUTHTOKENSECRET in the app.
     # HBPE self-signs service JWTs with this secret so the app accepts them.

@@ -57,6 +57,10 @@ def _get_or_create_engine(user_id: str):
 async def lifespan(app: FastAPI):
     global _ingester
 
+    # Init database connection pool early to fail fast
+    from ci.database import init_db
+    init_db()
+
     # Pre-load engine for the default user (single-user Phase 4 deployment)
     uid = _default_user_id()
     if uid:
