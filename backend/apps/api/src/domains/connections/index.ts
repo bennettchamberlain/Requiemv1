@@ -24,7 +24,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 
-import { ClientFactory, FacebookClient, GoogleClient, MicrosoftClient } from './clients';
+import { ClientFactory, FacebookClient, GoogleClient, MicrosoftClient, SpotifyClient } from './clients';
 import { ConnectionsController } from './controllers/ConnectionsController';
 import { ProvidersController } from './controllers/ProvidersController';
 import { ConnectionEntity } from './entities/ConnectionEntity';
@@ -47,6 +47,7 @@ import { ProviderService } from './services/ProviderService';
     ProviderService,
     ProviderKeyService,
     MicrosoftClient,
+    SpotifyClient,
   ],
   controllers: [ConnectionsController, ProvidersController],
   exports: [
@@ -57,6 +58,7 @@ import { ProviderService } from './services/ProviderService';
     FacebookClient,
     GoogleClient,
     MicrosoftClient,
+    SpotifyClient,
   ],
 })
 export class ConnectionsModule {}
@@ -69,7 +71,7 @@ export { ConnectionService, ProviderService, ProviderKeyService };
 export { ClientFactory } from './clients';
 
 // Clients
-export { FacebookClient, GoogleClient, MicrosoftClient };
+export { FacebookClient, GoogleClient, MicrosoftClient, SpotifyClient };
 
 // Types
 export type { BaseClient } from './clients/BaseClient';

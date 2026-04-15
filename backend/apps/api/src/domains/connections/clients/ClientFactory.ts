@@ -6,6 +6,7 @@ import { BaseClient as Client } from './BaseClient';
 import { FacebookClient } from './FacebookClient';
 import { GoogleClient } from './GoogleClient';
 import { MicrosoftClient } from './MicrosoftClient';
+import { SpotifyClient } from './SpotifyClient';
 
 @Injectable()
 export class ClientFactory {
@@ -15,10 +16,12 @@ export class ClientFactory {
     private readonly googleClient: GoogleClient,
     private readonly microsoftClient: MicrosoftClient,
     private readonly facebookClient: FacebookClient,
+    private readonly spotifyClient: SpotifyClient,
   ) {
     this.providers.set(config.auth.providers.google.id, this.googleClient);
     this.providers.set(config.auth.providers.microsoft.id, this.microsoftClient);
     this.providers.set(config.auth.providers.facebook.id, this.facebookClient);
+    this.providers.set(config.auth.providers.spotify.id, this.spotifyClient);
   }
 
   getClientByProviderId(providerId: string | null | undefined): Client {

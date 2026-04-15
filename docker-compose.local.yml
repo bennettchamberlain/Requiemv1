@@ -15,6 +15,9 @@ services:
       - ci
     extra_hosts:
       - host.docker.internal:host-gateway
+    depends_on:
+      object-store:
+        condition: service_healthy
     restart: unless-stopped
     profiles: [ "local" ]
 
@@ -88,3 +91,9 @@ services:
     ports:
       - 8002:8002
     profiles: [ "local" ]
+
+volumes:
+  db-data:
+    name: ci-server-local-db-data
+  object-data:
+    name: ci-server-local-object-data

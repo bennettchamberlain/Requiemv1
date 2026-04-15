@@ -37,6 +37,20 @@ import { syncOutlookMail } from './Microsoft/sync/SyncOutlookMail';
 import { OneDriveTransformService } from './Microsoft/transform/TransformOneDrive';
 import { OutlookCalendarTransformService } from './Microsoft/transform/TransformOutlookCalendar';
 import { OutlookMailTransformService } from './Microsoft/transform/TransformOutlookMail';
+import { syncPlaylists } from './Spotify/sync/SyncPlaylists';
+import { syncRecentlyPlayed } from './Spotify/sync/SyncRecentlyPlayed';
+import { syncSavedAudiobooks } from './Spotify/sync/SyncSavedAudiobooks';
+import { syncSavedEpisodes } from './Spotify/sync/SyncSavedEpisodes';
+import { syncSavedShows } from './Spotify/sync/SyncSavedShows';
+import { syncSavedTracks } from './Spotify/sync/SyncSavedTracks';
+import { syncTopArtists } from './Spotify/sync/SyncTopArtists';
+import { SpotifyPlaylistsTransformService } from './Spotify/transform/TransformPlaylists';
+import { SpotifyRecentlyPlayedTransformService } from './Spotify/transform/TransformRecentlyPlayed';
+import { SpotifySavedAudiobooksTransformService } from './Spotify/transform/TransformSavedAudiobooks';
+import { SpotifySavedEpisodesTransformService } from './Spotify/transform/TransformSavedEpisodes';
+import { SpotifySavedShowsTransformService } from './Spotify/transform/TransformSavedShows';
+import { SpotifySavedTracksTransformService } from './Spotify/transform/TransformSavedTracks';
+import { SpotifyTopArtistsTransformService } from './Spotify/transform/TransformTopArtists';
 
 @Injectable()
 export class EndpointServiceMap {
@@ -61,6 +75,13 @@ export class EndpointServiceMap {
     private readonly oneDriveTransformService: OneDriveTransformService,
     private readonly outlookCalendarTransformService: OutlookCalendarTransformService,
     private readonly outlookMailTransformService: OutlookMailTransformService,
+    private readonly spotifyRecentlyPlayedTransformService: SpotifyRecentlyPlayedTransformService,
+    private readonly spotifyPlaylistsTransformService: SpotifyPlaylistsTransformService,
+    private readonly spotifySavedAudiobooksTransformService: SpotifySavedAudiobooksTransformService,
+    private readonly spotifySavedEpisodesTransformService: SpotifySavedEpisodesTransformService,
+    private readonly spotifySavedShowsTransformService: SpotifySavedShowsTransformService,
+    private readonly spotifySavedTracksTransformService: SpotifySavedTracksTransformService,
+    private readonly spotifyTopArtistsTransformService: SpotifyTopArtistsTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -86,6 +107,15 @@ export class EndpointServiceMap {
           Photos: syncPhotos,
           Posts: syncPosts,
           Videos: syncVideos,
+        },
+        Spotify: {
+          'Recently Played': syncRecentlyPlayed,
+          Playlists: syncPlaylists,
+          'Saved Audiobooks': syncSavedAudiobooks,
+          'Saved Episodes': syncSavedEpisodes,
+          'Saved Shows': syncSavedShows,
+          'Saved Tracks': syncSavedTracks,
+          'Top Artists': syncTopArtists,
         },
       },
       transform: {
@@ -127,6 +157,29 @@ export class EndpointServiceMap {
           ),
           Calendar: this.outlookCalendarTransformService.transformOutlookCalendar.bind(
             this.outlookCalendarTransformService,
+          ),
+        },
+        Spotify: {
+          'Recently Played': this.spotifyRecentlyPlayedTransformService.transform.bind(
+            this.spotifyRecentlyPlayedTransformService,
+          ),
+          Playlists: this.spotifyPlaylistsTransformService.transform.bind(
+            this.spotifyPlaylistsTransformService,
+          ),
+          'Saved Audiobooks': this.spotifySavedAudiobooksTransformService.transform.bind(
+            this.spotifySavedAudiobooksTransformService,
+          ),
+          'Saved Episodes': this.spotifySavedEpisodesTransformService.transform.bind(
+            this.spotifySavedEpisodesTransformService,
+          ),
+          'Saved Shows': this.spotifySavedShowsTransformService.transform.bind(
+            this.spotifySavedShowsTransformService,
+          ),
+          'Saved Tracks': this.spotifySavedTracksTransformService.transform.bind(
+            this.spotifySavedTracksTransformService,
+          ),
+          'Top Artists': this.spotifyTopArtistsTransformService.transform.bind(
+            this.spotifyTopArtistsTransformService,
           ),
         },
       },

@@ -61,7 +61,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
         if (!clientId) {
           this.logger.error(
-            `No custom providerKey for Google and expected environment variable ${clientIdVariable} not specified`,
+            `No custom providerKey for Microsoft and expected environment variable ${clientIdVariable} not specified`,
           );
 
           throw new Error('Client id not configured for provider');
@@ -69,7 +69,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
 
         if (!clientSecret) {
           this.logger.error(
-            `No custom providerKey for Google and expected environment variable ${clientSecretVariable} not specified`,
+            `No custom providerKey for Microsoft and expected environment variable ${clientSecretVariable} not specified`,
           );
 
           throw new Error('Client secret not configured for provider');
