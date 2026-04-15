@@ -25,6 +25,10 @@ PROJECT_NAME := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
 # Helper: expands to "-t repo:tag" only when TAG is non-empty
 versioned_tag = $(if $(TAG),-t $(1):$(TAG))
 
+# Include --profile hbpe only when ENABLE_HBPE=true (reads from .env if not already in environment)
+ENABLE_HBPE ?= $(shell grep -E '^ENABLE_HBPE=' .env 2>/dev/null | cut -d= -f2)
+HBPE_PROFILE := $(if $(filter true,$(ENABLE_HBPE)),--profile hbpe,)
+
 define BANNER
    ______                                  _
   / ____/___  ____ ___  ____  ____ _____  (_)___  ____
@@ -364,7 +368,7 @@ install: ## Install project dependencies
 local: health init build-local stop ## Run the local deployment
 	@printf "⌨️ Starting local services...\n\n"
 
-	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d --remove-orphans
+	@docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local $(HBPE_PROFILE) up -d --remove-orphans
 
 	@printf "\n"
 

@@ -87,4 +87,4 @@ services:
     restart: unless-stopped
     ports:
       - 8002:8002
-    profiles: [ "local" ]
+    profiles: [ "hbpe" ]
