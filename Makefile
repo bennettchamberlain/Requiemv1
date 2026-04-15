@@ -395,6 +395,24 @@ seed: ## Seed database with John Smith user and demo data
 
 	@printf "\nDatabase successfully seeded. 🌳\n\n"
 
+.PHONY: predict
+predict: ## Run the HBPE prediction pipeline against the local container
+	@printf "🔮 Running HBPE prediction pipeline (local)...\n\n"
+
+	@docker exec ci-server-hbpe-service-1 python3 scripts/run_pipeline.py
+
+	@printf "\nPipeline run complete.\n\n"
+
+.PHONY: predict-production
+predict-production: ## Run the HBPE prediction pipeline against the production container
+	@printf "🔮 Running HBPE prediction pipeline (production)...\n\n"
+
+	@docker exec ci-server-hbpe-service-1 \
+		sh -c 'export $$(cat /proc/$$(pgrep -f "ci.worker" | head -1)/environ | xargs -0 | grep DATABASE_URL) \
+		&& python3 scripts/run_pipeline.py'
+
+	@printf "\nPipeline run complete.\n\n"
+
 .PHONY: seed-production
 seed-production: ## Seed production database via ephemeral proxy
 	@printf "🌱 Seeding production database...\n\n"
