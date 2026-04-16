@@ -76,13 +76,19 @@ def build_histogram(
 
     buckets = engine.predict(horizon_start=horizon_start)
 
+    status = "READY"
+    checkpoint = Path(settings.models_dir) / "hmt" / "hmt_checkpoint.pt"
+    if not checkpoint.exists():
+        status = "COLD_START"
+
     if user_id:
         _log_prediction(user_id, now, horizon_start, buckets)
 
     return {
-        "horizon":      horizon,
-        "generated_at": now.isoformat() + "Z",
-        "buckets":      buckets,
+        "horizon":       horizon,
+        "generated_at":  now.isoformat() + "Z",
+        "system_status": status,
+        "buckets":       buckets,
     }
 
 

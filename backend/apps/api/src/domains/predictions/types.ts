@@ -12,5 +12,6 @@ export interface ForecastBucket {
 export interface ForecastResponse {
   horizon: string;
   generated_at: string;
+  system_status: string;
   buckets: ForecastBucket[];
 }

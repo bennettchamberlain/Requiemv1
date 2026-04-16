@@ -176,11 +176,32 @@ function Legend() {
 interface ForecastStripProps {
   buckets: ForecastBucket[];
   generatedAt: string;
+  systemStatus?: string;
   className?: string;
 }
 
-export function ForecastStrip({ buckets, generatedAt, className }: ForecastStripProps) {
+export function ForecastStrip({ buckets, generatedAt, systemStatus = 'READY', className }: ForecastStripProps) {
   const pinned = normalizeBuckets(buckets);
+
+  if (systemStatus === 'COLD_START') {
+    return (
+      <div className={cn('space-y-2', className)}>
+        <div className="flex h-8 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground animate-pulse">
+          HBPE Initializing: Gathering initial behavior patterns...
+        </div>
+      </div>
+    );
+  }
+
+  if (systemStatus === 'TRAINING') {
+    return (
+      <div className={cn('space-y-2', className)}>
+        <div className="flex h-8 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground animate-pulse">
+          HBPE is training your custom adapter...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn('space-y-2', className)}>

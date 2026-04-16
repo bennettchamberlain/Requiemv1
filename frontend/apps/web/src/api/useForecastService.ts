@@ -5,6 +5,7 @@ const GET_FORECAST = gql(`
     forecast(horizon: $horizon) {
       horizon
       generatedAt
+      systemStatus
       buckets {
         bucketIndex
         startTime
@@ -38,13 +39,24 @@ export interface ForecastBucket {
 export interface ForecastResponse {
   horizon: string;
   generatedAt: string;
+  systemStatus: string;
   buckets: ForecastBucket[];
 }
 
+import { useEffect } from 'react';
+
 export function useForecastService(horizon = '24h') {
-  const { data, loading, error, refetch } = useQuery<{ forecast: ForecastResponse | null }>(GET_FORECAST, {
+  const { data, loading, error, refetch, startPolling, stopPolling } = useQuery<{ forecast: ForecastResponse | null }>(GET_FORECAST, {
     variables: { horizon },
   });
+
+  useEffect(() => {
+    if (data && data.forecast?.systemStatus !== 'READY') {
+      startPolling(5000);
+    } else {
+      stopPolling();
+    }
+  }, [data?.forecast?.systemStatus, startPolling, stopPolling]);
 
   return [{ data: data?.forecast ?? null, loading, error }, { refetch: () => refetch({ horizon }) }] as const;
 }
