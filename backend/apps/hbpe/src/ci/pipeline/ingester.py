@@ -1,5 +1,5 @@
 """
-Event stream ingester — async listener for new behavioural events (T4.3).
+Event stream ingester — async listener for new behavioral events (T4.3).
 
 Listens to PostgreSQL LISTEN/NOTIFY channels for:
   • ci_events          — calendar/task events (ci.events INSERT trigger)

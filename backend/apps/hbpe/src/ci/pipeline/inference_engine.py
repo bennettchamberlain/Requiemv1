@@ -1,7 +1,7 @@
 """
 Incremental inference engine for the HMT model (T4.2).
 
-Produces 48-bucket hourly-resolution behavioural forecasts by aggregating
+Produces 48-bucket hourly-resolution behavioral forecasts by aggregating
 per-day model outputs across a 30-day sliding window, weighted by recency
 and day-of-week similarity to the forecast horizon.
 
@@ -76,7 +76,7 @@ class _PyTorchSession:
 
 class InferenceEngine:
     """
-    Caching inference engine for HMT behavioural forecasting.
+    Caching inference engine for HMT behavioral forecasting.
 
     Lifecycle:
       engine = InferenceEngine(user_id)
@@ -323,9 +323,9 @@ class InferenceEngine:
         # ── Format response ────────────────────────────────────────────────────
         # L0 vocab layout: [PAD(0), MASK(1), SOD(2), EOD(3), class_0..class_7]
         # Zero special-token probability mass and renormalise so the 8
-        # behavioural classes always sum to 1.0 in the histogram.
+        # behavioral classes always sum to 1.0 in the histogram.
         N_SPECIAL  = 4
-        l0_classes = L0_CLASSES  # 8 behavioural class names
+        l0_classes = L0_CLASSES  # 8 behavioral class names
 
         results: list[dict] = []
         for b in range(N_BUCKETS):

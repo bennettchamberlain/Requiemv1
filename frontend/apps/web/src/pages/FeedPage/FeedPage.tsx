@@ -370,7 +370,7 @@ export function FeedPage() {
           <>
             <h2 className="text-2xl font-bold text-foreground">Tomorrow's Forecast</h2>
             {forecastLoading && (
-              <div className="text-sm text-muted-foreground">Loading behavioural forecast…</div>
+              <div className="text-sm text-muted-foreground">Loading behavioral forecast…</div>
             )}
             {forecast && <ForecastStrip buckets={forecast.buckets} generatedAt={forecast.generatedAt} />}
           </>

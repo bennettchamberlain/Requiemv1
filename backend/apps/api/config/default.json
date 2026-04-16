@@ -82,7 +82,7 @@
       "host": "http://tts-service:9002"
     },
     "hbpe": {
-      "host": "http://localhost:8002"
+      "host": "http://hbpe-service:8002"
     }
   },
   "features": {

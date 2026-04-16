@@ -185,7 +185,7 @@ export function ForecastStrip({ buckets, generatedAt, className }: ForecastStrip
   return (
     <div className={cn('space-y-2', className)}>
       {/* Strip — always 48 slots, 00:00 left → 23:30 right */}
-      <div className="flex items-stretch gap-px" role="img" aria-label="24-hour behavioural forecast strip">
+      <div className="flex items-stretch gap-px" role="img" aria-label="24-hour behavioral forecast strip">
         {pinned.map((bucket, idx) => (
           <ForecastSlot
             key={bucket.bucketIndex}

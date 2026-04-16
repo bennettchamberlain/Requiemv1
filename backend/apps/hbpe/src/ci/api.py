@@ -7,7 +7,7 @@ Lifecycle:
 
 Endpoints:
   GET /health               — liveness probe
-  GET /histogram            — 48-bucket 24h behavioural forecast
+  GET /histogram            — 48-bucket 24h behavioral forecast
   POST /invalidate/{date}   — manual cache invalidation (for testing / admin)
 
 The engine registry maps user_id → InferenceEngine.  In a single-user
@@ -104,7 +104,7 @@ async def histogram(
     user_id:  Optional[str] = Query(None,  description="User UUID (defaults to single-user mode)"),
 ) -> dict:
     """
-    Return a 48-bucket 24-hour behavioural forecast.
+    Return a 48-bucket 24-hour behavioral forecast.
 
     Response: { horizon, generated_at, buckets: [...48 items...] }
     Each bucket: { bucket_index, start_time, l0_probs, l1_probs, l2_probs, q10, q50, q90 }
