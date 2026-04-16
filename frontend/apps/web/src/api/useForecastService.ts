@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+
 import { gql, useQuery } from '@apollo/client';
 
 const GET_FORECAST = gql(`
