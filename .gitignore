@@ -29,6 +29,10 @@ AGENTS.md
 
 .idea/
 
+# LICENSE copies distributed to build contexts during docker build
+infrastructure/*/LICENSE
+backend/apps/*/LICENSE
+
 # Playwright
 /test-results/
 /playwright-report/

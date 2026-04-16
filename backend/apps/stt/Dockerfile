@@ -13,6 +13,8 @@ WORKDIR /app
 
 ENV PYTHONPATH=/app
 
+COPY LICENSE /LICENSE
+
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
