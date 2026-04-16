@@ -80,6 +80,9 @@
     },
     "tts": {
       "host": "http://tts-service:9002"
+    },
+    "hbpe": {
+      "host": "http://hbpe-service:8002"
     }
   },
   "features": {
@@ -92,7 +95,8 @@
     "advanced.theme.tab": false,
     "new.insights.page": false,
     "require.signup.codes": true,
-    "files.page": false
+    "files.page": false,
+    "hbpe": false
   },
   "environment": {
     "database.query.logging": false

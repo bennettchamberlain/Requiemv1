@@ -38,6 +38,13 @@ export async function seedEvents(module: TestingModule, multibar: MultiBar) {
           },
         },
       );
+    } else {
+      await eventService.update({ userId: JOHN_SMITH.id }, event.id, {
+        title: event.title,
+        description: event.description,
+        start_time: event.start_time,
+        end_time: event.end_time,
+      });
     }
 
     bar.increment();
