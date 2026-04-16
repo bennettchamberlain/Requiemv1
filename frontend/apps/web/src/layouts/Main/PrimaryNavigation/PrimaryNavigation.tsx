@@ -16,7 +16,7 @@ import {
 } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { useUploadFile } from '@/api';
+import { useUploadFile, useTriggerHbpe } from '@/api';
 import { AddPersonModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -29,7 +29,10 @@ import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
 import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
+
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [, { trigger }] = useTriggerHbpe();
 
   const [{ isOpen: isSearchModalOpen }, { open: openSearchModal, close: closeSearchModal }] =
     useModalControls();
@@ -151,7 +154,7 @@ export function PrimaryNavigation() {
                   </div>
                   <div className="mt-2 -mx-2 -mb-2 bg-muted/50 p-4 rounded-b-lg">
                     <div className="text-center text-sm font-semibold mb-3">Actions</div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       <DropdownMenu.Item
                         onSelect={openUploadModal}
                         className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
@@ -174,6 +177,22 @@ export function PrimaryNavigation() {
                       >
                         <Cable className="h-6! w-6!" strokeWidth={1.25} />
                         <span className="text-xs text-center">Connect</span>
+                      </DropdownMenu.Item>
+
+                      <DropdownMenu.Item
+                        onSelect={async (e) => {
+                          e.preventDefault();
+                          const success = await trigger();
+                          if (success) {
+                            toast.success('HBPE pipeline triggered successfully');
+                          } else {
+                            toast.error('Failed to trigger HBPE pipeline');
+                          }
+                        }}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <Search className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Predict</span>
                       </DropdownMenu.Item>
                     </div>
                   </div>

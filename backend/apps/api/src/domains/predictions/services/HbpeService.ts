@@ -32,4 +32,20 @@ export class HbpeService {
 
     return response.json() as Promise<ForecastResponse>;
   }
+
+  async triggerPipeline(userId: string): Promise<boolean> {
+    const url = `${this.baseUrl}/trigger?user_id=${userId}`;
+
+    try {
+      const response = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) });
+      if (!response.ok) {
+        this.logger.warn('HBPE trigger returned error', { url, status: response.status });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn('HBPE trigger unreachable', { url, err });
+      return false;
+    }
+  }
 }

@@ -641,6 +641,9 @@ type Mutation {
   removePlace(id: String!): Boolean!
   removeQuestion(id: String!): Boolean!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
+
+  """Manually trigger the HBPE pipeline for the current user"""
+  triggerHbpe: Boolean!
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!

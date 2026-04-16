@@ -143,3 +143,27 @@ async def invalidate_cache(
         _engines[uid].invalidate(d)
         return {"invalidated": str(d), "user_id": uid}
     return {"invalidated": str(d), "user_id": uid, "note": "no engine loaded"}
+
+
+@app.post("/trigger")
+async def trigger_pipeline(user_id: Optional[str] = Query(None)) -> dict:
+    """
+    Manually trigger the nightly HBPE pipeline for the user.
+    """
+    uid = user_id or _default_user_id()
+    if not uid:
+        raise HTTPException(status_code=503, detail="No users found in database")
+
+    try:
+        from temporalio.client import Client
+        from ci.config import settings
+        client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
+        schedule_id = f"hbpe-nightly-{uid[:8]}"
+        handle = client.get_schedule_handle(schedule_id)
+        # trigger() executes the scheduled action immediately
+        await handle.trigger()
+        return {"status": "triggered", "schedule_id": schedule_id}
+    except Exception as e:
+        log.exception("Failed to manually trigger HBPE pipeline")
+        raise HTTPException(status_code=500, detail=str(e))
+
