@@ -14,6 +14,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
+import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
@@ -43,6 +44,7 @@ import { ConnectionSyncJobResolver } from './resolvers/ConnectionSyncJobResolver
 import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
+import { ForecastResolver } from './resolvers/ForecastResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
@@ -73,6 +75,7 @@ import { UserResolver } from './resolvers/UserResolver';
     PairingModule,
     BrowserActivityModule,
     ConnectionsModule,
+    PredictionsModule,
     ConversationModule,
     EtlModule,
     FilesModule,
@@ -86,6 +89,7 @@ import { UserResolver } from './resolvers/UserResolver';
   ],
   providers: [
     ActionResolver,
+    ForecastResolver,
     PairingResolver,
     BrowserActivityResolver,
     CommunicationResolver,

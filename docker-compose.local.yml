@@ -62,6 +62,36 @@ services:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
 
+  hbpe-service:
+    build:
+      context: ./backend/apps/hbpe
+      dockerfile: Dockerfile.local
+    image: ci/hbpe-service-local
+    pull_policy: build
+    environment:
+      - PYTHONPATH=/app/src
+      - DATABASE_URL=postgresql://companion:${DATABASE_PASSWORD}@database:5432/companion
+      - TEMPORAL_ADDRESS=orchestrator:7233
+      - TEMPORAL_NAMESPACE=default
+      - HBPE_TASK_QUEUE=hbpe
+      - MODELS_DIR=/app/models
+      - TOKEN_CORPUS_DIR=/app/data/token_corpus
+      - HF_HOME=/app/models/hf_cache
+      - API_URL=http://host.docker.internal:3000
+      - API_JWT_SECRET=${AUTH_TOKEN_SECRET}
+    volumes:
+      - hbpe-models:/app/models
+      - hbpe-corpus:/app/data
+    networks:
+      - ci
+    depends_on:
+      - database
+      - orchestrator
+    restart: unless-stopped
+    ports:
+      - 8002:8002
+    profiles: [ "local" ]
+
 volumes:
   db-data:
     name: ci-server-local-db-data

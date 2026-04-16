@@ -16,6 +16,7 @@ export SETUP_ORCHESTRATOR_REPO ?= ci/setup-orchestrator
 export STT_REPO ?= ci/stt-service
 export SUMMARY_REPO ?= ci/summary-service
 export TTS_REPO ?= ci/tts-service
+export HBPE_REPO ?= ci/hbpe-service
 export PARSER_REPO ?= ci/parser-service
 
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
@@ -24,6 +25,7 @@ PROJECT_NAME := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
 
 # Helper: expands to "-t repo:tag" only when TAG is non-empty
 versioned_tag = $(if $(TAG),-t $(1):$(TAG))
+
 
 define BANNER
    ______                                  _
@@ -104,6 +106,9 @@ build-local: ## Build Docker images for local development
 	@printf "\n➤ Building text-to-speech service image...\n\n"
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
+	@printf "\n➤ Building HBPE service image...\n\n"
+	@docker build -f backend/apps/hbpe/Dockerfile.local $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
+
 	@printf "\n➤ Building parser service image...\n\n"
 	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
 
@@ -148,6 +153,9 @@ build-staging: ## Build Docker images for staging deployment
 
 	@printf "\n➤ Building text-to-speech service image...\n\n"
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
+
+	@printf "\n➤ Building HBPE service image...\n\n"
+	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
 	@printf "\n➤ Building parser service image...\n\n"
 	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
@@ -196,6 +204,9 @@ build-production: ## Build the application
 
 	@printf "\n➤ Building text-to-speech service image...\n\n"
 	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
+
+	@printf "\n➤ Building HBPE service image...\n\n"
+	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
 	@printf "\n➤ Building parser service image...\n\n"
 	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
@@ -393,6 +404,24 @@ seed: ## Seed database with John Smith user and demo data
 	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
 
 	@printf "\nDatabase successfully seeded. 🌳\n\n"
+
+.PHONY: predict
+predict: ## Run the HBPE prediction pipeline against the local container
+	@printf "🔮 Running HBPE prediction pipeline (local)...\n\n"
+
+	@docker exec ci-server-hbpe-service-1 python3 scripts/run_pipeline.py
+
+	@printf "\nPipeline run complete.\n\n"
+
+.PHONY: predict-production
+predict-production: ## Run the HBPE prediction pipeline against the production container
+	@printf "🔮 Running HBPE prediction pipeline (production)...\n\n"
+
+	@docker exec ci-server-hbpe-service-1 \
+		sh -c 'export $$(cat /proc/$$(pgrep -f "ci.worker" | head -1)/environ | xargs -0 | grep DATABASE_URL) \
+		&& python3 scripts/run_pipeline.py'
+
+	@printf "\nPipeline run complete.\n\n"
 
 .PHONY: seed-production
 seed-production: ## Seed production database via ephemeral proxy

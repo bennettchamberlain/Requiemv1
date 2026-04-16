@@ -9,6 +9,7 @@ services:
       OLLAMA_HOST: http://host.docker.internal:11434
       STT_HOST: http://stt-service:9001
       TTS_HOST: http://tts-service:9002
+      HBPE_HOST: http://hbpe-service:8002
     networks:
       - ci
     extra_hosts:
@@ -63,6 +64,15 @@ services:
   summary-service:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+
+  hbpe-service:
+    environment:
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
 
   #############
   # EPHEMERAL #

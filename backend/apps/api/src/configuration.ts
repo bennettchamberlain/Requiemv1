@@ -99,6 +99,9 @@ export const ConfigSchema = z.object({
     tts: z.object({
       host: z.string(),
     }),
+    hbpe: z.object({
+      host: z.string(),
+    }),
     parser: z.object({
       host: z.string(),
     }),
@@ -114,6 +117,7 @@ export const ConfigSchema = z.object({
     'new.insights.page': booleanStringSchema,
     'require.signup.codes': booleanStringSchema,
     'files.page': booleanStringSchema,
+    hbpe: booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
