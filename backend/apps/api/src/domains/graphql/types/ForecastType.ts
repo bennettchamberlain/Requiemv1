@@ -12,7 +12,10 @@ export class ForecastType {
   @Field(() => String, { description: 'ISO-8601 timestamp when this forecast was generated' })
   generatedAt!: string;
 
-  @Field(() => String, { defaultValue: 'READY', description: 'System status of the HBPE engine (COLD_START, TRAINING, READY)' })
+  @Field(() => String, {
+    defaultValue: 'READY',
+    description: 'System status of the HBPE engine (COLD_START, TRAINING, READY)',
+  })
   systemStatus!: string;
 
   @Field(() => [ForecastBucketType!]!)

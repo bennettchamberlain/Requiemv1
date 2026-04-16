@@ -21,9 +21,10 @@ type Documents = {
     "\n  query GetFeedActions($limit: Int) {\n    feedActions(limit: $limit) {\n      id\n      title\n      text\n      imageUrl\n      priority\n      seen\n      dismissed\n      metadata {\n        seen\n        type\n        context\n        relatedPerson\n      }\n      thread {\n        id\n      }\n    }\n  }\n": typeof types.GetFeedActionsDocument,
     "\n  mutation MarkActionAsSeen($id: ID!) {\n    markActionAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": typeof types.MarkActionAsSeenDocument,
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": typeof types.MarkActionAsDismissedDocument,
-    "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": typeof types.GetForecastDocument,
+    "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": typeof types.GetForecastDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.UntagEntitiesDocument,
+    "\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n": typeof types.TriggerHbpeDocument,
     "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n": typeof types.GetNodeTagsForRelationshipCardDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": typeof types.ActionGridItemDataFragmentDoc,
     "\n  fragment AnswerGridItemData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": typeof types.AnswerGridItemDataFragmentDoc,
@@ -124,9 +125,10 @@ const documents: Documents = {
     "\n  query GetFeedActions($limit: Int) {\n    feedActions(limit: $limit) {\n      id\n      title\n      text\n      imageUrl\n      priority\n      seen\n      dismissed\n      metadata {\n        seen\n        type\n        context\n        relatedPerson\n      }\n      thread {\n        id\n      }\n    }\n  }\n": types.GetFeedActionsDocument,
     "\n  mutation MarkActionAsSeen($id: ID!) {\n    markActionAsSeen(id: $id) {\n      id\n      seen\n    }\n  }\n": types.MarkActionAsSeenDocument,
     "\n  mutation MarkActionAsDismissed($id: ID!) {\n    markActionAsDismissed(id: $id) {\n      id\n      dismissed\n    }\n  }\n": types.MarkActionAsDismissedDocument,
-    "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": types.GetForecastDocument,
+    "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n": types.GetForecastDocument,
     "\n  mutation TagEntities($input: TagEntitiesInput!) {\n    tagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.TagEntitiesDocument,
     "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.UntagEntitiesDocument,
+    "\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n": types.TriggerHbpeDocument,
     "\n  query GetNodeTagsForRelationshipCard($id: ID!) {\n    node(id: $id) {\n      __typename\n      ... on Taggable {\n        tags {\n          label\n        }\n      }\n    }\n  }\n": types.GetNodeTagsForRelationshipCardDocument,
     "\n  fragment ActionGridItemData on ActionType {\n    id\n    actionTitle: title\n    actionText: text\n  }\n": types.ActionGridItemDataFragmentDoc,
     "\n  fragment AnswerGridItemData on AnswerType {\n    id\n    answer\n    question {\n      id\n      text\n    }\n  }\n": types.AnswerGridItemDataFragmentDoc,
@@ -253,7 +255,7 @@ export function gql(source: "\n  mutation MarkActionAsDismissed($id: ID!) {\n   
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n"];
+export function gql(source: "\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetForecast($horizon: String) {\n    forecast(horizon: $horizon) {\n      horizon\n      generatedAt\n      systemStatus\n      buckets {\n        bucketIndex\n        startTime\n        l0Probs { label probability }\n        l1Probs { label probability }\n        l2Probs { label probability }\n        q10\n        q50\n        q90\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -262,6 +264,10 @@ export function gql(source: "\n  mutation TagEntities($input: TagEntitiesInput!)
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UntagEntities($input: TagEntitiesInput!) {\n    untagEntities(input: $input) {\n      ... on Node {\n        id\n      }\n\n      ... on Taggable {\n        tags {\n          id\n          label\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n"): (typeof documents)["\n  mutation TriggerHbpe {\n    triggerHbpe\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
