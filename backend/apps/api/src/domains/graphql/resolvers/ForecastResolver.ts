@@ -33,14 +33,14 @@ export class ForecastResolver {
     }
   }
 
-  @Mutation(() => Boolean, { description: 'Manually trigger the HBPE pipeline for the current user' })
-  async triggerHbpe(@Context() context: RequestContext): Promise<boolean> {
+  @Mutation(() => String, { description: 'Manually trigger the HBPE pipeline for the current user' })
+  async triggerHbpe(@Context() context: RequestContext): Promise<string> {
     if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
-      return false;
+      return 'disabled';
     }
 
     if (!context.userId) {
-      return false;
+      return 'error';
     }
 
     return this.hbpeService.triggerPipeline(context.userId);

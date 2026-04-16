@@ -643,7 +643,7 @@ type Mutation {
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
 
   """Manually trigger the HBPE pipeline for the current user"""
-  triggerHbpe: Boolean!
+  triggerHbpe: String!
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!

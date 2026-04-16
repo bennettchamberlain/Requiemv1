@@ -122,18 +122,16 @@ function ForecastSlot({
   bucket,
   isFirst,
   isLast,
-  index,
   systemStatus,
 }: {
   bucket: ForecastBucket;
   isFirst: boolean;
   isLast: boolean;
-  index: number;
   systemStatus: string;
 }) {
   const isReady = systemStatus === 'READY';
   const dominant = dominantL0(bucket.l0Probs);
-  
+
   // Standard styling for READY state
   const color = isReady ? (L0_BG[dominant] ?? 'bg-gray-400') : 'bg-primary/60';
   const isEmpty = bucket.l0Probs.length === 0;
@@ -150,8 +148,8 @@ function ForecastSlot({
             isFirst && 'rounded-l-full',
             isLast && 'rounded-r-full',
           )}
-          style={{ 
-            opacity: isReady ? targetOpacity : undefined
+          style={{
+            opacity: isReady ? targetOpacity : undefined,
           }}
         />
       </Tooltip.Trigger>
@@ -190,13 +188,37 @@ interface ForecastStripProps {
   className?: string;
 }
 
-export function ForecastStrip({ buckets, generatedAt, systemStatus = 'READY', className }: ForecastStripProps) {
+const STATUS_LABELS: Record<string, string> = {
+  COLD_START: 'Waiting to initialize...',
+  'BOOTSTRAP:queued': 'Getting ready to initialize...',
+  'BOOTSTRAP:label': 'Labeling your events and content...',
+  'BOOTSTRAP:label_summaries': 'Labeling your recent activity...',
+  'BOOTSTRAP:serialize': 'Preparing training data...',
+  'BOOTSTRAP:train': 'Training your prediction model...',
+  'BOOTSTRAP:export': 'Optimizing model for your device...',
+  'BOOTSTRAP:lora': 'Fine-tuning your personalized adapter...',
+  'NIGHTLY:queued': 'Updating your predictions...',
+  'NIGHTLY:label': 'Labeling new events...',
+  'NIGHTLY:label_summaries': 'Labeling recent activity...',
+  'NIGHTLY:l1_sweep': 'Updating behavioral patterns...',
+  'NIGHTLY:l2_sweep': 'Updating behavioral patterns...',
+  'NIGHTLY:lora': 'Fine-tuning your model...',
+  'NIGHTLY:drift': 'Checking for behavior changes...',
+  'NIGHTLY:cache': 'Refreshing predictions...',
+};
+
+export function ForecastStrip({
+  buckets,
+  generatedAt,
+  systemStatus = 'READY',
+  className,
+}: ForecastStripProps) {
   const pinned = normalizeBuckets(buckets);
 
-  const statusLabel = 
-    systemStatus === 'COLD_START' ? 'HBPE Initializing: Gathering patterns...' :
-    systemStatus === 'TRAINING' ? 'HBPE Training custom adapter...' :
-    `Generated ${new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  const statusLabel =
+    systemStatus === 'READY'
+      ? `Generated ${new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : (STATUS_LABELS[systemStatus] ?? 'Processing...');
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -208,7 +230,6 @@ export function ForecastStrip({ buckets, generatedAt, systemStatus = 'READY', cl
             bucket={bucket}
             isFirst={idx === 0}
             isLast={idx === N_BUCKETS - 1}
-            index={idx}
             systemStatus={systemStatus}
           />
         ))}
@@ -217,9 +238,7 @@ export function ForecastStrip({ buckets, generatedAt, systemStatus = 'READY', cl
       {/* Time labels — always midnight to 23:30 */}
       <div className="flex justify-between text-[10px] text-muted-foreground px-0.5">
         <span>{formatBucketTime(0)}</span>
-        <span className={systemStatus !== 'READY' ? 'animate-pulse text-primary' : ''}>
-          {statusLabel}
-        </span>
+        <span className={systemStatus !== 'READY' ? 'animate-pulse text-primary' : ''}>{statusLabel}</span>
         <span>{formatBucketTime(N_BUCKETS - 1)}</span>
       </div>
 

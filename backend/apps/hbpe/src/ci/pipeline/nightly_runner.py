@@ -209,11 +209,19 @@ class NightlyHBPEWorkflow:
     A step failure logs the error and does not block subsequent steps.
     """
 
+    def __init__(self) -> None:
+        self._step = "queued"
+
+    @workflow.query
+    def current_step(self) -> str:
+        return self._step
+
     @workflow.run
     async def run(self, user_id: str) -> dict:
         results: dict = {"user_id": user_id, "steps": {}}
 
         # Step 1 — label unlabeled events/content
+        self._step = "label"
         results["steps"]["step1_label"] = await _safe_execute(
             workflow.execute_activity(
                 label_unlabeled, user_id,
@@ -224,6 +232,7 @@ class NightlyHBPEWorkflow:
         )
 
         # Step 1b — label hourly summaries
+        self._step = "label_summaries"
         results["steps"]["step1b_summaries"] = await _safe_execute(
             workflow.execute_activity(
                 label_summary_tokens, user_id,
@@ -234,6 +243,7 @@ class NightlyHBPEWorkflow:
         )
 
         # Step 2 — L1 staleness
+        self._step = "l1_sweep"
         results["steps"]["step2_l1_stale"] = await _safe_execute(
             workflow.execute_activity(
                 l1_stale_sweep, user_id,
@@ -244,6 +254,7 @@ class NightlyHBPEWorkflow:
         )
 
         # Step 3 — L2 staleness
+        self._step = "l2_sweep"
         results["steps"]["step3_l2_stale"] = await _safe_execute(
             workflow.execute_activity(
                 l2_stale_sweep, user_id,
@@ -253,21 +264,40 @@ class NightlyHBPEWorkflow:
             "step3_l2_stale",
         )
 
-        # Steps 4–6
-        for name, act, timeout in [
-            ("step4_lora",  lora_fine_tune,    timedelta(minutes=10)),
-            ("step5_drift", drift_detection,   _ACTIVITY_TIMEOUT),
-            ("step6_cache", cache_invalidation, _ACTIVITY_TIMEOUT),
-        ]:
-            results["steps"][name] = await _safe_execute(
-                workflow.execute_activity(
-                    act, user_id,
-                    start_to_close_timeout=timeout,
-                    retry_policy=RetryPolicy(maximum_attempts=1),
-                ),
-                name,
-            )
+        # Step 4 — LoRA fine-tune
+        self._step = "lora"
+        results["steps"]["step4_lora"] = await _safe_execute(
+            workflow.execute_activity(
+                lora_fine_tune, user_id,
+                start_to_close_timeout=timedelta(minutes=10),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            ),
+            "step4_lora",
+        )
 
+        # Step 5 — drift detection (stub)
+        self._step = "drift"
+        results["steps"]["step5_drift"] = await _safe_execute(
+            workflow.execute_activity(
+                drift_detection, user_id,
+                start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            ),
+            "step5_drift",
+        )
+
+        # Step 6 — cache invalidation (stub)
+        self._step = "cache"
+        results["steps"]["step6_cache"] = await _safe_execute(
+            workflow.execute_activity(
+                cache_invalidation, user_id,
+                start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            ),
+            "step6_cache",
+        )
+
+        self._step = "done"
         return results
 
 

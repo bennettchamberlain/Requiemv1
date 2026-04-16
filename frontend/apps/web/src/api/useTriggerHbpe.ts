@@ -7,12 +7,13 @@ const TRIGGER_HBPE = gql(`
 `);
 
 export function useTriggerHbpe() {
-  const [mutate, { loading, error, data }] = useMutation<{ triggerHbpe: boolean }>(TRIGGER_HBPE);
+  const [mutate, { loading, error, data }] = useMutation<{ triggerHbpe: string }>(TRIGGER_HBPE);
 
   const trigger = async () => {
     const response = await mutate();
-    return response.data?.triggerHbpe ?? false;
+
+    return response.data?.triggerHbpe ?? 'error';
   };
 
-  return [{ loading, error, success: data?.triggerHbpe }, { trigger }] as const;
+  return [{ loading, error, status: data?.triggerHbpe }, { trigger }] as const;
 }

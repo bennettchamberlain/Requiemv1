@@ -118,6 +118,13 @@ class BootstrapHBPEWorkflow:
     Fail-fast on training/export — labeling steps use fail-continue.
     """
 
+    def __init__(self) -> None:
+        self._step = "queued"
+
+    @workflow.query
+    def current_step(self) -> str:
+        return self._step
+
     @workflow.run
     async def run(self, user_id: str) -> dict:
         from ci.pipeline.nightly_runner import (
@@ -129,6 +136,7 @@ class BootstrapHBPEWorkflow:
         results: dict = {"user_id": user_id, "steps": {}, "workflow": "bootstrap"}
 
         # Step 1 — label all unlabeled events + content
+        self._step = "label"
         results["steps"]["label"] = await _safe(
             workflow.execute_activity(
                 label_unlabeled, user_id,
@@ -139,6 +147,7 @@ class BootstrapHBPEWorkflow:
         )
 
         # Step 2 — label all unlabeled hourly summaries
+        self._step = "label_summaries"
         results["steps"]["label_summaries"] = await _safe(
             workflow.execute_activity(
                 label_summary_tokens, user_id,
@@ -149,6 +158,7 @@ class BootstrapHBPEWorkflow:
         )
 
         # Step 3 — serialize labeled data into token stream
+        self._step = "serialize"
         results["steps"]["serialize"] = await _safe(
             workflow.execute_activity(
                 serialize_token_stream, user_id,
@@ -163,9 +173,11 @@ class BootstrapHBPEWorkflow:
         if ser.get("status") == "error" or ser.get("result", {}).get("rows", -1) == 0:
             results["aborted"]      = True
             results["abort_reason"] = "no_token_data"
+            self._step = "done"
             return results
 
         # Step 4 — train HMT model (L0 MAE pre-train → joint fine-tune)
+        self._step = "train"
         results["steps"]["train"] = await _safe(
             workflow.execute_activity(
                 train_hmt_model, user_id,
@@ -177,13 +189,16 @@ class BootstrapHBPEWorkflow:
 
         train = results["steps"]["train"]
         if train.get("status") == "error":
+            self._step = "done"
             return results
         if train.get("result", {}).get("skipped"):
             results["aborted"]      = True
             results["abort_reason"] = "no_training_data"
+            self._step = "done"
             return results
 
         # Step 5 — calibrate temperature + export ONNX INT8
+        self._step = "export"
         results["steps"]["export"] = await _safe(
             workflow.execute_activity(
                 calibrate_and_export_onnx, user_id,
@@ -194,6 +209,7 @@ class BootstrapHBPEWorkflow:
         )
 
         # Step 6 — initial LoRA fine-tune (non-blocking; checkpoint now exists)
+        self._step = "lora"
         results["steps"]["lora"] = await _safe(
             workflow.execute_activity(
                 lora_fine_tune, user_id,
@@ -203,6 +219,7 @@ class BootstrapHBPEWorkflow:
             "lora",
         )
 
+        self._step = "done"
         return results
 
 

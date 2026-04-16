@@ -29,7 +29,6 @@ import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
 import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
-
   const navigate = useNavigate();
   const { toast } = useToast();
   const [, { trigger }] = useTriggerHbpe();
@@ -182,11 +181,15 @@ export function PrimaryNavigation() {
                       <DropdownMenu.Item
                         onSelect={async (e) => {
                           e.preventDefault();
-                          const success = await trigger();
-                          if (success) {
-                            toast.success('HBPE pipeline triggered successfully');
+                          const status = await trigger();
+                          if (status === 'already_running') {
+                            toast.info('Prediction pipeline is already running');
+                          } else if (status === 'triggered') {
+                            toast.success('Prediction pipeline started');
+                          } else if (status === 'error' || !status) {
+                            toast.error('Failed to trigger prediction pipeline');
                           } else {
-                            toast.error('Failed to trigger HBPE pipeline');
+                            toast.success('Prediction pipeline started');
                           }
                         }}
                         className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"

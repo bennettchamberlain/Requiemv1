@@ -33,6 +33,11 @@ log = logging.getLogger(__name__)
 # Global engine registry: user_id → InferenceEngine
 _engines: dict = {}
 _ingester = None
+_temporal_client = None
+
+# Fixed workflow ID prefixes for deduplication
+_BOOTSTRAP_WF_PREFIX = "hbpe-bootstrap"
+_NIGHTLY_WF_PREFIX   = "hbpe-nightly"
 
 
 def _default_user_id() -> Optional[str]:
@@ -55,7 +60,7 @@ def _get_or_create_engine(user_id: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _ingester
+    global _ingester, _temporal_client
 
     # Init database connection pool early to fail fast
     from ci.database import init_db
@@ -69,6 +74,17 @@ async def lifespan(app: FastAPI):
             log.info("Pre-loaded InferenceEngine for user %s", uid[:8])
         except Exception:
             log.exception("Could not pre-load default inference engine")
+
+    # Connect shared Temporal client for workflow status queries
+    try:
+        from temporalio.client import Client
+        from ci.config import settings
+        _temporal_client = await Client.connect(
+            settings.temporal_address, namespace=settings.temporal_namespace
+        )
+        log.info("Temporal client connected for status queries")
+    except Exception:
+        log.exception("Could not connect Temporal client; status queries will be unavailable")
 
     # Start event ingester
     from ci.pipeline.ingester import EventIngester
@@ -87,6 +103,30 @@ app = FastAPI(
     version     = "0.2.0",
     lifespan    = lifespan,
 )
+
+
+async def _active_workflow_status(uid: str) -> Optional[str]:
+    """
+    Query the current step of any running HBPE workflow for uid.
+
+    Returns a status string like 'BOOTSTRAP:train' or 'NIGHTLY:lora',
+    or None if no workflow is actively running.
+    """
+    if not _temporal_client:
+        return None
+    for wf_type, prefix in [
+        ("BOOTSTRAP", _BOOTSTRAP_WF_PREFIX),
+        ("NIGHTLY",   _NIGHTLY_WF_PREFIX),
+    ]:
+        wf_id = f"{prefix}-{uid[:8]}"
+        try:
+            handle = _temporal_client.get_workflow_handle(wf_id)
+            step = await handle.query("current_step")
+            if step and step != "done":
+                return f"{wf_type}:{step}"
+        except Exception:
+            pass  # workflow not found, completed, or query failed
+    return None
 
 
 @app.get("/health")
@@ -115,7 +155,8 @@ async def histogram(
 
     try:
         engine = _get_or_create_engine(uid)
-        result = build_histogram(engine, horizon=horizon, user_id=uid)
+        wf_status = await _active_workflow_status(uid)
+        result = build_histogram(engine, horizon=horizon, user_id=uid, system_status=wf_status)
         return JSONResponse(content=result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -175,31 +216,39 @@ async def trigger_pipeline(user_id: Optional[str] = Query(None)) -> dict:
         raise HTTPException(status_code=503, detail="No users found in database")
 
     try:
-        import uuid
-        from temporalio.client import Client
+        from temporalio.exceptions import WorkflowAlreadyStartedError
         from ci.config import settings
 
-        client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
-        workflow_id = f"hbpe-manual-{uid[:8]}-{uuid.uuid4().hex[:8]}"
+        client = _temporal_client
+        if not client:
+            raise RuntimeError("Temporal client not available")
 
         if _model_exists():
             from ci.pipeline.nightly_runner import NightlyHBPEWorkflow
-            handle = await client.start_workflow(
-                NightlyHBPEWorkflow.run,
-                uid,
-                id=workflow_id,
-                task_queue=settings.task_queue,
-            )
-            return {"status": "triggered", "workflow": "nightly", "workflow_id": handle.id}
+            workflow_id = f"{_NIGHTLY_WF_PREFIX}-{uid[:8]}"
+            try:
+                handle = await client.start_workflow(
+                    NightlyHBPEWorkflow.run,
+                    uid,
+                    id=workflow_id,
+                    task_queue=settings.task_queue,
+                )
+                return {"status": "triggered", "workflow": "nightly", "workflow_id": handle.id}
+            except WorkflowAlreadyStartedError:
+                return {"status": "already_running", "workflow": "nightly", "workflow_id": workflow_id}
         else:
             from ci.pipeline.bootstrap import BootstrapHBPEWorkflow
-            handle = await client.start_workflow(
-                BootstrapHBPEWorkflow.run,
-                uid,
-                id=workflow_id,
-                task_queue=settings.task_queue,
-            )
-            return {"status": "triggered", "workflow": "bootstrap", "workflow_id": handle.id}
+            workflow_id = f"{_BOOTSTRAP_WF_PREFIX}-{uid[:8]}"
+            try:
+                handle = await client.start_workflow(
+                    BootstrapHBPEWorkflow.run,
+                    uid,
+                    id=workflow_id,
+                    task_queue=settings.task_queue,
+                )
+                return {"status": "triggered", "workflow": "bootstrap", "workflow_id": handle.id}
+            except WorkflowAlreadyStartedError:
+                return {"status": "already_running", "workflow": "bootstrap", "workflow_id": workflow_id}
 
     except Exception as e:
         log.exception("Failed to manually trigger HBPE pipeline")
