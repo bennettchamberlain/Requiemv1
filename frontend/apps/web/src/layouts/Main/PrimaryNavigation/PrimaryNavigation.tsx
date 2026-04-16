@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
-import { Button, DropdownMenu, Kbd, Separator } from '@ci/shadcn';
+import { Button, DropdownMenu, Kbd, Separator, useToast } from '@ci/shadcn';
 import {
   NotebookPen,
   Upload,
