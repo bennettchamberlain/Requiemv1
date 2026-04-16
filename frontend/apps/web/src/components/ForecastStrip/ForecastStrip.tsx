@@ -122,34 +122,49 @@ function ForecastSlot({
   bucket,
   isFirst,
   isLast,
+  index,
+  systemStatus,
 }: {
   bucket: ForecastBucket;
   isFirst: boolean;
   isLast: boolean;
+  index: number;
+  systemStatus: string;
 }) {
+  const isReady = systemStatus === 'READY';
   const dominant = dominantL0(bucket.l0Probs);
-  const color = L0_BG[dominant] ?? 'bg-gray-400';
+  
+  // Standard styling for READY state
+  const color = isReady ? (L0_BG[dominant] ?? 'bg-gray-400') : 'bg-primary/60';
   const isEmpty = bucket.l0Probs.length === 0;
-  // Empty slots (no historical data) render as faint gray; active slots clamped to [0.2, 1]
-  const opacity = isEmpty ? 0.08 : Math.max(0.2, Math.min(1, bucket.q50));
+  const targetOpacity = isEmpty ? 0.08 : Math.max(0.2, Math.min(1, bucket.q50));
+  
+  // Animation sweeping from left to right when not ready
+  const animationDelay = !isReady ? `${index * 35}ms` : undefined;
 
   return (
     <Tooltip>
       <Tooltip.Trigger asChild>
         <div
           className={cn(
-            'flex-1 h-8 cursor-default transition-transform duration-100',
-            'hover:scale-y-[1.3] hover:z-10 relative',
+            'flex-1 h-8 cursor-default transition-all duration-100',
+            isReady && 'hover:scale-y-[1.3] hover:z-10 relative',
+            !isReady && 'animate-pulse',
             color,
             isFirst && 'rounded-l-full',
             isLast && 'rounded-r-full',
           )}
-          style={{ opacity }}
+          style={{ 
+            opacity: isReady ? targetOpacity : undefined,
+            animationDelay 
+          }}
         />
       </Tooltip.Trigger>
-      <Tooltip.Content side="top" sideOffset={6} className="max-w-none p-3">
-        <SlotTooltip bucket={bucket} />
-      </Tooltip.Content>
+      {isReady && (
+        <Tooltip.Content side="top" sideOffset={6} className="max-w-none p-3">
+          <SlotTooltip bucket={bucket} />
+        </Tooltip.Content>
+      )}
     </Tooltip>
   );
 }
@@ -183,25 +198,10 @@ interface ForecastStripProps {
 export function ForecastStrip({ buckets, generatedAt, systemStatus = 'READY', className }: ForecastStripProps) {
   const pinned = normalizeBuckets(buckets);
 
-  if (systemStatus === 'COLD_START') {
-    return (
-      <div className={cn('space-y-2', className)}>
-        <div className="flex h-8 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground animate-pulse">
-          HBPE Initializing: Gathering initial behavior patterns...
-        </div>
-      </div>
-    );
-  }
-
-  if (systemStatus === 'TRAINING') {
-    return (
-      <div className={cn('space-y-2', className)}>
-        <div className="flex h-8 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground animate-pulse">
-          HBPE is training your custom adapter...
-        </div>
-      </div>
-    );
-  }
+  const statusLabel = 
+    systemStatus === 'COLD_START' ? 'HBPE Initializing: Gathering patterns...' :
+    systemStatus === 'TRAINING' ? 'HBPE Training custom adapter...' :
+    `Generated ${new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -213,6 +213,8 @@ export function ForecastStrip({ buckets, generatedAt, systemStatus = 'READY', cl
             bucket={bucket}
             isFirst={idx === 0}
             isLast={idx === N_BUCKETS - 1}
+            index={idx}
+            systemStatus={systemStatus}
           />
         ))}
       </div>
@@ -220,13 +222,13 @@ export function ForecastStrip({ buckets, generatedAt, systemStatus = 'READY', cl
       {/* Time labels — always midnight to 23:30 */}
       <div className="flex justify-between text-[10px] text-muted-foreground px-0.5">
         <span>{formatBucketTime(0)}</span>
-        <span>
-          Generated {new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+        <span className={systemStatus !== 'READY' ? 'animate-pulse text-primary' : ''}>
+          {statusLabel}
         </span>
         <span>{formatBucketTime(N_BUCKETS - 1)}</span>
       </div>
 
-      <Legend />
+      {systemStatus === 'READY' && <Legend />}
     </div>
   );
 }
