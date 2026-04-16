@@ -144,16 +144,23 @@ class InferenceEngine:
                     log.warning("ONNX load failed (%s): %s — falling back", path.name, exc)
 
         # PyTorch fallback
-        from ci.model.evaluator import _load_calibrated
-        from ci.model.lora import load_adapter, merge_adapter
-        model, _ = _load_calibrated(self.user_id, self._l0_vocab, self._l1_vocab, self.device)
-        adapter_path = ckpt_dir / f"lora_{self.user_id}.pt"
-        if adapter_path.exists():
-            load_adapter(model, adapter_path)
-            merge_adapter(model)
-        model.eval()
-        log.info("Inference engine using PyTorch fallback")
-        return _PyTorchSession(model)
+        try:
+            from ci.model.evaluator import _load_calibrated
+            from ci.model.lora import load_adapter, merge_adapter
+            model, _ = _load_calibrated(self.user_id, self._l0_vocab, self._l1_vocab, self.device)
+            adapter_path = ckpt_dir / f"lora_{self.user_id}.pt"
+            if adapter_path.exists():
+                load_adapter(model, adapter_path)
+                merge_adapter(model)
+            model.eval()
+            log.info("Inference engine using PyTorch fallback")
+            return _PyTorchSession(model)
+        except FileNotFoundError:
+            log.warning("No checkpoint found for PyTorch fallback; engine will start in dry-run mode until pipeline completes")
+            return None
+        except Exception as exc:
+            log.warning("PyTorch fallback load failed: %s — returning None", exc)
+            return None
 
     def _load_temperature(self) -> float:
         import torch
@@ -174,7 +181,7 @@ class InferenceEngine:
         or None if the day has no usable data.
         """
         batch = _build_full_batch(day_tokens, self._l0_vocab, self._l1_vocab, "cpu")
-        if batch is None:
+        if batch is None or self._session is None:
             return None
 
         token_ids, bucket_idxs, level_ids, padding_mask, _, _ = batch

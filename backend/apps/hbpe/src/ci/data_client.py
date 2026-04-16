@@ -27,7 +27,9 @@ import logging
 from datetime import date, datetime
 from typing import Optional
 
+import psycopg2
 import psycopg2.extras
+import psycopg2.errors
 
 from ci.database import get_conn
 from ci.graphql_client import GraphQLUnavailable, decode_gid, gql, paginate
@@ -361,10 +363,14 @@ def get_all_user_ids() -> list[str]:
     multi-user deployment the Temporal schedule setup needs all user IDs, so
     SQL against ci.users is the only option.
     """
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id::text FROM ci.users ORDER BY created_at")
-            return [row[0] for row in cur.fetchall()]
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id::text FROM ci.users ORDER BY created_at")
+                return [row[0] for row in cur.fetchall()]
+    except psycopg2.errors.UndefinedTable:
+        log.warning("ci.users does not exist yet (migrations pending) — yielding 0 users")
+        return []
 
 
 def get_first_user_id() -> Optional[str]:
