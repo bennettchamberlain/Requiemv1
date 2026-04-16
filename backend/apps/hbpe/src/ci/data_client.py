@@ -172,7 +172,7 @@ def get_unlabeled_content(user_id: str, limit: int = 1000) -> list[dict]:
     SQL rationale: same bulk-query reasoning as get_unlabeled_events.
     """
     sql = """
-        SELECT c.id::text AS content_id, c.title, c.content_type
+        SELECT c.id::text AS content_id, c.title, c.type AS content_type
         FROM ci.content c
         LEFT JOIN hbpe.l2_content_cluster lc ON lc.content_id = c.id
         WHERE c.user_id     = %s::uuid
