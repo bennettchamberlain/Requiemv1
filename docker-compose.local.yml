@@ -31,6 +31,9 @@ services:
   orchestrator:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/local.yaml
+    volumes:
+      - ./infrastructure/orchestrator/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/local.yaml:ro
     ports:
       - 7233:7233
 
@@ -77,7 +80,7 @@ services:
       - MODELS_DIR=/app/models
       - TOKEN_CORPUS_DIR=/app/data/token_corpus
       - HF_HOME=/app/models/hf_cache
-      - API_URL=http://host.docker.internal:3000
+      - API_URL=http://host.docker.internal:3030
       - API_JWT_SECRET=${AUTH_TOKEN_SECRET}
     volumes:
       - hbpe-models:/app/models

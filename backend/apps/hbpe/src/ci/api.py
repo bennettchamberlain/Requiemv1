@@ -145,24 +145,62 @@ async def invalidate_cache(
     return {"invalidated": str(d), "user_id": uid, "note": "no engine loaded"}
 
 
+def _model_exists() -> bool:
+    """Return True if an HMT checkpoint is present and predictions can be served."""
+    from pathlib import Path
+    from ci.config import settings
+    ckpt_dir = Path(settings.models_dir) / "hmt"
+    return any(
+        (ckpt_dir / name).exists()
+        for name in ("hmt_int8.onnx", "hmt_fp32.onnx", "hmt_calibrated.pt", "hmt_checkpoint.pt")
+    )
+
+
 @app.post("/trigger")
 async def trigger_pipeline(user_id: Optional[str] = Query(None)) -> dict:
     """
-    Manually trigger the nightly HBPE pipeline for the user.
+    Manually trigger the HBPE pipeline for the user.
+
+    Cold start (no checkpoint): runs BootstrapHBPEWorkflow — full pipeline from
+    labeling through model training, calibration, and ONNX export.
+
+    Warm start (checkpoint exists): runs NightlyHBPEWorkflow — incremental
+    label/sweep/LoRA update.
+
+    Starts the workflow directly (not via the nightly schedule) so that manual
+    triggers work on a fresh Temporal database.
     """
     uid = user_id or _default_user_id()
     if not uid:
         raise HTTPException(status_code=503, detail="No users found in database")
 
     try:
+        import uuid
         from temporalio.client import Client
         from ci.config import settings
+
         client = await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
-        schedule_id = f"hbpe-nightly-{uid[:8]}"
-        handle = client.get_schedule_handle(schedule_id)
-        # trigger() executes the scheduled action immediately
-        await handle.trigger()
-        return {"status": "triggered", "schedule_id": schedule_id}
+        workflow_id = f"hbpe-manual-{uid[:8]}-{uuid.uuid4().hex[:8]}"
+
+        if _model_exists():
+            from ci.pipeline.nightly_runner import NightlyHBPEWorkflow
+            handle = await client.start_workflow(
+                NightlyHBPEWorkflow.run,
+                uid,
+                id=workflow_id,
+                task_queue=settings.task_queue,
+            )
+            return {"status": "triggered", "workflow": "nightly", "workflow_id": handle.id}
+        else:
+            from ci.pipeline.bootstrap import BootstrapHBPEWorkflow
+            handle = await client.start_workflow(
+                BootstrapHBPEWorkflow.run,
+                uid,
+                id=workflow_id,
+                task_queue=settings.task_queue,
+            )
+            return {"status": "triggered", "workflow": "bootstrap", "workflow_id": handle.id}
+
     except Exception as e:
         log.exception("Failed to manually trigger HBPE pipeline")
         raise HTTPException(status_code=500, detail=str(e))

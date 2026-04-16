@@ -273,6 +273,22 @@ class InferenceEngine:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
+    def _try_reload_session(self) -> None:
+        """Reload model session if we're in dry-run mode and a checkpoint now exists."""
+        ckpt_dir = Path(settings.models_dir) / "hmt"
+        checkpoint_exists = any(
+            (ckpt_dir / name).exists()
+            for name in ("hmt_int8.onnx", "hmt_fp32.onnx", "hmt_calibrated.pt", "hmt_checkpoint.pt")
+        )
+        if not checkpoint_exists:
+            return
+        session = self._load_session()
+        if session is not None:
+            self._session = session
+            self._temp = self._load_temperature()
+            self.invalidate_all()
+            log.info("Inference engine reloaded from checkpoint (was in dry-run mode)")
+
     def predict(self, horizon_start: Optional[datetime.datetime] = None) -> list[dict]:
         """
         Return a 48-bucket histogram for the 24h window starting at *horizon_start*
@@ -281,6 +297,9 @@ class InferenceEngine:
         Each element: {bucket_index, start_time, l0_probs, l1_probs, l2_probs,
                        q10, q50, q90}
         """
+        if self._session is None:
+            self._try_reload_session()
+
         if horizon_start is None:
             now = datetime.datetime.utcnow()
             horizon_start = datetime.datetime(now.year, now.month, now.day) + datetime.timedelta(days=1)
