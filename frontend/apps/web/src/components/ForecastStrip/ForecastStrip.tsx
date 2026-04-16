@@ -138,9 +138,6 @@ function ForecastSlot({
   const color = isReady ? (L0_BG[dominant] ?? 'bg-gray-400') : 'bg-primary/60';
   const isEmpty = bucket.l0Probs.length === 0;
   const targetOpacity = isEmpty ? 0.08 : Math.max(0.2, Math.min(1, bucket.q50));
-  
-  // Animation sweeping from left to right when not ready
-  const animationDelay = !isReady ? `${index * 35}ms` : undefined;
 
   return (
     <Tooltip>
@@ -149,14 +146,12 @@ function ForecastSlot({
           className={cn(
             'flex-1 h-8 cursor-default transition-all duration-100',
             isReady && 'hover:scale-y-[1.3] hover:z-10 relative',
-            !isReady && 'animate-pulse',
             color,
             isFirst && 'rounded-l-full',
             isLast && 'rounded-r-full',
           )}
           style={{ 
-            opacity: isReady ? targetOpacity : undefined,
-            animationDelay 
+            opacity: isReady ? targetOpacity : undefined
           }}
         />
       </Tooltip.Trigger>

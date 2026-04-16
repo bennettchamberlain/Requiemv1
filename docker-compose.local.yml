@@ -82,6 +82,8 @@ services:
     volumes:
       - hbpe-models:/app/models
       - hbpe-corpus:/app/data
+    extra_hosts:
+      - host.docker.internal:host-gateway
     networks:
       - ci
     depends_on:
