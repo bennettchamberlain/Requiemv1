@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { gql, useQuery } from '@apollo/client';
 
 const GET_FORECAST = gql(`
@@ -43,10 +44,10 @@ export interface ForecastResponse {
   buckets: ForecastBucket[];
 }
 
-import { useEffect } from 'react';
-
 export function useForecastService(horizon = '24h') {
-  const { data, loading, error, refetch, startPolling, stopPolling } = useQuery<{ forecast: ForecastResponse | null }>(GET_FORECAST, {
+  const { data, loading, error, refetch, startPolling, stopPolling } = useQuery<{
+    forecast: ForecastResponse | null;
+  }>(GET_FORECAST, {
     variables: { horizon },
   });
 

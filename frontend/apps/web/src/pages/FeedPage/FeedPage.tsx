@@ -332,7 +332,13 @@ export function FeedPage() {
         {hbpeEnabled && (forecastLoading || forecast) && (
           <div className="px-2 pb-4">
             <h3 className="text-sm font-semibold text-foreground mb-2">Tomorrow's Forecast</h3>
-            {forecast && <ForecastStrip buckets={forecast.buckets} generatedAt={forecast.generatedAt} systemStatus={forecast.systemStatus} />}
+            {forecast && (
+              <ForecastStrip
+                buckets={forecast.buckets}
+                generatedAt={forecast.generatedAt}
+                systemStatus={forecast.systemStatus}
+              />
+            )}
           </div>
         )}
 
@@ -372,7 +378,13 @@ export function FeedPage() {
             {forecastLoading && (
               <div className="text-sm text-muted-foreground">Loading behavioral forecast…</div>
             )}
-            {forecast && <ForecastStrip buckets={forecast.buckets} generatedAt={forecast.generatedAt} systemStatus={forecast.systemStatus} />}
+            {forecast && (
+              <ForecastStrip
+                buckets={forecast.buckets}
+                generatedAt={forecast.generatedAt}
+                systemStatus={forecast.systemStatus}
+              />
+            )}
           </>
         )}
 
