@@ -9,7 +9,7 @@ import signal
 import asyncio
 import structlog
 from temporalio.client import Client
-from temporalio.worker import Worker
+from temporalio.worker import Worker, UnsandboxedWorkflowRunner
 
 from .config import settings
 from .llm_config import get_llm_config
@@ -178,6 +178,7 @@ async def run_worker():
             activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities_high,
             activity_executor=None,
+            workflow_runner=UnsandboxedWorkflowRunner(),
         )
 
         # Medium priority: Standard concurrency for all automated summaries
@@ -188,6 +189,7 @@ async def run_worker():
             activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities_medium,
             activity_executor=None,
+            workflow_runner=UnsandboxedWorkflowRunner(),
         )
 
         # Low priority: Limited concurrency for batch operations
@@ -198,6 +200,7 @@ async def run_worker():
             activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities_low,
             activity_executor=None,
+            workflow_runner=UnsandboxedWorkflowRunner(),
         )
 
         logger.info("workers_configured",
