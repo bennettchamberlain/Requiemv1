@@ -4,6 +4,7 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { JwtAuthGuard } from '@ci/common/guards';
+import { LoggerService } from '@ci/common/logging';
 import { HbpeService } from '@ci/domains/predictions';
 
 import { ForecastType } from '../types/ForecastType';
@@ -14,7 +15,10 @@ export class ForecastResolver {
   constructor(
     private readonly hbpeService: HbpeService,
     private readonly featureService: FeatureService,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ForecastResolver.name);
+  }
 
   @Query(() => ForecastType, { nullable: true, description: 'Fetch the HBPE day-ahead forecast histogram' })
   async forecast(
@@ -29,7 +33,9 @@ export class ForecastResolver {
       const response = await this.hbpeService.getForecast(toServiceContext(context), horizon);
 
       return ForecastType.toType(response);
-    } catch {
+    } catch (err) {
+      this.logger.error('Forecast query failed', err instanceof Error ? err : new Error(String(err)));
+
       return null;
     }
   }

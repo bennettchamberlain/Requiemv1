@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
@@ -24,6 +24,10 @@ export class HbpeService {
     } catch (err) {
       this.logger.warn('HBPE service unreachable', { url, err });
       throw new ServiceUnavailableException('Forecast service unavailable');
+    }
+
+    if (response.status === 401) {
+      throw new UnauthorizedException('Missing or invalid user context');
     }
 
     if (!response.ok) {

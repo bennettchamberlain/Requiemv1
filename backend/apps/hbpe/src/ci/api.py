@@ -80,7 +80,7 @@ async def health() -> dict:
 
 @app.get("/histogram")
 async def histogram(
-    user_id: str = Query(..., description="User UUID"),
+    user_id: str | None = Query(None, description="User UUID"),
     horizon: str = Query("24h", description="Forecast window (only '24h' supported)"),
 ) -> dict:
     """
@@ -89,6 +89,9 @@ async def histogram(
     Response: { horizon, generated_at, buckets: [...48 items...] }
     Each bucket: { bucket_index, start_time, l0_probs, l1_probs, l2_probs, q10, q50, q90 }
     """
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
+
     try:
         engine = _get_or_create_engine(user_id)
         result = build_histogram(engine, horizon=horizon, user_id=user_id)
@@ -103,12 +106,15 @@ async def histogram(
 @app.post("/invalidate/{date_str}")
 async def invalidate_cache(
     date_str: str,
-    user_id: str = Query(..., description="User UUID"),
+    user_id: str | None = Query(None, description="User UUID"),
 ) -> dict:
     """
     Manually invalidate the inference cache for a specific date.
     Useful for admin tooling and integration tests.
     """
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
+
     try:
         d = date.fromisoformat(date_str)
     except ValueError:
