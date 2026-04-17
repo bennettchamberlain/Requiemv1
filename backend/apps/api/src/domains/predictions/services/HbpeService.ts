@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 
+import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
@@ -13,8 +14,8 @@ export class HbpeService {
     this.logger.setContext('HbpeService');
   }
 
-  async getForecast(horizon = '48h'): Promise<ForecastResponse> {
-    const url = `${this.baseUrl}/histogram?horizon=${horizon}`;
+  async getForecast(context: UserServiceContext, horizon = '48h'): Promise<ForecastResponse> {
+    const url = `${this.baseUrl}/histogram?horizon=${horizon}&user_id=${context.userId}`;
 
     let response: Response;
 
