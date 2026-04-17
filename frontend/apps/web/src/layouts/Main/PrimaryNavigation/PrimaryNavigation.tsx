@@ -118,6 +118,7 @@ export function PrimaryNavigation() {
                   </Button>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
+                  <div className="text-center text-sm font-semibold mb-3 mt-1">Add</div>
                   <div className="grid grid-cols-4 gap-2">
                     <DropdownMenu.Item
                       onSelect={() => navigate('/notes/new')}
