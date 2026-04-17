@@ -118,7 +118,7 @@ export function PrimaryNavigation() {
                   </Button>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <DropdownMenu.Item
                       onSelect={() => navigate('/notes/new')}
                       className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
@@ -129,7 +129,7 @@ export function PrimaryNavigation() {
 
                     <DropdownMenu.Item
                       onSelect={openAddPersonModal}
-                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <User className="h-6! w-6!" strokeWidth={1.25} />
                       <span className="text-xs text-center">Person</span>
@@ -137,7 +137,7 @@ export function PrimaryNavigation() {
 
                     <DropdownMenu.Item
                       onSelect={openAddConceptModal}
-                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <Lightbulb className="h-6! w-6!" strokeWidth={1.25} />
                       <span className="text-xs text-center">Concept</span>
@@ -145,7 +145,7 @@ export function PrimaryNavigation() {
 
                     <DropdownMenu.Item
                       onSelect={openItemModal}
-                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <Package className="h-6! w-6!" strokeWidth={1.25} />
                       <span className="text-xs text-center">Item</span>
