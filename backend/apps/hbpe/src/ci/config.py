@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # ── Temporal ──────────────────────────────────────────────────────────────
     temporal_address: str = Field(
-        default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "localhost:7233")
+        default_factory=lambda: os.getenv("TEMPORAL_ADDRESS", "orchestrator:7233")
     )
     temporal_namespace: str = Field(
         default_factory=lambda: os.getenv("TEMPORAL_NAMESPACE", "default")

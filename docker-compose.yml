@@ -13,6 +13,21 @@ services:
       retries: 5
     profiles: [ "local", "staging", "production" ]
 
+  hbpe-service:
+    image: ci/hbpe-service
+    volumes:
+      - hbpe-models:/app/models
+      - hbpe-corpus:/app/data
+    networks:
+      - ci
+    depends_on:
+      database:
+        condition: service_healthy
+      orchestrator:
+        condition: service_started
+    restart: unless-stopped
+    profiles: [ "local", "staging", "production" ]
+
   object-store:
     image: ci/object-store
     volumes:
@@ -74,8 +89,6 @@ services:
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
-
-
   #############
   # EPHEMERAL #
   #############
@@ -101,33 +114,6 @@ services:
       database:
          condition: service_healthy
     profiles: [ "local", "staging", "production" ]
-
-  hbpe-service:
-    build:
-      context: ./backend/apps/hbpe
-      dockerfile: Dockerfile.rocm
-    image: ci/hbpe-service
-    pull_policy: build
-    environment:
-      - PYTHONPATH=/app/src
-      - TEMPORAL_ADDRESS=orchestrator:7233
-      - TEMPORAL_NAMESPACE=default
-      - HBPE_TASK_QUEUE=hbpe
-      - MODELS_DIR=/app/models
-      - TOKEN_CORPUS_DIR=/app/data/token_corpus
-      - HF_HOME=/app/models/hf_cache
-      - API_URL=http://api:3030
-      - API_JWT_SECRET=${AUTH_TOKEN_SECRET}
-    volumes:
-      - hbpe-models:/app/models
-      - hbpe-corpus:/app/data
-    networks:
-      - ci
-    depends_on:
-      - database
-      - orchestrator
-    restart: unless-stopped
-    profiles: [ "staging", "production" ]
 
   ##############################
   # THIRD-PARTY MANAGEMENT UIs #
