@@ -10,5 +10,6 @@ export { useTranscriptionService } from './useTranscriptionService';
 export { useGraphOverview } from './useGraphOverview';
 export { useEntityEvolutionService } from './useEntityEvolutionService';
 export type { GraphNode, GraphLink } from './useGraphOverview';
+export { useTriggerHbpe } from './useTriggerHbpe';
 
 export type { Action, Message, Thread } from './types';

@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
@@ -38,5 +38,18 @@ export class ForecastResolver {
 
       return null;
     }
+  }
+
+  @Mutation(() => String, { description: 'Manually trigger the HBPE pipeline for the current user' })
+  async triggerHbpe(@Context() context: RequestContext): Promise<string> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return 'disabled';
+    }
+
+    if (!context.userId) {
+      return 'error';
+    }
+
+    return this.hbpeService.triggerPipeline(context.userId);
   }
 }

@@ -39,9 +39,10 @@ _INSERT_LOG_SQL = """
 
 
 def build_histogram(
-    engine,           # InferenceEngine — typed loosely to avoid circular import
-    horizon:    str = "24h",
-    user_id:    Optional[str] = None,
+    engine,                            # InferenceEngine — typed loosely to avoid circular import
+    horizon:       str = "24h",
+    user_id:       Optional[str] = None,
+    system_status: Optional[str] = None,
 ) -> dict:
     """
     Generate the histogram response dict for GET /histogram.
@@ -76,13 +77,18 @@ def build_histogram(
 
     buckets = engine.predict(horizon_start=horizon_start)
 
+    if system_status is None:
+        checkpoint = Path(settings.models_dir) / "hmt" / "hmt_checkpoint.pt"
+        system_status = "READY" if checkpoint.exists() else "COLD_START"
+
     if user_id:
         _log_prediction(user_id, now, horizon_start, buckets)
 
     return {
-        "horizon":      horizon,
-        "generated_at": now.isoformat() + "Z",
-        "buckets":      buckets,
+        "horizon":       horizon,
+        "generated_at":  now.isoformat() + "Z",
+        "system_status": system_status,
+        "buckets":       buckets,
     }
 
 

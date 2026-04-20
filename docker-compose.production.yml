@@ -68,8 +68,11 @@ services:
         condition: service_completed_successfully
 
   orchestrator:
+    environment:
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/local.yaml
     volumes:
       - secrets:/run/secrets:ro
+      - ./infrastructure/orchestrator/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/local.yaml:ro
     depends_on:
       generate-secrets:
         condition: service_completed_successfully

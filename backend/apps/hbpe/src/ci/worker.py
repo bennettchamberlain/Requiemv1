@@ -13,6 +13,12 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from ci.config import settings
+from ci.pipeline.bootstrap import (
+    BootstrapHBPEWorkflow,
+    calibrate_and_export_onnx,
+    serialize_token_stream,
+    train_hmt_model,
+)
 from ci.pipeline.nightly_runner import (
     NightlyHBPEWorkflow,
     cache_invalidation,
@@ -50,7 +56,7 @@ async def main() -> None:
             worker = Worker(
                 client,
                 task_queue=settings.task_queue,
-                workflows=[NightlyHBPEWorkflow],
+                workflows=[NightlyHBPEWorkflow, BootstrapHBPEWorkflow],
                 activities=[
                     label_unlabeled,
                     label_summary_tokens,
@@ -59,6 +65,9 @@ async def main() -> None:
                     lora_fine_tune,
                     drift_detection,
                     cache_invalidation,
+                    serialize_token_stream,
+                    train_hmt_model,
+                    calibrate_and_export_onnx,
                 ],
             )
 

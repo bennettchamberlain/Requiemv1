@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from datetime import date
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -32,7 +33,11 @@ log = logging.getLogger(__name__)
 # Global engine registry: user_id → InferenceEngine
 _engines: dict = {}
 _ingester = None
+_temporal_client = None
 
+# Fixed workflow ID prefixes for deduplication
+_BOOTSTRAP_WF_PREFIX = "hbpe-bootstrap"
+_NIGHTLY_WF_PREFIX   = "hbpe-nightly"
 
 def _get_or_create_engine(user_id: str):
     if user_id not in _engines:
@@ -44,11 +49,23 @@ def _get_or_create_engine(user_id: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _ingester
+    global _ingester, _temporal_client
 
     # Init database connection pool early to fail fast
     from ci.database import init_db
     init_db()
+
+    # Connect Temporal client so /trigger can start workflows. Non-fatal if
+    # Temporal is unavailable — /trigger will surface a clear 503 instead.
+    try:
+        from temporalio.client import Client
+        from ci.config import settings
+        _temporal_client = await Client.connect(
+            settings.temporal_address, namespace=settings.temporal_namespace
+        )
+        log.info("Temporal client connected")
+    except Exception:
+        log.exception("Could not connect Temporal client; /trigger will return 503")
 
     # Start event ingester
     from ci.pipeline.ingester import EventIngester
@@ -67,6 +84,43 @@ app = FastAPI(
     version     = "0.2.0",
     lifespan    = lifespan,
 )
+
+
+async def _active_workflow_status(uid: str) -> Optional[str]:
+    """
+    Query the current step of any *running* HBPE workflow for uid.
+
+    Returns a status string like 'BOOTSTRAP:train' or 'NIGHTLY:lora', or None
+    if no workflow is actively running. Closed workflows are ignored even if
+    their `current_step` variable was never set to "done" — otherwise a
+    crash mid-step would leave the API reporting a stale status forever.
+    """
+    if not _temporal_client:
+        return None
+
+    import asyncio
+    from temporalio.client import WorkflowExecutionStatus
+
+    for wf_type, prefix in [
+        ("BOOTSTRAP", _BOOTSTRAP_WF_PREFIX),
+        ("NIGHTLY",   _NIGHTLY_WF_PREFIX),
+    ]:
+        wf_id = f"{prefix}-{uid[:8]}"
+        try:
+            handle = _temporal_client.get_workflow_handle(wf_id)
+            desc = await asyncio.wait_for(handle.describe(), timeout=1.0)
+            if desc.status != WorkflowExecutionStatus.RUNNING:
+                continue
+            step = await asyncio.wait_for(
+                handle.query("current_step"), timeout=1.0,
+            )
+            if step and step != "done":
+                return f"{wf_type}:{step}"
+        except asyncio.TimeoutError:
+            log.warning("Temporal status query timed out for %s; reporting none", wf_id)
+        except Exception:
+            pass  # workflow not found, completed, query not registered, etc.
+    return None
 
 
 @app.get("/health")
@@ -124,3 +178,76 @@ async def invalidate_cache(
         _engines[user_id].invalidate(d)
         return {"invalidated": str(d), "user_id": user_id}
     return {"invalidated": str(d), "user_id": user_id, "note": "no engine loaded"}
+
+
+def _model_exists() -> bool:
+    """Return True if an HMT checkpoint is present and predictions can be served."""
+    from pathlib import Path
+    from ci.config import settings
+    ckpt_dir = Path(settings.models_dir) / "hmt"
+    return any(
+        (ckpt_dir / name).exists()
+        for name in ("hmt_int8.onnx", "hmt_fp32.onnx", "hmt_calibrated.pt", "hmt_checkpoint.pt")
+    )
+
+
+@app.post("/trigger")
+async def trigger_pipeline(
+    user_id: str | None = Query(None, description="User UUID"),
+) -> dict:
+    """
+    Manually trigger the HBPE pipeline for the user.
+
+    Cold start (no checkpoint): runs BootstrapHBPEWorkflow — full pipeline from
+    labeling through model training, calibration, and ONNX export.
+
+    Warm start (checkpoint exists): runs NightlyHBPEWorkflow — incremental
+    label/sweep/LoRA update.
+
+    Starts the workflow directly (not via the nightly schedule) so that manual
+    triggers work on a fresh Temporal database.
+    """
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
+
+    client = _temporal_client
+    if not client:
+        raise HTTPException(status_code=503, detail="Temporal client not available")
+
+    try:
+        from temporalio.exceptions import WorkflowAlreadyStartedError
+        from ci.config import settings
+
+        if _model_exists():
+            from ci.pipeline.nightly_runner import NightlyHBPEWorkflow
+            workflow_id = f"{_NIGHTLY_WF_PREFIX}-{user_id[:8]}"
+            try:
+                handle = await client.start_workflow(
+                    NightlyHBPEWorkflow.run,
+                    user_id,
+                    id=workflow_id,
+                    task_queue=settings.task_queue,
+                )
+                return {"status": "triggered", "workflow": "nightly", "workflow_id": handle.id}
+            except WorkflowAlreadyStartedError:
+                return {"status": "already_running", "workflow": "nightly", "workflow_id": workflow_id}
+        else:
+            from ci.pipeline.bootstrap import BootstrapHBPEWorkflow
+            workflow_id = f"{_BOOTSTRAP_WF_PREFIX}-{user_id[:8]}"
+            try:
+                handle = await client.start_workflow(
+                    BootstrapHBPEWorkflow.run,
+                    user_id,
+                    id=workflow_id,
+                    task_queue=settings.task_queue,
+                )
+                return {"status": "triggered", "workflow": "bootstrap", "workflow_id": handle.id}
+            except WorkflowAlreadyStartedError:
+                return {"status": "already_running", "workflow": "bootstrap", "workflow_id": workflow_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("Failed to manually trigger HBPE pipeline")
+        raise HTTPException(status_code=500, detail=str(e))
+

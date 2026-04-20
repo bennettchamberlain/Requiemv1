@@ -122,34 +122,42 @@ function ForecastSlot({
   bucket,
   isFirst,
   isLast,
+  systemStatus,
 }: {
   bucket: ForecastBucket;
   isFirst: boolean;
   isLast: boolean;
+  systemStatus: string;
 }) {
+  const isReady = systemStatus === 'READY';
   const dominant = dominantL0(bucket.l0Probs);
-  const color = L0_BG[dominant] ?? 'bg-gray-400';
+
+  // Standard styling for READY state
+  const color = isReady ? (L0_BG[dominant] ?? 'bg-gray-400') : 'bg-primary/60';
   const isEmpty = bucket.l0Probs.length === 0;
-  // Empty slots (no historical data) render as faint gray; active slots clamped to [0.2, 1]
-  const opacity = isEmpty ? 0.08 : Math.max(0.2, Math.min(1, bucket.q50));
+  const targetOpacity = isEmpty ? 0.08 : Math.max(0.2, Math.min(1, bucket.q50));
 
   return (
     <Tooltip>
       <Tooltip.Trigger asChild>
         <div
           className={cn(
-            'flex-1 h-8 cursor-default transition-transform duration-100',
-            'hover:scale-y-[1.3] hover:z-10 relative',
+            'flex-1 h-8 cursor-default transition-all duration-100',
+            isReady && 'hover:scale-y-[1.3] hover:z-10 relative',
             color,
             isFirst && 'rounded-l-full',
             isLast && 'rounded-r-full',
           )}
-          style={{ opacity }}
+          style={{
+            opacity: isReady ? targetOpacity : undefined,
+          }}
         />
       </Tooltip.Trigger>
-      <Tooltip.Content side="top" sideOffset={6} className="max-w-none p-3">
-        <SlotTooltip bucket={bucket} />
-      </Tooltip.Content>
+      {isReady && (
+        <Tooltip.Content side="top" sideOffset={6} className="max-w-none p-3">
+          <SlotTooltip bucket={bucket} />
+        </Tooltip.Content>
+      )}
     </Tooltip>
   );
 }
@@ -176,11 +184,41 @@ function Legend() {
 interface ForecastStripProps {
   buckets: ForecastBucket[];
   generatedAt: string;
+  systemStatus?: string;
   className?: string;
 }
 
-export function ForecastStrip({ buckets, generatedAt, className }: ForecastStripProps) {
+const STATUS_LABELS: Record<string, string> = {
+  COLD_START: 'Waiting to initialize...',
+  'BOOTSTRAP:queued': 'Getting ready to initialize...',
+  'BOOTSTRAP:label': 'Labeling your events and content...',
+  'BOOTSTRAP:label_summaries': 'Labeling your recent activity...',
+  'BOOTSTRAP:serialize': 'Preparing training data...',
+  'BOOTSTRAP:train': 'Training your prediction model...',
+  'BOOTSTRAP:export': 'Optimizing model for your device...',
+  'BOOTSTRAP:lora': 'Fine-tuning your personalized adapter...',
+  'NIGHTLY:queued': 'Updating your predictions...',
+  'NIGHTLY:label': 'Labeling new events...',
+  'NIGHTLY:label_summaries': 'Labeling recent activity...',
+  'NIGHTLY:l1_sweep': 'Updating behavioral patterns...',
+  'NIGHTLY:l2_sweep': 'Updating behavioral patterns...',
+  'NIGHTLY:lora': 'Fine-tuning your model...',
+  'NIGHTLY:drift': 'Checking for behavior changes...',
+  'NIGHTLY:cache': 'Refreshing predictions...',
+};
+
+export function ForecastStrip({
+  buckets,
+  generatedAt,
+  systemStatus = 'READY',
+  className,
+}: ForecastStripProps) {
   const pinned = normalizeBuckets(buckets);
+
+  const statusLabel =
+    systemStatus === 'READY'
+      ? `Generated ${new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : (STATUS_LABELS[systemStatus] ?? 'Processing...');
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -192,6 +230,7 @@ export function ForecastStrip({ buckets, generatedAt, className }: ForecastStrip
             bucket={bucket}
             isFirst={idx === 0}
             isLast={idx === N_BUCKETS - 1}
+            systemStatus={systemStatus}
           />
         ))}
       </div>
@@ -199,13 +238,11 @@ export function ForecastStrip({ buckets, generatedAt, className }: ForecastStrip
       {/* Time labels — always midnight to 23:30 */}
       <div className="flex justify-between text-[10px] text-muted-foreground px-0.5">
         <span>{formatBucketTime(0)}</span>
-        <span>
-          Generated {new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-        </span>
+        <span className={systemStatus !== 'READY' ? 'animate-pulse text-primary' : ''}>{statusLabel}</span>
         <span>{formatBucketTime(N_BUCKETS - 1)}</span>
       </div>
 
-      <Legend />
+      {systemStatus === 'READY' && <Legend />}
     </div>
   );
 }
