@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from datetime import date
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -53,6 +54,18 @@ async def lifespan(app: FastAPI):
     # Init database connection pool early to fail fast
     from ci.database import init_db
     init_db()
+
+    # Connect Temporal client so /trigger can start workflows. Non-fatal if
+    # Temporal is unavailable — /trigger will surface a clear 503 instead.
+    try:
+        from temporalio.client import Client
+        from ci.config import settings
+        _temporal_client = await Client.connect(
+            settings.temporal_address, namespace=settings.temporal_namespace
+        )
+        log.info("Temporal client connected")
+    except Exception:
+        log.exception("Could not connect Temporal client; /trigger will return 503")
 
     # Start event ingester
     from ci.pipeline.ingester import EventIngester
@@ -179,7 +192,9 @@ def _model_exists() -> bool:
 
 
 @app.post("/trigger")
-async def trigger_pipeline(user_id: Optional[str] = Query(None)) -> dict:
+async def trigger_pipeline(
+    user_id: str | None = Query(None, description="User UUID"),
+) -> dict:
     """
     Manually trigger the HBPE pipeline for the user.
 
@@ -192,25 +207,24 @@ async def trigger_pipeline(user_id: Optional[str] = Query(None)) -> dict:
     Starts the workflow directly (not via the nightly schedule) so that manual
     triggers work on a fresh Temporal database.
     """
-    uid = user_id or _default_user_id()
-    if not uid:
-        raise HTTPException(status_code=503, detail="No users found in database")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
+
+    client = _temporal_client
+    if not client:
+        raise HTTPException(status_code=503, detail="Temporal client not available")
 
     try:
         from temporalio.exceptions import WorkflowAlreadyStartedError
         from ci.config import settings
 
-        client = _temporal_client
-        if not client:
-            raise RuntimeError("Temporal client not available")
-
         if _model_exists():
             from ci.pipeline.nightly_runner import NightlyHBPEWorkflow
-            workflow_id = f"{_NIGHTLY_WF_PREFIX}-{uid[:8]}"
+            workflow_id = f"{_NIGHTLY_WF_PREFIX}-{user_id[:8]}"
             try:
                 handle = await client.start_workflow(
                     NightlyHBPEWorkflow.run,
-                    uid,
+                    user_id,
                     id=workflow_id,
                     task_queue=settings.task_queue,
                 )
@@ -219,11 +233,11 @@ async def trigger_pipeline(user_id: Optional[str] = Query(None)) -> dict:
                 return {"status": "already_running", "workflow": "nightly", "workflow_id": workflow_id}
         else:
             from ci.pipeline.bootstrap import BootstrapHBPEWorkflow
-            workflow_id = f"{_BOOTSTRAP_WF_PREFIX}-{uid[:8]}"
+            workflow_id = f"{_BOOTSTRAP_WF_PREFIX}-{user_id[:8]}"
             try:
                 handle = await client.start_workflow(
                     BootstrapHBPEWorkflow.run,
-                    uid,
+                    user_id,
                     id=workflow_id,
                     task_queue=settings.task_queue,
                 )
@@ -231,6 +245,8 @@ async def trigger_pipeline(user_id: Optional[str] = Query(None)) -> dict:
             except WorkflowAlreadyStartedError:
                 return {"status": "already_running", "workflow": "bootstrap", "workflow_id": workflow_id}
 
+    except HTTPException:
+        raise
     except Exception as e:
         log.exception("Failed to manually trigger HBPE pipeline")
         raise HTTPException(status_code=500, detail=str(e))
