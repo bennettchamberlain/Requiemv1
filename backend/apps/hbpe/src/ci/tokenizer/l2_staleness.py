@@ -46,6 +46,9 @@ def _deactivate_stale_clusters(user_id: str, staleness_days: int) -> int:
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # Fail fast on lock contention — a single-row sweep has no business
+            # holding the activity hostage for minutes.
+            cur.execute("SET LOCAL statement_timeout = '30s'")
             cur.execute(sql, (user_id, staleness_days))
             deactivated = cur.rowcount
 

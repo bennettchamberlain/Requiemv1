@@ -107,13 +107,19 @@ app = FastAPI(
 
 async def _active_workflow_status(uid: str) -> Optional[str]:
     """
-    Query the current step of any running HBPE workflow for uid.
+    Query the current step of any *running* HBPE workflow for uid.
 
-    Returns a status string like 'BOOTSTRAP:train' or 'NIGHTLY:lora',
-    or None if no workflow is actively running.
+    Returns a status string like 'BOOTSTRAP:train' or 'NIGHTLY:lora', or None
+    if no workflow is actively running. Closed workflows are ignored even if
+    their `current_step` variable was never set to "done" — otherwise a
+    crash mid-step would leave the API reporting a stale status forever.
     """
     if not _temporal_client:
         return None
+
+    import asyncio
+    from temporalio.client import WorkflowExecutionStatus
+
     for wf_type, prefix in [
         ("BOOTSTRAP", _BOOTSTRAP_WF_PREFIX),
         ("NIGHTLY",   _NIGHTLY_WF_PREFIX),
@@ -121,11 +127,18 @@ async def _active_workflow_status(uid: str) -> Optional[str]:
         wf_id = f"{prefix}-{uid[:8]}"
         try:
             handle = _temporal_client.get_workflow_handle(wf_id)
-            step = await handle.query("current_step")
+            desc = await asyncio.wait_for(handle.describe(), timeout=1.0)
+            if desc.status != WorkflowExecutionStatus.RUNNING:
+                continue
+            step = await asyncio.wait_for(
+                handle.query("current_step"), timeout=1.0,
+            )
             if step and step != "done":
                 return f"{wf_type}:{step}"
+        except asyncio.TimeoutError:
+            log.warning("Temporal status query timed out for %s; reporting none", wf_id)
         except Exception:
-            pass  # workflow not found, completed, or query failed
+            pass  # workflow not found, completed, query not registered, etc.
     return None
 
 

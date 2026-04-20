@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 _RETRY = RetryPolicy(maximum_attempts=2, backoff_coefficient=2.0)
 _ACTIVITY_TIMEOUT = timedelta(minutes=5)
+_SWEEP_TIMEOUT    = timedelta(seconds=60)   # single-row UPDATEs — 60s is plenty
 
 
 # ── Step 1 — Label unlabeled events and content ────────────────────────────────
@@ -247,7 +248,7 @@ class NightlyHBPEWorkflow:
         results["steps"]["step2_l1_stale"] = await _safe_execute(
             workflow.execute_activity(
                 l1_stale_sweep, user_id,
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                start_to_close_timeout=_SWEEP_TIMEOUT,
                 retry_policy=_RETRY,
             ),
             "step2_l1_stale",
@@ -258,7 +259,7 @@ class NightlyHBPEWorkflow:
         results["steps"]["step3_l2_stale"] = await _safe_execute(
             workflow.execute_activity(
                 l2_stale_sweep, user_id,
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                start_to_close_timeout=_SWEEP_TIMEOUT,
                 retry_policy=_RETRY,
             ),
             "step3_l2_stale",

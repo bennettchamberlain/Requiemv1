@@ -96,6 +96,8 @@ class InferenceEngine:
         self._l1_vocab = build_l1_vocab(user_id)
         self._l1_display_names: dict[str, str] = self._load_l1_display_names()
         self._onnx_seq_len: Optional[int] = None
+        self._session_path: Optional[Path] = None
+        self._session_mtime: Optional[float] = None
         self._session  = self._load_session()
         self._temp     = self._load_temperature()
         # Memoised per-day model outputs
@@ -137,6 +139,8 @@ class InferenceEngine:
                         self._onnx_seq_len = input_shape[1]
                     else:
                         self._onnx_seq_len = ONNX_SEQ_LEN
+                    self._session_path  = path
+                    self._session_mtime = path.stat().st_mtime
                     log.info("Inference engine using ONNX: %s  (seq_len=%d)",
                              path.name, self._onnx_seq_len)
                     return sess
@@ -153,6 +157,11 @@ class InferenceEngine:
                 load_adapter(model, adapter_path)
                 merge_adapter(model)
             model.eval()
+            # Track calibrated checkpoint for mtime-based hot reload.
+            calibrated_path = ckpt_dir / "hmt_calibrated.pt"
+            if calibrated_path.exists():
+                self._session_path  = calibrated_path
+                self._session_mtime = calibrated_path.stat().st_mtime
             log.info("Inference engine using PyTorch fallback")
             return _PyTorchSession(model)
         except FileNotFoundError:
@@ -188,10 +197,19 @@ class InferenceEngine:
         seq_len = int(token_ids.shape[1])
         if self._onnx_seq_len is not None:
             if seq_len > self._onnx_seq_len:
-                raise ValueError(
-                    f"Sequence length {seq_len} exceeds ONNX model width {self._onnx_seq_len}. "
-                    "Re-export the ONNX model with a larger fixed width."
+                # Keep the most recent tokens (token_stream is ordered by seq_order
+                # ascending, so tail = newest buckets in the day). A single overflowing
+                # day must not take the whole 30-day forecast offline.
+                overflow = seq_len - self._onnx_seq_len
+                log.warning(
+                    "Day token count %d exceeds ONNX width %d — truncating %d oldest tokens",
+                    seq_len, self._onnx_seq_len, overflow,
                 )
+                token_ids    = token_ids[:, overflow:]
+                bucket_idxs  = bucket_idxs[:, overflow:]
+                level_ids    = level_ids[:, overflow:]
+                padding_mask = padding_mask[:, overflow:]
+                seq_len = self._onnx_seq_len
 
             pad = self._onnx_seq_len - seq_len
             if pad > 0:
@@ -289,6 +307,34 @@ class InferenceEngine:
             self.invalidate_all()
             log.info("Inference engine reloaded from checkpoint (was in dry-run mode)")
 
+    def _reload_if_model_changed(self) -> None:
+        """
+        Detect when the nightly/bootstrap pipeline has rewritten the model file
+        and swap in the new session. Without this the cached engine keeps using
+        a stale ONNX checkpoint (and stale onnx_seq_len / temperature) forever.
+        """
+        if self._session_path is None:
+            return
+        if not self._session_path.exists():
+            # File was deleted (e.g. DB reset). Drop session; next predict() will
+            # call _try_reload_session.
+            self._session = None
+            self._session_mtime = None
+            self.invalidate_all()
+            return
+        try:
+            current_mtime = self._session_path.stat().st_mtime
+        except OSError:
+            return
+        if self._session_mtime is not None and current_mtime > self._session_mtime:
+            log.info("Model file mtime changed — reloading inference session")
+            self._onnx_seq_len = None
+            new_session = self._load_session()
+            if new_session is not None:
+                self._session = new_session
+                self._temp = self._load_temperature()
+                self.invalidate_all()
+
     def predict(self, horizon_start: Optional[datetime.datetime] = None) -> list[dict]:
         """
         Return a 48-bucket histogram for the 24h window starting at *horizon_start*
@@ -299,6 +345,8 @@ class InferenceEngine:
         """
         if self._session is None:
             self._try_reload_session()
+        else:
+            self._reload_if_model_changed()
 
         if horizon_start is None:
             now = datetime.datetime.utcnow()
