@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from datetime import date
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -33,16 +32,6 @@ log = logging.getLogger(__name__)
 # Global engine registry: user_id → InferenceEngine
 _engines: dict = {}
 _ingester = None
-
-
-def _default_user_id() -> Optional[str]:
-    """Return the first user_id found in the DB, or None."""
-    try:
-        from ci.data_client import get_first_user_id
-        return get_first_user_id()
-    except Exception:
-        log.debug("Could not determine default user ID", exc_info=True)
-        return None
 
 
 def _get_or_create_engine(user_id: str):
@@ -60,15 +49,6 @@ async def lifespan(app: FastAPI):
     # Init database connection pool early to fail fast
     from ci.database import init_db
     init_db()
-
-    # Pre-load engine for the default user (single-user Phase 4 deployment)
-    uid = _default_user_id()
-    if uid:
-        try:
-            _get_or_create_engine(uid)
-            log.info("Pre-loaded InferenceEngine for user %s", uid[:8])
-        except Exception:
-            log.exception("Could not pre-load default inference engine")
 
     # Start event ingester
     from ci.pipeline.ingester import EventIngester
@@ -100,8 +80,8 @@ async def health() -> dict:
 
 @app.get("/histogram")
 async def histogram(
-    horizon:  str           = Query("24h", description="Forecast window (only '24h' supported)"),
-    user_id:  Optional[str] = Query(None,  description="User UUID (defaults to single-user mode)"),
+    user_id: str | None = Query(None, description="User UUID"),
+    horizon: str = Query("24h", description="Forecast window (only '24h' supported)"),
 ) -> dict:
     """
     Return a 48-bucket 24-hour behavioral forecast.
@@ -109,13 +89,12 @@ async def histogram(
     Response: { horizon, generated_at, buckets: [...48 items...] }
     Each bucket: { bucket_index, start_time, l0_probs, l1_probs, l2_probs, q10, q50, q90 }
     """
-    uid = user_id or _default_user_id()
-    if not uid:
-        raise HTTPException(status_code=503, detail="No users found in database")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
 
     try:
-        engine = _get_or_create_engine(uid)
-        result = build_histogram(engine, horizon=horizon, user_id=uid)
+        engine = _get_or_create_engine(user_id)
+        result = build_histogram(engine, horizon=horizon, user_id=user_id)
         return JSONResponse(content=result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -127,19 +106,21 @@ async def histogram(
 @app.post("/invalidate/{date_str}")
 async def invalidate_cache(
     date_str: str,
-    user_id:  Optional[str] = Query(None),
+    user_id: str | None = Query(None, description="User UUID"),
 ) -> dict:
     """
     Manually invalidate the inference cache for a specific date.
     Useful for admin tooling and integration tests.
     """
+    if not user_id:
+        raise HTTPException(status_code=401, detail="user_id is required")
+
     try:
         d = date.fromisoformat(date_str)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid date: {date_str}")
 
-    uid = user_id or _default_user_id()
-    if uid and uid in _engines:
-        _engines[uid].invalidate(d)
-        return {"invalidated": str(d), "user_id": uid}
-    return {"invalidated": str(d), "user_id": uid, "note": "no engine loaded"}
+    if user_id in _engines:
+        _engines[user_id].invalidate(d)
+        return {"invalidated": str(d), "user_id": user_id}
+    return {"invalidated": str(d), "user_id": user_id, "note": "no engine loaded"}

@@ -48,6 +48,18 @@ services:
     restart: unless-stopped
     profiles: [ "production" ]
 
+  hbpe-service:
+    volumes:
+      - secrets:/run/secrets:ro
+    depends_on:
+      generate-secrets:
+        condition: service_completed_successfully
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+
   object-store:
     volumes:
       - secrets:/run/secrets:ro
@@ -68,18 +80,6 @@ services:
     depends_on:
       generate-secrets:
         condition: service_completed_successfully
-
-  hbpe-service:
-    volumes:
-      - secrets:/run/secrets:ro
-    depends_on:
-      generate-secrets:
-        condition: service_completed_successfully
-    devices:
-      - /dev/kfd
-      - /dev/dri
-    group_add:
-      - video
 
   #############
   # EPHEMERAL #

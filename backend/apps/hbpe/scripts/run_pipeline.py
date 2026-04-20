@@ -7,15 +7,13 @@ All step logic is inlined; no subprocess calls.
 
 Usage (from backend/apps/hbpe/):
     DATABASE_URL=postgresql://... MODELS_DIR=/tmp/hbpe_models PYTHONPATH=src \\
-        python scripts/run_pipeline.py [user_id] [options]
+        python scripts/run_pipeline.py <user_id> [options]
 
 Options:
     --from-step N    Start from step N, skipping earlier steps (default: 1)
     --to-step N      Stop after step N (default: 13)
     --clean          Delete all model checkpoints in MODELS_DIR before starting
     --help / -h      Show this message
-
-If user_id is omitted it is auto-detected from ci.users (single-user mode).
 """
 from __future__ import annotations
 
@@ -992,22 +990,6 @@ def fmt_time(seconds: float) -> str:
     return f"{m}m {s:02d}s"
 
 
-def auto_user_id() -> str | None:
-    try:
-        import psycopg2
-        db_url = os.environ.get("DATABASE_URL", "")
-        if not db_url:
-            return None
-        conn = psycopg2.connect(db_url)
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM ci.users LIMIT 1")
-            row = cur.fetchone()
-        conn.close()
-        return str(row[0]) if row else None
-    except Exception:
-        return None
-
-
 def clean_models_dir(models_dir: str) -> None:
     for subdir in ("hmt", "l1"):
         d = Path(models_dir) / subdir
@@ -1048,10 +1030,15 @@ def main() -> None:
     opts       = parse_args()
     models_dir = os.environ.get("MODELS_DIR", "/tmp/hbpe_models")
 
-    user_id = opts["user_id"] or auto_user_id()
+    user_id = opts["user_id"]
+
+    if not user_id:
+        print("\nERROR: user_id is required.\n"
+              "  Usage: python scripts/run_pipeline.py <user_id> [options]")
+        sys.exit(1)
 
     banner(f"HBPE Pipeline  —  steps {opts['from_step']}–{opts['to_step']}")
-    print(f"  User    : {user_id or '(no DB / step 1 only)'}")
+    print(f"  User    : {user_id}")
     print(f"  Models  : {models_dir}")
     print(f"  Python  : {sys.executable}")
 
@@ -1063,12 +1050,6 @@ def main() -> None:
     if not steps_to_run:
         print("No steps selected.")
         sys.exit(0)
-
-    needs_user = any(s["needs_user"] for s in steps_to_run)
-    if needs_user and not user_id:
-        print("\nERROR: user_id required but not found.\n"
-              "  Pass it as an argument or set DATABASE_URL so it can be auto-detected.")
-        sys.exit(1)
 
     results: list[dict] = []
     current_phase: str = ""

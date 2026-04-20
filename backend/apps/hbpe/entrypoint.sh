@@ -44,6 +44,21 @@ fi
 
 export DATABASE_URL
 
+# ── API JWT Secret ────────────────────────────────
+# Needed by graphql_client.py to self-sign service JWTs.
+: "${API_JWT_SECRET:=$(get_secret AUTH_TOKEN_SECRET)}"
+export API_JWT_SECRET
+
+if [ -z "$API_JWT_SECRET" ]; then
+  echo "Error: API_JWT_SECRET is not set."
+  echo ""
+  echo "Please set the JWT secret in one of the following ways:"
+  echo ""
+  echo "  1. Add AUTH_TOKEN_SECRET to $SECRETS_FILE, or"
+  echo "  2. Set the API_JWT_SECRET environment variable"
+  exit 1
+fi
+
 echo "Starting CI-HBPE services..."
 
 # Start the FastAPI histogram API in the background
