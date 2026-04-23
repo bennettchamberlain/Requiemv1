@@ -100,5 +100,10 @@
   },
   "environment": {
     "database.query.logging": false
+  },
+  "ciPortal": {
+    "url": "",
+    "apiKey": "",
+    "deviceId": ""
   }
 }

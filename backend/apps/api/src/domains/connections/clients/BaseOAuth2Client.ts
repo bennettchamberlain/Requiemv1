@@ -1,13 +1,20 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Inject } from '@nestjs/common';
 
 import config from '@ci/configuration';
 
 import type { Connection } from '../entities/ConnectionEntity';
+import { ProviderKeyService } from '../services/ProviderKeyService';
+import { CloudOAuthProxyService } from '../services/CloudOAuthProxyService';
 
 import { BaseClient } from './BaseClient';
 import type { TokenExchange, TokenResponse } from './types';
 
 export abstract class BaseOAuth2Client extends BaseClient {
+  @Inject(ProviderKeyService)
+  protected readonly providerKeyService!: ProviderKeyService;
+
+  protected readonly cloudOAuthProxyService!: CloudOAuthProxyService;
+
   protected abstract baseUrl: string;
 
   protected abstract authorizationEndpoint: string;
@@ -22,7 +29,17 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   protected abstract getScopesFromActiveEndpoints(activeEndpoints: string[]): string;
 
-  abstract getClientCredentials(connection: Connection): Promise<{ clientId: string; clientSecret: string }>;
+  async getClientCredentials(
+    connection: Connection,
+  ): Promise<{ clientId: string; clientSecret: string } | null> {
+    console.log('getClientCredentials', connection);
+    return this.providerKeyService
+      .findByProviderId({ userId: connection.userId }, connection.provider!.id)
+      .then((keys) => {
+        console.log('keys', keys)
+        return keys ? { clientId: keys.clientId, clientSecret: keys.clientSecret } : null;
+      });
+  }
 
   abstract getAccountIdentifier(connection: Connection): Promise<string>;
 
@@ -76,6 +93,14 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   async getAuthorizationUrl(connection: Connection): Promise<string> {
     const clientCredentials = await this.getClientCredentials(connection);
+    if (!clientCredentials) {
+      this.logger.error('Cannot getAuthorizationUrl because client credentials not found for connection', {
+        connectionId: connection.id,
+      });
+
+      throw new Error('Cannot getAuthorizationUrl because client credentials not found');
+    }
+
     const params = new URLSearchParams({
       client_id: clientCredentials.clientId,
       redirect_uri: config.auth.oauth.callbackUrl,
@@ -90,6 +115,17 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   async exchangeAuthorizationCode(connection: Connection, code: string): Promise<TokenExchange> {
     const clientCredentials = await this.getClientCredentials(connection);
+    if (!clientCredentials) {
+      this.logger.error(
+        'Cannot exchangeAuthorizationUrl because client credentials not found for connection',
+        {
+          connectionId: connection.id,
+        },
+      );
+
+      throw new Error('Cannot exchangeAuthorizationUrl because client credentials not found');
+    }
+
     const tokenParams = new URLSearchParams({
       code,
       client_id: clientCredentials.clientId,
@@ -149,55 +185,78 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
     const clientCredentials = await this.getClientCredentials(connection);
 
-    const tokenParams = new URLSearchParams({
-      client_id: clientCredentials.clientId,
-      client_secret: clientCredentials.clientSecret,
-      scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
-      refresh_token: connection.refreshToken,
-      grant_type: 'refresh_token',
-    });
-
-    const tokenResponse = await fetch(this.tokenEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-      body: tokenParams.toString(),
-    });
-
-    if (!tokenResponse.ok) {
-      let errorDetails;
-
-      try {
-        errorDetails = tokenResponse.json();
-      } catch {
-        errorDetails = tokenResponse.text();
-      }
-
-      this.logger.error('Token exchange failed', {
-        status: tokenResponse.status,
-        error: errorDetails,
-        endpoint: this.tokenEndpoint,
+    //If the user has saved OAuth credentials for this provider, then refresh directly through their OAuth app.
+    //Otherwise, proxy it through CI portal
+    if (clientCredentials) {
+      const tokenParams = new URLSearchParams({
+        client_id: clientCredentials.clientId,
+        client_secret: clientCredentials.clientSecret,
+        scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
+        refresh_token: connection.refreshToken,
+        grant_type: 'refresh_token',
       });
 
-      throw new Error('Token exchange failed');
+      const tokenResponse = await fetch(this.tokenEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: tokenParams.toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        let errorDetails;
+
+        try {
+          errorDetails = tokenResponse.json();
+        } catch {
+          errorDetails = tokenResponse.text();
+        }
+
+        this.logger.error('Token exchange failed', {
+          status: tokenResponse.status,
+          error: errorDetails,
+          endpoint: this.tokenEndpoint,
+        });
+
+        throw new Error('Token exchange failed');
+      }
+
+      let tokenData: TokenResponse;
+
+      try {
+        tokenData = (await tokenResponse.json()) as TokenResponse;
+      } catch {
+        throw new Error('Invalid token response format');
+      }
+
+      const tokenExpiry = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
+
+      return {
+        accessToken: tokenData.access_token || null,
+        refreshToken: tokenData.refresh_token || null,
+        tokenExpiry,
+      } satisfies TokenExchange;
+    } else {
+      const cloudUrl = config.ciPortal.url?.replace(/\/$/, '');
+      if (!cloudUrl) {
+        throw new Error('CI_CLOUD_URL is not configured');
+      }
+
+      console.log('refreshing token through CI Portal proxy', connection.refreshToken);
+      //Proxy the refresh request through CI Portal
+      const proxyData = await this.cloudOAuthProxyService.refreshAccessToken(connection.refreshToken);
+      console.log('returned refresh proxyData', proxyData)
+
+      const tokenExpiry = proxyData.expires_in ? new Date(Date.now() + proxyData.expires_in * 1000) : null;
+
+      return {
+        accessToken: proxyData.access_token,
+        // Return the rotated proxy refresh token so the caller can persist it.
+        refreshToken: proxyData.refresh_token,
+        tokenExpiry,
+      } satisfies TokenExchange;
     }
-
-    let tokenData: TokenResponse;
-
-    try {
-      tokenData = (await tokenResponse.json()) as TokenResponse;
-    } catch {
-      throw new Error('Invalid token response format');
-    }
-
-    const tokenExpiry = tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null;
-
-    return {
-      accessToken: tokenData.access_token || null,
-      refreshToken: tokenData.refresh_token || null,
-      tokenExpiry,
-    } satisfies TokenExchange;
   }
 }
