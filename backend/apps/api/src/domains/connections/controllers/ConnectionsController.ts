@@ -188,13 +188,17 @@ export class ConnectionsController {
 
     const clientCredentials = await client.getClientCredentials(connection);
 
+    console.log('clientCredentials', connection, clientCredentials);
     //If the user has saved OAuth credentials for this provider, then just return the auth url generated for their OAuth app.
     //Otherwise refresh through the proxy service on CI Portal
     if (clientCredentials) {
+      console.log('getting auth url from local oauth credentials');
+
       return {
         url: await client.getAuthorizationUrl(connection),
       };
     } else {
+      console.log('getting auth url from cloud credentials');
       const provider = this.cloudOAuthProxyService.getProviderNameForId(connection.providerId);
 
       if (!provider) {
@@ -209,15 +213,12 @@ export class ConnectionsController {
       const baseCallbackUrl = config.auth.oauth.callbackUrl;
       const callbackUrl = `${baseCallbackUrl}?connectionId=${connection.id}`;
 
-      const scopes = this.cloudOAuthProxyService.resolveEndpointsToScopes(
-        provider,
-        connection.activeEndpoints,
-      );
+      const scopes = client.getScopesFromActiveEndpoints(connection.activeEndpoints);
 
       const { authorization_url } = await this.cloudOAuthProxyService.getAuthorizationUrl(
         provider,
         callbackUrl,
-        scopes.length > 0 ? scopes : undefined,
+        scopes.length > 0 ? scopes.split(' ') : undefined,
       );
 
       return { url: authorization_url };

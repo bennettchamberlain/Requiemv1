@@ -45,7 +45,7 @@ export class SpotifyClient extends BaseOAuth2Client {
     show_dialog: 'true',
   };
 
-  protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+  getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
     const scopesSet = new Set<string>(this.endpointScopeMap['default']);
 
     activeEndpoints.forEach((endpoint) => {

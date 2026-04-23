@@ -76,58 +76,6 @@ export class CloudOAuthProxyService {
   }
 
   /**
-   * Translate CI Server endpoint names (e.g. "Gmail", "Calendar") into the actual
-   * OAuth scope strings that CI Cloud expects. Always includes the provider's
-   * baseline scopes (openid/email/profile etc.).
-   */
-  resolveEndpointsToScopes(provider: string, endpoints: string[]): string[] {
-    switch (provider) {
-      case 'google': {
-        const base = ['openid', 'email', 'profile'];
-        const map: Record<string, string> = {
-          Calendar: 'https://www.googleapis.com/auth/calendar.readonly',
-          Gmail: 'https://www.googleapis.com/auth/gmail.readonly',
-          Drive: 'https://www.googleapis.com/auth/drive.readonly',
-          YouTube: 'https://www.googleapis.com/auth/youtube.readonly',
-          Contacts: 'https://www.googleapis.com/auth/contacts.readonly',
-        };
-        const extra = endpoints.flatMap((e) => (map[e] ? [map[e]] : []));
-
-        return [...new Set([...base, ...extra])];
-      }
-
-      case 'microsoft': {
-        const base = ['openid', 'email', 'profile', 'offline_access'];
-        const map: Record<string, string> = {
-          'Outlook Mail': 'Mail.Read',
-          Calendar: 'Calendars.Read',
-          OneDrive: 'Files.Read',
-        };
-        const extra = endpoints.flatMap((e) => (map[e] ? [map[e]] : []));
-
-        return [...new Set([...base, ...extra])];
-      }
-
-      case 'facebook': {
-        const base = ['email', 'public_profile'];
-        const map: Record<string, string> = {
-          Posts: 'user_posts',
-          Photos: 'user_photos',
-          Videos: 'user_videos',
-          Friends: 'user_friends',
-          Likes: 'user_likes',
-        };
-        const extra = endpoints.flatMap((e) => (map[e] ? [map[e]] : []));
-
-        return [...new Set([...base, ...extra])];
-      }
-
-      default:
-        return [];
-    }
-  }
-
-  /**
    * Initiate an OAuth flow via CI Cloud.
    * Returns the authorization URL to redirect the user to.
    */
@@ -146,7 +94,6 @@ export class CloudOAuthProxyService {
       throw new Error('HUB_API_KEY is not configured');
     }
 
-    console.log('callbackUrl', callbackUrl);
     const response = await fetch(`${this.baseUrl}/api/oauth/authorize`, {
       method: 'POST',
       headers: {
@@ -162,8 +109,6 @@ export class CloudOAuthProxyService {
       }),
     });
 
-    console.log('cloud getAuthorizationUrl response', response);
-
     if (!response.ok) {
       const text = await response.text();
       this.logger.error('CI Cloud authorize failed', { status: response.status, body: text });
@@ -178,7 +123,6 @@ export class CloudOAuthProxyService {
    * Returns a new access token and a rotated proxy refresh token.
    */
   async refreshAccessToken(proxyRefreshToken: string): Promise<CloudTokenResponse> {
-    console.log('refreshAccessToken called', proxyRefreshToken);
     if (!config.ciPortal.deviceId) {
       this.logger.error('Missing Hub Device ID');
       throw new Error('HUB_DEVICE_ID is not configured');

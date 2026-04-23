@@ -83,9 +83,8 @@ export class ProvidersController {
     });
 
     const credentials = await client.getClientCredentials(connection);
-    console.log('client credentials', credentials);
 
-    if (credentials?.clientId && credentials?.clientSecret) {
+    if (credentials) {
       const authorizationUrl = await client.getAuthorizationUrl(connection);
 
       return {
@@ -102,15 +101,12 @@ export class ProvidersController {
 
     const callbackUrl = `${config.auth.oauth.callbackUrl}?connectionId=${connection.id}`;
 
-    const scopes =
-      input.endpoints.length > 0
-        ? this.cloudOAuthProxyService.resolveEndpointsToScopes(providerName, input.endpoints)
-        : undefined;
+    const scopes = client.getScopesFromActiveEndpoints(input.endpoints);
 
     const { authorization_url } = await this.cloudOAuthProxyService.getAuthorizationUrl(
       providerName,
       callbackUrl,
-      scopes,
+      scopes.length > 0 ? scopes.split(' ') : undefined,
     );
 
     return { authorizationUrl: authorization_url };

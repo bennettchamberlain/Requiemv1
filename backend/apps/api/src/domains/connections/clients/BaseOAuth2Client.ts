@@ -3,8 +3,8 @@ import { BadRequestException, Inject } from '@nestjs/common';
 import config from '@ci/configuration';
 
 import type { Connection } from '../entities/ConnectionEntity';
-import { ProviderKeyService } from '../services/ProviderKeyService';
 import { CloudOAuthProxyService } from '../services/CloudOAuthProxyService';
+import { ProviderKeyService } from '../services/ProviderKeyService';
 
 import { BaseClient } from './BaseClient';
 import type { TokenExchange, TokenResponse } from './types';
@@ -28,16 +28,18 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
   protected abstract endpointScopeMap: Record<string, string[]>;
 
-  protected abstract getScopesFromActiveEndpoints(activeEndpoints: string[]): string;
+  abstract getScopesFromActiveEndpoints(activeEndpoints: string[]): string;
 
   async getClientCredentials(
     connection: Connection,
   ): Promise<{ clientId: string; clientSecret: string } | null> {
     console.log('getClientCredentials', connection);
+
     return this.providerKeyService
       .findByProviderId({ userId: connection.userId }, connection.provider!.id)
       .then((keys) => {
-        console.log('keys', keys)
+        console.log('keys', keys);
+
         return keys ? { clientId: keys.clientId, clientSecret: keys.clientSecret } : null;
       });
   }
@@ -248,7 +250,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
       console.log('refreshing token through CI Portal proxy', connection.refreshToken);
       //Proxy the refresh request through CI Portal
       const proxyData = await this.cloudOAuthProxyService.refreshAccessToken(connection.refreshToken);
-      console.log('returned refresh proxyData', proxyData)
+      console.log('returned refresh proxyData', proxyData);
 
       const tokenExpiry = proxyData.expires_in ? new Date(Date.now() + proxyData.expires_in * 1000) : null;
 

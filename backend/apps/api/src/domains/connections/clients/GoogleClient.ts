@@ -47,7 +47,7 @@ export class GoogleClient extends BaseOAuth2Client {
     prompt: 'consent',
   };
 
-  protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+  getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
     const scopesSet = new Set<string>(
       this.endpointScopeMap['default'].map((scope) => `https://www.googleapis.com/auth/${scope}`),
     );

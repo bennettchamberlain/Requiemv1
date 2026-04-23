@@ -30,7 +30,7 @@ export class MicrosoftClient extends BaseOAuth2Client {
     default: ['offline_access', 'user.read'],
   };
 
-  protected getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
+  getScopesFromActiveEndpoints(activeEndpoints: string[]): string {
     const scopesSet = new Set<string>(this.endpointScopeMap['default']);
 
     activeEndpoints.forEach((endpoint) => {

@@ -52,12 +52,9 @@ export class ProviderKeyService {
   }
 
   async findByProviderId(context: UserServiceContext, providerId: string): Promise<ProviderKey | null> {
-    console.log('findByProviderId', providerId, context.userId);
     const where = { providerId, userId: context.userId };
 
     const entity = await this.providerKeyRepository.findOne({ where });
-
-    console.log('entity', entity)
 
     return entity ? ProviderKeyEntity.toEgressType(entity) : null;
   }
