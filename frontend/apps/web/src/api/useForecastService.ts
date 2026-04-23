@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import { gql, useQuery } from '@apollo/client';
 
 const GET_FORECAST = gql(`
@@ -5,6 +7,7 @@ const GET_FORECAST = gql(`
     forecast(horizon: $horizon) {
       horizon
       generatedAt
+      systemStatus
       buckets {
         bucketIndex
         startTime
@@ -38,13 +41,32 @@ export interface ForecastBucket {
 export interface ForecastResponse {
   horizon: string;
   generatedAt: string;
+  systemStatus: string;
   buckets: ForecastBucket[];
 }
 
 export function useForecastService(horizon = '24h') {
-  const { data, loading, error, refetch } = useQuery<{ forecast: ForecastResponse | null }>(GET_FORECAST, {
+  const { data, previousData, loading, error, refetch, startPolling, stopPolling } = useQuery<{
+    forecast: ForecastResponse | null;
+  }>(GET_FORECAST, {
     variables: { horizon },
+    // errorPolicy 'all' keeps previousData populated when a poll errors, so a
+    // transient /histogram failure doesn't unmount the strip.
+    errorPolicy: 'all',
+    notifyOnNetworkStatusChange: true,
   });
 
-  return [{ data: data?.forecast ?? null, loading, error }, { refetch: () => refetch({ horizon }) }] as const;
+  // Fall back to the last successful response when the current poll returned
+  // null (resolver swallowed an HBPE error) — avoids flicker.
+  const forecast = data?.forecast ?? previousData?.forecast ?? null;
+
+  useEffect(() => {
+    if (forecast && forecast.systemStatus !== 'READY') {
+      startPolling(5000);
+    } else {
+      stopPolling();
+    }
+  }, [forecast, startPolling, stopPolling]);
+
+  return [{ data: forecast, loading, error }, { refetch: () => refetch({ horizon }) }] as const;
 }

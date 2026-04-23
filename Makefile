@@ -19,6 +19,9 @@ export TTS_REPO ?= ci/tts-service
 export HBPE_REPO ?= ci/hbpe-service
 export PARSER_REPO ?= ci/parser-service
 
+# Seed user UUID (John Smith) — must match backend/apps/api/scripts/seed-database/data/users.ts
+JOHN_SMITH_USER_ID := b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
+
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
 PROJECT_NAME := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
@@ -409,7 +412,7 @@ seed: ## Seed database with John Smith user and demo data
 predict: ## Run the HBPE prediction pipeline against the local container
 	@printf "🔮 Running HBPE prediction pipeline (local)...\n\n"
 
-	@docker exec ci-server-hbpe-service-1 python3 scripts/run_pipeline.py
+	@docker exec ci-server-hbpe-service-1 python3 scripts/run_pipeline.py $(JOHN_SMITH_USER_ID)
 
 	@printf "\nPipeline run complete.\n\n"
 
@@ -419,7 +422,7 @@ predict-production: ## Run the HBPE prediction pipeline against the production c
 
 	@docker exec ci-server-hbpe-service-1 \
 		sh -c 'export $$(cat /proc/$$(pgrep -f "ci.worker" | head -1)/environ | xargs -0 | grep DATABASE_URL) \
-		&& python3 scripts/run_pipeline.py'
+		&& python3 scripts/run_pipeline.py $(JOHN_SMITH_USER_ID)'
 
 	@printf "\nPipeline run complete.\n\n"
 

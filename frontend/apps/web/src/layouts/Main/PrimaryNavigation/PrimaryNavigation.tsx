@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
-import { Button, DropdownMenu, Kbd, Separator } from '@ci/shadcn';
+import { Button, DropdownMenu, Kbd, Separator, useToast } from '@ci/shadcn';
 import {
   NotebookPen,
   Upload,
@@ -16,7 +16,7 @@ import {
 } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { useUploadFile } from '@/api';
+import { useUploadFile, useTriggerHbpe } from '@/api';
 import { AddPersonModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -30,6 +30,8 @@ import { NavUser } from './NavUser';
 
 export function PrimaryNavigation() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [, { trigger }] = useTriggerHbpe();
 
   const [{ isOpen: isSearchModalOpen }, { open: openSearchModal, close: closeSearchModal }] =
     useModalControls();
@@ -116,7 +118,8 @@ export function PrimaryNavigation() {
                   </Button>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="text-center text-sm font-semibold mb-3 mt-1">Add</div>
+                  <div className="grid grid-cols-4 gap-2">
                     <DropdownMenu.Item
                       onSelect={() => navigate('/notes/new')}
                       className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
@@ -127,7 +130,7 @@ export function PrimaryNavigation() {
 
                     <DropdownMenu.Item
                       onSelect={openAddPersonModal}
-                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <User className="h-6! w-6!" strokeWidth={1.25} />
                       <span className="text-xs text-center">Person</span>
@@ -135,7 +138,7 @@ export function PrimaryNavigation() {
 
                     <DropdownMenu.Item
                       onSelect={openAddConceptModal}
-                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <Lightbulb className="h-6! w-6!" strokeWidth={1.25} />
                       <span className="text-xs text-center">Concept</span>
@@ -143,7 +146,7 @@ export function PrimaryNavigation() {
 
                     <DropdownMenu.Item
                       onSelect={openItemModal}
-                      className="flex-1 h-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <Package className="h-6! w-6!" strokeWidth={1.25} />
                       <span className="text-xs text-center">Item</span>
@@ -151,7 +154,7 @@ export function PrimaryNavigation() {
                   </div>
                   <div className="mt-2 -mx-2 -mb-2 bg-muted/50 p-4 rounded-b-lg">
                     <div className="text-center text-sm font-semibold mb-3">Actions</div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       <DropdownMenu.Item
                         onSelect={openUploadModal}
                         className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
@@ -174,6 +177,26 @@ export function PrimaryNavigation() {
                       >
                         <Cable className="h-6! w-6!" strokeWidth={1.25} />
                         <span className="text-xs text-center">Connect</span>
+                      </DropdownMenu.Item>
+
+                      <DropdownMenu.Item
+                        onSelect={async (e) => {
+                          e.preventDefault();
+                          const status = await trigger();
+                          if (status === 'already_running') {
+                            toast.info('Prediction pipeline is already running');
+                          } else if (status === 'triggered') {
+                            toast.success('Prediction pipeline started');
+                          } else if (status === 'error' || !status) {
+                            toast.error('Failed to trigger prediction pipeline');
+                          } else {
+                            toast.success('Prediction pipeline started');
+                          }
+                        }}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <Search className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Predict</span>
                       </DropdownMenu.Item>
                     </div>
                   </div>

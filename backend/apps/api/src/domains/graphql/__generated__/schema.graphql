@@ -525,6 +525,9 @@ type ForecastType {
   Forecast horizon, e.g. "48h"
   """
   horizon: String!
+
+  """System status of the HBPE engine (COLD_START, TRAINING, READY)"""
+  systemStatus: String!
 }
 
 type InsightItemType {
@@ -642,6 +645,9 @@ type Mutation {
   removeQuestion(id: String!): Boolean!
   startPairing: StartPairingPayload!
   tagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
+
+  """Manually trigger the HBPE pipeline for the current user"""
+  triggerHbpe: String!
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!

@@ -50,6 +50,16 @@ services:
     restart: unless-stopped
     profiles: [ "staging" ]
 
+  hbpe-service:
+    environment:
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      API_JWT_SECRET: ${AUTH_TOKEN_SECRET}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+
   object-store:
     environment:
       USERNAME: ${OBJECT_STORE_USERNAME}
@@ -60,19 +70,13 @@ services:
   orchestrator:
     environment:
       DATABASE_PASSWORD: ${ORCHESTRATOR_DATABASE_PASSWORD}
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/local.yaml
+    volumes:
+      - ./infrastructure/orchestrator/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/local.yaml:ro
 
   summary-service:
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-
-  hbpe-service:
-    environment:
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-    devices:
-      - /dev/kfd
-      - /dev/dri
-    group_add:
-      - video
 
   #############
   # EPHEMERAL #
