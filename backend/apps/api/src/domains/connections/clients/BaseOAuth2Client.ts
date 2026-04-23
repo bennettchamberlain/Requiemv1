@@ -13,6 +13,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
   @Inject(ProviderKeyService)
   protected readonly providerKeyService!: ProviderKeyService;
 
+  @Inject(CloudOAuthProxyService)
   protected readonly cloudOAuthProxyService!: CloudOAuthProxyService;
 
   protected abstract baseUrl: string;
