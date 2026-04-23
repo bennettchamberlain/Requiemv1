@@ -530,6 +530,24 @@ type ForecastType {
   systemStatus: String!
 }
 
+input IngestUserSnapshotInput {
+  cwd: String
+  deviceId: ID!
+  focusApp: String
+  focusTitle: String
+  fsEventCount: Int!
+  monotonicMs: Float!
+  observedAt: DateTime!
+  payload: JSON!
+  sessionId: ID!
+  snapshotKind: String!
+}
+
+type IngestUserSnapshotPayload {
+  errorMessage: String
+  success: Boolean!
+}
+
 type InsightItemType {
   keyActions: [String!]!
   relatedEntityIds: [String!]
@@ -626,6 +644,7 @@ type Mutation {
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
+  ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
   """Mark an action as dismissed"""
   markActionAsDismissed(id: ID!): ActionType

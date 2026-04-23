@@ -46,6 +46,7 @@ import { SpeechModule } from '@ci/domains/speech';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
+import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { UserModule } from '@ci/domains/user';
     SpeechModule,
     SummariesModule,
     UserModule,
+    UserSnapshotsModule,
   ],
   controllers: [HealthController],
   providers: [

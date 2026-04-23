@@ -7,6 +7,7 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
+import { DeviceModule } from '@ci/domains/devices';
 import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
@@ -18,6 +19,7 @@ import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
 import { UserModule } from '@ci/domains/user';
+import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 
 import { GraphQLController } from './controllers/GraphQLController';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
@@ -61,6 +63,7 @@ import { SummaryResolver } from './resolvers/SummaryResolver';
 import { TagResolver } from './resolvers/TagResolver';
 import { ThreadResolver } from './resolvers/ThreadResolver';
 import { UserResolver } from './resolvers/UserResolver';
+import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
 
 @Module({
   imports: [
@@ -75,6 +78,7 @@ import { UserResolver } from './resolvers/UserResolver';
     PairingModule,
     BrowserActivityModule,
     ConnectionsModule,
+    DeviceModule,
     PredictionsModule,
     ConversationModule,
     EtlModule,
@@ -86,6 +90,7 @@ import { UserResolver } from './resolvers/UserResolver';
     SearchNextModule,
     SummariesModule,
     UserModule,
+    UserSnapshotsModule,
   ],
   providers: [
     ActionResolver,
@@ -128,6 +133,7 @@ import { UserResolver } from './resolvers/UserResolver';
     ThreadLoader,
     ThreadMessagesLoader,
     ThreadResolver,
+    UserSnapshotResolver,
     UserResolver,
   ],
   controllers: [GraphQLController],
