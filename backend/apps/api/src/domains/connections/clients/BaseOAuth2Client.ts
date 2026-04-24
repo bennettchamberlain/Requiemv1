@@ -106,7 +106,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
 
     const params = new URLSearchParams({
       client_id: clientCredentials.clientId,
-      redirect_uri: config.auth.oauth.callbackUrl,
+      redirect_uri: config.auth.oauth.callbackUrl || `${process.env.APP_PUBLIC_URL}/oauth/callback`,
       response_type: 'code',
       scope: this.getScopesFromActiveEndpoints(connection.activeEndpoints),
       state: connection.id,
@@ -133,7 +133,7 @@ export abstract class BaseOAuth2Client extends BaseClient {
       code,
       client_id: clientCredentials.clientId,
       client_secret: clientCredentials.clientSecret,
-      redirect_uri: config.auth.oauth.callbackUrl,
+      redirect_uri: config.auth.oauth.callbackUrl || `${process.env.APP_PUBLIC_URL}/oauth/callback`,
       grant_type: 'authorization_code',
     });
 

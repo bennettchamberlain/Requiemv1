@@ -210,7 +210,7 @@ export class ConnectionsController {
 
       // Build the callback URL from the configured OAUTH_CALLBACK_URL, embedding
       // the connectionId so we know which connection to update on return.
-      const baseCallbackUrl = config.auth.oauth.callbackUrl;
+      const baseCallbackUrl = config.auth.oauth.callbackUrl || `${process.env.APP_PUBLIC_URL}/oauth/callback`;
       const callbackUrl = `${baseCallbackUrl}?connectionId=${connection.id}`;
 
       const scopes = client.getScopesFromActiveEndpoints(connection.activeEndpoints);

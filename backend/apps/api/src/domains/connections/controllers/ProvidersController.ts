@@ -99,9 +99,14 @@ export class ProvidersController {
       throw new InternalServerErrorException('Provider not configured for CI Cloud proxy');
     }
 
-    const callbackUrl = `${config.auth.oauth.callbackUrl}?connectionId=${connection.id}`;
+    console.log('config', config)
+    const baseCallbackUrl = config.auth.oauth.callbackUrl || `${process.env.APP_PUBLIC_URL}/oauth/callback`;
+    const callbackUrl = `${baseCallbackUrl}?connectionId=${connection.id}`;
+    console.log('callbackUrl', callbackUrl);
 
     const scopes = client.getScopesFromActiveEndpoints(input.endpoints);
+
+    console.log('scopes', scopes, scopes.split(' '))
 
     const { authorization_url } = await this.cloudOAuthProxyService.getAuthorizationUrl(
       providerName,

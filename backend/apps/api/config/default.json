@@ -45,7 +45,7 @@
       }
     },
     "oauth": {
-      "callbackUrl": "https://memory.ci.localhost/oauth/callback"
+      "callbackUrl": ""
     }
   },
   "db": {
