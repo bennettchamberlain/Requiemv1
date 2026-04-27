@@ -15,6 +15,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
+import { ParsingModule } from '@ci/domains/parsing';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SummariesModule } from '@ci/domains/summaries';
@@ -87,6 +88,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     IntelligenceModule,
     MemoryModule,
     NotesModule,
+    ParsingModule,
     SearchNextModule,
     SummariesModule,
     UserModule,

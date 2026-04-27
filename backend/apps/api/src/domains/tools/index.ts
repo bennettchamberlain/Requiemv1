@@ -28,6 +28,7 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
+import { ParsingModule } from '@ci/domains/parsing';
 import { SearchNextModule } from '@ci/domains/search-next';
 
 import { DatabaseSearchTool } from './providers/native/DatabaseSearchTool';
@@ -64,6 +65,7 @@ const nativeToolInstances = [
     FilesModule,
     MemoryModule,
     IntelligenceModule,
+    ParsingModule,
     SearchNextModule,
   ],
   providers: [
