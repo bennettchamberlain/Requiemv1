@@ -470,6 +470,21 @@ type EventType implements Node & Taggable {
   title: String
 }
 
+type FileChunkType implements Node {
+  chunkIndex: Int!
+  chunkerVersion: String!
+  content: String!
+  createdAt: DateTime!
+  file: FileType
+  fileId: ID!
+  id: ID!
+  parserName: String!
+  parserVersion: String!
+  sectionTitle: String
+  sourceLocator: JSON
+  updatedAt: DateTime!
+}
+
 type FileConnection implements Connection {
   edges: [FileEdge!]!
   pageInfo: PageInfo!
@@ -973,7 +988,7 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+union SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
 
 type StartPairingPayload {
   errorMessage: String

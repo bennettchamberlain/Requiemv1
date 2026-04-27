@@ -20,6 +20,7 @@ import {
   CommunicationEntity,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
+import { FileChunkService } from '@ci/domains/parsing';
 import {
   SearchService,
   TagService,
@@ -34,6 +35,7 @@ import { CommunicationType } from '../types/CommunicationType';
 import { ConceptType } from '../types/ConceptType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
+import { FileChunkType } from '../types/FileChunkType';
 import { FileType } from '../types/FileType';
 import { ItemType } from '../types/ItemType';
 import { NoteType } from '../types/NoteType';
@@ -55,6 +57,7 @@ export class SearchResolver {
     private readonly conceptService: ConceptService,
     private readonly contentService: ContentService,
     private readonly eventService: EventService,
+    private readonly fileChunkService: FileChunkService,
     private readonly fileService: FileService,
     private readonly itemService: ItemService,
     private readonly noteService: NoteService,
@@ -265,6 +268,7 @@ export class SearchResolver {
     const conceptIds = groupedByType.get('concept') || [];
     const contentIds = groupedByType.get('content') || [];
     const eventIds = groupedByType.get('event') || [];
+    const fileChunkIds = groupedByType.get('file-chunk') || [];
     const fileIds = groupedByType.get('file') || [];
     const itemIds = groupedByType.get('item') || [];
     const noteIds = groupedByType.get('note') || [];
@@ -279,7 +283,7 @@ export class SearchResolver {
       concepts,
       content,
       events,
-      files,
+      fileChunks,
       items,
       notes,
       people,
@@ -292,12 +296,16 @@ export class SearchResolver {
       this.conceptService.findByIds(context, conceptIds),
       this.contentService.findByIds(context, contentIds),
       this.eventService.findByIds(context, eventIds),
-      this.fileService.findByIds(context, fileIds),
+      this.fileChunkService.findByIds(fileChunkIds),
       this.itemService.findByIds(context, itemIds),
       this.noteService.findByIds(context, noteIds),
       this.personService.findByIds(context, peopleIds),
       this.placeService.findByIds(context, placeIds),
       this.threadService.findByIds(context, threadIds),
+    ]);
+
+    const files = await this.fileService.findByIds(context, [
+      ...new Set([...fileIds, ...fileChunks.map((chunk) => chunk.fileId)]),
     ]);
 
     const answerResults = answers
@@ -322,7 +330,18 @@ export class SearchResolver {
 
     const eventResults = events.filter((entity) => entity != null).map((entity) => EventType.toType(entity));
 
-    const fileResults = files.filter((entity) => entity != null).map((entity) => FileType.toType(entity));
+    const fileById = new Map(
+      files.filter((entity) => entity != null).map((entity) => [entity.id, entity] as const),
+    );
+
+    const fileChunkResults = fileChunks
+      .filter((entity) => entity != null)
+      .map((entity) => FileChunkType.toType(entity, fileById.get(entity.fileId) ?? null));
+
+    const fileResults = fileIds
+      .map((id) => fileById.get(id))
+      .filter((entity) => entity != null)
+      .map((entity) => FileType.toType(entity));
 
     const itemResults = items.filter((entity) => entity != null).map((entity) => ItemType.toType(entity));
 
@@ -359,6 +378,9 @@ export class SearchResolver {
     );
 
     eventResults.forEach((event) => resultMap.set(makeCompositeKey('event', event.__source.id), event));
+    fileChunkResults.forEach((chunk) =>
+      resultMap.set(makeCompositeKey('file-chunk', chunk.__source.id), chunk),
+    );
     fileResults.forEach((file) => resultMap.set(makeCompositeKey('file', file.__source.id), file));
     itemResults.forEach((item) => resultMap.set(makeCompositeKey('item', item.__source.id), item));
     noteResults.forEach((note) => resultMap.set(makeCompositeKey('note', note.__source.id), note));

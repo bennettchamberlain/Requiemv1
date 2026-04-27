@@ -13,7 +13,7 @@ import { DocumentParsedEvent } from '../events';
 import { DocumentChunkerService } from '../services/DocumentChunkerService';
 import { DocumentChunkService } from '../services/DocumentChunkService';
 import { DocumentParserService } from '../services/DocumentParserService';
-import { PARSEABLE_MIME_TYPES, ParseStatus } from '../types';
+import { ParseStatus } from '../types';
 
 @Injectable()
 export class FileDocumentParseListener {
@@ -44,7 +44,7 @@ export class FileDocumentParseListener {
       return;
     }
 
-    if (!PARSEABLE_MIME_TYPES.has(file.contentType)) {
+    if (!this.parserService.canParse(file.contentType, file.filename ?? file.id)) {
       this.logger.log('MIME type not parseable, skipping', {
         fileId: file.id,
         contentType: file.contentType,

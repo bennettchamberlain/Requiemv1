@@ -70,7 +70,7 @@ As a user, I want parsing to happen asynchronously after upload so that large fi
   - parse metadata needed for traceability
 - Each chunk must be indexed into the existing keyword and embedding search pipeline.
 - Search results must be able to return chunk-level hits and identify the parent file.
-- The file record must expose parse lifecycle state such as `pending`, `processing`, `completed`, `failed`, plus error details for failures.
+- The file record must expose parse lifecycle state such as `processing`, `completed`, `failed`, or `skipped`, plus error details for failures.
 - Re-uploading or updating a file with the same stored object must not create duplicate chunk records.
 - Parsing must be retryable from the job system.
 - The initial LLM integration must reuse the existing search path for retrieval rather than introducing a separate bespoke retrieval stack.

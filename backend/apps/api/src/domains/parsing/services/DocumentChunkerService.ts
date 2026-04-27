@@ -4,8 +4,6 @@ import {
   CHUNK_OVERLAP_CHARS,
   CHUNK_TARGET_CHARS,
   CHUNKER_VERSION,
-  PARSER_NAME,
-  PARSER_VERSION,
   type CreateChunkDto,
   type ParsedDocument,
 } from '../types';
@@ -35,8 +33,8 @@ export class DocumentChunkerService {
           content: text,
           sectionTitle: section.title ?? null,
           sourceLocator: Object.keys(section.metadata).length ? section.metadata : null,
-          parserName: PARSER_NAME,
-          parserVersion: PARSER_VERSION,
+          parserName: doc.parser.name,
+          parserVersion: doc.parser.version,
           chunkerVersion: CHUNKER_VERSION,
         });
       } else {
@@ -51,8 +49,8 @@ export class DocumentChunkerService {
             content: window,
             sectionTitle: section.title ?? null,
             sourceLocator: Object.keys(section.metadata).length ? section.metadata : null,
-            parserName: PARSER_NAME,
-            parserVersion: PARSER_VERSION,
+            parserName: doc.parser.name,
+            parserVersion: doc.parser.version,
             chunkerVersion: CHUNKER_VERSION,
           });
         }

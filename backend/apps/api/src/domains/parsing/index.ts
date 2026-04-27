@@ -8,11 +8,26 @@ import { FileChunkEntity } from './entities/FileChunkEntity';
 import { FileDocumentParseListener } from './listeners/FileDocumentParseListener';
 import { DocumentChunkerService } from './services/DocumentChunkerService';
 import { DocumentChunkService } from './services/DocumentChunkService';
+import { DOCUMENT_EXTRACTORS } from './services/DocumentExtractor';
+import { DocumentParserRegistry } from './services/DocumentParserRegistry';
 import { DocumentParserService } from './services/DocumentParserService';
+import { MarkItDownExtractor } from './services/MarkItDownExtractor';
 
 @Module({
   imports: [TypeOrmModule.forFeature([FileChunkEntity]), EventsModule, FilesModule],
-  providers: [DocumentParserService, DocumentChunkerService, DocumentChunkService, FileDocumentParseListener],
+  providers: [
+    MarkItDownExtractor,
+    {
+      provide: DOCUMENT_EXTRACTORS,
+      useFactory: (markItDownExtractor: MarkItDownExtractor) => [markItDownExtractor],
+      inject: [MarkItDownExtractor],
+    },
+    DocumentParserRegistry,
+    DocumentParserService,
+    DocumentChunkerService,
+    DocumentChunkService,
+    FileDocumentParseListener,
+  ],
   exports: [DocumentChunkService],
 })
 export class ParsingModule {}

@@ -1,33 +1,37 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
-import config from '@ci/configuration';
 
 import { type ParsedDocument } from '../types';
 
+import { DocumentParserRegistry } from './DocumentParserRegistry';
+
 @Injectable()
 export class DocumentParserService {
-  constructor(private readonly logger: LoggerService) {
+  constructor(
+    private readonly registry: DocumentParserRegistry,
+    private readonly logger: LoggerService,
+  ) {
     this.logger.setContext(DocumentParserService.name);
   }
 
+  canParse(mimeType: string, filename: string): boolean {
+    return this.registry.supports({ mimeType, filename });
+  }
+
   async parse(fileBytes: Uint8Array, mimeType: string, filename: string): Promise<ParsedDocument> {
-    const url = `${config.services.parser.host}/parse`;
+    const extractor = this.registry.resolve({ mimeType, filename });
 
-    const form = new FormData();
-    form.append('file', new Blob([fileBytes], { type: mimeType }), filename);
-    form.append('mime_type', mimeType);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      body: form,
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`Parser service returned ${response.status}: ${body}`);
+    if (extractor == null) {
+      throw new Error(`No document extractor available for ${mimeType} (${filename})`);
     }
 
-    return response.json() as Promise<ParsedDocument>;
+    this.logger.log('Dispatching parse request', {
+      extractor: extractor.key,
+      mimeType,
+      filename,
+    });
+
+    return extractor.parse({ fileBytes, mimeType, filename });
   }
 }
