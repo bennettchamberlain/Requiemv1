@@ -2,17 +2,24 @@ import { useEffect, useRef } from 'react';
 
 import { useEntityService } from '../../MemoryPage/useEntityService';
 import { Empty, EntityCard } from '../Components';
-import { groupEntitiesByDate, formatDateForDisplay } from '../Components/utils';
+import { groupEntitiesByDate, formatDateForDisplay, getEntityDate } from '../Components/utils';
 
-export function TimelineView() {
+interface Props {
+  entities?: ReturnType<typeof useEntityService>[0]['data'];
+  loadingOverride?: boolean;
+}
+
+export function TimelineView({ entities, loadingOverride }: Props = {}) {
   const timelineRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const hasInitialScrolledRef = useRef(false);
   const previousScrollHeightRef = useRef<number>(0);
 
   const [{ data, loading }] = useEntityService();
+  const visibleEntities = entities ?? data;
+  const isLoading = loadingOverride ?? loading;
 
-  const groupedEntitiesRaw = groupEntitiesByDate(data);
+  const groupedEntitiesRaw = groupEntitiesByDate(visibleEntities);
 
   // Ensure "today" appears first by explicitly sorting dates with today first
   const now = new Date();
@@ -43,7 +50,7 @@ export function TimelineView() {
     const container = scrollContainerRef.current;
 
     // Only scroll to "today" on initial load, not when loading more memories
-    if (container && data.length > 0 && !hasInitialScrolledRef.current) {
+    if (container && visibleEntities.length > 0 && !hasInitialScrolledRef.current) {
       setTimeout(() => {
         // First try to find the current day's date header
         const currentDayHeader = container.querySelector('[data-current-day="true"]');
@@ -62,13 +69,13 @@ export function TimelineView() {
         previousScrollHeightRef.current = container.scrollHeight;
       }, 200);
     }
-  }, [data.length]);
+  }, [visibleEntities.length]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
 
     if (!container || !hasInitialScrolledRef.current) {
-      if (container && data.length > 0) {
+      if (container && visibleEntities.length > 0) {
         // Store initial scroll height
         previousScrollHeightRef.current = container.scrollHeight;
       }
@@ -109,7 +116,7 @@ export function TimelineView() {
     } else {
       previousScrollHeightRef.current = currentScrollHeight;
     }
-  }, [data.length]);
+  }, [visibleEntities.length]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -123,7 +130,7 @@ export function TimelineView() {
     const handleScroll = () => {
       clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
-        if (loading) {
+        if (isLoading) {
           return;
         }
 
@@ -147,9 +154,9 @@ export function TimelineView() {
       container.removeEventListener('scroll', handleScroll);
       clearTimeout(scrollTimeout);
     };
-  }, [loading]);
+  }, [isLoading]);
 
-  if (groupedEntities.length === 0 && !loading) {
+  if (groupedEntities.length === 0 && !isLoading) {
     return (
       <Empty
         title="No memories yet"
@@ -180,12 +187,7 @@ export function TimelineView() {
 
             <div className="space-y-4 pl-8">
               {[...dayEntities].reverse().map((entity) => {
-                const entityDate =
-                  'time' in entity
-                    ? new Date(entity.time as string)
-                    : 'startTime' in entity
-                      ? new Date(entity.startTime as string)
-                      : new Date();
+                const entityDate = getEntityDate(entity) ?? new Date();
                 const now = new Date();
                 const timeDiff = Math.abs(entityDate.getTime() - now.getTime());
                 const isCurrentTime =
@@ -204,7 +206,7 @@ export function TimelineView() {
         );
       })}
 
-      {loading && (
+      {isLoading && (
         <div className="flex justify-center py-8">
           <div className="flex items-center gap-3 text-muted-foreground">
             <div className="w-5 h-5 border-2 border-muted border-t-primary rounded-full animate-spin" />

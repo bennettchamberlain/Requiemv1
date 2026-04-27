@@ -24,6 +24,7 @@ const SEARCH_QUERY = gql(`
           ...ConceptGridItemData
           ...ContentGridItemData
           ...EventGridItemData
+          ...FileChunkGridItemData
           ...FileGridItemData
           ...NoteGridItemData
           ...ItemGridItemData
@@ -36,6 +37,7 @@ const SEARCH_QUERY = gql(`
           ...TableConceptRowData
           ...TableContentRowData
           ...TableEventRowData
+          ...TableFileChunkRowData
           ...TableFileRowData
           ...TableItemRowData
           ...TableNoteRowData
@@ -47,6 +49,7 @@ const SEARCH_QUERY = gql(`
           ...TimelineBrowserActivityCardData
           ...TimelineCommunicationCardData
           ...TimelineEventCardData
+          ...TimelineFileChunkCardData
         }
       }
     }

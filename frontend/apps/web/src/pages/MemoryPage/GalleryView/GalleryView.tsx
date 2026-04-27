@@ -12,6 +12,7 @@ import {
   ContentGridItem,
   EntityGrid,
   EventGridItem,
+  FileChunkGridItem,
   FileGridItem,
   ItemGridItem,
   type ItemInventoryPreview,
@@ -33,7 +34,7 @@ export function GalleryView() {
 
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
 
-  const [{ data }] = useEntityService();
+  const [{ data }, { setActiveEntity }] = useEntityService();
 
   if (data.length === 0) {
     return (
@@ -109,6 +110,11 @@ export function GalleryView() {
                     navigate(`/events/${GlobalUID.parse('event', item.id)}`);
                   }}
                 />
+              );
+
+            case 'FileChunkType':
+              return (
+                <FileChunkGridItem key={item.id} fileChunk={item} onClick={() => setActiveEntity(item)} />
               );
 
             case 'FileType':

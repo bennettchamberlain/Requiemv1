@@ -2,6 +2,25 @@ import { Calendar, User, MapPin, Package, FileText, Contact, Lightbulb, Target }
 
 import type { EntityItem } from '../../MemoryPage/useEntityService';
 
+export function getEntityDate(entity: EntityItem): Date | null {
+  const rawValue =
+    'time' in entity
+      ? entity.time
+      : 'startTime' in entity
+        ? entity.startTime
+        : 'createdAt' in entity
+          ? entity.createdAt
+          : null;
+
+  if (typeof rawValue !== 'string' && !(rawValue instanceof Date)) {
+    return null;
+  }
+
+  const date = new Date(rawValue);
+
+  return isNaN(date.getTime()) ? null : date;
+}
+
 export function formatDuration(minutes: number): string {
   const days = Math.floor(minutes / (24 * 60));
   const hours = Math.floor((minutes % (24 * 60)) / 60);
@@ -86,19 +105,9 @@ export function formatDateForDisplay(dateStr: string): string {
 
 export function sortEntitiesByTime(entities: EntityItem[][]): EntityItem[][] {
   return [...entities].sort((a, b) => {
-    const dateA =
-      'time' in a
-        ? new Date(a.time as string)
-        : 'startTime' in a
-          ? new Date(a.startTime as string)
-          : new Date();
-    const dateB =
-      'time' in b
-        ? new Date(b.time as string)
-        : 'startTime' in b
-          ? new Date(b.startTime as string)
-          : new Date();
-    if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+    const dateA = getEntityDate(a as unknown as EntityItem);
+    const dateB = getEntityDate(b as unknown as EntityItem);
+    if (dateA == null || dateB == null) {
       return 0;
     }
 
@@ -113,18 +122,9 @@ export function groupEntitiesByDate(entities: EntityItem[]): Array<{
   const groups: Record<string, EntityItem[]> = {};
 
   entities.forEach((entity) => {
-    if (!('time' in entity) && !('startTime' in entity)) {
-      return;
-    }
+    const entityDate = getEntityDate(entity);
 
-    const entityDate =
-      'time' in entity
-        ? new Date(entity.time as string)
-        : 'startTime' in entity
-          ? new Date(entity.startTime as string)
-          : new Date();
-    if (!isNaN(entityDate.getTime())) {
-      // Use local date instead of UTC to match user's timezone
+    if (entityDate != null) {
       const year = entityDate.getFullYear();
       const month = String(entityDate.getMonth() + 1).padStart(2, '0');
       const day = String(entityDate.getDate()).padStart(2, '0');

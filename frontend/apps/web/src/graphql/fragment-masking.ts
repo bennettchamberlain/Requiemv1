@@ -1,7 +1,3 @@
-/* ------------------------------------------------------- */
-/*  THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)  */
-/* ------------------------------------------------------- */
-
 /* eslint-disable */
 import type { ResultOf, DocumentTypeDecoration, TypedDocumentNode } from '@graphql-typed-document-node/core';
 import type { FragmentDefinitionNode } from 'graphql';

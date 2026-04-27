@@ -16,6 +16,7 @@ import { CommunicationRow } from './rows/CommunicationRow';
 import { ConceptRow } from './rows/ConceptRow';
 import { ContentRow } from './rows/ContentRow';
 import { EventRow } from './rows/EventRow';
+import { FileChunkRow } from './rows/FileChunkRow';
 import { FileRow } from './rows/FileRow';
 import { ItemRow, type ItemInventoryPreview } from './rows/ItemRow';
 import { NoteRow } from './rows/NoteRow';
@@ -32,7 +33,7 @@ export function ListView() {
 
   const clearActiveItem = () => setActiveItem(null);
 
-  const [{ data }] = useEntityService();
+  const [{ data }, { setActiveEntity }] = useEntityService();
 
   if (data.length === 0) {
     return (
@@ -108,6 +109,9 @@ export function ListView() {
                     }}
                   />
                 );
+
+              case 'FileChunkType':
+                return <FileChunkRow key={item.id} fileChunk={item} onClick={() => setActiveEntity(item)} />;
 
               case 'FileType':
                 return <FileRow key={item.id} file={item} onClick={() => setActiveItem(item.id)} />;

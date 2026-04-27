@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { Map } from '@/components/Map';
 
 import { useEntityService } from '../../MemoryPage/useEntityService';
+import { getEntityDate } from '../Components/utils';
 import { TimelineView } from '../TimelineView';
 
 type LOCATION_TYPE = { properties: { latitude: number; longitude: number } };
@@ -32,19 +33,10 @@ export function DesktopMapView() {
     });
 
     filteredEntities.sort((a, b) => {
-      const dateA =
-        'time' in a
-          ? new Date(a.time as string)
-          : 'startTime' in a
-            ? new Date(a.startTime as string)
-            : new Date();
-      const dateB =
-        'time' in b
-          ? new Date(b.time as string)
-          : 'startTime' in b
-            ? new Date(b.startTime as string)
-            : new Date();
-      if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+      const dateA = getEntityDate(a);
+      const dateB = getEntityDate(b);
+
+      if (dateA == null || dateB == null) {
         return 0;
       }
 
@@ -59,7 +51,7 @@ export function DesktopMapView() {
     <Map center={[37.7749, -122.4194]}>
       <Map.Controls position="bottom-right" />
       <Map.Panel position="left" className="w-[300px] relative">
-        <TimelineView />
+        <TimelineView entities={entitiesWithLocation} />
         <SoftBlur />
       </Map.Panel>
 
