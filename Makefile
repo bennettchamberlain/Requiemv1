@@ -17,7 +17,6 @@ export STT_REPO ?= ci/stt-service
 export SUMMARY_REPO ?= ci/summary-service
 export TTS_REPO ?= ci/tts-service
 export HBPE_REPO ?= ci/hbpe-service
-export PARSER_REPO ?= ci/parser-service
 
 # Seed user UUID (John Smith) — must match backend/apps/api/scripts/seed-database/data/users.ts
 JOHN_SMITH_USER_ID := b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
@@ -112,9 +111,6 @@ build-local: ## Build Docker images for local development
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.local $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
-	@printf "\n➤ Building parser service image...\n\n"
-	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
-
 	@printf "\n"
 
 .PHONY: build-staging
@@ -159,9 +155,6 @@ build-staging: ## Build Docker images for staging deployment
 
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
-
-	@printf "\n➤ Building parser service image...\n\n"
-	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
 
 	@printf "\n"
 
@@ -210,9 +203,6 @@ build-production: ## Build the application
 
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
-
-	@printf "\n➤ Building parser service image...\n\n"
-	@docker build -f backend/apps/parser/Dockerfile $(call versioned_tag,$(PARSER_REPO)) -t $(PARSER_REPO):latest backend/apps/parser
 
 	@printf "\n"
 

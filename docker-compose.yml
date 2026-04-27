@@ -65,13 +65,6 @@ services:
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
-  parser-service:
-    image: ci/parser-service
-    networks:
-      - ci
-    restart: unless-stopped
-    profiles: [ "local", "staging", "production" ]
-
   summary-service:
     image: ci/summary-service
     extra_hosts:
