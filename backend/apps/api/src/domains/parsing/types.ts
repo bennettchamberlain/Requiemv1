@@ -5,7 +5,7 @@ export enum ParseStatus {
   SKIPPED = 'skipped',
 }
 
-export const CHUNKER_VERSION = '1.0.0';
+export const CHUNKER_VERSION = '1.2.0';
 
 /** Target chunk size in characters (~1000 tokens at ~4 chars/token) */
 export const CHUNK_TARGET_CHARS = 4000;
