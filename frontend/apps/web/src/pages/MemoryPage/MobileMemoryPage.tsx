@@ -6,6 +6,7 @@ import { Search, Filter, MapPin, List, Images, X, Share2 } from '@ci/shadcn/icon
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
@@ -21,6 +22,9 @@ export default function MobileMemoryPage() {
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
 
   const [activeTab, setActiveTab] = useState('list');
+  const activeChunkEntity = activeEntity?.__typename === 'FileChunkType' ? activeEntity : null;
+  const activeSheetEntity =
+    activeEntity != null && activeEntity.__typename !== 'FileChunkType' ? activeEntity : null;
 
   // Mobile-specific states
   const [showFilters, setShowFilters] = useState(false);
@@ -190,11 +194,13 @@ export default function MobileMemoryPage() {
           {activeTab === 'graph' && <GraphView variant="mobile" />}
         </>
       </PageContent>
-      {activeEntity && (
+      {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
-          <EntityDetails entity={activeEntity} />
+          <EntityDetails entity={activeSheetEntity} />
         </Sheet>
       )}
+
+      <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
     </>
   );
 }

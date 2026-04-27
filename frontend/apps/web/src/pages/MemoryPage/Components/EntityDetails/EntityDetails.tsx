@@ -5,7 +5,6 @@ import type { EntityItem } from '../../../MemoryPage/useEntityService';
 import { BrowserActivityDetails } from './BrowserActivityDetails';
 import { CommunicationDetails } from './CommunicationDetails';
 import { EventDetails } from './EventDetails';
-import { FileChunkDetails } from './FileChunkDetails';
 
 export interface Props {
   entity: EntityItem;
@@ -19,8 +18,6 @@ function getCategoryComponent({ entity }: Props) {
       return <CommunicationDetails entity={entity} />;
     case 'EventType':
       return <EventDetails entity={entity} />;
-    case 'FileChunkType':
-      return <FileChunkDetails entity={entity} />;
     default:
       return null;
   }

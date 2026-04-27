@@ -8,6 +8,7 @@ import { MapPin, List, Images, Share2 } from '@ci/shadcn/icons';
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
 import { SearchBox } from '@/components/SearchBox';
 import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
@@ -55,6 +56,9 @@ export default function DesktopMemoryPage() {
   const [searchId, setSearchId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState('map');
+  const activeChunkEntity = activeEntity?.__typename === 'FileChunkType' ? activeEntity : null;
+  const activeSheetEntity =
+    activeEntity != null && activeEntity.__typename !== 'FileChunkType' ? activeEntity : null;
 
   const { data: savedSearchData } = useQuery(GET_SAVED_SEARCH, {
     variables: { id: GlobalUID.encode('saved-search', searchId!) },
@@ -230,11 +234,13 @@ export default function DesktopMemoryPage() {
         {activeTab === 'graph' && <GraphView variant="desktop" />}
       </PageContent>
 
-      {activeEntity && (
+      {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
-          <EntityDetails entity={activeEntity} />
+          <EntityDetails entity={activeSheetEntity} />
         </Sheet>
       )}
+
+      <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
     </>
   );
 }
