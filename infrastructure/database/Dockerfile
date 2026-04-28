@@ -58,6 +58,8 @@ RUN mkdir -p /var/lib/apt/lists/partial && \
 # Copy compiled extensions from builder
 COPY --from=builder /tmp/install/ /
 
+COPY LICENSE /LICENSE
+
 # Install secrets-aware entrypoint wrapper
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 

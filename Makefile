@@ -25,6 +25,19 @@ export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
 PROJECT_NAME := $(shell basename "$(CURDIR)" | tr '[:upper:]' '[:lower:]')
 
+# Subdirectory build contexts that need a copy of LICENSE
+LICENSE_DIRS := \
+	infrastructure/database \
+	infrastructure/object-store \
+	infrastructure/orchestrator \
+	infrastructure/setup-database \
+	infrastructure/setup-orchestrator \
+	infrastructure/setup-secrets \
+	backend/apps/stt \
+	backend/apps/summary \
+	backend/apps/tts \
+	backend/apps/hbpe
+
 # Helper: expands to "-t repo:tag" only when TAG is non-empty
 versioned_tag = $(if $(TAG),-t $(1):$(TAG))
 
@@ -52,6 +65,18 @@ help: ## List make commands with their descriptions
 	@printf "\033[33mCommands:\033[0m\n"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 	@printf "\n"
+
+.PHONY: distribute-license
+distribute-license:
+	@for dir in $(LICENSE_DIRS); do \
+		cp LICENSE "$$dir/LICENSE"; \
+	done
+
+.PHONY: clean-license
+clean-license:
+	@for dir in $(LICENSE_DIRS); do \
+		rm -f "$$dir/LICENSE"; \
+	done
 
 .PHONY: reset
 reset: ## Reset the local development environment
@@ -81,7 +106,7 @@ reset: ## Reset the local development environment
 	@printf "\n$(GREEN)✓$(RESET) Reset complete.\n\n"
 
 .PHONY: build-local
-build-local: ## Build Docker images for local development
+build-local: distribute-license ## Build Docker images for local development
 	@printf "🧱 Building local images...\n\n"
 
 	@printf "➤ Building database setup image...\n\n"
@@ -111,10 +136,12 @@ build-local: ## Build Docker images for local development
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.local $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
+	@$(MAKE) clean-license
+
 	@printf "\n"
 
 .PHONY: build-staging
-build-staging: ## Build Docker images for staging deployment
+build-staging: distribute-license ## Build Docker images for staging deployment
 	@printf "🧱 Building staging images...\n\n"
 
 	@printf "➤ Compiling API...\n\n"
@@ -156,10 +183,12 @@ build-staging: ## Build Docker images for staging deployment
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
 
+	@$(MAKE) clean-license
+
 	@printf "\n"
 
 .PHONY: build-production
-build-production: ## Build the application
+build-production: distribute-license ## Build the application
 	@printf "🧱 Building production images...\n\n"
 
 	@printf "➤ Compiling API...\n\n"
@@ -203,6 +232,8 @@ build-production: ## Build the application
 
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
+
+	@$(MAKE) clean-license
 
 	@printf "\n"
 
@@ -389,6 +420,18 @@ production: health init build-production stop ## Run the production deployment
 	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production up -d --remove-orphans
 
 	@printf "\n"
+
+.PHONY: publish
+publish: ## Publish CI-Server images and metadata to the CI-Portal store
+	@printf "📦 Publishing to CI-Portal registry...\n\n"
+
+	@scripts/publish/publish.sh
+
+	@printf "\n"
+
+.PHONY: publish-quiet
+publish-quiet: ## Publish to CI-Portal store (quiet mode)
+	@scripts/publish/publish.sh -q
 
 .PHONY: seed
 seed: ## Seed database with John Smith user and demo data

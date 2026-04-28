@@ -36,8 +36,6 @@ services:
     image: ci/gateway
     ports:
       - 8642:8642
-    volumes:
-      - ./infrastructure/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - ci
     depends_on:
