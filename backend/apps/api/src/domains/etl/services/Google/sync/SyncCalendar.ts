@@ -28,7 +28,7 @@ export async function syncCalendar({
       });
 
       const params = new URLSearchParams({
-        maxResults: '10',
+        maxResults: '200',
         showDeleted: 'true',
         singleEvents: 'true',
         timeMax: connection.createdAt.toISOString(),
@@ -55,11 +55,7 @@ export async function syncCalendar({
         data: {
           items: events,
         },
-        nextCursor: nextPageToken
-          ? { pageToken: nextPageToken }
-          : nextSyncToken
-            ? { syncToken: nextSyncToken }
-            : {},
+        nextCursor: nextPageToken ? { pageToken: nextPageToken } : {},
       };
     } else {
       client.logger.log('Performing incremental Calendar sync', {
