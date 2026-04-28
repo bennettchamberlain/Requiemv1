@@ -188,17 +188,13 @@ export class ConnectionsController {
 
     const clientCredentials = await client.getClientCredentials(connection);
 
-    console.log('clientCredentials', connection, clientCredentials);
     //If the user has saved OAuth credentials for this provider, then just return the auth url generated for their OAuth app.
     //Otherwise refresh through the proxy service on CI Portal
     if (clientCredentials) {
-      console.log('getting auth url from local oauth credentials');
-
       return {
         url: await client.getAuthorizationUrl(connection),
       };
     } else {
-      console.log('getting auth url from cloud credentials');
       const provider = this.cloudOAuthProxyService.getProviderNameForId(connection.providerId);
 
       if (!provider) {
