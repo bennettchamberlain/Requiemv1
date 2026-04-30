@@ -324,41 +324,6 @@ export function ConnectionPage() {
     }
   };
 
-  const handleSyncConnection = async () => {
-    if (!confirm('Are you sure you want to sync data for this connection?')) {
-      return;
-    }
-
-    try {
-      if (!authToken) {
-        throw new Error('Authentication token not found');
-      }
-
-      const response = await fetch(`/api/connections/${GlobalUID.parse('connection', connection!.id)}/sync`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Error syncing connection: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      console.log('Successfully synced connection:', result);
-
-      toast.success(
-        `Data synced successfully for connection: ${result.connection?.name || connection!.name}`,
-      );
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error('Error syncing connection:', errorMessage, err);
-      toast.error(errorMessage);
-    }
-  };
-
   const handleReauthConnection = async () => {
     try {
       const response = await fetch(
@@ -421,10 +386,6 @@ export function ConnectionPage() {
             <Button variant="outline" size="sm" onClick={connectionEdit}>
               <Settings className="h-4 w-4 mr-2" />
               Edit
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleSyncConnection}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Sync
             </Button>
             <Button variant="destructive" size="sm" onClick={handleDeleteConnection} disabled={deleteLoading}>
               {deleteLoading ? (

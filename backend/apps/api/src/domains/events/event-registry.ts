@@ -17,7 +17,6 @@ interface EventPayload {
 export const enum Events {
   CHAT_SUMMARIZATION = 'chat.summarization',
   INFER_QUESTION_ANSWER = 'infer.question.answer',
-  SYNC_CONNECTION = 'sync.connection',
   PROMOTE_CONTACTS = 'PROMOTE_CONTACTS',
   PROMOTE_DRIVE_DATA = 'PROMOTE_DRIVE_DATA',
   PROMOTE_YOUTUBE_DATA = 'PROMOTE_YOUTUBE_DATA',
@@ -55,11 +54,6 @@ interface ChatSummarizationPayload extends EventPayload {
 interface InferQuestionAnswerPayload extends EventPayload {
   ownerId: string | null;
   questionId: string;
-}
-
-interface SyncConnectionPayload extends EventPayload {
-  connectionId: string;
-  userId: string;
 }
 
 interface PromoteGmailMessagesPayload extends EventPayload {
@@ -283,7 +277,6 @@ interface PromoteFacebookLikesPayload extends EventPayload {
 export type EventPayloads = {
   [Events.CHAT_SUMMARIZATION]: ChatSummarizationPayload;
   [Events.INFER_QUESTION_ANSWER]: InferQuestionAnswerPayload;
-  [Events.SYNC_CONNECTION]: SyncConnectionPayload;
   [Events.PROMOTE_GMAIL_MESSAGES]: PromoteGmailMessagesPayload;
   [Events.PROMOTE_CALENDAR_EVENTS]: PromoteCalendarEventsPayload;
   [Events.PROMOTE_YOUTUBE_DATA]: PromoteYouTubeDataPayload;
