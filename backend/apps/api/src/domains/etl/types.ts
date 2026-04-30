@@ -66,6 +66,7 @@ export interface SearchConnectionSyncJobDto {
   type?: string;
   properties?: Record<string, unknown> | null;
   lastTransformed?: Date | null | undefined;
+  orderBy?: string;
 }
 
 export const createConnectionSyncJobSchema = z.object({

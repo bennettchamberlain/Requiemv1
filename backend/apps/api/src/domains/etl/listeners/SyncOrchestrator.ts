@@ -220,6 +220,7 @@ export class SyncOrchestrator {
       { userId: SYSTEM_USER },
       {
         status: 'pending',
+        orderBy: 'updated_at:asc',
       },
     );
 

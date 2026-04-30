@@ -81,10 +81,17 @@ export class ConnectionSyncJobService {
     return ids.map((id) => map.get(id) ?? null);
   }
 
-  async findByConnectionId(context: ServiceContext, connectionId: string): Promise<ConnectionSyncJob[]> {
+  async findByConnectionId(
+    context: ServiceContext,
+    connectionId: string,
+    endpointName?: string,
+    type?: string,
+  ): Promise<ConnectionSyncJob[]> {
     const result = await this.connectionSyncJobRepository.find({
       where: {
         connectionId,
+        ...(endpointName != null && { endpointName }),
+        ...(type != null && { type }),
         ...(context.userId !== SYSTEM_USER && {
           userId: context.userId,
         }),
@@ -268,7 +275,14 @@ export class ConnectionSyncJobService {
       });
     }
 
-    executable = executable.orderBy('updated_at', 'DESC');
+    if (query.orderBy) {
+      const orderSplit = query.orderBy.split(':');
+      const orderField = orderSplit[0];
+      const orderDirection = orderSplit[1] === 'asc' ? 'ASC' : 'DESC';
+      executable = executable.orderBy(orderField, orderDirection);
+    } else {
+      executable = executable.orderBy('updated_at', 'DESC');
+    }
 
     return executable.getMany();
   }
