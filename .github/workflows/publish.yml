@@ -92,9 +92,6 @@ jobs:
             sudo apt-get install -y jq
           fi
 
-      - name: Build production images
-        run: make build-production
-
       - name: Run publish script
-        run: ./scripts/publish/publish.sh
+        run: make publish
 
