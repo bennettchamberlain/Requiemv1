@@ -396,15 +396,16 @@ main() {
       local REPO="${IMAGE_REMOTE[$i]}"
       local REMOTE="${REGISTRY}/${REPO}:${VERSION}"
 
-      # Check local image exists
-      if ! docker image inspect "${LOCAL_IMAGE}:${VERSION}" > /dev/null 2>&1; then
-        log "  ⚠ ${LOCAL_IMAGE}:${VERSION} not found locally — skipping"
+      # Check local image exists. `make production` builds images tagged
+      # :latest, which we then re-tag as ${REMOTE} (i.e. :${VERSION}) below.
+      if ! docker image inspect "${LOCAL_IMAGE}:latest" > /dev/null 2>&1; then
+        log "  ⚠ ${LOCAL_IMAGE}:latest not found locally — skipping"
         continue
       fi
 
-      logn "  ${LOCAL_IMAGE}:${VERSION} → ${REMOTE} … "
+      logn "  ${LOCAL_IMAGE}:latest → ${REMOTE} … "
 
-      docker image tag "${LOCAL_IMAGE}:${VERSION}" "${REMOTE}"
+      docker image tag "${LOCAL_IMAGE}:latest" "${REMOTE}"
       if PUSH_OUTPUT=$(docker image push "${REMOTE}" 2>&1); then
         log "✓"
         PUSH_COUNT=$((PUSH_COUNT + 1))
