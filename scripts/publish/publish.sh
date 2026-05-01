@@ -56,14 +56,6 @@ if [[ -z "${VERSION:-}" ]]; then
   VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || echo "latest")
 fi
 
-# Local image tag: read from the root package.json so we publish whatever
-# version was just built locally (the build pipeline tags images using the
-# same package.json version).
-LOCAL_TAG=$(jq -r '.version' "${REPO_ROOT}/package.json" 2>/dev/null || true)
-if [[ -z "$LOCAL_TAG" || "$LOCAL_TAG" == "null" ]]; then
-  echo "  ✗ Unable to read .version from ${REPO_ROOT}/package.json" >&2
-  exit 1
-fi
 
 QUIET=false
 for arg in "$@"; do
@@ -405,14 +397,14 @@ main() {
       local REMOTE="${REGISTRY}/${REPO}:${VERSION}"
 
       # Check local image exists
-      if ! docker image inspect "${LOCAL_IMAGE}:${LOCAL_TAG}" > /dev/null 2>&1; then
-        log "  ⚠ ${LOCAL_IMAGE}:${LOCAL_TAG} not found locally — skipping"
+      if ! docker image inspect "${LOCAL_IMAGE}:${VERSION}" > /dev/null 2>&1; then
+        log "  ⚠ ${LOCAL_IMAGE}:${VERSION} not found locally — skipping"
         continue
       fi
 
-      logn "  ${LOCAL_IMAGE}:${LOCAL_TAG} → ${REMOTE} … "
+      logn "  ${LOCAL_IMAGE}:${VERSION} → ${REMOTE} … "
 
-      docker image tag "${LOCAL_IMAGE}:${LOCAL_TAG}" "${REMOTE}"
+      docker image tag "${LOCAL_IMAGE}:${VERSION}" "${REMOTE}"
       if PUSH_OUTPUT=$(docker image push "${REMOTE}" 2>&1); then
         log "✓"
         PUSH_COUNT=$((PUSH_COUNT + 1))
