@@ -1,0 +1,77 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to publish to
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+# Only one publish run at a time per branch — newer pushes wait for older
+# ones to finish so we never race on registry tags or store ingest.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to CI-Portal
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      REGISTRY: ${{ vars.REGISTRY || 'ghcr.io/companionintelligence' }}
+      # Push to main always publishes to the dev store. workflow_dispatch lets
+      # operators target dev / staging / production manually.
+      PORTAL_API: >-
+        ${{
+          (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') && vars.PRODUCTION_PORTAL_API
+          || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging') && vars.STAGING_PORTAL_API
+          || vars.DEV_PORTAL_API
+        }}
+      STORE_ADMIN_API_KEY: >-
+        ${{
+          (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') && secrets.PRODUCTION_STORE_ADMIN_API_KEY
+          || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging') && secrets.STAGING_STORE_ADMIN_API_KEY
+          || secrets.DEV_STORE_ADMIN_API_KEY
+        }}
+      # Staging and production deploys promote images that were already pushed
+      # by the dev publish run, so we skip the docker login + push step there.
+      SKIP_IMAGE_PUSH: >-
+        ${{
+          (github.event_name == 'workflow_dispatch'
+            && (inputs.environment == 'staging' || inputs.environment == 'production'))
+          && 'true' || 'false'
+        }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          fi
+
+      - name: Run publish script
+        run: sh ./scripts/publish/publish.sh
+
