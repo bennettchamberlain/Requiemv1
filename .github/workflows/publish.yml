@@ -74,5 +74,5 @@ jobs:
           fi
 
       - name: Run publish script
-        run: sh ./scripts/publish/publish.sh
+        run: ./scripts/publish/publish.sh
 
