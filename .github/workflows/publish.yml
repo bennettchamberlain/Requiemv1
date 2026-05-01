@@ -2,22 +2,10 @@ name: Publish
 
 on:
   push:
-    branches:
-      - main
-      - ci-1210
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: Environment to publish to
-        required: true
-        type: choice
-        options:
-          - dev
-          - staging
-          - production
+    tags:
+      - '*'
 
-# Only one publish run at a time per branch — newer pushes wait for older
-# ones to finish so we never race on registry tags or store ingest.
+# Only one publish run at a time per tag.
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
@@ -32,28 +20,8 @@ jobs:
 
     env:
       REGISTRY: ${{ vars.REGISTRY || 'ghcr.io/companionintelligence' }}
-      # Push to main always publishes to the dev store. workflow_dispatch lets
-      # operators target dev / staging / production manually.
-      PORTAL_API: >-
-        ${{
-          (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') && vars.PRODUCTION_PORTAL_API
-          || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging') && vars.STAGING_PORTAL_API
-          || vars.DEV_PORTAL_API
-        }}
-      STORE_ADMIN_API_KEY: >-
-        ${{
-          (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') && secrets.PRODUCTION_STORE_ADMIN_API_KEY
-          || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging') && secrets.STAGING_STORE_ADMIN_API_KEY
-          || secrets.DEV_STORE_ADMIN_API_KEY
-        }}
-      # Staging and production deploys promote images that were already pushed
-      # by the dev publish run, so we skip the docker login + push step there.
-      SKIP_IMAGE_PUSH: >-
-        ${{
-          (github.event_name == 'workflow_dispatch'
-            && (inputs.environment == 'staging' || inputs.environment == 'production'))
-          && 'true' || 'false'
-        }}
+      PORTAL_API: ${{ vars.DEV_PORTAL_API }}
+      STORE_ADMIN_API_KEY: ${{ secrets.DEV_STORE_ADMIN_API_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
@@ -62,6 +30,15 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Resolve VERSION from tag
+        run: |
+          # github.ref looks like 'refs/tags/v1.2.3' or 'refs/tags/1.2.3'.
+          # Strip the refs/tags/ prefix and any leading 'v'.
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "Resolved VERSION=${version} from tag ${tag}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
