@@ -295,39 +295,6 @@ graphql: ## Generate GraphQL schema and frontend types
 
 	@printf "\nGraphQL successfully generated.\n\n"
 
-.PHONY: health-build
-health-build: ## Check only build prerequisites (node + yarn versions)
-	@printf "🩺 Checking health of build prerequisites...\n\n"
-
-	@NODEJS=$$(which node 2>/dev/null); \
-	if [ -z "$$NODEJS" ]; then \
-		printf "$(RED)✗$(RESET) You do not have 'node' installed or it is not in your path. Please install NodeJS v$(shell cat .nvmrc 2>/dev/null || echo '[unknown]') first.\n\n"; \
-		exit 1; \
-	else \
-		printf "$(GREEN)✓$(RESET) NodeJS found at $$NODEJS\n\n"; \
-	fi
-
-	@required_version=$$(cat .nvmrc); \
-	current_version=$$(node -v | cut -c2-); \
-	if [ "$$current_version" != "$$required_version" ]; then \
-		printf "$(RED)✗$(RESET) Node version mismatch. Expected $$required_version, but got $$current_version.\n\n"; \
-		exit 1; \
-	else \
-		printf "$(GREEN)✓$(RESET) Node version matches ($$current_version)\n\n"; \
-	fi
-
-	@required_yarn=$$(grep '"packageManager"' package.json | sed 's/.*yarn@\([^"]*\)".*/\1/'); \
-	current_yarn=$$(yarn --version 2>/dev/null); \
-	if [ -z "$$current_yarn" ]; then \
-		printf "$(RED)✗$(RESET) You do not have 'yarn' installed or it is not in your PATH.\n\n"; \
-		exit 1; \
-	elif [ "$$current_yarn" != "$$required_yarn" ]; then \
-		printf "$(RED)✗$(RESET) Yarn version mismatch. Expected $$required_yarn, but got $$current_yarn.\n\n"; \
-		exit 1; \
-	else \
-		printf "$(GREEN)✓$(RESET) Yarn version matches ($$current_yarn)\n\n"; \
-	fi
-
 .PHONY: health
 health: ## Check the repository for prerequisites
 	@printf "🩺 Checking health of prerequisites...\n\n"
@@ -447,7 +414,7 @@ migrate: ## Run database migrations
 	@printf "\nMigrations successfully run.\n\n"
 
 .PHONY: production
-production: health-build init build-production stop ## Run the production deployment
+production: health init build-production stop ## Run the production deployment
 	@printf "🚀 Starting production services...\n\n"
 
 	@docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production up -d --remove-orphans
