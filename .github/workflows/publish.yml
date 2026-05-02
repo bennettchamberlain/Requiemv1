@@ -2,8 +2,6 @@ name: Publish
 
 on:
   push:
-    branches:
-      - ci-1210
     tags:
       - '*'
 
@@ -58,17 +56,11 @@ jobs:
 
       - name: Resolve VERSION from tag
         run: |
-          if [[ "$GITHUB_REF" == refs/heads/ci-1210 ]]; then
-            # Branch-triggered test runs use a fixed test version.
-            version="0.0.0-test1"
-            echo "Resolved VERSION=${version} from branch ${GITHUB_REF#refs/heads/}"
-          else
-            # github.ref looks like 'refs/tags/v1.2.3' or 'refs/tags/1.2.3'.
-            # Strip the refs/tags/ prefix and any leading 'v'.
-            tag="${GITHUB_REF#refs/tags/}"
-            version="${tag#v}"
-            echo "Resolved VERSION=${version} from tag ${tag}"
-          fi
+          # github.ref looks like 'refs/tags/v1.2.3' or 'refs/tags/1.2.3'.
+          # Strip the refs/tags/ prefix and any leading 'v'.
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          echo "Resolved VERSION=${version} from tag ${tag}"
           echo "VERSION=${version}" >> "$GITHUB_ENV"
 
       - name: Set up Node.js
