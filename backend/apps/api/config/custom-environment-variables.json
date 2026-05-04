@@ -35,12 +35,6 @@
     "ollama": {
       "host": "OLLAMA_HOST"
     },
-    "stt": {
-      "host": "STT_HOST"
-    },
-    "tts": {
-      "host": "TTS_HOST"
-    },
     "hbpe": {
       "host": "HBPE_HOST"
     }

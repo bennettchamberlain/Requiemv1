@@ -55,16 +55,6 @@ services:
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
-  stt-service:
-    image: ci/stt-service
-    volumes:
-      - stt-service-models:/app/models
-      - stt-service-cache:/root/.cache
-    networks:
-      - ci
-    restart: unless-stopped
-    profiles: [ "local", "staging", "production" ]
-
   summary-service:
     image: ci/summary-service
     extra_hosts:
@@ -76,16 +66,6 @@ services:
         condition: service_healthy
       orchestrator:
         condition: service_started
-    restart: unless-stopped
-    profiles: [ "local", "staging", "production" ]
-
-  tts-service:
-    image: ci/tts-service
-    volumes:
-      - tts-service-models:/app/models
-      - tts-service-cache:/root/.cache
-    networks:
-      - ci
     restart: unless-stopped
     profiles: [ "local", "staging", "production" ]
 
@@ -161,10 +141,6 @@ volumes:
   db-data:
   object-data:
   secrets:
-  stt-service-models:
-  stt-service-cache:
-  tts-service-models:
-  tts-service-cache:
   hbpe-models:
   hbpe-corpus:
 

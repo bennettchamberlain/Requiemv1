@@ -93,12 +93,6 @@ export const ConfigSchema = z.object({
     ollama: z.object({
       host: z.string(),
     }),
-    stt: z.object({
-      host: z.string(),
-    }),
-    tts: z.object({
-      host: z.string(),
-    }),
     hbpe: z.object({
       host: z.string(),
     }),

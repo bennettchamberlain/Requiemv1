@@ -71,9 +71,7 @@ IMAGE_LOCAL=(
   ci/gateway
   ci/object-store
   ci/orchestrator
-  ci/stt-service
   ci/summary-service
-  ci/tts-service
   ci/setup-database
   ci/setup-orchestrator
   ci/setup-secrets
@@ -85,9 +83,7 @@ IMAGE_REMOTE=(
   companion/gateway
   companion/object-store
   companion/orchestrator
-  companion/stt-service
   companion/summary-service
-  companion/tts-service
   companion/setup-database
   companion/setup-orchestrator
   companion/setup-secrets
@@ -191,15 +187,6 @@ generate_compose() {
       }
     },
     {
-      "name": "stt-service",
-      "image": "${reg}/companion/stt-service:${ver}",
-      "restart": "unless-stopped",
-      "volumes": [
-        { "hostPath": "\${APP_DATA_DIR}/data/stt-models", "containerPath": "/app/models" },
-        { "hostPath": "\${APP_DATA_DIR}/data/stt-cache", "containerPath": "/root/.cache" }
-      ]
-    },
-    {
       "name": "summary-service",
       "image": "${reg}/companion/summary-service:${ver}",
       "restart": "unless-stopped",
@@ -211,15 +198,6 @@ generate_compose() {
         "database": { "condition": "service_healthy" },
         "orchestrator": { "condition": "service_started" }
       }
-    },
-    {
-      "name": "tts-service",
-      "image": "${reg}/companion/tts-service:${ver}",
-      "restart": "unless-stopped",
-      "volumes": [
-        { "hostPath": "\${APP_DATA_DIR}/data/tts-models", "containerPath": "/app/models" },
-        { "hostPath": "\${APP_DATA_DIR}/data/tts-cache", "containerPath": "/root/.cache" }
-      ]
     },
     {
       "name": "setup-database",

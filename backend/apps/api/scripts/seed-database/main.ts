@@ -9,7 +9,6 @@ import { EventService, LocalEventService } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { GraphQLModule } from '@ci/domains/graphql';
 import { LLMModule } from '@ci/domains/llm';
-import { SpeechModule } from '@ci/domains/speech';
 import { ToolsModule } from '@ci/domains/tools';
 
 import { App } from '../../src/application';
@@ -79,8 +78,6 @@ const logger = new LoggerService();
     .overrideModule(GraphQLModule)
     .useModule(class {})
     .overrideModule(LLMModule)
-    .useModule(class {})
-    .overrideModule(SpeechModule)
     .useModule(class {})
     .overrideModule(ToolsModule)
     .useModule(class {})
