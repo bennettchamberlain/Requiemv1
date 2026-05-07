@@ -12,7 +12,7 @@ import {
   Palette,
   ChartPie,
 } from '@ci/shadcn/icons';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 import { useTheme, ColorPicker } from '@/components/ThemePicker';
@@ -22,6 +22,7 @@ export function NavUser() {
   const [, { logout }] = useAuth();
   const { user } = useCurrentUser();
   const { themeState, setTheme } = useTheme();
+  const location = useLocation();
 
   const { isFeatureEnabled } = useFeatures();
 
@@ -92,7 +93,7 @@ export function NavUser() {
 
         <DropdownMenu.Group>
           <DropdownMenu.Item asChild>
-            <Link to="/settings">
+            <Link to="/settings/appearance" state={{ backgroundLocation: location }}>
               <Settings2 />
               Settings
             </Link>
