@@ -26,8 +26,6 @@ import { ChatLoader } from './ChatLoader';
 import { ChatMessage } from './ChatMessage';
 import { useConditionalAutoscroll } from './useConditionalAutoscroll';
 import { Channel, type Decoded, createStreamProcessor } from './utils';
-import { VoiceMode } from './VoiceMode/VoiceMode';
-import { useVoiceModeContext } from './VoiceModeProvider';
 
 type ChatInputProps = ComponentProps<typeof ChatInput>;
 
@@ -45,9 +43,6 @@ interface Props extends ChatInputProps {
   emptyState?: ReactNode;
   children?: ReactNode;
   onResponseFinished?: (text: string) => void;
-  selectedVoice?: string;
-  onVoiceChange?: (voice: string) => void;
-  onStopAudio?: () => void;
 }
 
 const textDecoder = new TextDecoder();
@@ -64,16 +59,8 @@ export function Chat({
   onSubmit,
   children,
   onResponseFinished,
-  selectedVoice: propSelectedVoice,
-  onVoiceChange: propOnVoiceChange,
-  onStopAudio,
   ...chatInputProps
 }: Props) {
-  // Voice state management
-  const [internalSelectedVoice, setInternalSelectedVoice] = useState('ryan');
-  const selectedVoice = propSelectedVoice ?? internalSelectedVoice;
-  const onVoiceChange = propOnVoiceChange ?? setInternalSelectedVoice;
-  const { isVoiceModeActive, toggleVoiceMode } = useVoiceModeContext();
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
   const lastProcessedResponseRef = useRef<string>('');
 
@@ -280,16 +267,6 @@ export function Chat({
     [onSubmit, flushStream],
   );
 
-  // Function to submit voice messages through the proper chat flow
-  const submitVoiceMessage = useCallback(
-    async (message: string) => {
-      const formData: FormData = { message };
-
-      return await handleSubmit(formData);
-    },
-    [handleSubmit],
-  );
-
   const handleFinished = useCallback(() => {
     const lastChannel = lastChannelRef.current;
 
@@ -405,22 +382,11 @@ export function Chat({
       {hasStartedReceiving === false && <ChatLoader className={loaderMargin} />}
 
       <div className={cn('w-full', contentPadding)}>
-        <VoiceMode
-          isActive={isVoiceModeActive}
-          onToggle={toggleVoiceMode}
-          onSubmitMessage={submitVoiceMessage}
-          selectedVoice={selectedVoice}
-          onVoiceChange={onVoiceChange}
-          onStopAudio={onStopAudio}
-        />
-
         <ChatInput
           ref={autoFocusRef}
           loading={loading}
           streaming={streaming}
           onSubmit={handleSubmit}
-          onVoiceModeToggle={toggleVoiceMode}
-          isVoiceModeActive={isVoiceModeActive}
           {...chatInputProps}
         />
       </div>
