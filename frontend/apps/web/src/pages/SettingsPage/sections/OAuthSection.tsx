@@ -15,7 +15,7 @@ export interface ProviderKey {
 }
 
 const GET_PROVIDERS = gql(`
-  query GetProvidersOAuth {
+  query GetProviders {
     providers {
       edges {
         cursor
@@ -36,7 +36,7 @@ const GET_PROVIDERS = gql(`
 `);
 
 const CREATE_PROVIDER_KEY = gql(`
-  mutation CreateProviderKeyOAuth($input: CreateProviderKeyInput!) {
+  mutation CreateProviderKey($input: CreateProviderKeyInput!) {
     createProviderKey(input: $input) {
       id
       providerId
@@ -48,7 +48,7 @@ const CREATE_PROVIDER_KEY = gql(`
 `);
 
 const UPDATE_PROVIDER_KEY = gql(`
-  mutation UpdateProviderKeyOAuth($id: ID!, $input: UpdateProviderKeyInput!) {
+  mutation UpdateProviderKey($id: ID!, $input: UpdateProviderKeyInput!) {
     updateProviderKey(id: $id, input: $input) {
       id
       clientId
@@ -58,7 +58,7 @@ const UPDATE_PROVIDER_KEY = gql(`
 `);
 
 const DELETE_PROVIDER_KEY = gql(`
-  mutation DeleteProviderKeyOAuth($id: ID!) {
+  mutation DeleteProviderKey($id: ID!) {
     deleteProviderKey(id: $id)
   }
 `);
