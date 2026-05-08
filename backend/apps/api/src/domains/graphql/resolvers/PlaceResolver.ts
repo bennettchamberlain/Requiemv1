@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { PlaceService } from '@ci/domains/memory';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -16,7 +16,7 @@ import { PlaceType } from '../types/PlaceType';
 import { UpdatePlaceInput } from '../types/UpdatePlaceInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => PlaceType)
 export class PlaceResolver {
   constructor(

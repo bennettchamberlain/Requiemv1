@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { ID, Args, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { NoteService } from '@ci/domains/notes';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -20,7 +20,7 @@ import { UpdateNoteInput } from '../types/UpdateNoteInput';
 import { UpdateNotePayload } from '../types/UpdateNotePayload';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => NoteType)
 export class NoteResolver {
   constructor(

@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Parent, Query, Mutation, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { CreateContentInput } from '@ci/domains/graphql/types/CreateContentInput';
 import { UpdateContentInput } from '@ci/domains/graphql/types/UpdateContentInput';
 import { ContentService } from '@ci/domains/memory';
@@ -18,7 +18,7 @@ import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ContentType)
 export class ContentResolver {
   constructor(

@@ -3,7 +3,7 @@ import { Args, Query, Resolver } from '@nestjs/graphql';
 import { type FindOptionsOrder } from 'typeorm';
 
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityEntity, BrowserActivityService } from '@ci/domains/browser-activity';
 import { ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
@@ -45,7 +45,7 @@ import { type SearchResult } from '../types/SearchResultType';
 import { ThreadType } from '../types/ThreadType';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver()
 export class SearchResolver {
   constructor(

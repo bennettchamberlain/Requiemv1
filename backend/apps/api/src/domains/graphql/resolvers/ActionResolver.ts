@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Parent, Query, ResolveField, Resolver, Args, ID, Mutation, Int } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ActionService } from '@ci/domains/intelligence';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -16,7 +16,7 @@ import { PaginationArgs } from '../types/PaginationArgs';
 import { ThreadType } from '../types/ThreadType';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ActionType)
 export class ActionResolver {
   constructor(

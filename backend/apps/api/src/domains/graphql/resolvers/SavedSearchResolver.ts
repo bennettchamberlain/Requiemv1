@@ -2,7 +2,7 @@ import { BadRequestException, UseGuards } from '@nestjs/common';
 import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { SavedSearchService } from '@ci/domains/files';
 import { UpdateSavedSearchPayload } from '@ci/domains/graphql/types/UpdateSavedSearchPayload';
 import type { IndexableEntity } from '@ci/domains/search-next';
@@ -20,7 +20,7 @@ import { SavedSearchType } from '../types/SavedSearchType';
 import { UpdateSavedSearchInput } from '../types/UpdateSavedSearchInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => SavedSearchType)
 export class SavedSearchResolver {
   constructor(private readonly savedSearchService: SavedSearchService) {}

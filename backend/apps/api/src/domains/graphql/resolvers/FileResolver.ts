@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Query, ResolveField, Resolver, Args, ID, Parent } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { FileService } from '@ci/domains/files';
 
 import { FileItemsLoader } from '../loaders/FileItemsLoader';
@@ -19,7 +19,7 @@ import { ItemType } from '../types/ItemType';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => FileType)
 export class FileResolver {
   constructor(
