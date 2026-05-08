@@ -17,11 +17,14 @@ set -euo pipefail
 #
 # Environment:
 #   REGISTRY             Docker registry host          (default: portal.ci.localhost)
-#   PORTAL_API           Portal API base URL           (default: https://portal.ci.localhost)
+#   PORTAL_API           Portal API base URL           (default: https://portal.ci.localhost/api)
 #   STORE_ADMIN_API_KEY  Admin key for publish API     (required)
-#   REGISTRY_USERNAME    Registry login username         (required)
-#   REGISTRY_PASSWORD    Registry login password         (required)
-#   VERSION              Override version               (default: git tag or "latest")
+#   REGISTRY_USERNAME    Registry login username       (required, unless GITHUB_TOKEN is set)
+#   REGISTRY_PASSWORD    Registry login password       (required, unless GITHUB_TOKEN is set)
+#   GITHUB_TOKEN         Token used as registry password fallback (e.g. inside GitHub Actions)
+#   GITHUB_ACTOR         Username paired with GITHUB_TOKEN          (default: github-actions)
+#   VERSION              Override version              (default: git tag or "latest")
+#   SKIP_IMAGE_PUSH      Skip Step 3 (docker login + image push)    (default: false)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -37,7 +40,7 @@ fi
 # ── Configuration ──────────────────────────────────────────────────────
 
 REGISTRY="${REGISTRY:-portal.ci.localhost}"
-PORTAL_API="${PORTAL_API:-https://portal.ci.localhost}"
+PORTAL_API="${PORTAL_API:-https://portal.ci.localhost/api}"
 ADMIN_KEY="${STORE_ADMIN_API_KEY:?STORE_ADMIN_API_KEY must be set}"
 SLUG="companion"
 
@@ -52,6 +55,7 @@ fi
 if [[ -z "${VERSION:-}" ]]; then
   VERSION=$(git -C "$REPO_ROOT" describe --tags --exact-match 2>/dev/null || echo "latest")
 fi
+
 
 QUIET=false
 for arg in "$@"; do
@@ -309,7 +313,7 @@ main() {
   log "=== Step 2: Upload bundle → pending ==="
 
   local RESULT HTTP_CODE BODY STATUS
-  RESULT=$(curl $CURL_OPTS -w '\n%{http_code}' -X POST "${PORTAL_API}/api/store/ingest" \
+  RESULT=$(curl $CURL_OPTS -w '\n%{http_code}' -X POST "${PORTAL_API}/store/ingest" \
     -H "x-admin-key: ${ADMIN_KEY}" \
     -H "Content-Type: application/octet-stream" \
     --data-binary "@${BUNDLE}")
@@ -333,58 +337,76 @@ main() {
   log ""
 
   # ── Step 3: Tag and push images ────────────────────────────────────
-  log "=== Step 3: Tag and push Docker images ==="
-
-  local REG_USER="${REGISTRY_USERNAME:?REGISTRY_USERNAME must be set}"
-  local REG_PASS="${REGISTRY_PASSWORD:?REGISTRY_PASSWORD must be set}"
-
-  logn "  Logging in to ${REGISTRY} … "
-  local LOGIN_OUTPUT
-  if LOGIN_OUTPUT=$(echo "${REG_PASS}" | docker login "${REGISTRY}" -u "${REG_USER}" --password-stdin 2>&1); then
-    log "✓"
+  if [[ "${SKIP_IMAGE_PUSH:-false}" == "true" ]]; then
+    log "=== Step 3: Tag and push Docker images (SKIPPED) ==="
+    log "  SKIP_IMAGE_PUSH=true — assuming images already exist in ${REGISTRY}"
+    log ""
   else
-    log "✗"
-    echo "$LOGIN_OUTPUT" >&2
-    fail "docker login to ${REGISTRY} failed"
-  fi
+    log "=== Step 3: Tag and push Docker images ==="
 
-  local PUSH_FAILED=0 PUSH_SKIPPED=0 PUSH_COUNT=0
-  for i in $(seq 0 $((${#IMAGE_LOCAL[@]} - 1))); do
-    local LOCAL_IMAGE="${IMAGE_LOCAL[$i]}"
-    local REPO="${IMAGE_REMOTE[$i]}"
-    local REMOTE="${REGISTRY}/${REPO}:${VERSION}"
-
-    # Check local image exists
-    if ! docker image inspect "${LOCAL_IMAGE}:latest" > /dev/null 2>&1; then
-      log "  ⚠ ${LOCAL_IMAGE}:latest not found locally — skipping"
-      continue
+    # Resolve registry credentials. Prefer explicit REGISTRY_USERNAME /
+    # REGISTRY_PASSWORD, but fall back to GITHUB_TOKEN (with GITHUB_ACTOR or a
+    # default username) so this script can run unmodified inside GitHub Actions.
+    local REG_USER REG_PASS
+    if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+      REG_USER="${REGISTRY_USERNAME}"
+      REG_PASS="${REGISTRY_PASSWORD}"
+    elif [[ -n "${GITHUB_TOKEN:-}" ]]; then
+      REG_USER="${GITHUB_ACTOR:-github-actions}"
+      REG_PASS="${GITHUB_TOKEN}"
+    else
+      fail "Registry credentials not set: provide REGISTRY_USERNAME and REGISTRY_PASSWORD, or GITHUB_TOKEN"
     fi
 
-    logn "  ${LOCAL_IMAGE} → ${REMOTE} … "
-
-    docker image tag "${LOCAL_IMAGE}:latest" "${REMOTE}"
-    if PUSH_OUTPUT=$(docker image push "${REMOTE}" 2>&1); then
+    logn "  Logging in to ${REGISTRY} as ${REG_USER} … "
+    local LOGIN_OUTPUT
+    if LOGIN_OUTPUT=$(echo "${REG_PASS}" | docker login "${REGISTRY}" -u "${REG_USER}" --password-stdin 2>&1); then
       log "✓"
-      PUSH_COUNT=$((PUSH_COUNT + 1))
     else
       log "✗"
-      echo "$PUSH_OUTPUT" >&2
-      PUSH_FAILED=$((PUSH_FAILED + 1))
+      echo "$LOGIN_OUTPUT" >&2
+      fail "docker login to ${REGISTRY} failed"
     fi
-  done
 
-  if [[ $PUSH_FAILED -gt 0 ]]; then
-    fail "${PUSH_FAILED} image(s) failed to push"
+    local PUSH_FAILED=0 PUSH_SKIPPED=0 PUSH_COUNT=0
+    for i in $(seq 0 $((${#IMAGE_LOCAL[@]} - 1))); do
+      local LOCAL_IMAGE="${IMAGE_LOCAL[$i]}"
+      local REPO="${IMAGE_REMOTE[$i]}"
+      local REMOTE="${REGISTRY}/${REPO}:${VERSION}"
+
+      # Check local image exists. `make production` builds images tagged
+      # :latest, which we then re-tag as ${REMOTE} (i.e. :${VERSION}) below.
+      if ! docker image inspect "${LOCAL_IMAGE}:latest" > /dev/null 2>&1; then
+        log "  ⚠ ${LOCAL_IMAGE}:latest not found locally — skipping"
+        continue
+      fi
+
+      logn "  ${LOCAL_IMAGE}:latest → ${REMOTE} … "
+
+      docker image tag "${LOCAL_IMAGE}:latest" "${REMOTE}"
+      if PUSH_OUTPUT=$(docker image push "${REMOTE}" 2>&1); then
+        log "✓"
+        PUSH_COUNT=$((PUSH_COUNT + 1))
+      else
+        log "✗"
+        echo "$PUSH_OUTPUT" >&2
+        PUSH_FAILED=$((PUSH_FAILED + 1))
+      fi
+    done
+
+    if [[ $PUSH_FAILED -gt 0 ]]; then
+      fail "${PUSH_FAILED} image(s) failed to push"
+    fi
+
+    log "  Pushed: ${PUSH_COUNT}, skipped: ${PUSH_SKIPPED}"
+    log ""
   fi
-
-  log "  Pushed: ${PUSH_COUNT}, skipped: ${PUSH_SKIPPED}"
-  log ""
 
   # ── Step 4: Publish (Phase 3) ──────────────────────────────────────
   log "=== Step 4: Publish → published ==="
 
   RESULT=$(curl $CURL_OPTS -w '\n%{http_code}' -X POST \
-    "${PORTAL_API}/api/store/publish/${SLUG}" \
+    "${PORTAL_API}/store/publish/${SLUG}" \
     -H "x-admin-key: ${ADMIN_KEY}")
 
   HTTP_CODE=$(echo "$RESULT" | tail -1)
@@ -408,7 +430,7 @@ main() {
   # ── Step 5: Verify store listing ───────────────────────────────────
   if ! $QUIET; then
     echo "=== Step 5: Verify store listing ==="
-    curl $CURL_OPTS "${PORTAL_API}/api/store/${SLUG}" | jq '.' 2>/dev/null \
+    curl $CURL_OPTS "${PORTAL_API}/store/${SLUG}" | jq '.' 2>/dev/null \
       || echo "  (listing endpoint returned non-JSON — but publish succeeded)"
     echo ""
     echo "✓ ${SLUG}@${VERSION} published to ${REGISTRY}"

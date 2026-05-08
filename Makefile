@@ -400,7 +400,7 @@ production: health init build-production stop ## Run the production deployment
 	@printf "\n"
 
 .PHONY: publish
-publish: ## Publish CI-Server images and metadata to the CI-Portal store
+publish: init build-production ## Publish CI-Server images and metadata to the CI-Portal store
 	@printf "📦 Publishing to CI-Portal registry...\n\n"
 
 	@scripts/publish/publish.sh
