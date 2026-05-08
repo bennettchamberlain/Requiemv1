@@ -6,7 +6,7 @@ import { type Request, type Response, type NextFunction } from 'express';
 import request from 'supertest';
 
 import { ContextService } from '@ci/common/context';
-import { IdFormatGuard, JwtAuthGuard } from '@ci/common/guards';
+import { IdFormatGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggingModule } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
@@ -45,7 +45,7 @@ describe('File routes', () => {
         },
       ],
     })
-      .overrideGuard(JwtAuthGuard)
+      .overrideGuard(JwtOrApiKeyAuthGuard)
       .useClass(MockJwtAuthGuard)
       .overrideProvider(FileService)
       .useValue({
