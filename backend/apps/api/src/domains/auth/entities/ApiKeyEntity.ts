@@ -42,6 +42,19 @@ export class ApiKeyEntity {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at!: Date;
+
+  static toEgressType(entity: ApiKeyEntity): ApiKey {
+    return {
+      id: entity.id,
+      name: entity.name,
+      prefix: entity.prefix,
+      scopes: entity.scopes,
+      expires_at: entity.expires_at,
+      last_used_at: entity.last_used_at,
+      created_at: entity.created_at,
+      updated_at: entity.updated_at,
+    };
+  }
 }
 
 export type ApiKey = Readonly<Omit<ApiKeyEntity, 'user' | 'hashed_key'>>;
