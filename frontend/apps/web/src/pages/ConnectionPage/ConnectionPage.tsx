@@ -16,7 +16,7 @@ import {
   formDataResolver,
   formDataSchema as s,
 } from '@ci/shadcn';
-import { AlertCircle, RefreshCw, Settings, Trash2 } from '@ci/shadcn/icons';
+import { AlertCircle, Ban, CheckCircle2, Clock, RefreshCw, Settings, Trash2 } from '@ci/shadcn/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -31,6 +31,8 @@ export interface Provider {
   readonly endpoints: {
     name: string;
     description: string;
+    iterationType?: string[] | null;
+    TTL?: number | null;
   }[];
 }
 
@@ -45,14 +47,6 @@ export interface Connection {
   readonly activeEndpoints?: string[];
   readonly needsReauth: boolean;
   lastSyncedAt?: string;
-}
-
-interface EndpointStatus {
-  [endpointName: string]: {
-    lastSuccess?: Date;
-    lastFailure?: Date;
-    error?: Record<string, unknown>;
-  };
 }
 
 export const EditConnectFormSchema = s.object({
@@ -80,6 +74,8 @@ const GET_CONNECTION = gql(`
         endpoints {
           name
           description
+          iterationType
+          TTL
         }
       }
     }
@@ -107,6 +103,8 @@ const UPDATE_CONNECTION = gql(`
               endpoints {
                 name
                 description
+                iterationType
+                TTL
               }
           }
       }
@@ -124,8 +122,8 @@ const DELETE_CONNECTION = gql(`
 `);
 
 const GET_CONNECTION_SYNC_JOBS = gql(`
-  query GetConnectionSyncJobs($connectionId: ID!) {
-    connectionSyncJobs(connectionId: $connectionId) {
+  query GetConnectionSyncJobs($connectionId: ID!, $endpointName: String, $type: String, $first: Int) {
+    connectionSyncJobs(connectionId: $connectionId, endpointName: $endpointName, type: $type, first: $first) {
       edges {
         cursor
         node {
@@ -153,6 +151,132 @@ const GET_CONNECTION_SYNC_JOBS = gql(`
   }
 `);
 
+type StatusJob = {
+  endpointName: string;
+  status: string;
+  type?: string | null;
+  nextCursor?: unknown;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  error?: { error?: string } | null;
+};
+
+function computeEndpointStatus(
+  jobs: StatusJob[],
+  endpoint: { name: string; TTL?: number | null },
+  jobType: 'historical' | 'incremental' | null,
+) {
+  const endpointJobs = jobs
+    .filter(
+      (j) =>
+        j.endpointName === endpoint.name && j.status !== 'pending' && (jobType == null || j.type === jobType),
+    )
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime(),
+    );
+
+  const latest = endpointJobs[0];
+
+  // Completion check: historical endpoint with no TTL whose latest job has an
+  // empty nextCursor object means it has fully completed and will not be re-run.
+  if (
+    jobType === 'historical' &&
+    endpoint.TTL == null &&
+    latest &&
+    typeof latest.nextCursor === 'object' &&
+    latest.nextCursor !== null &&
+    Object.keys(latest.nextCursor).length === 0
+  ) {
+    return {
+      icon: <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500 flex-shrink-0" />,
+      text: <span className="text-muted-foreground">Completed</span>,
+    };
+  }
+
+  if (!latest) {
+    return {
+      icon: <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />,
+      text: <span className="text-muted-foreground">Awaiting first run</span>,
+    };
+  }
+
+  if (latest.status === 'success') {
+    return {
+      icon: <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500 flex-shrink-0" />,
+      text: (
+        <span className="text-muted-foreground">
+          Successfully run at {new Date(latest.completedAt as string).toLocaleString()}
+        </span>
+      ),
+    };
+  }
+
+  if (latest.status === 'in_progress') {
+    return {
+      icon: <RefreshCw className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-500 flex-shrink-0" />,
+      text: <span className="text-muted-foreground">Run in progress</span>,
+    };
+  }
+
+  if (latest.status === 'failed') {
+    const errorText = latest.error?.error ?? 'Unknown error';
+
+    return {
+      icon: <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-500 flex-shrink-0" />,
+      text: <span className="text-muted-foreground">Last run failed: {String(errorText)}</span>,
+    };
+  }
+
+  return {
+    icon: <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />,
+    text: <span className="text-muted-foreground">Awaiting first run</span>,
+  };
+}
+
+interface EndpointStatusRowProps {
+  connectionId: string;
+  endpoint: { name: string; TTL?: number | null };
+  jobType: 'historical' | 'incremental' | null;
+  label?: string;
+}
+
+/**
+ * Renders a single status row for an endpoint. Each instance fetches its own
+ * connectionSyncJobs scoped by endpointName (and type, when provided) so the
+ * page does not need to load a global list of jobs up front.
+ *
+ * When `label` is provided, the row is rendered as an indented sub-row with
+ * the label (used for "History" / "Ongoing" within a dual-iteration endpoint).
+ * When `label` is undefined, the row is rendered as the top-level row with
+ * the endpoint name as its label.
+ */
+function EndpointStatusRow({ connectionId, endpoint, jobType, label }: EndpointStatusRowProps) {
+  const { data } = useQuery(GET_CONNECTION_SYNC_JOBS, {
+    variables: {
+      connectionId,
+      endpointName: endpoint.name,
+      type: jobType ?? undefined,
+      first: 10,
+    },
+  });
+
+  const jobs: StatusJob[] =
+    (data?.connectionSyncJobs.edges.map((edge) => edge.node) as StatusJob[] | undefined) ?? [];
+
+  const { icon, text } = computeEndpointStatus(jobs, endpoint, jobType);
+
+  return (
+    <li className="flex items-center gap-2 text-sm">
+      {icon}
+      <span className="font-medium">{label ?? endpoint.name}:</span>
+      {text}
+    </li>
+  );
+}
+
 export function ConnectionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -175,35 +299,7 @@ export function ConnectionPage() {
     },
   });
 
-  const { data: syncJobData } = useQuery(GET_CONNECTION_SYNC_JOBS, {
-    variables: {
-      connectionId: GlobalUID.encode('connection', id!),
-    },
-  });
-
-  console.log('syncJobData', syncJobData);
-
   const connection = data?.connection;
-  const syncJobs = syncJobData?.connectionSyncJobs.edges.map((edge) => edge.node) || [];
-
-  const endpointStatus: EndpointStatus = {};
-
-  for (const syncJob of syncJobs) {
-    if (!endpointStatus[syncJob.endpointName]) {
-      endpointStatus[syncJob.endpointName] = {};
-    }
-
-    if (syncJob.status === 'success' && !endpointStatus[syncJob.endpointName].lastSuccess) {
-      endpointStatus[syncJob.endpointName].lastSuccess = new Date(syncJob.completedAt);
-    }
-
-    if (syncJob.status === 'failed' && !endpointStatus[syncJob.endpointName].lastFailure) {
-      endpointStatus[syncJob.endpointName].lastFailure = new Date(syncJob.completedAt);
-      endpointStatus[syncJob.endpointName].error = syncJob.error;
-    }
-  }
-
-  console.log('endpointStatus', endpointStatus);
 
   const [updateConnection] = useMutation(UPDATE_CONNECTION);
 
@@ -410,10 +506,72 @@ export function ConnectionPage() {
               <div className="text-sm">{connection.externalId || 'N/A'}</div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <Label>Update Schedule</Label>
-              <div className="text-sm">{connection.schedule || 'N/A'}</div>
-            </div>
+            {connection.provider?.endpoints && connection.provider.endpoints.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <Label>Endpoints</Label>
+                <ul className="flex flex-col gap-3">
+                  {connection.provider.endpoints.map((endpoint) => {
+                    const isActive = (connection.activeEndpoints || []).includes(endpoint.name);
+
+                    if (!isActive) {
+                      return (
+                        <li key={endpoint.name} className="flex items-center gap-2 text-sm">
+                          <Ban className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="font-medium">{endpoint.name}:</span>
+                          <span className="text-muted-foreground">Not enabled</span>
+                        </li>
+                      );
+                    }
+
+                    const iterationTypes = endpoint.iterationType || '';
+                    const hasHistorical = iterationTypes.includes('historical');
+                    const hasIncremental = iterationTypes.includes('incremental');
+                    const showBoth = hasHistorical && hasIncremental;
+                    const encodedConnectionId = GlobalUID.encode('connection', id!);
+
+                    if (showBoth) {
+                      return (
+                        <li key={endpoint.name} className="flex flex-col gap-1 text-sm">
+                          <span className="font-medium">{endpoint.name}</span>
+                          <ul className="flex flex-col gap-1 pl-4">
+                            <EndpointStatusRow
+                              connectionId={encodedConnectionId}
+                              endpoint={endpoint}
+                              jobType="historical"
+                              label="History"
+                            />
+                            <EndpointStatusRow
+                              connectionId={encodedConnectionId}
+                              endpoint={endpoint}
+                              jobType="incremental"
+                              label="Ongoing"
+                            />
+                          </ul>
+                        </li>
+                      );
+                    }
+
+                    // Only one iteration type (or unknown). When only historical is
+                    // declared we still treat the jobs as historical so the completion
+                    // check can apply when TTL is null.
+                    const onlyType: 'historical' | 'incremental' | null = hasHistorical
+                      ? 'historical'
+                      : hasIncremental
+                        ? 'incremental'
+                        : null;
+
+                    return (
+                      <EndpointStatusRow
+                        key={endpoint.name}
+                        connectionId={encodedConnectionId}
+                        endpoint={endpoint}
+                        jobType={onlyType}
+                      />
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
 
             {connection.needsReauth && (
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-4 flex items-start gap-3">
@@ -428,33 +586,6 @@ export function ConnectionPage() {
                 </div>
               </div>
             )}
-
-            {Object.keys(endpointStatus).length > 0 &&
-              Object.entries(endpointStatus).map(([endpointName, status]) => {
-                const errorMessage =
-                  // @ts-expect-error  Errors can vary in shape, so we try a few different paths for where it could be
-                  status.error?.error?.details?.message || status.error?.error || 'Unknown error';
-
-                return (status.lastFailure && !status.lastSuccess) ||
-                  (status.lastFailure && status.lastSuccess && status.lastFailure > status.lastSuccess) ? (
-                  <div
-                    key={endpointName}
-                    className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4 flex items-start gap-3"
-                  >
-                    <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0 text-red-600 dark:text-red-500" />
-                    <div>
-                      <h3 className="font-medium text-red-900 dark:text-red-100">
-                        Issue with {endpointName} Endpoint
-                      </h3>
-                      <p className="text-sm text-red-800 dark:text-red-200">
-                        The last sync attempt for this endpoint failed on{' '}
-                        {status.lastFailure?.toLocaleString()}.
-                      </p>
-                      <p className="text-sm text-red-800 dark:text-red-200">Error logs: {errorMessage}</p>
-                    </div>
-                  </div>
-                ) : null;
-              })}
           </Card.Content>
         </Card>
       </PageContent>

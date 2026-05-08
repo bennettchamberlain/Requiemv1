@@ -16,8 +16,8 @@ export class ProviderEndpointType {
   @Field(() => String)
   iterationType!: string;
 
-  @Field(() => Number)
-  TTL?: number;
+  @Field(() => Number, { nullable: true })
+  TTL?: number | null;
 }
 
 @ObjectType()

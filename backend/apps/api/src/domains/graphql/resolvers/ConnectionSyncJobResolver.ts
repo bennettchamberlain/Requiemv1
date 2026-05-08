@@ -127,13 +127,20 @@ export class ConnectionSyncJobResolver {
     @Context() context: RequestContext,
     @Args() pagination: PaginationArgs,
     @Args('connectionId', { type: () => ID, nullable: true }) connectionId?: string,
+    @Args('endpointName', { type: () => String, nullable: true }) endpointName?: string,
+    @Args('type', { type: () => String, nullable: true }) type?: string,
   ): Promise<ConnectionSyncJobConnection> {
     const serviceContext = toServiceContext(context);
 
     let entities;
     if (connectionId) {
       const decodedConnectionId = GlobalUID.parse('connection', connectionId);
-      entities = await this.connectionSyncJobService.findByConnectionId(serviceContext, decodedConnectionId);
+      entities = await this.connectionSyncJobService.findByConnectionId(
+        serviceContext,
+        decodedConnectionId,
+        endpointName ?? undefined,
+        type ?? undefined,
+      );
     } else {
       entities = await this.connectionSyncJobService.findAll(serviceContext);
     }
