@@ -18,7 +18,7 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
-import { EventService, Events } from '@ci/domains/events';
+import { EventService } from '@ci/domains/events';
 
 import { ClientFactory } from '../clients';
 import { ConnectionService } from '../services/ConnectionService';
@@ -226,25 +226,6 @@ export class ConnectionsController {
 
     await this.update(context, connectionId, {
       externalId,
-    });
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':id/sync')
-  @HttpCode(204)
-  async sync(@Context() context: RequestContext, @Param('id') id: string) {
-    this.logger.log('Manual sync requested', {
-      userId: context.userId,
-      connectionId: id,
-    });
-
-    const jobIds = await this.eventService.send(Events.SYNC_CONNECTION, {
-      connectionId: id,
-      userId: context.userId!,
-    });
-
-    this.logger.log('Manual sync enqueued', {
-      jobIds,
     });
   }
 }
