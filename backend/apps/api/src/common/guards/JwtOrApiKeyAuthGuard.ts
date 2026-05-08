@@ -1,4 +1,9 @@
-import { type ExecutionContext, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  type ExecutionContext,
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -23,5 +28,13 @@ export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
     throw new InternalServerErrorException(
       `JwtOrApiKeyGuard does not support context type: ${context.getType()}`,
     );
+  }
+
+  handleRequest<TUser = unknown>(err: unknown, user: TUser): TUser {
+    if (err || !user) {
+      throw new UnauthorizedException();
+    }
+
+    return user;
   }
 }
