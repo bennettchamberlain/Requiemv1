@@ -2,11 +2,14 @@ import { lazy, Suspense, useCallback, useEffect } from 'react';
 
 import { LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Button, ScrollArea } from '@ci/shadcn';
-import { Key, Palette, X } from '@ci/shadcn/icons';
+import { Key, KeyRound, Palette, X } from '@ci/shadcn/icons';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 const AppearanceSection = lazy(() =>
   import('./sections/AppearanceSection').then((m) => ({ default: m.AppearanceSection })),
+);
+const ApiKeysSection = lazy(() =>
+  import('./sections/ApiKeysSection').then((m) => ({ default: m.ApiKeysSection })),
 );
 const OAuthSection = lazy(() => import('./sections/OAuthSection').then((m) => ({ default: m.OAuthSection })));
 
@@ -74,6 +77,11 @@ export function SettingsPage() {
                 Appearance
               </NavLink>
 
+              <NavLink to="/settings/api-keys" state={{ backgroundLocation }} className={navLinkClass}>
+                <KeyRound className="h-4 w-4" />
+                API Keys
+              </NavLink>
+
               <NavLink to="/settings/oauth" state={{ backgroundLocation }} className={navLinkClass}>
                 <Key className="h-4 w-4" />
                 OAuth Credentials
@@ -89,6 +97,7 @@ export function SettingsPage() {
                   <Routes>
                     <Route index element={<Navigate to="appearance" replace />} />
                     <Route path="appearance" element={<AppearanceSection />} />
+                    <Route path="api-keys" element={<ApiKeysSection />} />
                     <Route path="oauth" element={<OAuthSection />} />
                   </Routes>
                 </Suspense>
