@@ -33,6 +33,7 @@ import { SessionEntity } from './entities/SessionEntity';
 import { SignupCodeEntity } from './entities/SignupCodeEntity';
 import { CsrfGuard } from './guards/CsrfGuard';
 import { ApiKeyService } from './services/ApiKeyService';
+import { ApiKeyStrategy } from './services/ApiKeyStrategy';
 import { AuthService } from './services/AuthService';
 import { CsrfService } from './services/CsrfService';
 import { JwtStrategy } from './services/JwtStrategy';
@@ -53,7 +54,15 @@ import { SignupCodeService } from './services/SignupCodeService';
       },
     }),
   ],
-  providers: [AuthService, JwtStrategy, SignupCodeService, CsrfGuard, CsrfService, ApiKeyService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    SignupCodeService,
+    CsrfGuard,
+    CsrfService,
+    ApiKeyService,
+    ApiKeyStrategy,
+  ],
   controllers: [SessionController, SignupController, ApiKeyController],
   exports: [SignupCodeService, ApiKeyService],
 })
