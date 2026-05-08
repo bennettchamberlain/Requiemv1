@@ -18,7 +18,7 @@ import { QueryFailedError } from 'typeorm';
 
 import { PgErrorCode } from '@ci/common/constants';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { PositionService } from '../services/PositionService';
@@ -37,7 +37,7 @@ import {
 export class PositionController {
   constructor(private readonly positionService: PositionService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,
@@ -59,7 +59,7 @@ export class PositionController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   async findById(@Context() context: RequestContext, @Param('id') id: string) {
     const serviceContext = toServiceContext(context);
@@ -73,7 +73,7 @@ export class PositionController {
     return position;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id')
   async update(
     @Context() context: RequestContext,
@@ -91,7 +91,7 @@ export class PositionController {
     return result;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') positionId: string): Promise<void> {
@@ -110,7 +110,7 @@ export class PositionController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('range')
   async findByDateRange(
     @Context() context: RequestContext,
@@ -124,7 +124,7 @@ export class PositionController {
     return this.positionService.findByDateRange(serviceContext, startDate, endDate);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('geofence')
   async findByGeofence(
     @Context() context: RequestContext,

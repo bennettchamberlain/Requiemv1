@@ -15,7 +15,7 @@ import {
 import type { Response } from 'express';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { EventService } from '@ci/domains/events';
@@ -39,7 +39,7 @@ export class QuestionsController {
     this.logger.setContext(QuestionsController.name);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,
@@ -50,7 +50,7 @@ export class QuestionsController {
     return await this.questionService.create(serviceContext, input);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext): Promise<Question[]> {
     const serviceContext = toServiceContext(context);
@@ -58,7 +58,7 @@ export class QuestionsController {
     return this.questionService.findAll(serviceContext);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('unanswered')
   async findOneUnanswered(@Context() context: RequestContext, @Res() res: Response) {
     const serviceContext = toServiceContext(context);
@@ -71,7 +71,7 @@ export class QuestionsController {
     return res.status(HttpStatus.OK).json(question);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   findById(@Context() context: RequestContext, @Param('id') id: string): Promise<Question | null> {
     const serviceContext = toServiceContext(context);
@@ -79,7 +79,7 @@ export class QuestionsController {
     return this.questionService.findById(serviceContext, id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id')
   async update(
     @Context() context: RequestContext,
@@ -97,7 +97,7 @@ export class QuestionsController {
     return question;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') questionId: string): Promise<void> {

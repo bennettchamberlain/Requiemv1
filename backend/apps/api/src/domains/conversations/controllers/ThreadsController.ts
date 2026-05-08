@@ -13,7 +13,7 @@ import {
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { CreateThreadDto } from '@ci/domains/conversations/types';
 
@@ -39,7 +39,7 @@ export class ThreadsController {
     private readonly threadService: ThreadService,
   ) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async post(
     @Context() context: RequestContext,
@@ -50,7 +50,7 @@ export class ThreadsController {
     return this.threadService.create(serviceContext, input);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -60,7 +60,7 @@ export class ThreadsController {
     return threads;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   async findOne(
     @Context() context: RequestContext,
@@ -87,7 +87,7 @@ export class ThreadsController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(204)
   async delete(@Context() context: RequestContext, @Param('id') id: string) {

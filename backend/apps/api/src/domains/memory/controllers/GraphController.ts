@@ -2,7 +2,7 @@ import { Controller, Get, NotFoundException, Query, UseGuards } from '@nestjs/co
 import { z } from 'zod';
 
 import { Context, type RequestContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
@@ -26,7 +26,7 @@ type GetNodeDetailsDto = z.infer<typeof getNodeDetailsSchema>;
 type GraphSearchDto = z.infer<typeof graphSearchSchema>;
 
 @Controller('graph')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 export class GraphController {
   constructor(
     private readonly graphEvents: GraphEventService,
