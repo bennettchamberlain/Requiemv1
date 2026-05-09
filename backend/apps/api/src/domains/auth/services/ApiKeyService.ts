@@ -11,6 +11,8 @@ import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
 import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto } from '../types';
 
 const API_KEY_BYTE_LENGTH = 32;
+const API_KEY_HEX_LENGTH = API_KEY_BYTE_LENGTH * 2;
+const API_KEY_HEX_REGEX = /^[0-9a-f]+$/;
 const PREFIX_LENGTH = 5;
 
 @Injectable()
@@ -100,6 +102,10 @@ export class ApiKeyService {
   }
 
   async validateKey(rawKey: string): Promise<{ userId: string } | null> {
+    if (rawKey.length !== API_KEY_HEX_LENGTH || !API_KEY_HEX_REGEX.test(rawKey)) {
+      return null;
+    }
+
     const hashed = this.hash(rawKey);
 
     const key = await this.apiKeyRepository.findOne({
