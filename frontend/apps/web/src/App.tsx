@@ -1,7 +1,7 @@
 import { type ReactNode, lazy } from 'react';
 
 import { DeviceLayoutProvider } from '@ci/common';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, type Location } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
