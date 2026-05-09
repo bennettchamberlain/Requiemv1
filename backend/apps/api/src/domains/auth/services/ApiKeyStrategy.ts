@@ -48,7 +48,7 @@ export class ApiKeyStrategy extends PassportStrategy(RequestStrategy, 'api-key')
   }
 
   async validate(req: Request) {
-    const apiKey = req.headers[API_KEY_HEADER] as string | undefined;
+    const apiKey = req.get(API_KEY_HEADER);
 
     if (!apiKey) {
       return null;
