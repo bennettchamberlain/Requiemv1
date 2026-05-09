@@ -134,7 +134,7 @@ export function ApiKeysSection() {
 
     try {
       setDeleteLoading(true);
-      await fetch(`/api/keys/${deleteKey.id}`, {
+      await fetchJson(`/api/keys/${deleteKey.id}`, {
         method: 'DELETE',
         headers: headers(),
       });
