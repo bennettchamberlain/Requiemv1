@@ -5,7 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import type { ServiceContext } from '@ci/common/context';
+import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 
 import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
 import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto } from '../types';
@@ -20,7 +20,7 @@ export class ApiKeyService {
     private readonly apiKeyRepository: Repository<ApiKeyEntity>,
   ) {}
 
-  async create(context: ServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
+  async create(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
     const rawKey = randomBytes(API_KEY_BYTE_LENGTH).toString('hex');
     const prefix = rawKey.substring(0, PREFIX_LENGTH);
     const hashedKey = this.hash(rawKey);
@@ -32,7 +32,7 @@ export class ApiKeyService {
       hashed_key: hashedKey,
       scopes: data.scopes ?? [],
       expires_at: data.expires_at ? new Date(data.expires_at) : null,
-      user: { id: context.userId as string },
+      user_id: context.userId,
     });
 
     const saved = await this.apiKeyRepository.save(entity);
@@ -45,7 +45,9 @@ export class ApiKeyService {
 
   async findAllByUser(context: ServiceContext): Promise<ApiKey[]> {
     const keys = await this.apiKeyRepository.find({
-      where: { user: { id: context.userId as string } },
+      where: {
+        ...(context.userId !== SYSTEM_USER && { user_id: context.userId }),
+      },
       order: { created_at: 'DESC' },
     });
 
@@ -54,7 +56,10 @@ export class ApiKeyService {
 
   async findOneByUser(context: ServiceContext, keyId: string): Promise<ApiKey | null> {
     const key = await this.apiKeyRepository.findOne({
-      where: { id: keyId, user: { id: context.userId as string } },
+      where: {
+        id: keyId,
+        ...(context.userId !== SYSTEM_USER && { user_id: context.userId }),
+      },
     });
 
     return key ? ApiKeyEntity.toEgressType(key) : null;
@@ -62,7 +67,10 @@ export class ApiKeyService {
 
   async update(context: ServiceContext, keyId: string, data: UpdateApiKeyDto): Promise<ApiKey | null> {
     const key = await this.apiKeyRepository.findOne({
-      where: { id: keyId, user: { id: context.userId as string } },
+      where: {
+        id: keyId,
+        ...(context.userId !== SYSTEM_USER && { user_id: context.userId }),
+      },
     });
 
     if (!key) {
@@ -85,7 +93,7 @@ export class ApiKeyService {
   async remove(context: ServiceContext, keyId: string): Promise<boolean> {
     const result = await this.apiKeyRepository.delete({
       id: keyId,
-      user: { id: context.userId as string },
+      ...(context.userId !== SYSTEM_USER && { user_id: context.userId }),
     });
 
     return (result.affected ?? 0) > 0;
@@ -96,7 +104,7 @@ export class ApiKeyService {
 
     const key = await this.apiKeyRepository.findOne({
       where: { hashed_key: hashed },
-      relations: ['user'],
+      select: ['id', 'user_id', 'expires_at'],
     });
 
     if (!key) {
@@ -107,10 +115,9 @@ export class ApiKeyService {
       return null;
     }
 
-    key.last_used_at = new Date();
-    await this.apiKeyRepository.save(key);
+    await this.apiKeyRepository.update(key.id, { last_used_at: new Date() });
 
-    return { userId: key.user!.id };
+    return { userId: key.user_id };
   }
 
   private hash(key: string): string {

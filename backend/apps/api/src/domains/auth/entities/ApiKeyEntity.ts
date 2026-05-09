@@ -1,14 +1,4 @@
-import {
-  Entity,
-  Column,
-  PrimaryColumn,
-  ManyToOne,
-  JoinColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
-} from 'typeorm';
-
-import { UserEntity } from '@ci/domains/user';
+import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity({ schema: 'ci', name: 'api_keys' })
 export class ApiKeyEntity {
@@ -33,9 +23,8 @@ export class ApiKeyEntity {
   @Column({ type: 'timestamptz', nullable: true })
   last_used_at!: Date | null;
 
-  @ManyToOne(() => UserEntity)
-  @JoinColumn({ name: 'user_id' })
-  user?: UserEntity;
+  @Column({ type: 'uuid' })
+  user_id!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
@@ -57,4 +46,4 @@ export class ApiKeyEntity {
   }
 }
 
-export type ApiKey = Readonly<Omit<ApiKeyEntity, 'user' | 'hashed_key'>>;
+export type ApiKey = Readonly<Omit<ApiKeyEntity, 'user' | 'user_id' | 'hashed_key'>>;
