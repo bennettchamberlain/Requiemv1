@@ -26,7 +26,7 @@ export class JwtOrApiKeyAuthGuard extends AuthGuard(['jwt', 'api-key']) {
     }
 
     throw new InternalServerErrorException(
-      `JwtOrApiKeyGuard does not support context type: ${context.getType()}`,
+      `${JwtOrApiKeyAuthGuard.name} does not support context type: ${context.getType()}`,
     );
   }
 

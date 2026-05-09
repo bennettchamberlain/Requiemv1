@@ -20,6 +20,8 @@ export class ApiKeyGuard extends AuthGuard('api-key') {
       return context.switchToHttp().getRequest();
     }
 
-    throw new InternalServerErrorException(`ApiKeyGuard does not support context type: ${context.getType()}`);
+    throw new InternalServerErrorException(
+      `${ApiKeyGuard.name} does not support context type: ${context.getType()}`,
+    );
   }
 }
