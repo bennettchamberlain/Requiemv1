@@ -16,6 +16,7 @@ CREATE TABLE ci.api_keys (
 );
 
 CREATE INDEX idx_api_keys_user_id ON ci.api_keys(user_id);
+CREATE UNIQUE INDEX idx_api_keys_hashed_key ON ci.api_keys(hashed_key);
 
 -- migrate:down
 DROP TABLE IF EXISTS ci.api_keys;

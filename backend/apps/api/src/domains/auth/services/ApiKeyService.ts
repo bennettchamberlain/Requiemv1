@@ -92,31 +92,25 @@ export class ApiKeyService {
   }
 
   async validateKey(rawKey: string): Promise<{ userId: string } | null> {
-    const prefix = rawKey.substring(0, PREFIX_LENGTH);
+    const hashed = this.hash(rawKey);
 
-    const candidates = await this.apiKeyRepository.find({
-      where: { prefix },
+    const key = await this.apiKeyRepository.findOne({
+      where: { hashed_key: hashed },
       relations: ['user'],
     });
 
-    const now = new Date();
-
-    for (const candidate of candidates) {
-      if (candidate.expires_at && candidate.expires_at < now) {
-        continue;
-      }
-
-      const hashed = this.hash(rawKey);
-
-      if (hashed === candidate.hashed_key) {
-        candidate.last_used_at = now;
-        await this.apiKeyRepository.save(candidate);
-
-        return { userId: candidate.user!.id };
-      }
+    if (!key) {
+      return null;
     }
 
-    return null;
+    if (key.expires_at && key.expires_at < new Date()) {
+      return null;
+    }
+
+    key.last_used_at = new Date();
+    await this.apiKeyRepository.save(key);
+
+    return { userId: key.user!.id };
   }
 
   private hash(key: string): string {
