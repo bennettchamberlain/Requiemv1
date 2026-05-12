@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Parent, Query, Mutation, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ItemService } from '@ci/domains/memory';
 
 import { ItemFileLoader } from '../loaders/ItemFileLoader';
@@ -22,7 +22,7 @@ import { UpdateItemInput } from '../types/UpdateItemInput';
 import { UpdateItemPayload } from '../types/UpdateItemPayload';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ItemType)
 export class ItemResolver {
   constructor(

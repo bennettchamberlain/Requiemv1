@@ -2,7 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import { NodeService } from '@ci/domains/graph';
 
@@ -20,7 +20,7 @@ const getDeltasSchema = z.object({
 type GetDeltasDto = z.infer<typeof getDeltasSchema>;
 
 @Controller('audit')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 export class AuditController {
   constructor(
     private readonly deltaService: DeltaService,

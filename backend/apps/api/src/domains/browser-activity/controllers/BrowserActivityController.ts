@@ -3,7 +3,7 @@ import { QueryFailedError } from 'typeorm';
 
 import { PgErrorCode } from '@ci/common/constants';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { BrowserActivityService } from '../services/BrowserActivityService';
@@ -13,7 +13,7 @@ import { CreateBrowserActivityDto, BrowserActivity, createBrowserActivitySchema 
 export class BrowserActivityController {
   constructor(private readonly browserActivityService: BrowserActivityService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,

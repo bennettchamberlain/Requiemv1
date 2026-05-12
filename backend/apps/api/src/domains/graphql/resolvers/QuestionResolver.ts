@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { QuestionService } from '@ci/domains/intelligence';
 
 import { CreateQuestionInput } from '../types/CreateQuestionInput';
@@ -14,7 +14,7 @@ import { QuestionType } from '../types/QuestionType';
 import { UpdateQuestionInput } from '../types/UpdateQuestionInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => QuestionType)
 export class QuestionResolver {
   constructor(private readonly questionService: QuestionService) {}

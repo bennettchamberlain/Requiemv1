@@ -16,7 +16,7 @@ import { QueryFailedError } from 'typeorm';
 
 import { PgErrorCode } from '@ci/common/constants';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { DeviceService } from '../services/DeviceService';
@@ -26,7 +26,7 @@ import { CreateDeviceDto, UpdateDeviceDto, Device, createDeviceSchema, updateDev
 export class DeviceController {
   constructor(private readonly deviceService: DeviceService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,
@@ -45,7 +45,7 @@ export class DeviceController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext): Promise<Device[]> {
     const serviceContext = toServiceContext(context);
@@ -53,7 +53,7 @@ export class DeviceController {
     return this.deviceService.findAll(serviceContext);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') deviceId: string): Promise<Device | null> {
     const serviceContext = toServiceContext(context);
@@ -66,7 +66,7 @@ export class DeviceController {
     return device;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id')
   async update(
     @Context() context: RequestContext,
@@ -84,7 +84,7 @@ export class DeviceController {
     return device;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') deviceId: string): Promise<void> {
@@ -103,7 +103,7 @@ export class DeviceController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id/primary')
   async setPrimary(
     @Context() context: RequestContext,
@@ -119,7 +119,7 @@ export class DeviceController {
     return device;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id/last-seen')
   async updateLastSeen(
     @Context() context: RequestContext,

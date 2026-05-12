@@ -15,7 +15,7 @@ import {
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { EventService } from '@ci/domains/events';
@@ -70,7 +70,7 @@ export class ConnectionsController {
     this.logger.setContext(ConnectionsController.name);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,
@@ -86,7 +86,7 @@ export class ConnectionsController {
     return returnedConnection;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -101,7 +101,7 @@ export class ConnectionsController {
     });
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') id: string) {
     const serviceContext = toServiceContext(context);
@@ -118,7 +118,7 @@ export class ConnectionsController {
     return returnedConnection;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id')
   async update(
     @Context() context: RequestContext,
@@ -139,7 +139,7 @@ export class ConnectionsController {
     return returnedConnection;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(204)
   async delete(@Context() context: RequestContext, @Param('id') id: string) {
@@ -148,7 +148,7 @@ export class ConnectionsController {
     await this.connectionService.remove(serviceContext, id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
     const serviceContext = toServiceContext(context);
@@ -174,7 +174,7 @@ export class ConnectionsController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('complete')
   @HttpCode(204)
   async completeCallback(

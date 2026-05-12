@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { AnswerService } from '../services/AnswerService';
@@ -23,7 +23,7 @@ import { type CreateAnswerDto, type UpdateAnswerDto, createAnswerSchema, updateA
 export class AnswersController {
   constructor(private readonly answerService: AnswerService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,
@@ -34,7 +34,7 @@ export class AnswersController {
     return this.answerService.create(serviceContext, data);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get()
   findAll(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -42,7 +42,7 @@ export class AnswersController {
     return this.answerService.findAll(serviceContext);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   findOne(@Context() context: RequestContext, @Param('id') id: string) {
     const serviceContext = toServiceContext(context);
@@ -50,7 +50,7 @@ export class AnswersController {
     return this.answerService.findById(serviceContext, id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id')
   async update(
     @Context() context: RequestContext,
@@ -68,7 +68,7 @@ export class AnswersController {
     return result;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Context() context: RequestContext, @Param('id') answerId: string): Promise<void> {

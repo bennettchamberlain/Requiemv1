@@ -30,3 +30,29 @@ export interface UpdateSignupCodeDto {
 export interface RotationResult {
   sessionToken: string | null;
 }
+
+export interface CreateApiKeyDto {
+  name: string;
+  scopes?: string[];
+  expires_at?: string;
+}
+
+export interface UpdateApiKeyDto {
+  name?: string;
+  scopes?: string[];
+}
+
+export interface ApiKeyResponse {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  expires_at: Date | null;
+  last_used_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateApiKeyResponse extends ApiKeyResponse {
+  key: string;
+}

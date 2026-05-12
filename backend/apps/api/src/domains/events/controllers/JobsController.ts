@@ -1,7 +1,7 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext } from '@ci/common/context/';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
 import { JobDashboardDto, JobMonitorService } from '../services/JobMonitorService';
 
@@ -9,7 +9,7 @@ import { JobDashboardDto, JobMonitorService } from '../services/JobMonitorServic
 export class JobsController {
   constructor(private readonly jobMonitorService: JobMonitorService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('dashboard')
   getDashboard(@Context() context: RequestContext): Promise<JobDashboardDto> {
     return this.jobMonitorService.getDashboard(context);

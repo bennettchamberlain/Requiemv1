@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -29,16 +29,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const result = jwtPayloadSchema.safeParse(payload);
 
     if (!result.success) {
-      throw new BadRequestException({
-        message: 'JWT payload validation failed',
-        errors: result.error.issues,
-      });
+      return null;
     }
 
     const user = await this.userService.findById({ userId: SYSTEM_USER }, payload.sub);
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      return null;
     }
 
     ContextService.set({

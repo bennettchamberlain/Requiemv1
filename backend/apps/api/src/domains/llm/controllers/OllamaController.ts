@@ -17,7 +17,7 @@ import { z } from 'zod';
 
 import { Context, type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { Channel, FrameEncoder } from '@ci/common/rpc';
@@ -65,13 +65,13 @@ export class OllamaController {
     this.logger.setContext(OllamaController.name);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('models')
   async listModels(@Context() context: RequestContext) {
     return await this.ollamaService.getAvailableModels(context);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('models/capabilities')
   async getModelCapabilities(
     @Context() context: RequestContext,
@@ -86,7 +86,7 @@ export class OllamaController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('generate')
   @HttpCode(200)
   async generate(
