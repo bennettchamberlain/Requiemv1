@@ -238,7 +238,7 @@ export class ConnectionsController {
     });
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('openid/complete')
   @HttpCode(204)
   async completeOpenIDCallback(
