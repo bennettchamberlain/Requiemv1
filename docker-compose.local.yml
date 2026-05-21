@@ -45,19 +45,11 @@ services:
     ports:
       - 7233:7233
 
-  stt-service:
-    ports:
-      - 9001:9001
-
   summary-service:
     ports:
       - 8001:8001
     environment:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-
-  tts-service:
-    ports:
-      - 9002:9002
 
   #############
   # EPHEMERAL #

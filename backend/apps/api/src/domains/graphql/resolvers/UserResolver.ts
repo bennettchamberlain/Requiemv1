@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { NodeService } from '@ci/domains/graph';
 import { PersonService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
@@ -10,7 +10,7 @@ import { UserService } from '@ci/domains/user';
 import { PersonType } from '../types/PersonType';
 import { UserType } from '../types/UserType';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => UserType)
 export class UserResolver {
   constructor(

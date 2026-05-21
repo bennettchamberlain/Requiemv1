@@ -766,7 +766,7 @@ type ProviderEdge implements Edge {
 }
 
 type ProviderEndpointType {
-  TTL: Float!
+  TTL: Float
   description: String!
   iterationType: String!
   name: String!
@@ -810,7 +810,7 @@ type Query {
   concepts(after: String, before: String, first: Int, last: Int): ConceptConnection!
   connection(id: ID!): ConnectionType
   connectionSyncJob(id: ID!): ConnectionSyncJobType
-  connectionSyncJobs(after: String, before: String, connectionId: ID, first: Int, last: Int): ConnectionSyncJobConnection!
+  connectionSyncJobs(after: String, before: String, connectionId: ID, endpointName: String, first: Int, last: Int, type: String): ConnectionSyncJobConnection!
   connections(after: String, before: String, first: Int, last: Int): ConnectionConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!

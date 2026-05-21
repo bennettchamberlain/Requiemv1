@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ConnectionService } from '@ci/domains/connections';
 
 import { ProviderLoader } from '../loaders/ProviderLoader';
@@ -20,7 +20,7 @@ import { UpdateConnectionInput } from '../types/UpdateConnectionInput';
 import { UpdateConnectionPayload } from '../types/UpdateConnectionPayload';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ConnectionType)
 export class ConnectionResolver {
   constructor(

@@ -9,12 +9,6 @@
     "ollama": {
       "host": "http://localhost:11434"
     },
-    "stt": {
-      "host": "http://localhost:9001"
-    },
-    "tts": {
-      "host": "http://localhost:9002"
-    },
     "hbpe": {
       "host": "http://localhost:8002"
     }

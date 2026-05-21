@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { SummaryService } from '@ci/domains/summaries';
 
 import { GlobalUID } from '../types/GlobalUID';
@@ -12,7 +12,7 @@ import { SummaryEdge } from '../types/SummaryEdge';
 import { SummaryType } from '../types/SummaryType';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => SummaryType)
 export class SummaryResolver {
   constructor(private readonly summaryService: SummaryService) {}

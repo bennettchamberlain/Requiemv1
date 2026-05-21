@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
@@ -34,7 +34,7 @@ export class ProvidersController {
     this.logger.setContext(ProvidersController.name);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -42,7 +42,7 @@ export class ProvidersController {
     return this.providerService.findAll(serviceContext);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') id: string) {
     const serviceContext = toServiceContext(context);
@@ -50,7 +50,7 @@ export class ProvidersController {
     return this.providerService.findById(serviceContext, id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post(':id')
   async connect(
     @Context() context: RequestContext,

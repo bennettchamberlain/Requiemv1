@@ -7,8 +7,6 @@ services:
       DATABASE_HOST: database
       OBJECT_STORE_URL: http://object-store:9000
       OLLAMA_HOST: http://host.docker.internal:11434
-      STT_HOST: http://stt-service:9001
-      TTS_HOST: http://tts-service:9002
       HBPE_HOST: http://hbpe-service:8002
     networks:
       - ci

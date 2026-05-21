@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { CommunicationService } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
@@ -19,7 +19,7 @@ import { PersonEdge } from '../types/PersonEdge';
 import { PersonType } from '../types/PersonType';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => CommunicationType)
 export class CommunicationResolver {
   constructor(

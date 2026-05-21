@@ -15,12 +15,12 @@ import {
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { BaseOAuth2Client } from '@ci/domains/connections/clients/BaseOAuth2Client';
-import { EventService, Events } from '@ci/domains/events';
+import { EventService } from '@ci/domains/events';
 
 import { ClientFactory } from '../clients';
 import { CloudOAuthProxyService } from '../services/CloudOAuthProxyService';
@@ -85,7 +85,7 @@ export class ConnectionsController {
     this.logger.setContext(ConnectionsController.name);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post()
   async create(
     @Context() context: RequestContext,
@@ -101,7 +101,7 @@ export class ConnectionsController {
     return returnedConnection;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get()
   async findAll(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -116,7 +116,7 @@ export class ConnectionsController {
     });
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id')
   async findOne(@Context() context: RequestContext, @Param('id') id: string) {
     const serviceContext = toServiceContext(context);
@@ -133,7 +133,7 @@ export class ConnectionsController {
     return returnedConnection;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Patch(':id')
   async update(
     @Context() context: RequestContext,
@@ -154,7 +154,7 @@ export class ConnectionsController {
     return returnedConnection;
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Delete(':id')
   @HttpCode(204)
   async delete(@Context() context: RequestContext, @Param('id') id: string) {
@@ -163,7 +163,7 @@ export class ConnectionsController {
     await this.connectionService.remove(serviceContext, id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Get(':id/connect')
   async connect(@Context() context: RequestContext, @Param('id') id: string) {
     const serviceContext = toServiceContext(context);
@@ -221,7 +221,7 @@ export class ConnectionsController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('complete')
   @HttpCode(204)
   async completeCallback(
@@ -301,25 +301,6 @@ export class ConnectionsController {
 
     await this.update(context, connectionId, {
       externalId,
-    });
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post(':id/sync')
-  @HttpCode(204)
-  async sync(@Context() context: RequestContext, @Param('id') id: string) {
-    this.logger.log('Manual sync requested', {
-      userId: context.userId,
-      connectionId: id,
-    });
-
-    const jobIds = await this.eventService.send(Events.SYNC_CONNECTION, {
-      connectionId: id,
-      userId: context.userId!,
-    });
-
-    this.logger.log('Manual sync enqueued', {
-      jobIds,
     });
   }
 }

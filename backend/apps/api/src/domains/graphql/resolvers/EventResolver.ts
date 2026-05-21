@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { EventService } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
@@ -23,7 +23,7 @@ import { PlaceType } from '../types/PlaceType';
 import { UpdateEventInput } from '../types/UpdateEventInput';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => EventType)
 export class EventResolver {
   constructor(

@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ConceptService } from '@ci/domains/memory';
 
 import { TagLoader } from '../loaders/TagLoader';
@@ -20,7 +20,7 @@ import { UpdateConceptInput } from '../types/UpdateConceptInput';
 import { UpdateConceptPayload } from '../types/UpdateConceptPayload';
 import { Paginator } from '../utils/Paginator';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ConceptType)
 export class ConceptResolver {
   constructor(

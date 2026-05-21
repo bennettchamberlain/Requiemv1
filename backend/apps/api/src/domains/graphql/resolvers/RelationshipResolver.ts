@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Mutation, Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { RelationshipService } from '@ci/domains/graph';
 import { CreateRelationshipPayload } from '@ci/domains/graphql/types/CreateRelationshipPayload';
 import { DeleteByIdInput } from '@ci/domains/graphql/types/DeleteByIdInput';
@@ -18,7 +18,7 @@ import { GlobalUID } from '../types/GlobalUID';
 import { RelationshipType } from '../types/RelationshipType';
 import { UpdateRelationshipInput } from '../types/UpdateRelationshipInput';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => RelationshipType)
 export class RelationshipResolver {
   constructor(private readonly relationshipService: RelationshipService) {}

@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtAuthGuard } from '@ci/common/guards';
+import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ConnectionService, ProviderKeyService } from '@ci/domains/connections';
 
 import { CreateProviderKeyInput } from '../inputs/CreateProviderKeyInput';
@@ -10,7 +10,7 @@ import { UpdateProviderKeyInput } from '../inputs/UpdateProviderKeyInput';
 import { GlobalUID } from '../types/GlobalUID';
 import { ProviderKeyType } from '../types/ProviderKeyType';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver()
 export class ProviderKeyResolver {
   constructor(

@@ -13,9 +13,7 @@ export ORCHESTRATOR_REPO ?= ci/orchestrator
 export SETUP_SECRETS_REPO ?= ci/setup-secrets
 export SETUP_DATABASE_REPO ?= ci/setup-database
 export SETUP_ORCHESTRATOR_REPO ?= ci/setup-orchestrator
-export STT_REPO ?= ci/stt-service
 export SUMMARY_REPO ?= ci/summary-service
-export TTS_REPO ?= ci/tts-service
 export HBPE_REPO ?= ci/hbpe-service
 
 # Seed user UUID (John Smith) — must match backend/apps/api/scripts/seed-database/data/users.ts
@@ -33,9 +31,7 @@ LICENSE_DIRS := \
 	infrastructure/setup-database \
 	infrastructure/setup-orchestrator \
 	infrastructure/setup-secrets \
-	backend/apps/stt \
 	backend/apps/summary \
-	backend/apps/tts \
 	backend/apps/hbpe
 
 # Helper: expands to "-t repo:tag" only when TAG is non-empty
@@ -124,14 +120,8 @@ build-local: distribute-license ## Build Docker images for local development
 	@printf "\n➤ Building orchestrator image...\n\n"
 	@docker build -f infrastructure/orchestrator/Dockerfile $(call versioned_tag,$(ORCHESTRATOR_REPO)) -t $(ORCHESTRATOR_REPO):latest infrastructure/orchestrator
 
-	@printf "\n➤ Building speech-to-text service image...\n\n"
-	@docker build -f backend/apps/stt/Dockerfile $(call versioned_tag,$(STT_REPO)) -t $(STT_REPO):latest backend/apps/stt
-
 	@printf "\n➤ Building summary service image...\n\n"
 	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
-
-	@printf "\n➤ Building text-to-speech service image...\n\n"
-	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.local $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
@@ -171,14 +161,8 @@ build-staging: distribute-license ## Build Docker images for staging deployment
 	@printf "\n➤ Building orchestrator image...\n\n"
 	@docker build -f infrastructure/orchestrator/Dockerfile $(call versioned_tag,$(ORCHESTRATOR_REPO)) -t $(ORCHESTRATOR_REPO):latest infrastructure/orchestrator
 
-	@printf "\n➤ Building speech-to-text service image...\n\n"
-	@docker build -f backend/apps/stt/Dockerfile $(call versioned_tag,$(STT_REPO)) -t $(STT_REPO):latest backend/apps/stt
-
 	@printf "\n➤ Building summary service image...\n\n"
 	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
-
-	@printf "\n➤ Building text-to-speech service image...\n\n"
-	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
@@ -221,14 +205,8 @@ build-production: distribute-license ## Build the application
 	@printf "\n➤ Building setup secrets image...\n\n"
 	@docker build -f infrastructure/setup-secrets/Dockerfile $(call versioned_tag,$(SETUP_SECRETS_REPO)) -t $(SETUP_SECRETS_REPO):latest infrastructure/setup-secrets
 
-	@printf "\n➤ Building speech-to-text service image...\n\n"
-	@docker build -f backend/apps/stt/Dockerfile $(call versioned_tag,$(STT_REPO)) -t $(STT_REPO):latest backend/apps/stt
-
 	@printf "\n➤ Building summary service image...\n\n"
 	@docker build -f backend/apps/summary/Dockerfile $(call versioned_tag,$(SUMMARY_REPO)) -t $(SUMMARY_REPO):latest backend/apps/summary
-
-	@printf "\n➤ Building text-to-speech service image...\n\n"
-	@docker build -f backend/apps/tts/Dockerfile $(call versioned_tag,$(TTS_REPO)) -t $(TTS_REPO):latest backend/apps/tts
 
 	@printf "\n➤ Building HBPE service image...\n\n"
 	@docker build -f backend/apps/hbpe/Dockerfile.rocm $(call versioned_tag,$(HBPE_REPO)) -t $(HBPE_REPO):latest backend/apps/hbpe
@@ -422,7 +400,7 @@ production: health init build-production stop ## Run the production deployment
 	@printf "\n"
 
 .PHONY: publish
-publish: ## Publish CI-Server images and metadata to the CI-Portal store
+publish: init build-production ## Publish CI-Server images and metadata to the CI-Portal store
 	@printf "📦 Publishing to CI-Portal registry...\n\n"
 
 	@scripts/publish/publish.sh
