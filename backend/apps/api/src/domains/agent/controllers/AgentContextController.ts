@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { ApiKeyGuard } from '@ci/common/guards';
@@ -28,7 +28,6 @@ export class AgentContextController {
 
   /**
    * Returns the L0 static user context block (profile, family, preferences).
-   * Called once at MemoryProvider.initialize() and cached for the session.
    */
   @UseGuards(ApiKeyGuard)
   @Get('context')
@@ -38,7 +37,6 @@ export class AgentContextController {
 
   /**
    * Semantic search against the knowledge graph (L1).
-   * Called from MemoryProvider.queue_prefetch() on a background thread.
    */
   @UseGuards(ApiKeyGuard)
   @Post('recall')
@@ -50,19 +48,16 @@ export class AgentContextController {
   }
 
   /**
-   * Ingests a conversation turn into the knowledge graph (fire-and-forget).
-   * Returns 202 immediately; storage happens asynchronously.
+   * Ingests a conversation into the knowledge graph.
+   * Upserts by sessionId (one row per session); returns 200 when persisted.
    */
   @UseGuards(ApiKeyGuard)
   @Post('absorb')
-  @HttpCode(HttpStatus.ACCEPTED)
   absorb(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(absorbSchema)) input: AbsorbDto,
-  ): AbsorbResult {
-    this.absorbService.absorb(toServiceContext(context), input);
-
-    return { accepted: true };
+  ): Promise<AbsorbResult> {
+    return this.absorbService.absorb(toServiceContext(context), input);
   }
 
   /**
