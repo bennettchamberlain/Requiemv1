@@ -45,7 +45,7 @@
       }
     },
     "oauth": {
-      "callbackUrl": "https://memory.ci.localhost/oauth/callback"
+      "callbackUrl": ""
     }
   },
   "db": {
@@ -94,5 +94,10 @@
   },
   "environment": {
     "database.query.logging": false
+  },
+  "ciPortal": {
+    "url": "",
+    "apiKey": "",
+    "deviceId": ""
   }
 }
