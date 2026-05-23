@@ -115,6 +115,7 @@ export function OAuthCallbackPage() {
       } catch (err: unknown) {
         toast.error(String(err));
       } finally {
+        window.history.replaceState(null, '', window.location.pathname);
         navigate('/connections');
       }
     })();

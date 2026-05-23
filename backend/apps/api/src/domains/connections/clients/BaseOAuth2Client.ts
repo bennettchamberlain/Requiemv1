@@ -116,13 +116,13 @@ export abstract class BaseOAuth2Client extends BaseClient {
     const clientCredentials = await this.getClientCredentials(connection);
     if (!clientCredentials) {
       this.logger.error(
-        'Cannot exchangeAuthorizationUrl because client credentials not found for connection',
+        'Cannot exchangeAuthorizationCode because client credentials not found for connection',
         {
           connectionId: connection.id,
         },
       );
 
-      throw new Error('Cannot exchangeAuthorizationUrl because client credentials not found');
+      throw new Error('Cannot exchangeAuthorizationCode because client credentials not found');
     }
 
     const tokenParams = new URLSearchParams({
@@ -146,9 +146,14 @@ export abstract class BaseOAuth2Client extends BaseClient {
       let errorDetails;
 
       try {
-        errorDetails = tokenResponse.json();
+        const rawErrorDetails = await tokenResponse.text();
+        try {
+          errorDetails = JSON.parse(rawErrorDetails);
+        } catch {
+          errorDetails = rawErrorDetails;
+        }
       } catch {
-        errorDetails = tokenResponse.text();
+        errorDetails = 'Unable to read error response body';
       }
 
       this.logger.error('Token exchange failed', {
@@ -238,11 +243,6 @@ export abstract class BaseOAuth2Client extends BaseClient {
         tokenExpiry,
       } satisfies TokenExchange;
     } else {
-      const cloudUrl = config.ciPortal.url?.replace(/\/$/, '');
-      if (!cloudUrl) {
-        throw new Error('CI_CLOUD_URL is not configured');
-      }
-
       //Proxy the refresh request through CI Portal
       const proxyData = await this.cloudOAuthProxyService.refreshAccessToken(connection.refreshToken);
 

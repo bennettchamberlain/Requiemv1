@@ -64,7 +64,7 @@ const completeConnectionSchema = z.discriminatedUnion('flow', [
     accessToken: z.string(),
     refreshToken: z.string().optional(),
     expiresIn: z.number().int().positive().optional(),
-    userProviderId: z.string().optional(),
+    userProviderId: z.string(),
   }),
   z.object({
     flow: z.literal('direct'),

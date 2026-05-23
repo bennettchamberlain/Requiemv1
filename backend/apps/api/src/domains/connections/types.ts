@@ -7,7 +7,7 @@ export type CompleteConnectionDto =
       accessToken: string;
       refreshToken?: string;
       expiresIn?: number;
-      userProviderId?: string;
+      userProviderId: string;
     }
   | {
       flow: 'direct';

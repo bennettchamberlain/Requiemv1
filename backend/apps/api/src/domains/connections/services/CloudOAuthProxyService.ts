@@ -18,8 +18,8 @@ export interface CloudTokenResponse {
 /**
  * Service for proxying OAuth flows through CI Cloud.
  *
- * When `ciPortal.enabled` is true, this service replaces direct provider
- * OAuth calls so that client secrets never need to live on the box.
+ * This service replaces direct provider OAuth calls so that client secrets never need to live on the box.
+ * However, users can input their own OAuth credentials, in which case this service will not be used.
  *
  * Auth model (mirrors CI Cloud):
  *  - authorize: sends box_id + device_key in the request body
@@ -98,7 +98,7 @@ export class CloudOAuthProxyService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `basic ${btoa(`${encodeURIComponent(config.ciPortal.deviceId)}:${encodeURIComponent(config.ciPortal.apiKey)}`)}`,
+        Authorization: `Basic ${Buffer.from(`${config.ciPortal.deviceId}:${config.ciPortal.apiKey}`).toString('base64')}`,
       },
       body: JSON.stringify({
         provider,
