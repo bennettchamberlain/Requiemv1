@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -81,7 +82,7 @@ export class ProvidersController {
       if (!apiKey) {
         this.logger.log('Missing API key for OpenID connection');
 
-        throw new InternalServerErrorException('API key is required for OpenID provider');
+        throw new BadRequestException('API key is required for OpenID provider');
       }
 
       const connection = await this.connectionService.create(serviceContext, {
