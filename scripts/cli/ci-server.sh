@@ -2,9 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel 2>/dev/null)"; then
-  :
-else
+if ! REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel 2>/dev/null)"; then
   REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 fi
 MAN_FILE="${REPO_ROOT}/docs/cli/ci-server-cli.md"
@@ -193,18 +191,13 @@ cmd_config_set() {
 
   if [[ -f "${ENV_FILE}" ]]; then
     if grep -q "^${key}=" "${ENV_FILE}"; then
-      local replaced=false
       while IFS= read -r line || [[ -n "${line}" ]]; do
         if [[ "${line}" == "${key}="* ]]; then
           printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
-          replaced=true
         else
           printf "%s\n" "${line}" >> "${tmp}"
         fi
       done < "${ENV_FILE}"
-      if [[ "${replaced}" == false ]]; then
-        printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
-      fi
     else
       cat "${ENV_FILE}" > "${tmp}"
       printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
@@ -251,7 +244,9 @@ cmd_wizard() {
 
 main() {
   local command="${1:-help}"
-  shift || true
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
 
   case "${command}" in
     help|-h|--help) usage ;;
