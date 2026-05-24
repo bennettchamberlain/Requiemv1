@@ -228,7 +228,8 @@ build-production: distribute-license ## Build the application
 	@printf "\n"
 
 .PHONY: build
-build: build-production ## Build the application (alias for build-production)
+build: ## Build the application (alias for build-production)
+	@$(MAKE) build-production
 
 .PHONY: dbclear
 dbclear: ## Clear the data stored in the PostgreSQL database

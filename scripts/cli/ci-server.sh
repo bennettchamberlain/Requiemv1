@@ -2,7 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+if REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel 2>/dev/null)"; then
+  :
+else
+  REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+fi
 MAN_FILE="${REPO_ROOT}/docs/cli/ci-server-cli.md"
 ENV_FILE="${REPO_ROOT}/.env"
 
@@ -175,13 +179,21 @@ cmd_config_set() {
   fi
 
   local tmp
-  tmp="$(mktemp "${TMPDIR:-/tmp}/ci-server-cli-env.XXXXXX")"
+  if [[ ! "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "Invalid key '${key}'. Use letters, numbers, and underscores only."
+    exit 1
+  fi
+
+  tmp="$(mktemp "${TMPDIR:-/tmp}/ci-server-env-update.XXXXXX")"
 
   if [[ -f "${ENV_FILE}" ]]; then
     if grep -q "^${key}=" "${ENV_FILE}"; then
       awk -v k="${key}" -v v="${value}" '
         BEGIN { done = 0 }
-        $0 ~ "^" k "=" {
+        {
+          split($0, pair, "=")
+        }
+        pair[1] == k {
           print k "=" v
           done = 1
           next
