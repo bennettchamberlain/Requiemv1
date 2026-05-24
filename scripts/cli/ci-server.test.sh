@@ -64,7 +64,11 @@ test_wizard_shows_dry_run_mode() {
 
 main() {
   TMP_TEST_FILES=()
-  trap 'rm -f "${TMP_TEST_FILES[@]:-}" || true' EXIT
+  trap '
+    if ((${#TMP_TEST_FILES[@]} > 0)); then
+      rm -f "${TMP_TEST_FILES[@]}" || true
+    fi
+  ' EXIT
 
   test_wizard_shows_green_company_name
   test_wizard_invalid_selection_feedback
