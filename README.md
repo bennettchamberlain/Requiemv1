@@ -181,6 +181,26 @@ make reset
 
 Run `make` from the project root to see all available commands with descriptions.
 
+### CLI (Wizard + Command Mode)
+
+| Command | Description |
+|---------|-------------|
+| `make cli ARGS="help"` | Show CLI help and command groups |
+| `make wizard` | Start the interactive CLI wizard |
+| `make man` | Show the CLI manual |
+
+Examples:
+
+```bash
+make cli ARGS="setup hub"
+make cli ARGS="register portal --quiet"
+make cli ARGS="app add api"
+make cli ARGS="app status"
+make cli ARGS="setup mcp"
+make cli ARGS="shutdown"
+make cli ARGS="config show"
+```
+
 ### Setup & Initialization
 
 | Command | Description |
