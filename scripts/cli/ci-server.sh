@@ -9,6 +9,7 @@ else
 fi
 MAN_FILE="${REPO_ROOT}/docs/cli/ci-server-cli.md"
 ENV_FILE="${REPO_ROOT}/.env"
+ENV_KEY_REGEX='^[A-Za-z_][A-Za-z0-9_]*$'
 
 DRY_RUN=false
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -155,9 +156,13 @@ cmd_config_show() {
     case "${key}" in
       STORE_ADMIN_API_KEY)
         if [[ -n "${value}" ]]; then
-          local prefix="${value:0:4}"
-          local suffix="${value: -4}"
-          echo "${key}=${prefix}...${suffix}"
+          if [[ ${#value} -lt 8 ]]; then
+            echo "${key}=****"
+          else
+            local prefix="${value:0:4}"
+            local suffix="${value: -4}"
+            echo "${key}=${prefix}...${suffix}"
+          fi
         else
           echo "${key}="
         fi
@@ -179,7 +184,7 @@ cmd_config_set() {
   fi
 
   local tmp
-  if [[ ! "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  if [[ ! "${key}" =~ ${ENV_KEY_REGEX} ]]; then
     echo "Invalid key '${key}'. Use letters, numbers, and underscores only."
     exit 1
   fi
@@ -188,23 +193,18 @@ cmd_config_set() {
 
   if [[ -f "${ENV_FILE}" ]]; then
     if grep -q "^${key}=" "${ENV_FILE}"; then
-      awk -v k="${key}" -v v="${value}" '
-        BEGIN { done = 0 }
-        {
-          split($0, pair, "=")
-        }
-        pair[1] == k {
-          print k "=" v
-          done = 1
-          next
-        }
-        { print }
-        END {
-          if (!done) {
-            print k "=" v
-          }
-        }
-      ' "${ENV_FILE}" > "${tmp}"
+      local replaced=false
+      while IFS= read -r line || [[ -n "${line}" ]]; do
+        if [[ "${line}" == "${key}="* ]]; then
+          printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
+          replaced=true
+        else
+          printf "%s\n" "${line}" >> "${tmp}"
+        fi
+      done < "${ENV_FILE}"
+      if [[ "${replaced}" == false ]]; then
+        printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
+      fi
     else
       cat "${ENV_FILE}" > "${tmp}"
       printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
