@@ -151,25 +151,21 @@ cmd_config_show() {
   fi
 
   while IFS='=' read -r key value; do
-    case "${key}" in
-      STORE_ADMIN_API_KEY)
-        if [[ -n "${value}" ]]; then
-          if [[ ${#value} -lt 8 ]]; then
-            echo "${key}=****"
-          else
-            local prefix="${value:0:4}"
-            local suffix="${value: -4}"
-            echo "${key}=${prefix}...${suffix}"
-          fi
+    if [[ "${key}" == "STORE_ADMIN_API_KEY" ]]; then
+      if [[ -n "${value}" ]]; then
+        if [[ ${#value} -lt 8 ]]; then
+          echo "${key}=****"
         else
-          echo "${key}="
+          local prefix="${value:0:4}"
+          local suffix="${value: -4}"
+          echo "${key}=${prefix}...${suffix}"
         fi
-        ;;
-      # Intentionally expose known fixed keys and MCP_/HUB_ prefixed keys.
-      PORTAL_API|REGISTRY|MCP_*|HUB_*)
-        echo "${key}=${value}"
-        ;;
-    esac
+      else
+        echo "${key}="
+      fi
+    elif [[ "${key}" == "PORTAL_API" || "${key}" == "REGISTRY" || "${key}" == MCP_* || "${key}" == HUB_* ]]; then
+      echo "${key}=${value}"
+    fi
   done < "${ENV_FILE}"
 }
 
@@ -188,13 +184,13 @@ cmd_config_set() {
     exit 1
   fi
 
-  tmp="$(mktemp "${TMPDIR:-/tmp}/ci-server-env-update.XXXXXX")"
+  tmp="$(mktemp)"
   trap 'rm -f "${tmp:-}"' EXIT
 
   if [[ -f "${ENV_FILE}" ]]; then
     if grep -q "^${key}=" "${ENV_FILE}"; then
       while IFS= read -r line || [[ -n "${line}" ]]; do
-        if [[ "${line}" =~ ^${key}= ]]; then
+        if [[ "${line}" == "${key}="* ]]; then
           printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
         else
           printf "%s\n" "${line}" >> "${tmp}"
@@ -209,7 +205,11 @@ cmd_config_set() {
   fi
 
   if $DRY_RUN; then
-    echo "DRY-RUN: would write ${key}=*** to ${ENV_FILE}"
+    local display_value="${value}"
+    if [[ "${key}" == *KEY* || "${key}" == *TOKEN* || "${key}" == *PASSWORD* ]]; then
+      display_value="****"
+    fi
+    echo "DRY-RUN: would write ${key}=${display_value} to ${ENV_FILE}"
     trap - EXIT
     return 0
   fi
