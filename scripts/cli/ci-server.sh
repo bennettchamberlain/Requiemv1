@@ -147,7 +147,22 @@ cmd_config_show() {
     return 0
   fi
 
-  grep -E '^(PORTAL_API|REGISTRY|STORE_ADMIN_API_KEY|MCP_|HUB_)=' "${ENV_FILE}" || true
+  while IFS='=' read -r key value; do
+    case "${key}" in
+      STORE_ADMIN_API_KEY)
+        if [[ -n "${value}" ]]; then
+          local prefix="${value:0:4}"
+          local suffix="${value: -4}"
+          echo "${key}=${prefix}...${suffix}"
+        else
+          echo "${key}="
+        fi
+        ;;
+      PORTAL_API|REGISTRY|MCP_*|HUB_*)
+        echo "${key}=${value}"
+        ;;
+    esac
+  done < "${ENV_FILE}"
 }
 
 cmd_config_set() {
@@ -160,11 +175,24 @@ cmd_config_set() {
   fi
 
   local tmp
-  tmp="$(mktemp /tmp/ci-server-cli-env.XXXXXX)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/ci-server-cli-env.XXXXXX")"
 
   if [[ -f "${ENV_FILE}" ]]; then
     if grep -q "^${key}=" "${ENV_FILE}"; then
-      awk -v k="${key}" -v v="${value}" 'BEGIN{done=0} $0 ~ "^" k "=" {print k "=" v; done=1; next} {print} END{if(!done) print k "=" v}' "${ENV_FILE}" > "${tmp}"
+      awk -v k="${key}" -v v="${value}" '
+        BEGIN { done = 0 }
+        $0 ~ "^" k "=" {
+          print k "=" v
+          done = 1
+          next
+        }
+        { print }
+        END {
+          if (!done) {
+            print k "=" v
+          }
+        }
+      ' "${ENV_FILE}" > "${tmp}"
     else
       cat "${ENV_FILE}" > "${tmp}"
       printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
