@@ -165,6 +165,7 @@ cmd_config_show() {
           echo "${key}="
         fi
         ;;
+      # Intentionally expose known fixed keys and MCP_/HUB_ prefixed keys.
       PORTAL_API|REGISTRY|MCP_*|HUB_*)
         echo "${key}=${value}"
         ;;
@@ -188,11 +189,12 @@ cmd_config_set() {
   fi
 
   tmp="$(mktemp "${TMPDIR:-/tmp}/ci-server-env-update.XXXXXX")"
+  trap 'rm -f "${tmp:-}"' EXIT
 
   if [[ -f "${ENV_FILE}" ]]; then
     if grep -q "^${key}=" "${ENV_FILE}"; then
       while IFS= read -r line || [[ -n "${line}" ]]; do
-        if [[ "${line}" == "${key}="* ]]; then
+        if [[ "${line}" =~ ^${key}= ]]; then
           printf "%s=%s\n" "${key}" "${value}" >> "${tmp}"
         else
           printf "%s\n" "${line}" >> "${tmp}"
@@ -208,11 +210,12 @@ cmd_config_set() {
 
   if $DRY_RUN; then
     echo "DRY-RUN: would write ${key}=*** to ${ENV_FILE}"
-    rm -f "${tmp}"
+    trap - EXIT
     return 0
   fi
 
   mv "${tmp}" "${ENV_FILE}"
+  trap - EXIT
   echo "Updated ${key} in ${ENV_FILE}"
 }
 
