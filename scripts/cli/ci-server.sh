@@ -163,7 +163,7 @@ cmd_config_show() {
       else
         echo "${key}="
       fi
-    elif [[ "${key}" == "PORTAL_API" || "${key}" == "REGISTRY" || "${key}" == MCP_* || "${key}" == HUB_* ]]; then
+    elif [[ "${key}" == "PORTAL_API" || "${key}" == "REGISTRY" || "${key}" =~ ^(MCP|HUB)_ ]]; then
       echo "${key}=${value}"
     fi
   done < "${ENV_FILE}"
@@ -171,9 +171,9 @@ cmd_config_show() {
 
 cmd_config_set() {
   local key="${1:-}"
-  local value="${2:-}"
+  local value="${2-}"
 
-  if [[ -z "${key}" || -z "${value}" ]]; then
+  if [[ -z "${key}" || $# -lt 2 ]]; then
     echo "Usage: config set <KEY> <VALUE>"
     exit 1
   fi
