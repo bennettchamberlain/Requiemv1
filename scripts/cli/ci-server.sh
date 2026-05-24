@@ -15,6 +15,22 @@ if [[ "${1:-}" == "--dry-run" ]]; then
   shift
 fi
 
+print_company_banner() {
+  printf '\033[0;32m'
+  cat <<'EOF'
+COMPANION INTELLIGENCE
+
+ __   __         __               __
+/  ` /  \  |\/| |__)  /\  |\ | | /  \ |\ |
+\__, \__/  |  | |    /~~\ | \| | \__/ | \|
+
+       ___  ___              __   ___       __   ___
+| |\ |  |  |__  |    |    | / _` |__  |\ | /  ` |__
+| | \|  |  |___ |___ |___ | \__> |___ | \| \__, |___
+EOF
+  printf '\033[0m\n'
+}
+
 usage() {
   cat <<'EOF'
 CI-Server CLI
@@ -220,7 +236,15 @@ cmd_config_set() {
 }
 
 cmd_wizard() {
+  local previous_ps3="${PS3-}"
+  PS3="wizard> "
+
+  echo
+  print_company_banner
   echo "CI-Server Wizard"
+  if $DRY_RUN; then
+    echo "Mode: dry-run (no changes will be applied)"
+  fi
   echo "Select an action:"
   select selection in \
     "Setup Hub" \
@@ -232,17 +256,42 @@ cmd_wizard() {
     "Show Help" \
     "Exit"; do
     case "${selection}" in
-      "Setup Hub") cmd_setup_hub; break ;;
-      "Register with Cloud Portal") cmd_register_portal; break ;;
-      "Setup MCP") cmd_setup_mcp; break ;;
-      "App Lifecycle (status)") cmd_app status; break ;;
-      "Shutdown Services") cmd_shutdown; break ;;
-      "Show Config") cmd_config_show; break ;;
-      "Show Help") usage; break ;;
-      "Exit") break ;;
-      *) echo "Invalid selection";;
+      "Setup Hub")
+        cmd_setup_hub
+        ;;
+      "Register with Cloud Portal")
+        cmd_register_portal
+        ;;
+      "Setup MCP")
+        cmd_setup_mcp
+        ;;
+      "App Lifecycle (status)")
+        cmd_app status
+        ;;
+      "Shutdown Services")
+        cmd_shutdown
+        ;;
+      "Show Config")
+        cmd_config_show
+        ;;
+      "Show Help")
+        usage
+        ;;
+      "Exit")
+        echo "Exiting wizard."
+        break
+        ;;
+      *)
+        echo "Invalid selection '${REPLY}'. Enter a number between 1 and 8."
+        continue
+        ;;
     esac
+
+    echo
+    echo "Select another action or choose Exit."
   done
+
+  PS3="${previous_ps3}"
 }
 
 main() {

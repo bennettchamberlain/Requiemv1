@@ -74,6 +74,10 @@ wizard: ## Run the interactive CI-Server CLI wizard
 man: ## Show the CI-Server CLI manual
 	@scripts/cli/ci-server.sh man
 
+.PHONY: test-cli
+test-cli: ## Run focused tests for the CI-Server CLI wizard UX
+	@bash scripts/cli/ci-server.test.sh
+
 .PHONY: distribute-license
 distribute-license:
 	@for dir in $(LICENSE_DIRS); do \

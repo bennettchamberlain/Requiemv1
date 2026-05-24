@@ -188,6 +188,7 @@ Run `make` from the project root to see all available commands with descriptions
 | `make cli ARGS="help"` | Show CLI help and command groups |
 | `make wizard` | Start the interactive CLI wizard |
 | `make man` | Show the CLI manual |
+| `make test-cli` | Run focused CLI wizard UX tests |
 
 Examples:
 
