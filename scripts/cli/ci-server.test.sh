@@ -66,7 +66,7 @@ main() {
   TMP_TEST_FILES=()
   trap '
     if ((${#TMP_TEST_FILES[@]} > 0)); then
-      rm -f "${TMP_TEST_FILES[@]}" || true
+      rm -f "${TMP_TEST_FILES[@]}"
     fi
   ' EXIT
 
