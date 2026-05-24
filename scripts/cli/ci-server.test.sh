@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLI_SCRIPT="${SCRIPT_DIR}/ci-server.sh"
-readonly GREEN_COLOR=$'\033[0;32m'
+readonly GREEN=$'\033[0;32m'
 
 new_tmp_file() {
   local out
@@ -32,7 +32,7 @@ test_wizard_shows_green_company_name() {
   printf '8\n' | "${CLI_SCRIPT}" --dry-run wizard >"${out}" 2>&1
 
   assert_contains "${out}" "COMPANION INTELLIGENCE" "wizard should show company name"
-  assert_contains "${out}" "${GREEN_COLOR}" "wizard should start banner in green"
+  assert_contains "${out}" "${GREEN}" "wizard should start banner in green"
   assert_contains "${out}" "Exiting wizard." "wizard should exit cleanly"
 }
 
@@ -64,7 +64,7 @@ test_wizard_shows_dry_run_mode() {
 
 main() {
   TMP_TEST_FILES=()
-  trap 'rm -f "${TMP_TEST_FILES[@]:-}"' EXIT
+  trap 'rm -f "${TMP_TEST_FILES[@]:-}" || true' EXIT
 
   test_wizard_shows_green_company_name
   test_wizard_invalid_selection_feedback

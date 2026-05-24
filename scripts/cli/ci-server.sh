@@ -237,6 +237,17 @@ cmd_config_set() {
 
 cmd_wizard() {
   local original_ps3="${PS3-}"
+  local options=(
+    "Setup Hub"
+    "Register with Cloud Portal"
+    "Setup MCP"
+    "App Lifecycle (status)"
+    "Shutdown Services"
+    "Show Config"
+    "Show Help"
+    "Exit"
+  )
+  local option_count="${#options[@]}"
   PS3="wizard> "
 
   echo
@@ -246,15 +257,7 @@ cmd_wizard() {
     echo "Mode: dry-run (no changes will be applied)"
   fi
   echo "Select an action:"
-  select selection in \
-    "Setup Hub" \
-    "Register with Cloud Portal" \
-    "Setup MCP" \
-    "App Lifecycle (status)" \
-    "Shutdown Services" \
-    "Show Config" \
-    "Show Help" \
-    "Exit"; do
+  select selection in "${options[@]}"; do
     case "${selection}" in
       "Setup Hub")
         cmd_setup_hub
@@ -282,7 +285,7 @@ cmd_wizard() {
         break
         ;;
       *)
-        echo "Invalid selection '${REPLY}'. Enter a number between 1 and 8."
+        echo "Invalid selection '${REPLY}'. Enter a number between 1 and ${option_count}."
         continue
         ;;
     esac
