@@ -236,7 +236,7 @@ cmd_config_set() {
 }
 
 cmd_wizard() {
-  local previous_ps3="${PS3-}"
+  local original_ps3="${PS3-}"
   PS3="wizard> "
 
   echo
@@ -291,7 +291,7 @@ cmd_wizard() {
     echo "Select another action or choose Exit."
   done
 
-  PS3="${previous_ps3}"
+  PS3="${original_ps3}"
 }
 
 main() {
