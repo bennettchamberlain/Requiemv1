@@ -46,6 +46,7 @@ export interface RecallResult {
 
 export interface AbsorbResult {
   ok: boolean;
+  inserted: number;
 }
 
 export interface ToolResult {
