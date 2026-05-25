@@ -31,6 +31,10 @@ EOF
   printf '\033[0m\n'
 }
 
+print_wizard_section() {
+  printf '\n== %s ==\n' "$1"
+}
+
 usage() {
   cat <<'EOF'
 CI-Server CLI
@@ -260,24 +264,31 @@ cmd_wizard() {
   select selection in "${options[@]}"; do
     case "${selection}" in
       "Setup Hub")
+        print_wizard_section "Setup Hub"
         cmd_setup_hub
         ;;
       "Register with Cloud Portal")
+        print_wizard_section "Register with Cloud Portal"
         cmd_register_portal
         ;;
       "Setup MCP")
+        print_wizard_section "Setup MCP"
         cmd_setup_mcp
         ;;
       "App Lifecycle (status)")
+        print_wizard_section "App Lifecycle (status)"
         cmd_app status
         ;;
       "Shutdown Services")
+        print_wizard_section "Shutdown Services"
         cmd_shutdown
         ;;
       "Show Config")
+        print_wizard_section "Show Config"
         cmd_config_show
         ;;
       "Show Help")
+        print_wizard_section "Show Help"
         usage
         ;;
       "Exit")

@@ -71,3 +71,39 @@ scripts/cli/ci-server.sh setup mcp
 scripts/cli/ci-server.sh shutdown
 scripts/cli/ci-server.sh config set HUB_NAME my-hub
 ```
+
+## WIZARD / TUI UX WALKTHROUGH (SCREENSHOTS)
+
+The screenshots below show each major wizard section using `--dry-run`, so operators can preview actions safely.
+
+### 1) Wizard Home
+
+![Wizard home](./images/wizard/wizard-home.svg)
+
+### 2) Setup Hub
+
+![Wizard setup hub](./images/wizard/wizard-setup-hub.svg)
+
+### 3) Register with Cloud Portal
+
+![Wizard register portal](./images/wizard/wizard-register-portal.svg)
+
+### 4) Setup MCP
+
+![Wizard setup mcp](./images/wizard/wizard-setup-mcp.svg)
+
+### 5) App Lifecycle (status)
+
+![Wizard app status](./images/wizard/wizard-app-status.svg)
+
+### 6) Shutdown Services
+
+![Wizard shutdown](./images/wizard/wizard-shutdown.svg)
+
+### 7) Show Config
+
+![Wizard show config](./images/wizard/wizard-show-config.svg)
+
+### 8) Show Help
+
+![Wizard show help](./images/wizard/wizard-help.svg)

@@ -190,6 +190,8 @@ Run `make` from the project root to see all available commands with descriptions
 | `make man` | Show the CLI manual |
 | `make test-cli` | Run focused CLI wizard UX tests |
 
+Wizard/TUI screenshot walkthrough: [`docs/cli/ci-server-cli.md`](./docs/cli/ci-server-cli.md#wizard--tui-ux-walkthrough-screenshots)
+
 Examples:
 
 ```bash
