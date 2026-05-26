@@ -19,8 +19,8 @@ import {
   type ToolResult,
 } from '../types';
 
-@Controller('agent')
-export class AgentContextController {
+@Controller('memory')
+export class MemoryController {
   constructor(
     private readonly recallService: RecallService,
     private readonly absorbService: AbsorbService,

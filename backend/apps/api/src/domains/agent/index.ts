@@ -18,14 +18,14 @@ import { Module } from '@nestjs/common';
 import { MemoryModule } from '@ci/domains/memory';
 import { SearchNextModule } from '@ci/domains/search-next';
 
-import { AgentContextController } from './controllers/AgentContextController';
+import { MemoryController } from './controllers/MemoryController';
 import { AbsorbService } from './services/AbsorbService';
 import { RecallService } from './services/RecallService';
 
 @Module({
   imports: [MemoryModule, SearchNextModule],
   providers: [RecallService, AbsorbService],
-  controllers: [AgentContextController],
+  controllers: [MemoryController],
 })
 export class AgentModule {}
 
