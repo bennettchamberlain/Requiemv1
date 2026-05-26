@@ -9,7 +9,7 @@ export const recallSchema = z.object({
   maxResults: z.number().int().min(1).max(20).optional(),
 });
 
-export const absorbSchema = z.object({
+export const turnSchema = z.object({
   messages: z
     .array(
       z.object({
@@ -19,26 +19,7 @@ export const absorbSchema = z.object({
     )
     .min(1),
   sessionId: z.string().optional(),
-  platform: z.string().optional(),
 });
 
 export type RecallDto = z.infer<typeof recallSchema>;
-export type AbsorbDto = z.infer<typeof absorbSchema>;
-
-// ---------------------------------------------------------------------------
-// Response shapes
-// ---------------------------------------------------------------------------
-
-export interface ContextResult {
-  block: string;
-}
-
-export interface RecallResult {
-  block: string;
-  resultCount: number;
-}
-
-export interface AbsorbResult {
-  ok: boolean;
-  inserted: number;
-}
+export type TurnDto = z.infer<typeof turnSchema>;
