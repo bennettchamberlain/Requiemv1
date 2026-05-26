@@ -9,14 +9,11 @@ import { RecallService } from '../services/RecallService';
 import {
   absorbSchema,
   recallSchema,
-  toolCallSchema,
   type AbsorbDto,
   type AbsorbResult,
   type ContextResult,
   type RecallDto,
   type RecallResult,
-  type ToolCallDto,
-  type ToolResult,
 } from '../types';
 
 @Controller('memory')
@@ -58,17 +55,5 @@ export class MemoryController {
     @Body(new ValidationPipe(absorbSchema)) input: AbsorbDto,
   ): Promise<AbsorbResult> {
     return this.absorbService.absorb(toServiceContext(context), input);
-  }
-
-  /**
-   * Dispatches an explicit tool call from the agent (ci_search, ci_query, ci_remember).
-   */
-  @UseGuards(ApiKeyGuard)
-  @Post('tools')
-  handleToolCall(
-    @Context() context: RequestContext,
-    @Body(new ValidationPipe(toolCallSchema)) input: ToolCallDto,
-  ): Promise<ToolResult> {
-    return this.recallService.handleToolCall(toServiceContext(context), input);
   }
 }
