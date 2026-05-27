@@ -5,7 +5,7 @@ import { LoggerService } from '@ci/common/logging';
 import { ConceptService, GraphUtilityService, UserContextService } from '@ci/domains/memory';
 import { SearchService } from '@ci/domains/search-next';
 
-import type { ContextResult, RecallDto, RecallResult, ToolCallDto, ToolResult } from '../types';
+import type { ContextResult, RecallDto, RecallResult } from '../types';
 
 const DEFAULT_MAX_RESULTS = 5;
 const DEFAULT_QUERY_MAX_RESULTS = 10;
@@ -136,106 +136,6 @@ export class RecallService {
       this.logger.warn(`Recall failed for user ${context.userId}: ${err}`);
 
       return { block: '', resultCount: 0 };
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Tool dispatch
-  // ---------------------------------------------------------------------------
-
-  async handleToolCall(context: UserServiceContext, dto: ToolCallDto): Promise<ToolResult> {
-    switch (dto.tool) {
-      case 'ci_search':
-        return this.toolSearch(context, dto.args);
-      case 'ci_query':
-        return this.toolQuery(context, dto.args);
-      case 'ci_remember':
-        return this.toolRemember(context, dto.args);
-      default:
-        return { result: { error: `Unknown tool: ${dto.tool}` } };
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
-  private async toolSearch(context: UserServiceContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const query = String(args['query'] ?? '');
-    const maxResults = Math.min(Number(args['maxResults'] ?? DEFAULT_MAX_RESULTS), 20);
-
-    if (!query) {
-      return { result: { error: 'query is required' } };
-    }
-
-    const { block, resultCount } = await this.recall(context, { query, maxResults });
-
-    return { result: { memories: block, count: resultCount } };
-  }
-
-  private async toolQuery(context: UserServiceContext, args: Record<string, unknown>): Promise<ToolResult> {
-    const query = String(args['query'] ?? '');
-    const entityType = args['entityType'] as string | undefined;
-    const maxResults = Math.min(Number(args['maxResults'] ?? DEFAULT_QUERY_MAX_RESULTS), 20);
-
-    if (!query) {
-      return { result: { error: 'query is required' } };
-    }
-
-    try {
-      const searchOptions: Parameters<typeof this.searchService.search>[1] = {
-        query,
-        mode: 'hybrid',
-        maxResults,
-      };
-
-      if (entityType) {
-        (searchOptions as { includeTypes?: string[] }).includeTypes = [entityType];
-      }
-
-      const searchResults = await this.searchService.search(context, searchOptions as never);
-      const ids = searchResults.map((r) => r.id);
-      const nodes = await this.graphUtility.getNodesByIds(ids, context.userId);
-
-      const results = nodes.map((node) => ({
-        id: node.entity_id,
-        type: node.entity_type,
-        name: node.name,
-        description: node.description,
-        properties: node.properties,
-      }));
-
-      return { result: { results, count: results.length } };
-    } catch (err) {
-      this.logger.warn(`ci_query failed: ${err}`);
-
-      return { result: { error: 'Query failed', details: String(err) } };
-    }
-  }
-
-  private async toolRemember(
-    context: UserServiceContext,
-    args: Record<string, unknown>,
-  ): Promise<ToolResult> {
-    const content = String(args['content'] ?? '');
-    const name = args['name'] ? String(args['name']) : undefined;
-
-    if (!content) {
-      return { result: { error: 'content is required' } };
-    }
-
-    try {
-      await this.conceptService.create(context, {
-        name: name ?? content.slice(0, 80),
-        description: content,
-        searchContent: content,
-      });
-
-      return { result: { stored: true } };
-    } catch (err) {
-      this.logger.warn(`ci_remember failed: ${err}`);
-
-      return { result: { error: 'Failed to store memory', details: String(err) } };
     }
   }
 
