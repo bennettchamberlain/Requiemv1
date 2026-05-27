@@ -23,3 +23,12 @@ export const turnSchema = z.object({
 
 export type RecallDto = z.infer<typeof recallSchema>;
 export type TurnDto = z.infer<typeof turnSchema>;
+
+// ---------------------------------------------------------------------------
+// Response shapes
+// ---------------------------------------------------------------------------
+
+export interface RecallResult {
+  block: string;
+  resultCount: number;
+}
