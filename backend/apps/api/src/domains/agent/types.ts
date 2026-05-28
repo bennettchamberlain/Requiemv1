@@ -28,6 +28,10 @@ export type TurnDto = z.infer<typeof turnSchema>;
 // Response shapes
 // ---------------------------------------------------------------------------
 
+export interface ContextResult {
+  block: string;
+}
+
 export interface RecallResult {
   block: string;
   resultCount: number;
