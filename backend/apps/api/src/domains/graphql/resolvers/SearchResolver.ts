@@ -15,6 +15,7 @@ import {
   type TaggableEntity,
 } from '@ci/domains/search-next';
 
+import { ActionType } from '../types/ActionType';
 import { AnswerType } from '../types/AnswerType';
 import { BrowserActivityType } from '../types/BrowserActivityType';
 import { CommunicationType } from '../types/CommunicationType';
@@ -245,6 +246,8 @@ export class SearchResolver {
 
   private toSearchResult(resolved: ResolvedEntity): SearchResult {
     switch (resolved.type) {
+      case 'action':
+        return ActionType.toType(resolved.entity);
       case 'answer':
         return AnswerType.toType(resolved.entity);
       case 'browser-activity':

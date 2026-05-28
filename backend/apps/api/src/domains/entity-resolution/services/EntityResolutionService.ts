@@ -4,7 +4,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { type BrowserActivity, BrowserActivityService } from '@ci/domains/browser-activity';
 import { type Thread, ThreadService } from '@ci/domains/conversations';
 import { type SignedFile, FileService } from '@ci/domains/files';
-import { type Answer, AnswerService } from '@ci/domains/intelligence';
+import { type Answer, type Action, ActionService, AnswerService } from '@ci/domains/intelligence';
 import {
   type Communication,
   type Concept,
@@ -27,6 +27,7 @@ import { type EntityIdentifier, type IndexableEntity, type TaggableEntity } from
 type EntityType = IndexableEntity | TaggableEntity;
 
 export type ResolvedEntity =
+  | { type: 'action'; id: string; entity: Action }
   | { type: 'answer'; id: string; entity: Answer }
   | { type: 'browser-activity'; id: string; entity: BrowserActivity }
   | { type: 'communication'; id: string; entity: Communication }
@@ -43,6 +44,7 @@ export type ResolvedEntity =
 @Injectable()
 export class EntityResolutionService {
   constructor(
+    private readonly actionService: ActionService,
     private readonly answerService: AnswerService,
     private readonly browserActivityService: BrowserActivityService,
     private readonly communicationService: CommunicationService,
@@ -70,6 +72,7 @@ export class EntityResolutionService {
     const grouped = this.groupByType(identifiers);
 
     const [
+      actions,
       answers,
       browserActivities,
       communications,
@@ -83,6 +86,7 @@ export class EntityResolutionService {
       places,
       threads,
     ] = await Promise.all([
+      this.actionService.findByIds(context, grouped.get('action') ?? []),
       this.answerService.findByIds(context, grouped.get('answer') ?? []),
       this.browserActivityService.findByIds(context, grouped.get('browser-activity') ?? []),
       this.communicationService.findByIds(context, grouped.get('communication') ?? []),
@@ -99,6 +103,7 @@ export class EntityResolutionService {
 
     const map = new Map<string, ResolvedEntity>();
 
+    this.addToMap(map, 'action', actions);
     this.addToMap(map, 'answer', answers);
     this.addToMap(map, 'browser-activity', browserActivities);
     this.addToMap(map, 'communication', communications);
