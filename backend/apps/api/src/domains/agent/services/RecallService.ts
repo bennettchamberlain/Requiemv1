@@ -8,7 +8,6 @@ import { SearchService } from '@ci/domains/search-next';
 import type { ContextResult, RecallDto, RecallResult } from '../types';
 
 const DEFAULT_MAX_RESULTS = 5;
-const DEFAULT_QUERY_MAX_RESULTS = 10;
 // Approx token budget: each node snippet ~40 tokens, cap total injected context
 const MAX_BLOCK_CHARS = 3000;
 
