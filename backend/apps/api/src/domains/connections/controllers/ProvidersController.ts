@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -75,6 +76,31 @@ export class ProvidersController {
       throw new InternalServerErrorException();
     }
 
+    if (provider.authType === 'openid') {
+      const apiKey = input.apiKey;
+
+      if (!apiKey) {
+        this.logger.log('Missing API key for OpenID connection');
+
+        throw new BadRequestException('API key is required for OpenID provider');
+      }
+
+      const connection = await this.connectionService.create(serviceContext, {
+        providerId: provider.id,
+        name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
+        accessToken: apiKey,
+        schedule: '1 hour',
+        endpoints: input.endpoints,
+      });
+
+      const authorizationUrl = await client.getAuthorizationUrl(connection);
+
+      return {
+        authorizationUrl,
+      };
+    }
+
+    const oauthClient = client as BaseOAuth2Client;
     const connection = await this.connectionService.create(serviceContext, {
       providerId: provider.id,
       name: provider.name ?? 'My Connection', // TODO: We shouldn't require a name here.
@@ -82,10 +108,10 @@ export class ProvidersController {
       endpoints: input.endpoints,
     });
 
-    const credentials = await client.getClientCredentials(connection);
+    const credentials = await oauthClient.getClientCredentials(connection);
 
     if (credentials) {
-      const authorizationUrl = await client.getAuthorizationUrl(connection);
+      const authorizationUrl = await oauthClient.getAuthorizationUrl(connection);
 
       return {
         authorizationUrl,

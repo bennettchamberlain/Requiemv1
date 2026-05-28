@@ -10,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
@@ -72,6 +73,14 @@ const completeConnectionSchema = z.discriminatedUnion('flow', [
     code: z.string(),
   }),
 ]);
+
+const completeOpenIDSchema = z.object({
+  params: z.record(z.string()),
+});
+
+interface CompleteOpenIDDto {
+  params: Record<string, string>;
+}
 
 @Controller('connections')
 export class ConnectionsController {
@@ -301,6 +310,104 @@ export class ConnectionsController {
 
     await this.update(context, connectionId, {
       externalId,
+    });
+  }
+
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('openid/complete')
+  @HttpCode(204)
+  async completeOpenIDCallback(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(completeOpenIDSchema)) body: CompleteOpenIDDto,
+  ) {
+    const serviceContext = toServiceContext(context);
+    const { params } = body;
+
+    const claimedId = params['openid.claimed_id'];
+    const identity = params['openid.identity'];
+    const opEndpoint = params['openid.op_endpoint'];
+    const connectionId = params['connection_id'];
+
+    const connection = await this.connectionService.findById(serviceContext, connectionId);
+
+    if (connection == null) {
+      this.logger.log('Performed a callback on `null` connection');
+
+      throw new NotFoundException();
+    }
+
+    const client = this.clientFactory.getClientByProviderId(connection.provider?.id);
+
+    if (client == null) {
+      this.logger.log('Performed a callback without an associated client');
+
+      throw new InternalServerErrorException();
+    }
+
+    if (!claimedId || !identity || !opEndpoint) {
+      this.logger.log('Missing required OpenID parameters');
+      throw new InternalServerErrorException('Missing required OpenID parameters');
+    }
+
+    // Validate that the claimed_id is from a trusted Steam OpenID endpoint
+    if (!claimedId.startsWith('https://steamcommunity.com/openid/id/')) {
+      this.logger.log('Invalid OpenID claimed_id', { claimedId });
+      throw new UnauthorizedException('Invalid OpenID claimed_id');
+    }
+
+    // --- Direct Verification (Section 11.4.2) ---
+    // Send all params back to the OP with openid.mode changed to check_authentication
+    const verifyParams = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(params)) {
+      if (key === 'openid.mode') {
+        verifyParams.set(key, 'check_authentication');
+      } else {
+        verifyParams.set(key, value);
+      }
+    }
+
+    const verifyResponse = await fetch(opEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: verifyParams.toString(),
+    });
+
+    const verifyBody = await verifyResponse.text();
+    const isValid = verifyBody.includes('is_valid:true');
+
+    if (!isValid) {
+      this.logger.log('OpenID signature verification failed', { verifyBody });
+      throw new UnauthorizedException('OpenID signature verification failed');
+    }
+
+    // Extract the Steam ID from the claimed_id URL
+    const steamId = claimedId.split('/').pop();
+
+    if (!steamId) {
+      throw new InternalServerErrorException('Could not extract Steam ID from claimed_id');
+    }
+
+    // Find the pending connection for this user.
+    // The connection was already created by ProvidersController.connect() when the user
+    // initiated the OpenID flow — find it by looking for an inactive connection with
+    // the Steam provider for this user.
+    const existingConnection = await this.connectionService.search(serviceContext, {
+      providerId: connection!.providerId,
+      active: true,
+      externalId: steamId,
+    });
+
+    if (existingConnection.length > 0 && existingConnection.find((c) => c.id !== connectionId)) {
+      await this.connectionService.remove(serviceContext, connectionId);
+      throw new ConflictException('A connection to that account already exists');
+    }
+
+    // Activate the connection and set the external ID to the Steam ID
+    await this.connectionService.update(serviceContext, connectionId, {
+      active: true,
+      needsReauth: false,
+      externalId: steamId,
     });
   }
 }
