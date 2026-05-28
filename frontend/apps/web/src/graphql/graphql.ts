@@ -1575,7 +1575,7 @@ export type SearchResultEdge = {
   node: SearchResultType;
 };
 
-export type SearchResultType = AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
+export type SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
 
 export type SummaryConnection = Connection & {
   __typename?: 'SummaryConnection';
@@ -2102,6 +2102,7 @@ export type SearchBoxQueryQueryVariables = Exact<{
 
 
 export type SearchBoxQueryQuery = { __typename?: 'Query', search: { __typename?: 'SearchResultConnection', edges: Array<{ __typename?: 'SearchResultEdge', node:
+        | { __typename: 'ActionType', id: string }
         | { __typename: 'AnswerType', id: string }
         | { __typename: 'BrowserActivityType', id: string }
         | (
@@ -2340,6 +2341,7 @@ export type SearchQueryVariables = Exact<{
 
 
 export type SearchQuery = { __typename?: 'Query', search: { __typename?: 'SearchResultConnection', edges: Array<{ __typename?: 'SearchResultEdge', node:
+        | { __typename: 'ActionType', id: string }
         | (
           { __typename: 'AnswerType', id: string }
           & { ' $fragmentRefs'?: { 'AnswerGridItemDataFragment': AnswerGridItemDataFragment;'TableAnswerRowDataFragment': TableAnswerRowDataFragment } }
