@@ -5,9 +5,8 @@ import { ApiKeyGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 
-import { recallSchema, type RecallDto } from '../types';
-
 import { RecallService } from '../services/RecallService';
+import { recallSchema, type RecallDto } from '../types';
 
 @Controller('memory')
 export class MemoryController {
@@ -28,7 +27,7 @@ export class MemoryController {
   async recall(@Context() context: RequestContext, @Body(new ValidationPipe(recallSchema)) input: RecallDto) {
     return this.recallService.recall(toServiceContext(context), {
       query: input.query,
-      maxResults: input.maxResults
+      maxResults: input.maxResults,
     });
   }
 
