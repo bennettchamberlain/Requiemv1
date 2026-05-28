@@ -112,13 +112,6 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     allowedHosts: getAllowedHosts(),
-    proxy: {
-      '/api': {
-        target: process.env.DEV_API_PROXY ?? 'http://127.0.0.1:3030',
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, '') || '/',
-      },
-    },
     fs: {
       allow: ['.', path.resolve(__dirname, '../../packages')],
     },
