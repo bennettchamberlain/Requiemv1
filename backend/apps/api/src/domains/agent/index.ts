@@ -16,6 +16,7 @@ import { Module } from '@nestjs/common';
 
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { MemoryModule } from '@ci/domains/memory';
+import { NotesModule } from '@ci/domains/notes';
 import { SearchNextModule } from '@ci/domains/search-next';
 
 import { MemoryController } from './controllers/MemoryController';
@@ -24,7 +25,7 @@ import { RecallService } from './services/RecallService';
 import { SerializerService } from './services/SerializerService';
 
 @Module({
-  imports: [EntityResolutionModule, MemoryModule, SearchNextModule],
+  imports: [EntityResolutionModule, MemoryModule, NotesModule, SearchNextModule],
   providers: [ContextService, RecallService, SerializerService],
   exports: [SerializerService],
   controllers: [MemoryController],

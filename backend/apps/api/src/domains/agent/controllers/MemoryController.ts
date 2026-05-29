@@ -1,19 +1,21 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { ApiKeyGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
+import { NoteService } from '@ci/domains/notes';
 
 import { ContextService } from '../services/ContextService';
 import { RecallService } from '../services/RecallService';
-import { recallSchema, type RecallDto } from '../types';
+import { noteSchema, recallSchema, type NoteDto, type RecallDto } from '../types';
 
 @Controller('memory')
 export class MemoryController {
   constructor(
     private readonly contextService: ContextService,
     private readonly recallService: RecallService,
+    private readonly noteService: NoteService,
     private readonly logger: LoggerService,
   ) {}
 
@@ -55,6 +57,28 @@ export class MemoryController {
   }
 
   /**
+   * Stores a raw memory fragment written by the agent or by Hermes's built-in
+   * memory system (on_memory_write hook).
+   *
+   * The fragment is saved verbatim to ci.notes.  A future cron job will batch
+   * these fragments and use an LLM extraction pass to promote them into
+   * structured entities and relationships in the knowledge graph.
+   *
+   * Invoked by:
+   *   - Hermes 'on_memory_write'
+   */
+  @UseGuards(ApiKeyGuard)
+  @HttpCode(201)
+  @Post('note')
+  async note(@Context() context: RequestContext, @Body(new ValidationPipe(noteSchema)) input: NoteDto) {
+    const title = input.title ?? (input.source ? `[${input.source}]` : null);
+    await this.noteService.create(toServiceContext(context), {
+      title,
+      content: input.content,
+    });
+  }
+
+  /**
    * Ingests a conversation turn into the database.
    *
    * Invoked by:
@@ -70,9 +94,5 @@ export class MemoryController {
     //
     // Creating a thread/messages emits events internally; all async processing
     // downstream can be handled in event listeners.
-    //
-    // What we return here gets injected into the agent message before it goes
-    // to the model. Latency here is user-visible, so partition sync (immediate)
-    // from async (gradual enrichment).
   }
 }
