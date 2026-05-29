@@ -25,7 +25,6 @@ import { SerializerService } from './services/SerializerService';
 @Module({
   imports: [EntityResolutionModule, MemoryModule, SearchNextModule],
   providers: [RecallService, SerializerService],
-  exports: [SerializerService],
   controllers: [MemoryController],
 })
 export class AgentModule {}
