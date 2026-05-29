@@ -4,20 +4,22 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { ApiKeyGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
+import { UserContextService } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
 
-import { ContextService } from '../services/ContextService';
 import { RecallService } from '../services/RecallService';
 import { noteSchema, recallSchema, type NoteDto, type RecallDto } from '../types';
 
 @Controller('memory')
 export class MemoryController {
   constructor(
-    private readonly contextService: ContextService,
+    private readonly userContextService: UserContextService,
     private readonly recallService: RecallService,
     private readonly noteService: NoteService,
     private readonly logger: LoggerService,
-  ) {}
+  ) {
+    logger.setContext(MemoryController.name);
+  }
 
   /**
    * L0 — static user profile block for the agent system prompt.
@@ -33,7 +35,29 @@ export class MemoryController {
   @UseGuards(ApiKeyGuard)
   @Get('context')
   async context(@Context() context: RequestContext) {
-    return this.contextService.getContext(toServiceContext(context));
+    const serviceContext = toServiceContext(context);
+
+    try {
+      const userCtx = await this.userContextService.getUserContextForLLM(serviceContext.userId);
+
+      if (!userCtx) {
+        return {
+          block: '',
+        };
+      }
+
+      const block = this.userContextService.formatContextForSystemPrompt(userCtx);
+
+      return {
+        block,
+      };
+    } catch (err) {
+      this.logger.warn(`L0 context failed for user ${context.userId}: ${err}`);
+
+      return {
+        block: '',
+      };
+    }
   }
 
   /**

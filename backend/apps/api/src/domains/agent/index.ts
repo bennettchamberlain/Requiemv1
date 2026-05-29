@@ -20,14 +20,13 @@ import { NotesModule } from '@ci/domains/notes';
 import { SearchNextModule } from '@ci/domains/search-next';
 
 import { MemoryController } from './controllers/MemoryController';
-import { ContextService } from './services/ContextService';
 import { RecallService } from './services/RecallService';
 import { SerializerService } from './services/SerializerService';
 
 @Module({
   imports: [EntityResolutionModule, MemoryModule, NotesModule, SearchNextModule],
-  providers: [ContextService, RecallService, SerializerService],
   exports: [SerializerService],
+  providers: [RecallService, SerializerService],
   controllers: [MemoryController],
 })
 export class AgentModule {}
