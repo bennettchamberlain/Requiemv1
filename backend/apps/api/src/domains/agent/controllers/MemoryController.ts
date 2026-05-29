@@ -1,9 +1,10 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { ApiKeyGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
+import { UserContextService } from '@ci/domains/memory';
 
 import { RecallService } from '../services/RecallService';
 import { recallSchema, type RecallDto } from '../types';
@@ -11,16 +12,62 @@ import { recallSchema, type RecallDto } from '../types';
 @Controller('memory')
 export class MemoryController {
   constructor(
+    private readonly userContextService: UserContextService,
     private readonly recallService: RecallService,
     private readonly logger: LoggerService,
-  ) {}
+  ) {
+    logger.setContext(MemoryController.name);
+  }
 
   /**
-   * Semantic search against the knowledge graph.
+   * L0 — static user profile block for the agent system prompt.
+   *
+   * Returns a pre-formatted markdown block summarising the user's knowledge
+   * graph: name, relationships, preferences, and dossier. Intended to be
+   * called once per session (system_prompt_block), not per turn.
    *
    * Invoked by:
+   *   - Hermes 'system_prompt_block'
    *   - OpenClaw 'assemble'
+   */
+  @UseGuards(ApiKeyGuard)
+  @Get('context')
+  async context(@Context() context: RequestContext) {
+    const serviceContext = toServiceContext(context);
+
+    try {
+      const userCtx = await this.userContextService.getUserContextForLLM(serviceContext.userId);
+
+      if (!userCtx) {
+        return {
+          block: '',
+        };
+      }
+
+      const block = this.userContextService.formatContextForSystemPrompt(userCtx);
+
+      return {
+        block,
+      };
+    } catch (err) {
+      this.logger.warn(`L0 context failed for user ${context.userId}: ${err}`);
+
+      return {
+        block: '',
+      };
+    }
+  }
+
+  /**
+   * L1 — per-turn search against the knowledge graph.
+   *
+   * Runs a hybrid keyword/semantic search using the query, then hydrates
+   * the matched entity IDs into readable names and content. The response
+   * block is injected into the agent context before each turn.
+   *
+   * Invoked by:
    *   - Hermes 'prefetch'
+   *   - OpenClaw 'assemble'
    */
   @UseGuards(ApiKeyGuard)
   @Post('recall')
@@ -32,43 +79,24 @@ export class MemoryController {
   }
 
   /**
-   * Ingests a conversation into the database.
+   * Ingests a conversation turn into the database.
    *
-   * Invoked by
+   * Invoked by:
    *   - OpenClaw 'afterTurn'
    *   - Hermes 'sync_turn'
    */
   @UseGuards(ApiKeyGuard)
   @Post('turn')
   async turn(/* @Context() context: RequestContext, @Body(new ValidationPipe(turnSchema)) input: TurnDto */) {
-    // Right now we're just using this to sync Hermes and OpenClaw messages to
-    // sync to our system. We would store these as threads and messages (probably).
-    //
-    // Ultimately we would be interested in syncing context when a turn happens.
-    //
     // threadService.upsert(sessionId)
     // messageService.create(userMessage)
     // messageService.create(assistantMessage)
     //
-    // As a result of creating a thread and / or messages, we already emit events internally.
+    // Creating a thread/messages emits events internally; all async processing
+    // downstream can be handled in event listeners.
     //
-    // All of the asynchronous processing downstream of these events can be handled in event listeners.
-    //
-    // What we return from this message gets injected into the agent message before it goes into the agent.
-    // Note that the respones are not SSE, so any latency that we are incurring gets passed to the user.
-    // So we might think about how to partition the immediate results (sync) and the gradual improvements to our
-    // responses (async).
+    // What we return here gets injected into the agent message before it goes
+    // to the model. Latency here is user-visible, so partition sync (immediate)
+    // from async (gradual enrichment).
   }
-
-  /**
-   * We don't know how we're going to use this yet, so we're leaving it as a
-   * no-op route.
-   *
-   * Invoked by:
-   *   - OpenClaw 'memory_store'
-   *   - Hermes 'on_memory_write'
-   */
-  // @UseGuards(ApiKeyGuard)
-  // @Post('persist')
-  // async persist() { }
 }
