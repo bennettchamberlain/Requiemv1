@@ -115,6 +115,8 @@ export const ConfigSchema = z.object({
     'require.signup.codes': booleanStringSchema,
     'files.page': booleanStringSchema,
     hbpe: booleanStringSchema,
+    /** Enables the memory compaction cron that promotes note fragments into graph entities. */
+    'agent.memory.compaction': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

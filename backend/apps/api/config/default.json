@@ -96,7 +96,8 @@
     "new.insights.page": false,
     "require.signup.codes": true,
     "files.page": false,
-    "hbpe": false
+    "hbpe": false,
+    "agent.memory.compaction": false
   },
   "environment": {
     "database.query.logging": false

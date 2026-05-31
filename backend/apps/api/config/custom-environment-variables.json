@@ -50,7 +50,8 @@
     "new.insights.page": "ENABLE_NEW_INSIGHTS_PAGE",
     "require.signup.codes": "ENABLE_REQUIRE_SIGNUP_CODES",
     "files.page": "ENABLE_FILES_PAGE",
-    "hbpe": "ENABLE_HBPE"
+    "hbpe": "ENABLE_HBPE",
+    "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"
