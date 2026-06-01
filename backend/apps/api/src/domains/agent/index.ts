@@ -13,21 +13,37 @@
  */
 
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
-import { NotesModule } from '@ci/domains/notes';
 import { SearchNextModule } from '@ci/domains/search-next';
 
 import { MemoryController } from './controllers/MemoryController';
+import { MemoryCompactionCron } from './cron/MemoryCompactionCron';
+import { AgentMemoryEntity } from './entities/AgentMemoryEntity';
+import { AgentMemoryService } from './services/AgentMemoryService';
+import { MemoryCompactionService } from './services/MemoryCompactionService';
 import { RecallService } from './services/RecallService';
 import { SerializerService } from './services/SerializerService';
 
 @Module({
-  imports: [EntityResolutionModule, LLMModule, MemoryModule, NotesModule, SearchNextModule],
+  imports: [
+    TypeOrmModule.forFeature([AgentMemoryEntity]),
+    EntityResolutionModule,
+    LLMModule,
+    MemoryModule,
+    SearchNextModule,
+  ],
   exports: [SerializerService],
-  providers: [RecallService, SerializerService],
+  providers: [
+    AgentMemoryService,
+    MemoryCompactionCron,
+    MemoryCompactionService,
+    RecallService,
+    SerializerService,
+  ],
   controllers: [MemoryController],
 })
 export class AgentModule {}

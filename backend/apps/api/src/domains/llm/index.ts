@@ -24,42 +24,24 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
-import { NotesModule } from '@ci/domains/notes';
 import { ToolsModule } from '@ci/domains/tools';
 
 import { OllamaController } from './controllers/OllamaController';
 import { AnswerInferenceCron } from './cron/AnswerInferenceCron';
-import { MemoryCompactionCron } from './cron/MemoryCompactionCron';
 import { ImageDescriptionListener } from './listeners/ImageDescriptionListener';
 import { InventoryListener } from './listeners/InventoryListener';
-import { MemoryCompactionService } from './services/MemoryCompactionService';
 import { OllamaService } from './services/OllamaService';
 
 /**
  * @internal
  */
 @Module({
-  imports: [
-    ConversationModule,
-    EventsModule,
-    FilesModule,
-    IntelligenceModule,
-    MemoryModule,
-    NotesModule,
-    ToolsModule,
-  ],
-  providers: [
-    AnswerInferenceCron,
-    ImageDescriptionListener,
-    InventoryListener,
-    MemoryCompactionCron,
-    MemoryCompactionService,
-    OllamaService,
-  ],
+  imports: [ConversationModule, EventsModule, FilesModule, IntelligenceModule, MemoryModule, ToolsModule],
+  providers: [AnswerInferenceCron, ImageDescriptionListener, InventoryListener, OllamaService],
   controllers: [OllamaController],
-  exports: [MemoryCompactionService],
+  exports: [OllamaService],
 })
 export class LLMModule {}
 
-export { MemoryCompactionService };
+export { OllamaService };
 export { PROMPT_MODEL } from './services/OllamaService';

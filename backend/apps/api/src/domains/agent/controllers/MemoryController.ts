@@ -4,24 +4,28 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
-import { MemoryCompactionService } from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
-import { NoteService } from '@ci/domains/notes';
 
+import { AgentMemoryService } from '../services/AgentMemoryService';
+import { MemoryCompactionService } from '../services/MemoryCompactionService';
 import { RecallService } from '../services/RecallService';
-import { noteSchema, recallSchema, type NoteDto, type RecallDto } from '../types';
+import { agentMemorySchema, recallSchema, type AgentMemoryDto, type RecallDto } from '../types';
 
 @Controller('memory')
 export class MemoryController {
   constructor(
     private readonly userContextService: UserContextService,
     private readonly recallService: RecallService,
-    private readonly noteService: NoteService,
+    private readonly agentMemoryService: AgentMemoryService,
     private readonly compactionService: MemoryCompactionService,
     private readonly logger: LoggerService,
   ) {
     logger.setContext(MemoryController.name);
   }
+
+  // ---------------------------------------------------------------------------
+  // Agent-facing endpoints (API key only — called by Hermes/OpenClaw)
+  // ---------------------------------------------------------------------------
 
   /**
    * L0 — static user profile block for the agent system prompt.
@@ -29,10 +33,6 @@ export class MemoryController {
    * Returns a pre-formatted markdown block summarising the user's knowledge
    * graph: name, relationships, preferences, and dossier. Intended to be
    * called once per session (system_prompt_block), not per turn.
-   *
-   * Invoked by:
-   *   - Hermes 'system_prompt_block'
-   *   - OpenClaw 'assemble'
    */
   @UseGuards(ApiKeyGuard)
   @Get('context')
@@ -43,35 +43,22 @@ export class MemoryController {
       const userCtx = await this.userContextService.getUserContextForLLM(serviceContext.userId);
 
       if (!userCtx) {
-        return {
-          block: '',
-        };
+        return { block: '' };
       }
 
-      const block = this.userContextService.formatContextForSystemPrompt(userCtx);
-
-      return {
-        block,
-      };
+      return { block: this.userContextService.formatContextForSystemPrompt(userCtx) };
     } catch (err) {
       this.logger.warn(`L0 context failed for user ${context.userId}: ${err}`);
 
-      return {
-        block: '',
-      };
+      return { block: '' };
     }
   }
 
   /**
-   * L1 — per-turn search against the knowledge graph.
+   * L1 — per-turn hybrid search against the knowledge graph.
    *
-   * Runs a hybrid keyword/semantic search using the query, then hydrates
-   * the matched entity IDs into readable names and content. The response
-   * block is injected into the agent context before each turn.
-   *
-   * Invoked by:
-   *   - Hermes 'prefetch'
-   *   - OpenClaw 'assemble'
+   * Runs a keyword/semantic search using the query, then hydrates matched
+   * entity IDs into readable names and content.
    */
   @UseGuards(ApiKeyGuard)
   @Post('recall')
@@ -84,11 +71,8 @@ export class MemoryController {
 
   /**
    * Stores a raw memory fragment written by the agent or by Hermes's built-in
-   * memory system (on_memory_write hook).
-   *
-   * The fragment is saved verbatim to ci.notes.  A future cron job will batch
-   * these fragments and use an LLM extraction pass to promote them into
-   * structured entities and relationships in the knowledge graph.
+   * memory system (on_memory_write hook).  The fragment is saved verbatim to
+   * ci.agent_memory; the compaction cron promotes it into the knowledge graph.
    *
    * Invoked by:
    *   - Hermes 'on_memory_write'
@@ -96,11 +80,17 @@ export class MemoryController {
   @UseGuards(ApiKeyGuard)
   @HttpCode(201)
   @Post('note')
-  async note(@Context() context: RequestContext, @Body(new ValidationPipe(noteSchema)) input: NoteDto) {
+  async note(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(agentMemorySchema)) input: AgentMemoryDto,
+  ) {
     const title = input.title ?? (input.source ? `[${input.source}]` : null);
-    await this.noteService.create(toServiceContext(context), {
-      title,
+
+    await this.agentMemoryService.create(toServiceContext(context), {
       content: input.content,
+      source: input.source ?? null,
+      title,
+      sessionId: input.sessionId ?? null,
     });
   }
 
@@ -117,9 +107,6 @@ export class MemoryController {
     // threadService.upsert(sessionId)
     // messageService.create(userMessage)
     // messageService.create(assistantMessage)
-    //
-    // Creating a thread/messages emits events internally; all async processing
-    // downstream can be handled in event listeners.
   }
 
   // ---------------------------------------------------------------------------
@@ -127,43 +114,43 @@ export class MemoryController {
   // ---------------------------------------------------------------------------
 
   /**
-   * Returns up to 50 of the most recent memory fragments for the current user,
-   * including their processed_at timestamp so the settings UI can show status.
-   *
-   * Invoked by the Agent Memory settings section.
+   * Returns up to 50 of the most recent agent memory fragments for the current
+   * user, including their processed_at status for the settings UI.
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Get('notes')
   async notes(@Context() context: RequestContext) {
-    const notes = await this.noteService.findAll(toServiceContext(context), { take: 50 });
+    const fragments = await this.agentMemoryService.findRecent(toServiceContext(context), { take: 50 });
 
-    return notes.map((n) => ({
-      id: n.id,
-      title: n.title,
-      content: n.content,
-      createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : n.createdAt,
-      processedAt: n.processedAt instanceof Date ? n.processedAt.toISOString() : (n.processedAt ?? null),
+    return fragments.map((f) => ({
+      id: f.id,
+      title: f.title,
+      source: f.source,
+      sessionId: f.sessionId,
+      content: f.content,
+      createdAt: f.createdAt instanceof Date ? f.createdAt.toISOString() : f.createdAt,
+      processedAt: f.processedAt instanceof Date ? f.processedAt.toISOString() : (f.processedAt ?? null),
     }));
   }
 
   /**
    * Manually triggers the memory compaction worker for the current user's
    * unprocessed fragments.  The LLM call runs in the background; the response
-   * returns immediately with the count of queued fragments.
-   *
-   * Invoked by the "Compact Now" button in the Agent Memory settings section.
+   * returns immediately with the number of queued fragments.
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @HttpCode(200)
   @Post('compact')
   async compact(@Context() context: RequestContext) {
     const userId = context.userId;
+
     if (!userId) {
       return { queued: 0 };
     }
 
-    const ctx = toServiceContext(context);
-    const unprocessed = await this.noteService.findUnprocessed(ctx, { limit: 50 });
+    const unprocessed = await this.agentMemoryService.findUnprocessed(toServiceContext(context), {
+      limit: 50,
+    });
 
     if (unprocessed.length === 0) {
       return { queued: 0 };
