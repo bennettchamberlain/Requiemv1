@@ -57,6 +57,9 @@ import { OllamaService } from './services/OllamaService';
     OllamaService,
   ],
   controllers: [OllamaController],
-  exports: [],
+  exports: [MemoryCompactionService],
 })
 export class LLMModule {}
+
+export { MemoryCompactionService };
+export { PROMPT_MODEL } from './services/OllamaService';

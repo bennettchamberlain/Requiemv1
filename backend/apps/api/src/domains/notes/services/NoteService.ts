@@ -66,7 +66,7 @@ export class NoteService {
     return ids.map((id) => map.get(id) ?? null);
   }
 
-  async findAll(context: ServiceContext): Promise<Note[]> {
+  async findAll(context: ServiceContext, options?: { take?: number }): Promise<Note[]> {
     const results = await this.noteRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
@@ -76,6 +76,7 @@ export class NoteService {
       order: {
         updatedAt: 'DESC',
       },
+      ...(options?.take && { take: options.take }),
     });
 
     return results.map((entity) => NoteEntity.toEgressType(entity));

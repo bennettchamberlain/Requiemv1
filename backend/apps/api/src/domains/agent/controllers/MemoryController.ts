@@ -1,9 +1,10 @@
 import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { ApiKeyGuard } from '@ci/common/guards';
+import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
+import { MemoryCompactionService } from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
 
@@ -16,6 +17,7 @@ export class MemoryController {
     private readonly userContextService: UserContextService,
     private readonly recallService: RecallService,
     private readonly noteService: NoteService,
+    private readonly compactionService: MemoryCompactionService,
     private readonly logger: LoggerService,
   ) {
     logger.setContext(MemoryController.name);
@@ -118,5 +120,61 @@ export class MemoryController {
     //
     // Creating a thread/messages emits events internally; all async processing
     // downstream can be handled in event listeners.
+  }
+
+  // ---------------------------------------------------------------------------
+  // Settings UI endpoints (JWT or API key — usable from the browser)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns up to 50 of the most recent memory fragments for the current user,
+   * including their processed_at timestamp so the settings UI can show status.
+   *
+   * Invoked by the Agent Memory settings section.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('notes')
+  async notes(@Context() context: RequestContext) {
+    const notes = await this.noteService.findAll(toServiceContext(context), { take: 50 });
+
+    return notes.map((n) => ({
+      id: n.id,
+      title: n.title,
+      content: n.content,
+      createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : n.createdAt,
+      processedAt: n.processedAt instanceof Date ? n.processedAt.toISOString() : (n.processedAt ?? null),
+    }));
+  }
+
+  /**
+   * Manually triggers the memory compaction worker for the current user's
+   * unprocessed fragments.  The LLM call runs in the background; the response
+   * returns immediately with the count of queued fragments.
+   *
+   * Invoked by the "Compact Now" button in the Agent Memory settings section.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @HttpCode(200)
+  @Post('compact')
+  async compact(@Context() context: RequestContext) {
+    const userId = context.userId;
+    if (!userId) {
+      return { queued: 0 };
+    }
+
+    const ctx = toServiceContext(context);
+    const unprocessed = await this.noteService.findUnprocessed(ctx, { limit: 50 });
+
+    if (unprocessed.length === 0) {
+      return { queued: 0 };
+    }
+
+    void this.compactionService
+      .compactForUser(userId, unprocessed)
+      .catch((err: unknown) =>
+        this.logger.error('Manual compaction failed', err instanceof Error ? err : new Error(String(err))),
+      );
+
+    return { queued: unprocessed.length };
   }
 }

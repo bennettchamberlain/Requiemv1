@@ -23,35 +23,33 @@ import { OllamaService, PROMPT_MODEL } from './OllamaService';
 // LLM prompt
 // ---------------------------------------------------------------------------
 
-const EXTRACTION_SYSTEM_PROMPT = `You are a personal knowledge graph assistant. Extract structured entities and relationships from informal memory fragments written by or about a user.
+const EXTRACTION_SYSTEM_PROMPT = `You are a personal knowledge graph assistant. Your job is to extract PERSONAL biographical facts about the user from informal memory fragments.
 
-Return ONLY valid JSON in exactly this format, with no additional text or markdown:
-{
-  "entities": [
-    { "type": "person|concept|place|event|item|content", "name": "string", "description": "string (optional)", "properties": {} }
-  ],
-  "relationships": [
-    { "fromName": "string", "fromType": "string", "toName": "string", "toType": "string", "relationshipType": "UPPER_SNAKE_CASE", "bidirectional": false }
-  ]
-}
+Return ONLY valid JSON with no markdown, no code fences, no extra text:
+{"entities":[{"type":"<type>","name":"<name>","description":"<optional>"}],"relationships":[{"fromName":"<name>","fromType":"<type>","toName":"<name>","toType":"<type>","relationshipType":"<UPPER_SNAKE_CASE>"}]}
 
-Entity type guidelines:
-- person  : any individual human being
-- concept : an idea, topic, skill, preference, or abstract category
-- place   : a location, venue, or geographic area
-- event   : something that happened or will happen at a specific time
-- item    : a physical object, product, or possession
-- content : a document, book, article, movie, or media piece
+Entity types (use ONLY these exact strings — reject anything else):
+  person   — a human being the user knows or is
+  concept  — a hobby, preference, skill, topic, or abstract idea the user cares about
+  place    — a city, building, venue, or geographic area the user has been to or lives near
+  event    — something that happened or will happen to the user at a specific time
+  item     — a physical object or possession the user owns or uses
+  content  — a book, film, article, or piece of media the user has engaged with
 
-Relationship type guidelines (use UPPER_SNAKE_CASE):
-  KNOWS, LIVES_IN, WORKS_AT, INTERESTED_IN, OWNS, ATTENDED,
-  LIKES, DISLIKES, HAS_SKILL, RELATED_TO, PART_OF, CREATED_BY
+Relationship types: KNOWS, LIVES_IN, WORKS_AT, INTERESTED_IN, OWNS, ATTENDED, LIKES, DISLIKES, HAS_SKILL, RELATED_TO
 
-Rules:
-- Only extract clearly stated facts, never assumptions or inferences.
-- Skip fragments that are too vague to yield meaningful structure.
-- Only include relationships where BOTH endpoints appear in the entities list above.
-- If nothing meaningful can be extracted, return exactly: {"entities":[],"relationships":[]}`;
+Rules — read carefully:
+1. ONLY extract personal facts about the human user (their life, preferences, people they know, places they've been).
+2. SKIP fragments that are code snippets, technical notes, API docs, commands, or configuration — these contain no personal facts.
+3. SKIP fragments that are too vague or contain no personally meaningful information.
+4. ONLY include relationships where BOTH endpoints appear in the entities list.
+5. If nothing qualifies, return exactly: {"entities":[],"relationships":[]}`;
+
+/** Allowed entity type strings from the LLM. Anything else is discarded. */
+const VALID_ENTITY_TYPES = new Set(['person', 'concept', 'place', 'event', 'item', 'content']);
+
+/** Maximum characters per fragment sent to the LLM. Longer content is truncated. */
+const MAX_FRAGMENT_CHARS = 600;
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -117,8 +115,10 @@ export class MemoryCompactionService {
     const fragmentsText = notes
       .map((note, index) => {
         const label = note.title ? `[${note.title}]` : `[Fragment ${index + 1}]`;
+        const body = note.content ?? '';
+        const truncated = body.length > MAX_FRAGMENT_CHARS ? `${body.slice(0, MAX_FRAGMENT_CHARS)}…` : body;
 
-        return `${label}\n${note.content ?? ''}`;
+        return `${label}\n${truncated}`;
       })
       .join('\n\n---\n\n');
 
@@ -169,6 +169,11 @@ export class MemoryCompactionService {
         continue;
       }
 
+      if (!VALID_ENTITY_TYPES.has(entity.type)) {
+        this.logger.debug('Skipping entity with invalid type', { type: entity.type, name });
+        continue;
+      }
+
       try {
         const existing = await this.findExistingEntity(userId, entity.type, name);
 
@@ -198,6 +203,18 @@ export class MemoryCompactionService {
     // ------------------------------------------------------------------
 
     for (const rel of extracted.relationships) {
+      // Guard against the LLM omitting required fields.
+      if (
+        !rel.fromName?.trim() ||
+        !rel.fromType?.trim() ||
+        !rel.toName?.trim() ||
+        !rel.toType?.trim() ||
+        !rel.relationshipType?.trim()
+      ) {
+        this.logger.debug('Skipping relationship: missing required fields', { rel });
+        continue;
+      }
+
       const fromId = entityMap.get(this.entityKey(rel.fromType, rel.fromName));
       const toId = entityMap.get(this.entityKey(rel.toType, rel.toName));
 
@@ -259,15 +276,40 @@ export class MemoryCompactionService {
   }
 
   private entityKey(type: string, name: string): string {
-    return `${type.toLowerCase()}:${name.toLowerCase()}`;
+    return `${(type ?? '').toLowerCase()}:${(name ?? '').toLowerCase()}`;
   }
 
   private parseExtractionResult(content: string): ExtractionResult {
+    const empty: ExtractionResult = { entities: [], relationships: [] };
+
+    // Strip markdown code fences the model may wrap around the JSON.
+    let text = content
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+
+    // If the model prepended text before the JSON object, find the first '{'.
+    const brace = text.indexOf('{');
+    if (brace > 0) {
+      text = text.slice(brace);
+    }
+
+    // If the JSON appears truncated (no closing brace for the root object),
+    // there's nothing we can safely salvage — bail early.
+    if (!text.endsWith('}')) {
+      this.logger.warn('LLM extraction result appears truncated; skipping', {
+        preview: content.slice(0, 200),
+      });
+
+      return empty;
+    }
+
     try {
-      const parsed: unknown = JSON.parse(content);
+      const parsed: unknown = JSON.parse(text);
 
       if (typeof parsed !== 'object' || parsed === null) {
-        return { entities: [], relationships: [] };
+        return empty;
       }
 
       const obj = parsed as Record<string, unknown>;
@@ -283,7 +325,7 @@ export class MemoryCompactionService {
         preview: content.slice(0, 300),
       });
 
-      return { entities: [], relationships: [] };
+      return empty;
     }
   }
 }
