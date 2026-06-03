@@ -80,14 +80,7 @@ export class MemoryController {
     @Context() context: RequestContext,
     @Body(new ValidationPipe(agentMemorySchema)) input: AgentMemoryDto,
   ) {
-    const title = input.title ?? (input.source ? `[${input.source}]` : null);
-
-    await this.agentMemoryService.create(toServiceContext(context), {
-      content: input.content,
-      source: input.source ?? null,
-      title,
-      sessionId: input.sessionId ?? null,
-    });
+    return this.agentMemoryService.create(toServiceContext(context), input);
   }
 
   /**

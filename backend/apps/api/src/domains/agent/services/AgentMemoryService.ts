@@ -26,12 +26,15 @@ export class AgentMemoryService {
   }
 
   async create(context: UserServiceContext, data: CreateAgentMemoryDto): Promise<AgentMemory> {
+    const source = data.source ?? null;
+    const title = data.title ?? (source ? `[${source}]` : null);
+
     const entity = this.repository.create({
       id: uuidv7(),
       userId: context.userId,
       content: data.content,
-      source: data.source ?? null,
-      title: data.title ?? null,
+      source,
+      title,
       sessionId: data.sessionId ?? null,
     });
 
