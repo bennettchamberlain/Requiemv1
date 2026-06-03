@@ -23,10 +23,6 @@ export class MemoryController {
     logger.setContext(MemoryController.name);
   }
 
-  // ---------------------------------------------------------------------------
-  // Agent-facing endpoints (API key only — called by Hermes/OpenClaw)
-  // ---------------------------------------------------------------------------
-
   /**
    * L0 — static user profile block for the agent system prompt.
    *
@@ -79,8 +75,8 @@ export class MemoryController {
    */
   @UseGuards(ApiKeyGuard)
   @HttpCode(201)
-  @Post('note')
-  async note(
+  @Post('write')
+  async write(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(agentMemorySchema)) input: AgentMemoryDto,
   ) {
