@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { ApiKeyGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { UserContextService } from '@ci/domains/memory';
@@ -107,61 +107,5 @@ export class MemoryController {
     // threadService.upsert(sessionId)
     // messageService.create(userMessage)
     // messageService.create(assistantMessage)
-  }
-
-  // ---------------------------------------------------------------------------
-  // Settings UI endpoints (JWT or API key — usable from the browser)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Returns up to 50 of the most recent agent memory fragments for the current
-   * user, including their processed_at status for the settings UI.
-   */
-  @UseGuards(JwtOrApiKeyAuthGuard)
-  @Get('notes')
-  async notes(@Context() context: RequestContext) {
-    const fragments = await this.agentMemoryService.findRecent(toServiceContext(context), { take: 50 });
-
-    return fragments.map((f) => ({
-      id: f.id,
-      title: f.title,
-      source: f.source,
-      sessionId: f.sessionId,
-      content: f.content,
-      createdAt: f.createdAt instanceof Date ? f.createdAt.toISOString() : f.createdAt,
-      processedAt: f.processedAt instanceof Date ? f.processedAt.toISOString() : (f.processedAt ?? null),
-    }));
-  }
-
-  /**
-   * Manually triggers the memory compaction worker for the current user's
-   * unprocessed fragments.  The LLM call runs in the background; the response
-   * returns immediately with the number of queued fragments.
-   */
-  @UseGuards(JwtOrApiKeyAuthGuard)
-  @HttpCode(200)
-  @Post('compact')
-  async compact(@Context() context: RequestContext) {
-    const userId = context.userId;
-
-    if (!userId) {
-      return { queued: 0 };
-    }
-
-    const unprocessed = await this.agentMemoryService.findUnprocessed(toServiceContext(context), {
-      limit: 50,
-    });
-
-    if (unprocessed.length === 0) {
-      return { queued: 0 };
-    }
-
-    void this.compactionService
-      .compactForUser(userId, unprocessed)
-      .catch((err: unknown) =>
-        this.logger.error('Manual compaction failed', err instanceof Error ? err : new Error(String(err))),
-      );
-
-    return { queued: unprocessed.length };
   }
 }
