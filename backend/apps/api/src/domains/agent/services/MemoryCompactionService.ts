@@ -17,7 +17,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Message as OllamaMessage } from 'ollama';
 
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
+import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import { GraphEventService, ConceptService, PersonService } from '@ci/domains/memory';
@@ -106,10 +106,12 @@ export class MemoryCompactionService {
    *   3. Upsert extracted relationships.
    *   4. Stamp processed_at on every fragment regardless of outcome.
    */
-  async compactForUser(userId: string, fragments: AgentMemory[]): Promise<void> {
+  async compactForUser(context: UserServiceContext, fragments: AgentMemory[]): Promise<void> {
     if (fragments.length === 0) {
       return;
     }
+
+    const { userId } = context;
 
     this.logger.log('Compacting agent memory fragments', {
       userId,
@@ -141,8 +143,7 @@ export class MemoryCompactionService {
     let extracted: ExtractionResult = { entities: [], relationships: [] };
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const response = await this.ollamaService.chat({} as any, messages, {
+      const response = await this.ollamaService.chat(context, messages, {
         model: PROMPT_MODEL,
         format: 'json',
       });
@@ -168,8 +169,6 @@ export class MemoryCompactionService {
     /** `"type:name_lower"` → entityId in ci.entities */
     const entityMap = new Map<string, string>();
 
-    const serviceContext = { userId } as ServiceContext;
-
     for (const entity of extracted.entities) {
       const name = entity.name?.trim();
 
@@ -182,7 +181,7 @@ export class MemoryCompactionService {
       }
 
       try {
-        const existingId = await this.findExistingEntityId(serviceContext, entity.type, name);
+        const existingId = await this.findExistingEntityId(context, entity.type, name);
 
         const { entityId } = await this.graphEvents.upsertNode(userId, {
           entityId: existingId ?? undefined,
