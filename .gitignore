@@ -47,11 +47,3 @@ backend/apps/hbpe/src/ci/model/__pycache__/
 backend/apps/hbpe/src/ci/tokenizer/__pycache__/
 
 *.pyc
-
-.claude/
-
-.github/copilot-instructions.md
-
-ANTIGRAVITY.md
-
-CLAUDE.md
