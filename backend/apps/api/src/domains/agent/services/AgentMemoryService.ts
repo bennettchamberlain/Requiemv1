@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, LessThan, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
+import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
 import { AgentMemoryEntity, type AgentMemory } from '../entities/AgentMemoryEntity';
@@ -25,8 +25,8 @@ export class AgentMemoryService {
     this.logger.setContext(AgentMemoryService.name);
   }
 
-  async create(context: ServiceContext, data: CreateAgentMemoryDto): Promise<AgentMemory> {
-    const entity = Object.assign(new AgentMemoryEntity(), {
+  async create(context: UserServiceContext, data: CreateAgentMemoryDto): Promise<AgentMemory> {
+    const entity = this.repository.create({
       id: uuidv7(),
       userId: context.userId,
       content: data.content,
