@@ -17,10 +17,16 @@
 import { Injectable } from '@nestjs/common';
 import type { Message as OllamaMessage } from 'ollama';
 
-import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
+import {
+  SYSTEM_USER,
+  type RequestContext,
+  type ServiceContext,
+  type UserServiceContext,
+} from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { RelationshipService } from '@ci/domains/graph';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
-import { GraphEventService, ConceptService, PersonService } from '@ci/domains/memory';
+import { ConceptService, ItemService, PersonService, PlaceService } from '@ci/domains/memory';
 
 import type { AgentMemory } from '../entities/AgentMemoryEntity';
 import { AgentMemoryService } from '../services/AgentMemoryService';
@@ -42,7 +48,7 @@ Entity types (use ONLY these exact strings — reject anything else):
   item     — a physical object or possession the user owns or uses
   content  — a book, film, article, or piece of media the user has engaged with
 
-Relationship types: KNOWS, LIVES_IN, WORKS_AT, INTERESTED_IN, OWNS, ATTENDED, LIKES, DISLIKES, HAS_SKILL, RELATED_TO
+Relationship types: KNOWS, FRIENDS_WITH, FAMILY_MEMBER, LIVES_IN, WORKS_AT, STUDIES_AT, VISITED, OWNS, INTERESTED_IN, PREFERS, DISLIKES, PARTICIPATED_IN, ASSOCIATED_WITH
 
 Rules — read carefully:
 1. ONLY extract personal facts about the human user (their life, preferences, people they know, places they've been).
@@ -91,9 +97,11 @@ export class MemoryCompactionService {
   constructor(
     private readonly ollamaService: OllamaService,
     private readonly agentMemoryService: AgentMemoryService,
-    private readonly graphEvents: GraphEventService,
     private readonly personService: PersonService,
     private readonly conceptService: ConceptService,
+    private readonly placeService: PlaceService,
+    private readonly itemService: ItemService,
+    private readonly relationshipService: RelationshipService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(MemoryCompactionService.name);
@@ -102,7 +110,8 @@ export class MemoryCompactionService {
   /**
    * Process a batch of agent memory fragments for one user:
    *   1. Send fragments to the LLM for structured extraction.
-   *   2. Upsert extracted entities (dedup by name for person/concept).
+   *   2. Upsert extracted entities via the per-type domain services so their
+   *      `*.created` events fire and downstream indexers see the new rows.
    *   3. Upsert extracted relationships.
    *   4. Stamp processed_at on every fragment regardless of outcome.
    */
@@ -143,7 +152,7 @@ export class MemoryCompactionService {
     let extracted: ExtractionResult = { entities: [], relationships: [] };
 
     try {
-      const response = await this.ollamaService.chat(context, messages, {
+      const response = await this.ollamaService.chat({ userId } satisfies RequestContext, messages, {
         model: PROMPT_MODEL,
         format: 'json',
       });
@@ -181,18 +190,11 @@ export class MemoryCompactionService {
       }
 
       try {
-        const existingId = await this.findExistingEntityId(context, entity.type, name);
+        const entityId = await this.upsertEntity(context, entity.type, name, entity.description ?? null);
 
-        const { entityId } = await this.graphEvents.upsertNode(userId, {
-          entityId: existingId ?? undefined,
-          entityType: entity.type,
-          name,
-          description: entity.description ?? null,
-          properties: entity.properties ?? {},
-          mergeProperties: existingId != null,
-        });
-
-        entityMap.set(this.entityKey(entity.type, name), entityId);
+        if (entityId != null) {
+          entityMap.set(this.entityKey(entity.type, name), entityId);
+        }
       } catch (err) {
         this.logger.warn('Failed to upsert entity', {
           userId,
@@ -230,20 +232,32 @@ export class MemoryCompactionService {
         continue;
       }
 
-      try {
-        await this.graphEvents.upsertRelationship(userId, {
-          fromEntityId: fromId,
-          toEntityId: toId,
+      const relType = this.relationshipService.resolveType(rel.relationshipType, rel.fromType, rel.toType);
+
+      if (relType == null) {
+        this.logger.debug('Skipping relationship with unsupported type for endpoint pair', {
           relationshipType: rel.relationshipType,
+          fromType: rel.fromType,
+          toType: rel.toType,
+        });
+        continue;
+      }
+
+      try {
+        await this.relationshipService.upsert(context, {
+          fromNodeId: fromId,
+          fromNodeType: rel.fromType,
+          toNodeId: toId,
+          toNodeType: rel.toType,
+          type: relType,
           isBidirectional: rel.bidirectional ?? false,
-          mergeProperties: false,
         });
       } catch (err) {
         this.logger.warn('Failed to upsert relationship', {
           userId,
           fromName: rel.fromName,
           toName: rel.toName,
-          type: rel.relationshipType,
+          type: relType,
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -269,32 +283,93 @@ export class MemoryCompactionService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Returns the existing graph node entity_id for a given type+name, or null.
+   * Dispatches to the appropriate per-type domain service so its `*.created`
+   * event fires (and downstream indexers pick the row up). Returns the
+   * resulting entity id, or null if this type can't be persisted from the
+   * limited info the LLM emits.
    *
-   * Uses the per-type domain services (not the deprecated graph utility services).
-   * Only person and concept have a reliable name-search API; all other types
-   * fall through to null (a fresh graph node is created on upsert).
+   * person / concept : search-by-name; reuse existing id if matched, else create.
+   * place / item     : always create a new row (no name-based dedup yet).
+   * event / content  : no-op for now (see TODOs below).
    */
-  private async findExistingEntityId(
-    context: ServiceContext,
+  private async upsertEntity(
+    context: UserServiceContext,
     type: string,
     name: string,
+    description: string | null,
   ): Promise<string | null> {
     switch (type) {
       case 'person': {
-        const results = await this.personService.search(context, { name });
+        const matches = await this.personService.search(context, { name });
+        const existing = matches.find((p) => p.name?.toLowerCase() === name.toLowerCase());
 
-        return results.find((p) => p.name?.toLowerCase() === name.toLowerCase())?.id ?? null;
+        if (existing) {
+          return existing.id;
+        }
+
+        const created = await this.personService.create(context, {
+          name,
+          description: description ?? undefined,
+        });
+
+        return created.id;
       }
 
       case 'concept': {
-        const results = await this.conceptService.search(context, { name });
+        const matches = await this.conceptService.search(context, { name });
+        const existing = matches.find((c) => c.name?.toLowerCase() === name.toLowerCase());
 
-        return results.find((c) => c.name?.toLowerCase() === name.toLowerCase())?.id ?? null;
+        if (existing) {
+          return existing.id;
+        }
+
+        const created = await this.conceptService.create(context, {
+          name,
+          description: description ?? undefined,
+        });
+
+        return created.id;
       }
 
-      // place, event, item, content: no name-search API available yet.
-      // Always create a new graph node; dedup can be improved incrementally.
+      case 'place': {
+        const [created] = await this.placeService.create(context, {
+          name,
+          description: description ?? undefined,
+        });
+
+        return created?.id ?? null;
+      }
+
+      case 'item': {
+        const created = await this.itemService.create(context, {
+          name,
+          description: description ?? undefined,
+        });
+
+        return created.id;
+      }
+
+      // TODO: EventService.create requires `title` and a real `start_time: Date`,
+      // neither of which the extraction prompt asks for. Either extend the LLM
+      // output schema to include those fields, or route events through a
+      // separate extraction path.
+      case 'event':
+        this.logger.debug('Skipping event entity: extraction prompt does not yield start_time', {
+          name,
+        });
+
+        return null;
+
+      // TODO: ContentService.create requires a `type` subkind (book / film /
+      // article / …) that the extraction prompt does not produce. Extend the
+      // LLM schema before enabling this branch.
+      case 'content':
+        this.logger.debug('Skipping content entity: extraction prompt does not yield content type', {
+          name,
+        });
+
+        return null;
+
       default:
         return null;
     }
