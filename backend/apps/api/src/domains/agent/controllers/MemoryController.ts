@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { ApiKeyGuard } from '@ci/common/guards';
@@ -6,14 +6,18 @@ import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { UserContextService } from '@ci/domains/memory';
 
+import { AgentMemoryService } from '../services/AgentMemoryService';
+import { MemoryCompactionService } from '../services/MemoryCompactionService';
 import { RecallService } from '../services/RecallService';
-import { recallSchema, type RecallDto } from '../types';
+import { agentMemorySchema, recallSchema, type AgentMemoryDto, type RecallDto } from '../types';
 
 @Controller('memory')
 export class MemoryController {
   constructor(
     private readonly userContextService: UserContextService,
     private readonly recallService: RecallService,
+    private readonly agentMemoryService: AgentMemoryService,
+    private readonly compactionService: MemoryCompactionService,
     private readonly logger: LoggerService,
   ) {
     logger.setContext(MemoryController.name);
@@ -25,10 +29,6 @@ export class MemoryController {
    * Returns a pre-formatted markdown block summarising the user's knowledge
    * graph: name, relationships, preferences, and dossier. Intended to be
    * called once per session (system_prompt_block), not per turn.
-   *
-   * Invoked by:
-   *   - Hermes 'system_prompt_block'
-   *   - OpenClaw 'assemble'
    */
   @UseGuards(ApiKeyGuard)
   @Get('context')
@@ -39,35 +39,22 @@ export class MemoryController {
       const userCtx = await this.userContextService.getUserContextForLLM(serviceContext.userId);
 
       if (!userCtx) {
-        return {
-          block: '',
-        };
+        return { block: '' };
       }
 
-      const block = this.userContextService.formatContextForSystemPrompt(userCtx);
-
-      return {
-        block,
-      };
+      return { block: this.userContextService.formatContextForSystemPrompt(userCtx) };
     } catch (err) {
       this.logger.warn(`L0 context failed for user ${context.userId}: ${err}`);
 
-      return {
-        block: '',
-      };
+      return { block: '' };
     }
   }
 
   /**
-   * L1 — per-turn search against the knowledge graph.
+   * L1 — per-turn hybrid search against the knowledge graph.
    *
-   * Runs a hybrid keyword/semantic search using the query, then hydrates
-   * the matched entity IDs into readable names and content. The response
-   * block is injected into the agent context before each turn.
-   *
-   * Invoked by:
-   *   - Hermes 'prefetch'
-   *   - OpenClaw 'assemble'
+   * Runs a keyword/semantic search using the query, then hydrates matched
+   * entity IDs into readable names and content.
    */
   @UseGuards(ApiKeyGuard)
   @Post('recall')
@@ -76,6 +63,24 @@ export class MemoryController {
       query: input.query,
       maxResults: input.maxResults,
     });
+  }
+
+  /**
+   * Stores a raw memory fragment written by the agent or by Hermes's built-in
+   * memory system (on_memory_write hook).  The fragment is saved verbatim to
+   * ci.agent_memory; the compaction cron promotes it into the knowledge graph.
+   *
+   * Invoked by:
+   *   - Hermes 'on_memory_write'
+   */
+  @UseGuards(ApiKeyGuard)
+  @HttpCode(201)
+  @Post('write')
+  async write(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(agentMemorySchema)) input: AgentMemoryDto,
+  ) {
+    return this.agentMemoryService.create(toServiceContext(context), input);
   }
 
   /**
@@ -91,12 +96,5 @@ export class MemoryController {
     // threadService.upsert(sessionId)
     // messageService.create(userMessage)
     // messageService.create(assistantMessage)
-    //
-    // Creating a thread/messages emits events internally; all async processing
-    // downstream can be handled in event listeners.
-    //
-    // What we return here gets injected into the agent message before it goes
-    // to the model. Latency here is user-visible, so partition sync (immediate)
-    // from async (gradual enrichment).
   }
 }
