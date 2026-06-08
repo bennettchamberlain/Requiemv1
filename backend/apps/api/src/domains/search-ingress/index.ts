@@ -25,7 +25,6 @@ import { ConceptSearchIndexListener } from './listeners/ConceptSearchIndexListen
 import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListener';
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
 import { FileSearchIndexListener } from './listeners/FileSearchIndexListener';
-import { GraphNodeSearchIndexListener } from './listeners/GraphNodeSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
 import { NoteSearchIndexListener } from './listeners/NoteSearchIndexListener';
 import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener';
@@ -57,7 +56,6 @@ import { VectorService } from './services/VectorService';
     EmbeddingService,
     EventSearchIndexListener,
     FileSearchIndexListener,
-    GraphNodeSearchIndexListener,
     ItemSearchIndexListener,
     NoteSearchIndexListener,
     PersonSearchIndexListener,

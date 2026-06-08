@@ -3,11 +3,11 @@ import { Injectable } from '@nestjs/common';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EntityResolutionService } from '@ci/domains/entity-resolution';
+import { GraphExpansionService } from '@ci/domains/graph';
 import { SearchService } from '@ci/domains/search-next';
 
 import type { RecallDto, RecallResult } from '../types';
 
-import { GraphExpansionService } from './GraphExpansionService';
 import { SerializerService } from './SerializerService';
 
 const DEFAULT_MAX_RESULTS = 5;

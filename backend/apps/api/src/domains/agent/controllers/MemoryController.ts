@@ -103,26 +103,6 @@ export class MemoryController {
   // ---------------------------------------------------------------------------
 
   /**
-   * Returns up to 50 of the most recent agent memory fragments for the current
-   * user, including their processed_at status for the settings UI.
-   */
-  @UseGuards(JwtOrApiKeyAuthGuard)
-  @Get('notes')
-  async notes(@Context() context: RequestContext) {
-    const fragments = await this.agentMemoryService.findRecent(toServiceContext(context), { take: 50 });
-
-    return fragments.map((f) => ({
-      id: f.id,
-      title: f.title,
-      source: f.source,
-      sessionId: f.sessionId,
-      content: f.content,
-      createdAt: f.createdAt instanceof Date ? f.createdAt.toISOString() : f.createdAt,
-      processedAt: f.processedAt instanceof Date ? f.processedAt.toISOString() : (f.processedAt ?? null),
-    }));
-  }
-
-  /**
    * Manually triggers the memory compaction worker for the current user's
    * unprocessed fragments.  The LLM call runs in the background; the response
    * returns immediately with the number of queued fragments.
