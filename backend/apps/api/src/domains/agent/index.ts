@@ -15,6 +15,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { EmbeddingModule } from '@ci/common/embeddings';
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { GraphModule } from '@ci/domains/graph';
 import { LLMModule } from '@ci/domains/llm';
@@ -25,6 +26,7 @@ import { MemoryController } from './controllers/MemoryController';
 import { MemoryCompactionCron } from './cron/MemoryCompactionCron';
 import { AgentMemoryEntity } from './entities/AgentMemoryEntity';
 import { AgentMemoryService } from './services/AgentMemoryService';
+import { GraphExpansionService } from './services/GraphExpansionService';
 import { MemoryCompactionService } from './services/MemoryCompactionService';
 import { RecallService } from './services/RecallService';
 import { SerializerService } from './services/SerializerService';
@@ -32,6 +34,7 @@ import { SerializerService } from './services/SerializerService';
 @Module({
   imports: [
     TypeOrmModule.forFeature([AgentMemoryEntity]),
+    EmbeddingModule,
     EntityResolutionModule,
     GraphModule,
     LLMModule,
@@ -41,6 +44,7 @@ import { SerializerService } from './services/SerializerService';
   exports: [SerializerService],
   providers: [
     AgentMemoryService,
+    GraphExpansionService,
     MemoryCompactionCron,
     MemoryCompactionService,
     RecallService,
