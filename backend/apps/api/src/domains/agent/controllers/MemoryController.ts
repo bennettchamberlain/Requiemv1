@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { ApiKeyGuard } from '@ci/common/guards';
+import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { UserContextService } from '@ci/domains/memory';
@@ -96,5 +96,49 @@ export class MemoryController {
     // threadService.upsert(sessionId)
     // messageService.create(userMessage)
     // messageService.create(assistantMessage)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Settings UI endpoints (JWT or API key — usable from the browser)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Manually triggers the memory compaction worker for the current user's
+   * unprocessed fragments.  The LLM call runs in the background; the response
+   * returns immediately with the number of queued fragments.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @HttpCode(200)
+  @Post('compact')
+  async compact(@Context() context: RequestContext) {
+    const userId = context.userId;
+
+    if (!userId) {
+      return { queued: 0 };
+    }
+
+    // minAgeMinutes: 0 — bypass the settling delay used by the cron.
+    // When a user explicitly triggers compaction they want it to process
+    // everything immediately, regardless of how recently the fragments were
+    // written.
+    // limit 1000 — a manual trigger means "process everything now"; the cron
+    // path keeps a smaller batch, but here we don't want a backlog to be
+    // silently truncated (e.g. a large bulk import of 100s of fragments).
+    const unprocessed = await this.agentMemoryService.findUnprocessed(toServiceContext(context), {
+      limit: 1000,
+      minAgeMinutes: 0,
+    });
+
+    if (unprocessed.length === 0) {
+      return { queued: 0 };
+    }
+
+    void this.compactionService
+      .compactForUser({ userId }, unprocessed)
+      .catch((err: unknown) =>
+        this.logger.error('Manual compaction failed', err instanceof Error ? err : new Error(String(err))),
+      );
+
+    return { queued: unprocessed.length };
   }
 }
