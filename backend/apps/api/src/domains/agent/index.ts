@@ -4,9 +4,8 @@
  * Exposes REST endpoints:
  *   GET  /memory/context  — L0 static user profile (system_prompt_block)        [ApiKeyGuard]
  *   POST /memory/recall   — L1 hybrid search against the knowledge graph         [ApiKeyGuard]
- *   POST /memory/note     — ingest a raw memory fragment (on_memory_write)       [ApiKeyGuard]
- *   POST /memory/turn     — stub for conversation ingestion                      [ApiKeyGuard]
- *   GET  /memory/notes    — list recent fragments for the settings UI            [JwtOrApiKey]
+ *   POST /memory/write    — ingest a raw memory fragment (on_memory_write)       [ApiKeyGuard]
+ *   POST /memory/turn     — persist synced chat messages as communications       [ApiKeyGuard]
  *   POST /memory/compact  — manually trigger LLM compaction for current user     [JwtOrApiKey]
  *
  * @module AgentModule
