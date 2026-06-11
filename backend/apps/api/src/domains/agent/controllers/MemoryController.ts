@@ -9,6 +9,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { CommunicationService, CommunicationType, UserContextService } from '@ci/domains/memory';
 
 import { AgentMemoryService } from '../services/AgentMemoryService';
+import { ForecastContextService } from '../services/ForecastContextService';
 import { MemoryCompactionService } from '../services/MemoryCompactionService';
 import { RecallService } from '../services/RecallService';
 import {
@@ -50,6 +51,7 @@ export class MemoryController {
     private readonly recallService: RecallService,
     private readonly agentMemoryService: AgentMemoryService,
     private readonly communicationService: CommunicationService,
+    private readonly forecastContextService: ForecastContextService,
     private readonly compactionService: MemoryCompactionService,
     private readonly logger: LoggerService,
   ) {
@@ -70,12 +72,18 @@ export class MemoryController {
 
     try {
       const userCtx = await this.userContextService.getUserContextForLLM(serviceContext.userId);
+      const blocks: string[] = [];
 
-      if (!userCtx) {
-        return { block: '' };
+      if (userCtx) {
+        blocks.push(this.userContextService.formatContextForSystemPrompt(userCtx));
       }
 
-      return { block: this.userContextService.formatContextForSystemPrompt(userCtx) };
+      const forecastBlock = await this.forecastContextService.getRestOfDayBlock(serviceContext);
+      if (forecastBlock) {
+        blocks.push(forecastBlock);
+      }
+
+      return { block: blocks.join('\n\n') };
     } catch (err) {
       this.logger.warn(`L0 context failed for user ${context.userId}: ${err}`);
 
