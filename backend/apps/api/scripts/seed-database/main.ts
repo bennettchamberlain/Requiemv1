@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { MultiBar, Presets } from 'cli-progress';
 
 import { LoggerService } from '@ci/common/logging';
+import { AgentModule } from '@ci/domains/agent';
 import { EtlModule } from '@ci/domains/etl';
 import { EventService, LocalEventService } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
@@ -74,6 +75,8 @@ const logger = new LoggerService();
     .useClass(LocalEventService)
     .overrideProvider(FileService)
     .useValue({})
+    .overrideModule(AgentModule)
+    .useModule(class {})
     .overrideModule(EtlModule)
     .useModule(class {})
     .overrideModule(GraphQLModule)

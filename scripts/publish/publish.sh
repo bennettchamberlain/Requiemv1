@@ -147,16 +147,16 @@ generate_compose() {
       "restart": "no",
       "user": "root",
       "volumes": [
-        { "hostPath": "\${APP_DATA_DIR}/data/db", "containerPath": "/home/postgres/pgdata/data" }
+        { "hostPath": "\${APP_DATA_DIR}/data/db", "containerPath": "/var/lib/postgresql" }
       ],
-      "command": ["sh", "-c", "chown -R 1000:1000 /home/postgres/pgdata/data"]
+      "command": ["sh", "-c", "chown -R 999:999 /var/lib/postgresql"]
     },
     {
       "name": "database",
       "image": "${reg}/companion/database:${ver}",
       "restart": "unless-stopped",
       "volumes": [
-        { "hostPath": "\${APP_DATA_DIR}/data/db", "containerPath": "/home/postgres/pgdata/data" },
+        { "hostPath": "\${APP_DATA_DIR}/data/db", "containerPath": "/var/lib/postgresql" },
         { "hostPath": "\${APP_DATA_DIR}/data/secrets", "containerPath": "/run/secrets", "readOnly": true }
       ],
       "dependsOn" : {
