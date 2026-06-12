@@ -1,5 +1,6 @@
 import path from 'path';
 
+import { Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { MultiBar, Presets } from 'cli-progress';
 
@@ -9,7 +10,7 @@ import { EtlModule } from '@ci/domains/etl';
 import { EventService, LocalEventService } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { GraphQLModule } from '@ci/domains/graphql';
-import { LLMModule } from '@ci/domains/llm';
+import { LLMModule, OllamaService } from '@ci/domains/llm';
 import { McpModule } from '@ci/domains/mcp';
 import { ToolsModule } from '@ci/domains/tools';
 
@@ -47,6 +48,12 @@ import { seedUsers } from './seed-users';
 
 const logger = new LoggerService();
 
+@Module({
+  providers: [{ provide: OllamaService, useValue: {} }],
+  exports: [OllamaService],
+})
+class SeedLLMModule {}
+
 (async function () {
   const dataDir = path.resolve(__dirname, '..', 'seed-database');
 
@@ -82,7 +89,7 @@ const logger = new LoggerService();
     .overrideModule(GraphQLModule)
     .useModule(class {})
     .overrideModule(LLMModule)
-    .useModule(class {})
+    .useModule(SeedLLMModule)
     .overrideModule(McpModule)
     .useModule(class {})
     .overrideModule(ToolsModule)

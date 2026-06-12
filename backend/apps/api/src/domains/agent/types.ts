@@ -19,6 +19,7 @@ export const turnSchema = z.object({
     )
     .min(1),
   sessionId: z.string().optional(),
+  platform: z.string().max(100).optional(),
 });
 
 /**
