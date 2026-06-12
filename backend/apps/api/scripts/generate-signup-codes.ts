@@ -2,6 +2,7 @@ import { input } from '@inquirer/prompts';
 import { Test } from '@nestjs/testing';
 
 import { LoggerService } from '@ci/common/logging';
+import { AgentModule } from '@ci/domains/agent';
 import { SignupCodeService } from '@ci/domains/auth';
 import { EtlModule } from '@ci/domains/etl';
 import { EventService, LocalEventService } from '@ci/domains/events';
@@ -36,6 +37,8 @@ import { App } from '../src/application';
     })
     .overrideProvider(EventService)
     .useClass(LocalEventService)
+    .overrideModule(AgentModule)
+    .useModule(class {})
     .overrideModule(EtlModule)
     .useModule(class {})
     .overrideModule(GraphQLModule)
