@@ -100,7 +100,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
           },
         });
 
-        if (canceled) {
+        if (canceled || !response) {
           return;
         }
 
@@ -205,7 +205,9 @@ export function CaptureModal({ open = false, onClose }: Props) {
       }),
     });
 
-    setThreadId(thread.id);
+    if (thread) {
+      setThreadId(thread.id);
+    }
   }, [authToken, selectedModel]);
 
   useEffect(() => {

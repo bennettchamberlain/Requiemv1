@@ -139,11 +139,11 @@ export function useGraphOverview(
           fetchJson<GraphDataResponse>('/api/graph/data', { ...baseInit }),
         ]);
 
-        if (!contextResponse.success || !contextResponse.context) {
+        if (!contextResponse?.success || !contextResponse.context) {
           throw new Error('Unable to resolve user context');
         }
 
-        if (!graphResponse.success) {
+        if (!graphResponse?.success) {
           throw new Error('Graph data request failed');
         }
 
