@@ -139,16 +139,22 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       .filter((type): type is string => Boolean(type));
   }, [includedEntityTypesParam, excludedEntityTypesParam]);
 
+  // Explorer's `tags` URL param (comma-separated labels). Present (even empty)
+  // means the tag filter is active; absent leaves the graph unfiltered.
+  const rawTags = searchParams?.get('tags');
+  const tagsParam = rawTags ?? undefined;
+
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchNodes, setSearchNodes] = useState<Array<GraphNode & { score?: number | null }>>([]);
   const [searchLinks, setSearchLinks] = useState<GraphLink[]>([]);
 
   const [{ authToken }] = useAuth();
-  const { loading, error, subgraph, userEntityId, quickStats } = useGraphOverview(authToken, {
-    maxDepth: 3,
-    includeTypes: explorerIncludeTypes,
-  });
+  const { loading, error, subgraph, userEntityId, quickStats, tagMatchedEntityIds } = useGraphOverview(
+    authToken,
+    { maxDepth: 3, includeTypes: explorerIncludeTypes, tags: tagsParam },
+  );
+  const isTagFilterActive = tagMatchedEntityIds != null;
   const [, { setActiveEntity }] = useEntityService();
 
   const spawnLimit = useMemo(() => {
@@ -732,7 +738,15 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     const visibilitySet = new Set(visibility.ids);
 
     for (const node of rawNodes) {
-      if (!visibilitySet.has(node.id)) {
+      // When the tag filter is active, scope to the tag-matched nodes directly
+      // (the backend already resolved tags → graph entity_ids), bypassing the
+      // click-driven visibility gate so every loaded tagged node is shown.
+      // Otherwise fall back to the interactive visibility set.
+      if (tagMatchedEntityIds) {
+        if (!tagMatchedEntityIds.has(node.id)) {
+          continue;
+        }
+      } else if (!visibilitySet.has(node.id)) {
         continue;
       }
 
@@ -752,7 +766,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     }
 
     return allowed;
-  }, [entityTypeFilterSet, isEntityFilterActive, rawNodes, visibility.ids]);
+  }, [entityTypeFilterSet, isEntityFilterActive, tagMatchedEntityIds, rawNodes, visibility.ids]);
 
   const entityTypesAllSelected = includedEntityTypes.length === availableEntityTypes.length;
   const relationshipTypesAllSelected = includedRelationshipTypes.length === availableRelationshipTypes.length;
@@ -932,10 +946,14 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
   if (visibleNodes.length === 0) {
     const title = isSearchMode
       ? `No graph nodes found for "${trimmedSearchQuery}"`
-      : 'No graph data available yet';
+      : isTagFilterActive
+        ? 'No graph nodes match the selected tags'
+        : 'No graph data available yet';
     const description = isSearchMode
       ? 'Try another search'
-      : 'Start connecting memories to build your knowledge graph.';
+      : isTagFilterActive
+        ? 'Try different tags or clear the tag filter.'
+        : 'Start connecting memories to build your knowledge graph.';
 
     return (
       <div className="flex h-[540px] flex-col items-center justify-center rounded-lg border border-dashed border-muted px-4 py-6">

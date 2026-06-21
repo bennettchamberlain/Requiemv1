@@ -1,9 +1,10 @@
 import { Controller, Get, NotFoundException, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 
-import { Context, type RequestContext } from '@ci/common/context';
+import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
+import { TagService } from '@ci/domains/search-next';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { graphTypesToExclude } from '../graph.types';
@@ -11,6 +12,11 @@ import { GraphEventService } from '../services/GraphEventService';
 import { GraphQueryService } from '../services/GraphQueryService';
 import { GraphUtilityService } from '../services/GraphUtilityService';
 import { UserContextService } from '../services/UserContextService';
+
+/** Matches a canonical uuid; tag source ids that aren't uuids can never line up
+ * with a graph node's uuid `entity_id`/`linked_id`, so we drop them before the
+ * lookup to avoid a Postgres uuid cast error. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const getNodeDetailsSchema = z.object({
   entityId: z.string(),
@@ -34,8 +40,12 @@ const explorerTypesParam = z
           .filter(Boolean),
   );
 
+// `tags` is a comma-separated list of tag labels. Presence of the key (even
+// when empty) marks the filter as active, mirroring the explorer's "filter
+// active = present, even if empty" param contract.
 const graphDataSchema = z.object({
   includeTypes: explorerTypesParam,
+  tags: z.string().optional(),
 });
 const graphSearchSchema = z.object({
   query: z.string().min(1),
@@ -47,6 +57,14 @@ type GetNodeDetailsDto = z.infer<typeof getNodeDetailsSchema>;
 type GraphDataDto = z.infer<typeof graphDataSchema>;
 type GraphSearchDto = z.infer<typeof graphSearchSchema>;
 
+/** Reports whether the tag filter is engaged and which graph `entity_id`s match
+ * it. `active` follows the param-presence contract; `entityIds` is empty when
+ * the filter is active but matches nothing (e.g. `?tags=` or unknown labels). */
+interface TagMatch {
+  active: boolean;
+  entityIds: string[];
+}
+
 @Controller('graph')
 @UseGuards(JwtOrApiKeyAuthGuard)
 export class GraphController {
@@ -55,6 +73,7 @@ export class GraphController {
     private readonly graphQuery: GraphQueryService,
     private readonly graphUtility: GraphUtilityService,
     private readonly userContext: UserContextService,
+    private readonly tagService: TagService,
   ) {}
 
   private ensureUserId(ctx: RequestContext): string {
@@ -63,6 +82,55 @@ export class GraphController {
     }
 
     return ctx.userId;
+  }
+
+  /**
+   * Resolve the explorer's `tags` URL param into the set of graph `entity_id`s
+   * carrying those tags, so the graph view can scope to the same entities as
+   * the List/Gallery/Map explorers.
+   *
+   * Tags live on source records keyed by `(entity_type, entity_id)`, where the
+   * id is the source record's id — which for Person/Concept/Place/File equals
+   * the graph node's `entity_id`, and for Content/Event/Item/… equals the
+   * node's `linked_id`. We resolve the tagged source ids, then translate them
+   * to graph `entity_id`s; the client filters on the returned ids without
+   * needing to know either id scheme.
+   *
+   * Contract: an absent param means the filter is inactive (whole graph). A
+   * present param — even empty or resolving to nothing — means active with an
+   * empty match set (graph shows nothing).
+   */
+  private async resolveTagMatch(
+    ctx: RequestContext,
+    ownerId: string,
+    tagsParam: string | undefined,
+  ): Promise<TagMatch> {
+    if (tagsParam === undefined) {
+      return { active: false, entityIds: [] };
+    }
+
+    const labels = tagsParam
+      .split(',')
+      .map((label) => label.trim())
+      .filter((label) => label.length > 0);
+
+    if (labels.length === 0) {
+      return { active: true, entityIds: [] };
+    }
+
+    const tagged = await this.tagService.getEntitiesForTags(toServiceContext(ctx), labels);
+
+    const sourceIds = Array.from(
+      new Set(tagged.map((entity) => entity.id).filter((id) => UUID_PATTERN.test(id))),
+    );
+
+    if (sourceIds.length === 0) {
+      return { active: true, entityIds: [] };
+    }
+
+    const entityIds = await this.graphQuery.getEntityIdsByTagSources(ownerId, sourceIds);
+
+    return { active: true, entityIds };
   }
 
   @Get('context')
@@ -91,6 +159,7 @@ export class GraphController {
 
     const nodes = await this.graphQuery.getNodes(ownerId, { limit: 200, excludeEntityTypes });
     const relationships = await this.graphQuery.getRelationships(ownerId, {});
+    const tagMatch = await this.resolveTagMatch(ctx, ownerId, query.tags);
 
     // The frontend seeds its subgraph from the owner's entity node. A type filter can exclude it
     // (e.g. the user is a Person and Person is deselected), which would collapse the graph to
@@ -134,6 +203,7 @@ export class GraphController {
           properties: rel.properties || {},
         })),
       },
+      tagMatch,
     };
   }
 
