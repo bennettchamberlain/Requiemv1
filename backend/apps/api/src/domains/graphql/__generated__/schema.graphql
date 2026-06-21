@@ -939,6 +939,8 @@ input SearchInput {
   excludeTypes: [String!]
   includeTypes: [String!]
   query: String
+  sortBy: String
+  sortOrder: String
   startTime: String
   tags: [String!]
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, UseGuards } from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
 import { Args, Query, Resolver } from '@nestjs/graphql';
 import { type FindOptionsOrder } from 'typeorm';
 
@@ -23,7 +23,6 @@ import { ConceptType } from '../types/ConceptType';
 import { ContentType } from '../types/ContentType';
 import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
-import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
 import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
@@ -53,44 +52,105 @@ export class SearchResolver {
   ): Promise<SearchResultConnection> {
     const serviceContext = toServiceContext(context);
 
-    if (input.query == null && (!input.tags || input.tags.length === 0)) {
-      throw new BadRequestException('Must provide either query or tags');
-    }
+    const query = input.query != null && input.query.length > 0 ? input.query : undefined;
+    const tags = input.tags && input.tags.length > 0 ? input.tags : undefined;
+    const eventTypes = input.eventTypes && input.eventTypes.length > 0 ? input.eventTypes : undefined;
+    const hasTypes =
+      (input.includeTypes != null && input.includeTypes.length > 0) ||
+      (input.excludeTypes != null && input.excludeTypes.length > 0);
+    const startTime = input.startTime ? new Date(input.startTime) : undefined;
+    const endTime = input.endTime ? new Date(input.endTime) : undefined;
+    const hasDate = startTime != null || endTime != null;
+    // No filter signal at all -> fall back to recent timed entities (preserves prior behavior).
+    const noInputs = query == null && tags == null && !hasTypes && !hasDate;
 
-    if (input.query != null && input.tags && input.tags.length > 0) {
-      throw new BadRequestException('Cannot provide both query and tags');
-    }
+    // Build a candidate identifier set from the strongest available signal, then AND the
+    // remaining filter dimensions on as post-filters so all filters combine (LifeScope parity).
+    let candidateSource: 'query' | 'tags' | 'timed';
+    let identifiers: EntityIdentifier<IndexableEntity | TaggableEntity>[];
 
-    const results: SearchResult[] = [];
-
-    if (input.tags && input.tags.length > 0) {
-      const tagResults = await this.searchByTags(serviceContext, input.tags);
-
-      results.push(...this.filterEventsByType(tagResults, input.eventTypes));
-    } else if (input.query != null && input.query.length > 0) {
-      const queryResults = await this.searchByQuery(serviceContext, {
-        query: input.query,
+    if (query != null) {
+      candidateSource = 'query';
+      identifiers = await this.searchByQuery(serviceContext, {
+        query,
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
+        // Widen the candidate pool when post-filters will shrink it.
+        maxResults: tags != null || hasDate || eventTypes != null ? 100 : 25,
       });
-
-      results.push(...this.filterEventsByType(queryResults, input.eventTypes));
+    } else if (tags != null) {
+      candidateSource = 'tags';
+      identifiers = await this.searchByTags(serviceContext, tags);
     } else {
-      const noInputs =
-        (!input.includeTypes || input.includeTypes.length === 0) &&
-        (!input.excludeTypes || input.excludeTypes.length === 0) &&
-        !input.startTime &&
-        !input.endTime;
-      const queryResults = await this.searchByTimedEntities(serviceContext, {
+      candidateSource = 'timed';
+      identifiers = await this.searchByTimedEntities(serviceContext, {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
-        startTime: input.startTime ? new Date(input.startTime) : undefined,
-        endTime: noInputs ? new Date() : input.endTime ? new Date(input.endTime) : undefined,
-        eventTypes: input.eventTypes,
+        startTime,
+        // With no filters at all, bound to "now" so we return recent items, not the entire history.
+        endTime: endTime ?? (noInputs ? new Date() : undefined),
+        // "How" filter — pushed down to the event query for the timed path.
+        eventTypes,
       });
-
-      results.push(...queryResults);
     }
+
+    // Entity-type filter: the query/timed paths apply it at their source; apply to the tags path.
+    if (hasTypes && candidateSource === 'tags') {
+      identifiers = identifiers.filter((identifier) =>
+        this.matchesTypeFilter(identifier.type, input.includeTypes, input.excludeTypes),
+      );
+    }
+
+    // Tag filter (when tags weren't the candidate source): intersect by raw type:id.
+    if (tags != null && candidateSource !== 'tags') {
+      const tagged = await this.tagService.getEntitiesForTags(serviceContext, tags);
+      const taggedKeys = new Set(tagged.map((entity) => `${entity.type}:${entity.id}`));
+
+      identifiers = identifiers.filter((identifier) => taggedKeys.has(`${identifier.type}:${identifier.id}`));
+    }
+
+    let entries = await this.resolveToEntries(serviceContext, identifiers);
+
+    // Date filter (when date wasn't the candidate source — the timed path filters in SQL).
+    // Entities without a domain timestamp are dropped while a date filter is active.
+    if (hasDate && candidateSource !== 'timed') {
+      entries = entries.filter((entry) => {
+        const timestamp = SearchResolver.getEntityTimestamp(entry);
+
+        if (timestamp == null) {
+          return false;
+        }
+
+        if (startTime && timestamp < startTime) {
+          return false;
+        }
+
+        if (endTime && timestamp > endTime) {
+          return false;
+        }
+
+        return true;
+      });
+    }
+
+    // "How" filter (when not the timed path, which pushes it down to SQL): narrow event entries
+    // to the requested event types; every other entity type passes through untouched.
+    if (eventTypes != null && candidateSource !== 'timed') {
+      const allowed = new Set(eventTypes);
+
+      entries = entries.filter((entry) => {
+        if (entry.type !== 'event') {
+          return true;
+        }
+
+        const eventType = (entry.entity as { eventType?: string | null }).eventType;
+
+        return eventType != null && allowed.has(eventType);
+      });
+    }
+
+    const sorted = this.sortEntries(entries, input.sortBy, input.sortOrder, candidateSource);
+    const results = sorted.map((entry) => this.toSearchResult(entry));
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(results, {
       getId: (result) => result.id,
@@ -114,15 +174,17 @@ export class SearchResolver {
       query,
       includeTypes,
       excludeTypes,
+      maxResults,
     }: {
       query: string;
       includeTypes?: IndexableEntity[];
       excludeTypes?: IndexableEntity[];
+      maxResults?: number;
     },
-  ): Promise<SearchResult[]> {
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
     const options = {
       query,
-      maxResults: 25,
+      maxResults: maxResults ?? 25,
     };
     if (excludeTypes && excludeTypes.length > 0) {
       Object.assign(options, { excludeTypes });
@@ -130,19 +192,19 @@ export class SearchResolver {
       Object.assign(options, { includeTypes });
     }
 
-    const queryResults = await this.searchService.search(context, options);
-
-    return this.resolveEntities(context, queryResults);
+    // Already ranked by relevance; identifiers carry a score we discard (order preserves rank).
+    return this.searchService.search(context, options);
   }
 
-  private async searchByTags(context: UserServiceContext, tags: string[]): Promise<SearchResult[]> {
+  private async searchByTags(
+    context: UserServiceContext,
+    tags: string[],
+  ): Promise<EntityIdentifier<TaggableEntity>[]> {
     if (tags.length === 0) {
       return [];
     }
 
-    const tagResults = await this.tagService.getEntitiesForTags(context, tags);
-
-    return this.resolveEntities(context, tagResults);
+    return this.tagService.getEntitiesForTags(context, tags);
   }
 
   private async searchByTimedEntities(
@@ -160,7 +222,9 @@ export class SearchResolver {
       endTime?: Date;
       eventTypes?: string[];
     },
-  ): Promise<SearchResult[]> {
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    const wants = (type: IndexableEntity) => this.matchesTypeFilter(type, includeTypes, excludeTypes);
+
     const eventOptions: {
       limit: number;
       order: FindOptionsOrder<EventEntity>;
@@ -209,79 +273,96 @@ export class SearchResolver {
     }
 
     const [eventResults, browserActivityResults, communicationResults] = await Promise.all([
-      (includeTypes && includeTypes.indexOf('event') > -1) ||
-      (excludeTypes && excludeTypes?.indexOf('event') < 0)
-        ? this.eventService.getEntitiesForEvents(context, eventOptions)
-        : [],
-      (includeTypes && includeTypes?.indexOf('browser-activity') > -1) ||
-      (excludeTypes && excludeTypes?.indexOf('browser-activity') < 0)
+      wants('event') ? this.eventService.getEntitiesForEvents(context, eventOptions) : [],
+      wants('browser-activity')
         ? this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions)
         : [],
-      (includeTypes && includeTypes?.indexOf('communication') > -1) ||
-      (excludeTypes && excludeTypes?.indexOf('communication') < 0)
+      wants('communication')
         ? this.communicationService.getEntitiesForCommunications(context, communicationOptions)
         : [],
     ]);
 
-    const entities = await this.resolveEntities(context, [
-      ...eventResults,
-      ...browserActivityResults,
-      ...communicationResults,
-    ]);
-
-    return entities.sort((a, b) => {
-      const aTime =
-        'time' in a && a.time ? a.time : 'startTime' in a && a.startTime ? a.startTime : new Date();
-      const bTime =
-        'time' in b && b.time ? b.time : 'startTime' in b && b.startTime ? b.startTime : new Date();
-
-      return bTime.getTime() - aTime.getTime();
-    });
+    return [...eventResults, ...browserActivityResults, ...communicationResults];
   }
 
-  /**
-   * Narrows already-resolved results to the requested event types ("how things
-   * happened"). Only entities of type `event` are affected — every other entity
-   * type passes through untouched. Used by the query/tags paths, where the event
-   * filter can't be pushed down into the source query.
-   */
-  private filterEventsByType(results: SearchResult[], eventTypes?: string[]): SearchResult[] {
-    if (!eventTypes || eventTypes.length === 0) {
-      return results;
+  /** Resolves raw identifiers to full entities, preserving candidate order and dropping misses. */
+  private async resolveToEntries(
+    context: UserServiceContext,
+    identifiers: EntityIdentifier<IndexableEntity | TaggableEntity>[],
+  ): Promise<ResolvedEntity[]> {
+    const resolved = await this.entityResolutionService.resolve(context, identifiers);
+
+    return identifiers
+      .map((identifier) => resolved.get(`${identifier.type}:${identifier.id}`) ?? null)
+      .filter((entry): entry is ResolvedEntity => entry != null);
+  }
+
+  private matchesTypeFilter(
+    type: IndexableEntity | TaggableEntity,
+    includeTypes?: IndexableEntity[],
+    excludeTypes?: IndexableEntity[],
+  ): boolean {
+    if (excludeTypes && excludeTypes.length > 0) {
+      return !excludeTypes.includes(type as IndexableEntity);
     }
 
-    const allowed = new Set(eventTypes);
+    if (includeTypes && includeTypes.length > 0) {
+      return includeTypes.includes(type as IndexableEntity);
+    }
 
-    return results.filter((result) => {
-      const { type } = GlobalUID.decode((result as { id: string }).id);
+    return true;
+  }
 
-      if (type !== 'event') {
-        return true;
-      }
+  private sortEntries(
+    entries: ResolvedEntity[],
+    sortBy: string | undefined,
+    sortOrder: string | undefined,
+    candidateSource: 'query' | 'tags' | 'timed',
+  ): ResolvedEntity[] {
+    const direction = sortOrder === 'asc' ? 1 : -1;
+    const effective = sortBy ?? (candidateSource === 'query' ? 'relevance' : 'time');
 
-      const { eventType } = result as EventType;
+    if (effective === 'relevance') {
+      // Candidate order already reflects search rank; reverse only for ascending.
+      return direction === 1 ? [...entries].reverse() : entries;
+    }
 
-      return eventType != null && allowed.has(eventType);
+    if (effective === 'name') {
+      return [...entries].sort(
+        (a, b) => direction * SearchResolver.getEntityName(a).localeCompare(SearchResolver.getEntityName(b)),
+      );
+    }
+
+    return [...entries].sort((a, b) => {
+      const aTime = SearchResolver.getEntityTimestamp(a)?.getTime() ?? 0;
+      const bTime = SearchResolver.getEntityTimestamp(b)?.getTime() ?? 0;
+
+      return direction * (aTime - bTime);
     });
   }
 
-  private async resolveEntities(
-    context: UserServiceContext,
-    results: EntityIdentifier<IndexableEntity | TaggableEntity>[],
-  ): Promise<SearchResult[]> {
-    const resolved = await this.entityResolutionService.resolve(context, results);
+  private static getEntityTimestamp(entry: ResolvedEntity): Date | null {
+    const entity = entry.entity as Record<string, unknown>;
+    const value = entity.time ?? entity.startTime ?? null;
 
-    return results
-      .map((result) => {
-        const entry = resolved.get(`${result.type}:${result.id}`);
+    if (value instanceof Date) {
+      return value;
+    }
 
-        if (!entry) {
-          return null;
-        }
+    if (typeof value === 'string') {
+      const date = new Date(value);
 
-        return this.toSearchResult(entry);
-      })
-      .filter((r): r is SearchResult => r != null);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    return null;
+  }
+
+  private static getEntityName(entry: ResolvedEntity): string {
+    const entity = entry.entity as Record<string, unknown>;
+    const value = entity.name ?? entity.title ?? entity.summary ?? '';
+
+    return typeof value === 'string' ? value : '';
   }
 
   private toSearchResult(resolved: ResolvedEntity): SearchResult {
