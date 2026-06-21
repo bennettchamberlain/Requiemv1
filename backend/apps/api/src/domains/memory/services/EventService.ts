@@ -79,6 +79,10 @@ export class EventService {
           toCreate.sourceId = item.source_id;
         }
 
+        if (item.sharing_level) {
+          toCreate.sharingLevel = item.sharing_level;
+        }
+
         // Idempotency: (source_type, source_system, source_id) is the stable
         // provenance triple capture sources carry. Re-ingesting the same event
         // — flaky-client retries, a full importer re-sync — must NOT create a
