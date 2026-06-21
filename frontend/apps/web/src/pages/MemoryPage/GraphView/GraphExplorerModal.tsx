@@ -6,49 +6,21 @@ import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons'
 import { useSearchParams } from 'react-router-dom';
 
 import { useGraphOverview, type GraphNode, type GraphLink } from '@/api/useGraphOverview';
+import { colorForRawType } from '@/components/entities/entityVisuals';
 import { ForceGraph, ForceGraph3D } from '@/components/ForceGraph';
 import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
 import { useAuth } from '@/hooks';
 import { Empty } from '@/pages/MemoryPage/Components';
 import { useEntityService } from '@/pages/MemoryPage/useEntityService';
 
-const TYPE_COLOR_PALETTE = [
-  '#38bdf8',
-  '#a855f7',
-  '#f97316',
-  '#22c55e',
-  '#facc15',
-  '#ec4899',
-  '#14b8a6',
-  '#60a5fa',
-  '#f87171',
-  '#c084fc',
-];
-
 const DEFAULT_SPAWN_LIMIT = 10;
 const DEFAULT_HOP_DEPTH = 2;
 const MIN_HOP_DEPTH = 1;
 const MAX_HOP_DEPTH = 7;
 
+// Colour nodes/badges by entity type from the shared LifeScope palette.
 function getTypeColor(entityType: string): string {
-  if (!entityType) {
-    return TYPE_COLOR_PALETTE[0];
-  }
-
-  const normalized = entityType.toLowerCase();
-  if (normalized === 'location' || normalized === 'place') {
-    return '#22c55e';
-  }
-
-  let hash = 0;
-  for (let i = 0; i < entityType.length; i += 1) {
-    hash = (hash << 5) - hash + entityType.charCodeAt(i);
-    hash |= 0;
-  }
-
-  const index = Math.abs(hash) % TYPE_COLOR_PALETTE.length;
-
-  return TYPE_COLOR_PALETTE[index];
+  return colorForRawType(entityType);
 }
 
 interface GraphTabPanelProps {
