@@ -2,21 +2,24 @@ import { useEffect, useState } from 'react';
 
 import { useMutation } from '@apollo/client';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
-import { Badge, Button, Calendar, Dialog, Input, Label, Popover, Select, Sheet, useToast } from '@ci/shadcn';
+import { Badge, Button, Calendar, Dialog, Input, Label, Popover, Select, useToast } from '@ci/shadcn';
 import {
+  ArrowUpDown,
   Calendar as CalendarIcon,
+  ChevronDown,
+  ChevronUp,
   MapPin,
   Save,
   Search,
   SlidersHorizontal,
   Sparkles,
+  Users,
   X,
 } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
-import { HowFilter } from '@/components/SearchBox/HowFilter';
 import { DropdownProvider, useDropdown } from '@/components/SearchBox/useDropdown';
 import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
@@ -67,54 +70,6 @@ function formatDateLabel(dateFrom: string, dateTo: string): string {
   }
 
   return 'Any time';
-}
-
-/** Debounced free-text search bound to the `?search` URL param. */
-function SearchField() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const urlValue = searchParams.get('search') ?? '';
-  const [value, setValue] = useState(urlValue);
-
-  // Keep the input in sync when the URL changes externally (e.g. clear, saved search).
-  useEffect(() => {
-    setValue(urlValue);
-  }, [urlValue]);
-
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (value === urlValue) {
-        return;
-      }
-
-      setSearchParams(
-        (params) => {
-          if (value) {
-            params.set('search', value);
-          } else {
-            params.delete('search');
-          }
-
-          return params;
-        },
-        { replace: true },
-      );
-    }, 350);
-
-    return () => clearTimeout(handle);
-  }, [value, urlValue, setSearchParams]);
-
-  return (
-    <div className="relative min-w-[220px] flex-1">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        type="search"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Search your memory…"
-        className="pl-8"
-      />
-    </div>
-  );
 }
 
 /** A comma-list URL param edited as removable chips (used for who/where). */
@@ -216,8 +171,9 @@ function DateControl() {
     <Popover>
       <Popover.Trigger asChild>
         <Button variant="outline">
-          <CalendarIcon className="mr-2 h-4 w-4" />
-          {formatDateLabel(dateFrom, dateTo)}
+          <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+          When: {dateFrom || dateTo ? formatDateLabel(dateFrom, dateTo) : 'all'}
+          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
         </Button>
       </Popover.Trigger>
       <Popover.Content className="w-auto p-0" align="start">
@@ -273,6 +229,7 @@ function SortControl() {
       }}
     >
       <Select.Trigger className="w-[150px]">
+        <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
         <Select.Value placeholder="Sort" />
       </Select.Trigger>
       <Select.Content>
@@ -286,24 +243,82 @@ function SortControl() {
   );
 }
 
+/** "Who" — the people dimension, as a plain "Who: …" dropdown over `people`. */
+function WhoFilter() {
+  const [searchParams] = useSearchParams();
+  const people = searchParams.get('people')?.split(',').filter(Boolean) ?? [];
+  const value = people.length === 0 ? 'all' : people.length === 1 ? people[0] : `${people.length} selected`;
+
+  return (
+    <Popover>
+      <Popover.Trigger asChild>
+        <Button variant="outline">
+          <Users className="mr-2 h-4 w-4 text-muted-foreground" />
+          Who: {value}
+          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+        </Button>
+      </Popover.Trigger>
+      <Popover.Content align="start" className="w-72 space-y-2">
+        <span className="text-xs font-medium text-muted-foreground">People involved</span>
+        <ChipFilter param="people" placeholder="Add a name…" />
+      </Popover.Content>
+    </Popover>
+  );
+}
+
+/** "Where" — the location dimension (located-only + place names) as a "Where: …" dropdown. */
+function WhereFilter() {
+  const [searchParams] = useSearchParams();
+  const located = searchParams.get('hasLocation') === '1';
+  const places = searchParams.get('places')?.split(',').filter(Boolean) ?? [];
+  const value =
+    places.length > 0
+      ? places.length === 1
+        ? places[0]
+        : `${places.length} places`
+      : located
+        ? 'located'
+        : 'all';
+
+  return (
+    <Popover>
+      <Popover.Trigger asChild>
+        <Button variant="outline">
+          <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />
+          Where: {value}
+          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+        </Button>
+      </Popover.Trigger>
+      <Popover.Content align="start" className="w-72 space-y-3">
+        <ToggleChip param="hasLocation" label="Has a location" icon={<MapPin className="h-4 w-4" />} />
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">Places</span>
+          <ChipFilter param="places" placeholder="Add a place…" />
+        </div>
+      </Popover.Content>
+    </Popover>
+  );
+}
+
 /**
- * The advanced LifeScope-parity filter controls (what / how / connector /
- * who / where / located / semantic / tags). `modal` is forwarded to the portaled
- * Radix dropdowns so they behave correctly inside a modal Sheet/Dialog.
+ * The advanced search controls in plain Who / What / When / Where / How order,
+ * followed by tags + a semantic toggle, then sort + save. `modal` is forwarded
+ * to the portaled Radix dropdowns so they behave inside a modal Sheet/Dialog.
  */
-function FilterControls({ modal }: { modal: boolean }) {
+function AdvancedFilters({ modal }: { modal: boolean }) {
   const [{ tags }, { setTags }] = useDropdown();
 
   return (
     <>
-      <EntityTypeFilter modal={modal} />
-      <HowFilter modal={modal} />
-      <ConnectorFilter modal={modal} />
-      <ChipFilter param="people" placeholder="Who…" />
-      <ChipFilter param="places" placeholder="Where…" />
-      <ToggleChip param="hasLocation" label="Located" icon={<MapPin className="h-4 w-4" />} />
-      <ToggleChip param="semantic" label="Semantic" icon={<Sparkles className="h-4 w-4" />} />
-      <div className="min-w-[160px]">
+      <WhoFilter />
+      <EntityTypeFilter modal={modal} label="What" />
+      <DateControl />
+      <WhereFilter />
+      <ConnectorFilter modal={modal} label="How" />
+
+      <span className="mx-1 h-6 w-px self-center bg-border" />
+
+      <div className="w-44">
         <TagInput
           tags={tags}
           onTagAdded={(tag) => {
@@ -314,6 +329,12 @@ function FilterControls({ modal }: { modal: boolean }) {
           onTagRemoved={(tag) => setTags(tags.filter((value) => value !== tag))}
         />
       </div>
+      <ToggleChip param="semantic" label="Semantic" icon={<Sparkles className="h-4 w-4" />} />
+
+      <span className="mx-1 h-6 w-px self-center bg-border" />
+
+      <SortControl />
+      <SaveSearchButton />
     </>
   );
 }
@@ -435,121 +456,120 @@ function ResultCount() {
   );
 }
 
-function ExplorerToolbarInner({ variant }: { variant: 'desktop' | 'mobile' }) {
+/**
+ * The "Advanced" toggle. Lives in the global header (desktop) or above the mobile
+ * tabs; it controls the toolbar drawer via the page's lifted `open` state and
+ * surfaces the active-filter count with an up/down chevron.
+ */
+export function AdvancedSearchToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const [searchParams] = useSearchParams();
-  const [filtersOpen, setFiltersOpen] = useState(false);
-
   const activeCount = countActiveFilters(searchParams);
 
-  // Mobile: keep the search inline; tuck date / sort / filters + Save into a drawer.
-  if (variant === 'mobile') {
-    return (
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <SearchField />
+  return (
+    <Button
+      type="button"
+      variant={open || activeCount > 0 ? 'secondary' : 'outline'}
+      onClick={onToggle}
+      aria-expanded={open}
+    >
+      <SlidersHorizontal className="mr-2 h-4 w-4" />
+      Advanced
+      {activeCount > 0 && (
+        <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+          {activeCount}
+        </Badge>
+      )}
+      {open ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />}
+    </Button>
+  );
+}
 
-          <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-            <Sheet.Trigger asChild>
-              <Button type="button" variant={activeCount > 0 ? 'secondary' : 'outline'} className="shrink-0">
-                <SlidersHorizontal className="h-4 w-4" />
-                {activeCount > 0 && (
-                  <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-                    {activeCount}
-                  </Badge>
-                )}
-              </Button>
-            </Sheet.Trigger>
-            <Sheet.Content side="right" className="flex w-[88vw] max-w-sm flex-col gap-4 overflow-y-auto">
-              <Sheet.Header>
-                <Sheet.Title>Search filters</Sheet.Title>
-                <Sheet.Description>Filter and sort your memory results.</Sheet.Description>
-              </Sheet.Header>
+/**
+ * Debounced free-text search bound to the `?search` URL param. Used on mobile,
+ * where the unified header search bar isn't shown; desktop uses the header
+ * GlobalSearchBox instead.
+ */
+export function MemorySearchField() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlValue = searchParams.get('search') ?? '';
+  const [value, setValue] = useState(urlValue);
 
-              <div className="flex flex-col gap-4 px-4 pb-4">
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">When</span>
-                  <DateControl />
-                </div>
+  // Keep the input in sync when the URL changes externally (clear, saved search).
+  useEffect(() => {
+    setValue(urlValue);
+  }, [urlValue]);
 
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Sort</span>
-                  <SortControl />
-                </div>
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      if (value === urlValue) {
+        return;
+      }
 
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Filters</span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <FilterControls modal />
-                  </div>
-                </div>
+      setSearchParams(
+        (params) => {
+          if (value) {
+            params.set('search', value);
+          } else {
+            params.delete('search');
+          }
 
-                <SaveSearchButton />
-              </div>
-            </Sheet.Content>
-          </Sheet>
-        </div>
+          return params;
+        },
+        { replace: true },
+      );
+    }, 350);
 
-        <ResultCount />
+    return () => clearTimeout(handle);
+  }, [value, urlValue, setSearchParams]);
 
-        <ActiveFilterChips />
-      </div>
-    );
-  }
+  return (
+    <div className="relative w-full">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        type="search"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder="Search your memory…"
+        className="pl-8"
+      />
+    </div>
+  );
+}
 
-  // Desktop: search + when + sort + a Filters toggle revealing the advanced set inline.
+function ExplorerToolbarInner({ open }: { open: boolean }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchField />
-
-        <DateControl />
-        <SortControl />
-
-        <Button
-          type="button"
-          variant={filtersOpen ? 'secondary' : 'outline'}
-          onClick={() => setFiltersOpen((open) => !open)}
-        >
-          <SlidersHorizontal className="mr-2 h-4 w-4" />
-          Filters
-          {activeCount > 0 && (
-            <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-              {activeCount}
-            </Badge>
-          )}
-        </Button>
-
-        <SaveSearchButton />
-
-        <span className="ml-auto">
-          <ResultCount />
-        </span>
-      </div>
-
-      {filtersOpen && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/20 p-2">
-          <FilterControls modal={false} />
+      {/* The advanced-search drawer: plain Who / What / When / Where / How, then
+          tags + semantic, then sort + save. Opened from the header toggle. */}
+      {open && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+          <AdvancedFilters modal={false} />
         </div>
       )}
 
-      <ActiveFilterChips />
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <ActiveFilterChips />
+        </div>
+        <div className="shrink-0">
+          <ResultCount />
+        </div>
+      </div>
     </div>
   );
 }
 
 /**
- * The always-visible explorer toolbar: free-text search plus the full
- * LifeScope-parity filter set (what / how / connector / who / where / when),
- * sort, semantic toggle, tags, and Save search. Wrapped in DropdownProvider so
- * the useDropdown URL-param setters (entity types, date, sort, tags) work.
- *
- * On `desktop` the advanced filters reveal inline; on `mobile` they live in a
- * slide-out drawer behind a Filters button, keeping the search field inline.
+ * The explorer toolbar body that sits under the unified header bar: the
+ * advanced-search drawer (Who / What / When / Where / How + tags, semantic, sort,
+ * save) plus the active-filter chips and result count. `open` is controlled by
+ * the page — the AdvancedSearchToggle that flips it lives in the header. Wrapped
+ * in DropdownProvider so the useDropdown URL-param setters work.
  */
-export function ExplorerToolbar({ variant = 'desktop' }: { variant?: 'desktop' | 'mobile' }) {
+export function ExplorerToolbar({ open }: { open: boolean }) {
   return (
     <DropdownProvider args={[{ changeSearchParams: true }]}>
-      <ExplorerToolbarInner variant={variant} />
+      <ExplorerToolbarInner open={open} />
     </DropdownProvider>
   );
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { Button, DropdownMenu } from '@ci/shadcn';
-import { ChevronDown } from '@ci/shadcn/icons';
+import { ChevronDown, Database } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { gql } from '@/graphql';
@@ -17,9 +17,11 @@ const EVENT_SOURCES_QUERY = gql(`
 
 interface Props {
   modal?: boolean;
+  /** When set, renders a plain "{label}: {value}" trigger (e.g. "How: all"). */
+  label?: string;
 }
 
-export function ConnectorFilter({ modal = true }: Props) {
+export function ConnectorFilter({ modal = true, label }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -33,6 +35,13 @@ export function ConnectorFilter({ modal = true }: Props) {
   const selectedCount = selectedSources.length;
 
   const getDisplayText = () => {
+    if (label) {
+      const value =
+        selectedCount === 0 ? 'all' : selectedCount === 1 ? selectedSources[0] : `${selectedCount} selected`;
+
+      return `${label}: ${value}`;
+    }
+
     if (selectedCount === 0) {
       return 'All Sources';
     }
@@ -66,10 +75,13 @@ export function ConnectorFilter({ modal = true }: Props) {
 
   return (
     <DropdownMenu modal={modal} onOpenChange={() => setIsOpen(!isOpen)}>
-      <Trigger>
+      <Trigger asChild>
         <Button type="button" variant="outline">
+          {label && <Database className="mr-2 h-4 w-4 text-muted-foreground" />}
           {getDisplayText()}
-          <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown
+            className={`ml-2 h-4 w-4 opacity-50 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          />
         </Button>
       </Trigger>
 
