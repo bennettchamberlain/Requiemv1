@@ -2,19 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
 import { Button, DropdownMenu, Separator, useToast } from '@ci/shadcn';
-import {
-  NotebookPen,
-  Upload,
-  Camera,
-  Plus,
-  Cable,
-  Search,
-  Tags,
-  User,
-  Lightbulb,
-  Package,
-} from '@ci/shadcn/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { NotebookPen, Upload, Camera, Plus, Cable, Search, User, Lightbulb, Package } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
 
 import { useUploadFile, useTriggerHbpe } from '@/api';
 import { AddPersonModal } from '@/components/modals/AddItemModal';
@@ -80,7 +69,7 @@ export function PrimaryNavigation() {
         {/* Left: breadcrumb + (on Memory) the view toggles */}
         <div className="flex shrink-0 flex-row items-center gap-2">
           <Portal id="breadcrumbs" />
-          <Portal id="nav-views" className="flex flex-row items-center" />
+          <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
         </div>
 
         {/* Center: the unified search, stretched to fill the bar */}
@@ -90,18 +79,12 @@ export function PrimaryNavigation() {
 
         {/* Right: (on Memory) the Advanced toggle, page actions, tags, new, account */}
         <div className="flex shrink-0 flex-row items-center gap-2">
-          <Portal id="nav-tools" className="flex flex-row items-center" />
+          <Portal id="nav-tools" className="flex flex-row items-center empty:hidden" />
           <Portal ref={actionsRef} id="actions" className="flex flex-row items-center" />
 
           {hasActions && <Separator orientation="vertical" className="data-[orientation=vertical]:h-6" />}
 
           <div className="flex items-center">
-            <Button variant="ghost" size="icon" aria-label="More Options">
-              <Link to="/tags">
-                <Tags strokeWidth={1.5} />
-              </Link>
-            </Button>
-
             <DropdownMenu modal={false}>
               <DropdownMenu.Trigger asChild>
                 <Button variant="ghost" size="icon" aria-label="More Options">
