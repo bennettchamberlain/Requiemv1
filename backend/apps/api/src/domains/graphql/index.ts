@@ -45,6 +45,7 @@ import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ForecastResolver } from './resolvers/ForecastResolver';
+import { GraphIngestResolver } from './resolvers/GraphIngestResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
@@ -105,6 +106,7 @@ import { UserResolver } from './resolvers/UserResolver';
     EventResolver,
     FileItemsLoader,
     FileResolver,
+    GraphIngestResolver,
     ItemFileLoader,
     ItemResolver,
     KnownPlacesResolver,
