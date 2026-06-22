@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { GlobalUID } from '@ci/common';
 import { Images } from '@ci/shadcn/icons';
 
 import {
@@ -13,14 +12,11 @@ import {
   EventGridItem,
   FileGridItem,
   ItemGridItem,
-  type ItemInventoryPreview,
   NoteGridItem,
   PersonGridItem,
   PlaceGridItem,
   ThreadGridItem,
 } from '@/components/entities';
-import { FileModal } from '@/components/modals/FileModal';
-import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
 
 import { Empty } from '../Components';
 import { useEntityService } from '../useEntityService';
@@ -30,8 +26,6 @@ import { MediaLightbox } from './MediaLightbox';
 import { MediaTile } from './MediaTile';
 
 export function GalleryView() {
-  const [activeItem, setActiveItem] = useState<string | null>(null);
-  const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const [{ data, loading, hasNextPage, loadingMore, loadMore }, { setActiveEntity }] = useEntityService();
@@ -95,17 +89,6 @@ export function GalleryView() {
     );
   }
 
-  const clearActiveItem = () => setActiveItem(null);
-
-  const openInventoryModal = (item: ItemInventoryPreview) => {
-    setSelectedInventoryItem({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      file: item.file,
-    });
-  };
-
   return (
     <>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
@@ -113,7 +96,7 @@ export function GalleryView() {
           {data.map((item) => {
             // Media-bearing entities (image/video) render as real thumbnails and
             // open the lightbox; everything else keeps its clean text tile and
-            // click-to-open-drawer / dedicated-modal behaviour.
+            // opens the shared details drawer (incl. non-media File/Item).
             const mediaIdx = mediaIndexById.get(item.id);
             if (mediaIdx != null) {
               return (
@@ -157,10 +140,10 @@ export function GalleryView() {
                 return <EventGridItem key={item.id} event={item} onClick={() => setActiveEntity(item)} />;
 
               case 'FileType':
-                return <FileGridItem key={item.id} file={item} onClick={() => setActiveItem(item.id)} />;
+                return <FileGridItem key={item.id} file={item} onClick={() => setActiveEntity(item)} />;
 
               case 'ItemType':
-                return <ItemGridItem key={item.id} item={item} onSelectInventoryItem={openInventoryModal} />;
+                return <ItemGridItem key={item.id} item={item} onClick={() => setActiveEntity(item)} />;
 
               case 'NoteType':
                 return <NoteGridItem key={item.id} note={item} onClick={() => setActiveEntity(item)} />;
@@ -186,18 +169,6 @@ export function GalleryView() {
           {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
         </div>
       </div>
-
-      <FileModal fileId={activeItem ?? null} onClose={clearActiveItem} />
-
-      <InventoryItemModal
-        open={selectedInventoryItem != null}
-        onClose={() => setSelectedInventoryItem(null)}
-        item={selectedInventoryItem}
-        create={false}
-        detailPagePath={
-          selectedInventoryItem ? `/items/${GlobalUID.parse('item', selectedInventoryItem.id)}` : undefined
-        }
-      />
 
       {lightboxIndex != null && mediaEntries[lightboxIndex] && (
         <MediaLightbox

@@ -1,9 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
-import { GlobalUID } from '@ci/common';
-
-import { FileModal } from '@/components/modals/FileModal';
-import { InventoryItemModal, type InventoryItem } from '@/components/modals/InventoryItemModal';
 import {
   DateGroupHeader,
   Empty,
@@ -23,18 +19,13 @@ import { ConceptRow } from './rows/ConceptRow';
 import { ContentRow } from './rows/ContentRow';
 import { EventRow } from './rows/EventRow';
 import { FileRow } from './rows/FileRow';
-import { ItemRow, type ItemInventoryPreview } from './rows/ItemRow';
+import { ItemRow } from './rows/ItemRow';
 import { NoteRow } from './rows/NoteRow';
 import { PersonRow } from './rows/PersonRow';
 import { PlaceRow } from './rows/PlaceRow';
 import { ThreadRow } from './rows/ThreadRow';
 
 export function ListView() {
-  const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
-  const [activeItem, setActiveItem] = useState<string | null>(null);
-
-  const clearActiveItem = () => setActiveItem(null);
-
   const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
     useEntityService();
 
@@ -66,15 +57,7 @@ export function ListView() {
   // Segment the chronological results into Today / Yesterday / This Week / … groups.
   const groups = useMemo(() => groupEntitiesByBucket(data), [data]);
 
-  const openInventoryModal = (item: ItemInventoryPreview) => {
-    setSelectedInventoryItem({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      file: item.file,
-    });
-  };
-
+  // Every row opens the same shared details drawer (incl. File/Item media).
   const renderRow = (item: EntityItem) => {
     const time = formatRowTime(getEntityTimestamp(item));
 
@@ -112,10 +95,10 @@ export function ListView() {
         return <EventRow key={item.id} event={item} time={time} onClick={() => setActiveEntity(item)} />;
 
       case 'FileType':
-        return <FileRow key={item.id} file={item} time={time} onClick={() => setActiveItem(item.id)} />;
+        return <FileRow key={item.id} file={item} time={time} onClick={() => setActiveEntity(item)} />;
 
       case 'ItemType':
-        return <ItemRow key={item.id} item={item} time={time} onSelectInventoryItem={openInventoryModal} />;
+        return <ItemRow key={item.id} item={item} time={time} onClick={() => setActiveEntity(item)} />;
 
       case 'NoteType':
         return <NoteRow key={item.id} note={item} time={time} onClick={() => setActiveEntity(item)} />;
@@ -163,37 +146,23 @@ export function ListView() {
   }
 
   return (
-    <>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
-        <div className="flex flex-col">
-          {groups.map((group) => (
-            <section key={group.key} className="pb-1">
-              <DateGroupHeader label={group.label} count={group.entities.length} />
-              <div className="flex flex-col">{group.entities.map(renderRow)}</div>
-            </section>
-          ))}
-        </div>
-
-        {loadingMore && <ListSkeleton count={3} showHeader={false} />}
-
-        {hasNextPage && <div ref={sentinelRef} className="h-8" />}
-
-        <div className="py-3 text-center text-xs text-muted-foreground">
-          {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
-        </div>
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="flex flex-col">
+        {groups.map((group) => (
+          <section key={group.key} className="pb-1">
+            <DateGroupHeader label={group.label} count={group.entities.length} />
+            <div className="flex flex-col">{group.entities.map(renderRow)}</div>
+          </section>
+        ))}
       </div>
 
-      <FileModal fileId={activeItem ?? null} onClose={clearActiveItem} />
+      {loadingMore && <ListSkeleton count={3} showHeader={false} />}
 
-      <InventoryItemModal
-        open={selectedInventoryItem != null}
-        onClose={() => setSelectedInventoryItem(null)}
-        item={selectedInventoryItem}
-        create={false}
-        detailPagePath={
-          selectedInventoryItem ? `/items/${GlobalUID.parse('item', selectedInventoryItem.id)}` : undefined
-        }
-      />
-    </>
+      {hasNextPage && <div ref={sentinelRef} className="h-8" />}
+
+      <div className="py-3 text-center text-xs text-muted-foreground">
+        {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+      </div>
+    </div>
   );
 }
