@@ -75,6 +75,20 @@ class Settings(BaseSettings):
     qwen_gguf_file: str = Field(
         default_factory=lambda: os.getenv("QWEN_GGUF_FILE", "Qwen3.5-0.8B-Q8_0.gguf")
     )
+    # Qwen3.5 is a "thinking" model: by default it emits a long <think> block
+    # before the answer. For label generation (a 1-3 word JSON), that chain of
+    # thought is pure CPU cost. Disabling it (the /no_think soft switch) is the
+    # single biggest throughput win on CPU-only deployments. Set
+    # QWEN_DISABLE_THINKING=false to restore reasoning.
+    qwen_disable_thinking: bool = Field(
+        default_factory=lambda: os.getenv("QWEN_DISABLE_THINKING", "true").lower()
+        in ("1", "true", "yes")
+    )
+    # Token ceiling applied when thinking is disabled — the response is just a
+    # short JSON object, so a small cap keeps each generation cheap.
+    qwen_max_tokens_no_think: int = Field(
+        default_factory=lambda: int(os.getenv("QWEN_MAX_TOKENS_NO_THINK", "64"))
+    )
 
     # ── Staleness (§1.2) ─────────────────────────────────────────────────────
     cluster_staleness_days: int = Field(

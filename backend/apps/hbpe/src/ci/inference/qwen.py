@@ -52,6 +52,14 @@ class QwenModel:
             n_gpu_layers=-1,    # full GPU offload — Metal on M-series, HIPBLAS on ROCm
             verbose=False,
         )
+        # A single llama.cpp context is NOT thread-safe: concurrent
+        # create_chat_completion() calls interleave decodes on the shared KV
+        # cache, corrupting it ("find_slot: non-consecutive token position …")
+        # and aborting the process via GGML_ASSERT. This singleton is reached
+        # from multiple Temporal activity threads (overlapping users, or a
+        # timed-out attempt still draining while a retry starts), so every
+        # generation must hold this lock.
+        self._gen_lock = threading.Lock()
         log.info("Qwen GGUF loaded")
 
     def generate(
@@ -61,16 +69,27 @@ class QwenModel:
         max_new_tokens: int = 32,
     ) -> str:
         """Single chat completion, greedy decoding."""
+        max_tokens = max_new_tokens
+        if settings.qwen_disable_thinking:
+            # Qwen3.x reads the `/no_think` soft switch from the user turn and
+            # skips the <think> reasoning block. A label is a 1-3 word JSON
+            # object — nothing to reason about — and the CoT tokens dominate CPU
+            # cost, so we suppress them and cap output hard. (_strip_thinking
+            # below is a safety net if a given GGUF template ignores the switch.)
+            user_message = f"{user_message} /no_think"
+            max_tokens = min(max_new_tokens, settings.qwen_max_tokens_no_think)
+
         messages: list[dict] = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
         messages.append({"role": "user", "content": user_message})
 
-        result = self._llm.create_chat_completion(
-            messages=messages,
-            max_tokens=max_new_tokens,
-            temperature=0.15,
-        )
+        with self._gen_lock:
+            result = self._llm.create_chat_completion(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.15,
+            )
         raw = result["choices"][0]["message"]["content"].strip()
         # Qwen3.5 is a thinking model — strip <think>…</think> so _parse_json
         # sees only the final answer, not the in-progress reasoning.
