@@ -35,7 +35,7 @@ request leaving your machine.
   own outright.
 - **A REST + LLM API** — a NestJS backend with JWT authentication and
   tool-calling endpoints, the single interface every Companion client talks to
-  at `memory.ci.localhost`.
+  at `ci-server.localhost`.
 - **Retrieval-augmented memory (RAG)** — ask questions in plain language and get
   answers grounded in *your* captured history, with citations back to the source.
 - **On-device behavioral prediction (HBPE)** — the Human Behavioral Prediction
