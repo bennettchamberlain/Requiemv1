@@ -6,10 +6,10 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 function getAllowedHosts(): string[] {
-  const hostname = process.env.HOSTNAME;
+  const hostname = process.env.APP_PUBLIC_HOSTNAME;
 
   if (!hostname) {
-    return ['memory.ci.localhost'];
+    return ['ci-server.localhost'];
   }
 
   try {
