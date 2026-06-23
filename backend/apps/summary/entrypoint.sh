@@ -55,9 +55,12 @@ fi
 export DATABASE_URL
 
 # ── LLM ──────────────────────────────────────────
+# Only export when a key is actually configured. Exporting an empty string
+# would clobber the application-layer default ("ollama"), which Ollama ignores
+# but the OpenAI client requires to be non-empty.
 
 : "${LLM_API_KEY:=$(get_secret LLM_API_KEY)}"
-export LLM_API_KEY
+[ -n "$LLM_API_KEY" ] && export LLM_API_KEY
 
 # ── Start services ───────────────────────────────
 

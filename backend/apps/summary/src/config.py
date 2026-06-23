@@ -4,7 +4,7 @@ Configuration management for CI-Summary Service.
 import os
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     llm_model: str = Field(default_factory=_llm_model_from_env)
     llm_temperature: float = 0.3
     llm_max_tokens: int = 2000
+
+    @field_validator("llm_api_key", mode="before")
+    @classmethod
+    def _default_llm_api_key(cls, value):
+        # An empty/blank LLM_API_KEY (e.g. exported but unset for a local Ollama
+        # setup) must not reach the OpenAI client, which rejects empty keys.
+        # Fall back to the "ollama" dummy, which Ollama ignores.
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "ollama"
+        return value
 
     # Embedding Configuration
     embedding_model: str = Field(default_factory=lambda: os.getenv("EMBEDDING_MODEL") or os.getenv("LLM_DEFAULT_EMBEDDING_MODEL", "nomic-embed-text"))
