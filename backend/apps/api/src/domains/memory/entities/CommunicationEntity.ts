@@ -1,8 +1,17 @@
-import { Entity, PrimaryColumn, Column } from 'typeorm';
+import { Entity, Index, PrimaryColumn, Column } from 'typeorm';
 
 @Entity({ schema: 'ci', name: 'communications' })
+// Idempotency key for imported communications. Created by migration
+// 20260624120000_add_communications_source_idempotency; declared here so TypeORM
+// is aware of it (schema sync stays off — the migration is the source of truth).
+@Index('communications_source_idem', ['time', 'userId', 'sourceSystem', 'sourceId'], {
+  unique: true,
+  where: '"source_id" IS NOT NULL',
+})
 export class CommunicationEntity {
-  @Column({ type: 'uuid' })
+  // Part of the primary key as of 20260624120000 (was a plain column): the PK is
+  // (time, user_id, id) so distinct messages sharing a timestamp+type coexist.
+  @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
   @PrimaryColumn({ type: 'timestamptz' })
@@ -11,7 +20,7 @@ export class CommunicationEntity {
   @PrimaryColumn({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
-  @PrimaryColumn({ type: 'text', name: 'communication_type' })
+  @Column({ type: 'text', name: 'communication_type' })
   communicationType!: string;
 
   @Column({ type: 'uuid', nullable: true, name: 'device_id' })
@@ -74,6 +83,15 @@ export class CommunicationEntity {
   @Column({ type: 'text', name: 'preview' })
   preview!: string | null;
 
+  @Column({ type: 'text', nullable: true, name: 'source_type' })
+  sourceType!: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'source_system' })
+  sourceSystem!: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'source_id' })
+  sourceId!: string | null;
+
   static toEgressType(entity: CommunicationEntity) {
     return {
       id: entity.id,
@@ -100,6 +118,9 @@ export class CommunicationEntity {
       isEncrypted: entity.isEncrypted,
       isArchived: entity.isArchived,
       preview: entity.preview,
+      sourceType: entity.sourceType,
+      sourceSystem: entity.sourceSystem,
+      sourceId: entity.sourceId,
     };
   }
 }

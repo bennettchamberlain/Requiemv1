@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, In, type FindOptionsOrder } from 'typeorm';
-import { v7 as uuidv7 } from 'uuid';
+import { v5 as uuidv5, v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
@@ -22,6 +22,11 @@ interface Options {
   afterId?: string;
 }
 
+// Fixed namespace for deriving stable communication ids from a provenance triple
+// (UUIDv5), so an imported message always hashes to the same id and a re-sync is
+// idempotent. Mirrors ItemService's ITEM_SOURCE_NAMESPACE.
+const COMM_SOURCE_NAMESPACE = 'b8f1c0de-1a2b-5c3d-8e4f-000000000002';
+
 @Injectable()
 export class CommunicationService {
   constructor(
@@ -35,7 +40,29 @@ export class CommunicationService {
   }
 
   async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<Communication> {
-    const id = data.id ?? uuidv7();
+    // Idempotency: imported communications carry the (source_type, source_system,
+    // source_id) provenance triple. Derive a stable, user-scoped id from it so a
+    // re-sync resolves to the same row (PK is (time, user_id, id)) → find-or-
+    // return instead of duplicating. Distinct messages have distinct source ids,
+    // so they coexist even at the same timestamp. Mirrors ItemService.create.
+    const hasSource = Boolean(data.source_system && data.source_id);
+    const id =
+      data.id ??
+      (hasSource
+        ? uuidv5(
+            `${context.userId}:${data.source_type ?? ''}:${data.source_system}:${data.source_id}`,
+            COMM_SOURCE_NAMESPACE,
+          )
+        : uuidv7());
+
+    if (hasSource) {
+      const existing = await this.communicationRepository.findOne({
+        where: { id, userId: context.userId },
+      });
+      if (existing) {
+        return CommunicationEntity.toEgressType(existing);
+      }
+    }
 
     const communication = this.communicationRepository.create({
       id,
@@ -61,11 +88,30 @@ export class CommunicationService {
       isEncrypted: data.is_encrypted || false,
       isArchived: data.is_archived || false,
       preview: data.preview ?? null,
+      sourceType: data.source_type ?? null,
+      sourceSystem: data.source_system ?? null,
+      sourceId: data.source_id ?? null,
     });
 
     // TODO: Build relationships using from_entity_id and to_entity_ids
 
-    const communicationResult = await this.communicationRepository.save(communication);
+    let communicationResult: CommunicationEntity;
+    try {
+      communicationResult = await this.communicationRepository.save(communication);
+    } catch (err) {
+      // Lost a race to a concurrent insert of the same derived id (PK / idem
+      // index raised 23505) — fetch and return the winner.
+      if (hasSource && (err as { code?: string })?.code === '23505') {
+        const existing = await this.communicationRepository.findOne({
+          where: { id, userId: context.userId },
+        });
+        if (existing) {
+          return CommunicationEntity.toEgressType(existing);
+        }
+      }
+
+      throw err;
+    }
 
     await this.eventService.send(CommunicationCreatedEvent, {
       communicationId: communicationResult.id,

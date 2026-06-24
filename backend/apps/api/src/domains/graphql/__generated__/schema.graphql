@@ -248,6 +248,25 @@ input CreateAnswerInput {
   questionId: String!
 }
 
+input CreateCommunicationInput {
+  communicationType: String!
+  content: String!
+  direction: String!
+  durationSeconds: Int
+  participantsMetadata: JSON
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  subject: String
+  threadId: String
+  time: DateTime!
+}
+
+type CreateCommunicationPayload {
+  communication: CommunicationType
+  success: Boolean!
+}
+
 input CreateConceptInput {
   description: String
   linkedId: String
@@ -334,12 +353,20 @@ input CreateEventInput {
 }
 
 input CreateItemInput {
+  acquiredAt: DateTime
   brand: String
   category: String
+  currency: String
   currentValue: Float
   description: String
+  metadata: JSON
   model: String
   name: String!
+  purchasePrice: Float
+  sourceId: ID
+  sourceSystem: String
+  sourceType: String
+  subcategory: String
 }
 
 type CreateItemPayload {
@@ -669,6 +696,7 @@ type MessageType implements Node {
 type Mutation {
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   createAnswer(input: CreateAnswerInput!): AnswerType!
+  createCommunication(input: CreateCommunicationInput!): CreateCommunicationPayload!
   createConcept(input: CreateConceptInput!): CreateConceptPayload!
   createConnection(input: CreateConnectionInput!): CreateConnectionPayload!
   createConnectionSyncJob(input: CreateConnectionSyncJobInput!): CreateConnectionSyncJobPayload!

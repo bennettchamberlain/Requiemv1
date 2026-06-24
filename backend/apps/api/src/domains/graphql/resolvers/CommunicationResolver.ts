@@ -11,6 +11,8 @@ import { TagLoader } from '../loaders/TagLoader';
 import { CommunicationConnection } from '../types/CommunicationConnection';
 import { CommunicationEdge } from '../types/CommunicationEdge';
 import { CommunicationType } from '../types/CommunicationType';
+import { CreateCommunicationInput } from '../types/CreateCommunicationInput';
+import { CreateCommunicationPayload } from '../types/CreateCommunicationPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -71,6 +73,35 @@ export class CommunicationResolver {
     const entity = await this.communicationService.findById(serviceContext, id);
 
     return entity ? CommunicationType.toType(entity) : null;
+  }
+
+  @Mutation(() => CreateCommunicationPayload)
+  async createCommunication(
+    @Context() context: RequestContext,
+    @Args('input') input: CreateCommunicationInput,
+  ): Promise<CreateCommunicationPayload> {
+    const serviceContext = toServiceContext(context);
+
+    type CommDto = Parameters<CommunicationService['create']>[1];
+
+    const entity = await this.communicationService.create(serviceContext, {
+      time: input.time,
+      communication_type: input.communicationType as CommDto['communication_type'],
+      direction: input.direction as CommDto['direction'],
+      content: input.content,
+      subject: input.subject,
+      thread_id: input.threadId,
+      duration_seconds: input.durationSeconds,
+      participants_metadata: input.participantsMetadata,
+      source_type: input.sourceType,
+      source_system: input.sourceSystem,
+      source_id: input.sourceId,
+    });
+
+    return {
+      success: Boolean(entity),
+      communication: entity ? CommunicationType.toType(entity) : undefined,
+    };
   }
 
   @Mutation(() => CommunicationType, { nullable: true })

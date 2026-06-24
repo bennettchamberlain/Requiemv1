@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { v7 as uuid7 } from 'uuid';
+import { v5 as uuidv5, v7 as uuid7 } from 'uuid';
 
 import { SYSTEM_USER, type UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
@@ -11,6 +11,11 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 
 import { type Item, ItemEntity } from '../entities/ItemEntity';
 import type { CreateItemDto, UpdateItemDto } from '../types';
+
+// Fixed namespace for deriving stable inventory ids from a provenance triple
+// (UUIDv5). Constant on purpose: the same source identity must always hash to
+// the same object_id so re-syncs are idempotent.
+const ITEM_SOURCE_NAMESPACE = 'b8f1c0de-1a2b-5c3d-8e4f-000000000001';
 
 @Injectable()
 export class ItemService {
@@ -24,7 +29,42 @@ export class ItemService {
   }
 
   async create(context: UserServiceContext, data: CreateItemDto): Promise<Item> {
-    const id = data.id ?? uuid7();
+    // Idempotency without a dedicated source column / unique index: when an item
+    // carries a provenance triple (e.g. an imported purchase), derive a stable,
+    // USER-SCOPED primary key from it. Re-ingesting the same item — flaky-client
+    // retries, a full importer re-sync — resolves to the same id, so we
+    // find-or-return instead of duplicating. The key is hashed with the userId
+    // so the same source id under two users never collides on the global PK.
+    const hasSource = Boolean(data.sourceSystem && data.sourceId);
+    const id =
+      data.id ??
+      (hasSource
+        ? uuidv5(
+            `${context.userId}:${data.sourceType ?? ''}:${data.sourceSystem}:${data.sourceId}`,
+            ITEM_SOURCE_NAMESPACE,
+          )
+        : uuid7());
+
+    if (hasSource) {
+      const existing = await this.itemRepository.findOne({
+        where: { id, userId: context.userId },
+      });
+      if (existing) {
+        return ItemEntity.toEgressType(existing);
+      }
+    }
+
+    // No source_* columns exist, so keep the provenance visible/queryable in the
+    // metadata jsonb (mirrors the ItemEntity.source_file_id convention).
+    const metadata: Record<string, unknown> = { ...(data.metadata ?? {}) };
+    if (hasSource) {
+      if (data.sourceType) {
+        metadata.source_type = data.sourceType;
+      }
+
+      metadata.source_system = data.sourceSystem;
+      metadata.source_id = data.sourceId;
+    }
 
     const entity = this.itemRepository.create({
       id,
@@ -35,19 +75,37 @@ export class ItemService {
       subcategory: data.subcategory ?? null,
       brand: data.brand ?? null,
       model: data.model ?? null,
+      purchasePrice: data.purchasePrice ?? null,
       currentValue: data.currentValue ?? null,
       currency: data.currency ?? 'USD',
+      acquiredAt: data.acquiredAt ?? null,
       condition: data.condition ?? null,
-      metadata: data.metadata ?? {},
+      metadata,
     });
 
-    await this.itemRepository.save(entity);
+    let saved: ItemEntity;
+    try {
+      saved = await this.itemRepository.save(entity);
+    } catch (err) {
+      // Lost a race to a concurrent insert of the same derived id (PK raised
+      // 23505) — fetch and return the winner.
+      if (hasSource && (err as { code?: string })?.code === '23505') {
+        const existing = await this.itemRepository.findOne({
+          where: { id, userId: context.userId },
+        });
+        if (existing) {
+          return ItemEntity.toEgressType(existing);
+        }
+      }
+
+      throw err;
+    }
 
     await this.eventService.send(ItemCreatedEvent, {
-      itemId: entity.id,
+      itemId: saved.id,
     });
 
-    return ItemEntity.toEgressType(entity);
+    return ItemEntity.toEgressType(saved);
   }
 
   async findAll(context: ServiceContext): Promise<Item[]> {

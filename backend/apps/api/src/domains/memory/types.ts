@@ -259,11 +259,18 @@ export interface CreateItemDto {
   subcategory?: string;
   brand?: string;
   model?: string;
+  purchasePrice?: number;
   currentValue?: number;
   currency?: string;
+  acquiredAt?: Date;
   condition?: 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a' | null;
   images?: string[];
   metadata?: Record<string, unknown>;
+  // Provenance for imported items — folded into metadata and used to derive a
+  // stable, user-scoped id for idempotent re-sync (no source columns/migration).
+  sourceType?: string;
+  sourceSystem?: string;
+  sourceId?: string;
 }
 
 export interface UpdateItemDto {
@@ -382,6 +389,11 @@ export interface CreateCommunicationDto {
   is_encrypted?: boolean;
   is_archived?: boolean;
   preview?: string | null;
+  // Provenance triple for imported communications — used to derive a stable id
+  // for idempotent re-sync (see CommunicationService.create).
+  source_type?: string;
+  source_system?: string;
+  source_id?: string;
 }
 
 export const createCommunicationSchema = z.object({
