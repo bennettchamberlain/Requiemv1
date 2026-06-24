@@ -400,7 +400,7 @@ async function up(key: string): Promise<void> {
       DATABASE_PORT: String(dbPort),
       OBJECT_STORE_URL: `http://localhost:${objPort}`,
       HBPE_HOST: `http://localhost:${hbpePort}`,
-      HOSTNAME: host, // this stack's own origin (<key>.localhost); OAuth host is separate
+      APP_PUBLIC_HOSTNAME: host, // this stack's own origin (<key>.localhost); OAuth host is separate
       OVERMIND_SOCKET: overmindSocket,
       // Overmind reloads .env over the environment we hand it, which would
       // overwrite the dynamic per-worktree ports set above. This env already

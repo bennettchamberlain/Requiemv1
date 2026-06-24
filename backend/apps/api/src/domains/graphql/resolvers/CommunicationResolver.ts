@@ -3,7 +3,7 @@ import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nest
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
-import { CommunicationService } from '@ci/domains/memory';
+import { CommunicationService, CommunicationType as CommunicationTypeEnum } from '@ci/domains/memory';
 import { type Person } from '@ci/domains/memory';
 
 import { PersonLoader } from '../loaders/PersonLoader';
@@ -12,7 +12,6 @@ import { CommunicationConnection } from '../types/CommunicationConnection';
 import { CommunicationEdge } from '../types/CommunicationEdge';
 import { CommunicationType } from '../types/CommunicationType';
 import { CreateCommunicationInput } from '../types/CreateCommunicationInput';
-import { CreateCommunicationPayload } from '../types/CreateCommunicationPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -75,33 +74,43 @@ export class CommunicationResolver {
     return entity ? CommunicationType.toType(entity) : null;
   }
 
-  @Mutation(() => CreateCommunicationPayload)
-  async createCommunication(
+  /**
+   * Batch, idempotent communication ingest for the importer (net-new write path
+   * outside ETL). Each input dedupes on the provenance triple (user, sourceType,
+   * sourceSystem, sourceId) so a re-sync returns the existing communication
+   * instead of inserting a duplicate. Returns created-or-existing rows in input
+   * order.
+   */
+  @Mutation(() => [CommunicationType])
+  async createCommunications(
     @Context() context: RequestContext,
-    @Args('input') input: CreateCommunicationInput,
-  ): Promise<CreateCommunicationPayload> {
+    @Args('input', { type: () => [CreateCommunicationInput] }) input: CreateCommunicationInput[],
+  ): Promise<CommunicationType[]> {
     const serviceContext = toServiceContext(context);
 
-    type CommDto = Parameters<CommunicationService['create']>[1];
+    const communications = await this.communicationService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        communication_type: item.communicationType as CommunicationTypeEnum,
+        time: item.time,
+        content: item.content,
+        preview: item.preview,
+        subject: item.subject,
+        // `direction` is stored verbatim; the column is plain text. Default to
+        // 'inbound' when the importer omits it.
+        direction: (item.direction ?? 'inbound') as 'inbound' | 'outbound',
+        thread_id: item.threadId,
+        from_entity_id: item.fromEntityId,
+        to_entity_ids: item.toEntityIds,
+        participants_metadata: item.participantsMetadata,
+        attachments: item.attachments,
+        source_type: item.sourceType,
+        source_system: item.sourceSystem,
+        source_id: item.sourceId,
+      })),
+    );
 
-    const entity = await this.communicationService.create(serviceContext, {
-      time: input.time,
-      communication_type: input.communicationType as CommDto['communication_type'],
-      direction: input.direction as CommDto['direction'],
-      content: input.content,
-      subject: input.subject,
-      thread_id: input.threadId,
-      duration_seconds: input.durationSeconds,
-      participants_metadata: input.participantsMetadata,
-      source_type: input.sourceType,
-      source_system: input.sourceSystem,
-      source_id: input.sourceId,
-    });
-
-    return {
-      success: Boolean(entity),
-      communication: entity ? CommunicationType.toType(entity) : undefined,
-    };
+    return communications.map((communication) => CommunicationType.toType(communication));
   }
 
   @Mutation(() => CommunicationType, { nullable: true })

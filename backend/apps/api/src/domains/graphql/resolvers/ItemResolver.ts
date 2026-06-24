@@ -7,6 +7,7 @@ import { ItemService } from '@ci/domains/memory';
 
 import { ItemFileLoader } from '../loaders/ItemFileLoader';
 import { TagLoader } from '../loaders/TagLoader';
+import { CreateInventoryInput } from '../types/CreateInventoryInput';
 import { CreateItemInput } from '../types/CreateItemInput';
 import { CreateItemPayload } from '../types/CreateItemPayload';
 import { DeleteByIdInput } from '../types/DeleteByIdInput';
@@ -86,17 +87,9 @@ export class ItemResolver {
       name: input.name,
       description: input.description,
       category: input.category,
-      subcategory: input.subcategory,
       brand: input.brand,
       model: input.model,
-      purchasePrice: input.purchasePrice,
       currentValue: input.currentValue,
-      currency: input.currency,
-      acquiredAt: input.acquiredAt,
-      metadata: input.metadata,
-      sourceType: input.sourceType,
-      sourceSystem: input.sourceSystem,
-      sourceId: input.sourceId,
     });
 
     if (entity == null) {
@@ -109,6 +102,43 @@ export class ItemResolver {
       success: true,
       item: entity ? ItemType.toType(entity) : undefined,
     };
+  }
+
+  /**
+   * Batch, idempotent inventory ingest for the importer. Each input dedupes on the
+   * provenance triple (owner, sourceType, sourceSystem, sourceId) so a re-sync
+   * returns the existing item instead of inserting a duplicate (e.g. an Amazon
+   * order id mapped to identifierCodes.order_id AND sourceId). Returns the
+   * created-or-existing items in input order.
+   */
+  @Mutation(() => [ItemType])
+  async createInventoryItems(
+    @Context() context: RequestContext,
+    @Args('input', { type: () => [CreateInventoryInput] }) input: CreateInventoryInput[],
+  ): Promise<ItemType[]> {
+    const serviceContext = toServiceContext(context);
+
+    const items = await this.itemService.createMany(
+      serviceContext,
+      input.map((item) => ({
+        name: item.name,
+        description: item.description,
+        category: item.category,
+        subcategory: item.subcategory,
+        brand: item.brand,
+        purchasePrice: item.purchasePrice,
+        currentValue: item.currentValue,
+        currency: item.currency,
+        acquiredAt: item.acquiredAt,
+        condition: item.condition,
+        identifierCodes: item.identifierCodes,
+        sourceType: item.sourceType,
+        sourceSystem: item.sourceSystem,
+        sourceId: item.sourceId,
+      })),
+    );
+
+    return items.map((item) => ItemType.toType(item));
   }
 
   @Mutation(() => UpdateItemPayload)

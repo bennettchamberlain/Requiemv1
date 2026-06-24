@@ -1,7 +1,7 @@
 {
   "host": "0.0.0.0",
   "port": 3030,
-  "hostname": "memory.ci.localhost",
+  "hostname": "ci-server.localhost",
   "logging": {
     "level": "info"
   },
@@ -54,11 +54,11 @@
       "callbackUrl": ""
     },
     "openid": {
-      "callbackUrl": "https://memory.ci.localhost/openid/callback"
+      "callbackUrl": "https://ci-server.localhost/openid/callback"
     },
     "oidc": {
       "issuerUrl": "",
-      "callbackUrl": "https://memory.ci.localhost/api/authenticate/oidc/callback"
+      "callbackUrl": "https://ci-server.localhost/api/authenticate/oidc/callback"
     },
     "portal": {
       "enabled": false,

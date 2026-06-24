@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
-import { v5 as uuidv5, v7 as uuid7 } from 'uuid';
+import { In, IsNull, Repository, type FindOptionsWhere } from 'typeorm';
+import { v7 as uuid7 } from 'uuid';
 
+import { isUniqueViolation } from '@ci/common/constants';
 import { SYSTEM_USER, type UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
@@ -11,11 +12,6 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 
 import { type Item, ItemEntity } from '../entities/ItemEntity';
 import type { CreateItemDto, UpdateItemDto } from '../types';
-
-// Fixed namespace for deriving stable inventory ids from a provenance triple
-// (UUIDv5). Constant on purpose: the same source identity must always hash to
-// the same object_id so re-syncs are idempotent.
-const ITEM_SOURCE_NAMESPACE = 'b8f1c0de-1a2b-5c3d-8e4f-000000000001';
 
 @Injectable()
 export class ItemService {
@@ -29,46 +25,12 @@ export class ItemService {
   }
 
   async create(context: UserServiceContext, data: CreateItemDto): Promise<Item> {
-    // Idempotency without a dedicated source column / unique index: when an item
-    // carries a provenance triple (e.g. an imported purchase), derive a stable,
-    // USER-SCOPED primary key from it. Re-ingesting the same item — flaky-client
-    // retries, a full importer re-sync — resolves to the same id, so we
-    // find-or-return instead of duplicating. The key is hashed with the userId
-    // so the same source id under two users never collides on the global PK.
-    const hasSource = Boolean(data.sourceSystem && data.sourceId);
-    const id =
-      data.id ??
-      (hasSource
-        ? uuidv5(
-            `${context.userId}:${data.sourceType ?? ''}:${data.sourceSystem}:${data.sourceId}`,
-            ITEM_SOURCE_NAMESPACE,
-          )
-        : uuid7());
-
-    if (hasSource) {
-      const existing = await this.itemRepository.findOne({
-        where: { id, userId: context.userId },
-      });
-      if (existing) {
-        return ItemEntity.toEgressType(existing);
-      }
-    }
-
-    // No source_* columns exist, so keep the provenance visible/queryable in the
-    // metadata jsonb (mirrors the ItemEntity.source_file_id convention).
-    const metadata: Record<string, unknown> = { ...(data.metadata ?? {}) };
-    if (hasSource) {
-      if (data.sourceType) {
-        metadata.source_type = data.sourceType;
-      }
-
-      metadata.source_system = data.sourceSystem;
-      metadata.source_id = data.sourceId;
-    }
+    const id = data.id ?? uuid7();
 
     const entity = this.itemRepository.create({
       id,
       userId: context.userId,
+      ownerUserId: context.userId,
       name: data.name,
       description: data.description ?? null,
       category: data.category ?? null,
@@ -79,33 +41,68 @@ export class ItemService {
       currentValue: data.currentValue ?? null,
       currency: data.currency ?? 'USD',
       acquiredAt: data.acquiredAt ?? null,
+      identifierCodes: data.identifierCodes ?? {},
       condition: data.condition ?? null,
-      metadata,
+      metadata: data.metadata ?? {},
+      sourceType: data.sourceType ?? null,
+      sourceSystem: data.sourceSystem ?? null,
+      sourceId: data.sourceId ?? null,
     });
 
-    let saved: ItemEntity;
-    try {
-      saved = await this.itemRepository.save(entity);
-    } catch (err) {
-      // Lost a race to a concurrent insert of the same derived id (PK raised
-      // 23505) — fetch and return the winner.
-      if (hasSource && (err as { code?: string })?.code === '23505') {
-        const existing = await this.itemRepository.findOne({
-          where: { id, userId: context.userId },
-        });
-        if (existing) {
-          return ItemEntity.toEgressType(existing);
-        }
-      }
-
-      throw err;
-    }
+    await this.itemRepository.save(entity);
 
     await this.eventService.send(ItemCreatedEvent, {
-      itemId: saved.id,
+      itemId: entity.id,
     });
 
-    return ItemEntity.toEgressType(saved);
+    return ItemEntity.toEgressType(entity);
+  }
+
+  /**
+   * Batch, idempotent inventory ingest for the importer. Each item dedupes on the
+   * provenance triple (owner_user_id, source_type, source_system, source_id) —
+   * identical to EventService.create — so a re-sync returns the existing row
+   * instead of inserting a duplicate. Paired with the inventory_source_triple_uniq
+   * partial unique index, which also catches a lost insert race (23505).
+   */
+  async createMany(context: UserServiceContext, data: CreateItemDto[]): Promise<Item[]> {
+    return Promise.all(
+      data.map(async (item) => {
+        // Idempotency: when the triple is present, return the existing row.
+        const sourceWhere: FindOptionsWhere<ItemEntity> | null =
+          item.sourceType && item.sourceId
+            ? {
+                ownerUserId: context.userId,
+                sourceType: item.sourceType,
+                sourceSystem: item.sourceSystem ?? IsNull(),
+                sourceId: item.sourceId,
+              }
+            : null;
+
+        if (sourceWhere) {
+          const existing = await this.itemRepository.findOne({ where: sourceWhere });
+          if (existing) {
+            return ItemEntity.toEgressType(existing);
+          }
+        }
+
+        try {
+          return await this.create(context, item);
+        } catch (err) {
+          // Lost a race to a concurrent insert of the same triple (the partial-
+          // unique index raised 23505) — fetch and return the winner. TypeORM
+          // surfaces the pg code on the error or its nested driverError.
+          if (sourceWhere && isUniqueViolation(err)) {
+            const existing = await this.itemRepository.findOne({ where: sourceWhere });
+            if (existing) {
+              return ItemEntity.toEgressType(existing);
+            }
+          }
+
+          throw err;
+        }
+      }),
+    );
   }
 
   async findAll(context: ServiceContext): Promise<Item[]> {
