@@ -300,6 +300,42 @@ export type CreateAnswerInput = {
   questionId: Scalars['String']['input'];
 };
 
+export type CreateBrowserActivityInput = {
+  actionType?: InputMaybe<Scalars['String']['input']>;
+  category?: InputMaybe<Scalars['String']['input']>;
+  containsSensitive?: InputMaybe<Scalars['Boolean']['input']>;
+  deviceId?: InputMaybe<Scalars['String']['input']>;
+  durationSeconds?: InputMaybe<Scalars['Int']['input']>;
+  isIncognito?: InputMaybe<Scalars['Boolean']['input']>;
+  pageSummary?: InputMaybe<Scalars['String']['input']>;
+  productivityScore?: InputMaybe<Scalars['Float']['input']>;
+  properties?: InputMaybe<Scalars['JSON']['input']>;
+  scrollDepthPercent?: InputMaybe<Scalars['Float']['input']>;
+  sourceId?: InputMaybe<Scalars['String']['input']>;
+  sourceSystem?: InputMaybe<Scalars['String']['input']>;
+  sourceType?: InputMaybe<Scalars['String']['input']>;
+  time: Scalars['DateTime']['input'];
+  title?: InputMaybe<Scalars['String']['input']>;
+  url: Scalars['String']['input'];
+};
+
+export type CreateCommunicationInput = {
+  attachments?: InputMaybe<Array<Scalars['JSON']['input']>>;
+  communicationType: Scalars['String']['input'];
+  content: Scalars['String']['input'];
+  direction?: InputMaybe<Scalars['String']['input']>;
+  fromEntityId?: InputMaybe<Scalars['String']['input']>;
+  participantsMetadata?: InputMaybe<Scalars['JSON']['input']>;
+  preview?: InputMaybe<Scalars['String']['input']>;
+  sourceId?: InputMaybe<Scalars['String']['input']>;
+  sourceSystem?: InputMaybe<Scalars['String']['input']>;
+  sourceType?: InputMaybe<Scalars['String']['input']>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  threadId?: InputMaybe<Scalars['String']['input']>;
+  time: Scalars['DateTime']['input'];
+  toEntityIds?: InputMaybe<Array<Scalars['String']['input']>>;
+};
+
 export type CreateConceptInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   linkedId?: InputMaybe<Scalars['String']['input']>;
@@ -357,6 +393,9 @@ export type CreateContentInput = {
   externalId?: InputMaybe<Scalars['String']['input']>;
   mimetype?: InputMaybe<Scalars['String']['input']>;
   sourceData?: InputMaybe<Scalars['JSON']['input']>;
+  sourceId?: InputMaybe<Scalars['String']['input']>;
+  sourceSystem?: InputMaybe<Scalars['String']['input']>;
+  sourceType?: InputMaybe<Scalars['String']['input']>;
   sourceUrl?: InputMaybe<Scalars['String']['input']>;
   text?: InputMaybe<Scalars['String']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
@@ -386,6 +425,23 @@ export type CreateEventInput = {
   startTime: Scalars['DateTime']['input'];
   status?: InputMaybe<Scalars['String']['input']>;
   title?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CreateInventoryInput = {
+  acquiredAt?: InputMaybe<Scalars['DateTime']['input']>;
+  brand?: InputMaybe<Scalars['String']['input']>;
+  category?: InputMaybe<Scalars['String']['input']>;
+  condition?: InputMaybe<ItemCondition>;
+  currency?: InputMaybe<Scalars['String']['input']>;
+  currentValue?: InputMaybe<Scalars['Float']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  identifierCodes?: InputMaybe<Scalars['JSON']['input']>;
+  name: Scalars['String']['input'];
+  purchasePrice?: InputMaybe<Scalars['Float']['input']>;
+  sourceId?: InputMaybe<Scalars['String']['input']>;
+  sourceSystem?: InputMaybe<Scalars['String']['input']>;
+  sourceType?: InputMaybe<Scalars['String']['input']>;
+  subcategory?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type CreateItemInput = {
@@ -749,11 +805,15 @@ export type Mutation = {
   __typename?: 'Mutation';
   bulkIngestGraph: BulkGraphPayload;
   createAnswer: AnswerType;
+  createBrowserActivities: Array<BrowserActivityType>;
+  createCommunications: Array<CommunicationType>;
   createConcept: CreateConceptPayload;
   createConnection: CreateConnectionPayload;
   createConnectionSyncJob: CreateConnectionSyncJobPayload;
   createContent: ContentType;
+  createContents: Array<ContentType>;
   createEvent: EventType;
+  createInventoryItems: Array<ItemType>;
   createItem: CreateItemPayload;
   createNote: CreateNotePayload;
   createPerson: CreatePersonPayload;
@@ -819,6 +879,16 @@ export type MutationCreateAnswerArgs = {
 };
 
 
+export type MutationCreateBrowserActivitiesArgs = {
+  input: Array<CreateBrowserActivityInput>;
+};
+
+
+export type MutationCreateCommunicationsArgs = {
+  input: Array<CreateCommunicationInput>;
+};
+
+
 export type MutationCreateConceptArgs = {
   input: CreateConceptInput;
 };
@@ -839,8 +909,18 @@ export type MutationCreateContentArgs = {
 };
 
 
+export type MutationCreateContentsArgs = {
+  input: Array<CreateContentInput>;
+};
+
+
 export type MutationCreateEventArgs = {
   input: CreateEventInput;
+};
+
+
+export type MutationCreateInventoryItemsArgs = {
+  input: Array<CreateInventoryInput>;
 };
 
 
