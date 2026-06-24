@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 
 import { Button } from '@ci/shadcn';
 import { Loader2, MapPin, Search as SearchIcon, X } from '@ci/shadcn/icons';
@@ -242,9 +242,11 @@ function zoomToCluster(map: L.Map, cluster: Cluster) {
 function ClusteredMarkers({
   located,
   onSelect,
+  onHoverEntity,
 }: {
   located: LocatedEntity[];
   onSelect: (entity: EntityItem) => void;
+  onHoverEntity?: (entity: EntityItem | null) => void;
 }) {
   const map = useLeafletMap();
   const [zoom, setZoom] = useState(() => map.getZoom());
@@ -267,6 +269,8 @@ function ClusteredMarkers({
               position={[coords.lat, coords.lng]}
               variant={markerVariant(entity)}
               onClick={() => onSelect(entity)}
+              onMouseEnter={() => onHoverEntity?.(entity)}
+              onMouseLeave={() => onHoverEntity?.(null)}
             />
           );
         }
@@ -439,16 +443,132 @@ function FitBoundsOnce({ located }: { located: LocatedEntity[] }) {
   return null;
 }
 
+type ConnectorLine = { x1: number; y1: number; x2: number; y2: number } | null;
+
+function MapTimelineConnector({
+  active,
+  rowElementsRef,
+}: {
+  active: LocatedEntity | null;
+  rowElementsRef: MutableRefObject<globalThis.Map<string, HTMLDivElement>>;
+}) {
+  const map = useLeafletMap();
+  const [line, setLine] = useState<ConnectorLine>(null);
+
+  const updateLine = useCallback(() => {
+    if (!active) {
+      setLine(null);
+
+      return;
+    }
+
+    const row = rowElementsRef.current.get(active.entity.id);
+
+    if (!row) {
+      setLine(null);
+
+      return;
+    }
+
+    const containerRect = map.getContainer().getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const markerPoint = map.latLngToContainerPoint([active.coords.lat, active.coords.lng]);
+
+    setLine({
+      x1: rowRect.right - containerRect.left,
+      y1: rowRect.top + rowRect.height / 2 - containerRect.top,
+      x2: markerPoint.x,
+      y2: markerPoint.y,
+    });
+  }, [active, map, rowElementsRef]);
+
+  useMapEvents({
+    move: updateLine,
+    moveend: updateLine,
+    zoom: updateLine,
+    zoomend: updateLine,
+  });
+
+  useEffect(() => {
+    updateLine();
+
+    const row = active ? rowElementsRef.current.get(active.entity.id) : null;
+    const scrollRoot = row?.closest('[data-radix-scroll-area-viewport]');
+
+    scrollRoot?.addEventListener('scroll', updateLine, { passive: true });
+    window.addEventListener('resize', updateLine);
+
+    return () => {
+      scrollRoot?.removeEventListener('scroll', updateLine);
+      window.removeEventListener('resize', updateLine);
+    };
+  }, [active, rowElementsRef, updateLine]);
+
+  if (!line) {
+    return null;
+  }
+
+  return (
+    <svg className="pointer-events-none absolute inset-0 z-[450] overflow-visible" aria-hidden="true">
+      <line
+        x1={line.x1}
+        y1={line.y1}
+        x2={line.x2}
+        y2={line.y2}
+        stroke="rgb(56 189 248)"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeDasharray="8 6"
+      />
+    </svg>
+  );
+}
+
 export function DesktopMapView() {
   const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore } =
     useLocatedEntities();
+  const rowElementsRef = useRef(new globalThis.Map<string, HTMLDivElement>());
+  const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const activeEntityId = hoveredEntityId ?? selectedEntityId;
+
+  const locatedById = useMemo(
+    () => new globalThis.Map(located.map((item) => [item.entity.id, item])),
+    [located],
+  );
+  const activeLocated = activeEntityId ? (locatedById.get(activeEntityId) ?? null) : null;
+
+  const registerTimelineRow = useCallback((entityId: string, element: HTMLDivElement | null) => {
+    if (element) {
+      rowElementsRef.current.set(entityId, element);
+    } else {
+      rowElementsRef.current.delete(entityId);
+    }
+  }, []);
+
+  const handleTimelineHover = useCallback((entity: EntityItem | null) => {
+    setHoveredEntityId(entity?.id ?? null);
+  }, []);
+
+  const handleEntitySelect = useCallback(
+    (entity: EntityItem) => {
+      setSelectedEntityId(entity.id);
+      setActiveEntity(entity);
+    },
+    [setActiveEntity],
+  );
 
   return (
     // TODO: This default leads to some map jittering. It's OK for now, but let's think about tracking the user's last location and use that for the default center.
     <Map center={[37.7749, -122.4194]}>
-      <Map.Controls position="bottom-right" />
+      <Map.Controls position="top-right" />
       <Map.Panel position="left" className="w-[300px] relative">
-        <TimelineView />
+        <TimelineView
+          activeEntityId={activeEntityId}
+          onEntityHover={handleTimelineHover}
+          onEntitySelect={handleEntitySelect}
+          registerTimelineRow={registerTimelineRow}
+        />
         <SoftBlur />
       </Map.Panel>
 
@@ -459,8 +579,9 @@ export function DesktopMapView() {
         loadingMore={loadingMore}
         onLoadMore={loadMore}
       />
+      <MapTimelineConnector active={activeLocated} rowElementsRef={rowElementsRef} />
       <Map.RouteLayer locations={routeLocations} />
-      <ClusteredMarkers located={located} onSelect={setActiveEntity} />
+      <ClusteredMarkers located={located} onSelect={handleEntitySelect} onHoverEntity={handleTimelineHover} />
       <FitBoundsOnce located={located} />
     </Map>
   );
@@ -472,7 +593,7 @@ export function MobileMapView() {
 
   return (
     <Map center={[37.7749, -122.4194]}>
-      <Map.Controls position="bottom-right" />
+      <Map.Controls position="top-right" />
       <SearchAreaControl />
       <LoadMorePinsControl
         shown={located.length}

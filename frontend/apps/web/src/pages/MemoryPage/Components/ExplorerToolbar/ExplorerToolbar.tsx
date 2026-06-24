@@ -2,12 +2,23 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
-import { Badge, Button, Calendar, Dialog, Input, Label, Popover, Select, useToast } from '@ci/shadcn';
+import {
+  Badge,
+  Button,
+  Calendar,
+  Dialog,
+  Input,
+  Label,
+  Popover,
+  Select,
+  Tooltip,
+  cn,
+  useToast,
+} from '@ci/shadcn';
 import {
   ArrowUpDown,
   Calendar as CalendarIcon,
   ChevronDown,
-  ChevronUp,
   MapPin,
   Save,
   Search,
@@ -480,26 +491,47 @@ function ResultCount() {
  * tabs; it controls the toolbar drawer via the page's lifted `open` state and
  * surfaces the active-filter count with an up/down chevron.
  */
-export function AdvancedSearchToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+export function AdvancedSearchToggle({
+  open,
+  onToggle,
+  className,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  className?: string;
+}) {
   const [searchParams] = useSearchParams();
   const activeCount = countActiveFilters(searchParams);
+  const label = open ? 'Close advanced search' : 'Open advanced search';
 
   return (
-    <Button
-      type="button"
-      variant={open || activeCount > 0 ? 'secondary' : 'outline'}
-      onClick={onToggle}
-      aria-expanded={open}
-    >
-      <SlidersHorizontal className="mr-2 h-4 w-4" />
-      Advanced
-      {activeCount > 0 && (
-        <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-          {activeCount}
-        </Badge>
-      )}
-      {open ? <ChevronUp className="ml-2 h-4 w-4" /> : <ChevronDown className="ml-2 h-4 w-4" />}
-    </Button>
+    <Tooltip.Provider>
+      <Tooltip delayDuration={400}>
+        <Tooltip.Trigger asChild>
+          <Button
+            type="button"
+            size="icon"
+            variant={open || activeCount > 0 ? 'secondary' : 'outline'}
+            onClick={onToggle}
+            aria-label={label}
+            aria-expanded={open}
+            title={label}
+            className={cn('relative h-10 w-10 flex-shrink-0', className)}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {activeCount > 0 && (
+              <Badge
+                variant={open ? 'default' : 'secondary'}
+                className="absolute -right-1 -top-1 h-5 min-w-5 justify-center px-1 text-[10px]"
+              >
+                {activeCount}
+              </Badge>
+            )}
+          </Button>
+        </Tooltip.Trigger>
+        <Tooltip.Content side="bottom">{label}</Tooltip.Content>
+      </Tooltip>
+    </Tooltip.Provider>
   );
 }
 
@@ -555,7 +587,10 @@ export function MemorySearchField() {
   );
 }
 
-function ExplorerToolbarInner({ open }: { open: boolean }) {
+function ExplorerToolbarInner({ open, showResultCount }: { open: boolean; showResultCount: boolean }) {
+  const [searchParams] = useSearchParams();
+  const showSummaryRow = showResultCount || countActiveFilters(searchParams) > 0;
+
   return (
     <div className="flex flex-col gap-2">
       {/* The advanced-search drawer: plain Who / What / When / Where / How, then
@@ -566,14 +601,18 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <ActiveFilterChips />
+      {showSummaryRow && (
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <ActiveFilterChips />
+          </div>
+          {showResultCount && (
+            <div className="shrink-0">
+              <ResultCount />
+            </div>
+          )}
         </div>
-        <div className="shrink-0">
-          <ResultCount />
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -585,10 +624,16 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
  * the page — the AdvancedSearchToggle that flips it lives in the header. Wrapped
  * in DropdownProvider so the useDropdown URL-param setters work.
  */
-export function ExplorerToolbar({ open }: { open: boolean }) {
+export function ExplorerToolbar({
+  open,
+  showResultCount = true,
+}: {
+  open: boolean;
+  showResultCount?: boolean;
+}) {
   return (
     <DropdownProvider args={[{ changeSearchParams: true }]}>
-      <ExplorerToolbarInner open={open} />
+      <ExplorerToolbarInner open={open} showResultCount={showResultCount} />
     </DropdownProvider>
   );
 }
