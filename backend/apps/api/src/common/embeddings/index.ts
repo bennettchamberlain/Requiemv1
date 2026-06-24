@@ -9,3 +9,4 @@ import { EmbeddingGenerationService } from './services/EmbeddingGenerationServic
 export class EmbeddingModule {}
 
 export { EmbeddingGenerationService };
+export { embedSkipReason, normalizeEmbeddableType, shouldEmbedType } from './embeddable';
