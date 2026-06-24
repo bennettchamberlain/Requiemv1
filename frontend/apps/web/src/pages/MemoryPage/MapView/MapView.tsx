@@ -13,6 +13,7 @@ import { useEntityService, type EntityItem } from '../../MemoryPage/useEntitySer
 import { boundsToBbox, bboxCenter, formatBbox, parseBbox } from '../bbox';
 import { formatEventTimeRange } from '../Components';
 import { TimelineView } from '../TimelineView';
+import './memory-map.css';
 
 // Colour/icon-code each marker by what it represents, like the old LifeScope map.
 const MARKER_VARIANT_BY_TYPENAME: Record<string, MarkerVariant> = {
@@ -256,16 +257,8 @@ function ClusterPopupContent({
   onZoom: () => void;
 }) {
   return (
-    <div className="w-72 overflow-hidden text-card-foreground" onClick={(event) => event.stopPropagation()}>
-      <div className="border-b border-border/70 px-3 py-2">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <MapPin className="h-4 w-4 text-blue-500" />
-          {cluster.items.length} events here
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">Select an event to view its details.</p>
-      </div>
-
-      <div className="max-h-72 overflow-y-auto p-2">
+    <div className="w-72 overflow-hidden text-black" onClick={(event) => event.stopPropagation()}>
+      <div className="max-h-72 overflow-y-auto py-2">
         {cluster.items.map(({ entity }) => {
           const time = clusterItemTime(entity);
 
@@ -273,16 +266,16 @@ function ClusterPopupContent({
             <button
               key={entity.id}
               type="button"
-              className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex w-full items-start gap-2 px-3 py-2 text-left text-black transition-colors hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
               onClick={() => onSelect(entity)}
             >
-              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-card-foreground">
+                <span className="block truncate text-sm font-medium text-black">
                   {clusterItemTitle(entity)}
                 </span>
                 {time && (
-                  <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  <span className="mt-1 flex items-center gap-1 text-xs text-slate-600">
                     <Clock className="h-3 w-3" />
                     {time}
                   </span>
@@ -293,8 +286,13 @@ function ClusterPopupContent({
         })}
       </div>
 
-      <div className="border-t border-border/70 p-2">
-        <Button type="button" size="sm" variant="outline" className="w-full" onClick={onZoom}>
+      <div className="border-t border-slate-200 p-0">
+        <Button
+          type="button"
+          size="sm"
+          className="w-full rounded-none border-0 bg-black! text-white! hover:bg-black/90! hover:text-white!"
+          onClick={onZoom}
+        >
           Zoom to group
         </Button>
       </div>
