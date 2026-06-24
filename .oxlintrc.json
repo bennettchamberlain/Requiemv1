@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/crates/oxc_linter/schemas/oxlint.schema.json",
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/dev-dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    ".yarn/**",
+    ".pnp.*",
+    "**/docs/**",
+    "**/__generated__/**",
+    "**/components/ui/**",
+    "infrastructure/iframely/**",
+    "frontend/apps/web/src/graphql/index.ts",
+    "frontend/apps/web/src/graphql/gql.ts",
+    "frontend/apps/web/src/graphql/graphql.ts",
+    "frontend/apps/web/src/graphql/fragment-masking.ts",
+    "frontend/apps/web/src/graphql/possibleTypes.ts"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-unused-vars": "off",
+    "no-undef": "off",
+    "unicorn/no-useless-fallback-in-spread": "off",
+    "unicorn/no-empty-file": "off",
+    "unicorn/no-useless-spread": "off",
+    "unicorn/no-single-promise-in-promise-methods": "off",
+    "typescript/no-useless-empty-export": "off"
+  }
+}

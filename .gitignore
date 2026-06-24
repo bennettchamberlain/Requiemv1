@@ -53,3 +53,6 @@ backend/apps/hbpe/src/ci/tokenizer/__pycache__/
 
 # Local Cloudflare Tunnel config (holds credentials path); keep the example only
 infrastructure/cloudflare/config.yml
+
+# ESLint result cache (speeds up repeat/incremental lint runs)
+.eslintcache

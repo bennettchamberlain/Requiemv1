@@ -118,6 +118,8 @@ jobs:
             command: yarn workspace @ci/be-api lint
           - name: frontend
             command: yarn workspace @ci/fe-web lint
+          - name: format
+            command: yarn format:check
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
