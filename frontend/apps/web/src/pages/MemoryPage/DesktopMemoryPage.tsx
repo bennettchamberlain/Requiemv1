@@ -230,8 +230,8 @@ export default function DesktopMemoryPage() {
       <PageContent className="p-0 gap-0">
         {/* Advanced-search drawer (when open) + active-filter chips + result count. */}
         {showExplorerToolbar && (
-          <div className="px-4 pt-3">
-            <ExplorerToolbar open={advancedOpen} showResultCount={activeTab !== 'map'} />
+          <div className={advancedOpen ? 'px-4 pt-0' : 'px-4 pt-3'}>
+            <ExplorerToolbar open={advancedOpen} showResultCount={activeTab !== 'map'} attachedToHeader />
           </div>
         )}
 
