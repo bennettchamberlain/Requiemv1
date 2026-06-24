@@ -42,7 +42,7 @@ fi
 REGISTRY="${REGISTRY:-portal.ci.localhost}"
 PORTAL_API="${PORTAL_API:-https://portal.ci.localhost/api}"
 ADMIN_KEY="${STORE_ADMIN_API_KEY:-}"
-SLUG="companion"
+SLUG="ci-memory"
 
 # Portal catalog registration (ingest → publish) is best-effort. Pushing the
 # images to the registry is the part that actually matters for installs, so a
