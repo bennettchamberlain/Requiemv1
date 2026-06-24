@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 
 import { Button } from '@ci/shadcn';
-import { Loader2, MapPin, Search as SearchIcon, X } from '@ci/shadcn/icons';
+import { Calendar, Clock, Loader2, MapPin, Search as SearchIcon, X } from '@ci/shadcn/icons';
 import L, { type LatLngExpression } from 'leaflet';
-import { Marker as LeafletMarker, useMap as useLeafletMap, useMapEvents } from 'react-leaflet';
+import { Marker as LeafletMarker, Popup, useMap as useLeafletMap, useMapEvents } from 'react-leaflet';
 import { useSearchParams } from 'react-router-dom';
 
 import { Map } from '@/components/Map';
@@ -11,7 +11,9 @@ import { type MarkerVariant } from '@/components/Map/Marker';
 
 import { useEntityService, type EntityItem } from '../../MemoryPage/useEntityService';
 import { boundsToBbox, bboxCenter, formatBbox, parseBbox } from '../bbox';
+import { formatEventTimeRange } from '../Components';
 import { TimelineView } from '../TimelineView';
+import './memory-map.css';
 
 // Colour/icon-code each marker by what it represents, like the old LifeScope map.
 const MARKER_VARIANT_BY_TYPENAME: Record<string, MarkerVariant> = {
@@ -190,7 +192,7 @@ function makeClusterIcon(count: number): L.DivIcon {
 
   // Inline styles (not Tailwind) so the size can scale with the count without
   // relying on dynamically-generated utility classes.
-  const html = `<div style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;border-radius:9999px;background:rgba(37,99,235,0.92);color:#fff;font-weight:600;font-size:13px;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4);">${count}</div>`;
+  const html = `<div style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;border-radius:9999px;background:var(--primary);color:var(--primary-foreground);font-weight:600;font-size:13px;border:3px solid var(--background);box-shadow:var(--shadow-glow-ci),0 1px 4px rgba(0,0,0,0.4);">${count}</div>`;
 
   return L.divIcon({
     html,
@@ -200,28 +202,143 @@ function makeClusterIcon(count: number): L.DivIcon {
   });
 }
 
+type ClusterListEntity = {
+  title?: string | null;
+  name?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  time?: string | null;
+  bucketStartTime?: string | null;
+  bucketTime?: string | null;
+};
+
+function clusterItemTitle(entity: EntityItem): string {
+  const item = entity as ClusterListEntity;
+
+  return (
+    item.title || item.name || (entity.__typename === 'EventType' ? 'Untitled event' : 'Untitled memory')
+  );
+}
+
+function clusterItemTime(entity: EntityItem): string | null {
+  const item = entity as ClusterListEntity;
+
+  if (entity.__typename === 'EventType') {
+    const start = item.startTime ?? item.bucketStartTime;
+
+    return start ? formatEventTimeRange(start, item.endTime) : null;
+  }
+
+  const raw = item.time ?? item.bucketTime;
+
+  if (!raw) {
+    return null;
+  }
+
+  const time = new Date(raw);
+
+  return isNaN(time.getTime())
+    ? null
+    : time.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+}
+
+function ClusterPopupContent({
+  cluster,
+  onSelect,
+  onZoom,
+}: {
+  cluster: Cluster;
+  onSelect: (entity: EntityItem) => void;
+  onZoom: () => void;
+}) {
+  return (
+    <div className="w-72 overflow-hidden text-black" onClick={(event) => event.stopPropagation()}>
+      <div className="max-h-72 overflow-y-auto py-2">
+        {cluster.items.map(({ entity }) => {
+          const time = clusterItemTime(entity);
+
+          return (
+            <button
+              key={entity.id}
+              type="button"
+              className="flex w-full items-start gap-2 px-3 py-2 text-left text-black transition-colors hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+              onClick={() => onSelect(entity)}
+            >
+              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-black">
+                  {clusterItemTitle(entity)}
+                </span>
+                {time && (
+                  <span className="mt-1 flex items-center gap-1 text-xs text-slate-600">
+                    <Clock className="h-3 w-3" />
+                    {time}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-slate-200 p-0">
+        <Button
+          type="button"
+          size="sm"
+          className="w-full rounded-none border-0 bg-black! text-white! hover:bg-black/90! hover:text-white!"
+          onClick={onZoom}
+        >
+          Zoom to group
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ClusterMarker({
   position,
   count,
-  onClick,
+  cluster,
+  onSelect,
+  onZoom,
 }: {
   position: [number, number];
   count: number;
-  onClick: () => void;
+  cluster: Cluster;
+  onSelect: (entity: EntityItem) => void;
+  onZoom: () => void;
 }) {
+  const map = useLeafletMap();
   const icon = useMemo(() => makeClusterIcon(count), [count]);
+  const handleSelect = useCallback(
+    (entity: EntityItem) => {
+      map.closePopup();
+      onSelect(entity);
+    },
+    [map, onSelect],
+  );
 
   const eventHandlers = useMemo(
     () => ({
       click: (event: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(event);
-        onClick();
       },
     }),
-    [onClick],
+    [],
   );
 
-  return <LeafletMarker position={position} icon={icon} eventHandlers={eventHandlers} zIndexOffset={300} />;
+  return (
+    <LeafletMarker position={position} icon={icon} eventHandlers={eventHandlers} zIndexOffset={300}>
+      <Popup className="custom-popup memory-map-cluster-popup" minWidth={288} maxWidth={320}>
+        <ClusterPopupContent cluster={cluster} onSelect={handleSelect} onZoom={onZoom} />
+      </Popup>
+    </LeafletMarker>
+  );
 }
 
 function zoomToCluster(map: L.Map, cluster: Cluster) {
@@ -242,9 +359,11 @@ function zoomToCluster(map: L.Map, cluster: Cluster) {
 function ClusteredMarkers({
   located,
   onSelect,
+  onHoverEntity,
 }: {
   located: LocatedEntity[];
   onSelect: (entity: EntityItem) => void;
+  onHoverEntity?: (entity: EntityItem | null) => void;
 }) {
   const map = useLeafletMap();
   const [zoom, setZoom] = useState(() => map.getZoom());
@@ -267,6 +386,8 @@ function ClusteredMarkers({
               position={[coords.lat, coords.lng]}
               variant={markerVariant(entity)}
               onClick={() => onSelect(entity)}
+              onMouseEnter={() => onHoverEntity?.(entity)}
+              onMouseLeave={() => onHoverEntity?.(null)}
             />
           );
         }
@@ -276,7 +397,9 @@ function ClusteredMarkers({
             key={cluster.id}
             position={[cluster.lat, cluster.lng]}
             count={cluster.items.length}
-            onClick={() => zoomToCluster(map, cluster)}
+            cluster={cluster}
+            onSelect={onSelect}
+            onZoom={() => zoomToCluster(map, cluster)}
           />
         );
       })}
@@ -343,9 +466,10 @@ function SearchAreaControl() {
     <div ref={stopPropagation} className="absolute left-1/2 top-3 z-400 flex -translate-x-1/2 gap-2">
       {showSearch && (
         <Button
+          variant="outline"
           size="sm"
           onClick={() => setBbox(formatBbox(boundsToBbox(map.getBounds())))}
-          className="border border-gray-200! bg-white! text-slate-700! shadow-md hover:bg-gray-100!"
+          className="border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent"
         >
           <SearchIcon className="mr-1 h-4 w-4" />
           Search events in this area
@@ -357,7 +481,7 @@ function SearchAreaControl() {
           size="sm"
           variant="outline"
           onClick={() => setBbox(null)}
-          className="border border-gray-200! bg-white! text-slate-700! shadow-md hover:bg-gray-100!"
+          className="border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent"
         >
           <X className="mr-1 h-4 w-4" />
           Clear area
@@ -401,10 +525,11 @@ function LoadMorePinsControl({
   return (
     <div ref={stopPropagation} className="absolute bottom-4 left-1/2 z-400 -translate-x-1/2">
       <Button
+        variant="outline"
         size="sm"
         onClick={onLoadMore}
         disabled={loadingMore}
-        className="border border-gray-200! bg-white! text-slate-700! shadow-md hover:bg-gray-100!"
+        className="border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent"
       >
         {loadingMore ? (
           <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -439,16 +564,132 @@ function FitBoundsOnce({ located }: { located: LocatedEntity[] }) {
   return null;
 }
 
+type ConnectorLine = { x1: number; y1: number; x2: number; y2: number } | null;
+
+function MapTimelineConnector({
+  active,
+  rowElementsRef,
+}: {
+  active: LocatedEntity | null;
+  rowElementsRef: MutableRefObject<globalThis.Map<string, HTMLDivElement>>;
+}) {
+  const map = useLeafletMap();
+  const [line, setLine] = useState<ConnectorLine>(null);
+
+  const updateLine = useCallback(() => {
+    if (!active) {
+      setLine(null);
+
+      return;
+    }
+
+    const row = rowElementsRef.current.get(active.entity.id);
+
+    if (!row) {
+      setLine(null);
+
+      return;
+    }
+
+    const containerRect = map.getContainer().getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const markerPoint = map.latLngToContainerPoint([active.coords.lat, active.coords.lng]);
+
+    setLine({
+      x1: rowRect.right - containerRect.left,
+      y1: rowRect.top + rowRect.height / 2 - containerRect.top,
+      x2: markerPoint.x,
+      y2: markerPoint.y,
+    });
+  }, [active, map, rowElementsRef]);
+
+  useMapEvents({
+    move: updateLine,
+    moveend: updateLine,
+    zoom: updateLine,
+    zoomend: updateLine,
+  });
+
+  useEffect(() => {
+    updateLine();
+
+    const row = active ? rowElementsRef.current.get(active.entity.id) : null;
+    const scrollRoot = row?.closest('[data-radix-scroll-area-viewport]');
+
+    scrollRoot?.addEventListener('scroll', updateLine, { passive: true });
+    window.addEventListener('resize', updateLine);
+
+    return () => {
+      scrollRoot?.removeEventListener('scroll', updateLine);
+      window.removeEventListener('resize', updateLine);
+    };
+  }, [active, rowElementsRef, updateLine]);
+
+  if (!line) {
+    return null;
+  }
+
+  return (
+    <svg className="pointer-events-none absolute inset-0 z-[450] overflow-visible" aria-hidden="true">
+      <line
+        x1={line.x1}
+        y1={line.y1}
+        x2={line.x2}
+        y2={line.y2}
+        stroke="rgb(56 189 248)"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeDasharray="8 6"
+      />
+    </svg>
+  );
+}
+
 export function DesktopMapView() {
   const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore } =
     useLocatedEntities();
+  const rowElementsRef = useRef(new globalThis.Map<string, HTMLDivElement>());
+  const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const activeEntityId = hoveredEntityId ?? selectedEntityId;
+
+  const locatedById = useMemo(
+    () => new globalThis.Map(located.map((item) => [item.entity.id, item])),
+    [located],
+  );
+  const activeLocated = activeEntityId ? (locatedById.get(activeEntityId) ?? null) : null;
+
+  const registerTimelineRow = useCallback((entityId: string, element: HTMLDivElement | null) => {
+    if (element) {
+      rowElementsRef.current.set(entityId, element);
+    } else {
+      rowElementsRef.current.delete(entityId);
+    }
+  }, []);
+
+  const handleTimelineHover = useCallback((entity: EntityItem | null) => {
+    setHoveredEntityId(entity?.id ?? null);
+  }, []);
+
+  const handleEntitySelect = useCallback(
+    (entity: EntityItem) => {
+      setSelectedEntityId(entity.id);
+      setActiveEntity(entity);
+    },
+    [setActiveEntity],
+  );
 
   return (
     // TODO: This default leads to some map jittering. It's OK for now, but let's think about tracking the user's last location and use that for the default center.
     <Map center={[37.7749, -122.4194]}>
-      <Map.Controls position="bottom-right" />
+      <Map.Controls position="top-right" />
       <Map.Panel position="left" className="w-[300px] relative">
-        <TimelineView />
+        <TimelineView
+          activeEntityId={activeEntityId}
+          onEntityHover={handleTimelineHover}
+          onEntitySelect={handleEntitySelect}
+          registerTimelineRow={registerTimelineRow}
+        />
         <SoftBlur />
       </Map.Panel>
 
@@ -459,8 +700,9 @@ export function DesktopMapView() {
         loadingMore={loadingMore}
         onLoadMore={loadMore}
       />
+      <MapTimelineConnector active={activeLocated} rowElementsRef={rowElementsRef} />
       <Map.RouteLayer locations={routeLocations} />
-      <ClusteredMarkers located={located} onSelect={setActiveEntity} />
+      <ClusteredMarkers located={located} onSelect={handleEntitySelect} onHoverEntity={handleTimelineHover} />
       <FitBoundsOnce located={located} />
     </Map>
   );
@@ -472,7 +714,7 @@ export function MobileMapView() {
 
   return (
     <Map center={[37.7749, -122.4194]}>
-      <Map.Controls position="bottom-right" />
+      <Map.Controls position="top-right" />
       <SearchAreaControl />
       <LoadMorePinsControl
         shown={located.length}

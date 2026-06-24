@@ -83,6 +83,9 @@ export class CommunicationEntity {
   @Column({ type: 'text', name: 'preview' })
   preview!: string | null;
 
+  // Provenance triple — the stable key capture sources carry. Lets the importer
+  // write communications and re-ingest idempotently (paired with the
+  // communications_source_triple_uniq partial unique index).
   @Column({ type: 'text', nullable: true, name: 'source_type' })
   sourceType!: string | null;
 
