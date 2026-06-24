@@ -72,30 +72,31 @@ export class SearchService {
     context: UserServiceContext,
     options: SearchOptions,
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    const { mode = 'auto' } = options;
+    const resolvedOptions = this.applyDefaultTypeExclusions(options);
+    const { mode = 'auto' } = resolvedOptions;
 
     let results: EntityIdentifier<IndexableEntity>[];
 
     switch (mode) {
       case 'semantic':
-        results = await this.semanticSearch(context, options);
+        results = await this.semanticSearch(context, resolvedOptions);
         break;
 
       case 'keyword':
-        results = await this.keywordSearch(context, options);
+        results = await this.keywordSearch(context, resolvedOptions);
         break;
 
       case 'boosted':
-        results = await this.boostedKeywordSearch(context, options);
+        results = await this.boostedKeywordSearch(context, resolvedOptions);
         break;
 
       case 'hybrid':
-        results = await this.hybridSearch(context, options);
+        results = await this.hybridSearch(context, resolvedOptions);
         break;
 
       case 'auto':
       default:
-        results = await this.autoSearch(context, options);
+        results = await this.autoSearch(context, resolvedOptions);
         break;
     }
 
@@ -103,6 +104,50 @@ export class SearchService {
       id: result.id,
       type: result.type,
     }));
+  }
+
+  /**
+   * Vector search over raw message embeddings (entity_type = 'message') — the
+   * "naive RAG" retrieval channel that complements entity/graph search. Source
+   * messages carry detail the terse entity serialisation drops, so surfacing the
+   * closest raw fragments alongside the graph lifts recall (see RecallService).
+   *
+   * Cosine distance (<=>), matching semanticSearch — nomic embeddings are
+   * unnormalised, so L2 is meaningless here. Top-K by similarity, no distance
+   * threshold: callers union the result and let the answerer filter.
+   */
+  async searchMessages(
+    context: UserServiceContext,
+    query: string,
+    maxResults = 10,
+  ): Promise<{ id: string; score: number }[]> {
+    const vector = await this.embeddingGenerationService.generateEmbeddingString(query);
+
+    const sql = `
+      SELECT entity_id, 1 - (embedding <=> $2) AS score
+      FROM ci_search.embeddings
+      WHERE user_id = $1 AND entity_type = 'message'
+      ORDER BY score DESC
+      LIMIT ${maxResults}
+    `;
+
+    const rows = await this.embeddingRepo.query(sql, [context.userId, vector]);
+
+    return rows.map((row: { entity_id: string; score: string }) => ({
+      id: row.entity_id,
+      score: parseFloat(row.score),
+    }));
+  }
+
+  private applyDefaultTypeExclusions(options: SearchOptions): SearchOptions {
+    if (options.includeTypes || options.excludeTypes) {
+      return options;
+    }
+
+    return {
+      ...options,
+      excludeTypes: ['message'],
+    };
   }
 
   /**
