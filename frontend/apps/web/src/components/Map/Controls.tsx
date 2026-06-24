@@ -8,6 +8,9 @@ import { useMap } from './useMap';
 
 type Position = Exclude<ComponentProps<typeof Panel>['position'], 'top' | 'bottom' | 'left' | 'right'>;
 
+const mapControlButtonClassName =
+  'border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent';
+
 interface Props {
   className?: string;
   position?: Position;
@@ -29,7 +32,7 @@ export function Controls({ className, position = 'top-left' }: Props) {
                   variant="outline"
                   size="icon"
                   onClick={zoomIn}
-                  className="text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!"
+                  className={mapControlButtonClassName}
                 >
                   <Plus />
                 </Button>
@@ -43,7 +46,7 @@ export function Controls({ className, position = 'top-left' }: Props) {
                   variant="outline"
                   size="icon"
                   onClick={zoomOut}
-                  className="text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!"
+                  className={mapControlButtonClassName}
                 >
                   <Minus />
                 </Button>
@@ -58,7 +61,7 @@ export function Controls({ className, position = 'top-left' }: Props) {
                 variant="outline"
                 size="icon"
                 onClick={centerVisibleMarkers}
-                className="text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!"
+                className={mapControlButtonClassName}
               >
                 <Crosshair />
               </Button>
@@ -69,13 +72,13 @@ export function Controls({ className, position = 'top-left' }: Props) {
             <Tooltip.Content side={tooltipSide}>Toggle routes</Tooltip.Content>
             <Tooltip.Trigger asChild>
               <Button
-                variant="outline"
+                variant={displayRoutes ? 'default' : 'outline'}
                 size="icon"
                 onClick={toggleRoutes}
                 className={cn(
                   displayRoutes
-                    ? 'bg-blue-500! text-white! hover:bg-blue-400! border-blue-400!'
-                    : 'text-slate-700! bg-white! hover:bg-gray-100! border-gray-200!',
+                    ? 'border-transparent dark:border-transparent'
+                    : mapControlButtonClassName,
                 )}
               >
                 <Route />
