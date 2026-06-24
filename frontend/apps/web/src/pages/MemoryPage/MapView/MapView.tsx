@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 
 import { Button } from '@ci/shadcn';
-import { Loader2, MapPin, Search as SearchIcon, X } from '@ci/shadcn/icons';
+import { Calendar, Clock, Loader2, MapPin, Search as SearchIcon, X } from '@ci/shadcn/icons';
 import L, { type LatLngExpression } from 'leaflet';
-import { Marker as LeafletMarker, useMap as useLeafletMap, useMapEvents } from 'react-leaflet';
+import { Marker as LeafletMarker, Popup, useMap as useLeafletMap, useMapEvents } from 'react-leaflet';
 import { useSearchParams } from 'react-router-dom';
 
 import { Map } from '@/components/Map';
@@ -11,6 +11,7 @@ import { type MarkerVariant } from '@/components/Map/Marker';
 
 import { useEntityService, type EntityItem } from '../../MemoryPage/useEntityService';
 import { boundsToBbox, bboxCenter, formatBbox, parseBbox } from '../bbox';
+import { formatEventTimeRange } from '../Components';
 import { TimelineView } from '../TimelineView';
 
 // Colour/icon-code each marker by what it represents, like the old LifeScope map.
@@ -200,28 +201,146 @@ function makeClusterIcon(count: number): L.DivIcon {
   });
 }
 
+type ClusterListEntity = {
+  title?: string | null;
+  name?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  time?: string | null;
+  bucketStartTime?: string | null;
+  bucketTime?: string | null;
+};
+
+function clusterItemTitle(entity: EntityItem): string {
+  const item = entity as ClusterListEntity;
+
+  return (
+    item.title || item.name || (entity.__typename === 'EventType' ? 'Untitled event' : 'Untitled memory')
+  );
+}
+
+function clusterItemTime(entity: EntityItem): string | null {
+  const item = entity as ClusterListEntity;
+
+  if (entity.__typename === 'EventType') {
+    const start = item.startTime ?? item.bucketStartTime;
+
+    return start ? formatEventTimeRange(start, item.endTime) : null;
+  }
+
+  const raw = item.time ?? item.bucketTime;
+
+  if (!raw) {
+    return null;
+  }
+
+  const time = new Date(raw);
+
+  return isNaN(time.getTime())
+    ? null
+    : time.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+}
+
+function ClusterPopupContent({
+  cluster,
+  onSelect,
+  onZoom,
+}: {
+  cluster: Cluster;
+  onSelect: (entity: EntityItem) => void;
+  onZoom: () => void;
+}) {
+  return (
+    <div className="w-72 overflow-hidden text-card-foreground" onClick={(event) => event.stopPropagation()}>
+      <div className="border-b border-border/70 px-3 py-2">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <MapPin className="h-4 w-4 text-blue-500" />
+          {cluster.items.length} events here
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">Select an event to view its details.</p>
+      </div>
+
+      <div className="max-h-72 overflow-y-auto p-2">
+        {cluster.items.map(({ entity }) => {
+          const time = clusterItemTime(entity);
+
+          return (
+            <button
+              key={entity.id}
+              type="button"
+              className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onSelect(entity)}
+            >
+              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-card-foreground">
+                  {clusterItemTitle(entity)}
+                </span>
+                {time && (
+                  <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3" />
+                    {time}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-border/70 p-2">
+        <Button type="button" size="sm" variant="outline" className="w-full" onClick={onZoom}>
+          Zoom to group
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ClusterMarker({
   position,
   count,
-  onClick,
+  cluster,
+  onSelect,
+  onZoom,
 }: {
   position: [number, number];
   count: number;
-  onClick: () => void;
+  cluster: Cluster;
+  onSelect: (entity: EntityItem) => void;
+  onZoom: () => void;
 }) {
+  const map = useLeafletMap();
   const icon = useMemo(() => makeClusterIcon(count), [count]);
+  const handleSelect = useCallback(
+    (entity: EntityItem) => {
+      map.closePopup();
+      onSelect(entity);
+    },
+    [map, onSelect],
+  );
 
   const eventHandlers = useMemo(
     () => ({
       click: (event: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(event);
-        onClick();
       },
     }),
-    [onClick],
+    [],
   );
 
-  return <LeafletMarker position={position} icon={icon} eventHandlers={eventHandlers} zIndexOffset={300} />;
+  return (
+    <LeafletMarker position={position} icon={icon} eventHandlers={eventHandlers} zIndexOffset={300}>
+      <Popup className="custom-popup memory-map-cluster-popup" minWidth={288} maxWidth={320}>
+        <ClusterPopupContent cluster={cluster} onSelect={handleSelect} onZoom={onZoom} />
+      </Popup>
+    </LeafletMarker>
+  );
 }
 
 function zoomToCluster(map: L.Map, cluster: Cluster) {
@@ -280,7 +399,9 @@ function ClusteredMarkers({
             key={cluster.id}
             position={[cluster.lat, cluster.lng]}
             count={cluster.items.length}
-            onClick={() => zoomToCluster(map, cluster)}
+            cluster={cluster}
+            onSelect={onSelect}
+            onZoom={() => zoomToCluster(map, cluster)}
           />
         );
       })}
