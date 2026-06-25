@@ -1,6 +1,33 @@
 import config from '@ci/configuration';
 
 /**
+ * This module is the single decision point for *whether* a thing is worth a
+ * dense embedding. Two orthogonal concerns live here and intentionally share a
+ * file:
+ *
+ *  1. **Content quality** — given a piece of TEXT, is it substantive enough to
+ *     embed? Empty / too-short / a bare trivial reaction / a single bare URL all
+ *     carry no searchable signal. Entry points: {@link embedSkipReason},
+ *     {@link isEmbeddable}. Callers: the per-domain `*SearchIndexListener`s,
+ *     which derive a search document and pass it as text.
+ *
+ *  2. **Entity type** — given an entity TYPE, is that type embeddable at all,
+ *     and (for graph producers) which canonical search-vocabulary type does it
+ *     map onto? Entry points: {@link normalizeEmbeddableType},
+ *     {@link isEmbeddableType}, {@link shouldEmbedType} (the operator allowlist),
+ *     and {@link entityEmbedSkipReason} (the combined guard for
+ *     `SEARCH_EMBED_ENTITY` producers).
+ *
+ * Keyword/tsvector indexing is NOT gated by anything here — only dense
+ * embeddings are. Both concerns are conservative: they only drop what is
+ * provably low value.
+ */
+
+// ---------------------------------------------------------------------------
+// Concern 1: content quality (text-based)
+// ---------------------------------------------------------------------------
+
+/**
  * Trivial, high-volume phrases that carry no searchable signal. These are the
  * canonical "reaction" / system rows that dominate chat/social imports — a user
  * would never search for them, and embedding millions of them is pure cost.
@@ -140,11 +167,84 @@ export function isEmbeddable(text: string | null | undefined, options?: Embeddab
   return embedSkipReason(text, options) === null;
 }
 
+// ---------------------------------------------------------------------------
+// Concern 2: entity type (vocabulary + operator allowlist)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical search-vocabulary entity types that have a dense embedding in
+ * `ci_search.embeddings`. Kept as plain literals (rather than imported from the
+ * search domain) so this module stays dependency-free — the search domain
+ * already depends on `@ci/common/embeddings`. Keep in sync with
+ * search-next's `INDEXABLE_ENTITIES`.
+ */
+const EMBEDDABLE_SEARCH_TYPES = new Set<string>([
+  'answer',
+  'browser-activity',
+  'communication',
+  'concept',
+  'content',
+  'event',
+  'file',
+  'item',
+  'message',
+  'note',
+  'person',
+  'place',
+  'thread',
+]);
+
+/**
+ * Graph NER `entity_type` values mapped onto the search vocabulary. Anything not
+ * listed falls back to a lowercase comparison, so a source that already speaks
+ * the search vocabulary (e.g. `person`) passes through unchanged. Mirrors the
+ * explorer bridge in `domains/memory/graph.types.ts`
+ * (`EXPLORER_TO_GRAPH_ENTITY_TYPES`).
+ */
+const GRAPH_TYPE_ALIASES: Record<string, string> = {
+  Person: 'person',
+  Contact: 'person',
+  Concept: 'concept',
+  Location: 'place',
+  Place: 'place',
+  Object: 'item',
+  Thing: 'item',
+  Item: 'item',
+  Event: 'event',
+  Content: 'content',
+  File: 'file',
+};
+
+/**
+ * Resolve a source/graph entity type onto the canonical (lowercase) search
+ * vocabulary, or `null` when the type has no embeddable representation. This is
+ * how graph producers (Person/Concept/Location pushed by GraphEventService) land
+ * in the same embedding space the search queries hit.
+ */
+export function normalizeEmbeddableType(entityType: string | null | undefined): string | null {
+  if (entityType == null) {
+    return null;
+  }
+
+  const candidate = GRAPH_TYPE_ALIASES[entityType] ?? entityType.toLowerCase();
+
+  return EMBEDDABLE_SEARCH_TYPES.has(candidate) ? candidate : null;
+}
+
+/**
+ * Whether the given entity type has any embeddable representation in the search
+ * vocabulary (in either the graph or search vocabulary). Pure vocabulary check —
+ * does NOT consult the operator allowlist (see {@link shouldEmbedType}).
+ */
+export function isEmbeddableType(entityType: string | null | undefined): boolean {
+  return normalizeEmbeddableType(entityType) !== null;
+}
+
 /**
  * Whether a given entity type is eligible for dense embedding, per the
- * configurable allowlist (CI_EMBED_TYPES). An empty allowlist means "embed all
- * types" — the conservative default, so nothing is dropped by type unless an
- * operator explicitly opts into a restricted set.
+ * configurable operator allowlist (CI_EMBED_TYPES). An empty allowlist means
+ * "embed all types" — the conservative default, so nothing is dropped by type
+ * unless an operator explicitly opts into a restricted set.
  *
  * Keyword/tsvector indexing is NOT gated by this — only dense embeddings are.
  */
@@ -156,4 +256,35 @@ export function shouldEmbedType(entityType: string, allowlist?: readonly string[
   }
 
   return types.includes(entityType);
+}
+
+/**
+ * Combined skip guard for producers that embed an arbitrary
+ * `(entityType, searchContent)` pair directly off an event payload — notably
+ * graph person/concept nodes pushed via `Events.SEARCH_EMBED_ENTITY`, which
+ * don't own a first-class memory row and so never flow through a per-domain
+ * `*SearchIndexListener`.
+ *
+ * Applies BOTH concerns so these producers get the same treatment as everything
+ * else: the content must clear the same quality bar (non-empty, long enough, not
+ * a bare trivial reaction or URL), AND the entity TYPE must be embeddable in the
+ * search vocabulary. Returns a human-readable reason to skip, or `null` when the
+ * entity is embeddable. Content reasons are reported before the type reason — a
+ * blank/low-value document is uninteresting regardless of type.
+ */
+export function entityEmbedSkipReason(input: {
+  entityType?: string | null;
+  searchContent?: string | null;
+}): string | null {
+  const contentSkip = embedSkipReason(input.searchContent);
+
+  if (contentSkip != null) {
+    return contentSkip === 'empty' ? 'search content is empty' : `search content is ${contentSkip}`;
+  }
+
+  if (!isEmbeddableType(input.entityType)) {
+    return `entity type "${input.entityType ?? '(unspecified)'}" is not embeddable`;
+  }
+
+  return null;
 }

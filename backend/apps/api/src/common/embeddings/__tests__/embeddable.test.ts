@@ -1,4 +1,11 @@
-import { embedSkipReason, isEmbeddable, shouldEmbedType } from '../embeddable';
+import {
+  embedSkipReason,
+  entityEmbedSkipReason,
+  isEmbeddable,
+  isEmbeddableType,
+  normalizeEmbeddableType,
+  shouldEmbedType,
+} from '../embeddable';
 
 describe('embedSkipReason', () => {
   it('skips null/undefined/empty/whitespace as "empty"', () => {
@@ -90,5 +97,83 @@ describe('shouldEmbedType', () => {
     expect(shouldEmbedType('event', allow)).toBe(true);
     expect(shouldEmbedType('message', allow)).toBe(false);
     expect(shouldEmbedType('communication', allow)).toBe(false);
+  });
+});
+
+describe('normalizeEmbeddableType', () => {
+  it('maps the capitalized graph vocabulary onto the lowercase search vocabulary', () => {
+    expect(normalizeEmbeddableType('Person')).toBe('person');
+    expect(normalizeEmbeddableType('Contact')).toBe('person');
+    expect(normalizeEmbeddableType('Concept')).toBe('concept');
+    expect(normalizeEmbeddableType('Location')).toBe('place');
+    expect(normalizeEmbeddableType('Object')).toBe('item');
+  });
+
+  it('passes a value that already speaks the search vocabulary through unchanged', () => {
+    expect(normalizeEmbeddableType('person')).toBe('person');
+    expect(normalizeEmbeddableType('concept')).toBe('concept');
+  });
+
+  it('returns null for graph-only connective types and unknown types', () => {
+    expect(normalizeEmbeddableType('Goal')).toBeNull();
+    expect(normalizeEmbeddableType('Tag')).toBeNull();
+    expect(normalizeEmbeddableType('Wormhole')).toBeNull();
+  });
+
+  it('returns null for null/undefined', () => {
+    expect(normalizeEmbeddableType(null)).toBeNull();
+    expect(normalizeEmbeddableType(undefined)).toBeNull();
+  });
+});
+
+describe('isEmbeddableType', () => {
+  it('is true for embeddable types (in either vocabulary) and false otherwise', () => {
+    expect(isEmbeddableType('Person')).toBe(true);
+    expect(isEmbeddableType('place')).toBe(true);
+    expect(isEmbeddableType('Goal')).toBe(false);
+    expect(isEmbeddableType(undefined)).toBe(false);
+  });
+});
+
+describe('entityEmbedSkipReason', () => {
+  it('returns null when content is present and the type is embeddable', () => {
+    expect(entityEmbedSkipReason({ entityType: 'Person', searchContent: 'Dana Scully' })).toBeNull();
+  });
+
+  it('skips empty or whitespace-only content', () => {
+    expect(entityEmbedSkipReason({ entityType: 'Person', searchContent: '' })).toBe(
+      'search content is empty',
+    );
+    expect(entityEmbedSkipReason({ entityType: 'Person', searchContent: '   ' })).toBe(
+      'search content is empty',
+    );
+    expect(entityEmbedSkipReason({ entityType: 'Person', searchContent: null })).toBe(
+      'search content is empty',
+    );
+  });
+
+  it('skips low-value content using the shared content-quality bar', () => {
+    // trivial reaction phrase and a single bare URL are dropped too, surfacing
+    // the underlying SkipReason in the message.
+    expect(entityEmbedSkipReason({ entityType: 'Person', searchContent: 'thanks' })).toBe(
+      'search content is trivial',
+    );
+    expect(entityEmbedSkipReason({ entityType: 'Concept', searchContent: 'https://example.com' })).toBe(
+      'search content is url-only',
+    );
+  });
+
+  it('skips non-embeddable types, naming the offending type', () => {
+    expect(entityEmbedSkipReason({ entityType: 'Goal', searchContent: 'be happy' })).toContain('Goal');
+    expect(entityEmbedSkipReason({ entityType: undefined, searchContent: 'orphan content' })).toContain(
+      '(unspecified)',
+    );
+  });
+
+  it('prioritises the content reason over the type reason', () => {
+    // A blank document is uninteresting regardless of type — report that first.
+    expect(entityEmbedSkipReason({ entityType: 'Goal', searchContent: '' })).toBe(
+      'search content is empty',
+    );
   });
 });
