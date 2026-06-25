@@ -198,6 +198,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       if (this.suppressedQueues.has(queue)) {
         continue;
       }
+
       try {
         const jobId = await this.boss.send(queue, resolvedData);
 

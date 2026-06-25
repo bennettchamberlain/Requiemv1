@@ -44,9 +44,7 @@ export class BodyParserMiddleware implements NestMiddleware {
     // actually applies to the GraphQL route.
     const routePath = (req.originalUrl || req.url || req.path).split('?')[0];
     const isGraphql =
-      req.baseUrl === GRAPHQL_PATH ||
-      routePath === GRAPHQL_PATH ||
-      routePath.startsWith(`${GRAPHQL_PATH}/`);
+      req.baseUrl === GRAPHQL_PATH || routePath === GRAPHQL_PATH || routePath.startsWith(`${GRAPHQL_PATH}/`);
 
     // Use the specified limit, the GraphQL bulk-ingest limit, or default to 100kb.
     const bodyLimit = limit || (isGraphql ? GRAPHQL_BODY_LIMIT : '100kb');
