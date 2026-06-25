@@ -306,8 +306,15 @@ export class CommunicationLinkBackfillService {
         // uuid[][] can't be unnested element-wise); each row's array is rebuilt
         // in SQL. Still bounded to this page's (user_id, time, id) rows so it
         // stays chunk-local; the NULL guards keep it idempotent.
-        await this.dataSource.query(
-          `UPDATE ci.communications c
+        //
+        // Historical rows live in COMPRESSED TimescaleDB chunks; a wide UPDATE
+        // decompresses them and exceeds the default per-txn cap (100k tuples),
+        // aborting the backfill. Lift the cap for this txn only — a one-time
+        // backfill; the compression policy recompacts the touched chunks later.
+        await this.dataSource.transaction(async (em) => {
+          await em.query('SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0');
+          await em.query(
+            `UPDATE ci.communications c
               SET from_entity_id = COALESCE(u.from_id, c.from_entity_id),
                   to_entity_ids   = CASE
                                       WHEN u.to_ids IS NOT NULL
@@ -329,8 +336,9 @@ export class CommunicationLinkBackfillService {
             WHERE c.user_id = $1
               AND c.time = u.time
               AND c.id = u.id`,
-          [userId, updIds, updTimes, updFromIds, updToIds],
-        );
+            [userId, updIds, updTimes, updFromIds, updToIds],
+          );
+        });
       }
 
       // Advance the keyset cursor to the oldest row in this page. Strictly
