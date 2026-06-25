@@ -64,6 +64,11 @@ export {
 };
 export { EntityIdentifierEntity, NodeEntity, RelationshipEntity };
 export type { EntityIdentifier, IdentifierKey, Node, Relationship };
+export type {
+  GraphEntityInputDto,
+  GraphRelationshipInputDto,
+  GraphIngestResult,
+} from './services/GraphIngestService';
 export { RelationshipMap, RelationshipType } from './types';
 export {
   type IdentifierKind,
