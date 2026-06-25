@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
 
+import { SYSTEM_USER } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
-import { AgentMemoryCreatedEvent, type AgentMemoryCreatedPayload } from '@ci/domains/agent/events';
+import {
+  AgentMemoryCreatedEvent,
+  AgentMemoryRemovedEvent,
+  type AgentMemoryCreatedPayload,
+  type AgentMemoryRemovedPayload,
+} from '@ci/domains/agent/events';
 import { OnEvent } from '@ci/domains/events';
 
 import { EmbeddingService } from '../services/EmbeddingService';
@@ -60,5 +66,23 @@ export class MessageSearchIndexListener {
     this.logger.log('Indexed agent-memory fragment for recall message channel', {
       memoryId: payload.memoryId,
     });
+  }
+
+  @OnEvent(AgentMemoryRemovedEvent, { queue: 'search-index' })
+  async removeMessage(payload: AgentMemoryRemovedPayload) {
+    this.logger.log('Removing agent-memory fragment from search index', {
+      memoryId: payload.memoryId,
+    });
+
+    // The 'message' channel writes a dense embedding only — no tsvector/vector
+    // row — so reap the embedding alone; there is nothing for vectorService to
+    // remove (this listener does not even inject it).
+    await this.embeddingService.remove(
+      { userId: SYSTEM_USER },
+      {
+        entityType: 'message',
+        entityId: payload.memoryId,
+      },
+    );
   }
 }
