@@ -4,12 +4,12 @@ import js from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
 import 'eslint-import-resolver-typescript';
 import importPlugin from 'eslint-plugin-import';
-import prettierPlugin from 'eslint-plugin-prettier';
 import globals from 'globals';
 
 export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  // Disables formatting-related ESLint rules; Prettier runs as its own pipeline step now.
   prettierConfig,
 
   {
@@ -25,13 +25,10 @@ export default [
 
     plugins: {
       import: importPlugin,
-      prettier: prettierPlugin,
       '@typescript-eslint': tseslint.plugin,
     },
 
     rules: {
-      'prettier/prettier': 'error',
-
       curly: ['error', 'all'],
 
       'lines-between-class-members': ['error', 'always', { exceptAfterSingleLine: false }],

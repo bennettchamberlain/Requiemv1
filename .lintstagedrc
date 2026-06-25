@@ -1,3 +1,7 @@
 {
-  "**/*.{ts,tsx,js,mjs}": "yarn lint:fix"
+  "*.{ts,tsx,js,mjs}": [
+    "oxlint --fix",
+    "eslint --fix",
+    "prettier --write"
+  ]
 }

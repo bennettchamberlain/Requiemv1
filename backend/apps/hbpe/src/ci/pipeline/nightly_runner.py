@@ -45,7 +45,6 @@ _TRAIN_TIMEOUT     = timedelta(hours=6)
 _EXPORT_TIMEOUT    = timedelta(hours=1)
 _LORA_TIMEOUT      = timedelta(hours=1)
 
-
 # On-device inference (Qwen via llama.cpp) runs on a single-worker executor so
 # blocking label work never runs concurrently — neither across users' nightly
 # workflows nor when a timed-out attempt's thread is still draining as Temporal
