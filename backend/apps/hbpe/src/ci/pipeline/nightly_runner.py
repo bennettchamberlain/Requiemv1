@@ -235,10 +235,9 @@ async def lora_fine_tune(user_id: str) -> dict:
     import datetime
 
     def _run() -> dict:
-        from pathlib import Path
-        from ci.config import settings
+        from ci.model.checkpoints import user_ckpt_dir, HMT_CKPT
 
-        checkpoint = Path(settings.models_dir) / "hmt" / "hmt_checkpoint.pt"
+        checkpoint = user_ckpt_dir(user_id) / HMT_CKPT
         if not checkpoint.exists():
             log.info("lora_fine_tune: base checkpoint not found — skipping (cold start)")
             return {"skipped": True, "reason": "no_base_checkpoint"}
@@ -246,6 +245,46 @@ async def lora_fine_tune(user_id: str) -> dict:
         from ci.model.nightly_finetune import fine_tune_nightly
         yesterday = datetime.date.today() - datetime.timedelta(days=1)
         return fine_tune_nightly(user_id, yesterday)
+
+    return await asyncio.get_event_loop().run_in_executor(None, _run)
+
+
+@activity.defn(name="needs_bootstrap")
+async def needs_bootstrap(user_id: str) -> dict:
+    """
+    Decide whether the user needs a (re)bootstrap before LoRA fine-tune.
+
+    Returns {"needs": bool, "reason": str}. Needs is True when the user has no
+    per-user HMT checkpoint (cold start) or when their current L1 vocabulary has
+    drifted away from the one their checkpoint was trained with (so a freshly
+    built model would no longer load the saved weights — the size-mismatch that
+    motivated CI-Server-ad4).
+    """
+    import asyncio
+
+    def _run() -> dict:
+        import torch
+        from ci.model.checkpoints import (
+            user_ckpt_dir, model_exists, l1_vocab_fingerprint,
+            HMT_CALIBRATED, HMT_CKPT,
+        )
+        from ci.model.vocab import build_l1_vocab
+
+        if not model_exists(user_id):
+            return {"needs": True, "reason": "no_checkpoint"}
+
+        d = user_ckpt_dir(user_id)
+        ckpt_path = d / HMT_CALIBRATED if (d / HMT_CALIBRATED).exists() else d / HMT_CKPT
+        try:
+            ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+        except Exception:
+            return {"needs": True, "reason": "checkpoint_unreadable"}
+
+        stored = ckpt.get("l1_vocab_fingerprint")
+        current = l1_vocab_fingerprint(build_l1_vocab(user_id))
+        if stored != current:
+            return {"needs": True, "reason": "vocab_drift"}
+        return {"needs": False, "reason": "up_to_date"}
 
     return await asyncio.get_event_loop().run_in_executor(None, _run)
 
@@ -333,6 +372,53 @@ class NightlyHBPEWorkflow:
             ),
             "step3_l2_stale",
         )
+
+        # Step 3b — (re)bootstrap the per-user HMT model when it is missing or its
+        # L1 vocab has drifted from the saved checkpoint. Without a checkpoint
+        # matching the current vocab, lora_fine_tune can't load the model (the
+        # size mismatch behind CI-Server-ad4). These activities are shared with
+        # BootstrapHBPEWorkflow and called by name to avoid importing that module.
+        self._step = "bootstrap_check"
+        boot_check = await _safe_execute(
+            workflow.execute_activity(
+                needs_bootstrap, user_id,
+                start_to_close_timeout=_SWEEP_TIMEOUT,
+                retry_policy=_RETRY,
+            ),
+            "bootstrap_check",
+        )
+        results["steps"]["bootstrap_check"] = boot_check
+
+        if boot_check.get("result", {}).get("needs"):
+            self._step = "serialize"
+            results["steps"]["serialize"] = await _safe_execute(
+                workflow.execute_activity(
+                    "serialize_token_stream", user_id,
+                    start_to_close_timeout=timedelta(minutes=10),
+                    retry_policy=RetryPolicy(maximum_attempts=1),
+                ),
+                "serialize",
+            )
+
+            self._step = "train"
+            results["steps"]["train"] = await _safe_execute(
+                workflow.execute_activity(
+                    "train_hmt_model", user_id,
+                    start_to_close_timeout=timedelta(hours=2),
+                    retry_policy=RetryPolicy(maximum_attempts=1),
+                ),
+                "train",
+            )
+
+            self._step = "export"
+            results["steps"]["export"] = await _safe_execute(
+                workflow.execute_activity(
+                    "calibrate_and_export_onnx", user_id,
+                    start_to_close_timeout=timedelta(minutes=30),
+                    retry_policy=RetryPolicy(maximum_attempts=1),
+                ),
+                "export",
+            )
 
         # Step 4 — LoRA fine-tune
         self._step = "lora"

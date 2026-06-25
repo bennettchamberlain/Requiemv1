@@ -38,6 +38,10 @@ import numpy as np
 
 from ci.config import settings
 from ci.model.calibration import _build_full_batch
+from ci.model.checkpoints import (
+    user_ckpt_dir, HMT_CALIBRATED, HMT_CKPT, HMT_FP32_ONNX, HMT_INT8_ONNX,
+    MODEL_ARTIFACTS,
+)
 from ci.model.vocab import (
     L0_CLASSES, PAD_IDX, SOD_IDX, EOD_IDX,
     build_l0_vocab, build_l1_vocab,
@@ -122,9 +126,9 @@ class InferenceEngine:
 
     def _load_session(self):
         """Load INT8 ONNX → FP32 ONNX → PyTorch model (in preference order)."""
-        ckpt_dir  = Path(settings.models_dir) / "hmt"
-        int8_path = ckpt_dir / "hmt_int8.onnx"
-        fp32_path = ckpt_dir / "hmt_fp32.onnx"
+        ckpt_dir  = user_ckpt_dir(self.user_id)
+        int8_path = ckpt_dir / HMT_INT8_ONNX
+        fp32_path = ckpt_dir / HMT_FP32_ONNX
         for path in (int8_path, fp32_path):
             if path.exists():
                 try:
@@ -158,7 +162,7 @@ class InferenceEngine:
                 merge_adapter(model)
             model.eval()
             # Track calibrated checkpoint for mtime-based hot reload.
-            calibrated_path = ckpt_dir / "hmt_calibrated.pt"
+            calibrated_path = ckpt_dir / HMT_CALIBRATED
             if calibrated_path.exists():
                 self._session_path  = calibrated_path
                 self._session_mtime = calibrated_path.stat().st_mtime
@@ -173,8 +177,8 @@ class InferenceEngine:
 
     def _load_temperature(self) -> float:
         import torch
-        ckpt_dir = Path(settings.models_dir) / "hmt"
-        for name in ("hmt_calibrated.pt", "hmt_checkpoint.pt"):
+        ckpt_dir = user_ckpt_dir(self.user_id)
+        for name in (HMT_CALIBRATED, HMT_CKPT):
             p = ckpt_dir / name
             if p.exists():
                 ckpt = torch.load(p, map_location="cpu", weights_only=True)
@@ -293,10 +297,9 @@ class InferenceEngine:
 
     def _try_reload_session(self) -> None:
         """Reload model session if we're in dry-run mode and a checkpoint now exists."""
-        ckpt_dir = Path(settings.models_dir) / "hmt"
+        ckpt_dir = user_ckpt_dir(self.user_id)
         checkpoint_exists = any(
-            (ckpt_dir / name).exists()
-            for name in ("hmt_int8.onnx", "hmt_fp32.onnx", "hmt_calibrated.pt", "hmt_checkpoint.pt")
+            (ckpt_dir / name).exists() for name in MODEL_ARTIFACTS
         )
         if not checkpoint_exists:
             return

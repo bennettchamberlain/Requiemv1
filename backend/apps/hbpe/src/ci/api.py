@@ -180,15 +180,10 @@ async def invalidate_cache(
     return {"invalidated": str(d), "user_id": user_id, "note": "no engine loaded"}
 
 
-def _model_exists() -> bool:
-    """Return True if an HMT checkpoint is present and predictions can be served."""
-    from pathlib import Path
-    from ci.config import settings
-    ckpt_dir = Path(settings.models_dir) / "hmt"
-    return any(
-        (ckpt_dir / name).exists()
-        for name in ("hmt_int8.onnx", "hmt_fp32.onnx", "hmt_calibrated.pt", "hmt_checkpoint.pt")
-    )
+def _model_exists(user_id: str) -> bool:
+    """Return True if this user has an HMT checkpoint and predictions can be served."""
+    from ci.model.checkpoints import model_exists
+    return model_exists(user_id)
 
 
 @app.post("/trigger")
@@ -218,7 +213,7 @@ async def trigger_pipeline(
         from temporalio.exceptions import WorkflowAlreadyStartedError
         from ci.config import settings
 
-        if _model_exists():
+        if _model_exists(user_id):
             from ci.pipeline.nightly_runner import NightlyHBPEWorkflow
             workflow_id = f"{_NIGHTLY_WF_PREFIX}-{user_id[:8]}"
             try:
