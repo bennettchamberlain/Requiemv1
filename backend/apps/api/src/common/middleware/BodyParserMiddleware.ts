@@ -38,7 +38,15 @@ export class BodyParserMiddleware implements NestMiddleware {
 
     // The /graphql endpoint is a single Apollo-mounted POST route (no Nest route
     // metadata), so it needs an explicit limit here rather than via @BodyLimit.
-    const isGraphql = req.path === GRAPHQL_PATH || req.path.startsWith(`${GRAPHQL_PATH}/`);
+    // The Apollo driver mounts /graphql via `app.use('/graphql', …)`, so when this
+    // middleware runs inside that mount `req.path` is '/' and `req.baseUrl` is
+    // '/graphql'. Check baseUrl/originalUrl (not just req.path) so the limit
+    // actually applies to the GraphQL route.
+    const routePath = (req.originalUrl || req.url || req.path).split('?')[0];
+    const isGraphql =
+      req.baseUrl === GRAPHQL_PATH ||
+      routePath === GRAPHQL_PATH ||
+      routePath.startsWith(`${GRAPHQL_PATH}/`);
 
     // Use the specified limit, the GraphQL bulk-ingest limit, or default to 100kb.
     const bodyLimit = limit || (isGraphql ? GRAPHQL_BODY_LIMIT : '100kb');
