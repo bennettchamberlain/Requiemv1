@@ -122,10 +122,7 @@ export class EntityIdentifierService {
    * Uses a single `WHERE (kind, value_normalized) IN (...)` row-values
    * predicate scoped to owner_user_id, so N participants cost one round-trip.
    */
-  async findEntityIdsByIdentifiers(
-    ownerUserId: string,
-    keys: IdentifierKey[],
-  ): Promise<Map<string, string>> {
+  async findEntityIdsByIdentifiers(ownerUserId: string, keys: IdentifierKey[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     if (keys.length === 0) {
       return out;

@@ -230,7 +230,9 @@ describe('CommunicationLinkBackfillService.backfill', () => {
       if (sql.includes('MIN(time)')) {
         boundsServed = true;
 
-        return [{ min_time: new Date('2026-01-07T00:00:00.000Z'), max_time: new Date('2026-01-07T00:00:00.000Z') }];
+        return [
+          { min_time: new Date('2026-01-07T00:00:00.000Z'), max_time: new Date('2026-01-07T00:00:00.000Z') },
+        ];
       }
 
       if (sql.includes('UPDATE ci.communications')) {

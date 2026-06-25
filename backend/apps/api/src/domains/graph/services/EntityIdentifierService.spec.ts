@@ -133,9 +133,9 @@ describe('EntityIdentifierService.findEntityIdsByIdentifiers', () => {
   });
 
   it('issues a single scoped row-values IN query and maps matches by key', async () => {
-    const managerQuery = jest.fn().mockResolvedValue([
-      { kind: 'email', value_normalized: 'a@b.com', entity_id: ENTITY },
-    ]);
+    const managerQuery = jest
+      .fn()
+      .mockResolvedValue([{ kind: 'email', value_normalized: 'a@b.com', entity_id: ENTITY }]);
     const { service } = makeService({ managerQuery });
 
     const result = await service.findEntityIdsByIdentifiers(OWNER, [

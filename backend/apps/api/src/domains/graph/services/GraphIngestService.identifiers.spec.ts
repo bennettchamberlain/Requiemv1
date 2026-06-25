@@ -66,7 +66,10 @@ describe('GraphIngestService identifier population', () => {
     const upsert = jest.fn();
     const { service } = makeService(upsert);
 
-    await service.ingest({ userId: USER }, { entities: [entity({ note: 'no contacts here' })], relationships: [] });
+    await service.ingest(
+      { userId: USER },
+      { entities: [entity({ note: 'no contacts here' })], relationships: [] },
+    );
 
     expect(upsert).not.toHaveBeenCalled();
   });
