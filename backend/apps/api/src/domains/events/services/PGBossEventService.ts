@@ -25,6 +25,19 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
   private readonly fetchBatchSize = config.queues.fetchBatchSize;
 
+  // Bulk-import escape hatch: send() fans an event out to EVERY registered queue
+  // (each worker then filters by event name), so a large import enqueues ~Nqueues
+  // jobs per row. During a bulk load, set CI_QUEUE_SUPPRESS to a comma-separated
+  // list of queues to skip enqueuing entirely (e.g. file-preview-generation,
+  // image-description,geocode,feed-queue,etl) — keep search-index for searchable
+  // results. Enrichment can be backfilled later.
+  private readonly suppressedQueues = new Set(
+    (process.env.CI_QUEUE_SUPPRESS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+
   private running = false;
 
   private stopTasks: Promise<void>[] = [];
@@ -178,10 +191,13 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       return jobId ? [jobId] : [];
     }
 
-    // Otherwise, send to all registered queues.
+    // Otherwise, send to all registered queues (minus any suppressed for a bulk load).
     const jobIds: string[] = [];
 
     for (const queue of allQueues) {
+      if (this.suppressedQueues.has(queue)) {
+        continue;
+      }
       try {
         const jobId = await this.boss.send(queue, resolvedData);
 
