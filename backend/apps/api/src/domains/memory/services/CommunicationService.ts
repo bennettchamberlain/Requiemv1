@@ -138,6 +138,18 @@ export class CommunicationService {
       scope: { userId: context.userId },
       conflictTarget: '(user_id, time, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
       tripleColumns: ['source_type', 'source_system', 'source_id'],
+      // Self-heal source-derived mutable fields on re-sync. Communications
+      // imported before the importer's direction fix landed as `inbound`; a plain
+      // DO NOTHING re-sync left them wrong forever. Likewise `participants_metadata`
+      // (now carrying `.to` recipients) was absent on older rows, blocking the
+      // comms->people backfill from populating to_entity_ids. Refreshing these on
+      // conflict corrects both while staying idempotent (no dup rows, and no
+      // CommunicationCreatedEvent for refreshed rows — only genuine inserts). We
+      // deliberately exclude identity/arbiter columns (id, time, user_id,
+      // source_*) and any column a user may edit server-side. NOTE: this means a
+      // re-sync overwrites these five fields from the source of record; do not add
+      // server-mutable columns here or a re-import would clobber local edits.
+      conflictUpdateColumns: ['direction', 'participants_metadata', 'content', 'preview', 'subject'],
       // communications is a TimescaleDB hypertable partitioned on time; bound the
       // dedup/hydrate reads to the batch's time range so chunk exclusion avoids the
       // all-chunks scan that segfaults TSDB 2.28 (importer pushes in time order).

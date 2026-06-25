@@ -12,6 +12,9 @@ interface Row {
   sourceSystem: string | null;
   sourceId: string | null;
   userId: string;
+  // Source-derived mutable fields the communications upsert refreshes on conflict.
+  direction?: string;
+  participantsMetadata?: Record<string, unknown>;
 }
 
 const tripleKey = (r: { sourceType: string | null; sourceSystem: string | null; sourceId: string | null }) =>
@@ -125,8 +128,15 @@ function makeFakeRepository(initial: Row[] = []) {
     return qb;
   }
 
+  // Source-derived columns the DO UPDATE path refreshes; the fake copies these
+  // from the incoming (EXCLUDED) row onto the existing row to mimic
+  // `SET col = EXCLUDED.col`. (The helper only emits these for the columns the
+  // caller lists; the fake refreshing the superset is sufficient for the tests.)
+  const REFRESHABLE: (keyof Row)[] = ['direction', 'participantsMetadata'];
+
   function makeInsertQB() {
     let values: Row[] = [];
+    let conflictAction = '';
     const iqb: Record<string, unknown> = {};
     iqb.insert = () => iqb;
     iqb.into = () => iqb;
@@ -136,18 +146,40 @@ function makeFakeRepository(initial: Row[] = []) {
       return iqb;
     };
 
-    iqb.onConflict = () => iqb;
+    iqb.onConflict = (action: string) => {
+      conflictAction = action;
+
+      return iqb;
+    };
+
     iqb.returning = () => iqb;
     iqb.execute = async () => {
-      const insertedRaw: { id: string }[] = [];
+      const doUpdate = / DO UPDATE /i.test(conflictAction);
+      // Mirror Postgres RETURNING (xmax = 0) AS bulk_inserted under DO UPDATE.
+      const insertedRaw: { id: string; bulk_inserted?: boolean }[] = [];
       for (const row of values) {
-        if (row.sourceId != null && existsByTriple(row)) {
-          continue; // ON CONFLICT DO NOTHING — skip
+        const existing = row.sourceId != null ? existsByTriple(row) : undefined;
+
+        if (existing) {
+          if (doUpdate) {
+            // ON CONFLICT DO UPDATE SET col = EXCLUDED.col — refresh on existing.
+            for (const col of REFRESHABLE) {
+              if (col in row) {
+                (existing as Record<keyof Row, unknown>)[col] = row[col];
+              }
+            }
+
+            insertedRaw.push({ id: existing.id, bulk_inserted: false });
+          }
+
+          // DO NOTHING — skip entirely (no RETURNING row).
+          continue;
         }
 
-        // Intra-batch duplicate guard (the unique index would also catch this).
+        // Genuine insert (also covers the intra-batch dup guard the unique index
+        // would catch; the helper already collapses dups before this point).
         table.set(row.id, row);
-        insertedRaw.push({ id: row.id });
+        insertedRaw.push({ id: row.id, bulk_inserted: true });
       }
 
       return { raw: insertedRaw };
@@ -169,7 +201,7 @@ function makeFakeRepository(initial: Row[] = []) {
   return { repo: repo as unknown as Repository<Row>, table };
 }
 
-const opts = (repo: Repository<Row>, entities: Row[]) => ({
+const opts = (repo: Repository<Row>, entities: Row[], conflictUpdateColumns?: string[]) => ({
   repository: repo,
   entities,
   primaryKey: 'id' as const,
@@ -181,6 +213,7 @@ const opts = (repo: Repository<Row>, entities: Row[]) => ({
   scope: { userId: entities[0]?.userId ?? 'user-1' },
   conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
   tripleColumns: ['source_type', 'source_system', 'source_id'] as [string, string, string],
+  ...(conflictUpdateColumns ? { conflictUpdateColumns } : {}),
 });
 
 const row = (over: Partial<Row>): Row => ({
@@ -264,5 +297,107 @@ describe('bulkInsertIdempotent', () => {
   it('returns [] for an empty batch without touching the repository', async () => {
     const { repo } = makeFakeRepository();
     await expect(bulkInsertIdempotent(opts(repo, []))).resolves.toEqual([]);
+  });
+});
+
+describe('bulkInsertIdempotent — DO UPDATE (conflictUpdateColumns) self-heal path', () => {
+  const REFRESH = ['direction', 'participants_metadata'];
+
+  it('refreshes the listed columns on a re-insert of the same triple (direction + participants)', async () => {
+    // A row imported before the direction fix: stored inbound, empty participants.
+    const existing = row({
+      id: 'existing',
+      sourceId: 's1',
+      direction: 'inbound',
+      participantsMetadata: {},
+    });
+    const { repo, table } = makeFakeRepository([existing]);
+
+    // Re-sync sends the corrected direction + populated recipients for that triple.
+    const results = await bulkInsertIdempotent(
+      opts(
+        repo,
+        [
+          row({
+            id: 'new-attempt',
+            sourceId: 's1',
+            direction: 'outbound',
+            participantsMetadata: { to: ['alice@example.com'] },
+          }),
+        ],
+        REFRESH,
+      ),
+    );
+
+    // Idempotent: dedupes to the pre-existing row, no duplicate inserted.
+    expect(results[0].entity.id).toBe('existing');
+    expect(table.size).toBe(1);
+    // ...but the mutable, source-derived fields are now corrected.
+    expect(results[0].entity.direction).toBe('outbound');
+    expect(results[0].entity.participantsMetadata).toEqual({ to: ['alice@example.com'] });
+    expect(table.get('existing')?.direction).toBe('outbound');
+  });
+
+  it('flags a refreshed (updated) row as inserted=false so NO new event fires', async () => {
+    const existing = row({ id: 'existing', sourceId: 's1', direction: 'inbound' });
+    const { repo } = makeFakeRepository([existing]);
+
+    const results = await bulkInsertIdempotent(
+      opts(repo, [row({ id: 'new-attempt', sourceId: 's1', direction: 'outbound' })], REFRESH),
+    );
+
+    // Updated, not inserted — caller must not emit a CommunicationCreatedEvent.
+    expect(results[0].inserted).toBe(false);
+  });
+
+  it('flags a genuinely new row as inserted=true even on the DO UPDATE path', async () => {
+    const { repo, table } = makeFakeRepository();
+
+    const results = await bulkInsertIdempotent(
+      opts(repo, [row({ id: 'fresh', sourceId: 's-new', direction: 'outbound' })], REFRESH),
+    );
+
+    expect(results[0].entity.id).toBe('fresh');
+    expect(results[0].inserted).toBe(true);
+    expect(table.size).toBe(1);
+  });
+
+  it('collapses an intra-batch duplicate triple to one row under DO UPDATE (no 21000, single insert flag)', async () => {
+    // Postgres rejects affecting the same arbiter row twice in one DO UPDATE; the
+    // helper must collapse the dup before the INSERT. Both inputs resolve to one
+    // row, flagged inserted exactly once.
+    const { repo, table } = makeFakeRepository();
+    const results = await bulkInsertIdempotent(
+      opts(
+        repo,
+        [
+          row({ id: 'first', sourceId: 'dup', direction: 'inbound' }),
+          row({ id: 'second', sourceId: 'dup', direction: 'outbound' }),
+        ],
+        REFRESH,
+      ),
+    );
+
+    expect(results[0].entity.id).toBe('first');
+    expect(results[1].entity.id).toBe('first');
+    expect(results.filter((r) => r.inserted)).toHaveLength(1);
+    expect(table.size).toBe(1);
+  });
+
+  it('keeps DO NOTHING callers unchanged: no conflictUpdateColumns means existing rows are never refreshed', async () => {
+    const existing = row({ id: 'existing', sourceId: 's1', direction: 'inbound' });
+    const { repo, table } = makeFakeRepository([existing]);
+
+    // Same triple, corrected direction, but NO conflictUpdateColumns (Item/Event path).
+    const results = await bulkInsertIdempotent(
+      opts(repo, [row({ id: 'new-attempt', sourceId: 's1', direction: 'outbound' })]),
+    );
+
+    expect(results[0].entity.id).toBe('existing');
+    expect(results[0].inserted).toBe(false);
+    // Untouched — the legacy find-or-return path must not refresh.
+    expect(results[0].entity.direction).toBe('inbound');
+    expect(table.get('existing')?.direction).toBe('inbound');
+    expect(table.size).toBe(1);
   });
 });
