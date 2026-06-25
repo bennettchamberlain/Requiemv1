@@ -172,8 +172,6 @@ describe('entityEmbedSkipReason', () => {
 
   it('prioritises the content reason over the type reason', () => {
     // A blank document is uninteresting regardless of type — report that first.
-    expect(entityEmbedSkipReason({ entityType: 'Goal', searchContent: '' })).toBe(
-      'search content is empty',
-    );
+    expect(entityEmbedSkipReason({ entityType: 'Goal', searchContent: '' })).toBe('search content is empty');
   });
 });
