@@ -38,6 +38,13 @@ _SWEEP_TIMEOUT    = timedelta(seconds=60)   # single-row UPDATEs — 60s is plen
 _LABEL_TIMEOUT     = timedelta(hours=24)
 _HEARTBEAT_TIMEOUT = timedelta(minutes=2)
 
+# (Re)bootstrap steps are CPU-bound with no heartbeat — generous ceilings so a
+# full retrain on drift is never cancelled prematurely (matches BootstrapHBPEWorkflow).
+_SERIALIZE_TIMEOUT = timedelta(hours=1)
+_TRAIN_TIMEOUT     = timedelta(hours=6)
+_EXPORT_TIMEOUT    = timedelta(hours=1)
+_LORA_TIMEOUT      = timedelta(hours=1)
+
 
 # On-device inference (Qwen via llama.cpp) runs on a single-worker executor so
 # blocking label work never runs concurrently — neither across users' nightly
@@ -394,7 +401,7 @@ class NightlyHBPEWorkflow:
             results["steps"]["serialize"] = await _safe_execute(
                 workflow.execute_activity(
                     "serialize_token_stream", user_id,
-                    start_to_close_timeout=timedelta(minutes=10),
+                    start_to_close_timeout=_SERIALIZE_TIMEOUT,
                     retry_policy=RetryPolicy(maximum_attempts=1),
                 ),
                 "serialize",
@@ -404,7 +411,7 @@ class NightlyHBPEWorkflow:
             results["steps"]["train"] = await _safe_execute(
                 workflow.execute_activity(
                     "train_hmt_model", user_id,
-                    start_to_close_timeout=timedelta(hours=2),
+                    start_to_close_timeout=_TRAIN_TIMEOUT,
                     retry_policy=RetryPolicy(maximum_attempts=1),
                 ),
                 "train",
@@ -414,7 +421,7 @@ class NightlyHBPEWorkflow:
             results["steps"]["export"] = await _safe_execute(
                 workflow.execute_activity(
                     "calibrate_and_export_onnx", user_id,
-                    start_to_close_timeout=timedelta(minutes=30),
+                    start_to_close_timeout=_EXPORT_TIMEOUT,
                     retry_policy=RetryPolicy(maximum_attempts=1),
                 ),
                 "export",
@@ -425,7 +432,7 @@ class NightlyHBPEWorkflow:
         results["steps"]["step4_lora"] = await _safe_execute(
             workflow.execute_activity(
                 lora_fine_tune, user_id,
-                start_to_close_timeout=timedelta(minutes=10),
+                start_to_close_timeout=_LORA_TIMEOUT,
                 retry_policy=RetryPolicy(maximum_attempts=1),
             ),
             "step4_lora",
