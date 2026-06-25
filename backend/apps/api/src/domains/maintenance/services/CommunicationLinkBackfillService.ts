@@ -260,6 +260,16 @@ export class CommunicationLinkBackfillService {
         return resolved.get(`${key.kind}:${key.valueNormalized}`) ?? null;
       };
 
+      // Resolve every candidate in memory, collecting the writes, then apply
+      // them as ONE set-based UPDATE per page. The previous one-round-trip-per-row
+      // UPDATE was the dominant cost over a long history (a 22-year backfill is
+      // ~100k+ writes), so a single HTTP call never finished and only the
+      // newest windows linked. Parallel arrays are zipped with unnest below.
+      const updIds: string[] = [];
+      const updTimes: string[] = [];
+      const updFromIds: (string | null)[] = [];
+      const updToIds: (string | null)[] = []; // JSON array of uuids, or null
+
       for (const row of candidates) {
         examined += 1;
         const meta = row.participants_metadata ?? {};
@@ -276,23 +286,10 @@ export class CommunicationLinkBackfillService {
         }
 
         if (fromId != null || toIds != null) {
-          // Update is bounded by the partition key (time + user_id + id) so it
-          // stays within this one chunk. The NULL guards in WHERE keep it
-          // idempotent even if the row changed since the read.
-          await this.dataSource.query(
-            `UPDATE ci.communications
-                SET from_entity_id = COALESCE($4, from_entity_id),
-                    to_entity_ids   = CASE
-                                        WHEN $5::uuid[] IS NOT NULL
-                                             AND (to_entity_ids IS NULL OR cardinality(to_entity_ids) = 0)
-                                        THEN $5::uuid[]
-                                        ELSE to_entity_ids
-                                      END
-              WHERE user_id = $1
-                AND time = $2
-                AND id = $3`,
-            [userId, row.time, row.id, fromId, toIds],
-          );
+          updIds.push(row.id);
+          updTimes.push(row.time instanceof Date ? row.time.toISOString() : String(row.time));
+          updFromIds.push(fromId);
+          updToIds.push(toIds != null ? JSON.stringify(toIds) : null);
 
           if (fromId != null) {
             fromLinked += 1;
@@ -302,6 +299,38 @@ export class CommunicationLinkBackfillService {
             toLinked += 1;
           }
         }
+      }
+
+      if (updIds.length > 0) {
+        // One set-based UPDATE for the whole page. `to_ids` rides as jsonb (a
+        // uuid[][] can't be unnested element-wise); each row's array is rebuilt
+        // in SQL. Still bounded to this page's (user_id, time, id) rows so it
+        // stays chunk-local; the NULL guards keep it idempotent.
+        await this.dataSource.query(
+          `UPDATE ci.communications c
+              SET from_entity_id = COALESCE(u.from_id, c.from_entity_id),
+                  to_entity_ids   = CASE
+                                      WHEN u.to_ids IS NOT NULL
+                                           AND (c.to_entity_ids IS NULL OR cardinality(c.to_entity_ids) = 0)
+                                      THEN u.to_ids
+                                      ELSE c.to_entity_ids
+                                    END
+             FROM (
+               SELECT t.id,
+                      t.time,
+                      t.from_id,
+                      CASE
+                        WHEN t.to_json IS NULL THEN NULL
+                        ELSE ARRAY(SELECT jsonb_array_elements_text(t.to_json))::uuid[]
+                      END AS to_ids
+                 FROM unnest($2::uuid[], $3::timestamptz[], $4::uuid[], $5::jsonb[])
+                        AS t(id, time, from_id, to_json)
+             ) u
+            WHERE c.user_id = $1
+              AND c.time = u.time
+              AND c.id = u.id`,
+          [userId, updIds, updTimes, updFromIds, updToIds],
+        );
       }
 
       // Advance the keyset cursor to the oldest row in this page. Strictly
