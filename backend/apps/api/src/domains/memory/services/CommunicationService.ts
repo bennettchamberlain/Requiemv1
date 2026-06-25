@@ -138,6 +138,10 @@ export class CommunicationService {
       scope: { userId: context.userId },
       conflictTarget: '(user_id, time, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
       tripleColumns: ['source_type', 'source_system', 'source_id'],
+      // communications is a TimescaleDB hypertable partitioned on time; bound the
+      // dedup/hydrate reads to the batch's time range so chunk exclusion avoids the
+      // all-chunks scan that segfaults TSDB 2.28 (importer pushes in time order).
+      timeColumn: 'time',
     });
 
     // Emit one CommunicationCreatedEvent per newly-inserted row (existing rows were
