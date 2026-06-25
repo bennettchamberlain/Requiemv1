@@ -188,110 +188,131 @@ export class CommunicationLinkBackfillService {
     windowEnd: Date,
     limit: number,
   ): Promise<{ examined: number; fromLinked: number; toLinked: number }> {
-    const candidates: CandidateRow[] = await this.dataSource.query(
-      `SELECT id, time, user_id, from_entity_id, to_entity_ids, participants_metadata
-         FROM ci.communications
-        WHERE user_id = $1
-          AND time >= $2
-          AND time < $3
-          AND (from_entity_id IS NULL OR to_entity_ids IS NULL OR cardinality(to_entity_ids) = 0)
-          AND participants_metadata IS NOT NULL
-        ORDER BY time DESC
-        LIMIT $4`,
-      [userId, windowStart.toISOString(), windowEnd.toISOString(), limit],
-    );
-
-    if (candidates.length === 0) {
-      return { examined: 0, fromLinked: 0, toLinked: 0 };
-    }
-
-    // Collect every distinct identifier this window needs, then resolve them all
-    // in a single query (one round-trip for the whole window).
-    const keys: IdentifierKey[] = [];
-    const seen = new Set<string>();
-    const addKey = (key: IdentifierKey | null) => {
-      if (key == null) {
-        return;
-      }
-
-      const dedupe = `${key.kind}:${key.valueNormalized}`;
-      if (!seen.has(dedupe)) {
-        seen.add(dedupe);
-        keys.push(key);
-      }
-    };
-
-    for (const row of candidates) {
-      const meta = row.participants_metadata ?? {};
-      if (row.from_entity_id == null) {
-        addKey(classify(readString(meta.from)));
-      }
-
-      if (row.to_entity_ids == null || row.to_entity_ids.length === 0) {
-        for (const raw of readStringArray(meta.to)) {
-          addKey(classify(raw));
-        }
-      }
-    }
-
-    const resolved = await this.entityIdentifierService.findEntityIdsByIdentifiers(userId, keys);
-
-    const lookup = (raw: string | null): string | null => {
-      const key = classify(raw);
-      if (key == null) {
-        return null;
-      }
-
-      return resolved.get(`${key.kind}:${key.valueNormalized}`) ?? null;
-    };
-
     let examined = 0;
     let fromLinked = 0;
     let toLinked = 0;
 
-    for (const row of candidates) {
-      examined += 1;
-      const meta = row.participants_metadata ?? {};
+    // Keyset cursor (time, id) DESC. A single LIMIT would strand every candidate
+    // past the first page in a dense window (e.g. a high-volume sender whose
+    // messages in one window exceed the page size) — and because the outer loop
+    // then steps to an older window, those stranded rows would never be reached
+    // (the observed "31 of 122k linked" bug). Page through the whole window with
+    // a (time, id) cursor so every candidate is examined exactly once.
+    let cursorTime = windowEnd.toISOString();
+    let cursorId = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 
-      const fromId = row.from_entity_id == null ? lookup(readString(meta.from)) : null;
-
-      let toIds: string[] | null = null;
-      if (row.to_entity_ids == null || row.to_entity_ids.length === 0) {
-        const ids = readStringArray(meta.to)
-          .map((raw) => lookup(raw))
-          .filter((id): id is string => id != null);
-        // Only write when we actually resolved at least one recipient.
-        toIds = ids.length > 0 ? unique(ids) : null;
-      }
-
-      if (fromId == null && toIds == null) {
-        continue;
-      }
-
-      // Update is bounded by the partition key (time + user_id + id) so it stays
-      // within this one chunk. The NULL guards in WHERE keep it idempotent even
-      // if the row changed since the read.
-      await this.dataSource.query(
-        `UPDATE ci.communications
-            SET from_entity_id = COALESCE($4, from_entity_id),
-                to_entity_ids   = CASE
-                                    WHEN $5::uuid[] IS NOT NULL
-                                         AND (to_entity_ids IS NULL OR cardinality(to_entity_ids) = 0)
-                                    THEN $5::uuid[]
-                                    ELSE to_entity_ids
-                                  END
+    for (;;) {
+      const candidates: CandidateRow[] = await this.dataSource.query(
+        `SELECT id, time, user_id, from_entity_id, to_entity_ids, participants_metadata
+           FROM ci.communications
           WHERE user_id = $1
-            AND time = $2
-            AND id = $3`,
-        [userId, row.time, row.id, fromId, toIds],
+            AND time >= $2
+            AND time < $3
+            AND (from_entity_id IS NULL OR to_entity_ids IS NULL OR cardinality(to_entity_ids) = 0)
+            AND participants_metadata IS NOT NULL
+            AND (time, id) < ($5::timestamptz, $6::uuid)
+          ORDER BY time DESC, id DESC
+          LIMIT $4`,
+        [userId, windowStart.toISOString(), windowEnd.toISOString(), limit, cursorTime, cursorId],
       );
 
-      if (fromId != null) {
-        fromLinked += 1;
+      if (candidates.length === 0) {
+        break;
       }
 
-      if (toIds != null) {
-        toLinked += 1;
+      // Collect every distinct identifier this page needs, then resolve them all
+      // in a single query (one round-trip for the whole page).
+      const keys: IdentifierKey[] = [];
+      const seen = new Set<string>();
+      const addKey = (key: IdentifierKey | null) => {
+        if (key == null) {
+          return;
+        }
+
+        const dedupe = `${key.kind}:${key.valueNormalized}`;
+        if (!seen.has(dedupe)) {
+          seen.add(dedupe);
+          keys.push(key);
+        }
+      };
+
+      for (const row of candidates) {
+        const meta = row.participants_metadata ?? {};
+        if (row.from_entity_id == null) {
+          addKey(classify(readString(meta.from)));
+        }
+
+        if (row.to_entity_ids == null || row.to_entity_ids.length === 0) {
+          for (const raw of readStringArray(meta.to)) {
+            addKey(classify(raw));
+          }
+        }
+      }
+
+      const resolved = await this.entityIdentifierService.findEntityIdsByIdentifiers(userId, keys);
+
+      const lookup = (raw: string | null): string | null => {
+        const key = classify(raw);
+        if (key == null) {
+          return null;
+        }
+
+        return resolved.get(`${key.kind}:${key.valueNormalized}`) ?? null;
+      };
+
+      for (const row of candidates) {
+        examined += 1;
+        const meta = row.participants_metadata ?? {};
+
+        const fromId = row.from_entity_id == null ? lookup(readString(meta.from)) : null;
+
+        let toIds: string[] | null = null;
+        if (row.to_entity_ids == null || row.to_entity_ids.length === 0) {
+          const ids = readStringArray(meta.to)
+            .map((raw) => lookup(raw))
+            .filter((id): id is string => id != null);
+          // Only write when we actually resolved at least one recipient.
+          toIds = ids.length > 0 ? unique(ids) : null;
+        }
+
+        if (fromId != null || toIds != null) {
+          // Update is bounded by the partition key (time + user_id + id) so it
+          // stays within this one chunk. The NULL guards in WHERE keep it
+          // idempotent even if the row changed since the read.
+          await this.dataSource.query(
+            `UPDATE ci.communications
+                SET from_entity_id = COALESCE($4, from_entity_id),
+                    to_entity_ids   = CASE
+                                        WHEN $5::uuid[] IS NOT NULL
+                                             AND (to_entity_ids IS NULL OR cardinality(to_entity_ids) = 0)
+                                        THEN $5::uuid[]
+                                        ELSE to_entity_ids
+                                      END
+              WHERE user_id = $1
+                AND time = $2
+                AND id = $3`,
+            [userId, row.time, row.id, fromId, toIds],
+          );
+
+          if (fromId != null) {
+            fromLinked += 1;
+          }
+
+          if (toIds != null) {
+            toLinked += 1;
+          }
+        }
+      }
+
+      // Advance the keyset cursor to the oldest row in this page. Strictly
+      // monotonic (time DESC, id DESC), so the loop always makes progress and
+      // terminates; a short page means the window is drained.
+      const last = candidates[candidates.length - 1];
+      cursorTime = last.time instanceof Date ? last.time.toISOString() : String(last.time);
+      cursorId = last.id;
+
+      if (candidates.length < limit) {
+        break;
       }
     }
 
