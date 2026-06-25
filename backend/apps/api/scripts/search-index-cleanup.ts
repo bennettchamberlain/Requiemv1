@@ -130,9 +130,7 @@ async function runOrphans(db: DataSource, args: ParsedArgs): Promise<void> {
 
 async function runTruncate(db: DataSource, args: ParsedArgs): Promise<void> {
   if (!args.confirm) {
-    throw new Error(
-      'truncate is destructive (wipes the entire search index). Re-run with --confirm.',
-    );
+    throw new Error('truncate is destructive (wipes the entire search index). Re-run with --confirm.');
   }
 
   const service = makeService(db);

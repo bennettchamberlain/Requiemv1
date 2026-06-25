@@ -14,10 +14,7 @@ import {
   OrphanCleanupService,
   type TruncateSearchIndexResult,
 } from '@ci/domains/search-ingress';
-import {
-  INDEXABLE_ENTITIES,
-  type IndexableEntity,
-} from '@ci/domains/search-next';
+import { INDEXABLE_ENTITIES, type IndexableEntity } from '@ci/domains/search-next';
 
 import {
   type CommunicationLinkBackfillResult,
