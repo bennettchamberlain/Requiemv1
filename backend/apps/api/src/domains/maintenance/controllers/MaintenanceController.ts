@@ -21,6 +21,7 @@ import {
   type CommunicationLinkBackfillResult,
   CommunicationLinkBackfillService,
 } from '../services/CommunicationLinkBackfillService';
+import { type GraphEnrichmentResult, GraphEnrichmentService } from '../services/GraphEnrichmentService';
 import {
   type DeferralResult,
   type DroppedIndex,
@@ -92,6 +93,19 @@ const linkCommunicationsSchema = z.object({
 
 type LinkCommunicationsRequest = z.infer<typeof linkCommunicationsSchema>;
 
+// Body for POST /api/maintenance/extract-graph. All optional: caps how much of
+// the user's own data the LLM extraction samples per run. Re-runnable.
+const extractGraphSchema = z.object({
+  /** Max communications to sample (default 200). */
+  maxCommunications: z.coerce.number().int().min(0).max(5000).optional(),
+  /** Max events to sample (default 100). */
+  maxEvents: z.coerce.number().int().min(0).max(5000).optional(),
+  /** Override the Ollama model (default: the background PROMPT_MODEL). */
+  model: z.string().min(1).optional(),
+});
+
+type ExtractGraphRequest = z.infer<typeof extractGraphSchema>;
+
 interface GeocodeLocationsResponse {
   jobId: string | null;
   estimatedEventCount: number;
@@ -117,6 +131,7 @@ export class MaintenanceController {
     private readonly indexDeferralService: IndexDeferralService,
     private readonly orphanCleanupService: OrphanCleanupService,
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
+    private readonly graphEnrichmentService: GraphEnrichmentService,
   ) {}
 
   @Post('geocode-locations')
@@ -197,6 +212,47 @@ export class MaintenanceController {
       endTime: body.endTime,
       windowDays: body.windowDays,
       windowLimit: body.windowLimit,
+    });
+  }
+
+  /**
+   * Graph-LLM enrichment. Samples the signed-in user's own communications +
+   * events, runs the LOCAL Ollama model over the content to extract personal
+   * preferences (liked/disliked concepts) and close/family relationships, then
+   * writes them into the graph via the idempotent bulkIngestGraph path:
+   *   - preferences -> `Concept` nodes (properties.type set to the tool vocab) +
+   *     PREFERS/DISLIKES edges from the owner's self entity;
+   *   - family relations -> SPOUSE/PARENT_OF/... edges between EXISTING Person
+   *     nodes (resolved by name; skipped if a person isn't already in the graph).
+   * This is what makes getUserPreferences / getEntertainmentPreferences /
+   * getFamilyMembers return data on imported (importer-only) graphs. Re-runnable
+   * and idempotent. Operator-triggered; never auto-run.
+   */
+  @Post('extract-graph')
+  async extractGraph(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(extractGraphSchema)) body: ExtractGraphRequest,
+  ): Promise<GraphEnrichmentResult> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return {
+        sampledRecords: 0,
+        preferencesExtracted: 0,
+        familyRelationsExtracted: 0,
+        familyRelationsResolved: 0,
+        conceptsWritten: 0,
+        preferenceEdgesWritten: 0,
+        familyEdgesWritten: 0,
+        errors: ['extract-graph requires an authenticated user'],
+      };
+    }
+
+    return this.graphEnrichmentService.enrich(userId, {
+      maxCommunications: body.maxCommunications,
+      maxEvents: body.maxEvents,
+      model: body.model,
     });
   }
 

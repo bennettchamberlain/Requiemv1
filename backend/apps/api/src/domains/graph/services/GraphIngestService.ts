@@ -38,6 +38,18 @@ export interface GraphRelationshipInputDto {
   toKey: string;
   type: string;
   properties?: Record<string, unknown> | null;
+  /**
+   * Optional pre-resolved graph node ids for the endpoints. When set they take
+   * precedence over `fromKey` / `toKey` resolution, letting a caller attach an
+   * edge to an entity that already exists in the graph (and is NOT part of this
+   * batch) without re-ingesting it — used by GraphEnrichmentService to wire
+   * family edges between Person nodes the importer already created. The
+   * importer / GraphQL path never sets these, so its behaviour is unchanged.
+   */
+  fromEntityId?: string;
+  fromEntityType?: string;
+  toEntityId?: string;
+  toEntityType?: string;
 }
 
 export interface GraphIngestResult {
@@ -114,8 +126,10 @@ export class GraphIngestService {
 
       for (const r of input.relationships) {
         try {
-          const fromId = r.fromKey === SELF_KEY ? self?.id : keyToId.get(r.fromKey);
-          const toId = r.toKey === SELF_KEY ? self?.id : keyToId.get(r.toKey);
+          // A pre-resolved endpoint id (an existing graph node) wins over key
+          // resolution; otherwise fall back to the `self` sentinel or a batch key.
+          const fromId = r.fromEntityId ?? (r.fromKey === SELF_KEY ? self?.id : keyToId.get(r.fromKey));
+          const toId = r.toEntityId ?? (r.toKey === SELF_KEY ? self?.id : keyToId.get(r.toKey));
 
           if (!fromId || !toId) {
             errors.push(`relationship ${r.fromKey}->${r.toKey}: endpoint not found in batch`);
@@ -123,8 +137,11 @@ export class GraphIngestService {
           }
 
           const fromType =
-            r.fromKey === SELF_KEY ? (self?.type ?? USER_ENTITY_TYPE) : keyToType.get(r.fromKey)!;
-          const toType = r.toKey === SELF_KEY ? (self?.type ?? USER_ENTITY_TYPE) : keyToType.get(r.toKey)!;
+            r.fromEntityType ??
+            (r.fromKey === SELF_KEY ? (self?.type ?? USER_ENTITY_TYPE) : keyToType.get(r.fromKey)!);
+          const toType =
+            r.toEntityType ??
+            (r.toKey === SELF_KEY ? (self?.type ?? USER_ENTITY_TYPE) : keyToType.get(r.toKey)!);
 
           await this.upsertRelationship(ownerId, {
             fromId,

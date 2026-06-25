@@ -11,20 +11,31 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 import { GraphModule } from '@ci/domains/graph';
-import { EventEntity } from '@ci/domains/memory';
+import { LLMModule } from '@ci/domains/llm';
+import { EventEntity, MemoryModule } from '@ci/domains/memory';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 
 import { MaintenanceController } from './controllers/MaintenanceController';
 import { CommunicationLinkBackfillService } from './services/CommunicationLinkBackfillService';
+import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 
 /**
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([EventEntity]), EventsModule, SearchIngressModule, GraphModule],
+  imports: [
+    TypeOrmModule.forFeature([EventEntity]),
+    EventsModule,
+    SearchIngressModule,
+    GraphModule,
+    // GraphEnrichmentService needs the local Ollama client (LLMModule) and the
+    // Person-resolution read path (GraphQueryService, exported by MemoryModule).
+    LLMModule,
+    MemoryModule,
+  ],
   controllers: [MaintenanceController],
-  providers: [IndexDeferralService, CommunicationLinkBackfillService],
-  exports: [IndexDeferralService, CommunicationLinkBackfillService],
+  providers: [IndexDeferralService, CommunicationLinkBackfillService, GraphEnrichmentService],
+  exports: [IndexDeferralService, CommunicationLinkBackfillService, GraphEnrichmentService],
 })
 export class MaintenanceModule {}
