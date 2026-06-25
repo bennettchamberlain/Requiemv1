@@ -49,7 +49,11 @@ function makeDataSource(rows: FakeRow[]) {
     return [];
   });
 
-  return { dataSource: { query }, updates, query };
+  // The service wraps each page's UPDATE in dataSource.transaction(); route the
+  // entity-manager's query() back to the same mock so SET LOCAL + UPDATE land here.
+  const transaction = jest.fn(async (cb: (em: { query: typeof query }) => Promise<unknown>) => cb({ query }));
+
+  return { dataSource: { query, transaction }, updates, query };
 }
 
 function makeIdentifierService(map: Record<string, string>) {
@@ -122,11 +126,13 @@ describe('CommunicationLinkBackfillService.backfill', () => {
     expect(ds.updates).toHaveLength(1);
     const { sql, params } = ds.updates[0];
     expect(sql).toContain('UPDATE ci.communications');
-    expect(sql).toContain('time = $2');
+    expect(sql).toContain('c.id = u.id');
+    // Batched: params are parallel per-page arrays — [userId, ids[], times[], fromIds[], toJson[]].
+    // to_ids ride as jsonb strings (a uuid[][] can't be unnested element-wise).
     expect(params[0]).toBe(USER);
-    expect(params[2]).toBe('row-1');
-    expect(params[3]).toBe(FROM_ENTITY);
-    expect(params[4]).toEqual([TO_ENTITY_1, TO_ENTITY_2]);
+    expect(params[1]).toEqual(['row-1']);
+    expect(params[3]).toEqual([FROM_ENTITY]);
+    expect(params[4]).toEqual([JSON.stringify([TO_ENTITY_1, TO_ENTITY_2])]);
   });
 
   it('leaves links NULL and skips the UPDATE when nothing matches', async () => {
@@ -175,8 +181,8 @@ describe('CommunicationLinkBackfillService.backfill', () => {
     expect(result.toLinked).toBe(1);
     expect(ds.updates).toHaveLength(1);
     const { params } = ds.updates[0];
-    expect(params[3]).toBeNull(); // fromId not resolved (was already set)
-    expect(params[4]).toEqual([TO_ENTITY_1]);
+    expect(params[3]).toEqual([null]); // fromId not resolved (was already set)
+    expect(params[4]).toEqual([JSON.stringify([TO_ENTITY_1])]);
   });
 
   it('writes a partial recipient set when only some recipients resolve', async () => {
@@ -197,7 +203,7 @@ describe('CommunicationLinkBackfillService.backfill', () => {
 
     expect(result.toLinked).toBe(1);
     expect(ds.updates).toHaveLength(1);
-    expect(ds.updates[0].params[4]).toEqual([TO_ENTITY_1]);
+    expect(ds.updates[0].params[4]).toEqual([JSON.stringify([TO_ENTITY_1])]);
   });
 
   it('returns an empty result and runs no windows when bounds are inverted', async () => {
@@ -254,11 +260,14 @@ describe('CommunicationLinkBackfillService.backfill', () => {
       return [];
     });
 
+    const transaction = jest.fn(async (cb: (em: { query: typeof query }) => Promise<unknown>) =>
+      cb({ query }),
+    );
     const ids = makeIdentifierService({ 'email:sender@example.com': FROM_ENTITY });
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
     const service = new CommunicationLinkBackfillService(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { query } as any,
+      { query, transaction } as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ids as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
