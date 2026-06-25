@@ -28,6 +28,18 @@ export const VIRTUAL_STATUS = 'virtual';
  *   GEOMETRIC_CENTER              -> 0.8  (a venue / named place center)
  *   APPROXIMATE                   -> 0.4  (city / region centroid)
  */
+export const APPROXIMATE_CONFIDENCE = 0.4;
+
+/**
+ * Confidence at or below this threshold is "coarse" — a city/region centroid,
+ * not a real venue. The batch listener tags these (metadata.location_source =
+ * 'approximate') so the coordinate is distinguishable from a precise hit. A
+ * non-address free-text label ("Mom's", "the usual spot") that slips past the
+ * virtual denylist resolves to exactly such a centroid, so this is the signal
+ * that flags it downstream.
+ */
+export const LOW_CONFIDENCE_THRESHOLD = APPROXIMATE_CONFIDENCE;
+
 export function confidenceForLocationType(locationType: string | null | undefined): number {
   switch (locationType) {
     case 'ROOFTOP':
@@ -55,8 +67,26 @@ export interface GeocodeOutcome {
   cached: boolean;
   /** Whether a retry is worthwhile (transient provider failure). */
   retryable: boolean;
+  /**
+   * True when status === 'OK' but the confidence is coarse (<= 0.4, an
+   * APPROXIMATE city/region centroid). Lets callers tag the resolved coordinate
+   * as low-precision so it is distinguishable from a real venue/street hit.
+   */
+  lowConfidence?: boolean;
   normalizedAddress?: string | null;
   locationType?: string | null;
+}
+
+/** Options controlling a single {@link GeocodeService.geocode} call. */
+export interface GeocodeOptions {
+  /**
+   * Skip the cache lookup and force a fresh provider call, then overwrite the
+   * cache row. Used by `retryNull` backfills to re-attempt locations a prior run
+   * negative-cached (ZERO_RESULTS / REQUEST_DENIED / INVALID_REQUEST). The
+   * virtual denylist is still honored — busting the cache never sends a
+   * denylisted virtual venue to the provider.
+   */
+  bustCache?: boolean;
 }
 
 @Injectable()
@@ -114,12 +144,12 @@ export class GeocodeService {
    * virtual-location denylist. Never throws on provider-level failures: those
    * are returned as a status on the outcome.
    */
-  async geocode(location: string | null | undefined): Promise<GeocodeOutcome> {
+  async geocode(location: string | null | undefined, options: GeocodeOptions = {}): Promise<GeocodeOutcome> {
     if (!location || location.trim().length === 0) {
       return { status: 'ZERO_RESULTS', point: null, confidence: null, cached: false, retryable: false };
     }
 
-    // Denylisted virtual venues are never sent to Google.
+    // Denylisted virtual venues are never sent to Google — even on a cache-bust.
     if (isVirtualLocation(location)) {
       return {
         status: VIRTUAL_STATUS,
@@ -133,12 +163,16 @@ export class GeocodeService {
     const queryHash = GeocodeService.hashQuery(location);
 
     // --- Cache check -------------------------------------------------------
-    const cached = await this.cacheRepository.findOne({ where: { queryHash } });
-    if (cached) {
-      // Bump hit_count opportunistically; never let it fail the read.
-      await this.cacheRepository.increment({ queryHash }, 'hitCount', 1).catch(() => undefined);
+    // bustCache skips the read so a retryNull backfill can re-attempt a row a
+    // prior run negative-cached; the provider result then overwrites the row.
+    if (!options.bustCache) {
+      const cached = await this.cacheRepository.findOne({ where: { queryHash } });
+      if (cached) {
+        // Bump hit_count opportunistically; never let it fail the read.
+        await this.cacheRepository.increment({ queryHash }, 'hitCount', 1).catch(() => undefined);
 
-      return this.outcomeFromCache(cached);
+        return this.outcomeFromCache(cached);
+      }
     }
 
     // --- Provider call -----------------------------------------------------
@@ -170,13 +204,15 @@ export class GeocodeService {
 
     if (result.status === 'OK' && typeof result.lat === 'number' && typeof result.lng === 'number') {
       const point = GeocodeService.toPoint(result.lat, result.lng);
+      const confidence = confidenceForLocationType(result.locationType);
 
       return {
         status: 'OK',
         point,
-        confidence: confidenceForLocationType(result.locationType),
+        confidence,
         cached: false,
         retryable: false,
+        lowConfidence: confidence <= LOW_CONFIDENCE_THRESHOLD,
         normalizedAddress: result.normalizedAddress ?? null,
         locationType: result.locationType ?? null,
       };
@@ -195,12 +231,15 @@ export class GeocodeService {
 
   private outcomeFromCache(row: GeocodeCacheEntity): GeocodeOutcome {
     if (row.status === 'OK' && typeof row.lat === 'number' && typeof row.lng === 'number') {
+      const confidence = confidenceForLocationType(row.locationType);
+
       return {
         status: 'OK',
         point: GeocodeService.toPoint(row.lat, row.lng),
-        confidence: confidenceForLocationType(row.locationType),
+        confidence,
         cached: true,
         retryable: false,
+        lowConfidence: confidence <= LOW_CONFIDENCE_THRESHOLD,
         normalizedAddress: row.normalizedAddress,
         locationType: row.locationType,
       };

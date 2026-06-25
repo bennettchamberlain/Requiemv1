@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
+import config from '@ci/configuration';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventEntity } from '@ci/domains/memory';
 import { GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
@@ -42,9 +43,14 @@ const recreateIndexesSchema = z.object({
 });
 
 const geocodeLocationsSchema = z.object({
-  /** Max events to geocode in this batch. */
+  /** Max events to geocode in this batch (default: config.geocoding.batchSize). */
   limit: z.coerce.number().int().min(1).max(5000).optional(),
-  /** Re-attempt events still missing coordinates (default: same as the auto set). */
+  /**
+   * Re-attempt NULL-coordinate events INCLUDING ones a prior run tagged virtual
+   * or negative-cached, busting the geocode cache so the provider is re-queried.
+   * Use after a key change or a denylist/heuristic fix. Default false: skip
+   * already-virtual rows and serve negative results from cache.
+   */
   retryNull: z.boolean().optional(),
 });
 
@@ -92,9 +98,6 @@ interface GeocodeLocationsResponse {
   status: 'enqueued' | 'noop';
 }
 
-/** Default batch size — mirrors GeocodeBatchListener.DEFAULT_LIMIT. */
-const DEFAULT_LIMIT = 200;
-
 /** The dedicated PGBoss queue the geocode listener consumes. */
 const GEOCODE_QUEUE = 'geocode';
 
@@ -128,17 +131,26 @@ export class MaintenanceController {
       return { jobId: null, estimatedEventCount: 0, status: 'noop' };
     }
 
-    const limit = body.limit ?? DEFAULT_LIMIT;
+    // Default batch size follows config.geocoding.batchSize (env GEOCODING_BATCH_SIZE).
+    const limit = body.limit ?? config.geocoding.batchSize;
+    const retryNull = body.retryNull ?? false;
 
     // Estimate how many events this batch will touch, capped at the batch limit.
-    const candidateCount = await this.dataSource
+    // Mirror the listener's candidate filter: by default skip rows already
+    // tagged virtual; with retryNull they are re-attempted and counted.
+    const countQuery = this.dataSource
       .getRepository(EventEntity)
       .createQueryBuilder('event')
       .where('event.user_id = :userId', { userId })
       .andWhere('event.location_name IS NOT NULL')
       .andWhere("btrim(event.location_name) <> ''")
-      .andWhere('event.location_coordinates IS NULL')
-      .getCount();
+      .andWhere('event.location_coordinates IS NULL');
+
+    if (!retryNull) {
+      countQuery.andWhere("COALESCE(event.metadata->>'location_source', '') <> 'virtual'");
+    }
+
+    const candidateCount = await countQuery.getCount();
 
     const estimatedEventCount = Math.min(candidateCount, limit);
 
@@ -148,7 +160,7 @@ export class MaintenanceController {
 
     const jobIds = await this.signallingEventService.send(
       GeocodeBatchRequestEvent,
-      { userId, limit, retryNull: body.retryNull ?? false },
+      { userId, limit, retryNull },
       { queue: GEOCODE_QUEUE },
     );
 

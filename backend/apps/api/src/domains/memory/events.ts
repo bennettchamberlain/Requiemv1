@@ -385,12 +385,15 @@ export type GeocodeBatchRequestPayload = {
   userId: string;
   /** Optional explicit set of event ids to geocode; overrides the auto-selection. */
   eventIds?: string[];
-  /** Max number of events to process in this batch. */
+  /** Max number of events to process in this batch (default: config.geocoding.batchSize). */
   limit?: number;
   /**
-   * When true, also (re)attempt events that have a location_name but whose prior
-   * geocode left coordinates null. Defaults to selecting only never-geocoded
-   * events (location_coordinates IS NULL).
+   * When true, re-attempt NULL-coordinate events INCLUDING ones a prior run
+   * tagged virtual (metadata.location_source = 'virtual') or negative-cached,
+   * and bust the geocode cache so the provider is actually re-queried (e.g.
+   * after an API-key change or a denylist/heuristic fix). Default (false) keeps
+   * the cheap path: only never-resolved rows, virtual-tagged rows skipped, and
+   * negative results served from cache.
    */
   retryNull?: boolean;
 };
