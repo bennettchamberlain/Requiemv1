@@ -2,7 +2,11 @@ import { Entity, PrimaryColumn, Column } from 'typeorm';
 
 @Entity({ schema: 'ci', name: 'communications' })
 export class CommunicationEntity {
-  @Column({ type: 'uuid' })
+  // Surrogate primary key (with the hypertable partition cols time + user_id) so
+  // distinct messages sharing a timestamp + type coexist; idempotent re-sync
+  // dedupes on communications_source_triple_uniq. See migration
+  // 20260624130000_communications_surrogate_pk.
+  @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
   @PrimaryColumn({ type: 'timestamptz' })
@@ -11,7 +15,7 @@ export class CommunicationEntity {
   @PrimaryColumn({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
-  @PrimaryColumn({ type: 'text', name: 'communication_type' })
+  @Column({ type: 'text', name: 'communication_type' })
   communicationType!: string;
 
   @Column({ type: 'uuid', nullable: true, name: 'device_id' })

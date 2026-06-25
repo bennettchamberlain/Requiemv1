@@ -4,6 +4,7 @@ import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOpt
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
+import { bulkInsertIdempotent } from '@ci/common/persistence';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -46,116 +47,179 @@ export class EventService {
     private readonly dataSource: DataSource,
   ) {}
 
+  /** Map a CreateEventDto onto EventEntity columns (shared by the single + bulk paths). */
+  private toEntityFields(item: CreateEventDto): Partial<EventEntity> {
+    const toCreate = { ...item } as Partial<EventEntity>;
+
+    if (item.start_time) {
+      toCreate.startTime = item.start_time;
+    }
+
+    if (item.end_time) {
+      toCreate.endTime = item.end_time;
+    }
+
+    if (item.source_system) {
+      toCreate.sourceSystem = item.source_system;
+    }
+
+    if (item.event_type) {
+      toCreate.eventType = item.event_type;
+    }
+
+    if (item.source_type) {
+      toCreate.sourceType = item.source_type;
+    }
+
+    if (item.participant_entity_ids) {
+      toCreate.participantEntityIds = item.participant_entity_ids;
+    }
+
+    if (item.organizer_entity_id) {
+      toCreate.organizerEntityId = item.organizer_entity_id;
+    }
+
+    if (item.location_entity_id) {
+      toCreate.locationEntityId = item.location_entity_id;
+    }
+
+    if (item.location_coordinates) {
+      toCreate.locationCoordinates = item.location_coordinates;
+    }
+
+    if (item.location_name) {
+      toCreate.locationName = item.location_name;
+    }
+
+    if (item.source_id) {
+      toCreate.sourceId = item.source_id;
+    }
+
+    if (item.sharing_level) {
+      toCreate.sharingLevel = item.sharing_level;
+    }
+
+    return toCreate;
+  }
+
+  /**
+   * Find-or-create a single event, idempotent on the provenance triple. Kept as
+   * the per-row path (a re-ingest / flaky-client retry returns the existing row);
+   * the array path below uses a set-based insert for bulk importer pushes.
+   */
+  private async createOne(context: UserServiceContext, item: CreateEventDto): Promise<Event> {
+    const toCreate = this.toEntityFields(item);
+
+    // Idempotency: (source_type, source_system, source_id) is the stable
+    // provenance triple capture sources carry. Re-ingesting the same event
+    // — flaky-client retries, a full importer re-sync — must NOT create a
+    // duplicate. When the triple is present, return the existing row.
+    const sourceWhere: FindOptionsWhere<EventEntity> | null =
+      item.source_type && item.source_id
+        ? {
+            sourceType: item.source_type,
+            sourceSystem: item.source_system ?? IsNull(),
+            sourceId: item.source_id,
+            user: { id: context.userId },
+          }
+        : null;
+
+    if (sourceWhere) {
+      const existing = await this.eventRepository.findOne({ where: sourceWhere });
+      if (existing) {
+        return EventEntity.toEgressType(existing);
+      }
+    }
+
+    const id = item.id ?? uuidv7();
+
+    const event = this.eventRepository.create({
+      ...toCreate,
+      id,
+      user: {
+        id: context.userId,
+      },
+    });
+
+    let eventResult: EventEntity;
+    try {
+      eventResult = await this.eventRepository.save(event);
+    } catch (err) {
+      // Lost a race to a concurrent insert of the same triple (the partial-
+      // unique index raised 23505) — fetch and return the winner.
+      if (sourceWhere && (err as { code?: string })?.code === '23505') {
+        const existing = await this.eventRepository.findOne({ where: sourceWhere });
+        if (existing) {
+          return EventEntity.toEgressType(existing);
+        }
+      }
+
+      throw err;
+    }
+
+    await this.signallingEventService.send(EventCreatedEvent, {
+      eventId: eventResult.id,
+    });
+
+    return EventEntity.toEgressType(eventResult);
+  }
+
   async create(context: UserServiceContext, data: CreateEventDto | CreateEventDto[]): Promise<Event[]> {
-    const isSingle = !Array.isArray(data);
-    const dataArray: CreateEventDto[] = isSingle ? [data] : data;
+    if (!Array.isArray(data)) {
+      return [await this.createOne(context, data)];
+    }
 
-    return await Promise.all(
-      dataArray.map(async (item) => {
-        const toCreate = { ...item } as Partial<EventEntity>;
+    return this.createManyBatched(context, data);
+  }
 
-        if (item.start_time) {
-          toCreate.startTime = item.start_time;
-        }
+  /**
+   * Batch, idempotent event ingest for the importer. Dedupes on the provenance
+   * triple (source_type, source_system, source_id), scoped to the user, via one
+   * set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row findOne + save
+   * loop (the old path was N findOnes + N inserts and throttled the ~1M-row push).
+   * Re-syncing the same triple returns the existing row instead of inserting a
+   * duplicate. Paired with the events_source_triple_uniq partial unique index,
+   * which also absorbs a lost insert race. An EventCreatedEvent is emitted for each
+   * newly-inserted row only (the embedding/search pipeline listens for these).
+   */
+  private async createManyBatched(context: UserServiceContext, data: CreateEventDto[]): Promise<Event[]> {
+    if (data.length === 0) {
+      return [];
+    }
 
-        if (item.end_time) {
-          toCreate.endTime = item.end_time;
-        }
-
-        if (item.source_system) {
-          toCreate.sourceSystem = item.source_system;
-        }
-
-        if (item.event_type) {
-          toCreate.eventType = item.event_type;
-        }
-
-        if (item.source_type) {
-          toCreate.sourceType = item.source_type;
-        }
-
-        if (item.participant_entity_ids) {
-          toCreate.participantEntityIds = item.participant_entity_ids;
-        }
-
-        if (item.organizer_entity_id) {
-          toCreate.organizerEntityId = item.organizer_entity_id;
-        }
-
-        if (item.location_entity_id) {
-          toCreate.locationEntityId = item.location_entity_id;
-        }
-
-        if (item.location_coordinates) {
-          toCreate.locationCoordinates = item.location_coordinates;
-        }
-
-        if (item.location_name) {
-          toCreate.locationName = item.location_name;
-        }
-
-        if (item.source_id) {
-          toCreate.sourceId = item.source_id;
-        }
-
-        if (item.sharing_level) {
-          toCreate.sharingLevel = item.sharing_level;
-        }
-
-        // Idempotency: (source_type, source_system, source_id) is the stable
-        // provenance triple capture sources carry. Re-ingesting the same event
-        // — flaky-client retries, a full importer re-sync — must NOT create a
-        // duplicate. When the triple is present, return the existing row.
-        const sourceWhere: FindOptionsWhere<EventEntity> | null =
-          item.source_type && item.source_id
-            ? {
-                sourceType: item.source_type,
-                sourceSystem: item.source_system ?? IsNull(),
-                sourceId: item.source_id,
-                user: { id: context.userId },
-              }
-            : null;
-
-        if (sourceWhere) {
-          const existing = await this.eventRepository.findOne({ where: sourceWhere });
-          if (existing) {
-            return EventEntity.toEgressType(existing);
-          }
-        }
-
-        const id = item.id ?? uuidv7();
-
-        const event = this.eventRepository.create({
-          ...toCreate,
-          id,
-          user: {
-            id: context.userId,
-          },
-        });
-
-        let eventResult: EventEntity;
-        try {
-          eventResult = await this.eventRepository.save(event);
-        } catch (err) {
-          // Lost a race to a concurrent insert of the same triple (the partial-
-          // unique index raised 23505) — fetch and return the winner.
-          if (sourceWhere && (err as { code?: string })?.code === '23505') {
-            const existing = await this.eventRepository.findOne({ where: sourceWhere });
-            if (existing) {
-              return EventEntity.toEgressType(existing);
-            }
-          }
-
-          throw err;
-        }
-
-        await this.signallingEventService.send(EventCreatedEvent, {
-          eventId: eventResult.id,
-        });
-
-        return EventEntity.toEgressType(eventResult);
+    const entities = data.map((item) =>
+      this.eventRepository.create({
+        ...this.toEntityFields(item),
+        id: item.id ?? uuidv7(),
+        userId: context.userId,
       }),
     );
+
+    const results = await bulkInsertIdempotent({
+      repository: this.eventRepository,
+      entities,
+      primaryKey: 'id',
+      getTriple: (entity) => ({
+        sourceType: entity.sourceType,
+        sourceSystem: entity.sourceSystem,
+        sourceId: entity.sourceId,
+      }),
+      scope: { userId: context.userId },
+      // The events_source_triple_uniq index is NOT user-scoped (see migration
+      // 20260620213807); the arbiter must match it exactly.
+      conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      tripleColumns: ['source_type', 'source_system', 'source_id'],
+    });
+
+    for (const { entity, inserted } of results) {
+      if (inserted) {
+        await this.signallingEventService.send(EventCreatedEvent, {
+          eventId: entity.id,
+        });
+      }
+    }
+
+    return results.map(({ entity }) => EventEntity.toEgressType(entity));
   }
 
   async findAll(context: ServiceContext): Promise<Event[]> {

@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository, type FindOptionsWhere } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
 
-import { isUniqueViolation } from '@ci/common/constants';
 import { SYSTEM_USER, type UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { bulkInsertIdempotent } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { ItemCreatedEvent, ItemUpdatedEvent, ItemRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -59,50 +59,67 @@ export class ItemService {
   }
 
   /**
-   * Batch, idempotent inventory ingest for the importer. Each item dedupes on the
-   * provenance triple (owner_user_id, source_type, source_system, source_id) —
-   * identical to EventService.create — so a re-sync returns the existing row
-   * instead of inserting a duplicate. Paired with the inventory_source_triple_uniq
-   * partial unique index, which also catches a lost insert race (23505).
+   * Batch, idempotent inventory ingest for the importer. Dedupes on the provenance
+   * triple (source_type, source_system, source_id), scoped to owner_user_id, via
+   * one set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row findOne +
+   * save loop. Re-syncing the same triple returns the existing row instead of
+   * inserting a duplicate. Paired with the inventory_source_triple_uniq partial
+   * unique index, which also absorbs a lost insert race. An ItemCreatedEvent is
+   * emitted for each newly-inserted row only (the embedding/search pipeline
+   * listens for these).
    */
   async createMany(context: UserServiceContext, data: CreateItemDto[]): Promise<Item[]> {
-    return Promise.all(
-      data.map(async (item) => {
-        // Idempotency: when the triple is present, return the existing row.
-        const sourceWhere: FindOptionsWhere<ItemEntity> | null =
-          item.sourceType && item.sourceId
-            ? {
-                ownerUserId: context.userId,
-                sourceType: item.sourceType,
-                sourceSystem: item.sourceSystem ?? IsNull(),
-                sourceId: item.sourceId,
-              }
-            : null;
+    if (data.length === 0) {
+      return [];
+    }
 
-        if (sourceWhere) {
-          const existing = await this.itemRepository.findOne({ where: sourceWhere });
-          if (existing) {
-            return ItemEntity.toEgressType(existing);
-          }
-        }
-
-        try {
-          return await this.create(context, item);
-        } catch (err) {
-          // Lost a race to a concurrent insert of the same triple (the partial-
-          // unique index raised 23505) — fetch and return the winner. TypeORM
-          // surfaces the pg code on the error or its nested driverError.
-          if (sourceWhere && isUniqueViolation(err)) {
-            const existing = await this.itemRepository.findOne({ where: sourceWhere });
-            if (existing) {
-              return ItemEntity.toEgressType(existing);
-            }
-          }
-
-          throw err;
-        }
+    const entities = data.map((item) =>
+      this.itemRepository.create({
+        id: item.id ?? uuid7(),
+        userId: context.userId,
+        ownerUserId: context.userId,
+        name: item.name,
+        description: item.description ?? null,
+        category: item.category ?? null,
+        subcategory: item.subcategory ?? null,
+        brand: item.brand ?? null,
+        model: item.model ?? null,
+        purchasePrice: item.purchasePrice ?? null,
+        currentValue: item.currentValue ?? null,
+        currency: item.currency ?? 'USD',
+        acquiredAt: item.acquiredAt ?? null,
+        identifierCodes: item.identifierCodes ?? {},
+        condition: item.condition ?? null,
+        metadata: item.metadata ?? {},
+        sourceType: item.sourceType ?? null,
+        sourceSystem: item.sourceSystem ?? null,
+        sourceId: item.sourceId ?? null,
       }),
     );
+
+    const results = await bulkInsertIdempotent({
+      repository: this.itemRepository,
+      entities,
+      primaryKey: 'id',
+      getTriple: (entity) => ({
+        sourceType: entity.sourceType,
+        sourceSystem: entity.sourceSystem,
+        sourceId: entity.sourceId,
+      }),
+      scope: { ownerUserId: context.userId },
+      conflictTarget: '(owner_user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      tripleColumns: ['source_type', 'source_system', 'source_id'],
+    });
+
+    for (const { entity, inserted } of results) {
+      if (inserted) {
+        await this.eventService.send(ItemCreatedEvent, {
+          itemId: entity.id,
+        });
+      }
+    }
+
+    return results.map(({ entity }) => ItemEntity.toEgressType(entity));
   }
 
   async findAll(context: ServiceContext): Promise<Item[]> {
