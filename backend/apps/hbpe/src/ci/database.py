@@ -131,8 +131,11 @@ def get_conn() -> Generator[PgConnection, None, None]:
         if not conn.closed:
             try:
                 conn.rollback()
-            except psycopg2.Error:
-                pass
+            except psycopg2.Error as rb_exc:
+                # Intentionally swallowed: re-raising here would replace the
+                # original exception with the rollback failure. Log at debug so
+                # the original error still propagates below.
+                log.debug("rollback after error failed (ignored): %s", rb_exc)
         raise
     finally:
         # Never return a broken connection to the pool — close=True discards it.
