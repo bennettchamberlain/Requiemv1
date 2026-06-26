@@ -123,6 +123,21 @@ async def _active_workflow_status(uid: str) -> Optional[str]:
     return None
 
 
+async def _resolve_system_status(user_id: str) -> str:
+    """
+    Status string for the forecast response.
+
+    READY once a checkpoint exists; otherwise the live workflow step
+    (e.g. ``BOOTSTRAP:train``) so the UI shows real progress instead of a
+    permanent "Waiting to initialize…", falling back to COLD_START when no
+    workflow is currently running.
+    """
+    if _model_exists():
+        return "READY"
+    status = await _active_workflow_status(user_id)
+    return status or "COLD_START"
+
+
 @app.get("/health")
 async def health() -> dict:
     return {
@@ -148,7 +163,10 @@ async def histogram(
 
     try:
         engine = _get_or_create_engine(user_id)
-        result = build_histogram(engine, horizon=horizon, user_id=user_id)
+        system_status = await _resolve_system_status(user_id)
+        result = build_histogram(
+            engine, horizon=horizon, user_id=user_id, system_status=system_status
+        )
         return JSONResponse(content=result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
