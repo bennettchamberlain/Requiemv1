@@ -28,6 +28,7 @@ from ci.pipeline.nightly_runner import (
     label_summary_tokens,
     label_unlabeled,
     lora_fine_tune,
+    needs_bootstrap,
 )
 from ci.pipeline.schedule import setup_hbpe_schedules
 
@@ -62,6 +63,7 @@ async def main() -> None:
                     label_summary_tokens,
                     l1_stale_sweep,
                     l2_stale_sweep,
+                    needs_bootstrap,
                     lora_fine_tune,
                     drift_detection,
                     cache_invalidation,
