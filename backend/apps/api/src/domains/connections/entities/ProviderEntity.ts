@@ -69,7 +69,7 @@ export class ProviderEntity {
       localOnly:
         entity.authType === 'oauth2' && (!config.ciPortal.deviceId || !config.ciPortal.apiKey)
           ? true
-          : entity.localOnly ?? false,
+          : (entity.localOnly ?? false),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
