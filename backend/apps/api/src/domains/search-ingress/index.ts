@@ -23,6 +23,7 @@ import { BrowserActivitySearchIndexListener } from './listeners/BrowserActivityS
 import { CommunicationSearchIndexListener } from './listeners/CommunicationSearchIndexListener';
 import { ConceptSearchIndexListener } from './listeners/ConceptSearchIndexListener';
 import { ContentSearchIndexListener } from './listeners/ContentSearchIndexListener';
+import { EntityEmbeddingListener } from './listeners/EntityEmbeddingListener';
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
 import { FileSearchIndexListener } from './listeners/FileSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
@@ -32,6 +33,7 @@ import { PersonSearchIndexListener } from './listeners/PersonSearchIndexListener
 import { PlaceSearchIndexListener } from './listeners/PlaceSearchIndexListener';
 import { ThreadSearchIndexListener } from './listeners/ThreadSearchIndexListener';
 import { EmbeddingService } from './services/EmbeddingService';
+import { OrphanCleanupService } from './services/OrphanCleanupService';
 import { VectorService } from './services/VectorService';
 
 /**
@@ -55,17 +57,29 @@ import { VectorService } from './services/VectorService';
     ConceptSearchIndexListener,
     ContentSearchIndexListener,
     EmbeddingService,
+    EntityEmbeddingListener,
     EventSearchIndexListener,
     FileSearchIndexListener,
     ItemSearchIndexListener,
     MessageSearchIndexListener,
     NoteSearchIndexListener,
+    OrphanCleanupService,
     PersonSearchIndexListener,
     PlaceSearchIndexListener,
     ThreadSearchIndexListener,
     VectorService,
   ],
+  exports: [OrphanCleanupService],
 })
 export class SearchIngressModule {}
 
 export { EmbeddingEntity, VectorEntity };
+export { OrphanCleanupService } from './services/OrphanCleanupService';
+export type {
+  OrphanCleanupOptions,
+  OrphanCleanupResult,
+  OrphanTypeResult,
+  TruncateSearchIndexResult,
+} from './services/OrphanCleanupService';
+export { ENTITY_SOURCE_MAP } from './entitySourceMap';
+export type { EntitySource } from './entitySourceMap';

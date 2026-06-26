@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
 
-import { EmbeddingGenerationService } from '@ci/common/embeddings';
+import { SYSTEM_USER } from '@ci/common/context';
+import { EmbeddingGenerationService, embedSkipReason, shouldEmbedType } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
-import { AgentMemoryCreatedEvent, type AgentMemoryCreatedPayload } from '@ci/domains/agent/events';
+import {
+  AgentMemoryCreatedEvent,
+  AgentMemoryRemovedEvent,
+  type AgentMemoryCreatedPayload,
+  type AgentMemoryRemovedPayload,
+} from '@ci/domains/agent/events';
 import { OnEvent } from '@ci/domains/events';
 
 import { EmbeddingService } from '../services/EmbeddingService';
@@ -44,6 +50,27 @@ export class MessageSearchIndexListener {
       return;
     }
 
+    if (!shouldEmbedType('message')) {
+      this.logger.log('Message type not in embed allowlist, skipping embedding', {
+        memoryId: payload.memoryId,
+      });
+
+      return;
+    }
+
+    // Selective embedding: drop trivial / reaction fragments ("Loved an image",
+    // bare "ok", emoji) that dominate chat imports and carry no search signal.
+    const skipReason = embedSkipReason(content);
+
+    if (skipReason != null) {
+      this.logger.log('Skipping low-value agent-memory embedding', {
+        memoryId: payload.memoryId,
+        skipReason,
+      });
+
+      return;
+    }
+
     const embedding = await this.embeddingGenerationService.generateEmbedding(content);
 
     await this.embeddingService.upsert(
@@ -60,5 +87,23 @@ export class MessageSearchIndexListener {
     this.logger.log('Indexed agent-memory fragment for recall message channel', {
       memoryId: payload.memoryId,
     });
+  }
+
+  @OnEvent(AgentMemoryRemovedEvent, { queue: 'search-index' })
+  async removeMessage(payload: AgentMemoryRemovedPayload) {
+    this.logger.log('Removing agent-memory fragment from search index', {
+      memoryId: payload.memoryId,
+    });
+
+    // The 'message' channel writes a dense embedding only — no tsvector/vector
+    // row — so reap the embedding alone; there is nothing for vectorService to
+    // remove (this listener does not even inject it).
+    await this.embeddingService.remove(
+      { userId: SYSTEM_USER },
+      {
+        entityType: 'message',
+        entityId: payload.memoryId,
+      },
+    );
   }
 }

@@ -19,7 +19,24 @@ interface EventData {
 
 @Injectable()
 export class PGBossEventService extends EventService implements OnModuleInit, OnModuleDestroy {
-  private semaphore = plimit(10);
+  // Global in-flight job ceiling across all queues. Configurable (CI_QUEUE_CONCURRENCY)
+  // so the decoupled embedding/index workers can be scaled for bulk imports.
+  private semaphore = plimit(config.queues.concurrency);
+
+  private readonly fetchBatchSize = config.queues.fetchBatchSize;
+
+  // Bulk-import escape hatch: send() fans an event out to EVERY registered queue
+  // (each worker then filters by event name), so a large import enqueues ~Nqueues
+  // jobs per row. During a bulk load, set CI_QUEUE_SUPPRESS to a comma-separated
+  // list of queues to skip enqueuing entirely (e.g. file-preview-generation,
+  // image-description,geocode,feed-queue,etl) — keep search-index for searchable
+  // results. Enrichment can be backfilled later.
+  private readonly suppressedQueues = new Set(
+    (process.env.CI_QUEUE_SUPPRESS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
 
   private running = false;
 
@@ -174,10 +191,14 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
       return jobId ? [jobId] : [];
     }
 
-    // Otherwise, send to all registered queues.
+    // Otherwise, send to all registered queues (minus any suppressed for a bulk load).
     const jobIds: string[] = [];
 
     for (const queue of allQueues) {
+      if (this.suppressedQueues.has(queue)) {
+        continue;
+      }
+
       try {
         const jobId = await this.boss.send(queue, resolvedData);
 
@@ -211,7 +232,7 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
 
       const jobs = await this.boss.fetch<EventData>(queueName, {
         includeMetadata: true,
-        batchSize: available,
+        batchSize: Math.min(available, this.fetchBatchSize),
       });
 
       if (jobs.length === 0) {

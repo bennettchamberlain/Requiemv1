@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOptionsWhere } from 'typeorm';
+import { DataSource, In, Repository, type FindOptionsOrder } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { isUniqueViolation } from '@ci/common/constants';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { bulkInsertIdempotent } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -88,53 +88,66 @@ export class BrowserActivityService {
   }
 
   /**
-   * Batch, idempotent browser-activity ingest for the importer. Each row dedupes
-   * on the provenance triple (user_id, source_type, source_system, source_id) —
-   * the same find-or-return pattern as EventService.create — so a re-sync returns
-   * the existing row instead of inserting a duplicate. Paired with the
-   * browser_activity_source_triple_uniq partial unique index, which also catches a
-   * lost insert race (23505).
+   * Batch, idempotent browser-activity ingest for the importer. Dedupes on the
+   * provenance triple (source_type, source_system, source_id), scoped to the user,
+   * via one set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row
+   * findOne + save loop. Re-syncing the same triple returns the existing row
+   * instead of inserting a duplicate. Paired with the
+   * browser_activity_source_triple_uniq partial unique index, which also absorbs a
+   * lost insert race. Bulk ingest does NOT emit a per-row BrowserActivityCreatedEvent
+   * — search indexing is deferred to the post-load batch embed
+   * (POST /api/maintenance/search-index/backfill); single-row create() still emits.
    */
   async createMany(
     context: UserServiceContext,
     data: CreateBrowserActivityDto[],
   ): Promise<BrowserActivity[]> {
-    return Promise.all(
-      data.map(async (item) => {
-        // Idempotency: when the triple is present, return the existing row.
-        const sourceWhere: FindOptionsWhere<BrowserActivityEntity> | null =
-          item.source_type && item.source_id
-            ? {
-                user_id: context.userId,
-                source_type: item.source_type,
-                source_system: item.source_system ?? IsNull(),
-                source_id: item.source_id,
-              }
-            : null;
+    if (data.length === 0) {
+      return [];
+    }
 
-        if (sourceWhere) {
-          const existing = await this.browserActivityRepository.findOne({ where: sourceWhere });
-          if (existing) {
-            return BrowserActivityEntity.toEgressType(existing);
-          }
-        }
-
-        try {
-          // A single (non-array) input yields a single BrowserActivity.
-          return (await this.create(context, item)) as BrowserActivity;
-        } catch (err) {
-          // Lost a race to a concurrent insert of the same triple — fetch the winner.
-          if (sourceWhere && isUniqueViolation(err)) {
-            const existing = await this.browserActivityRepository.findOne({ where: sourceWhere });
-            if (existing) {
-              return BrowserActivityEntity.toEgressType(existing);
-            }
-          }
-
-          throw err;
-        }
+    const entities = data.map((item) =>
+      this.browserActivityRepository.create({
+        id: item.id ?? uuidv7(),
+        time: new Date(item.time),
+        user_id: context.userId,
+        device_id: item.device_id ?? null,
+        url: item.url,
+        title: item.title,
+        action_type: item.action_type,
+        properties: item.properties ?? {},
+        duration_seconds: item.duration_seconds,
+        scroll_depth_percent: item.scroll_depth_percent,
+        page_summary: item.page_summary,
+        category: item.category,
+        productivity_score: item.productivity_score,
+        is_incognito: item.is_incognito ?? false,
+        contains_sensitive: item.contains_sensitive ?? false,
+        source_type: item.source_type ?? null,
+        source_system: item.source_system ?? null,
+        source_id: item.source_id ?? null,
       }),
     );
+
+    const results = await bulkInsertIdempotent({
+      repository: this.browserActivityRepository,
+      entities,
+      primaryKey: 'id',
+      getTriple: (entity) => ({
+        sourceType: entity.source_type,
+        sourceSystem: entity.source_system,
+        sourceId: entity.source_id,
+      }),
+      scope: { user_id: context.userId },
+      conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      tripleColumns: ['source_type', 'source_system', 'source_id'],
+    });
+
+    // Bulk ingest does NOT emit a per-row BrowserActivityCreatedEvent: the per-row
+    // pgboss fan-out was the dominant cost at import volume. Search indexing for
+    // bulk-loaded rows is deferred to the post-load batch embed
+    // (POST /api/maintenance/search-index/backfill). Single-row create() still emits.
+    return results.map(({ entity }) => BrowserActivityEntity.toEgressType(entity));
   }
 
   async findAll(context: ServiceContext): Promise<BrowserActivity[]> {

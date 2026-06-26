@@ -8,7 +8,7 @@ import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import { AgentMemoryEntity, type AgentMemory } from '../entities/AgentMemoryEntity';
-import { AgentMemoryCreatedEvent } from '../events';
+import { AgentMemoryCreatedEvent, AgentMemoryRemovedEvent } from '../events';
 
 export interface CreateAgentMemoryDto {
   content: string;
@@ -57,6 +57,42 @@ export class AgentMemoryService {
     );
 
     return AgentMemoryEntity.toEgressType(saved);
+  }
+
+  /**
+   * Deletes a single memory fragment (owner-scoped unless SYSTEM_USER is
+   * passed) and emits {@link AgentMemoryRemovedEvent} so the search-index
+   * listener can reap its 'message' embedding.
+   *
+   * Fragments have no DB-level FK into ci_search.embeddings, so the embedding
+   * is cascade-deleted through this event rather than ON DELETE CASCADE — the
+   * delete-side mirror of {@link AgentMemoryService.create}'s created-event.
+   * Returns false (and emits nothing) when no matching row exists.
+   */
+  async remove(context: ServiceContext, memoryId: string): Promise<boolean> {
+    const existing = await this.repository.findOne({
+      where: {
+        id: memoryId,
+        ...(context.userId !== SYSTEM_USER && { userId: context.userId }),
+      },
+    });
+
+    if (existing == null) {
+      return false;
+    }
+
+    await this.repository.delete({ id: existing.id });
+
+    await this.eventService.send(
+      AgentMemoryRemovedEvent,
+      {
+        memoryId: existing.id,
+        userId: existing.userId,
+      },
+      { queue: 'search-index' },
+    );
+
+    return true;
   }
 
   /**

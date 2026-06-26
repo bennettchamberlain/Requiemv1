@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository, In, IsNull, type FindOptionsOrder, type FindOptionsWhere } from 'typeorm';
+import { DataSource, Repository, In, type FindOptionsOrder } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { isUniqueViolation } from '@ci/common/constants';
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { bulkInsertIdempotent } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -79,50 +79,88 @@ export class CommunicationService {
   }
 
   /**
-   * Batch, idempotent communication ingest for the importer. Each row dedupes on
-   * the provenance triple (user_id, source_type, source_system, source_id) — the
-   * same find-or-return pattern as EventService.create — so a re-sync returns the
-   * existing row instead of inserting a duplicate. Paired with the
-   * communications_source_triple_uniq partial unique index, which also catches a
-   * lost insert race (23505). (The index also carries `time`, a hypertable
-   * partition key the importer keeps stable per source row.)
+   * Batch, idempotent communication ingest for the importer. Dedupes on the
+   * provenance triple (source_type, source_system, source_id), scoped to the user,
+   * via one set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row
+   * findOne + save loop (the old path was N findOnes + N inserts and throttled the
+   * ~1M-row importer push). Re-syncing the same triple returns the existing row
+   * without inserting a duplicate. Paired with the communications_source_triple_uniq
+   * partial unique index (which carries `time`, a hypertable partition key the
+   * importer keeps stable per source row); ON CONFLICT also absorbs a lost insert
+   * race. A CommunicationCreatedEvent is emitted for each newly-inserted row only
+   * (the embedding/search pipeline listens for these).
    */
   async createMany(context: UserServiceContext, data: CreateCommunicationDto[]): Promise<Communication[]> {
-    return Promise.all(
-      data.map(async (item) => {
-        // Idempotency: when the triple is present, return the existing row.
-        const sourceWhere: FindOptionsWhere<CommunicationEntity> | null =
-          item.source_type && item.source_id
-            ? {
-                userId: context.userId,
-                sourceType: item.source_type,
-                sourceSystem: item.source_system ?? IsNull(),
-                sourceId: item.source_id,
-              }
-            : null;
+    if (data.length === 0) {
+      return [];
+    }
 
-        if (sourceWhere) {
-          const existing = await this.communicationRepository.findOne({ where: sourceWhere });
-          if (existing) {
-            return CommunicationEntity.toEgressType(existing);
-          }
-        }
-
-        try {
-          return await this.create(context, item);
-        } catch (err) {
-          // Lost a race to a concurrent insert of the same triple — fetch the winner.
-          if (sourceWhere && isUniqueViolation(err)) {
-            const existing = await this.communicationRepository.findOne({ where: sourceWhere });
-            if (existing) {
-              return CommunicationEntity.toEgressType(existing);
-            }
-          }
-
-          throw err;
-        }
+    const entities = data.map((item) =>
+      this.communicationRepository.create({
+        id: item.id ?? uuidv7(),
+        time: item.time,
+        communicationType: item.communication_type,
+        userId: context.userId,
+        deviceId: item.device_id,
+        direction: item.direction,
+        threadId: item.thread_id,
+        fromEntityId: item.from_entity_id,
+        toEntityIds: item.to_entity_ids || [],
+        participantsMetadata: item.participants_metadata || {},
+        subject: item.subject,
+        content: item.content,
+        durationSeconds: item.duration_seconds,
+        sentimentScore: item.sentiment_score,
+        importanceScore: item.importance_score,
+        urgencyScore: item.urgency_score,
+        category: item.category,
+        summary: item.summary,
+        connectionId: item.connection_id,
+        attachments: item.attachments || [],
+        isEncrypted: item.is_encrypted || false,
+        isArchived: item.is_archived || false,
+        preview: item.preview ?? null,
+        sourceType: item.source_type ?? null,
+        sourceSystem: item.source_system ?? null,
+        sourceId: item.source_id ?? null,
       }),
     );
+
+    const results = await bulkInsertIdempotent({
+      repository: this.communicationRepository,
+      entities,
+      primaryKey: 'id',
+      getTriple: (entity) => ({
+        sourceType: entity.sourceType,
+        sourceSystem: entity.sourceSystem,
+        sourceId: entity.sourceId,
+      }),
+      scope: { userId: context.userId },
+      conflictTarget: '(user_id, time, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
+      tripleColumns: ['source_type', 'source_system', 'source_id'],
+      // Self-heal source-derived mutable fields on re-sync. Communications
+      // imported before the importer's direction fix landed as `inbound`; a plain
+      // DO NOTHING re-sync left them wrong forever. Likewise `participants_metadata`
+      // (now carrying `.to` recipients) was absent on older rows, blocking the
+      // comms->people backfill from populating to_entity_ids. Refreshing these on
+      // conflict corrects both while staying idempotent (no dup rows). We
+      // deliberately exclude identity/arbiter columns (id, time, user_id,
+      // source_*) and any column a user may edit server-side. NOTE: this means a
+      // re-sync overwrites these five fields from the source of record; do not add
+      // server-mutable columns here or a re-import would clobber local edits.
+      conflictUpdateColumns: ['direction', 'participants_metadata', 'content', 'preview', 'subject'],
+      // communications is a TimescaleDB hypertable partitioned on time; bound the
+      // dedup/hydrate reads to the batch's time range so chunk exclusion avoids the
+      // all-chunks scan that segfaults TSDB 2.28 (importer pushes in time order).
+      timeColumn: 'time',
+    });
+
+    // Bulk ingest does NOT emit a per-row CommunicationCreatedEvent: at import
+    // volume the per-row pgboss fan-out (one job per registered queue per row)
+    // was the dominant cost. Search indexing for bulk-loaded rows is deferred to
+    // the post-load batch embed (POST /api/maintenance/search-index/backfill).
+    // Single-row create() still emits, so interactive creates index live.
+    return results.map(({ entity }) => CommunicationEntity.toEgressType(entity));
   }
 
   async findAll(context: UserServiceContext): Promise<Communication[]> {
