@@ -805,9 +805,11 @@ export type Mutation = {
   __typename?: 'Mutation';
   bulkIngestGraph: BulkGraphPayload;
   createAnswer: AnswerType;
+  createAnswers: Array<AnswerType>;
   createBrowserActivities: Array<BrowserActivityType>;
   createCommunications: Array<CommunicationType>;
   createConcept: CreateConceptPayload;
+  createConcepts: Array<ConceptType>;
   createConnection: CreateConnectionPayload;
   createConnectionSyncJob: CreateConnectionSyncJobPayload;
   createContent: ContentType;
@@ -817,10 +819,14 @@ export type Mutation = {
   createInventoryItems: Array<ItemType>;
   createItem: CreateItemPayload;
   createNote: CreateNotePayload;
+  createNotes: Array<NoteType>;
+  createPeople: Array<PersonType>;
   createPerson: CreatePersonPayload;
   createPlace: PlaceType;
+  createPlaces: Array<PlaceType>;
   createProviderKey: ProviderKeyType;
   createQuestion: QuestionType;
+  createQuestions: Array<QuestionType>;
   createRelationship: CreateRelationshipPayload;
   createSavedSearch: CreateSavedSearchPayload;
   deleteConcept: DeleteByIdPayload;
@@ -880,6 +886,11 @@ export type MutationCreateAnswerArgs = {
 };
 
 
+export type MutationCreateAnswersArgs = {
+  input: Array<CreateAnswerInput>;
+};
+
+
 export type MutationCreateBrowserActivitiesArgs = {
   input: Array<CreateBrowserActivityInput>;
 };
@@ -892,6 +903,11 @@ export type MutationCreateCommunicationsArgs = {
 
 export type MutationCreateConceptArgs = {
   input: CreateConceptInput;
+};
+
+
+export type MutationCreateConceptsArgs = {
+  input: Array<CreateConceptInput>;
 };
 
 
@@ -940,6 +956,16 @@ export type MutationCreateNoteArgs = {
 };
 
 
+export type MutationCreateNotesArgs = {
+  input: Array<CreateNoteInput>;
+};
+
+
+export type MutationCreatePeopleArgs = {
+  input: Array<CreatePersonInput>;
+};
+
+
 export type MutationCreatePersonArgs = {
   input: CreatePersonInput;
 };
@@ -950,6 +976,11 @@ export type MutationCreatePlaceArgs = {
 };
 
 
+export type MutationCreatePlacesArgs = {
+  input: Array<CreatePlaceInput>;
+};
+
+
 export type MutationCreateProviderKeyArgs = {
   input: CreateProviderKeyInput;
 };
@@ -957,6 +988,11 @@ export type MutationCreateProviderKeyArgs = {
 
 export type MutationCreateQuestionArgs = {
   input: CreateQuestionInput;
+};
+
+
+export type MutationCreateQuestionsArgs = {
+  input: Array<CreateQuestionInput>;
 };
 
 
