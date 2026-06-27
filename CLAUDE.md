@@ -16,7 +16,7 @@ Personal database, REST/LLM API, RAG, and HBPE behavioral-prediction engine. The
 
 ## Stack
 
-- NestJS 10 (backend)
+- NestJS 11 (backend)
 - React/Vite (frontend)
 - PostgreSQL 15 + pgvector + TimescaleDB
 - Ollama (local LLM / embeddings)
@@ -31,15 +31,18 @@ Personal database, REST/LLM API, RAG, and HBPE behavioral-prediction engine. The
 # Install dependencies
 yarn install
 
-# Start development server / service
-docker compose up -d && yarn dev
+# Bring up the full per-worktree dev stack (Docker services + migrations
+# + Caddy route at <project>.localhost + api/web via overmind)
+make dev
 
-# Run tests
-yarn test
+# Run tests (per app, e.g. the backend API)
+cd backend/apps/api && yarn test
 
-# Build for production
-yarn build
+# Build images (ENV=local|staging|production, default local)
+make build
 ```
+
+See `README.md` for the full prerequisite setup and the complete `make` command reference.
 
 ## Package manager
 
@@ -55,7 +58,7 @@ yarn build
 
 ## Database migrations
 
-SQL migration files in `backend/apps/api/db/migrations/` are hand-written and are the source of truth. Update the TypeORM entities to match.
+SQL migration files in `backend/apps/api/db/postgres/migrations/` are hand-written and are the source of truth (applied via dbmate). Update the TypeORM entities to match.
 
 ## HBPE sidecar
 

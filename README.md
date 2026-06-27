@@ -24,15 +24,19 @@ This is a Yarn workspace monorepo with the following structure:
 
 ```
 ├── backend/apps/
-│   └── api/                    # Main backend API service (NestJS)
+│   ├── api/                    # Main backend API service (NestJS)
+│   ├── hbpe/                   # HBPE behavioral-prediction sidecar (Python/FastAPI, ONNX)
+│   └── summary/                # Temporal hierarchical summarization agent
 ├── frontend/apps/
-│   ├── web/                    # Main web application (React + Vite)
-│   └── native/                 # Future native app
-└── frontend/packages/
-    ├── capture/                # Camera capture components
-    ├── common/                 # Shared utilities and components
-    ├── shadcn/                 # ShadCN components (these typically shouldn't be modified directly, they're just local copies of our component library)
-    └── template/               # A starter package to copy and paste when you need to create a new package in frontend/packages/
+│   └── web/                    # Main web application (React + Vite)
+├── frontend/packages/
+│   ├── capture/                # Camera capture components
+│   ├── common/                 # Shared utilities and components
+│   ├── editor/                 # Rich-text editor package
+│   ├── shadcn/                 # ShadCN components (these typically shouldn't be modified directly, they're just local copies of our component library)
+│   └── template/               # A starter package to copy and paste when you need to create a new package in frontend/packages/
+└── mcp-servers/
+    └── web-search/             # Web-search MCP server
 ```
 
 ## TL;DR - Hermes
@@ -358,7 +362,7 @@ yarn lint:fix  # Auto-fix linting issues
 ```bash
 yarn dev                    # Start development server with nodemon
 yarn migrate:make <name>    # Create a new migration file
-yarn migrate:rollback       # Rollback the last migration
+yarn migrate:down           # Roll back the last migration
 yarn lint:circular-imports  # Check for circular import dependencies
 yarn lint                   # Lint backend code
 yarn lint:fix               # Auto-fix backend linting issues
