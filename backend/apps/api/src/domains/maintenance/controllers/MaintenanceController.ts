@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventEntity } from '@ci/domains/memory';
 import { GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import {
+  EmbeddingEntity,
   type OrphanCleanupResult,
   OrphanCleanupService,
   type TruncateSearchIndexResult,
@@ -92,6 +93,37 @@ const searchIndexBackfillSchema = z.object({
 });
 
 type SearchIndexBackfillRequest = z.infer<typeof searchIndexBackfillSchema>;
+
+/** Backfillable types, as a Set, for lenient `?types=` filtering. */
+const BACKFILLABLE_ENTITY_SET: ReadonlySet<string> = new Set(BACKFILLABLE_ENTITIES);
+
+// Query for GET /api/maintenance/search-index/embedded-count. `types` is an
+// optional CSV of BACKFILLABLE_ENTITIES (e.g. "communication,event"). Unknown
+// tokens are dropped silently rather than 400'd: the importer's drain poller
+// treats any non-200 as "endpoint unavailable" and abandons the animation, so a
+// stray type must not break the count. Absent (or all-unknown) => count every type.
+const embeddedCountQuerySchema = z.object({
+  types: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value === undefined
+        ? undefined
+        : value
+            .split(',')
+            .map((type) => type.trim())
+            .filter((type) => BACKFILLABLE_ENTITY_SET.has(type)),
+    ),
+});
+
+type EmbeddedCountQuery = z.infer<typeof embeddedCountQuerySchema>;
+
+interface EmbeddedCountResponse {
+  /** Total `ci_search.embeddings` rows matching the (optional) type filter. */
+  count: number;
+  /** Per-`entity_type` row counts (only the matched types appear). */
+  perType: Record<string, number>;
+}
 
 type GeocodeLocationsRequest = z.infer<typeof geocodeLocationsSchema>;
 
@@ -354,5 +386,52 @@ export class MaintenanceController {
       batchSize: body.batchSize,
       limitPerType: body.limitPerType,
     });
+  }
+
+  /**
+   * Stage-6 embed-drain gauge (import-progress redesign, plan items 21-23). The
+   * /search-index/backfill sweep returns `enqueued` (rows QUEUED on the
+   * `search-index` pgboss queue), but the embeds drain out-of-band as the
+   * listeners run. The importer polls THIS endpoint to drive its stage-6 bar from
+   * a real embedded count instead of leaving it indeterminate: it reads the total,
+   * subtracts a baseline taken right after the sweep, and animates toward `enqueued`.
+   *
+   * Returns the number of `ci_search.embeddings` rows, optionally restricted to the
+   * CSV `?types=` (BACKFILLABLE_ENTITIES vocab). The count is GLOBAL — not
+   * user-scoped — to mirror the backfill it tracks (which re-emits across all
+   * users' un-indexed rows). The leading column of the table's
+   * `UNIQUE (entity_type, entity_id)` index is `entity_type`, so the GROUP BY (and
+   * the type filter) is index-served. Best-effort by contract: the importer
+   * degrades gracefully if this is absent/erroring.
+   */
+  @Get('search-index/embedded-count')
+  async embeddedCount(
+    @Query(new ValidationPipe(embeddedCountQuerySchema)) query: EmbeddedCountQuery,
+  ): Promise<EmbeddedCountResponse> {
+    const types = query.types && query.types.length > 0 ? query.types : undefined;
+
+    const builder = this.dataSource
+      .getRepository(EmbeddingEntity)
+      .createQueryBuilder('embedding')
+      .select('embedding.entityType', 'entityType')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('embedding.entityType');
+
+    if (types) {
+      builder.where('embedding.entityType IN (:...types)', { types });
+    }
+
+    const rows = await builder.getRawMany<{ entityType: string; count: string }>();
+
+    const perType: Record<string, number> = {};
+    let count = 0;
+    for (const row of rows) {
+      // COUNT(*) comes back as a bigint string from the pg driver.
+      const n = Number(row.count);
+      perType[row.entityType] = n;
+      count += n;
+    }
+
+    return { count, perType };
   }
 }
