@@ -12,6 +12,7 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventEntity } from '@ci/domains/memory';
 import { GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import {
+  EmbeddingEntity,
   type OrphanCleanupResult,
   OrphanCleanupService,
   type TruncateSearchIndexResult,
@@ -99,31 +100,35 @@ const searchIndexBackfillSchema = z.object({
 
 type SearchIndexBackfillRequest = z.infer<typeof searchIndexBackfillSchema>;
 
+/** Backfillable types, as a Set, for lenient `?types=` filtering. */
+const BACKFILLABLE_ENTITY_SET: ReadonlySet<string> = new Set(BACKFILLABLE_ENTITIES);
+
 // Query for GET /api/maintenance/search-index/embedded-count. `types` is an
-// optional CSV of backfillable entity types to restrict the count to; omitted =
-// all backfillable types. Drives the importer's stage-6 "embedded" drain bar.
-const embeddedCountSchema = z.object({
+// optional CSV of BACKFILLABLE_ENTITIES (e.g. "communication,event"). Unknown
+// tokens are dropped silently rather than 400'd: the importer's drain poller
+// treats any non-200 as "endpoint unavailable" and abandons the animation, so a
+// stray type must not break the count. Absent (or all-unknown) => count every type.
+const embeddedCountQuerySchema = z.object({
   types: z
     .string()
     .optional()
-    .transform((raw) =>
-      raw
-        ? raw
+    .transform((value) =>
+      value === undefined
+        ? undefined
+        : value
             .split(',')
-            .map((t) => t.trim())
-            .filter((t) => t.length > 0)
-        : undefined,
-    )
-    .pipe(z.array(z.enum(BACKFILLABLE_ENTITIES)).min(1).optional()),
+            .map((type) => type.trim())
+            .filter((type) => BACKFILLABLE_ENTITY_SET.has(type)),
+    ),
 });
 
-type EmbeddedCountRequest = z.infer<typeof embeddedCountSchema>;
+type EmbeddedCountQuery = z.infer<typeof embeddedCountQuerySchema>;
 
 interface EmbeddedCountResponse {
-  /** Embedded-row count in `ci_search.embeddings` per backfillable entity type. */
-  counts: Record<string, number>;
-  /** Sum across the returned types. */
-  total: number;
+  /** Total `ci_search.embeddings` rows matching the (optional) type filter. */
+  count: number;
+  /** Per-`entity_type` row counts (only the matched types appear). */
+  perType: Record<string, number>;
 }
 
 type GeocodeLocationsRequest = z.infer<typeof geocodeLocationsSchema>;
@@ -447,44 +452,50 @@ export class MaintenanceController {
   }
 
   /**
-   * Stage-6 drain signal. Counts the `ci_search.embeddings` rows per backfillable
-   * entity_type (communication/event/content/item/browser-activity) — i.e. rows
-   * that have actually been embedded, NOT merely enqueued by
-   * /search-index/backfill. The importer's maintenance-runner polls this while the
-   * pgboss `search-index` queue drains to drive the "embedded" progress bar toward
-   * the swept `enqueued` total. `?types=` (CSV) restricts to a subset; omitted =
-   * all backfillable types (each present in the response, 0 when none embedded).
-   * Reuses the same `ci_search.embeddings(entity_type, entity_id)` shape the
-   * SearchIndexBackfillService LEFT JOINs against.
+   * Stage-6 embed-drain gauge (import-progress redesign, plan items 21-23). The
+   * /search-index/backfill sweep returns `enqueued` (rows QUEUED on the
+   * `search-index` pgboss queue), but the embeds drain out-of-band as the
+   * listeners run. The importer polls THIS endpoint to drive its stage-6 bar from
+   * a real embedded count instead of leaving it indeterminate: it reads the total,
+   * subtracts a baseline taken right after the sweep, and animates toward `enqueued`.
+   *
+   * Returns the number of `ci_search.embeddings` rows, optionally restricted to the
+   * CSV `?types=` (BACKFILLABLE_ENTITIES vocab). The count is GLOBAL — not
+   * user-scoped — to mirror the backfill it tracks (which re-emits across all
+   * users' un-indexed rows). The leading column of the table's
+   * `UNIQUE (entity_type, entity_id)` index is `entity_type`, so the GROUP BY (and
+   * the type filter) is index-served. Best-effort by contract: the importer
+   * degrades gracefully if this is absent/erroring.
    */
   @Get('search-index/embedded-count')
   async embeddedCount(
-    @Query(new ValidationPipe(embeddedCountSchema)) query: EmbeddedCountRequest,
+    @Query(new ValidationPipe(embeddedCountQuerySchema)) query: EmbeddedCountQuery,
   ): Promise<EmbeddedCountResponse> {
-    const types = query.types ?? [...BACKFILLABLE_ENTITIES];
+    const types = query.types && query.types.length > 0 ? query.types : undefined;
 
-    const rows: Array<{ entity_type: string; count: string }> = await this.dataSource.query(
-      `SELECT entity_type, COUNT(*)::text AS count
-         FROM ci_search.embeddings
-        WHERE entity_type = ANY($1)
-        GROUP BY entity_type`,
-      [types],
-    );
+    const builder = this.dataSource
+      .getRepository(EmbeddingEntity)
+      .createQueryBuilder('embedding')
+      .select('embedding.entityType', 'entityType')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('embedding.entityType');
 
-    // Seed every requested type at 0 so the importer always sees a stable key set
-    // (a type with no embeddings yet is absent from the GROUP BY result).
-    const counts: Record<string, number> = {};
-    for (const type of types) {
-      counts[type] = 0;
+    if (types) {
+      builder.where('embedding.entityType IN (:...types)', { types });
     }
 
+    const rows = await builder.getRawMany<{ entityType: string; count: string }>();
+
+    const perType: Record<string, number> = {};
+    let count = 0;
     for (const row of rows) {
-      counts[row.entity_type] = Number(row.count);
+      // COUNT(*) comes back as a bigint string from the pg driver.
+      const n = Number(row.count);
+      perType[row.entityType] = n;
+      count += n;
     }
 
-    const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
-
-    return { counts, total };
+    return { count, perType };
   }
 
   /**
