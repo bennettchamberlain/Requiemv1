@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
+import type { Request, Response } from 'express';
 import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
@@ -19,10 +20,15 @@ import {
 import { INDEXABLE_ENTITIES, type IndexableEntity } from '@ci/domains/search-next';
 
 import {
+  type CommunicationLinkBackfillProgress,
   type CommunicationLinkBackfillResult,
   CommunicationLinkBackfillService,
 } from '../services/CommunicationLinkBackfillService';
-import { type GraphEnrichmentResult, GraphEnrichmentService } from '../services/GraphEnrichmentService';
+import {
+  type GraphEnrichmentProgressCounts,
+  type GraphEnrichmentResult,
+  GraphEnrichmentService,
+} from '../services/GraphEnrichmentService';
 import {
   type DeferralResult,
   type DroppedIndex,
@@ -251,12 +257,43 @@ export class MaintenanceController {
   async linkCommunications(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(linkCommunicationsSchema)) body: LinkCommunicationsRequest,
-  ): Promise<CommunicationLinkBackfillResult> {
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('stream') stream?: string,
+    @Headers('accept') accept?: string,
+  ): Promise<CommunicationLinkBackfillResult | void> {
     const serviceContext = toServiceContext(context);
     const userId = serviceContext.userId;
 
+    const empty: CommunicationLinkBackfillResult = {
+      examined: 0,
+      fromLinked: 0,
+      toLinked: 0,
+      windows: 0,
+      range: null,
+    };
+
+    // Opt-in streaming (NDJSON): one {type:'progress'} line per window then a
+    // final {type:'result'} line. When NOT requested, behave exactly as before:
+    // a single synchronous JSON result. Same JwtOrApiKeyAuthGuard either way.
+    if (wantsStream(stream, accept)) {
+      return this.streamNdjson<CommunicationLinkBackfillResult>(req, res, async (emit) => {
+        if (typeof userId !== 'string') {
+          return empty;
+        }
+
+        return this.communicationLinkBackfillService.backfill(userId, {
+          startTime: body.startTime,
+          endTime: body.endTime,
+          windowDays: body.windowDays,
+          windowLimit: body.windowLimit,
+          onProgress: (partial: CommunicationLinkBackfillProgress) => emit({ type: 'progress', ...partial }),
+        });
+      });
+    }
+
     if (typeof userId !== 'string') {
-      return { examined: 0, fromLinked: 0, toLinked: 0, windows: 0, range: null };
+      return empty;
     }
 
     return this.communicationLinkBackfillService.backfill(userId, {
@@ -284,21 +321,47 @@ export class MaintenanceController {
   async extractGraph(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(extractGraphSchema)) body: ExtractGraphRequest,
-  ): Promise<GraphEnrichmentResult> {
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('stream') stream?: string,
+    @Headers('accept') accept?: string,
+  ): Promise<GraphEnrichmentResult | void> {
     const serviceContext = toServiceContext(context);
     const userId = serviceContext.userId;
 
+    const unauthenticated: GraphEnrichmentResult = {
+      sampledRecords: 0,
+      preferencesExtracted: 0,
+      familyRelationsExtracted: 0,
+      familyRelationsResolved: 0,
+      conceptsWritten: 0,
+      preferenceEdgesWritten: 0,
+      familyEdgesWritten: 0,
+      errors: ['extract-graph requires an authenticated user'],
+    };
+
+    // Opt-in streaming (NDJSON): one {type:'progress'} line per LLM chunk (incl.
+    // failed chunks, so the bar never stalls on an Ollama error) then a final
+    // {type:'result'} line. When NOT requested, the response is the existing
+    // single synchronous JSON. Same JwtOrApiKeyAuthGuard either way.
+    if (wantsStream(stream, accept)) {
+      return this.streamNdjson<GraphEnrichmentResult>(req, res, async (emit) => {
+        if (typeof userId !== 'string') {
+          return unauthenticated;
+        }
+
+        return this.graphEnrichmentService.enrich(userId, {
+          maxCommunications: body.maxCommunications,
+          maxEvents: body.maxEvents,
+          model: body.model,
+          onProgress: (chunksDone: number, chunksTotal: number, partial: GraphEnrichmentProgressCounts) =>
+            emit({ type: 'progress', chunksDone, chunksTotal, ...partial }),
+        });
+      });
+    }
+
     if (typeof userId !== 'string') {
-      return {
-        sampledRecords: 0,
-        preferencesExtracted: 0,
-        familyRelationsExtracted: 0,
-        familyRelationsResolved: 0,
-        conceptsWritten: 0,
-        preferenceEdgesWritten: 0,
-        familyEdgesWritten: 0,
-        errors: ['extract-graph requires an authenticated user'],
-      };
+      return unauthenticated;
     }
 
     return this.graphEnrichmentService.enrich(userId, {
@@ -434,4 +497,61 @@ export class MaintenanceController {
 
     return { count, perType };
   }
+
+  /**
+   * Shared NDJSON streamer for the opt-in streaming maintenance endpoints. Writes
+   * one JSON line per `emit(...)` call (the per-tick {type:'progress'} frames),
+   * then a final {type:'result', ...result} line, then ends the response. Runs
+   * the work via `@Res({ passthrough: false })`-style manual writes; the handler
+   * returns `void` so Nest does not also try to serialize a body.
+   */
+  private async streamNdjson<TResult extends object>(
+    req: Request,
+    res: Response,
+    run: (emit: (line: Record<string, unknown>) => void) => Promise<TResult>,
+  ): Promise<void> {
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    res.flushHeaders?.();
+
+    let clientGone = false;
+    req.on('close', () => {
+      clientGone = true;
+    });
+
+    const emit = (line: Record<string, unknown>) => {
+      if (clientGone || res.writableEnded) {
+        return;
+      }
+
+      res.write(`${JSON.stringify(line)}\n`);
+    };
+
+    try {
+      const result = await run(emit);
+      emit({ type: 'result', ...result });
+    } catch (err) {
+      emit({ type: 'error', error: (err as Error).message });
+    } finally {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    }
+  }
+}
+
+/**
+ * A request opts into NDJSON streaming via `?stream=1` (any truthy-ish value
+ * except '0'/'false') OR an `Accept: application/x-ndjson` header. Anything else
+ * (the default) gets the back-compat synchronous JSON response.
+ */
+function wantsStream(stream: string | undefined, accept: string | undefined): boolean {
+  if (typeof stream === 'string' && stream !== '' && stream !== '0' && stream !== 'false') {
+    return true;
+  }
+
+  return typeof accept === 'string' && accept.toLowerCase().includes('application/x-ndjson');
 }
