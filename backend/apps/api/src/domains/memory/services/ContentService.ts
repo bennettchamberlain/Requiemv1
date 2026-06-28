@@ -50,9 +50,11 @@ export class ContentService {
           sourceType: item.source_type ?? undefined,
           sourceSystem: item.source_system ?? undefined,
           sourceId: item.source_id ?? undefined,
-          user: {
-            id: context.userId,
-          },
+          // Write the owner via the scalar FK column, not the `user` relation:
+          // ci.content.user_id and the relation map to the same DB column, and a
+          // relation-only write was being shadowed to NULL (see ContentEntity.userId).
+          // Mirrors EventService.createManyBatched.
+          userId: context.userId,
         });
 
         const contentResult = await this.contentRepository.save(content);
@@ -249,10 +251,13 @@ export class ContentService {
    * oldest first, so a GraphQL loader can attach a thumbnail to an event
    * without a per-event query. See {@link EventMediaLoader}.
    *
-   * Ownership is scoped through the joined event's `user_id`, NOT
-   * `content.user_id`: the latter is mapped `insert: false` and so is never
-   * populated for importer-created media rows (it sits NULL in the DB). The
-   * linked file is independently re-scoped to the user by `FileService`.
+   * Ownership is scoped through the joined event's `user_id` rather than
+   * `content.user_id`. New inserts now populate `content.user_id` (see
+   * ContentEntity.userId — it used to be mapped `insert: false`, which persisted
+   * NULL), but pre-fix rows stay NULL until the backfill migration runs and the
+   * dedupe "loser" rows it leaves behind never get an owner, so the event join is
+   * the reliable scope here. The linked file is independently re-scoped to the
+   * user by `FileService`.
    */
   async findMediaFilesByEventIds(
     context: UserServiceContext,
