@@ -39,6 +39,78 @@ This is a Yarn workspace monorepo with the following structure:
     └── web-search/             # Web-search MCP server
 ```
 
+## Architecture at a glance
+
+CI-Server is a multi-service stack: a NestJS API and a React/Vite SPA in front of
+a Postgres data tier (pgvector + TimescaleDB + Apache AGE), with Python sidecars
+(HBPE prediction, Summary) driven by Temporal, MinIO for object storage, and
+Ollama for local LLM/embeddings. The diagrams below are rendered by GitHub; for
+the full design (domains, data model, data flows) see
+[docs/architecture/architecture.md](docs/architecture/architecture.md).
+
+### Local dev stack (`make dev`)
+
+`make dev` brings up the whole stack per worktree and fronts it with a single
+Caddy origin at `https://<project>.localhost`:
+
+```mermaid
+flowchart TB
+    Browser["Browser<br/>https://&lt;project&gt;.localhost"]
+
+    subgraph Caddy["Caddy (TLS, :443) — same-origin reverse proxy"]
+      direction LR
+      R["routes by path"]
+    end
+
+    subgraph Overmind["overmind (Procfile, host processes)"]
+      API["api — NestJS<br/>(REST + GraphQL)"]
+      WEB["web — Vite dev server :5173"]
+    end
+
+    subgraph Compose["Docker Compose stack (per-worktree)"]
+      PG[("Postgres 15<br/>pgvector · TimescaleDB · AGE<br/>+ PGBoss job queue")]
+      MINIO[("MinIO<br/>object storage")]
+      TEMP["Temporal<br/>(durable workflows)"]
+      SUM["summary service"]
+      HBPE["hbpe service"]
+    end
+
+    OLLAMA["Ollama<br/>(local LLM + embeddings, host :11434)"]
+
+    Browser --> Caddy
+    R -->|"/api, /graphql"| API
+    R -->|"/static"| MINIO
+    R -->|"/"| WEB
+    API <--> PG
+    API <--> MINIO
+    API --> TEMP
+    API <--> OLLAMA
+    TEMP --> SUM
+    TEMP --> HBPE
+    SUM --> PG
+    HBPE --> PG
+    SUM --> OLLAMA
+```
+
+A startup supervisor (`scripts/dev-stack`) allocates ports, brings up the Compose
+services, runs migrations (dbmate), registers the Caddy route, and runs `api` +
+`web` via overmind. Conventional host ports are used when free, with ephemeral
+fallbacks so multiple worktrees never collide.
+
+### Caddy request routing
+
+Because everything is served from one origin, the app is same-origin with no
+CORS:
+
+```mermaid
+flowchart LR
+    C["https://&lt;project&gt;.localhost"]
+    C -->|"/api/*"| API["api (NestJS REST)"]
+    C -->|"/graphql"| GQL["api (Apollo GraphQL)"]
+    C -->|"/static/*"| OBJ["MinIO object store"]
+    C -->|"everything else"| WEB["web (Vite SPA)"]
+```
+
 ## TL;DR - Hermes
 
 ### STANDALONE SETUP
@@ -281,6 +353,10 @@ Then open `https://<project>.localhost` (e.g. **https://ci-server.localhost**) a
 Username: jsmith@example.com
 Password: ]60.a6{CJ}lB*rHAp;w;
 ```
+
+With the stack up and seeded, this is also the state from which to capture UI
+screenshots for the docs — see the [screenshot capture guide](docs/screenshots.md)
+for the screen list, naming, and conventions.
 
 If something is wedged, reset the environment (stops the stack and removes this project's volumes/networks):
 
