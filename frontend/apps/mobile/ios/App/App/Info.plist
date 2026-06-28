@@ -64,6 +64,17 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!--
+		  CI-Server appliances are frequently reached over plain HTTP on a LAN or
+		  tailnet (the user's own self-hosted server). Allow cleartext loads so the
+		  app can connect to an http:// server entered on the /server screen — the
+		  target is always a user-specified, first-party appliance.
+		-->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

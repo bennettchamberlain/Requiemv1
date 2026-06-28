@@ -44,6 +44,13 @@ const config: CapacitorConfig = {
     // bundled (production) build that serves the local web assets.
     ...(process.env.CAP_SERVER_URL ? { url: process.env.CAP_SERVER_URL, cleartext: true } : {}),
   },
+  android: {
+    // CI-Server appliances are often plain http on a LAN/tailnet. The webview is
+    // served from https://localhost, so let it load http:// content (mixed content)
+    // — paired with android:usesCleartextTraffic="true" in AndroidManifest.xml.
+    // iOS uses NSAppTransportSecurity (Info.plist) for the same purpose.
+    allowMixedContent: true,
+  },
 };
 
 export default config;
