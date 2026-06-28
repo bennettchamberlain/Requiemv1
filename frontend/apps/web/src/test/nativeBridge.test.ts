@@ -1,4 +1,7 @@
 import {
+  addBackButtonListener,
+  exitApp,
+  hideSplashScreen,
   openExternalUrl,
   secureStorageGet,
   secureStorageRemove,
@@ -112,5 +115,69 @@ describe('nativeBridge — native uses the Capacitor plugins', () => {
     await openExternalUrl('https://idp.example.com/auth');
 
     expect(browserOpen).toHaveBeenCalledWith({ url: 'https://idp.example.com/auth' });
+  });
+});
+
+describe('nativeBridge — app lifecycle (back button, exit, splash)', () => {
+  function fakeShellWindow() {
+    const remove = vi.fn();
+    let backHandler: ((e: { canGoBack?: boolean }) => void) | undefined;
+    const addListener = vi.fn(async (_event: string, listener: (e: { canGoBack?: boolean }) => void) => {
+      backHandler = listener;
+
+      return { remove };
+    });
+    const exit = vi.fn(async () => {});
+    const splashHide = vi.fn(async () => {});
+
+    const win = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        Plugins: {
+          App: { addListener, exitApp: exit },
+          SplashScreen: { hide: splashHide },
+        },
+      },
+    };
+
+    return { win, remove, exit, splashHide, fireBack: (canGoBack: boolean) => backHandler?.({ canGoBack }) };
+  }
+
+  it('registers the back button, forwards canGoBack, and unsubscribes', async () => {
+    const { win, remove, fireBack } = fakeShellWindow();
+    setWindow(win);
+
+    const seen: boolean[] = [];
+    const unsubscribe = await addBackButtonListener((canGoBack) => seen.push(canGoBack));
+
+    fireBack(true);
+    fireBack(false);
+    expect(seen).toEqual([true, false]);
+
+    unsubscribe();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('exitApp and hideSplashScreen call the plugins', async () => {
+    const { win, exit, splashHide } = fakeShellWindow();
+    setWindow(win);
+
+    await exitApp();
+    await hideSplashScreen();
+
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(splashHide).toHaveBeenCalledTimes(1);
+  });
+
+  it('is inert on web: back listener is a no-op and exit/splash do not throw', async () => {
+    setWindow({});
+
+    const handler = vi.fn();
+    const unsubscribe = await addBackButtonListener(handler);
+    unsubscribe();
+
+    await expect(exitApp()).resolves.toBeUndefined();
+    await expect(hideSplashScreen()).resolves.toBeUndefined();
+    expect(handler).not.toHaveBeenCalled();
   });
 });

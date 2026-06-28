@@ -16,6 +16,10 @@ export {
 export { createHookContext } from './src/utils/createHookContext';
 export { fetchJson } from './src/utils/fetchJson';
 export {
+  addAppStateListener,
+  addBackButtonListener,
+  exitApp,
+  hideSplashScreen,
   openExternalUrl,
   secureStorageGet,
   secureStorageRemove,

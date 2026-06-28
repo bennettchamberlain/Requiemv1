@@ -130,6 +130,22 @@ export const ConfigSchema = z.object({
   graphql: z.object({
     maxQueryComplexity: z.number().int(),
   }),
+  // Local-first sync (PowerSync). The server issues short-lived client tokens via
+  // /api/powersync/token; the sync engine runs in the `powersync` container. Empty
+  // url/jwtSecret = feature scaffolded but not enabled (the endpoint returns 503).
+  // See infrastructure/powersync/README.md.
+  powersync: z.object({
+    /** Public URL of the PowerSync service the client connects to. */
+    url: z.string().default(''),
+    /** Shared HS256 secret the PowerSync service's client_auth trusts. */
+    jwtSecret: z.string().default(''),
+    /** Audience claim the PowerSync service expects. */
+    audience: z.string().default('powersync'),
+    /** Client token lifetime (the SDK refreshes via fetchCredentials). */
+    tokenTtl: z.string().default('300s'),
+    /** Key id set in the JWT header, matched against the PowerSync jwks entry. */
+    jwtKid: z.string().default('ci-powersync-hs256'),
+  }),
   services: z.object({
     ollama: z.object({
       host: z.string(),

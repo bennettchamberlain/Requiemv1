@@ -78,6 +78,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@capacitor/splash-screen@npm:^7.0.0":
+  version: 7.0.5
+  resolution: "@capacitor/splash-screen@npm:7.0.5"
+  peerDependencies:
+    "@capacitor/core": ">=7.0.0"
+  checksum: 10c0/256bf06d142dff9484caa31e31aaaef2710a9d082d3262d75f178b36fd9dde410a2ae71bd346e22035dca7b47fc2f5f15e9589b12264592f548fd2ed432b1ea1
+  languageName: node
+  linkType: hard
+
 "@ci/fe-mobile@workspace:.":
   version: 0.0.0-use.local
   resolution: "@ci/fe-mobile@workspace:."
@@ -88,6 +97,7 @@ __metadata:
     "@capacitor/cli": "npm:^7.0.0"
     "@capacitor/core": "npm:^7.0.0"
     "@capacitor/ios": "npm:^7.0.0"
+    "@capacitor/splash-screen": "npm:^7.0.0"
     capacitor-secure-storage-plugin: "npm:^0.11.0"
     typescript: "npm:^5.8.3"
   languageName: unknown
