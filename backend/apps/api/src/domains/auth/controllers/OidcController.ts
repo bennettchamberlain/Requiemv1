@@ -1,22 +1,44 @@
 import { createHash, randomBytes } from 'crypto';
 
-import { Controller, Get, HttpCode, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 import parseDuration from 'parse-duration';
 import { Agent, fetch as undiciFetch } from 'undici';
+import { z } from 'zod';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
+import { OidcNativeCodeService } from '../services/OidcNativeCodeService';
 
 const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
 const STATE_COOKIE = 'oidc_state';
 const PKCE_COOKIE = 'oidc_pkce';
+// Carries the "this flow was launched by the native app" signal through the IdP round
+// trip. Set alongside state/pkce on initiate and read on callback; both cookies live on
+// CI-Server's own domain in the SAME system browser, so they survive the redirect.
+const CLIENT_COOKIE = 'oidc_client';
+const NATIVE_CLIENT = 'native';
+
+const nativeExchangeSchema = z.object({
+  code: z.string().min(1),
+});
 
 // Allow self-signed certificates when the OIDC issuer is on localhost (dev only).
 // Short keepAlive prevents stale connections to Wrangler's dev server from hanging.
@@ -52,9 +74,18 @@ export class OidcController {
     private readonly authService: AuthService,
     private readonly csrfService: CsrfService,
     private readonly featureService: FeatureService,
+    private readonly oidcNativeCodeService: OidcNativeCodeService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(OidcController.name);
+  }
+
+  /** Build the native deep-link return URL (`<scheme>://oidc/callback?...`). */
+  private nativeRedirectUrl(params: Record<string, string>): string {
+    const scheme = config.auth.oidc.nativeRedirectScheme || 'companion';
+    const search = new URLSearchParams(params).toString();
+
+    return `${scheme}://oidc/callback${search ? `?${search}` : ''}`;
   }
 
   /**
@@ -74,7 +105,7 @@ export class OidcController {
    */
   @Get()
   @HttpCode(302)
-  initiate(@Req() req: Request, @Res() res: Response) {
+  initiate(@Query('client') client: string | undefined, @Req() req: Request, @Res() res: Response) {
     const { issuerUrl } = config.auth.oidc;
 
     if (!issuerUrl) {
@@ -106,6 +137,18 @@ export class OidcController {
       maxAge: 10 * 60 * 1000,
     });
 
+    // Remember whether the native app launched this flow, so the callback returns the
+    // result via the custom-scheme deep link instead of a browser session cookie.
+    if (client === NATIVE_CLIENT) {
+      res.cookie(CLIENT_COOKIE, NATIVE_CLIENT, {
+        httpOnly: true,
+        secure: req.secure,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 10 * 60 * 1000,
+      });
+    }
+
     const authorizeUrl = new URL('/api/auth/oauth2/authorize', issuerUrl);
 
     authorizeUrl.searchParams.set('client_id', 'ci-server');
@@ -130,19 +173,37 @@ export class OidcController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    // Whether the native app launched this flow (set on `initiate`). When native, every
+    // exit — success or failure — returns via the custom-scheme deep link rather than a
+    // browser redirect, so the system browser can hand control back to the app.
+    const isNative = req.cookies?.[CLIENT_COOKIE] === NATIVE_CLIENT;
+
+    res.clearCookie(CLIENT_COOKIE, {
+      httpOnly: true,
+      secure: req.secure,
+      sameSite: 'lax',
+      path: '/',
+    });
+
+    // Route a failure to the native deep link (`?error=...`) or the web login page.
+    const failRedirect = (reason: string) =>
+      isNative
+        ? res.redirect(this.nativeRedirectUrl({ error: reason }))
+        : res.redirect(`/login?error=${encodeURIComponent(reason)}`);
+
     if (error) {
-      return res.redirect(`/login?error=${encodeURIComponent(error)}`);
+      return failRedirect(error);
     }
 
     if (!code || !state) {
-      return res.redirect('/login?error=missing_params');
+      return failRedirect('missing_params');
     }
 
     // Validate state matches cookie
     const storedState = req.cookies?.[STATE_COOKIE];
 
     if (!storedState || storedState !== state) {
-      return res.redirect('/login?error=invalid_state');
+      return failRedirect('invalid_state');
     }
 
     // Clear state cookie
@@ -164,13 +225,13 @@ export class OidcController {
     });
 
     if (!codeVerifier) {
-      return res.redirect('/login?error=missing_pkce');
+      return failRedirect('missing_pkce');
     }
 
     const { issuerUrl } = config.auth.oidc;
 
     if (!issuerUrl) {
-      return res.redirect('/login?error=oidc_not_configured');
+      return failRedirect('oidc_not_configured');
     }
 
     const callbackUrl = this.getCallbackUrl(req);
@@ -199,7 +260,7 @@ export class OidcController {
 
         this.logger.error(`OIDC token exchange failed: ${tokenResponse.status} ${errorBody}`);
 
-        return res.redirect('/login?error=token_exchange_failed');
+        return failRedirect('token_exchange_failed');
       }
 
       const tokens = (await tokenResponse.json()) as {
@@ -221,7 +282,7 @@ export class OidcController {
       if (!userInfoResponse.ok) {
         this.logger.error(`OIDC userinfo failed: ${userInfoResponse.status}`);
 
-        return res.redirect('/login?error=userinfo_failed');
+        return failRedirect('userinfo_failed');
       }
 
       const userInfo = (await userInfoResponse.json()) as {
@@ -231,7 +292,7 @@ export class OidcController {
       };
 
       if (!userInfo.email) {
-        return res.redirect('/login?error=no_email');
+        return failRedirect('no_email');
       }
 
       // Find existing user or create a new one
@@ -247,7 +308,7 @@ export class OidcController {
             `OIDC sign-in rejected for unknown user (signup codes required): ${userInfo.email}`,
           );
 
-          return res.redirect('/login?error=signup_code_required');
+          return failRedirect('signup_code_required');
         }
 
         // Auto-create account for Portal-authenticated users.
@@ -262,7 +323,17 @@ export class OidcController {
         );
       }
 
-      // Issue session tokens (same flow as local login)
+      // Native: do NOT set a browser session cookie (it cannot reach the app's webview
+      // cross-origin). Instead mint a short-lived, single-use code and deep-link it back
+      // to the app, which exchanges it for a JWT at /oidc/native/exchange. No long-lived
+      // secret ever travels in the deep-link URL.
+      if (isNative) {
+        const oneTimeCode = this.oidcNativeCodeService.issue(user.id);
+
+        return res.redirect(this.nativeRedirectUrl({ code: oneTimeCode }));
+      }
+
+      // Web: issue session tokens (same flow as local login).
       const sessionToken = await this.authService.issueSessionToken(
         user.id,
         this.authService.getSessionMetadata(req),
@@ -289,7 +360,32 @@ export class OidcController {
     } catch (err) {
       this.logger.error('OIDC callback error', err instanceof Error ? err.stack : String(err));
 
-      return res.redirect('/login?error=oidc_failed');
+      return failRedirect('oidc_failed');
     }
+  }
+
+  /**
+   * Native-only: exchange the short-lived one-time code delivered by the
+   * `<scheme>://oidc/callback?code=...` deep link for a real access token (JWT). The app
+   * then trades that JWT for a durable API key — the same credential path as password
+   * login. The code is single-use and expires after ~2 minutes; redeeming it here
+   * invalidates it, so it is replay-safe. Unauthenticated by design: the one-time code
+   * IS the bearer of proof, and it never grants access beyond a single JWT issuance.
+   */
+  @Post('native/exchange')
+  @HttpCode(200)
+  nativeExchange(@Body(new ValidationPipe(nativeExchangeSchema)) input: { code: string }) {
+    const userId = this.oidcNativeCodeService.redeem(input.code);
+
+    if (!userId) {
+      // Generic message — do not distinguish "expired" from "unknown" to a caller.
+      this.logger.warn('OIDC native code exchange rejected (invalid or expired code)');
+
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+
+    const accessToken = this.authService.issueAccessToken(userId);
+
+    return { accessToken };
   }
 }

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  addAppUrlOpenListener,
   buildApiUrl,
   createHookContext,
   fetchJson,
   isNativePlatform,
+  parseOidcCallbackUrl,
   secureStorageGet,
   secureStorageRemove,
   secureStorageSet,
@@ -81,6 +83,32 @@ async function mintAndStoreApiKey(jwt: string): Promise<string | null> {
   setApiKey(created.key);
 
   return created.key;
+}
+
+interface OidcNativeExchangeResponse {
+  accessToken: string;
+}
+
+// Native OIDC return path: exchange the short-lived one-time code carried by the
+// `companion://oidc/callback?code=...` deep link for a real JWT, then trade that JWT
+// for a durable API key — identical to the password path. The one-time code is single
+// use and short-lived; no long-lived secret ever travels in the deep-link URL.
+async function completeOidcNativeSignIn(code: string): Promise<string | null> {
+  const data = await fetchJson<OidcNativeExchangeResponse>('/api/authenticate/oidc/native/exchange', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ code }),
+  });
+
+  const jwt = data?.accessToken ?? null;
+
+  if (!jwt) {
+    return null;
+  }
+
+  return mintAndStoreApiKey(jwt);
 }
 
 type ReturnValue = [
@@ -290,6 +318,63 @@ function useAuth(): ReturnValue {
   }, []);
 
   useAutoRefreshToken(accessToken, refresh);
+
+  // Native only: complete "Sign in with CI Portal" when the system browser redirects
+  // back into the app via the `companion://oidc/callback?...` deep link. Unrelated
+  // deep links (other schemes/paths) parse to null and are ignored.
+  useEffect(() => {
+    if (!isNativePlatform()) {
+      return;
+    }
+
+    let unsubscribe = () => {};
+
+    let cancelled = false;
+
+    void addAppUrlOpenListener((url) => {
+      const params = parseOidcCallbackUrl(url);
+
+      if (!params) {
+        return;
+      }
+
+      if (params.error || !params.code) {
+        setLoginError(new Error(params.error || 'oidc_failed'));
+
+        return;
+      }
+
+      const { code } = params;
+
+      void (async () => {
+        try {
+          const key = await completeOidcNativeSignIn(code);
+
+          if (!key) {
+            setLoginError(new Error('oidc_exchange_failed'));
+
+            return;
+          }
+
+          setNativeApiKey(key);
+          navigate('/', { replace: true });
+        } catch (err: unknown) {
+          setLoginError(err);
+        }
+      })();
+    }).then((cleanup) => {
+      if (cancelled) {
+        cleanup();
+      } else {
+        unsubscribe = cleanup;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [navigate]);
 
   useEffect(() => {
     const handleAuthMessage = (event: MessageEvent) => {

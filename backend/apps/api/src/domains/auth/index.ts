@@ -38,6 +38,7 @@ import { ApiKeyStrategy } from './services/ApiKeyStrategy';
 import { AuthService } from './services/AuthService';
 import { CsrfService } from './services/CsrfService';
 import { JwtStrategy } from './services/JwtStrategy';
+import { OidcNativeCodeService } from './services/OidcNativeCodeService';
 import { SignupCodeService } from './services/SignupCodeService';
 
 /**
@@ -63,6 +64,7 @@ import { SignupCodeService } from './services/SignupCodeService';
     CsrfService,
     ApiKeyService,
     ApiKeyStrategy,
+    OidcNativeCodeService,
   ],
   controllers: [SessionController, SignupController, ApiKeyController, OidcController],
   exports: [SignupCodeService, ApiKeyService],
