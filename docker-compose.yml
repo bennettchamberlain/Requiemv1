@@ -76,7 +76,7 @@ services:
   # pinning the image version. NOTE: verify the image tag/command against the
   # PowerSync release you deploy.
   powersync:
-    image: journeyapps/powersync-service:latest
+    image: journeyapps/powersync-service:1.23.0
     command: ["start", "-r", "unified"]
     volumes:
       - ./infrastructure/powersync:/config:ro

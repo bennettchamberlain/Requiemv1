@@ -31,7 +31,7 @@ import config from '@ci/configuration';
   app.enableCors({
     origin: [...nativeAppOrigins, ...config.cors.allowedOrigins],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-API-Key'],
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   });
 

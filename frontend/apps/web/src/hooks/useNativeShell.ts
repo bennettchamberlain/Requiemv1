@@ -24,6 +24,10 @@ export function useNativeShell(): void {
 
     void hideSplashScreen();
 
+    // `addBackButtonListener` is async; if the effect cleans up before it resolves,
+    // remove the listener as soon as it arrives (the `disposed` guard) so it can't
+    // leak past unmount.
+    let disposed = false;
     let unsubscribe = () => {};
 
     void addBackButtonListener((canGoBack) => {
@@ -33,10 +37,15 @@ export function useNativeShell(): void {
         void exitApp();
       }
     }).then((fn) => {
-      unsubscribe = fn;
+      if (disposed) {
+        fn();
+      } else {
+        unsubscribe = fn;
+      }
     });
 
     return () => {
+      disposed = true;
       unsubscribe();
     };
   }, [navigate]);
