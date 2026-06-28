@@ -1,9 +1,15 @@
 import { StrictMode } from 'react';
 
+import { initApiBaseUrl } from '@ci/common';
 import { createRoot } from 'react-dom/client';
 
 import './styles/index.css';
 import App from './App.tsx';
+
+// Resolve the API origin before anything renders. No-op on web (stays same-origin);
+// on the native Capacitor shell this loads the user-configured server URL so Apollo
+// and the auth/fetch layer target the right host from the first request.
+initApiBaseUrl();
 
 // Facebook OAuth appends #_=_ to redirect URLs; it can break React Router and cause blank screens.
 // Clear it as early as possible so routing works correctly.

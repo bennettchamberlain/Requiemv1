@@ -5,6 +5,9 @@
   "logging": {
     "level": "info"
   },
+  "cors": {
+    "allowedOrigins": []
+  },
   "auth": {
     "local": {
       "saltRounds": 10

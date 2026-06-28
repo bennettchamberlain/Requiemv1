@@ -1,0 +1,22 @@
+# Dependencies (this workspace uses the node-modules linker — see .yarnrc.yml)
+node_modules/
+
+# The generated ios/ and android/ native projects ARE committed, but their build
+# artifacts and copied web assets are not.
+ios/App/Pods/
+ios/App/build/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/Assets.xcassets/Splash.imageset/*.png
+
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/local.properties
+android/.idea/
+android/capacitor-cordova-android-plugins/
+
+*.log
+.DS_Store

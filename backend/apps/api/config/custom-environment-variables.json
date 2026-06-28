@@ -4,6 +4,9 @@
     "__name": "PORT",
     "__format": "json"
   },
+  "cors": {
+    "allowedOrigins": "CORS_ALLOWED_ORIGINS"
+  },
   "auth": {
     "jwt": {
       "authTokenSecret": "AUTH_TOKEN_SECRET",

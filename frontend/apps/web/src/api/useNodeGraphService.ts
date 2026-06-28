@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 
+import { buildApiUrl } from '@ci/common';
+
 import { useAuth } from '@/hooks';
 
 export interface NodeDetailsResponse {
@@ -204,7 +206,7 @@ export function useNodeGraphService({ entityId, nodeLimit = 25, maxDepth = 1, sk
         maxEdges: String(requestedMaxEdges),
       });
 
-      const response = await fetch(`/api/graph/node?${params.toString()}`, {
+      const response = await fetch(buildApiUrl(`/api/graph/node?${params.toString()}`), {
         headers: tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : undefined,
       });
 
@@ -228,7 +230,7 @@ export function useNodeGraphService({ entityId, nodeLimit = 25, maxDepth = 1, sk
 
       if (depth > 1) {
         try {
-          const fallbackResponse = await fetch('/api/graph/data', {
+          const fallbackResponse = await fetch(buildApiUrl('/api/graph/data'), {
             headers: tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : undefined,
           });
 

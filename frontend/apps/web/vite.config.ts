@@ -24,83 +24,91 @@ function getAllowedHosts(): string[] {
   }
 }
 
+// In a Capacitor native build the web assets are served from the local app bundle,
+// where the Workbox service worker fights Capacitor's own asset serving and the
+// now cross-origin `/api` calls. The mobile build sets VITE_DISABLE_PWA=true to
+// drop the PWA plugin (Vite ignores falsy entries in `plugins`); offline support
+// on native is provided by the on-device SQLite/local-first layer instead.
+const disablePwa = process.env.VITE_DISABLE_PWA === 'true';
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      manifest: {
-        name: 'Companion Intelligence',
-        short_name: 'Companion',
-        description: 'Your AI-powered assistant',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
-        display: 'standalone',
-        orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
-        icons: [
-          {
-            src: '/logo-180x180.png',
-            sizes: '180x180',
-            type: 'image/png',
-            purpose: 'any maskable',
-          },
-          {
-            src: '/logo-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any maskable',
-          },
-          {
-            src: '/logo-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable',
-          },
-        ],
-      },
-      devOptions: {
-        enabled: false,
-        type: 'module',
-      },
-      workbox: {
-        // Pre-caches all matching assets.
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            // Match any request that ends with .png, .jpg, .jpeg or .svg.
-            // Treat these as static files that should be persisted in the
-            // application cache.
-            urlPattern: /\.(?:png|jpg|jpeg|svg)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images',
-              expiration: {
-                maxEntries: 60,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 Days
-              },
+    !disablePwa &&
+      VitePWA({
+        registerType: 'autoUpdate',
+        manifest: {
+          name: 'Companion Intelligence',
+          short_name: 'Companion',
+          description: 'Your AI-powered assistant',
+          theme_color: '#ffffff',
+          background_color: '#ffffff',
+          display: 'standalone',
+          orientation: 'portrait',
+          scope: '/',
+          start_url: '/',
+          icons: [
+            {
+              src: '/logo-180x180.png',
+              sizes: '180x180',
+              type: 'image/png',
+              purpose: 'any maskable',
             },
-          },
-          {
-            // Match API requests, excluding OIDC auth redirects which cross origins
-            urlPattern: /\/api\/(?!authenticate\/oidc)/,
-            handler: 'NetworkOnly',
-            options: {
-              backgroundSync: {
-                name: 'api-queue',
-                options: {
-                  maxRetentionTime: 24 * 60,
+            {
+              src: '/logo-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any maskable',
+            },
+            {
+              src: '/logo-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable',
+            },
+          ],
+        },
+        devOptions: {
+          enabled: false,
+          type: 'module',
+        },
+        workbox: {
+          // Pre-caches all matching assets.
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+
+          navigateFallbackDenylist: [/^\/api\//],
+          runtimeCaching: [
+            {
+              // Match any request that ends with .png, .jpg, .jpeg or .svg.
+              // Treat these as static files that should be persisted in the
+              // application cache.
+              urlPattern: /\.(?:png|jpg|jpeg|svg)$/,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'images',
+                expiration: {
+                  maxEntries: 60,
+                  maxAgeSeconds: 30 * 24 * 60 * 60, // 30 Days
                 },
               },
             },
-          },
-        ],
-      },
-    }),
+            {
+              // Match API requests, excluding OIDC auth redirects which cross origins
+              urlPattern: /\/api\/(?!authenticate\/oidc)/,
+              handler: 'NetworkOnly',
+              options: {
+                backgroundSync: {
+                  name: 'api-queue',
+                  options: {
+                    maxRetentionTime: 24 * 60,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      }),
   ],
   resolve: {
     alias: {

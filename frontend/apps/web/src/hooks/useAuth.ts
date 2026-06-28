@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { createHookContext, fetchJson } from '@ci/common';
+import { buildApiUrl, createHookContext, fetchJson } from '@ci/common';
 import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -72,7 +72,7 @@ function useAuth(): ReturnValue {
 
       try {
         // Obtain a pre-auth CSRF token before submitting credentials
-        await fetch('/api/authenticate/csrf', {
+        await fetch(buildApiUrl('/api/authenticate/csrf'), {
           credentials: 'include',
         });
 
@@ -103,7 +103,7 @@ function useAuth(): ReturnValue {
 
   const logout = useCallback(async () => {
     try {
-      const response = await fetch('/api/authenticate/logout', {
+      const response = await fetch(buildApiUrl('/api/authenticate/logout'), {
         method: 'POST',
         headers: withCsrfHeader(),
         credentials: 'include',
@@ -132,7 +132,7 @@ function useAuth(): ReturnValue {
 
       try {
         // Obtain a pre-auth CSRF token before submitting signup
-        await fetch('/api/authenticate/csrf', {
+        await fetch(buildApiUrl('/api/authenticate/csrf'), {
           credentials: 'include',
         });
 

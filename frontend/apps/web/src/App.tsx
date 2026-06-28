@@ -1,7 +1,14 @@
-import { type ReactNode, lazy } from 'react';
+import { type ReactNode, lazy, useEffect } from 'react';
 
-import { DeviceLayoutProvider } from '@ci/common';
-import { BrowserRouter as Router, Routes, Route, useLocation, type Location } from 'react-router-dom';
+import { DeviceLayoutProvider, getApiBaseUrl, isNativePlatform } from '@ci/common';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+  type Location,
+} from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
@@ -40,6 +47,7 @@ const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
+const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
@@ -70,7 +78,17 @@ function Providers({ children }: { children: ReactNode }) {
 function AppRoutes() {
   const { isFeatureEnabled } = useFeatures();
   const location = useLocation();
+  const navigate = useNavigate();
   const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
+
+  // On the native app the API origin must be configured before anything else can
+  // load. If we're running natively with no server set, route to the setup screen.
+  // Inert on web (isNativePlatform() is false there).
+  useEffect(() => {
+    if (isNativePlatform() && !getApiBaseUrl() && location.pathname !== '/server') {
+      navigate('/server', { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   return (
     <>
@@ -103,6 +121,8 @@ function AppRoutes() {
         />
 
         <Route element={<CenteredLayout />}>
+          <Route path="/server" element={<ServerSettingsPage />} />
+
           <Route
             path="/login"
             element={

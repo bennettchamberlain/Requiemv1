@@ -1,3 +1,5 @@
+import { buildApiUrl } from './apiBase';
+
 interface Opts extends RequestInit {
   timeout?: number;
 }
@@ -13,7 +15,11 @@ export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T |
     rest.signal = controller.signal;
   }
 
-  const res = await fetch(input, rest);
+  // String paths (e.g. `/api/...`) are resolved against the configured API origin.
+  // On web this is a no-op (origin is ''); on native it targets the user's server.
+  const resolved = typeof input === 'string' ? buildApiUrl(input) : input;
+
+  const res = await fetch(resolved, rest);
 
   if (timeoutId != null) {
     clearTimeout(timeoutId);

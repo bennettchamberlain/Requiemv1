@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
+import { buildApiUrl, Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Table, Card, ToggleGroup, Badge } from '@ci/shadcn';
 import {
   AlertCircle,
@@ -59,7 +59,7 @@ export function PromptsPage() {
         throw new Error('Authentication token not found');
       }
 
-      const response = await fetch('/api/answers', {
+      const response = await fetch(buildApiUrl('/api/answers'), {
         headers: {
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
@@ -167,7 +167,7 @@ export function PromptsPage() {
       throw new Error('Authentication token not found');
     }
 
-    const response = await fetch(`/api/answers/${answerId}`, {
+    const response = await fetch(buildApiUrl(`/api/answers/${answerId}`), {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${authToken}`,

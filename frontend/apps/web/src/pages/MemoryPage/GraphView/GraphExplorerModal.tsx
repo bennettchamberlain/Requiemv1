@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { buildApiUrl } from '@ci/common';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import { Badge, Button, Input, Label, Separator, Slider, cn } from '@ci/shadcn';
 import { AlertCircle, Anchor, Loader2, Sparkles, Users } from '@ci/shadcn/icons';
@@ -297,7 +298,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
           params.set('to', dateToParam);
         }
 
-        const response = await fetch(`/api/graph/search?${params.toString()}`, {
+        const response = await fetch(buildApiUrl(`/api/graph/search?${params.toString()}`), {
           headers: {
             Authorization: `Bearer ${authToken}`,
           },

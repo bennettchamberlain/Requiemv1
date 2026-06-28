@@ -22,6 +22,24 @@ export const ConfigSchema = z.object({
   logging: z.object({
     level: z.string(),
   }),
+  // Cross-origin allowlist for non-same-origin clients — notably the native
+  // Capacitor app, whose webview origin is capacitor://localhost (iOS) or
+  // http(s)://localhost (Android). The web app is served same-origin behind the
+  // proxy and needs no entry here. The fixed native origins are always allowed in
+  // main.ts; this list is the operator-extensible addition, parsed from a
+  // comma-separated CORS_ALLOWED_ORIGINS env var.
+  cors: z.object({
+    allowedOrigins: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        return val
+          .split(',')
+          .map((o) => o.trim())
+          .filter((o) => o.length > 0);
+      }
+
+      return val;
+    }, z.array(z.string()).default([])),
+  }),
   auth: z.object({
     local: z.object({
       saltRounds: z.number(),

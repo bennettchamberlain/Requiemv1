@@ -13,7 +13,8 @@
   "workspaces": [
     "backend/apps/*",
     "frontend/apps/*",
-    "frontend/packages/*"
+    "frontend/packages/*",
+    "!frontend/apps/mobile"
   ],
   "resolutions": {
     "@protobufjs/utf8": "^1.1.1",

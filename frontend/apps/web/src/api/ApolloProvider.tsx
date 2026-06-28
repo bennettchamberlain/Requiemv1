@@ -7,6 +7,7 @@ import {
   createHttpLink,
 } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
+import { buildApiUrl } from '@ci/common';
 
 import introspectionResult from '@/graphql/possibleTypes';
 import { useAuth } from '@/hooks';
@@ -20,7 +21,7 @@ export function ApolloProvider({ children }: { children: ReactNode }) {
 
   const client = useMemo(() => {
     const httpLink = createHttpLink({
-      uri: '/api/graphql',
+      uri: buildApiUrl('/api/graphql'),
     });
 
     const authLink = setContext((_, { headers }) => {
