@@ -274,13 +274,15 @@ describe('SessionController', () => {
   });
 
   describe('GET /authenticate/csrf', () => {
-    it('should set an CSRF token cookie', async () => {
-      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(204);
+    it('should set a CSRF token cookie and return the token in the body', async () => {
+      const response = await request(app.getHttpServer()).get('/authenticate/csrf').expect(200);
 
       expect(mockCsrfService.generateToken).toHaveBeenCalled();
       const cookies = parseCookies(response);
       expect(cookies[CSRF_COOKIE_NAME]).toBeDefined();
       expect(cookies[CSRF_COOKIE_NAME].value).toBe(MOCK_CSRF_TOKEN);
+      // Body token lets cookie-less native clients echo it as the x-csrf-token header.
+      expect(response.body.csrfToken).toBe(MOCK_CSRF_TOKEN);
     });
   });
 
@@ -291,8 +293,10 @@ describe('SessionController', () => {
         throw new ForbiddenException('Missing CSRF token');
       });
 
+      // Browser request (carries the CSRF cookie) → strict double-submit path.
       await request(app.getHttpServer())
         .post('/authenticate')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
         .send({ username: 'test@example.com', password: 'password123' })
         .expect(403);
     });
@@ -305,7 +309,30 @@ describe('SessionController', () => {
 
       await request(app.getHttpServer())
         .post('/authenticate/refresh')
-        .set('Cookie', [`${COOKIE_NAME}=session-token-value`])
+        .set('Cookie', [`${COOKIE_NAME}=session-token-value`, `${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .expect(403);
+    });
+
+    it('should accept a cookie-less request with a validly-signed CSRF header (native)', async () => {
+      mockCsrfService.verifyToken.mockReturnValueOnce(true);
+
+      await request(app.getHttpServer())
+        .post('/authenticate')
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
+        .send({ username: 'test@example.com', password: 'password123' })
+        .expect(200);
+
+      expect(mockCsrfService.verifyToken).toHaveBeenCalledWith(MOCK_CSRF_TOKEN);
+      expect(mockCsrfService.validateToken).not.toHaveBeenCalled();
+    });
+
+    it('should reject a cookie-less request whose CSRF header token is invalid', async () => {
+      mockCsrfService.verifyToken.mockReturnValueOnce(false);
+
+      await request(app.getHttpServer())
+        .post('/authenticate')
+        .set('X-CSRF-Token', 'tampered.token')
+        .send({ username: 'test@example.com', password: 'password123' })
         .expect(403);
     });
 

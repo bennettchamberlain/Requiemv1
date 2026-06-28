@@ -25,7 +25,16 @@ const API_KEY_ID_STORAGE = 'ci.apiKeyId';
 
 const CSRF_COOKIE_NAME = 'csrfToken';
 
+// Native clients run in a cross-origin webview and can neither read nor send the
+// SameSite=Strict CSRF cookie, so they capture the token from the
+// `/api/authenticate/csrf` response body and echo it as the header instead.
+let nativeCsrfToken: string | null = null;
+
 function getCsrfToken(): string | undefined {
+  if (isNativePlatform()) {
+    return nativeCsrfToken ?? undefined;
+  }
+
   const match = document.cookie.split('; ').find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
 
   return match?.split('=').slice(1).join('=');
@@ -150,17 +159,27 @@ function useAuth(): ReturnValue {
       setLoginError(null);
 
       try {
-        // Obtain a pre-auth CSRF token before submitting credentials
-        await fetch(buildApiUrl('/api/authenticate/csrf'), {
-          credentials: 'include',
+        // Obtain a pre-auth CSRF token before submitting credentials. Native clients
+        // are cookie-less: they read the signed token from the response body and send
+        // it as the header, with `credentials: 'omit'` so the request isn't a
+        // credentialed cross-origin call (which would require
+        // Access-Control-Allow-Credentials the appliance/proxy may not send).
+        const native = isNativePlatform();
+        const csrfResponse = await fetch(buildApiUrl('/api/authenticate/csrf'), {
+          credentials: native ? 'omit' : 'include',
         });
+
+        if (native) {
+          const csrfBody = (await csrfResponse.json().catch(() => null)) as { csrfToken?: string } | null;
+          nativeCsrfToken = csrfBody?.csrfToken ?? null;
+        }
 
         const data = await fetchJson<AuthResponse>('/api/authenticate', {
           method: 'POST',
           headers: withCsrfHeader({
             'Content-Type': 'application/json',
           }),
-          credentials: 'include',
+          credentials: native ? 'omit' : 'include',
           body: JSON.stringify({
             username: email,
             password,

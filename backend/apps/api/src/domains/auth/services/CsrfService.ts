@@ -53,9 +53,14 @@ export class CsrfService {
   }
 
   /**
-   * Verify the HMAC signature of a token.
+   * Verify the HMAC signature of a token. Accepts `undefined` (returns false) so the
+   * guard can hand a possibly-absent header value straight through.
    */
-  verifyToken(token: string): boolean {
+  verifyToken(token: string | undefined): boolean {
+    if (!token) {
+      return false;
+    }
+
     const dotIndex = token.indexOf('.');
 
     if (dotIndex === -1) {

@@ -46,11 +46,18 @@ export class SessionController {
    * header on the POST /authenticate request.
    */
   @Get('csrf')
-  @HttpCode(204)
+  @HttpCode(200)
   issueCsrfToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const token = this.csrfService.generateToken();
 
     this.setCsrfCookie(req, res, token);
+
+    // Also return the token in the body. Browser clients ignore this and rely on the
+    // SameSite cookie (double-submit), but a cookie-less native client — whose
+    // cross-origin webview can neither read nor send that cookie — reads the token
+    // here and echoes it as the `x-csrf-token` header. `CsrfGuard` accepts a
+    // validly-signed header token when no cookie is present.
+    return { csrfToken: token };
   }
 
   @Post()
