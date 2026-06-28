@@ -350,7 +350,11 @@ export class MaintenanceController {
     const maxGapHours = body.maxGapHours ?? DEFAULT_MAX_GAP_HOURS;
     const sourceSystems = body.sourceSystems ?? [...DEFAULT_ESTIMATE_SOURCE_SYSTEMS];
 
-    const candidateCount = await this.locationEstimateService.countCandidates(userId, sourceSystems);
+    const candidateCount = await this.locationEstimateService.countCandidates(
+      userId,
+      sourceSystems,
+      Math.round(maxGapHours * 3600),
+    );
     const estimatedEventCount = Math.min(candidateCount, limit);
 
     if (estimatedEventCount === 0) {

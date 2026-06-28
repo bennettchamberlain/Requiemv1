@@ -78,17 +78,57 @@ export class LocationEstimateService {
     this.logger.setContext(LocationEstimateService.name);
   }
 
-  /** Coordinate-less physical-presence events eligible for estimation (upper bound). */
-  async countCandidates(userId: string, sourceSystems: string[]): Promise<number> {
-    const rows: Array<{ count: string }> = await this.dataSource.query(
-      `SELECT count(*)::text AS count
-         FROM ci.events e
-        WHERE e.user_id = $1
+  /**
+   * The candidate filter, shared by {@link countCandidates} and the estimate
+   * UPDATE so the count is EXACT (every counted row can actually be filled). A
+   * candidate is a coordinate-less, non-deleted, non-PREDICTED, physical-presence
+   * event that is not already estimated AND has at least one real donor location
+   * within the gap. `gapParam` is a bind-placeholder name ($3/$4) — a static
+   * string this class controls, never user input. The donor predicates use a
+   * sargable BETWEEN window (not abs(...)) so the planner can use the
+   * (user_id, time) / (user_id, start_time) indexes.
+   *
+   * The `is_predicted = false` guard is REQUIRED: ci.events has a CHECK constraint
+   * `valid_prediction_inference` (NOT (is_predicted AND is_inferred)); the estimate
+   * is one set-based UPDATE that sets is_inferred=true, so a single predicted
+   * candidate would violate the constraint and abort the ENTIRE batch. Predicted
+   * future events should not be retro-located anyway.
+   *
+   * Requiring a donor here (not just in the per-row LATERAL) also fixes
+   * starvation: ORDER BY start_time DESC LIMIT would otherwise fill its slots with
+   * the newest candidates regardless of donor availability, so a run of donor-less
+   * recent events could permanently shadow older fillable ones.
+   */
+  private candidatePredicate(gapParam: string): string {
+    const window = `e.start_time - make_interval(secs => ${gapParam}) AND e.start_time + make_interval(secs => ${gapParam})`;
+
+    return `e.user_id = $1
           AND e.location_coordinates IS NULL
           AND e.is_deleted = false
+          AND COALESCE(e.is_predicted, false) = false
           AND e.source_system = ANY($2)
-          AND COALESCE(e.metadata->>'location_source', '') <> 'estimated'`,
-      [userId, sourceSystems],
+          AND COALESCE(e.metadata->>'location_source', '') <> 'estimated'
+          AND (
+            EXISTS (
+              SELECT 1 FROM ci.position p
+               WHERE p.user_id = $1 AND p.location IS NOT NULL
+                 AND p.time BETWEEN ${window}
+            )
+            OR EXISTS (
+              SELECT 1 FROM ci.events n
+               WHERE n.user_id = $1 AND n.location_coordinates IS NOT NULL
+                 AND n.event_id <> e.event_id AND n.is_deleted = false
+                 AND COALESCE(n.metadata->>'location_source', '') <> 'estimated'
+                 AND n.start_time BETWEEN ${window}
+            )
+          )`;
+  }
+
+  /** Coordinate-less physical-presence events that have a donor within the gap. */
+  async countCandidates(userId: string, sourceSystems: string[], maxGapSeconds: number): Promise<number> {
+    const rows: Array<{ count: string }> = await this.dataSource.query(
+      `SELECT count(*)::text AS count FROM ci.events e WHERE ${this.candidatePredicate('$3')}`,
+      [userId, sourceSystems, maxGapSeconds],
     );
 
     return Number(rows[0]?.count ?? 0);
@@ -101,7 +141,7 @@ export class LocationEstimateService {
    */
   async estimateBatch(userId: string, opts: EstimateBatchOptions): Promise<EstimateBatchResult> {
     const maxGapSeconds = Math.round(opts.maxGapHours * 3600);
-    const candidates = await this.countCandidates(userId, opts.sourceSystems);
+    const candidates = await this.countCandidates(userId, opts.sourceSystems, maxGapSeconds);
 
     if (candidates === 0) {
       return { candidates: 0, estimated: 0 };
@@ -111,11 +151,7 @@ export class LocationEstimateService {
       `WITH candidate AS (
          SELECT e.event_id, e.start_time
            FROM ci.events e
-          WHERE e.user_id = $1
-            AND e.location_coordinates IS NULL
-            AND e.is_deleted = false
-            AND e.source_system = ANY($2)
-            AND COALESCE(e.metadata->>'location_source', '') <> 'estimated'
+          WHERE ${this.candidatePredicate('$4')}
           ORDER BY e.start_time DESC
           LIMIT $3
        )
@@ -148,7 +184,8 @@ export class LocationEstimateService {
                    FROM ci.position p
                   WHERE p.user_id = $1
                     AND p.location IS NOT NULL
-                    AND abs(extract(epoch FROM (p.time - c.start_time))) <= $4
+                    AND p.time BETWEEN c.start_time - make_interval(secs => $4)
+                                   AND c.start_time + make_interval(secs => $4)
                   ORDER BY abs(extract(epoch FROM (p.time - c.start_time))) ASC
                   LIMIT 1
                )
@@ -165,7 +202,8 @@ export class LocationEstimateService {
                     AND n.event_id <> c.event_id
                     AND n.is_deleted = false
                     AND COALESCE(n.metadata->>'location_source', '') <> 'estimated'
-                    AND abs(extract(epoch FROM (n.start_time - c.start_time))) <= $4
+                    AND n.start_time BETWEEN c.start_time - make_interval(secs => $4)
+                                         AND c.start_time + make_interval(secs => $4)
                   ORDER BY abs(extract(epoch FROM (n.start_time - c.start_time))) ASC
                   LIMIT 1
                )

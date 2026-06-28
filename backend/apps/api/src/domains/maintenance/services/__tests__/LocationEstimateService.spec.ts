@@ -19,18 +19,23 @@ function makeService(queryImpl: (...args: unknown[]) => Promise<unknown>) {
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
 describe('LocationEstimateService.countCandidates', () => {
-  it('counts coordinate-less, non-estimated, physical-presence events for the user', async () => {
+  it('counts coordinate-less, non-estimated, non-predicted, donor-backed events for the user', async () => {
     const { service, dataSource } = makeService(async () => [{ count: '42' }]);
 
-    const n = await service.countCandidates(USER, ['calendar', 'uber']);
+    const n = await service.countCandidates(USER, ['calendar', 'uber'], 86400);
 
     expect(n).toBe(42);
-    const [sql, params] = dataSource.query.mock.calls[0];
+    const [sql, params] = dataSource.query.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain('location_coordinates IS NULL');
     expect(sql).toContain('source_system = ANY($2)');
     expect(sql).toContain('is_deleted = false');
     expect(sql).toContain("<> 'estimated'");
-    expect(params).toEqual([USER, ['calendar', 'uber']]);
+    // Blocker guard: never count/estimate a predicted event (CHECK constraint).
+    expect(sql).toContain('COALESCE(e.is_predicted, false) = false');
+    // Exact (not upper-bound) count: only candidates with a donor in the gap.
+    expect(sql).toContain('EXISTS (');
+    expect(sql).toContain('make_interval(secs => $3)'); // sargable window, gap = $3 here
+    expect(params).toEqual([USER, ['calendar', 'uber'], 86400]);
   });
 });
 
@@ -80,7 +85,9 @@ describe('LocationEstimateService.estimateBatch', () => {
     expect(sql).toContain('location_coordinates IS NULL'); // never overwrite real coords
     expect(sql).toContain("|| jsonb_build_object('location_source', 'estimated')");
     expect(sql).toContain('is_inferred = true');
+    expect(sql).toContain('COALESCE(e.is_predicted, false) = false'); // never abort batch on a predicted row
     expect(sql).toContain("'position'"); // GPS-fix donor branch present
+    expect(sql).toContain('make_interval(secs => $4)'); // sargable donor window (gap = $4 in the UPDATE)
     // Nearest-in-time is the PRIMARY donor sort; a GPS position fix only breaks a
     // tie at equal delta. (A far position fix must not beat a closer event.)
     expect(sql).toContain("ORDER BY delta_seconds ASC, (donor <> 'position')");
