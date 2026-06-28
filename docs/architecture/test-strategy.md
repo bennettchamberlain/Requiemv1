@@ -8,7 +8,7 @@
 | Layer | Tooling | What exists |
 |---|---|---|
 | Unit / controller | Jest + `@nestjs/testing` + `supertest` | `auth/__tests__/SessionController.test.ts`, `auth/__tests__/SignupController.test.ts`, `auth/__tests__/Routes.e2e.test.ts`, `files/__tests__/Routes.e2e.test.ts`, `common/controllers/__tests__/HealthController.test.ts` (seed). |
-| Integration | Jest (same runner), Docker-backed Postgres + Minio + Temporal via `make local`. | Used by `Routes.e2e.test.ts` patterns. |
+| Integration | Jest (same runner), Docker-backed Postgres + Minio + Temporal via `make dev`. | Used by `Routes.e2e.test.ts` patterns. |
 | Browser / E2E | Playwright (`tests/BetaOneLoginFlow.spec.ts`). | One spec — the login flow. |
 | Coverage gate | Jest `coverageThreshold` | Set to **5% floor** as a starting fence; raise per area as tests land. |
 

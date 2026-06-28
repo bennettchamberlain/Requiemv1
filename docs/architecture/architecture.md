@@ -1,6 +1,6 @@
 # CI-Server Architecture
 
-> **Status:** Living document &nbsp;•&nbsp; **Last updated:** 2026-05-18
+> **Status:** Living document &nbsp;•&nbsp; **Last updated:** 2026-06-28
 >
 > CI-Server is the personal digital-memory appliance at the heart of Companion Intelligence. It owns the user's graph of entities, relationships, files, measurements, summaries and predictions, and exposes them to apps via REST/GraphQL.
 
@@ -18,7 +18,7 @@ It is deployed as a Docker Compose stack and is the **primary backend** that oth
 | [CI-Hub](https://github.com/companionintelligence/CI-Hub) | App runtime / homeserver (Runtipi-based) that hosts CI-Server + 3rd-party apps | Hosts CI-Server as one of many installable apps |
 | [CI-Marketplace](https://github.com/companionintelligence/CI-Marketplace) | App catalog: `config.json` + `docker-compose.json` per app, deployed to R2/D1 | Defines and distributes the CI-Server bundle (and sibling apps) to Hubs |
 | [CI-Portal](https://github.com/companionintelligence/CI-Portal) | Cloudflare-hosted proxy & control plane: auth, tenancy, remote access to a user's Hub | Brokers external traffic and identity into the user's CI-Server |
-| [CI-Gateway](https://github.com/companionintelligence/CI-Gateway) | Local reverse proxy: TLS + `*.ci.localhost` routing during development | Fronts CI-Server in dev; the production analog runs inside CI-Hub |
+| [CI-Gateway](https://github.com/companionintelligence/CI-Gateway) | Reverse proxy / TLS termination | Local dev is fronted by **Caddy** on the host (see the root README); the bundled NGINX `gateway` image fronts staging/production |
 
 ---
 
@@ -38,7 +38,7 @@ flowchart LR
             API["Backend API<br/>(NestJS / GraphQL)"]
             HBPE["HBPE<br/>(behavior prediction)"]
             SUM["Summary Agent<br/>(LLM summaries)"]
-            DB[("Postgres<br/>+ TimescaleDB<br/>+ pgvector<br/>+ Apache AGE")]
+            DB[("Postgres 18<br/>+ TimescaleDB<br/>+ pgvector<br/>+ PostGIS")]
             OBJ[("MinIO<br/>object store")]
             ORC["Temporal<br/>(orchestrator)"]
             Web["Web SPA<br/>(React + Vite)"]
@@ -95,7 +95,7 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph Edge
-      NGINX["gateway / dev-gateway<br/>(NGINX TLS + routing)"]
+      NGINX["edge proxy<br/>(Caddy on host in local dev;<br/>NGINX 'gateway' image in staging/prod)"]
     end
 
     subgraph App["Application Tier"]
@@ -109,7 +109,7 @@ flowchart TB
     end
 
     subgraph Data["Data Tier"]
-      PG[("Postgres 16<br/>+ TimescaleDB hypertables<br/>+ pgvector embeddings<br/>+ Apache AGE graph<br/>+ PostGIS")]
+      PG[("Postgres 18<br/>+ TimescaleDB hypertables<br/>+ pgvector embeddings<br/>+ PostGIS<br/>(graph = entities/relationships tables)")]
       OBJ[("MinIO<br/>S3-compatible object store")]
     end
 
@@ -145,18 +145,21 @@ flowchart TB
 
 | Service | Image | Role | Persistence |
 |---|---|---|---|
-| `database` | `ci/database` (Timescale + pgvector + PostGIS + AGE) | Primary store, hypertables, graph extension, vector search | `db-data` |
+| `database` | `ci/database` (Postgres 18 + TimescaleDB + pgvector + PostGIS) | Primary store, hypertables, vector search, graph as `entities`/`relationships` tables | `db-data` |
 | `object-store` | `ci/object-store` (MinIO) | Files, images, captures | `object-data` |
-| `orchestrator` | `ci/orchestrator` (Temporal 1.26) | Durable workflow engine for syncs, summaries, predictions | (Postgres-backed) |
+| `orchestrator` | `ci/orchestrator` (Temporal 1.26.2) | Durable workflow engine for syncs, summaries, predictions | (Postgres-backed) |
 | `hbpe-service` | `ci/hbpe-service` | Behavior prediction engine: nightly model train + INT8 inference | `hbpe-models`, `hbpe-corpus` |
 | `summary-service` | `ci/summary-service` | Hourly→Daily→Weekly summary agent | (via DB) |
 | `setup-database` | `ci/setup-database` | One-shot: migrations and seed | — |
 | `setup-orchestrator` | `ci/setup-orchestrator` | One-shot: Temporal namespace bootstrap | — |
 | `setup-secrets` | `ci/setup-secrets` | One-shot: generates and mounts `.env.secrets` | — |
-| `dev-gateway` / `gateway` | NGINX | Local TLS + `*.ci.localhost` routing | — |
+| `gateway` | NGINX (`ci/gateway`) | TLS + routing for **staging/production** only | — |
+| `dbproxy` / `dbconnstr` / `orchestrator-ui` | — | `tooling`-profile helpers (DB proxy, connection string, Temporal UI) | — |
 | `mcp-servers/web-search` | (Node) | MCP server exposing web search to LLM agents | — |
 
-Environments are selected via Compose **profiles**: `local`, `staging`, `production`, plus `tooling` for ad-hoc DB shells.
+In **local development** there is no gateway container — `make dev` fronts the stack with **Caddy on the host** at `https://<project>.localhost` (see the root README).
+
+Environments are selected via Compose **profiles**: `local`, `staging`, `production`, plus `tooling` for ad-hoc DB shells / Temporal UI. Each environment also has an overlay file (`docker-compose.local.yml`, `docker-compose.staging.yml`, `docker-compose.production.yml`) on top of the base `docker-compose.yml`.
 
 ### 3.3 Backend Domains
 
@@ -169,7 +172,7 @@ Located at `backend/apps/api/src/domains/`. Each domain is a NestJS module with 
 | `onboarding` | First-run flow and account bootstrap |
 | `connections` | OAuth clients (Google, MS, Facebook, Spotify), token storage |
 | `etl` | Per-provider sync services (`Google/`, `Microsoft/`, `Facebook/`, `Spotify/`), `SyncOrchestrator`, `PromoteService` (raw → graph) |
-| `graph` | Low-level `NodeService`, `RelationshipService`, `GraphService` over Apache AGE |
+| `graph` | Low-level `NodeService`, `RelationshipService`, `GraphService` over the `ci.entities` + `ci.relationships` Postgres tables |
 | `memory` | High-level domain services: `PersonService`, `PlaceService`, `EventService`, `ContentService`, `FileService`, `ItemService`, `ConceptService`, `CommunicationService`, `UserContextService` |
 | `intelligence` | Conversational layer: `QuestionService`, `AnswerService`, `ActionService` (the "ask my memory" surface) |
 | `conversations` | Chat threads, messages, agent dispatch |
@@ -275,7 +278,7 @@ sequenceDiagram
 | Editor lib | `frontend/packages/editor` | Rich-text / note editor |
 | Common lib | `frontend/packages/common` | Shared hooks, types, GraphQL fragments |
 | ShadCN lib | `frontend/packages/shadcn` | Local copy of the component library |
-| Native (future) | `frontend/apps/native` | Placeholder for mobile/native shell |
+| Native (future) | `frontend/apps/native` | Planned mobile/native shell — not yet present in the repo |
 | Browser ext. | [CI-Browser-Extension](https://github.com/companionintelligence/CI-Browser-Extension) | Talks to `browser-activity` |
 | XR / Spatial | [CI-Spatial-Companion-*](https://github.com/companionintelligence/), [CI-XR-Scan](https://github.com/companionintelligence/CI-XR-Scan) | Use `position` + AR relative coordinates |
 | Wearables / IoT | [CI-Pebble](https://github.com/companionintelligence/CI-Pebble), [CI-Mentra](https://github.com/companionintelligence/CI-Mentra), [CI-OMI](https://github.com/companionintelligence/CI-OMI), [CI-Even-Realities](https://github.com/companionintelligence/CI-Even-Realities) | Push to `devices` / `sensors` / `measurements` |
@@ -291,7 +294,7 @@ flowchart LR
     Hub[CI-Hub<br/>homeserver runtime] -- installs --> ServerApp
     Hub -- installs --> OtherApp
     Portal[CI-Portal<br/>edge proxy + identity] -- routes user traffic --> Hub
-    Gateway[CI-Gateway<br/>local TLS proxy] -- dev-only --> Server[CI-Server]
+    Gateway["Edge proxy<br/>Caddy in dev · NGINX gateway in staging/prod"] -- TLS + routing --> Server[CI-Server]
     Browser[CI-Browser-Extension] -- GraphQL --> Server
     XR[CI-Spatial-Companion / CI-XR-Scan] -- GraphQL + position --> Server
     Wearables[CI-Pebble / CI-Mentra / CI-OMI / CI-Even-Realities] -- measurements --> Server
@@ -316,10 +319,10 @@ flowchart LR
 
 | Profile | Compose file | Use |
 |---|---|---|
-| `local` | `docker-compose.yml` + `docker-compose.local.yml` | `make local` developer loop; Vite + nodemon outside containers |
-| `staging` | `docker-compose.staging.yml` | Pre-prod parity; runs against staging secrets |
-| `production` | `docker-compose.production.yml` | Production deploys inside CI-Hub |
-| `tooling` | (profile flag) | DB shells, ad-hoc admin (`make dbproxy`, etc.) |
+| `local` | `docker-compose.yml` + `docker-compose.local.yml` | `make dev` developer loop; Vite + nodemon run on the host (outside containers), fronted by Caddy |
+| `staging` | `docker-compose.yml` + `docker-compose.staging.yml` | Pre-prod parity; runs against staging secrets |
+| `production` | `docker-compose.yml` + `docker-compose.production.yml` | Production deploys inside CI-Hub |
+| `tooling` | base compose, `tooling` profile | DB shells / proxy and the Temporal UI (`make tooling`, `make dbshell`, `make dburl`) |
 
 Secrets are mounted via the `secrets` volume produced by `setup-secrets`, with provider OAuth credentials, DB credentials, JWT signing keys, and the cross-service shared secret used by HBPE and Summary to sign service JWTs.
 
@@ -343,7 +346,7 @@ The roadmap below is synthesized from the current repo state (domains present, c
 
 | Theme | Item |
 |---|---|
-| Native shell | Fill in `frontend/apps/native` (currently placeholder) |
+| Native shell | Create `frontend/apps/native` (not yet present) |
 | HBPE | Move from nightly batch to incremental online updates; expose richer prediction reads in `domains/predictions` |
 | Summary | Add monthly + yearly tiers; surface summary timeline in the web SPA |
 | Tools | Expand `mcp-servers/` beyond web-search (calendar, contacts, files) — these slot into `domains/tools` |

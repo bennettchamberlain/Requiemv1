@@ -42,7 +42,7 @@ This is a Yarn workspace monorepo with the following structure:
 ## Architecture at a glance
 
 CI-Server is a multi-service stack: a NestJS API and a React/Vite SPA in front of
-a Postgres data tier (pgvector + TimescaleDB + Apache AGE), with Python sidecars
+a Postgres 18 data tier (pgvector + TimescaleDB + PostGIS), with Python sidecars
 (HBPE prediction, Summary) driven by Temporal, MinIO for object storage, and
 Ollama for local LLM/embeddings. The diagrams below are rendered by GitHub; for
 the full design (domains, data model, data flows) see
@@ -68,7 +68,7 @@ flowchart TB
     end
 
     subgraph Compose["Docker Compose stack (per-worktree)"]
-      PG[("Postgres 15<br/>pgvector · TimescaleDB · AGE<br/>+ PGBoss job queue")]
+      PG[("Postgres 18<br/>pgvector · TimescaleDB · PostGIS<br/>+ PGBoss job queue")]
       MINIO[("MinIO<br/>object storage")]
       TEMP["Temporal<br/>(durable workflows)"]
       SUM["summary service"]
