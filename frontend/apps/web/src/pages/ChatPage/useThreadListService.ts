@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-import { buildApiUrl, fetchJson } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl, fetchJson } from '@ci/common';
 
 import { useAuth } from '@/hooks';
 
@@ -50,6 +50,7 @@ export function useThreadListService(): ReturnType {
       const res = await fetch(buildApiUrl(`/api/threads/${id}`), {
         method: 'DELETE',
         headers: {
+          ...apiKeyHeaders(),
           Authorization: `Bearer ${authToken}`,
         },
       });

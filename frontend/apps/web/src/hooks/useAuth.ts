@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { buildApiUrl, createHookContext, fetchJson } from '@ci/common';
+import {
+  buildApiUrl,
+  createHookContext,
+  fetchJson,
+  isNativePlatform,
+  secureStorageGet,
+  secureStorageRemove,
+  secureStorageSet,
+  setApiKey,
+} from '@ci/common';
 import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const authChannel = new BroadcastChannel('auth');
+
+// On native the durable credential is an API key kept in the OS keystore — the
+// cookie/JWT session does not survive cross-origin inside a webview. We store the
+// raw key (sent as x-api-key) and its server id (for reference/future revocation).
+const API_KEY_STORAGE = 'ci.apiKey';
+const API_KEY_ID_STORAGE = 'ci.apiKeyId';
 
 const CSRF_COOKIE_NAME = 'csrfToken';
 
@@ -37,10 +52,43 @@ interface AuthResponse {
   accessToken: string;
 }
 
+interface CreateApiKeyResponse {
+  id: string;
+  key: string;
+}
+
+// Exchange a freshly-issued JWT for a long-lived API key (the /api/keys endpoint is
+// JWT-guarded, so this must run while we still hold the login JWT), persist it to the
+// keystore, and activate it for subsequent requests. Returns the raw key, or null.
+async function mintAndStoreApiKey(jwt: string): Promise<string | null> {
+  const created = await fetchJson<CreateApiKeyResponse>('/api/keys', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: JSON.stringify({
+      name: `Companion mobile · ${new Date().toISOString().slice(0, 10)}`,
+    }),
+  });
+
+  if (!created?.key) {
+    return null;
+  }
+
+  await secureStorageSet(API_KEY_STORAGE, created.key);
+  await secureStorageSet(API_KEY_ID_STORAGE, created.id);
+  setApiKey(created.key);
+
+  return created.key;
+}
+
 type ReturnValue = [
   {
     expired: boolean;
     authToken?: string | null;
+    /** True when authenticated by EITHER a web JWT session or a native API key. */
+    authenticated: boolean;
     loading: boolean;
     error: unknown | null;
   },
@@ -61,6 +109,9 @@ function useAuth(): ReturnValue {
   const [initializing, setInitializing] = useState<boolean>(true);
 
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  // Native-only: present once the keystore API key is loaded/minted. Drives the
+  // authenticated state on native, where there is no JWT in `accessToken`.
+  const [nativeApiKey, setNativeApiKey] = useState<string | null>(null);
 
   const decoded = useMemo(() => (accessToken ? jwtDecode<JwtPayload>(accessToken) : null), [accessToken]);
   const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
@@ -88,7 +139,14 @@ function useAuth(): ReturnValue {
           }),
         });
 
-        setAccessToken(data?.accessToken ?? null);
+        const jwt = data?.accessToken ?? null;
+
+        if (jwt && isNativePlatform()) {
+          // Native: trade the JWT for a durable API key and authenticate via that.
+          setNativeApiKey(await mintAndStoreApiKey(jwt));
+        } else {
+          setAccessToken(jwt);
+        }
 
         const returnTo = (location.state as { from?: string })?.from ?? '/';
         navigate(returnTo, { replace: true });
@@ -102,6 +160,22 @@ function useAuth(): ReturnValue {
   );
 
   const logout = useCallback(async () => {
+    if (isNativePlatform()) {
+      // No cookie session to revoke. Clear the local credential; the API key stays
+      // valid server-side (the /api/keys revoke endpoint is JWT-only, and we hold no
+      // JWT here) and can be revoked from Settings → API Keys after re-login.
+      setApiKey(null);
+      await secureStorageRemove(API_KEY_STORAGE);
+      await secureStorageRemove(API_KEY_ID_STORAGE);
+      setNativeApiKey(null);
+      setAccessToken(null);
+      setLoginLoading(false);
+      setLoginError(null);
+      navigate('/');
+
+      return;
+    }
+
     try {
       const response = await fetch(buildApiUrl('/api/authenticate/logout'), {
         method: 'POST',
@@ -150,7 +224,13 @@ function useAuth(): ReturnValue {
           }),
         });
 
-        setAccessToken(data?.accessToken ?? null);
+        const jwt = data?.accessToken ?? null;
+
+        if (jwt && isNativePlatform()) {
+          setNativeApiKey(await mintAndStoreApiKey(jwt));
+        } else {
+          setAccessToken(jwt);
+        }
 
         navigate('/');
       } catch (err: unknown) {
@@ -182,6 +262,18 @@ function useAuth(): ReturnValue {
   useEffect(() => {
     (async () => {
       try {
+        if (isNativePlatform()) {
+          // Native restore: load the stored API key. No cookie refresh applies here.
+          const storedKey = await secureStorageGet(API_KEY_STORAGE);
+
+          if (storedKey) {
+            setApiKey(storedKey);
+            setNativeApiKey(storedKey);
+          }
+
+          return;
+        }
+
         const data = await fetchJson<AuthResponse>('/api/authenticate/refresh', {
           method: 'POST',
           headers: withCsrfHeader(),
@@ -215,8 +307,11 @@ function useAuth(): ReturnValue {
 
   return [
     {
-      expired: isExpired(),
+      // A native API key never "expires" from the client's point of view (there is
+      // no short-lived JWT to age out); web keeps the JWT expiry check.
+      expired: nativeApiKey ? false : isExpired(),
       authToken: accessToken,
+      authenticated: Boolean(accessToken) || Boolean(nativeApiKey),
       loading: loginLoading || initializing,
       error: loginError ?? refreshError,
     },

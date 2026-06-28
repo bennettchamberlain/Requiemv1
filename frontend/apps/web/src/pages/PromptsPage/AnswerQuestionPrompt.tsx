@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, type FormEvent } from 'react';
 
-import { buildApiUrl } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl } from '@ci/common';
 import { Button, Card, Textarea, Spinner } from '@ci/shadcn';
 import { Send } from '@ci/shadcn/icons';
 
@@ -37,6 +37,7 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
 
       const response = await fetch(buildApiUrl('/api/questions/unanswered'), {
         headers: {
+          ...apiKeyHeaders(),
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
@@ -102,6 +103,7 @@ export function AnswerQuestionPrompt({ onAnswerSubmitted }: Props) {
         const response = await fetch(buildApiUrl('/api/answers'), {
           method: 'POST',
           headers: {
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },

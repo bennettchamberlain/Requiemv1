@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { buildApiUrl } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl } from '@ci/common';
 
 import { useAuth } from '@/hooks';
 
@@ -97,7 +97,10 @@ export function useEntityEvolutionService({ entityId, limit = 200, skip = false 
       });
 
       const response = await fetch(buildApiUrl(`/api/audit/deltas?${params.toString()}`), {
-        headers: tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : undefined,
+        headers: {
+          ...apiKeyHeaders(),
+          ...(tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : {}),
+        },
       });
 
       if (!response.ok) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { buildApiUrl, fetchJson } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl, fetchJson } from '@ci/common';
 
 import { useAuth } from '@/hooks';
 
@@ -50,6 +50,7 @@ export function useFeedQuestionService(): ReturnType {
       const response = await fetch(buildApiUrl('/api/questions/unanswered'), {
         method: 'GET',
         headers: {
+          ...apiKeyHeaders(),
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },

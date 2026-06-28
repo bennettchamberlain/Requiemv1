@@ -82,9 +82,23 @@ Capacitor deps are pinned to `^7.0.0` as a starting point. If a newer major is
 current when you set this up, bump `@capacitor/*` together (core, cli, ios,
 android, app) and re-run `yarn sync`.
 
+## Native auth (wired)
+
+Email/password sign-in works on native without cookies: after login the app mints a
+long-lived **API key** (`POST /api/keys`) and stores it in the OS keystore
+(`capacitor-secure-storage-plugin`); every request then carries `x-api-key`. The key
+is loaded from the keystore on startup, so sessions persist across launches. Logout
+clears the local key (server-side revocation is in Settings → API Keys, since the
+`/api/keys` revoke endpoint is JWT-only).
+
+"Sign in with CI Portal" (OIDC) opens the **system browser** (`@capacitor/browser`)
+on native. ⚠️ Completing OIDC still needs the IdP to redirect back into the app via a
+deep link (custom URL scheme + `@capacitor/app` `appUrlOpen`) — a follow-up. Use
+email/password on native until that lands.
+
 ## Not yet wired (later phases)
 
-- Native auth via secure storage + API key (currently uses the web auth flow).
 - Camera capture into the upload flow (`@capacitor/camera`).
 - Push notifications (needs backend APNs/FCM).
+- OIDC deep-link return (custom scheme + backend redirect_uri).
 - Local-first sync (PowerSync) — the on-device SQLite layer.

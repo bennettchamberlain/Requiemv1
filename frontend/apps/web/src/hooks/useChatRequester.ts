@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { buildApiUrl } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl } from '@ci/common';
 import { useToast } from '@ci/shadcn';
 
 import type { FormData } from '@/components/Chat';
@@ -79,6 +79,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
           },
           body: JSON.stringify({

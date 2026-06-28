@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { buildApiUrl, Portal, usePageTitle } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl, Portal, usePageTitle } from '@ci/common';
 import { Breadcrumb, Button, Table, Card, ToggleGroup, Badge } from '@ci/shadcn';
 import {
   AlertCircle,
@@ -61,6 +61,7 @@ export function PromptsPage() {
 
       const response = await fetch(buildApiUrl('/api/answers'), {
         headers: {
+          ...apiKeyHeaders(),
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
@@ -170,6 +171,7 @@ export function PromptsPage() {
     const response = await fetch(buildApiUrl(`/api/answers/${answerId}`), {
       method: 'PATCH',
       headers: {
+        ...apiKeyHeaders(),
         Authorization: `Bearer ${authToken}`,
         'Content-Type': 'application/json',
       },
