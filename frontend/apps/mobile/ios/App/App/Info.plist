@@ -71,8 +71,12 @@
 		  tailnet (the user's own self-hosted server). Allow cleartext loads so the
 		  app can connect to an http:// server entered on the /server screen — the
 		  target is always a user-specified, first-party appliance.
+
+		  Scoped to WKWebView content (where all our network requests originate) via
+		  NSAllowsArbitraryLoadsInWebContent rather than the app-wide
+		  NSAllowsArbitraryLoads, which is the App-Store-preferred, narrower exception.
 		-->
-		<key>NSAllowsArbitraryLoads</key>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 	</dict>
 	<key>UIApplicationSceneManifest</key>
