@@ -22,10 +22,34 @@ interface BrowserPlugin {
   open(options: { url: string }): Promise<void>;
 }
 
+interface PluginListenerHandle {
+  remove(): Promise<void> | void;
+}
+
+interface AppPlugin {
+  addListener(
+    eventName: 'backButton',
+    listener: (event: { canGoBack?: boolean }) => void,
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'appStateChange',
+    listener: (event: { isActive: boolean }) => void,
+  ): Promise<PluginListenerHandle>;
+  exitApp(): Promise<void>;
+}
+
+interface SplashScreenPlugin {
+  hide(): Promise<void>;
+}
+
 interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
   Browser?: BrowserPlugin;
+  App?: AppPlugin;
+  SplashScreen?: SplashScreenPlugin;
 }
+
+const noop = () => {};
 
 function plugins(): CapacitorPlugins | undefined {
   if (typeof window === 'undefined') {
@@ -113,5 +137,64 @@ export async function openExternalUrl(url: string): Promise<void> {
 
   if (typeof window !== 'undefined') {
     window.location.assign(url);
+  }
+}
+
+/**
+ * Subscribe to the Android hardware back button. `handler` receives whether the
+ * webview can navigate back. Returns an unsubscribe function. No-op on web/iOS (the
+ * event never fires), where it returns a no-op cleanup.
+ */
+export async function addBackButtonListener(handler: (canGoBack: boolean) => void): Promise<() => void> {
+  const app = plugins()?.App;
+
+  if (!isNativePlatform() || !app) {
+    return noop;
+  }
+
+  const handle = await app.addListener('backButton', (event) => handler(Boolean(event?.canGoBack)));
+
+  return () => {
+    void handle.remove();
+  };
+}
+
+/**
+ * Subscribe to foreground/background transitions. Returns an unsubscribe function.
+ * No-op on web.
+ */
+export async function addAppStateListener(handler: (isActive: boolean) => void): Promise<() => void> {
+  const app = plugins()?.App;
+
+  if (!isNativePlatform() || !app) {
+    return noop;
+  }
+
+  const handle = await app.addListener('appStateChange', (event) => handler(Boolean(event?.isActive)));
+
+  return () => {
+    void handle.remove();
+  };
+}
+
+/** Quit the native app (Android). No-op on web/iOS (iOS has no programmatic exit). */
+export async function exitApp(): Promise<void> {
+  const app = plugins()?.App;
+
+  if (isNativePlatform() && app) {
+    await app.exitApp();
+  }
+}
+
+/** Dismiss the native splash screen once the web app has mounted. No-op on web. */
+export async function hideSplashScreen(): Promise<void> {
+  const splash = plugins()?.SplashScreen;
+
+  if (isNativePlatform() && splash) {
+    try {
+      await splash.hide();
+    } catch {
+      // Splash may already be hidden — ignore.
+    }
   }
 }

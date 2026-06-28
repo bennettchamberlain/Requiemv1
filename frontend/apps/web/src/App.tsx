@@ -16,7 +16,13 @@ import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { RedirectKnownUser } from '@/components/RedirectKnownUser';
 import { ThemeProvider, BackgroundProvider } from '@/components/ThemePicker';
-import { AuthProvider, CaptureModalProvider, ModelProvider, usePreventOverscroll } from '@/hooks';
+import {
+  AuthProvider,
+  CaptureModalProvider,
+  ModelProvider,
+  useNativeShell,
+  usePreventOverscroll,
+} from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
@@ -80,6 +86,9 @@ function AppRoutes() {
   const location = useLocation();
   const navigate = useNavigate();
   const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
+
+  // Native shell wiring (splash dismiss, Android back button). Inert on web.
+  useNativeShell();
 
   // On the native app the API origin must be configured before anything else can
   // load. If we're running natively with no server set, route to the setup screen.
