@@ -52,7 +52,9 @@ describe('LocationEstimateService.estimateBatch', () => {
     let call = 0;
     const { service, dataSource } = makeService(async () => {
       call += 1;
-      if (call === 1) {return [{ count: '5' }];} // countCandidates
+      if (call === 1) {
+        return [{ count: '5' }];
+      } // countCandidates
 
       return [{ event_id: 'a' }, { event_id: 'b' }]; // UPDATE ... RETURNING
     });
