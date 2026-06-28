@@ -51,6 +51,29 @@ const config: CapacitorConfig = {
     // iOS uses NSAppTransportSecurity (Info.plist) for the same purpose.
     allowMixedContent: true,
   },
+  plugins: {
+    SplashScreen: {
+      // The native shell shows the brand splash (CI globe on white — see
+      // assets/splash.png, wired to iOS LaunchScreen "Splash" + Android
+      // @drawable/splash) until the web app mounts. `launchAutoHide: false` keeps
+      // it up until `useNativeShell` calls `hideSplashScreen()` once React has
+      // rendered, avoiding a white flash between splash and first paint.
+      launchAutoHide: false,
+      backgroundColor: '#ffffff',
+      showSpinner: false,
+      androidSplashResourceName: 'splash',
+      splashFullScreen: true,
+      splashImmersive: false,
+    },
+    StatusBar: {
+      // Dark glyphs on the light app chrome. `overlaysWebView: false` so the web
+      // content isn't drawn under the status bar (it has no global inset handling
+      // for that); paired with the brand-tinted background below.
+      style: 'DARK',
+      backgroundColor: '#ffffff',
+      overlaysWebView: false,
+    },
+  },
 };
 
 export default config;

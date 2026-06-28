@@ -78,12 +78,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@capacitor/local-notifications@npm:^7.0.0":
+  version: 7.0.6
+  resolution: "@capacitor/local-notifications@npm:7.0.6"
+  peerDependencies:
+    "@capacitor/core": ">=7.0.0"
+  checksum: 10c0/8e9a8f123a0c7588ca95de797816c70fe8d5340b6aece1eb084d8616ccec2cb4da243e04a19e075b8a37c032ad54a3c487a6aeda6f49960aa8a30f26ed92bb65
+  languageName: node
+  linkType: hard
+
 "@capacitor/splash-screen@npm:^7.0.0":
   version: 7.0.5
   resolution: "@capacitor/splash-screen@npm:7.0.5"
   peerDependencies:
     "@capacitor/core": ">=7.0.0"
   checksum: 10c0/256bf06d142dff9484caa31e31aaaef2710a9d082d3262d75f178b36fd9dde410a2ae71bd346e22035dca7b47fc2f5f15e9589b12264592f548fd2ed432b1ea1
+  languageName: node
+  linkType: hard
+
+"@capacitor/status-bar@npm:^7.0.0":
+  version: 7.0.6
+  resolution: "@capacitor/status-bar@npm:7.0.6"
+  peerDependencies:
+    "@capacitor/core": ">=7.0.0"
+  checksum: 10c0/d2de1dd7b32681fab24974f09c05a4c17a71a6d77efff39f8bc47ed9d20dc50be4d770946993ede91e51f71b4b278096743f89d0818efe83ffaf52d161aaaa03
   languageName: node
   linkType: hard
 
@@ -97,7 +115,9 @@ __metadata:
     "@capacitor/cli": "npm:^7.0.0"
     "@capacitor/core": "npm:^7.0.0"
     "@capacitor/ios": "npm:^7.0.0"
+    "@capacitor/local-notifications": "npm:^7.0.0"
     "@capacitor/splash-screen": "npm:^7.0.0"
+    "@capacitor/status-bar": "npm:^7.0.0"
     capacitor-secure-storage-plugin: "npm:^0.11.0"
     typescript: "npm:^5.8.3"
   languageName: unknown

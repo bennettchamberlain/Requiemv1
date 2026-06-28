@@ -155,11 +155,38 @@ session. Keep the scheme in sync across `ios/App/App/Info.plist` (`CFBundleURLTy
 the Android `AndroidManifest.xml` intent-filter (documented in `capacitor.config.ts`),
 `@ci/common`'s `OIDC_NATIVE_SCHEME`, and `auth.oidc.nativeRedirectScheme`.
 
+## Native capabilities & permissions
+
+**Camera + microphone (capture).** The existing in-webview capture (`@ci/capture`,
+`navigator.mediaDevices.getUserMedia`) works natively once the OS permissions are
+declared — the webview's permission request maps to the OS prompt on first use. Wired:
+- **iOS** (`Info.plist`): `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`,
+  `NSPhotoLibraryAddUsageDescription`.
+- **Android** (`AndroidManifest.xml`): `CAMERA`, `RECORD_AUDIO`,
+  `MODIFY_AUDIO_SETTINGS` (+ `<uses-feature camera required="false">`).
+
+**Status bar + splash (branding).** Configured in `capacitor.config.ts` under
+`plugins`. The splash shows the CI globe on a brand background until the web app mounts
+(`SplashScreen.launchAutoHide: false`; `useNativeShell` calls `hideSplashScreen()` after
+first paint to avoid a flash). The status bar is **theme-aware**: `useNativeShell`
+mirrors the web app's light/dark theme (the `dark` class on `<html>`) onto
+`@capacitor/status-bar` — light glyphs over a dark bar in dark mode, dark glyphs over a
+light bar in light mode — and re-applies on theme change via a `MutationObserver`.
+
+**Local notifications.** `@capacitor/local-notifications` is wired through `@ci/common`
+(`requestNotificationPermission`, `hasNotificationPermission`, `scheduleLocalNotification`)
+with a web no-op fallback. Android 13+ needs the `POST_NOTIFICATIONS` runtime permission
+(declared). All native-bridge helpers are unit-tested in
+`frontend/apps/web/src/test/nativeBridge.test.ts`.
+
+These bridges live in `@ci/common/src/utils/nativeBridge.ts` and reach the plugins via
+the runtime `window.Capacitor.Plugins` global (no `@capacitor/*` import in the web
+bundle); the standalone mobile project declares the actual plugin packages.
+
 ## Not yet wired (later phases)
 
 - **Local-first sync (PowerSync client)** — the on-device SQLite layer. The server
   scaffold + `GET /api/powersync/token` already exist (see `infrastructure/powersync/`).
-- Camera capture into the upload flow (`@capacitor/camera`) — the in-webview
-  getUserMedia camera already works.
-- Push notifications (needs backend APNs/FCM).
+- **Push notifications** — needs backend APNs/FCM infrastructure + a device-token
+  registration endpoint. Local notifications work today; remote push is deferred.
 </content>

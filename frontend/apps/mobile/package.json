@@ -21,7 +21,9 @@
     "@capacitor/browser": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
+    "@capacitor/local-notifications": "^7.0.0",
     "@capacitor/splash-screen": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0",
     "capacitor-secure-storage-plugin": "^0.11.0"
   },
   "devDependencies": {

@@ -20,12 +20,17 @@ export {
   addAppUrlOpenListener,
   addBackButtonListener,
   exitApp,
+  hasNotificationPermission,
   hideSplashScreen,
   openExternalUrl,
+  requestNotificationPermission,
+  scheduleLocalNotification,
   secureStorageGet,
   secureStorageRemove,
   secureStorageSet,
+  setStatusBarStyle,
 } from './src/utils/nativeBridge';
+export type { LocalNotification } from './src/utils/nativeBridge';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,

@@ -46,11 +46,34 @@ interface SplashScreenPlugin {
   hide(): Promise<void>;
 }
 
+interface StatusBarPlugin {
+  setStyle(options: { style: 'DARK' | 'LIGHT' | 'DEFAULT' }): Promise<void>;
+  setBackgroundColor(options: { color: string }): Promise<void>;
+  show(): Promise<void>;
+  hide(): Promise<void>;
+}
+
+interface LocalNotificationsPlugin {
+  checkPermissions(): Promise<{ display: string }>;
+  requestPermissions(): Promise<{ display: string }>;
+  schedule(options: { notifications: LocalNotification[] }): Promise<unknown>;
+}
+
 interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
   Browser?: BrowserPlugin;
   App?: AppPlugin;
   SplashScreen?: SplashScreenPlugin;
+  StatusBar?: StatusBarPlugin;
+  LocalNotifications?: LocalNotificationsPlugin;
+}
+
+export interface LocalNotification {
+  id: number;
+  title: string;
+  body: string;
+  /** Optional fire time; omit to deliver immediately. */
+  schedule?: { at: Date };
 }
 
 const noop = () => {};
@@ -226,4 +249,116 @@ export async function hideSplashScreen(): Promise<void> {
       // Splash may already be hidden — ignore.
     }
   }
+}
+
+/**
+ * Apply the native status-bar appearance: glyph `style` ('DARK' = dark glyphs for a
+ * light background, 'LIGHT' = light glyphs for a dark background) and, on Android, the
+ * bar `backgroundColor`. The capacitor.config.ts StatusBar block sets the launch
+ * default; call this to react to theme changes at runtime. No-op on web.
+ */
+export async function setStatusBarStyle(style: 'DARK' | 'LIGHT', backgroundColor?: string): Promise<void> {
+  const statusBar = plugins()?.StatusBar;
+
+  if (!isNativePlatform() || !statusBar) {
+    return;
+  }
+
+  try {
+    await statusBar.setStyle({ style });
+
+    if (backgroundColor) {
+      // Android-only; iOS ignores it (the bar is translucent over the webview).
+      await statusBar.setBackgroundColor({ color: backgroundColor });
+    }
+  } catch {
+    // Plugin unavailable or unsupported on this platform — ignore.
+  }
+}
+
+/**
+ * Whether OS notification permission is already granted. Returns false on web and
+ * when the plugin is unavailable, so callers can gate a permission prompt.
+ */
+export async function hasNotificationPermission(): Promise<boolean> {
+  const notifications = plugins()?.LocalNotifications;
+
+  if (!isNativePlatform() || !notifications) {
+    return false;
+  }
+
+  try {
+    const { display } = await notifications.checkPermissions();
+
+    return display === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prompt for OS notification permission (no-op if already decided). Returns whether
+ * permission is granted afterward. No-op → false on web.
+ */
+export async function requestNotificationPermission(): Promise<boolean> {
+  const notifications = plugins()?.LocalNotifications;
+
+  if (!isNativePlatform() || !notifications) {
+    return false;
+  }
+
+  try {
+    const current = await notifications.checkPermissions();
+    const { display } = current.display === 'prompt' ? await notifications.requestPermissions() : current;
+
+    return display === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Deliver a local notification (immediately, or at `at`). Requests permission first if
+ * needed. Returns whether it was scheduled. No-op → false on web. For server-pushed
+ * notifications the backend needs APNs/FCM wiring + a device-token endpoint (deferred).
+ */
+export async function scheduleLocalNotification(
+  title: string,
+  body: string,
+  options: { id?: number; at?: Date } = {},
+): Promise<boolean> {
+  const notifications = plugins()?.LocalNotifications;
+
+  if (!isNativePlatform() || !notifications) {
+    return false;
+  }
+
+  if (!(await requestNotificationPermission())) {
+    return false;
+  }
+
+  try {
+    // A stable-ish default id derived from the title so repeat calls coalesce rather
+    // than stack; callers that need distinct notifications should pass an explicit id.
+    const id = options.id ?? (Math.abs(hashString(title)) % 2_000_000_000) + 1;
+
+    await notifications.schedule({
+      notifications: [{ id, title, body, ...(options.at ? { schedule: { at: options.at } } : {}) }],
+    });
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Small deterministic string hash (djb2) for deriving stable notification ids. */
+function hashString(value: string): number {
+  let hash = 5381;
+
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(i);
+  }
+
+  return hash | 0;
 }

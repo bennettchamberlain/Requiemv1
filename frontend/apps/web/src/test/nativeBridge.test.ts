@@ -2,11 +2,15 @@ import {
   addAppUrlOpenListener,
   addBackButtonListener,
   exitApp,
+  hasNotificationPermission,
   hideSplashScreen,
   openExternalUrl,
+  requestNotificationPermission,
+  scheduleLocalNotification,
   secureStorageGet,
   secureStorageRemove,
   secureStorageSet,
+  setStatusBarStyle,
 } from '@ci/common/src/utils/nativeBridge';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -238,5 +242,116 @@ describe('nativeBridge — deep links (appUrlOpen)', () => {
     unsubscribe();
 
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('nativeBridge — status bar', () => {
+  it('sets glyph style and Android background color via the plugin', async () => {
+    const setStyle = vi.fn(async () => {});
+    const setBackgroundColor = vi.fn(async () => {});
+    setWindow({
+      Capacitor: {
+        isNativePlatform: () => true,
+        Plugins: { StatusBar: { setStyle, setBackgroundColor } },
+      },
+    });
+
+    await setStatusBarStyle('DARK', '#ffffff');
+
+    expect(setStyle).toHaveBeenCalledWith({ style: 'DARK' });
+    expect(setBackgroundColor).toHaveBeenCalledWith({ color: '#ffffff' });
+  });
+
+  it('skips setBackgroundColor when no color is given', async () => {
+    const setStyle = vi.fn(async () => {});
+    const setBackgroundColor = vi.fn(async () => {});
+    setWindow({
+      Capacitor: {
+        isNativePlatform: () => true,
+        Plugins: { StatusBar: { setStyle, setBackgroundColor } },
+      },
+    });
+
+    await setStatusBarStyle('LIGHT');
+
+    expect(setStyle).toHaveBeenCalledWith({ style: 'LIGHT' });
+    expect(setBackgroundColor).not.toHaveBeenCalled();
+  });
+
+  it('is inert on web (no plugin)', async () => {
+    setWindow({});
+
+    await expect(setStatusBarStyle('DARK', '#ffffff')).resolves.toBeUndefined();
+  });
+});
+
+describe('nativeBridge — local notifications', () => {
+  function fakeNotificationsWindow(initialDisplay: string) {
+    let display = initialDisplay;
+    const checkPermissions = vi.fn(async () => ({ display }));
+    const requestPermissions = vi.fn(async () => {
+      display = 'granted';
+
+      return { display };
+    });
+    const schedule = vi.fn(async () => ({}));
+
+    const win = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        Plugins: { LocalNotifications: { checkPermissions, requestPermissions, schedule } },
+      },
+    };
+
+    return { win, checkPermissions, requestPermissions, schedule };
+  }
+
+  it('hasNotificationPermission reflects the granted state', async () => {
+    const { win } = fakeNotificationsWindow('granted');
+    setWindow(win);
+
+    expect(await hasNotificationPermission()).toBe(true);
+  });
+
+  it('requestNotificationPermission prompts only when undecided', async () => {
+    const { win, requestPermissions } = fakeNotificationsWindow('prompt');
+    setWindow(win);
+
+    expect(await requestNotificationPermission()).toBe(true);
+    expect(requestPermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('requestNotificationPermission does not re-prompt when already granted', async () => {
+    const { win, requestPermissions } = fakeNotificationsWindow('granted');
+    setWindow(win);
+
+    expect(await requestNotificationPermission()).toBe(true);
+    expect(requestPermissions).not.toHaveBeenCalled();
+  });
+
+  it('scheduleLocalNotification schedules after ensuring permission', async () => {
+    const { win, schedule } = fakeNotificationsWindow('granted');
+    setWindow(win);
+
+    const ok = await scheduleLocalNotification('Hello', 'World', { id: 7 });
+
+    expect(ok).toBe(true);
+    expect(schedule).toHaveBeenCalledWith({ notifications: [{ id: 7, title: 'Hello', body: 'World' }] });
+  });
+
+  it('scheduleLocalNotification bails when permission is denied', async () => {
+    const { win, schedule } = fakeNotificationsWindow('denied');
+    setWindow(win);
+
+    expect(await scheduleLocalNotification('Hi', 'There')).toBe(false);
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('is inert on web: returns false and never throws', async () => {
+    setWindow({});
+
+    expect(await hasNotificationPermission()).toBe(false);
+    expect(await requestNotificationPermission()).toBe(false);
+    expect(await scheduleLocalNotification('a', 'b')).toBe(false);
   });
 });
