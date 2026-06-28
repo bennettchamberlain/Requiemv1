@@ -362,3 +362,29 @@ function hashString(value: string): number {
 
   return hash | 0;
 }
+
+// Keep in sync with apiBase.ts `STORAGE_KEY`. Native App Intents read the base URL
+// from the OS keystore (they can't read the webview's localStorage), so we mirror it.
+const API_BASE_URL_KEY = 'ci.apiBaseUrl';
+
+/**
+ * Mirror the configured API base URL from localStorage into the OS keystore, so native
+ * App Intents (Siri/Shortcuts/Spotlight) — which run outside the webview — can reach
+ * the same server. The API key is already persisted to the keystore by the auth flow,
+ * so together they give an App Intent everything it needs. No-op on web.
+ */
+export async function syncNativeIntentConfig(): Promise<void> {
+  if (!isNativePlatform() || typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const baseUrl = window.localStorage.getItem(API_BASE_URL_KEY);
+
+    if (baseUrl) {
+      await secureStorageSet(API_BASE_URL_KEY, baseUrl);
+    }
+  } catch {
+    // Best-effort — App Intents simply won't be configured until this succeeds.
+  }
+}

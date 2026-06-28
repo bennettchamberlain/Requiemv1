@@ -29,6 +29,7 @@ export {
   secureStorageRemove,
   secureStorageSet,
   setStatusBarStyle,
+  syncNativeIntentConfig,
 } from './src/utils/nativeBridge';
 export type { LocalNotification } from './src/utils/nativeBridge';
 export {

@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 
 import {
+  addAppStateListener,
   addBackButtonListener,
   exitApp,
   hideSplashScreen,
   isNativePlatform,
   setStatusBarStyle,
+  syncNativeIntentConfig,
 } from '@ci/common';
 import { useNavigate } from 'react-router-dom';
 
@@ -82,6 +84,20 @@ export function useNativeShell(): void {
 
     void hideSplashScreen();
 
+    // Mirror the API base URL into the keystore so native App Intents can reach the
+    // server — now (covers the configured server from a previous session) and whenever
+    // the app returns to the foreground (covers a server just set this session).
+    void syncNativeIntentConfig();
+    let disposeAppState = () => {};
+
+    void addAppStateListener((isActive) => {
+      if (isActive) {
+        void syncNativeIntentConfig();
+      }
+    }).then((fn) => {
+      disposeAppState = fn;
+    });
+
     // Sync the status bar to the current theme now, then on every theme change. The
     // ThemeProvider swaps the `dark`/`light` class on <html>, so observe that attribute.
     applyStatusBarForTheme();
@@ -111,6 +127,7 @@ export function useNativeShell(): void {
     return () => {
       disposed = true;
       themeObserver.disconnect();
+      disposeAppState();
       unsubscribe();
     };
   }, [navigate]);

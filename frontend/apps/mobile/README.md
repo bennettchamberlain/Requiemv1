@@ -183,6 +183,27 @@ These bridges live in `@ci/common/src/utils/nativeBridge.ts` and reach the plugi
 the runtime `window.Capacitor.Plugins` global (no `@capacitor/*` import in the web
 bundle); the standalone mobile project declares the actual plugin packages.
 
+**Apple App Intents (iOS, Siri / Shortcuts / Spotlight).** Native Swift App Intents in
+`ios/App/App/` expose Companion's core actions to the system (gated `@available(iOS
+16+)`; the app still supports iOS 15, where they're simply absent):
+- **Ask Companion** (`AskCompanionIntent`) — asks a question via `POST /api/llm/generate`
+  and speaks the answer (parses the endpoint's length-prefixed binary text frames).
+- **Search Memory** (`SearchMemoryIntent`) — runs the GraphQL `search` query and reports
+  the match count + top titles.
+- **Remember** (`RememberIntent`) — creates a note via the `createNote` mutation.
+- **Open Companion** (`OpenCompanionIntent`) — launches the app.
+
+`CompanionShortcuts` (an `AppShortcutsProvider`) registers Siri phrases so the actions
+appear in Spotlight and the Shortcuts app automatically — no extension or special
+entitlement needed. The intents run **outside the webview**, so they read config from
+the Keychain rather than `localStorage`: `CompanionConfig` reads the API key
+(`cap_sec`/`ci.apiKey`, already written by the auth flow) and the server origin
+(`cap_sec`/`ci.apiBaseUrl`, mirrored from localStorage by `syncNativeIntentConfig()` in
+`useNativeShell`). `CompanionAPI` is a small `URLSession` client that authenticates with
+`x-api-key`. Intents short-circuit with a friendly Siri error when the user hasn't set a
+server / signed in. (Execution is direct REST/GraphQL today; it can later target a
+deterministic Intent-Catalog execute endpoint when `feat/intent-catalog` lands.)
+
 ## Not yet wired (later phases)
 
 - **Local-first sync (PowerSync client)** — the on-device SQLite layer. The server
