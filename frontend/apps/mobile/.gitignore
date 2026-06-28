@@ -11,9 +11,10 @@ node_modules/
 # artifacts and copied web assets are not.
 ios/App/Pods/
 ios/App/build/
+ios/App/DerivedData/
+ios/DerivedData/
 ios/App/App/public/
 ios/App/App/capacitor.config.json
-ios/App/App/Assets.xcassets/Splash.imageset/*.png
 
 android/.gradle/
 android/build/
