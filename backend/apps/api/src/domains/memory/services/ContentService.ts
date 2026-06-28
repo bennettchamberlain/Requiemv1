@@ -241,6 +241,41 @@ export class ContentService {
     return rows.map((row) => ({ id: row.id, type: 'content' as IndexableEntity }));
   }
 
+  /**
+   * Batch-resolve the media file linked to each of `eventIds`. Photo/video
+   * events carry their binary via a `ci.content` row (type='media',
+   * external_id = the ORIGINAL `ci.files` id) written by the importer's media
+   * pass — there is no direct events->files FK. Returns one row per link,
+   * oldest first, so a GraphQL loader can attach a thumbnail to an event
+   * without a per-event query. See {@link EventMediaLoader}.
+   *
+   * Ownership is scoped through the joined event's `user_id`, NOT
+   * `content.user_id`: the latter is mapped `insert: false` and so is never
+   * populated for importer-created media rows (it sits NULL in the DB). The
+   * linked file is independently re-scoped to the user by `FileService`.
+   */
+  async findMediaFilesByEventIds(
+    context: UserServiceContext,
+    eventIds: string[],
+  ): Promise<{ eventId: string; fileId: string; mimetype: string | null }[]> {
+    if (eventIds.length === 0) {
+      return [];
+    }
+
+    return this.contentRepository
+      .createQueryBuilder('content')
+      .innerJoin('content.event', 'event')
+      .select('content.event_id', 'eventId')
+      .addSelect('content.external_id', 'fileId')
+      .addSelect('content.mimetype', 'mimetype')
+      .where('event.userId = :userId', { userId: context.userId })
+      .andWhere('content.event_id IN (:...eventIds)', { eventIds })
+      .andWhere("content.type = 'media'")
+      .andWhere('content.external_id IS NOT NULL')
+      .orderBy('content.created_at', 'ASC')
+      .getRawMany<{ eventId: string; fileId: string; mimetype: string | null }>();
+  }
+
   async update(context: ServiceContext, id: string, data: UpdateContentDto): Promise<Content | null> {
     const updateData: Partial<ContentEntity> = {};
 
