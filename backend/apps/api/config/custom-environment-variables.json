@@ -30,7 +30,8 @@
       "callbackUrl": "OAUTH_CALLBACK_URL"
     },
     "oidc": {
-      "issuerUrl": "OIDC_ISSUER_URL"
+      "issuerUrl": "OIDC_ISSUER_URL",
+      "nativeRedirectScheme": "OIDC_NATIVE_REDIRECT_SCHEME"
     },
     "portal": {
       "enabled": {

@@ -17,6 +17,7 @@ export { createHookContext } from './src/utils/createHookContext';
 export { fetchJson } from './src/utils/fetchJson';
 export {
   addAppStateListener,
+  addAppUrlOpenListener,
   addBackButtonListener,
   exitApp,
   hideSplashScreen,
@@ -25,3 +26,10 @@ export {
   secureStorageRemove,
   secureStorageSet,
 } from './src/utils/nativeBridge';
+export {
+  OIDC_NATIVE_CALLBACK_URL,
+  OIDC_NATIVE_CLIENT_FLAG,
+  OIDC_NATIVE_SCHEME,
+  parseOidcCallbackUrl,
+} from './src/utils/oidcNative';
+export type { OidcCallbackParams } from './src/utils/oidcNative';

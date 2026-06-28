@@ -10,6 +10,24 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * global and reads its configured server origin from localStorage (see
  * `@ci/common` apiBase + the in-app /server settings screen), so no extra native
  * bridge is needed for Phase 1.
+ *
+ * OIDC deep link ("Sign in with CI Portal"): the app registers the custom URL
+ * scheme `companion://` so the OIDC callback can return into the app. iOS is wired
+ * via `CFBundleURLTypes` in `ios/App/App/Info.plist`. When the Android project is
+ * generated (`npx cap add android`), add the matching intent-filter to
+ * `android/app/src/main/AndroidManifest.xml`, inside the main `<activity>`:
+ *
+ *   <intent-filter>
+ *     <action android:name="android.intent.action.VIEW" />
+ *     <category android:name="android.intent.category.DEFAULT" />
+ *     <category android:name="android.intent.category.BROWSABLE" />
+ *     <data android:scheme="companion" android:host="oidc" />
+ *   </intent-filter>
+ *
+ * Keep the scheme in sync with `OIDC_NATIVE_SCHEME` in `@ci/common`
+ * (src/utils/oidcNative.ts) and the backend's `auth.oidc.nativeRedirectScheme`
+ * config. `@capacitor/app` surfaces the inbound URL as an `appUrlOpen` event,
+ * which `useAuth` handles via `addAppUrlOpenListener`.
  */
 const config: CapacitorConfig = {
   appId: 'com.companionintelligence.app',

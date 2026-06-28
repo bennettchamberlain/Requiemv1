@@ -106,6 +106,10 @@ export const ConfigSchema = z.object({
     oidc: z.object({
       issuerUrl: z.string(),
       callbackUrl: z.string(),
+      // Custom URL scheme the native (Capacitor) app registers so the OIDC callback
+      // can deep-link the sign-in result back into the app. Must match the scheme in
+      // the iOS Info.plist / Android intent-filter and @ci/common's OIDC_NATIVE_SCHEME.
+      nativeRedirectScheme: z.string().default('companion'),
     }),
   }),
   db: z.object({

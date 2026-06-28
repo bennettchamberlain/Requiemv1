@@ -14,6 +14,27 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.companionintelligence.app.oidc</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!--
+				  Custom URL scheme used to return the OIDC sign-in result from the
+				  system browser back into the native app (deep link). The backend
+				  redirects to `companion://oidc/callback?code=<one-time-code>` and
+				  @capacitor/app surfaces it as an `appUrlOpen` event. Keep this in
+				  sync with `OIDC_NATIVE_SCHEME` in @ci/common (oidcNative.ts) and the
+				  backend's `auth.oidc.nativeRedirectScheme` config.
+				-->
+				<string>companion</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

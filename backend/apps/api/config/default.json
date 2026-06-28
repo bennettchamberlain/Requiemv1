@@ -61,7 +61,8 @@
     },
     "oidc": {
       "issuerUrl": "",
-      "callbackUrl": "https://ci-server.localhost/api/authenticate/oidc/callback"
+      "callbackUrl": "https://ci-server.localhost/api/authenticate/oidc/callback",
+      "nativeRedirectScheme": "companion"
     },
     "portal": {
       "enabled": false,

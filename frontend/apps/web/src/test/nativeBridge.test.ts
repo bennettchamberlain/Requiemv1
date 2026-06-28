@@ -1,4 +1,5 @@
 import {
+  addAppUrlOpenListener,
   addBackButtonListener,
   exitApp,
   hideSplashScreen,
@@ -178,6 +179,64 @@ describe('nativeBridge — app lifecycle (back button, exit, splash)', () => {
 
     await expect(exitApp()).resolves.toBeUndefined();
     await expect(hideSplashScreen()).resolves.toBeUndefined();
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('nativeBridge — deep links (appUrlOpen)', () => {
+  function fakeUrlOpenWindow() {
+    const remove = vi.fn();
+    let urlHandler: ((e: { url?: string }) => void) | undefined;
+    const addListener = vi.fn(async (_event: string, listener: (e: { url?: string }) => void) => {
+      urlHandler = listener;
+
+      return { remove };
+    });
+
+    const win = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        Plugins: {
+          App: { addListener },
+        },
+      },
+    };
+
+    return { win, remove, fireUrl: (url?: string) => urlHandler?.({ url }) };
+  }
+
+  it('forwards the opened URL and unsubscribes', async () => {
+    const { win, remove, fireUrl } = fakeUrlOpenWindow();
+    setWindow(win);
+
+    const seen: string[] = [];
+    const unsubscribe = await addAppUrlOpenListener((url) => seen.push(url));
+
+    fireUrl('companion://oidc/callback?code=abc123');
+    expect(seen).toEqual(['companion://oidc/callback?code=abc123']);
+
+    unsubscribe();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores events with no url', async () => {
+    const { win, fireUrl } = fakeUrlOpenWindow();
+    setWindow(win);
+
+    const handler = vi.fn();
+    await addAppUrlOpenListener(handler);
+
+    fireUrl(undefined);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('is inert on web: returns a no-op unsubscribe and never fires', async () => {
+    setWindow({});
+
+    const handler = vi.fn();
+    const unsubscribe = await addAppUrlOpenListener(handler);
+    unsubscribe();
+
     expect(handler).not.toHaveBeenCalled();
   });
 });

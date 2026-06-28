@@ -35,6 +35,10 @@ interface AppPlugin {
     eventName: 'appStateChange',
     listener: (event: { isActive: boolean }) => void,
   ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'appUrlOpen',
+    listener: (event: { url?: string }) => void,
+  ): Promise<PluginListenerHandle>;
   exitApp(): Promise<void>;
 }
 
@@ -171,6 +175,31 @@ export async function addAppStateListener(handler: (isActive: boolean) => void):
   }
 
   const handle = await app.addListener('appStateChange', (event) => handler(Boolean(event?.isActive)));
+
+  return () => {
+    void handle.remove();
+  };
+}
+
+/**
+ * Subscribe to deep links opened into the app (custom URL scheme / universal links),
+ * delivered by `@capacitor/app` as `appUrlOpen`. `handler` receives the full URL string.
+ * Used to complete native "Sign in with CI Portal": the system browser redirects to
+ * `companion://oidc/callback?...` and that URL surfaces here. Returns an unsubscribe
+ * function. No-op on web (the event never fires), where it returns a no-op cleanup.
+ */
+export async function addAppUrlOpenListener(handler: (url: string) => void): Promise<() => void> {
+  const app = plugins()?.App;
+
+  if (!isNativePlatform() || !app) {
+    return noop;
+  }
+
+  const handle = await app.addListener('appUrlOpen', (event) => {
+    if (event?.url) {
+      handler(event.url);
+    }
+  });
 
   return () => {
     void handle.remove();
