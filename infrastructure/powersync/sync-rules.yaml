@@ -1,0 +1,44 @@
+# PowerSync sync rules — what data replicates to each user's on-device SQLite.
+#
+# One bucket per user, scoped by `request.user_id()` (the JWT `sub` set by
+# CI-Server's /api/powersync/token endpoint). Only small, user-scoped, read-mostly
+# tables are synced; large/server-computed/PII data stays online via GraphQL.
+#
+# Verified user-scoped tables (each has a uuid `id` PK + `user_id`):
+#   - ci.notes            (id, title, content, user_id, created_at, updated_at)
+#   - ci.files            (metadata only — the binary lives in Minio via bucket/key)
+#   - ci_search.tags      (id, label, description, user_id, ...)
+#
+# DELIBERATELY NOT synced (keep online): ci.events / ci.browser_activity /
+# ci.communications (TimescaleDB hypertables, high-churn, PII, embeddings),
+# ci.content (NULL user_id), ci.entities/relationships (graph), ci_search.embeddings
+# (pgvector — huge, server-computed), HBPE tables.
+#
+# TODO (verify exact table names first): add chat threads/messages (text only),
+# inventory/items, and ci_search.entity_tag (scoped via its tag's user_id). Their
+# table names did not match the assumed ci.threads/ci.messages/ci.inventory at
+# scaffold time — confirm against backend/apps/api/db/postgres/migrations before
+# adding, so a wrong name doesn't break replication.
+
+bucket_definitions:
+  user_data:
+    # The authenticated user's id, taken from the token subject.
+    parameters: SELECT request.user_id() AS user_id
+
+    data:
+      - SELECT id, title, content, user_id, created_at, updated_at
+        FROM ci.notes
+        WHERE user_id = bucket.user_id
+
+      # Files: metadata only. No binary/extracted-text/embedding columns exist on
+      # this table (the object is fetched from Minio via a fresh signed URL), so the
+      # full row is safe to sync.
+      - SELECT id, filename, content_type, size, width, height, variant, title,
+               description, bucket, key, hash, external_id, parent_id, user_id,
+               external_created_at, external_updated_at, created_at, updated_at, deleted_at
+        FROM ci.files
+        WHERE user_id = bucket.user_id
+
+      - SELECT id, label, description, user_id, created_at, updated_at, deleted_at
+        FROM ci_search.tags
+        WHERE user_id = bucket.user_id
