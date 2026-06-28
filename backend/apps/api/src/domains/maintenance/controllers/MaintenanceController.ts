@@ -10,7 +10,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventEntity } from '@ci/domains/memory';
-import { GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
+import { EstimateLocationBatchRequestEvent, GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import {
   EmbeddingEntity,
   type OrphanCleanupResult,
@@ -19,6 +19,7 @@ import {
 } from '@ci/domains/search-ingress';
 import { INDEXABLE_ENTITIES, type IndexableEntity } from '@ci/domains/search-next';
 
+import { ESTIMATE_LOCATION_QUEUE } from '../listeners/EstimateLocationBatchListener';
 import {
   type CommunicationLinkBackfillProgress,
   type CommunicationLinkBackfillResult,
@@ -35,6 +36,11 @@ import {
   IndexDeferralService,
   type RecreateResult,
 } from '../services/IndexDeferralService';
+import {
+  DEFAULT_ESTIMATE_SOURCE_SYSTEMS,
+  DEFAULT_MAX_GAP_HOURS,
+  LocationEstimateService,
+} from '../services/LocationEstimateService';
 import {
   BACKFILLABLE_ENTITIES,
   type SearchIndexBackfillResult,
@@ -65,6 +71,23 @@ const geocodeLocationsSchema = z.object({
    * already-virtual rows and serve negative results from cache.
    */
   retryNull: z.boolean().optional(),
+});
+
+const estimateLocationsSchema = z.object({
+  /** Max coordinate-less events to fill in this batch (default 500). */
+  limit: z.coerce.number().int().min(1).max(20000).optional(),
+  /**
+   * Max time gap (hours) between a candidate event and its donor location; a
+   * candidate with no real location within this window is left unestimated.
+   * Default 24 (the "Balanced" scope).
+   */
+  maxGapHours: z.coerce.number().positive().max(720).optional(),
+  /**
+   * Restrict candidates to these source_systems (physical-presence events).
+   * Defaults to the built-in allowlist (calendar/photos/purchases/transport/
+   * fitness) so messages/social posts are never estimated.
+   */
+  sourceSystems: z.array(z.string().min(1)).min(1).optional(),
 });
 
 // Body for POST /api/maintenance/search-index/cleanup-orphans. All optional;
@@ -133,6 +156,8 @@ interface EmbeddedCountResponse {
 
 type GeocodeLocationsRequest = z.infer<typeof geocodeLocationsSchema>;
 
+type EstimateLocationsRequest = z.infer<typeof estimateLocationsSchema>;
+
 // Body for POST /api/maintenance/link-communications. All optional: with no
 // time range the job derives the bound from the data's own MIN/MAX(time) and
 // walks the whole history in windows. A range is cheaper/safer on the
@@ -172,6 +197,9 @@ interface GeocodeLocationsResponse {
 /** The dedicated PGBoss queue the geocode listener consumes. */
 const GEOCODE_QUEUE = 'geocode';
 
+/** Default batch size for the location estimator when the body omits a limit. */
+const ESTIMATE_DEFAULT_LIMIT = 500;
+
 /**
  * Operator-facing maintenance endpoints. POST /api/maintenance/geocode-locations
  * enqueues a forward-geocode backfill (geodata-plan Phase 1): it counts the
@@ -190,6 +218,7 @@ export class MaintenanceController {
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
+    private readonly locationEstimateService: LocationEstimateService,
   ) {}
 
   @Post('geocode-locations')
@@ -286,6 +315,56 @@ export class MaintenanceController {
       GeocodeBatchRequestEvent,
       { userId, limit, retryNull, direction: 'reverse' },
       { queue: GEOCODE_QUEUE },
+    );
+
+    return {
+      jobId: jobIds[0] ?? null,
+      estimatedEventCount,
+      status: jobIds.length > 0 ? 'enqueued' : 'noop',
+    };
+  }
+
+  /**
+   * Temporal location-estimation backfill (geodata-plan Phase 3). Fills
+   * location_coordinates for coordinate-less physical-presence events from the
+   * nearest-in-time real location within a bounded gap (LifeScope-style), so the
+   * long tail of unlocated events gets onto the map. Counts the eligible
+   * candidates and emits an {@link EstimateLocationBatchRequestEvent}. Run LAST
+   * in the maintenance chain (after geocoding) so it only fills what nothing else
+   * could resolve. Idempotent — never overwrites real coordinates, never chains
+   * an estimate off another estimate.
+   */
+  @Post('estimate-locations')
+  async estimateLocations(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(estimateLocationsSchema)) body: EstimateLocationsRequest,
+  ): Promise<GeocodeLocationsResponse> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { jobId: null, estimatedEventCount: 0, status: 'noop' };
+    }
+
+    const limit = body.limit ?? ESTIMATE_DEFAULT_LIMIT;
+    const maxGapHours = body.maxGapHours ?? DEFAULT_MAX_GAP_HOURS;
+    const sourceSystems = body.sourceSystems ?? [...DEFAULT_ESTIMATE_SOURCE_SYSTEMS];
+
+    const candidateCount = await this.locationEstimateService.countCandidates(
+      userId,
+      sourceSystems,
+      Math.round(maxGapHours * 3600),
+    );
+    const estimatedEventCount = Math.min(candidateCount, limit);
+
+    if (estimatedEventCount === 0) {
+      return { jobId: null, estimatedEventCount: 0, status: 'noop' };
+    }
+
+    const jobIds = await this.signallingEventService.send(
+      EstimateLocationBatchRequestEvent,
+      { userId, limit, maxGapHours, sourceSystems },
+      { queue: ESTIMATE_LOCATION_QUEUE },
     );
 
     return {
