@@ -274,6 +274,57 @@ export class MaintenanceController {
   }
 
   /**
+   * Reverse-geocode backfill (geodata-plan Phase 2): the inverse of
+   * geocode-locations. Counts events that HAVE coordinates (photo EXIF / GPS /
+   * estimation) but no readable location_name, and emits a
+   * {@link GeocodeBatchRequestEvent} with direction 'reverse' so the batch
+   * listener resolves a place name for each — turning bare map pins into labels.
+   */
+  @Post('reverse-geocode-locations')
+  async reverseGeocodeLocations(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(geocodeLocationsSchema)) body: GeocodeLocationsRequest,
+  ): Promise<GeocodeLocationsResponse> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { jobId: null, estimatedEventCount: 0, status: 'noop' };
+    }
+
+    const limit = body.limit ?? config.geocoding.batchSize;
+    const retryNull = body.retryNull ?? false;
+
+    // Candidate set: coordinates present, name missing — the inverse of the
+    // forward backfill's filter.
+    const candidateCount = await this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .where('event.user_id = :userId', { userId })
+      .andWhere('event.location_coordinates IS NOT NULL')
+      .andWhere("(event.location_name IS NULL OR btrim(event.location_name) = '')")
+      .getCount();
+
+    const estimatedEventCount = Math.min(candidateCount, limit);
+
+    if (estimatedEventCount === 0) {
+      return { jobId: null, estimatedEventCount: 0, status: 'noop' };
+    }
+
+    const jobIds = await this.signallingEventService.send(
+      GeocodeBatchRequestEvent,
+      { userId, limit, retryNull, direction: 'reverse' },
+      { queue: GEOCODE_QUEUE },
+    );
+
+    return {
+      jobId: jobIds[0] ?? null,
+      estimatedEventCount,
+      status: jobIds.length > 0 ? 'enqueued' : 'noop',
+    };
+  }
+
+  /**
    * Temporal location-estimation backfill (geodata-plan Phase 3). Fills
    * location_coordinates for coordinate-less physical-presence events from the
    * nearest-in-time real location within a bounded gap (LifeScope-style), so the

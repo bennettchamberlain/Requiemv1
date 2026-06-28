@@ -396,6 +396,15 @@ export type GeocodeBatchRequestPayload = {
    * negative results served from cache.
    */
   retryNull?: boolean;
+  /**
+   * Which direction to run. 'forward' (default) geocodes location_name -> coords
+   * for events missing coordinates; 'reverse' geocodes coords -> location_name
+   * for events that have coordinates (e.g. from photo EXIF / GPS) but no name,
+   * so a bare pin gets a readable label. Both directions share this queue + the
+   * listener's single rate limiter so they never collectively exceed the
+   * provider's QPS.
+   */
+  direction?: 'forward' | 'reverse';
 };
 
 defineEvent<GeocodeBatchRequestPayload>(GeocodeBatchRequestEvent);
