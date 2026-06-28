@@ -170,7 +170,10 @@ export class LocationEstimateService {
                   LIMIT 1
                )
              ) donors
-            ORDER BY (donor <> 'position'), delta_seconds ASC
+            -- Nearest-in-time wins; a GPS position fix only breaks a tie at
+            -- equal delta (it's the more precise source). Do NOT prefer a far
+            -- position fix over a temporally-closer located event.
+            ORDER BY delta_seconds ASC, (donor <> 'position')
             LIMIT 1
          ) d
         WHERE tgt.event_id = c.event_id

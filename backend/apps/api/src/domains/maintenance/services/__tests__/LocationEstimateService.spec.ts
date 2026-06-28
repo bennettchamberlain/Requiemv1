@@ -80,8 +80,10 @@ describe('LocationEstimateService.estimateBatch', () => {
     expect(sql).toContain('location_coordinates IS NULL'); // never overwrite real coords
     expect(sql).toContain("|| jsonb_build_object('location_source', 'estimated')");
     expect(sql).toContain('is_inferred = true');
-    expect(sql).toContain("'position'"); // prefers GPS donor
-    expect(sql).toContain("(donor <> 'position')"); // position wins ties
+    expect(sql).toContain("'position'"); // GPS-fix donor branch present
+    // Nearest-in-time is the PRIMARY donor sort; a GPS position fix only breaks a
+    // tie at equal delta. (A far position fix must not beat a closer event.)
+    expect(sql).toContain("ORDER BY delta_seconds ASC, (donor <> 'position')");
   });
 
   it('converts a fractional maxGapHours to whole seconds', async () => {
