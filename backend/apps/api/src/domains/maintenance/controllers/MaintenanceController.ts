@@ -9,6 +9,7 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { EventService as SignallingEventService } from '@ci/domains/events';
+import { MediaDimensionsBackfillRequestEvent, MEDIA_DIMENSIONS_QUEUE } from '@ci/domains/files';
 import { EventEntity } from '@ci/domains/memory';
 import { EstimateLocationBatchRequestEvent, GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import {
@@ -123,6 +124,15 @@ const searchIndexBackfillSchema = z.object({
 
 type SearchIndexBackfillRequest = z.infer<typeof searchIndexBackfillSchema>;
 
+// Body for POST /api/maintenance/backfill-media-dimensions. All optional: caps
+// how many ORIGINAL image/video files this batch records width/height for.
+const backfillMediaDimensionsSchema = z.object({
+  /** Max files to probe + record in this batch (default: MEDIA_DIMENSIONS_DEFAULT_LIMIT). */
+  limit: z.coerce.number().int().min(1).max(50000).optional(),
+});
+
+type BackfillMediaDimensionsRequest = z.infer<typeof backfillMediaDimensionsSchema>;
+
 /** Backfillable types, as a Set, for lenient `?types=` filtering. */
 const BACKFILLABLE_ENTITY_SET: ReadonlySet<string> = new Set(BACKFILLABLE_ENTITIES);
 
@@ -194,11 +204,20 @@ interface GeocodeLocationsResponse {
   status: 'enqueued' | 'noop';
 }
 
+interface BackfillMediaDimensionsResponse {
+  jobId: string | null;
+  estimatedFileCount: number;
+  status: 'enqueued' | 'noop';
+}
+
 /** The dedicated PGBoss queue the geocode listener consumes. */
 const GEOCODE_QUEUE = 'geocode';
 
 /** Default batch size for the location estimator when the body omits a limit. */
 const ESTIMATE_DEFAULT_LIMIT = 500;
+
+/** Default batch size for the media-dimensions backfill when the body omits a limit. */
+const MEDIA_DIMENSIONS_DEFAULT_LIMIT = 500;
 
 /**
  * Operator-facing maintenance endpoints. POST /api/maintenance/geocode-locations
@@ -370,6 +389,62 @@ export class MaintenanceController {
     return {
       jobId: jobIds[0] ?? null,
       estimatedEventCount,
+      status: jobIds.length > 0 ? 'enqueued' : 'noop',
+    };
+  }
+
+  /**
+   * Media-dimensions backfill. Records `ci.files.width`/`height` for ORIGINAL
+   * image/video files that still lack them — the existing corpus, ingested
+   * before the preview pass started capturing dimensions. Counts the candidates
+   * (locally-stored ORIGINAL image/video files with NULL width) and emits a
+   * {@link MediaDimensionsBackfillRequestEvent} for the files-domain listener to
+   * process out-of-band. Once recorded, EventType.mediaWidth/mediaHeight and the
+   * drawer "Dimensions" row light up with no frontend change. Idempotent +
+   * resumable: re-run until estimatedFileCount is 0.
+   */
+  @Post('backfill-media-dimensions')
+  async backfillMediaDimensions(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(backfillMediaDimensionsSchema)) body: BackfillMediaDimensionsRequest,
+  ): Promise<BackfillMediaDimensionsResponse> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { jobId: null, estimatedFileCount: 0, status: 'noop' };
+    }
+
+    const limit = body.limit ?? MEDIA_DIMENSIONS_DEFAULT_LIMIT;
+
+    // Mirror the listener's candidate filter so the estimate matches the work.
+    const rows = await this.dataSource.query<Array<{ count: string }>>(
+      `SELECT COUNT(*)::bigint AS count
+         FROM ci.files
+        WHERE user_id = $1
+          AND variant = $2
+          AND key IS NOT NULL
+          AND width IS NULL
+          AND (content_type LIKE 'image/%' OR content_type LIKE 'video/%')`,
+      [userId, 'ORIGINAL'],
+    );
+
+    const candidateCount = Number(rows[0]?.count ?? 0);
+    const estimatedFileCount = Math.min(candidateCount, limit);
+
+    if (estimatedFileCount === 0) {
+      return { jobId: null, estimatedFileCount: 0, status: 'noop' };
+    }
+
+    const jobIds = await this.signallingEventService.send(
+      MediaDimensionsBackfillRequestEvent,
+      { userId, limit },
+      { queue: MEDIA_DIMENSIONS_QUEUE },
+    );
+
+    return {
+      jobId: jobIds[0] ?? null,
+      estimatedFileCount,
       status: jobIds.length > 0 ? 'enqueued' : 'noop',
     };
   }
