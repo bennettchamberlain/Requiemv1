@@ -93,6 +93,13 @@
   "graphql": {
     "maxQueryComplexity": 150
   },
+  "powersync": {
+    "url": "",
+    "jwtSecret": "",
+    "audience": "powersync",
+    "tokenTtl": "300s",
+    "jwtKid": "ci-powersync-hs256"
+  },
   "services": {
     "ollama": {
       "host": "http://host.docker.internal:11434"

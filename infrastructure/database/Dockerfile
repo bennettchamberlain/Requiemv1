@@ -59,6 +59,15 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # shared_preload_libraries is required for TimescaleDB. Passing it via
 # the postgres CLI applies regardless of whether postgresql.conf has
 # been previously initialised on the persistent volume.
-CMD ["postgres", "-c", "shared_preload_libraries=timescaledb"]
+#
+# wal_level=logical (+ replication slots/senders) enables logical replication,
+# which the PowerSync local-first sync engine consumes. These are safe defaults if
+# PowerSync is unused; raise the slot/sender counts if you add more replication
+# consumers. See infrastructure/powersync/.
+CMD ["postgres", \
+     "-c", "shared_preload_libraries=timescaledb", \
+     "-c", "wal_level=logical", \
+     "-c", "max_replication_slots=10", \
+     "-c", "max_wal_senders=10"]
 
 EXPOSE 5432

@@ -1,0 +1,1 @@
+export { PowerSyncModule } from './PowerSyncModule';

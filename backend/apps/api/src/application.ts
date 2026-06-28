@@ -42,6 +42,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
 import { PositionModule } from '@ci/domains/position';
+import { PowerSyncModule } from '@ci/domains/powersync';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
@@ -82,6 +83,7 @@ import { UserModule } from '@ci/domains/user';
     McpModule,
     OnboardingModule,
     PositionModule,
+    PowerSyncModule,
     PredictionsModule,
     ToolsModule,
     MemoryModule,
