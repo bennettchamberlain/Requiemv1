@@ -1,3 +1,4 @@
+import { apiKeyHeaders } from './apiAuth';
 import { buildApiUrl } from './apiBase';
 
 interface Opts extends RequestInit {
@@ -6,6 +7,15 @@ interface Opts extends RequestInit {
 
 export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T | undefined> {
   const { timeout, ...rest } = init ?? {};
+
+  // On native, attach the API key (`x-api-key`). No-op on web (returns `{}`), so the
+  // request is unchanged. Callers pass plain-object headers, so a shallow merge is
+  // safe; the caller's own headers take precedence on the (unused) key collision.
+  const keyHeaders = apiKeyHeaders();
+
+  if (Object.keys(keyHeaders).length > 0) {
+    rest.headers = { ...keyHeaders, ...(rest.headers as Record<string, string> | undefined) };
+  }
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let controller: AbortController;

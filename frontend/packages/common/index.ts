@@ -4,6 +4,7 @@ export { LoadingPage } from './src/components/loading-page';
 export { Portal } from './src/components/portal';
 export { DeviceLayoutProvider, useDeviceLayout, usePageTitle } from './src/hooks';
 export { GlobalUID } from './src/utils/GlobalUID';
+export { apiKeyHeaders, getApiKey, setApiKey } from './src/utils/apiAuth';
 export {
   buildApiUrl,
   getApiBaseUrl,
@@ -14,3 +15,9 @@ export {
 } from './src/utils/apiBase';
 export { createHookContext } from './src/utils/createHookContext';
 export { fetchJson } from './src/utils/fetchJson';
+export {
+  openExternalUrl,
+  secureStorageGet,
+  secureStorageRemove,
+  secureStorageSet,
+} from './src/utils/nativeBridge';

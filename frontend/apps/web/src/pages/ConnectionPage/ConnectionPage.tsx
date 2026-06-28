@@ -1,7 +1,15 @@
 import { type ReactNode, useState } from 'react';
 
 import { isReference, type Reference, useMutation, useQuery } from '@apollo/client';
-import { buildApiUrl, GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
+import {
+  apiKeyHeaders,
+  buildApiUrl,
+  GlobalUID,
+  LoadingPage,
+  Portal,
+  usePageTitle,
+  EmptyState,
+} from '@ci/common';
 import {
   Breadcrumb,
   Card,
@@ -431,6 +439,7 @@ export function ConnectionPage() {
         {
           method: 'GET',
           headers: {
+            ...apiKeyHeaders(),
             Authorization: `Bearer ${authToken}`,
           },
         },

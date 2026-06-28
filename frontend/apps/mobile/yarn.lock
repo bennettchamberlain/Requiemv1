@@ -23,6 +23,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@capacitor/browser@npm:^7.0.0":
+  version: 7.0.5
+  resolution: "@capacitor/browser@npm:7.0.5"
+  peerDependencies:
+    "@capacitor/core": ">=7.0.0"
+  checksum: 10c0/d88cdfb2d0368e8b6edaf894989b1f9d957965d34fd8b5002b0fff05eee1b51d7a7cfa048624f13bd0e41530262655aa632f4cb8621f77ac789a642738081981
+  languageName: node
+  linkType: hard
+
 "@capacitor/cli@npm:^7.0.0":
   version: 7.6.7
   resolution: "@capacitor/cli@npm:7.6.7"
@@ -75,9 +84,11 @@ __metadata:
   dependencies:
     "@capacitor/android": "npm:^7.0.0"
     "@capacitor/app": "npm:^7.0.0"
+    "@capacitor/browser": "npm:^7.0.0"
     "@capacitor/cli": "npm:^7.0.0"
     "@capacitor/core": "npm:^7.0.0"
     "@capacitor/ios": "npm:^7.0.0"
+    capacitor-secure-storage-plugin: "npm:^0.11.0"
     typescript: "npm:^5.8.3"
   languageName: unknown
   linkType: soft
@@ -296,6 +307,15 @@ __metadata:
   version: 0.2.13
   resolution: "buffer-crc32@npm:0.2.13"
   checksum: 10c0/cb0a8ddf5cf4f766466db63279e47761eb825693eeba6a5a95ee4ec8cb8f81ede70aa7f9d8aeec083e781d47154290eb5d4d26b3f7a465ec57fb9e7d59c47150
+  languageName: node
+  linkType: hard
+
+"capacitor-secure-storage-plugin@npm:^0.11.0":
+  version: 0.11.0
+  resolution: "capacitor-secure-storage-plugin@npm:0.11.0"
+  peerDependencies:
+    "@capacitor/core": ">=7.0.0"
+  checksum: 10c0/1672bbc958f8b432bc0667e640552bce96ebad0a4bd4bef0543471161116c81c0bca202b62fa536ff2b59876b947e4b12b14b1f4ec4a5eb4066c9c781b398a16
   languageName: node
   linkType: hard
 

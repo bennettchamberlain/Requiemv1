@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button, Card, Separator } from '@ci/shadcn';
 import { Link, useSearchParams } from 'react-router-dom';
 
+import { OidcButton } from '@/components/OidcButton';
 import { useAuth } from '@/hooks';
 
 import { LoginForm, type LoginFormData } from './LoginForm';
@@ -36,9 +37,7 @@ export function LoginPage() {
             <p className="text-destructive mb-4 text-center text-sm">Sign in failed. Please try again.</p>
           )}
 
-          <Button className="w-full" asChild>
-            <a href="/api/authenticate/oidc">Sign in with CI Portal</a>
-          </Button>
+          <OidcButton label="Sign in with CI Portal" />
 
           {showPasswordForm ? (
             <>
