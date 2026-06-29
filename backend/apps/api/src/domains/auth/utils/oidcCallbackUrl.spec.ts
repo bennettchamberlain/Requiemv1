@@ -10,7 +10,10 @@ describe('resolveOidcCallbackUrl', () => {
 
   it('prefers the public base URL over the inbound request host', () => {
     expect(
-      resolveOidcCallbackUrl(localhostRequest, 'https://ci-memory-core-2-hanz-corp.companionintelligence.com'),
+      resolveOidcCallbackUrl(
+        localhostRequest,
+        'https://ci-memory-core-2-hanz-corp.companionintelligence.com',
+      ),
     ).toBe(`https://ci-memory-core-2-hanz-corp.companionintelligence.com${CALLBACK_PATH}`);
   });
 
@@ -21,7 +24,9 @@ describe('resolveOidcCallbackUrl', () => {
   });
 
   it('falls back to the request origin when no public base URL is configured', () => {
-    expect(resolveOidcCallbackUrl(localhostRequest, '')).toBe(`http://ci-memory-core-2-hanz-corp.localhost${CALLBACK_PATH}`);
+    expect(resolveOidcCallbackUrl(localhostRequest, '')).toBe(
+      `http://ci-memory-core-2-hanz-corp.localhost${CALLBACK_PATH}`,
+    );
     expect(resolveOidcCallbackUrl(localhostRequest, undefined)).toBe(
       `http://ci-memory-core-2-hanz-corp.localhost${CALLBACK_PATH}`,
     );
