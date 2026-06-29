@@ -18,6 +18,7 @@ import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { MaintenanceController } from './controllers/MaintenanceController';
 import { EstimateLocationBatchListener } from './listeners/EstimateLocationBatchListener';
 import { CommunicationLinkBackfillService } from './services/CommunicationLinkBackfillService';
+import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { LocationEstimateService } from './services/LocationEstimateService';
@@ -41,6 +42,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   providers: [
     IndexDeferralService,
     CommunicationLinkBackfillService,
+    EventParticipantBackfillService,
     GraphEnrichmentService,
     SearchIndexBackfillService,
     LocationEstimateService,
@@ -49,6 +51,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   exports: [
     IndexDeferralService,
     CommunicationLinkBackfillService,
+    EventParticipantBackfillService,
     GraphEnrichmentService,
     SearchIndexBackfillService,
     LocationEstimateService,
