@@ -58,6 +58,10 @@ Server env (read by `config.powersync`, see `backend/apps/api/config/`):
 | `POWERSYNC_JWT_SECRET` | Shared HS256 secret used to sign client tokens |
 | `POWERSYNC_AUDIENCE` | Token audience (default `powersync`) |
 
+> ⚠️ `POWERSYNC_AUDIENCE` must match `client_auth.audience` in `powersync.yaml` (the
+> service config, which hard-codes `['powersync']`). If you override it on CI-Server,
+> update the service config too, or PowerSync will reject the tokens as invalid.
+
 With `POWERSYNC_URL` / `POWERSYNC_JWT_SECRET` unset, the feature is dormant and
 `/api/powersync/token` returns **503** — safe to ship disabled.
 

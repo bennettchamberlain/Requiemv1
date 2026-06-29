@@ -26,7 +26,7 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
-  # Xcode 27 dropped iOS 14; force every pod target to the App minimum (15.0).
+  # Xcode 26 / the iOS 26 SDK dropped iOS 14; force every pod target to the App minimum (15.0).
   installer.pods_project.targets.each do |t|
     t.build_configurations.each do |c|
       c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
