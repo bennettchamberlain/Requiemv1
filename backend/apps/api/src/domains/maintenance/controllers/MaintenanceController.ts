@@ -9,6 +9,7 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { EventService as SignallingEventService } from '@ci/domains/events';
+import { MediaDimensionsBackfillRequestEvent, MEDIA_DIMENSIONS_QUEUE } from '@ci/domains/files';
 import { EventEntity } from '@ci/domains/memory';
 import { EstimateLocationBatchRequestEvent, GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import {
@@ -26,6 +27,11 @@ import {
   CommunicationLinkBackfillService,
 } from '../services/CommunicationLinkBackfillService';
 import {
+  type EventParticipantBackfillProgress,
+  type EventParticipantBackfillResult,
+  EventParticipantBackfillService,
+} from '../services/EventParticipantBackfillService';
+import {
   type GraphEnrichmentProgressCounts,
   type GraphEnrichmentResult,
   GraphEnrichmentService,
@@ -41,6 +47,10 @@ import {
   DEFAULT_MAX_GAP_HOURS,
   LocationEstimateService,
 } from '../services/LocationEstimateService';
+import {
+  type PersonStubBackfillResult,
+  PersonStubBackfillService,
+} from '../services/PersonStubBackfillService';
 import {
   BACKFILLABLE_ENTITIES,
   type SearchIndexBackfillResult,
@@ -123,6 +133,15 @@ const searchIndexBackfillSchema = z.object({
 
 type SearchIndexBackfillRequest = z.infer<typeof searchIndexBackfillSchema>;
 
+// Body for POST /api/maintenance/backfill-media-dimensions. All optional: caps
+// how many ORIGINAL image/video files this batch records width/height for.
+const backfillMediaDimensionsSchema = z.object({
+  /** Max files to probe + record in this batch (default: MEDIA_DIMENSIONS_DEFAULT_LIMIT). */
+  limit: z.coerce.number().int().min(1).max(50000).optional(),
+});
+
+type BackfillMediaDimensionsRequest = z.infer<typeof backfillMediaDimensionsSchema>;
+
 /** Backfillable types, as a Set, for lenient `?types=` filtering. */
 const BACKFILLABLE_ENTITY_SET: ReadonlySet<string> = new Set(BACKFILLABLE_ENTITIES);
 
@@ -175,6 +194,23 @@ const linkCommunicationsSchema = z.object({
 
 type LinkCommunicationsRequest = z.infer<typeof linkCommunicationsSchema>;
 
+// Body for POST /api/maintenance/extract-people-from-communications. Same shape
+// as the link-communications body: identical windowing semantics, identical
+// MIN/MAX-derived bounds when no range is supplied.
+const extractPeopleFromCommunicationsSchema = linkCommunicationsSchema;
+
+type ExtractPeopleFromCommunicationsRequest = z.infer<typeof extractPeopleFromCommunicationsSchema>;
+
+// Body for POST /api/maintenance/link-events. All optional. ci.events isn't a
+// hypertable, so there's no time-window knob to expose — just the per-page
+// candidate cap. Defaults sweep every candidate ci.events row for the user.
+const linkEventsSchema = z.object({
+  /** Max candidate rows examined per page (default 2000). */
+  pageSize: z.coerce.number().int().min(1).max(50000).optional(),
+});
+
+type LinkEventsRequest = z.infer<typeof linkEventsSchema>;
+
 // Body for POST /api/maintenance/extract-graph. All optional: caps how much of
 // the user's own data the LLM extraction samples per run. Re-runnable.
 const extractGraphSchema = z.object({
@@ -194,11 +230,20 @@ interface GeocodeLocationsResponse {
   status: 'enqueued' | 'noop';
 }
 
+interface BackfillMediaDimensionsResponse {
+  jobId: string | null;
+  estimatedFileCount: number;
+  status: 'enqueued' | 'noop';
+}
+
 /** The dedicated PGBoss queue the geocode listener consumes. */
 const GEOCODE_QUEUE = 'geocode';
 
 /** Default batch size for the location estimator when the body omits a limit. */
 const ESTIMATE_DEFAULT_LIMIT = 500;
+
+/** Default batch size for the media-dimensions backfill when the body omits a limit. */
+const MEDIA_DIMENSIONS_DEFAULT_LIMIT = 500;
 
 /**
  * Operator-facing maintenance endpoints. POST /api/maintenance/geocode-locations
@@ -216,6 +261,8 @@ export class MaintenanceController {
     private readonly indexDeferralService: IndexDeferralService,
     private readonly orphanCleanupService: OrphanCleanupService,
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
+    private readonly personStubBackfillService: PersonStubBackfillService,
+    private readonly eventParticipantBackfillService: EventParticipantBackfillService,
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
     private readonly locationEstimateService: LocationEstimateService,
@@ -375,6 +422,62 @@ export class MaintenanceController {
   }
 
   /**
+   * Media-dimensions backfill. Records `ci.files.width`/`height` for ORIGINAL
+   * image/video files that still lack them — the existing corpus, ingested
+   * before the preview pass started capturing dimensions. Counts the candidates
+   * (locally-stored ORIGINAL image/video files with NULL width) and emits a
+   * {@link MediaDimensionsBackfillRequestEvent} for the files-domain listener to
+   * process out-of-band. Once recorded, EventType.mediaWidth/mediaHeight and the
+   * drawer "Dimensions" row light up with no frontend change. Idempotent +
+   * resumable: re-run until estimatedFileCount is 0.
+   */
+  @Post('backfill-media-dimensions')
+  async backfillMediaDimensions(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(backfillMediaDimensionsSchema)) body: BackfillMediaDimensionsRequest,
+  ): Promise<BackfillMediaDimensionsResponse> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { jobId: null, estimatedFileCount: 0, status: 'noop' };
+    }
+
+    const limit = body.limit ?? MEDIA_DIMENSIONS_DEFAULT_LIMIT;
+
+    // Mirror the listener's candidate filter so the estimate matches the work.
+    const rows = await this.dataSource.query<Array<{ count: string }>>(
+      `SELECT COUNT(*)::bigint AS count
+         FROM ci.files
+        WHERE user_id = $1
+          AND variant = $2
+          AND key IS NOT NULL
+          AND width IS NULL
+          AND (content_type LIKE 'image/%' OR content_type LIKE 'video/%')`,
+      [userId, 'ORIGINAL'],
+    );
+
+    const candidateCount = Number(rows[0]?.count ?? 0);
+    const estimatedFileCount = Math.min(candidateCount, limit);
+
+    if (estimatedFileCount === 0) {
+      return { jobId: null, estimatedFileCount: 0, status: 'noop' };
+    }
+
+    const jobIds = await this.signallingEventService.send(
+      MediaDimensionsBackfillRequestEvent,
+      { userId, limit },
+      { queue: MEDIA_DIMENSIONS_QUEUE },
+    );
+
+    return {
+      jobId: jobIds[0] ?? null,
+      estimatedFileCount,
+      status: jobIds.length > 0 ? 'enqueued' : 'noop',
+    };
+  }
+
+  /**
    * People-linking backfill. Resolves communications' raw participant strings
    * (participants_metadata.from / .to) to graph entities via the normalized
    * entity_identifiers index, filling from_entity_id / to_entity_ids where they
@@ -382,6 +485,14 @@ export class MaintenanceController {
    * no stub Person entities. Bounded per time-window so it never triggers the
    * all-chunk hypertable scan. Operator-triggered; safe to run repeatedly as new
    * identifiers arrive.
+   *
+   * PREREQUISITE: the identifier index must be populated. A contact importer
+   * (Google Contacts, Apple Contacts, etc.) ordinarily seeds it, but when a
+   * corpus lands without one — emails/phones live only in communications — the
+   * index is empty and every lookup misses. Run
+   * POST /api/maintenance/extract-people-from-communications first to extract
+   * stub Person entities + identifiers from the communications themselves; then
+   * this endpoint can link the rows to them.
    */
   @Post('link-communications')
   async linkCommunications(
@@ -431,6 +542,106 @@ export class MaintenanceController {
       endTime: body.endTime,
       windowDays: body.windowDays,
       windowLimit: body.windowLimit,
+    });
+  }
+
+  /**
+   * Person-stub backfill from communications. Scans
+   * `ci.communications.participants_metadata.{from,to,cc,bcc}`, classifies each
+   * distinct raw participant as email/phone via the shared normalization rule,
+   * and creates a stub Person entity + `ci.entity_identifiers` row for every
+   * identifier the index doesn't yet cover. The foundation step that lets
+   * /link-communications resolve raw participants to entity_ids on a corpus
+   * with no contact-importer history. Idempotent (entities dedupe on the
+   * linked-key partial unique index; identifiers dedupe on the unique index).
+   * Bounded per time-window for hypertable safety.
+   *
+   * Run this BEFORE /link-communications. A contact importer that later pushes
+   * the same email lands on its own linked_table, so it does not collide with
+   * the stubs and the identifier index keeps pointing at whichever Person was
+   * created first (a real merge is out of scope; tracked separately).
+   */
+  @Post('extract-people-from-communications')
+  async extractPeopleFromCommunications(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(extractPeopleFromCommunicationsSchema))
+    body: ExtractPeopleFromCommunicationsRequest,
+  ): Promise<PersonStubBackfillResult> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return {
+        examined: 0,
+        identifiersSeen: 0,
+        identifiersExisting: 0,
+        peopleCreated: 0,
+        identifiersIndexed: 0,
+        errors: [],
+        windows: 0,
+        range: null,
+      };
+    }
+
+    return this.personStubBackfillService.backfill(userId, {
+      startTime: body.startTime,
+      endTime: body.endTime,
+      windowDays: body.windowDays,
+      windowLimit: body.windowLimit,
+    });
+  }
+
+  /**
+   * People-linking backfill for ci.events. Parses organizer + attendee emails
+   * out of `event.metadata` (organizerEmail / participants[].email and friends),
+   * resolves them against the normalized ci.entity_identifiers index, and fills
+   * `organizer_entity_id` / `participant_entity_ids` where they are NULL/empty.
+   * Re-runnable, idempotent (only touches NULL/empty link columns), creates no
+   * stub Person entities. Run AFTER the entity_identifiers/Person index has been
+   * populated so the resolver has something to hit; safe to re-run as more
+   * Person identifiers arrive. Operator-triggered.
+   */
+  @Post('link-events')
+  async linkEvents(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(linkEventsSchema)) body: LinkEventsRequest,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('stream') stream?: string,
+    @Headers('accept') accept?: string,
+  ): Promise<EventParticipantBackfillResult | void> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    const empty: EventParticipantBackfillResult = {
+      examined: 0,
+      organizersLinked: 0,
+      participantsLinked: 0,
+      pages: 0,
+    };
+
+    // Opt-in streaming (NDJSON): one {type:'progress'} line per page then a
+    // final {type:'result'} line. When NOT requested, behave exactly as before:
+    // a single synchronous JSON result. Same JwtOrApiKeyAuthGuard either way.
+    if (wantsStream(stream, accept)) {
+      return this.streamNdjson<EventParticipantBackfillResult>(req, res, async (emit) => {
+        if (typeof userId !== 'string') {
+          return empty;
+        }
+
+        return this.eventParticipantBackfillService.backfill(userId, {
+          pageSize: body.pageSize,
+          onProgress: (partial: EventParticipantBackfillProgress) => emit({ type: 'progress', ...partial }),
+        });
+      });
+    }
+
+    if (typeof userId !== 'string') {
+      return empty;
+    }
+
+    return this.eventParticipantBackfillService.backfill(userId, {
+      pageSize: body.pageSize,
     });
   }
 
