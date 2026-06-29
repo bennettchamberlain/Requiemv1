@@ -20,10 +20,16 @@ const PREVIEW_MAX_DIMENSION = 300;
 const IMAGE_MIME_PREFIX = 'image/';
 const VIDEO_MIME_PREFIX = 'video/';
 
-/** A generated preview plus the source's intrinsic dimensions (null if unreadable). */
+/**
+ * A generated preview plus the dimensions of both the rendered preview JPEG
+ * (always known; stored on the PREVIEW row so the FE has intrinsic sizes for
+ * `<img>` aspect-ratio) and the source media (`null` if unreadable; backfilled
+ * onto the ORIGINAL row).
+ */
 interface PreviewResult {
   buffer: Buffer;
-  dimensions: MediaDimensions | null;
+  previewDimensions: MediaDimensions;
+  sourceDimensions: MediaDimensions | null;
 }
 
 @Injectable()
@@ -102,13 +108,17 @@ export class FilePreviewGenerationListener {
     // Record the source's intrinsic dimensions onto the ORIGINAL row so
     // EventMediaLoader (and the drawer "Dimensions" row) can surface them. A
     // targeted write that doesn't re-trigger preview generation or re-indexing.
-    if (result.dimensions != null) {
-      await this.fileService.setDimensions(context, file.id, result.dimensions);
+    if (result.sourceDimensions != null) {
+      await this.fileService.setDimensions(context, file.id, result.sourceDimensions);
     }
 
     const preview = await this.fileService.create(context, {
       contentType: 'image/jpeg',
       size: result.buffer.length,
+      // Always known — captured from sharp's resolveWithObject. Lets the FE
+      // thumbnail loader size the slot before the image decodes.
+      width: result.previewDimensions.width,
+      height: result.previewDimensions.height,
       variant: FileVariant.PREVIEW,
       buffer: result.buffer,
       parentId: file.id,
@@ -135,18 +145,28 @@ export class FilePreviewGenerationListener {
     // Buffer where it isn't on a partially-consumed stream).
     const original = Buffer.from(await this.fileService.getFileContent(context, file.key));
 
-    const dimensions = await this.mediaDimensionsService.fromImageBuffer(original);
+    const sourceDimensions = await this.mediaDimensionsService.fromImageBuffer(original);
 
-    const buffer = await sharp(original)
+    // .rotate() (no args) reads EXIF orientation, rotates the pixels, and
+    // strips the tag. Must come before .resize() so the resize box applies to
+    // the *display* orientation, not the stored one. Without this the JPEG
+    // bytes are saved as-is and browsers don't reliably honour the tag on
+    // derivative JPEGs — photos come back upside-down or sideways.
+    const { data, info } = await sharp(original)
+      .rotate()
       .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
         fit: 'inside',
       })
       .jpeg({
         quality: 80,
       })
-      .toBuffer();
+      .toBuffer({ resolveWithObject: true });
 
-    return { buffer, dimensions };
+    return {
+      buffer: data,
+      previewDimensions: { width: info.width, height: info.height },
+      sourceDimensions,
+    };
   }
 
   private async generateVideoPreview(
@@ -169,7 +189,7 @@ export class FilePreviewGenerationListener {
 
       // Probe the source stream's dimensions from the same spooled file, before
       // collapsing it to a single frame.
-      const dimensions = await this.mediaDimensionsService.fromVideoFile(tempInput);
+      const sourceDimensions = await this.mediaDimensionsService.fromVideoFile(tempInput);
 
       // Extract a single frame
       await new Promise<void>((resolve, reject) => {
@@ -183,14 +203,21 @@ export class FilePreviewGenerationListener {
 
       const frame = await fs.readFile(tempOutput);
 
-      const buffer = await sharp(frame)
+      // ffmpeg already auto-rotates the extracted frame, so .rotate() is a
+      // safety net for any orientation tag still on the JPEG bytes.
+      const { data, info } = await sharp(frame)
+        .rotate()
         .resize(PREVIEW_MAX_DIMENSION, PREVIEW_MAX_DIMENSION, {
           fit: 'inside',
         })
         .jpeg({ quality: 80 })
-        .toBuffer();
+        .toBuffer({ resolveWithObject: true });
 
-      return { buffer, dimensions };
+      return {
+        buffer: data,
+        previewDimensions: { width: info.width, height: info.height },
+        sourceDimensions,
+      };
     } finally {
       await fs.unlink(tempInput).catch(() => {});
       await fs.unlink(tempOutput).catch(() => {});

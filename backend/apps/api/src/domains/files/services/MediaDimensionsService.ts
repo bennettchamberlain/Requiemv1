@@ -52,6 +52,12 @@ export class MediaDimensionsService {
       const { width, height, orientation } = await sharp(buffer).metadata();
 
       if (width == null || height == null) {
+        // Sharp didn't throw but came back with no usable dimensions — happens
+        // on HEIC files with HEIF box variants the bundled libheif can't
+        // parse. Log it so silent regressions are visible (we saw ~18% of HEIC
+        // originals stuck at NULL before this warning existed).
+        this.logger.warn('Image dimensions unavailable', { bytes: buffer.length });
+
         return null;
       }
 
