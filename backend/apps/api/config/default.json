@@ -58,7 +58,6 @@
     },
     "oidc": {
       "issuerUrl": "",
-      "callbackUrl": "https://ci-server.localhost/api/authenticate/oidc/callback",
       "publicBaseUrl": ""
     },
     "portal": {

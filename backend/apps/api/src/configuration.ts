@@ -87,7 +87,6 @@ export const ConfigSchema = z.object({
     }),
     oidc: z.object({
       issuerUrl: z.string(),
-      callbackUrl: z.string(),
       // Public origin of this app (e.g. https://ci-memory-<org>.companionintelligence.com),
       // injected by CI-Hub as APP_BASE_URL. When set, the OIDC redirect_uri is built from
       // this stable origin instead of the inbound request host — so reaching the app at its

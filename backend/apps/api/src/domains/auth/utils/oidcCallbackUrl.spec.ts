@@ -41,6 +41,26 @@ describe('resolveOidcCallbackUrl', () => {
     ).toBe(`https://app.example.com${CALLBACK_PATH}`);
   });
 
+  it('takes the first hop from comma-separated forwarded headers', () => {
+    expect(
+      resolveOidcCallbackUrl({
+        forwardedProto: 'https, http',
+        forwardedHost: 'app.example.com, internal:3000',
+        secure: false,
+      }),
+    ).toBe(`https://app.example.com${CALLBACK_PATH}`);
+  });
+
+  it('takes the first entry from array-valued forwarded headers', () => {
+    expect(
+      resolveOidcCallbackUrl({
+        forwardedProto: ['https', 'http'],
+        forwardedHost: ['app.example.com', 'internal:3000'],
+        secure: false,
+      }),
+    ).toBe(`https://app.example.com${CALLBACK_PATH}`);
+  });
+
   it('uses https in the fallback path when the connection is secure', () => {
     expect(resolveOidcCallbackUrl({ host: 'app.example.com', secure: true })).toBe(
       `https://app.example.com${CALLBACK_PATH}`,

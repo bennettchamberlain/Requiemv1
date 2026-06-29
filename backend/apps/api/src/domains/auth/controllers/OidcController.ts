@@ -71,8 +71,8 @@ export class OidcController {
   private getCallbackUrl(req: Request) {
     return resolveOidcCallbackUrl(
       {
-        forwardedProto: req.headers['x-forwarded-proto'] as string | undefined,
-        forwardedHost: req.headers['x-forwarded-host'] as string | undefined,
+        forwardedProto: req.headers['x-forwarded-proto'],
+        forwardedHost: req.headers['x-forwarded-host'],
         host: req.headers.host,
         secure: req.secure,
       },
