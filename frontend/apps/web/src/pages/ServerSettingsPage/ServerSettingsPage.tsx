@@ -20,26 +20,29 @@ export function ServerSettingsPage() {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
 
-  function normalize(value: string): string {
-    return value.trim().replace(/\/+$/, '');
-  }
-
-  function isValidOrigin(value: string): boolean {
+  // Parse to a clean http(s) origin, dropping any path/query/hash so the persisted
+  // value is always a true origin (e.g. `https://host/app` → `https://host`) and
+  // request URLs like `${origin}/api/...` resolve correctly. Returns null if invalid.
+  function toOrigin(value: string): string | null {
     try {
-      const parsed = new URL(value);
+      const parsed = new URL(value.trim());
 
-      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
+      }
+
+      return parsed.origin;
     } catch {
-      return false;
+      return null;
     }
   }
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
-    const candidate = normalize(url);
+    const candidate = toOrigin(url);
 
-    if (!isValidOrigin(candidate)) {
+    if (!candidate) {
       setStatus('error');
       setError('Enter a full server URL, e.g. https://ci-server.example.com');
 
@@ -49,18 +52,16 @@ export function ServerSettingsPage() {
     setStatus('testing');
     setError(null);
 
-    try {
-      // Health-check the candidate origin directly (not via buildApiUrl, since we
-      // are validating a URL the user has not committed to yet). `/api/health` is
-      // unauthenticated, so a 2xx confirms reachability before we save.
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+    // Health-check the candidate origin directly (not via buildApiUrl, since we are
+    // validating a URL the user has not committed to yet). `/api/health` is
+    // unauthenticated, so a 2xx confirms reachability before we save.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
 
+    try {
       const response = await fetch(`${candidate}/api/health`, {
         signal: controller.signal,
       });
-
-      clearTimeout(timeout);
 
       if (!response.ok) {
         throw new Error(`Server responded with ${response.status}`);
@@ -77,6 +78,9 @@ export function ServerSettingsPage() {
           ? 'Could not reach the server (timed out). Check the URL and your network.'
           : `Could not reach the server. ${err instanceof Error ? err.message : ''}`.trim(),
       );
+    } finally {
+      // Always clear the abort timer, including the network-error path.
+      clearTimeout(timeout);
     }
   };
 

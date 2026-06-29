@@ -383,6 +383,10 @@ export async function syncNativeIntentConfig(): Promise<void> {
 
     if (baseUrl) {
       await secureStorageSet(API_BASE_URL_KEY, baseUrl);
+    } else {
+      // Keep the keystore consistent with localStorage: if the base URL was cleared,
+      // drop the mirrored copy so App Intents don't keep using a stale server.
+      await secureStorageRemove(API_BASE_URL_KEY);
     }
   } catch {
     // Best-effort — App Intents simply won't be configured until this succeeds.
