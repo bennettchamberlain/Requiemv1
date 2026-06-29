@@ -19,7 +19,7 @@ yarn dev
 ## How a request flows
 
 The API is a NestJS app exposing REST (`/api`) and Apollo GraphQL (`/graphql`),
-backed by Postgres (pgvector + TimescaleDB + Apache AGE) with async work handed
+backed by Postgres 18 (pgvector + TimescaleDB + PostGIS) with async work handed
 to Temporal and PGBoss. Embeddings and LLM calls go to Ollama.
 
 ```mermaid

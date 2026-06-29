@@ -36,7 +36,7 @@ This is a Yarn workspace monorepo with the following structure:
 │   ├── shadcn/                 # ShadCN components (these typically shouldn't be modified directly, they're just local copies of our component library)
 │   └── template/               # A starter package to copy and paste when you need to create a new package in frontend/packages/
 └── mcp-servers/
-    └── web-search/             # Web-search MCP server
+    └── web-search/             # Web-search MCP server (git submodule)
 ```
 
 ## Architecture at a glance

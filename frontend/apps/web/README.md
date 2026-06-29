@@ -35,7 +35,8 @@ flowchart TB
       Saved["/saved-searches"]
       Chat["/chat/:id?"]
       Feed["/feed/:id?"]
-      Insights["/insights/:id?"]
+      Insights["/insights"]
+      InsightDetail["/insights/:id"]
     end
     subgraph Records["Records & detail"]
       People["/people/:id"]
@@ -51,7 +52,8 @@ flowchart TB
     end
     subgraph Ops["Connections & system"]
       Connect["/connect"]
-      Connections["/connections/:id?"]
+      Connections["/connections"]
+      ConnectionDetail["/connections/:id"]
       Providers["/providers/:id"]
       Jobs["/jobs"]
       Settings["/settings/* (appearance · api-keys · oauth)"]

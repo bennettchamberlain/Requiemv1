@@ -155,7 +155,7 @@ flowchart TB
 | `setup-secrets` | `ci/setup-secrets` | One-shot: generates and mounts `.env.secrets` | — |
 | `gateway` | NGINX (`ci/gateway`) | TLS + routing for **staging/production** only | — |
 | `dbproxy` / `dbconnstr` / `orchestrator-ui` | — | `tooling`-profile helpers (DB proxy, connection string, Temporal UI) | — |
-| `mcp-servers/web-search` | (Node) | MCP server exposing web search to LLM agents | — |
+| `mcp-servers/web-search` | (Node, git submodule) | MCP server exposing web search to LLM agents | — |
 
 In **local development** there is no gateway container — `make dev` fronts the stack with **Caddy on the host** at `https://<project>.localhost` (see the root README).
 
