@@ -16,12 +16,14 @@ import { EventEntity, MemoryModule } from '@ci/domains/memory';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 
 import { MaintenanceController } from './controllers/MaintenanceController';
+import { CommunicationParticipantLinkListener } from './listeners/CommunicationParticipantLinkListener';
 import { EstimateLocationBatchListener } from './listeners/EstimateLocationBatchListener';
 import { CommunicationLinkBackfillService } from './services/CommunicationLinkBackfillService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { LocationEstimateService } from './services/LocationEstimateService';
+import { PersonStubBackfillService } from './services/PersonStubBackfillService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
 
 /**
@@ -42,15 +44,18 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   providers: [
     IndexDeferralService,
     CommunicationLinkBackfillService,
+    PersonStubBackfillService,
     EventParticipantBackfillService,
     GraphEnrichmentService,
     SearchIndexBackfillService,
     LocationEstimateService,
     EstimateLocationBatchListener,
+    CommunicationParticipantLinkListener,
   ],
   exports: [
     IndexDeferralService,
     CommunicationLinkBackfillService,
+    PersonStubBackfillService,
     EventParticipantBackfillService,
     GraphEnrichmentService,
     SearchIndexBackfillService,
