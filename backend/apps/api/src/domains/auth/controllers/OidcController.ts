@@ -26,6 +26,7 @@ import { UserService } from '@ci/domains/user';
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
 import { OidcNativeCodeService } from '../services/OidcNativeCodeService';
+import { resolveOidcCallbackUrl } from '../utils/oidcCallbackUrl';
 
 const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
 const STATE_COOKIE = 'oidc_state';
@@ -89,15 +90,25 @@ export class OidcController {
   }
 
   /**
-   * Derive the callback URL from the current request's origin.
-   * This removes the need for a static OIDC_CALLBACK_URL env var —
-   * the callback is always relative to wherever CI-Server is running.
+   * Resolve the OIDC callback URL.
+   *
+   * Prefers the app's public base URL (CI-Hub injects it as APP_BASE_URL →
+   * config.auth.oidc.publicBaseUrl) so the redirect_uri is the app's stable
+   * public origin. Falls back to the inbound request's origin for local/dev
+   * installs without a public base URL. Building it from the request host alone
+   * breaks when the app is reached at its local *.localhost route, since the
+   * resulting localhost callback is unreachable for CI-Portal.
    */
   private getCallbackUrl(req: Request) {
-    const proto = (req.headers['x-forwarded-proto'] as string) || (req.secure ? 'https' : 'http');
-    const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost';
-
-    return `${proto}://${host}/api/authenticate/oidc/callback`;
+    return resolveOidcCallbackUrl(
+      {
+        forwardedProto: req.headers['x-forwarded-proto'],
+        forwardedHost: req.headers['x-forwarded-host'],
+        host: req.headers.host,
+        secure: req.secure,
+      },
+      config.auth.oidc.publicBaseUrl,
+    );
   }
 
   /**

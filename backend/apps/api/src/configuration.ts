@@ -105,7 +105,11 @@ export const ConfigSchema = z.object({
     }),
     oidc: z.object({
       issuerUrl: z.string(),
-      callbackUrl: z.string(),
+      // Public origin of this app (e.g. https://ci-memory-<org>.companionintelligence.com),
+      // injected by CI-Hub as APP_BASE_URL. When set, the OIDC redirect_uri is built from
+      // this stable origin instead of the inbound request host — so reaching the app at its
+      // local *.localhost route still yields a publicly-reachable callback for CI-Portal.
+      publicBaseUrl: z.string().optional().default(''),
       // Custom URL scheme the native (Capacitor) app registers so the OIDC callback
       // can deep-link the sign-in result back into the app. Must match the scheme in
       // the iOS Info.plist / Android intent-filter and @ci/common's OIDC_NATIVE_SCHEME.

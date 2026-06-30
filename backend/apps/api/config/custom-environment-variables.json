@@ -31,6 +31,7 @@
     },
     "oidc": {
       "issuerUrl": "OIDC_ISSUER_URL",
+      "publicBaseUrl": "APP_BASE_URL",
       "nativeRedirectScheme": "OIDC_NATIVE_REDIRECT_SCHEME"
     },
     "portal": {
