@@ -10,7 +10,13 @@ vi.mock('./useAuth', () => ({
   // `useCurrentUser` gates on `authenticated` (true for a web JWT session OR a native
   // API key); derive it from the token so both credentials are covered.
   useAuth: () => [
-    { authToken: h.authToken, authenticated: Boolean(h.authToken), expired: false, loading: false, error: null },
+    {
+      authToken: h.authToken,
+      authenticated: Boolean(h.authToken),
+      expired: false,
+      loading: false,
+      error: null,
+    },
     {},
   ],
 }));
