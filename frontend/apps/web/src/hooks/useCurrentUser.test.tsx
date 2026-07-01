@@ -7,7 +7,12 @@ import { useCurrentUser } from './useCurrentUser';
 const h = vi.hoisted(() => ({ authToken: 'tok' as string | null }));
 
 vi.mock('./useAuth', () => ({
-  useAuth: () => [{ authToken: h.authToken, expired: false, loading: false, error: null }, {}],
+  // `useCurrentUser` gates on `authenticated` (true for a web JWT session OR a native
+  // API key); derive it from the token so both credentials are covered.
+  useAuth: () => [
+    { authToken: h.authToken, authenticated: Boolean(h.authToken), expired: false, loading: false, error: null },
+    {},
+  ],
 }));
 
 vi.mock('@apollo/client', async (orig) => ({
