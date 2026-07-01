@@ -15,15 +15,32 @@ type ButtonVariant = ComponentProps<typeof Button>['variant'];
  * scheme (`companion://oidc/callback`) — handled by the deep-link listener in useAuth —
  * instead of setting a browser session cookie.
  */
-export function OidcButton({ label, variant }: { label: string; variant?: ButtonVariant }) {
+export function OidcButton({
+  label,
+  variant,
+  redirect,
+}: {
+  label: string;
+  variant?: ButtonVariant;
+  redirect?: string;
+}) {
+  // Optional post-login destination (a safe same-origin path the server re-validates),
+  // carried through the full-page OIDC round-trip so the user lands back where they were.
+  const params = new URLSearchParams();
+
+  if (redirect) {
+    params.set('redirect', redirect);
+  }
+
   // Web: same-origin path, anchor navigates normally (unchanged behavior).
-  const webHref = buildApiUrl(OIDC_URL_PATH);
+  const webHref = buildApiUrl(`${OIDC_URL_PATH}${params.toString() ? `?${params.toString()}` : ''}`);
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (isNativePlatform()) {
       event.preventDefault();
-      const nativeHref = buildApiUrl(`${OIDC_URL_PATH}?client=${OIDC_NATIVE_CLIENT_FLAG}`);
-      void openExternalUrl(nativeHref);
+      const nativeParams = new URLSearchParams(params);
+      nativeParams.set('client', OIDC_NATIVE_CLIENT_FLAG);
+      void openExternalUrl(buildApiUrl(`${OIDC_URL_PATH}?${nativeParams.toString()}`));
     }
     // Web: let the anchor navigate normally.
   };
