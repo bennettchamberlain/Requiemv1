@@ -17,21 +17,27 @@ const SEARCH_INDEX_QUEUE = 'search-index';
  * terminates. Records every SELECT so paging can be asserted.
  */
 function makeDataSource(pagesByType: Record<string, string[][]>) {
-  const calls: Array<{ entityType: string; after: string | null; limit: number }> = [];
+  const calls: Array<{ entityType: string; after: string | null; afterTs?: string | null; limit: number }> =
+    [];
   const cursors: Record<string, number> = {};
 
   const query = jest.fn(async (_sql: string, params: unknown[]) => {
+    // Time-paged (hypertable) types bind 4 params (type, afterTs, afterId, limit);
+    // plain uuid keysets bind 3 (type, afterId, limit).
+    const timePaged = params.length === 4;
     const entityType = params[0] as string;
-    const after = (params[1] ?? null) as string | null;
-    const limit = params[2] as number;
-    calls.push({ entityType, after, limit });
+    const after = ((timePaged ? params[2] : params[1]) ?? null) as string | null;
+    const afterTs = timePaged ? ((params[1] ?? null) as string | null) : undefined;
+    const limit = (timePaged ? params[3] : params[2]) as number;
+    calls.push({ entityType, after, afterTs, limit });
 
     const pages = pagesByType[entityType] ?? [];
     const idx = cursors[entityType] ?? 0;
     cursors[entityType] = idx + 1;
     const page = pages[idx] ?? [];
 
-    return page.map((id) => ({ id }));
+    // Time-paged rows carry the ORDER BY timestamp alongside the id.
+    return page.map((id) => (timePaged ? { id, ts: `ts-${id}` } : { id }));
   });
 
   return { query, calls } as const;
@@ -106,19 +112,36 @@ describe('SearchIndexBackfillService', () => {
     }
   });
 
-  it('keyset-pages until a short page, advancing the cursor by the last id', async () => {
+  it('keyset-pages plain uuid tables until a short page, advancing the cursor by the last id', async () => {
     const { service, sendMany, ds } = makeService({
+      content: [['c1', 'c2'], ['c3'], []],
+    });
+
+    const result = await service.backfill({ entityTypes: ['content'], batchSize: 2 });
+
+    expect(result.enqueued).toBe(3);
+    // page 1 after=null, page 2 after='c2' (last of page 1), page 3 after='c3'.
+    const contentCalls = ds.calls.filter((c) => c.entityType === 'content');
+    expect(contentCalls.map((c) => c.after)).toEqual([null, 'c2', 'c3']);
+    // one bulk enqueue per non-empty page (the empty page 3 enqueues nothing).
+    expect(sendMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('time-pages hypertable-backed communications on the composite (time, id) cursor', async () => {
+    const { service, ds } = makeService({
       communication: [['c1', 'c2'], ['c3'], []],
     });
 
     const result = await service.backfill({ entityTypes: ['communication'], batchSize: 2 });
 
     expect(result.enqueued).toBe(3);
-    // page 1 after=null, page 2 after='c2' (last of page 1), page 3 after='c3'.
+    // Both cursor halves advance together: (afterTs, afterId) from the last row.
     const comCalls = ds.calls.filter((c) => c.entityType === 'communication');
-    expect(comCalls.map((c) => c.after)).toEqual([null, 'c2', 'c3']);
-    // one bulk enqueue per non-empty page (the empty page 3 enqueues nothing).
-    expect(sendMany).toHaveBeenCalledTimes(2);
+    expect(comCalls.map((c) => [c.afterTs ?? null, c.after])).toEqual([
+      [null, null],
+      ['ts-c2', 'c2'],
+      ['ts-c3', 'c3'],
+    ]);
   });
 
   it('caps emission at limitPerType and stops paging that type', async () => {
@@ -151,5 +174,47 @@ describe('SearchIndexBackfillService', () => {
 
     const sweptTypes = new Set(ds.calls.map((c) => c.entityType));
     expect(sweptTypes).toEqual(new Set(['item']));
+  });
+
+  it('omits the errors field entirely on a clean sweep', async () => {
+    const { service } = makeService({ communication: [['c1'], []] });
+
+    const result = await service.backfill({ entityTypes: ['communication'], batchSize: 10 });
+
+    expect(result.errors).toBeUndefined();
+  });
+
+  it('fail-soft: a mid-sweep enqueue failure keeps the pages already enqueued, reports the error, and continues with the remaining types', async () => {
+    const { service, sendMany } = makeService({
+      communication: [['c1', 'c2'], ['c3'], []],
+      item: [['i1'], []],
+    });
+    // Page 1 of communication enqueues fine; page 2 blows up (e.g. connection
+    // drop inside a pg-boss insert chunk); item must still be swept afterwards.
+    sendMany
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('connection terminated'))
+      .mockResolvedValue(undefined);
+
+    const result = await service.backfill({ entityTypes: ['communication', 'item'], batchSize: 2 });
+
+    // The 2 rows of page 1 are real jobs — counted, not lost.
+    expect(result.perType.communication).toBe(2);
+    expect(result.errors).toEqual({ communication: 'connection terminated' });
+    // The failure did not abort the sweep: item completed normally.
+    expect(result.perType.item).toBe(1);
+    expect(result.enqueued).toBe(3);
+  });
+
+  it('a failure on the FIRST page of a type reports zero enqueued for it without throwing', async () => {
+    const { service, sendMany } = makeService({
+      communication: [['c1'], []],
+    });
+    sendMany.mockRejectedValueOnce(new Error('boom'));
+
+    const result = await service.backfill({ entityTypes: ['communication'], batchSize: 10 });
+
+    expect(result.perType.communication).toBe(0);
+    expect(result.errors).toEqual({ communication: 'boom' });
   });
 });

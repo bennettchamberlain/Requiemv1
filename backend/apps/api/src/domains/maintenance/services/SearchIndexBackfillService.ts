@@ -53,6 +53,24 @@ const EVENT_BY_TYPE: Record<BackfillableEntity, { event: string; idField: string
   file: { event: FileCreatedEvent, idField: 'fileId' },
 };
 
+/**
+ * Types whose source table is a TimescaleDB hypertable partitioned on a time
+ * column (→ the column to page by). A bare-id keyset can't use the PK there —
+ * the PK leads with `time` — so every page forced a full sort of all chunks
+ * (~1s/page on 881k comms). Paging on `(timeColumn, id)` matches the PK order,
+ * letting ChunkAppend stream pages in partition order: measured 961ms → 86ms
+ * per 1000-row page. Types not listed here page on their plain uuid PK.
+ */
+const TIME_PAGED_TYPES: Partial<Record<BackfillableEntity, string>> = {
+  communication: 'time',
+};
+
+/** Keyset cursor: the last row of the previous page. `ts` only for time-paged types. */
+interface PageCursor {
+  id: string;
+  ts: string | null;
+}
+
 export interface SearchIndexBackfillOptions {
   /** Restrict the sweep to these entity types (default: all backfillable types). */
   entityTypes?: BackfillableEntity[];
@@ -67,6 +85,14 @@ export interface SearchIndexBackfillResult {
   enqueued: number;
   /** Rows re-emitted per entity type. */
   perType: Record<string, number>;
+  /**
+   * Present only when one or more types failed partway: entity type → error
+   * message. Counts in `perType` reflect what WAS enqueued before the failure,
+   * and the sweep continues with the remaining types — so a transient failure on
+   * one table doesn't abort the whole backfill, and a re-run (idempotent via the
+   * LEFT JOIN) picks up exactly what's still missing.
+   */
+  errors?: Record<string, string>;
 }
 
 /**
@@ -98,16 +124,26 @@ export class SearchIndexBackfillService {
     const types = options.entityTypes ?? [...BACKFILLABLE_ENTITIES];
 
     const perType: Record<string, number> = {};
+    const errors: Record<string, string> = {};
     let enqueued = 0;
 
     for (const entityType of types) {
-      const count = await this.backfillType(entityType, batchSize, options.limitPerType);
+      const { count, error } = await this.backfillType(entityType, batchSize, options.limitPerType);
       perType[entityType] = count;
       enqueued += count;
-      this.logger.log('Search-index backfill: type complete', { entityType, enqueued: count });
+
+      if (error != null) {
+        errors[entityType] = error;
+        this.logger.error(
+          'Search-index backfill: type failed partway, continuing with remaining types',
+          new Error(error),
+        );
+      } else {
+        this.logger.log('Search-index backfill: type complete', { entityType, enqueued: count });
+      }
     }
 
-    return { enqueued, perType };
+    return Object.keys(errors).length > 0 ? { enqueued, perType, errors } : { enqueued, perType };
   }
 
   /**
@@ -122,63 +158,93 @@ export class SearchIndexBackfillService {
     entityType: BackfillableEntity,
     batchSize: number,
     limitPerType: number | undefined,
-  ): Promise<number> {
+  ): Promise<{ count: number; error?: string }> {
     const { event, idField } = EVENT_BY_TYPE[entityType];
-    let after: string | null = null;
+    let after: PageCursor | null = null;
     let enqueued = 0;
 
-    for (;;) {
-      const ids = await this.missingIds(entityType, batchSize, after);
-      if (ids.length === 0) {
-        break;
+    // Fail-soft per type: a mid-sweep failure (connection drop, constraint issue
+    // in a pg-boss insert chunk) keeps the pages already enqueued — they are real
+    // jobs — and reports the error instead of throwing a 500 that hides them.
+    // The idempotent LEFT JOIN makes a re-run resume from what's still missing.
+    try {
+      for (;;) {
+        const rows = await this.missingIds(entityType, batchSize, after);
+        if (rows.length === 0) {
+          break;
+        }
+
+        // Trim the final page so we never exceed limitPerType.
+        const room = limitPerType != null ? Math.max(limitPerType - enqueued, 0) : rows.length;
+        const page = rows.slice(0, room);
+
+        if (page.length > 0) {
+          await this.events.sendMany(
+            SEARCH_INDEX_QUEUE,
+            page.map((row) => ({ name: event, data: { [idField]: row.id } })),
+          );
+          enqueued += page.length;
+        }
+
+        if (limitPerType != null && enqueued >= limitPerType) {
+          break;
+        }
+
+        const last = rows[rows.length - 1];
+        after = { id: last.id, ts: last.ts ?? null };
       }
-
-      // Trim the final page so we never exceed limitPerType.
-      const room = limitPerType != null ? Math.max(limitPerType - enqueued, 0) : ids.length;
-      const page = ids.slice(0, room);
-
-      if (page.length > 0) {
-        await this.events.sendMany(
-          SEARCH_INDEX_QUEUE,
-          page.map((id) => ({ name: event, data: { [idField]: id } })),
-        );
-        enqueued += page.length;
-      }
-
-      if (limitPerType != null && enqueued >= limitPerType) {
-        break;
-      }
-
-      after = ids[ids.length - 1];
+    } catch (err) {
+      return { count: enqueued, error: err instanceof Error ? err.message : String(err) };
     }
 
-    return enqueued;
+    return { count: enqueued };
   }
 
   /**
-   * Ids of source rows with no matching `ci_search.embeddings` row, after the
-   * keyset cursor. Table / id column come from the authoritative ENTITY_SOURCE_MAP
+   * Rows (id + optional page-order timestamp) with no matching
+   * `ci_search.embeddings` row, after the keyset cursor. Table / id / time
+   * columns come from the authoritative ENTITY_SOURCE_MAP + TIME_PAGED_TYPES
    * (trusted constants, not request input), so interpolating them is safe.
    *
-   * The cursor compares and orders on the NATIVE `uuid` id column (casting only
-   * the bound cursor param to `::uuid`), NOT `id::text`. Every BACKFILLABLE_ENTITIES
-   * id column is a `uuid`, and a `uuid`-typed keyset lets Postgres serve the page
-   * straight from the primary-key index — whereas the old `id::text` cast forced a
-   * full sort of the source table on every page, which dominated the sweep time at
-   * import scale. `id::text` remains only in the SELECT list (a cheap per-row
-   * projection that returns the id as a string for the caller).
+   * Plain tables: the cursor compares and orders on the NATIVE `uuid` id column
+   * (casting only the bound cursor param to `::uuid`), NOT `id::text` — a
+   * `uuid`-typed keyset serves the page straight from the primary-key index,
+   * whereas an `id::text` cast forces a full sort of the source table per page.
+   *
+   * Hypertables (TIME_PAGED_TYPES): the cursor is the composite
+   * `(timeColumn, id)` matching the hypertable PK's leading order, so
+   * ChunkAppend streams pages in partition order instead of sorting every
+   * chunk per page. The timestamp round-trips through text (`::text` out,
+   * `::timestamptz` back) losslessly.
    */
   private async missingIds(
     entityType: BackfillableEntity,
     batchSize: number,
-    after: string | null,
-  ): Promise<string[]> {
+    after: PageCursor | null,
+  ): Promise<Array<{ id: string; ts?: string | null }>> {
     const source = ENTITY_SOURCE_MAP[entityType];
     const discriminator = source.discriminator
       ? `AND s."${source.discriminator.column}" = '${source.discriminator.value}'`
       : '';
+    const timeColumn = TIME_PAGED_TYPES[entityType];
 
-    const rows: Array<{ id: string }> = await this.dataSource.query(
+    if (timeColumn != null) {
+      return this.dataSource.query(
+        `SELECT s."${source.idColumn}"::text AS id, s."${timeColumn}"::text AS ts
+           FROM "${source.schema}"."${source.table}" s
+           LEFT JOIN ci_search.embeddings e
+             ON e.entity_type = $1 AND e.entity_id = s."${source.idColumn}"
+          WHERE e.entity_id IS NULL
+            ${discriminator}
+            AND ($2::timestamptz IS NULL
+                 OR (s."${timeColumn}", s."${source.idColumn}") > ($2::timestamptz, $3::uuid))
+          ORDER BY s."${timeColumn}", s."${source.idColumn}"
+          LIMIT $4`,
+        [entityType, after?.ts ?? null, after?.id ?? null, batchSize],
+      );
+    }
+
+    return this.dataSource.query(
       `SELECT s."${source.idColumn}"::text AS id
          FROM "${source.schema}"."${source.table}" s
          LEFT JOIN ci_search.embeddings e
@@ -188,9 +254,7 @@ export class SearchIndexBackfillService {
           AND ($2::uuid IS NULL OR s."${source.idColumn}" > $2::uuid)
         ORDER BY s."${source.idColumn}"
         LIMIT $3`,
-      [entityType, after, batchSize],
+      [entityType, after?.id ?? null, batchSize],
     );
-
-    return rows.map((row) => row.id);
   }
 }
