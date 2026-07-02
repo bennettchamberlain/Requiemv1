@@ -106,8 +106,9 @@ export interface SearchIndexBackfillResult {
  * embedding + tsvector upsert (idempotent), the batched-Ollama coalescing buffer
  * amortises the embed calls, and no other enrichment queue is touched.
  *
- * It is re-runnable and incremental: a row already carrying an embedding is
- * skipped by the LEFT JOIN, so a second run only picks up what is still missing.
+ * It is re-runnable and incremental: a row already carrying an embedding — or a
+ * `ci_search.index_skips` marker (examined and intentionally not embedded) — is
+ * skipped by the LEFT JOINs, so a second run only picks up what is still missing.
  */
 @Injectable()
 export class SearchIndexBackfillService {
@@ -202,9 +203,13 @@ export class SearchIndexBackfillService {
 
   /**
    * Rows (id + optional page-order timestamp) with no matching
-   * `ci_search.embeddings` row, after the keyset cursor. Table / id / time
-   * columns come from the authoritative ENTITY_SOURCE_MAP + TIME_PAGED_TYPES
-   * (trusted constants, not request input), so interpolating them is safe.
+   * `ci_search.embeddings` row AND no `ci_search.index_skips` marker, after the
+   * keyset cursor. The skips anti-join is what makes the sweep CONVERGE: the
+   * listeners intentionally never write an embedding for low-value rows, so
+   * without it every backfill run re-enqueued the same skipped rows as no-op
+   * jobs forever. Table / id / time columns come from the authoritative
+   * ENTITY_SOURCE_MAP + TIME_PAGED_TYPES (trusted constants, not request
+   * input), so interpolating them is safe.
    *
    * Plain tables: the cursor compares and orders on the NATIVE `uuid` id column
    * (casting only the bound cursor param to `::uuid`), NOT `id::text` — a
@@ -234,7 +239,10 @@ export class SearchIndexBackfillService {
            FROM "${source.schema}"."${source.table}" s
            LEFT JOIN ci_search.embeddings e
              ON e.entity_type = $1 AND e.entity_id = s."${source.idColumn}"
+           LEFT JOIN ci_search.index_skips k
+             ON k.entity_type = $1 AND k.entity_id = s."${source.idColumn}"
           WHERE e.entity_id IS NULL
+            AND k.entity_id IS NULL
             ${discriminator}
             AND ($2::timestamptz IS NULL
                  OR (s."${timeColumn}", s."${source.idColumn}") > ($2::timestamptz, $3::uuid))
@@ -249,7 +257,10 @@ export class SearchIndexBackfillService {
          FROM "${source.schema}"."${source.table}" s
          LEFT JOIN ci_search.embeddings e
            ON e.entity_type = $1 AND e.entity_id = s."${source.idColumn}"
+         LEFT JOIN ci_search.index_skips k
+           ON k.entity_type = $1 AND k.entity_id = s."${source.idColumn}"
         WHERE e.entity_id IS NULL
+          AND k.entity_id IS NULL
           ${discriminator}
           AND ($2::uuid IS NULL OR s."${source.idColumn}" > $2::uuid)
         ORDER BY s."${source.idColumn}"

@@ -164,6 +164,22 @@ describe('SearchIndexBackfillService', () => {
     ]);
   });
 
+  it('anti-joins ci_search.index_skips in BOTH query branches so skip-marked rows never re-enqueue', async () => {
+    const { service, ds } = makeService({
+      communication: [['c1'], []], // time-paged (hypertable) branch
+      content: [['c2'], []], // plain uuid-keyset branch
+    });
+
+    await service.backfill({ entityTypes: ['communication', 'content'], batchSize: 10 });
+
+    expect(ds.query.mock.calls.length).toBeGreaterThan(0);
+    for (const [sql] of ds.query.mock.calls) {
+      const flat = (sql as string).replace(/\s+/g, ' ');
+      expect(flat).toContain('LEFT JOIN ci_search.index_skips k');
+      expect(flat).toContain('k.entity_id IS NULL');
+    }
+  });
+
   it('only sweeps the requested entity types', async () => {
     const { service, ds } = makeService({
       communication: [['c1'], []],

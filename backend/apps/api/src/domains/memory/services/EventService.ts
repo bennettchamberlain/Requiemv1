@@ -4,7 +4,7 @@ import { DataSource, In, IsNull, Repository, type FindOptionsOrder, type FindOpt
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
-import { bulkInsertIdempotent } from '@ci/common/persistence';
+import { bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -210,6 +210,9 @@ export class EventService {
       // 20260620213807); the arbiter must match it exactly.
       conflictTarget: '(source_type, source_system, source_id) WHERE source_id IS NOT NULL',
       tripleColumns: ['source_type', 'source_system', 'source_id'],
+      // Centralized refresh contract — currently empty, so conflicts stay
+      // DO NOTHING find-or-return.
+      conflictUpdateColumns: INGEST_REFRESH_COLUMNS.event,
     });
 
     // Bulk ingest does NOT emit a per-row EventCreatedEvent: the per-row pgboss

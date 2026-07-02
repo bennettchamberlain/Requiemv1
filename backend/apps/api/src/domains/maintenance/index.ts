@@ -22,6 +22,7 @@ import { CommunicationLinkBackfillService } from './services/CommunicationLinkBa
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { IndexDeferralService } from './services/IndexDeferralService';
+import { IngestResetService } from './services/IngestResetService';
 import { LocationEstimateService } from './services/LocationEstimateService';
 import { PersonStubBackfillService } from './services/PersonStubBackfillService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
@@ -43,6 +44,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   controllers: [MaintenanceController],
   providers: [
     IndexDeferralService,
+    IngestResetService,
     CommunicationLinkBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
