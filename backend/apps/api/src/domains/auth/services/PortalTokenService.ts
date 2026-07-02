@@ -10,6 +10,11 @@ import config from '@ci/configuration';
 import { type User, UserService } from '@ci/domains/user';
 
 import { FederatedIdentityService } from './FederatedIdentityService';
+import {
+  parseAllowedServiceClients,
+  resolveServiceAccount,
+  type ServiceAccountClaims,
+} from '../utils/serviceAccountToken';
 
 /**
  * Validates CI-Portal-issued OIDC tokens and maps them to a CI-Server user.
@@ -19,6 +24,16 @@ import { FederatedIdentityService } from './FederatedIdentityService';
  * (issuer + audience checked) and JIT-provisions the matching CI-Server user, so
  * any portal-authenticated app can write to memory with one brokered token.
  *
+ * ## Service accounts (Portal-brokered service credential — B5)
+ *
+ * Sidecars (HBPE, Summary) used to self-sign HS256 JWTs with the shared
+ * `AUTH_JWT_AUTHTOKENSECRET`; a single leaked symmetric secret meant full user
+ * impersonation. They now present a Portal-issued, EdDSA-signed service token
+ * whose `client_id`/`act.sub` is one of `auth.portal.serviceClients`. Such tokens
+ * are verified against the same Portal JWKS and resolve to the existing user
+ * named in `sub` (the on-behalf-of principal) — never JIT-provisioned by email.
+ * See CI-Engineering `architecture/identity/unified-identity-plan.md` · B5 / D3.
+ *
  * Gated behind `auth.portal.enabled` so it runs alongside the legacy JWT/api-key
  * paths during migration. See unified-identity-pipeline.md.
  */
@@ -26,6 +41,9 @@ import { FederatedIdentityService } from './FederatedIdentityService';
 export class PortalTokenService implements PortalTokenVerifier {
   // Lazily built so a disabled/misconfigured portal never blocks startup.
   private jwks?: ReturnType<typeof createRemoteJWKSet>;
+
+  // Allow-listed service-account client ids, parsed once from config.
+  private readonly serviceClients = parseAllowedServiceClients(config.auth.portal.serviceClients);
 
   constructor(
     private readonly userService: UserService,
@@ -99,7 +117,40 @@ export class PortalTokenService implements PortalTokenVerifier {
       return null;
     }
 
+    // A Portal-brokered service credential (e.g. HBPE) acts on behalf of an
+    // existing user; resolve it distinctly from a human OIDC login.
+    const serviceAccount = resolveServiceAccount(
+      payload as JWTPayload & ServiceAccountClaims,
+      this.serviceClients,
+    );
+    if (serviceAccount) {
+      return this.resolveServiceAccountUser(serviceAccount.clientId, serviceAccount.onBehalfOfUserId);
+    }
+
     return this.provisionUser(payload);
+  }
+
+  /**
+   * Resolve the on-behalf-of user for a verified service-account token. Unlike
+   * human logins, a service account never provisions a new user: `sub` must name
+   * an existing CI-Server user, else the request is rejected (null). This keeps a
+   * compromised or misconfigured sidecar from minting identities.
+   */
+  private async resolveServiceAccountUser(
+    clientId: string,
+    onBehalfOfUserId: string,
+  ): Promise<User | null> {
+    const user = await this.userService.findById({ userId: SYSTEM_USER }, onBehalfOfUserId);
+
+    if (!user) {
+      this.logger.warn(
+        `Service account "${clientId}" presented a token for unknown user "${onBehalfOfUserId}"; rejecting.`,
+      );
+
+      return null;
+    }
+
+    return user;
   }
 
   /**

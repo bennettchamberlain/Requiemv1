@@ -46,7 +46,8 @@
       "issuer": "PORTAL_OIDC_ISSUER",
       "jwksUri": "PORTAL_OIDC_JWKS_URI",
       "audience": "PORTAL_OIDC_AUDIENCE",
-      "pushRelayUrl": "PORTAL_PUSH_RELAY_URL"
+      "pushRelayUrl": "PORTAL_PUSH_RELAY_URL",
+      "serviceClients": "PORTAL_OIDC_SERVICE_CLIENTS"
     },
     "hubForwardAuth": {
       "enabled": {
