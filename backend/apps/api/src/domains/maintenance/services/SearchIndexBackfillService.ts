@@ -78,6 +78,15 @@ export interface SearchIndexBackfillOptions {
   batchSize?: number;
   /** Hard cap on rows re-emitted PER entity type (default: unbounded). */
   limitPerType?: number;
+  /**
+   * Skip the sweep entirely when the search-index queue already holds more than
+   * this many undrained jobs (default 5000; 0 disables the guard). The LEFT
+   * JOINs exclude rows that finished indexing, NOT rows merely sitting in the
+   * queue — so re-sweeping before a drain re-enqueues the whole missing set as
+   * duplicates. A 1M-row import that got kicked 4 ways (push kick ×3 retries +
+   * the orchestrate leg) piled up 5.1M jobs this way.
+   */
+  pendingThreshold?: number;
 }
 
 export interface SearchIndexBackfillResult {
@@ -93,6 +102,14 @@ export interface SearchIndexBackfillResult {
    * LEFT JOIN) picks up exactly what's still missing.
    */
   errors?: Record<string, string>;
+  /**
+   * Present when the sweep enqueued NOTHING by design: another sweep is already
+   * running in-process, or the queue backlog exceeds pendingThreshold. Callers
+   * treat this as success — the pending work already covers the missing rows.
+   */
+  skipped?: 'already_running' | 'queue_backlog';
+  /** Queue depth observed when skipped === 'queue_backlog'. */
+  pending?: number;
 }
 
 /**
@@ -112,6 +129,15 @@ export interface SearchIndexBackfillResult {
  */
 @Injectable()
 export class SearchIndexBackfillService {
+  /**
+   * In-process sweep lock. Every trigger converges on this service (the REST
+   * endpoint, the importer's post-push kick, the orchestrate leg), and a sweep
+   * that runs while another is mid-flight re-enqueues the same missing rows —
+   * the client-side dogpile that turned one 1.27M-row sweep into 3.85M jobs
+   * when a timed-out kick was retried against a still-running sweep.
+   */
+  private running = false;
+
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly events: SignallingEventService,
@@ -121,8 +147,36 @@ export class SearchIndexBackfillService {
   }
 
   async backfill(options: SearchIndexBackfillOptions = {}): Promise<SearchIndexBackfillResult> {
+    if (this.running) {
+      this.logger.warn('Search-index backfill: sweep already running, skipping this trigger');
+
+      return { enqueued: 0, perType: {}, skipped: 'already_running' };
+    }
+
+    this.running = true;
+    try {
+      return await this.sweep(options);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async sweep(options: SearchIndexBackfillOptions): Promise<SearchIndexBackfillResult> {
     const batchSize = options.batchSize ?? 1000;
     const types = options.entityTypes ?? [...BACKFILLABLE_ENTITIES];
+
+    const pendingThreshold = options.pendingThreshold ?? 5000;
+    if (pendingThreshold > 0) {
+      const pending = await this.pendingQueueDepth();
+      if (pending > pendingThreshold) {
+        this.logger.warn('Search-index backfill: queue backlog exceeds threshold, skipping sweep', {
+          pending,
+          pendingThreshold,
+        });
+
+        return { enqueued: 0, perType: {}, skipped: 'queue_backlog', pending };
+      }
+    }
 
     const perType: Record<string, number> = {};
     const errors: Record<string, string> = {};
@@ -145,6 +199,17 @@ export class SearchIndexBackfillService {
     }
 
     return Object.keys(errors).length > 0 ? { enqueued, perType, errors } : { enqueued, perType };
+  }
+
+  /** Undrained (created/retry) jobs currently sitting on the search-index queue. */
+  private async pendingQueueDepth(): Promise<number> {
+    const rows: Array<{ count: string }> = await this.dataSource.query(
+      `SELECT count(*)::bigint AS count
+         FROM pgboss.job
+        WHERE name = 'search-index' AND state IN ('created', 'retry')`,
+    );
+
+    return Number(rows[0]?.count ?? 0);
   }
 
   /**

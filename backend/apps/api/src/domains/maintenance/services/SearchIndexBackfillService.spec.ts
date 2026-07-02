@@ -21,7 +21,11 @@ function makeDataSource(pagesByType: Record<string, string[][]>) {
     [];
   const cursors: Record<string, number> = {};
 
-  const query = jest.fn(async (_sql: string, params: unknown[]) => {
+  const query = jest.fn(async (_sql: string, params?: unknown[]) => {
+    // The pending-depth probe binds no params (reads pgboss.job); answer 0 so
+    // sweeps proceed by default — guard tests override with mockImplementationOnce.
+    if (!params) {return [{ count: '0' }];}
+
     // Time-paged (hypertable) types bind 4 params (type, afterTs, afterId, limit);
     // plain uuid keysets bind 3 (type, afterId, limit).
     const timePaged = params.length === 4;
@@ -173,7 +177,9 @@ describe('SearchIndexBackfillService', () => {
     await service.backfill({ entityTypes: ['communication', 'content'], batchSize: 10 });
 
     expect(ds.query.mock.calls.length).toBeGreaterThan(0);
-    for (const [sql] of ds.query.mock.calls) {
+    for (const [sql, params] of ds.query.mock.calls) {
+      if (!params) {continue;} // the pending-depth probe reads pgboss.job, not a source table
+
       const flat = (sql as string).replace(/\s+/g, ' ');
       expect(flat).toContain('LEFT JOIN ci_search.index_skips k');
       expect(flat).toContain('k.entity_id IS NULL');
@@ -220,6 +226,58 @@ describe('SearchIndexBackfillService', () => {
     // The failure did not abort the sweep: item completed normally.
     expect(result.perType.item).toBe(1);
     expect(result.enqueued).toBe(3);
+  });
+
+  it('skips the sweep when another one is already running in-process', async () => {
+    const { service, sendMany } = makeService({ communication: [['c1'], []] });
+    // Hold the first sweep open mid-enqueue so the second call overlaps it.
+    let release: (() => void) | undefined;
+    sendMany.mockImplementationOnce(() => new Promise<undefined>(res => { release = () => res(undefined); }));
+
+    const first = service.backfill({ entityTypes: ['communication'], batchSize: 10, pendingThreshold: 0 });
+    // Wait until the first sweep actually reaches the held sendMany (several
+    // awaits deep); the lock itself is set synchronously at entry.
+    while (release === undefined) {await new Promise((r) => setTimeout(r, 0));}
+
+    const second = await service.backfill({ entityTypes: ['communication'], batchSize: 10, pendingThreshold: 0 });
+
+    expect(second).toEqual({ enqueued: 0, perType: {}, skipped: 'already_running' });
+
+    release();
+    const firstResult = await first;
+    expect(firstResult.enqueued).toBe(1);
+
+    // The lock is released after the sweep — a later run proceeds normally.
+    const third = await service.backfill({ entityTypes: ['communication'], batchSize: 10, pendingThreshold: 0 });
+    expect(third.skipped).toBeUndefined();
+  });
+
+  it('skips the sweep when the queue backlog exceeds pendingThreshold', async () => {
+    const { service, sendMany, ds } = makeService({ communication: [['c1'], []] });
+    // The FIRST dataSource.query call is the pending-depth probe; the page
+    // queries only run when the sweep proceeds.
+    ds.query.mockImplementationOnce(async () => [{ count: '123456' }]);
+
+    const result = await service.backfill({ entityTypes: ['communication'], batchSize: 10 });
+
+    expect(result).toEqual({ enqueued: 0, perType: {}, skipped: 'queue_backlog', pending: 123456 });
+    expect(sendMany).not.toHaveBeenCalled();
+  });
+
+  it('proceeds when the backlog is under the threshold (and when the guard is disabled)', async () => {
+    const under = makeService({ communication: [['c1'], []] });
+    under.ds.query.mockImplementationOnce(async () => [{ count: '10' }]);
+    const r1 = await under.service.backfill({ entityTypes: ['communication'], batchSize: 10 });
+    expect(r1.skipped).toBeUndefined();
+    expect(r1.enqueued).toBe(1);
+
+    const disabled = makeService({ communication: [['c1'], []] });
+    const r2 = await disabled.service.backfill({
+      entityTypes: ['communication'],
+      batchSize: 10,
+      pendingThreshold: 0, // guard off: no depth probe, straight to the sweep
+    });
+    expect(r2.enqueued).toBe(1);
   });
 
   it('a failure on the FIRST page of a type reports zero enqueued for it without throwing', async () => {
