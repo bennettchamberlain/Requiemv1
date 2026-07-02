@@ -103,12 +103,18 @@ type BrowserActivityType implements Node & Taggable {
   url: String!
 }
 
+type BulkGraphEntityMapping {
+  entityId: ID!
+  key: String!
+}
+
 input BulkGraphInput {
   entities: [GraphEntityInput!]!
   relationships: [GraphRelationshipInput!]
 }
 
 type BulkGraphPayload {
+  entities: [BulkGraphEntityMapping!]!
   entitiesProcessed: Int!
   errors: [String!]!
   relationshipsProcessed: Int!

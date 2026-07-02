@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Headers, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  ConflictException,
+  Controller,
+  Get,
+  Headers,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { Request, Response } from 'express';
 import { DataSource } from 'typeorm';
@@ -48,6 +59,11 @@ import {
   DEFAULT_MAX_GAP_HOURS,
   LocationEstimateService,
 } from '../services/LocationEstimateService';
+import {
+  MaintenanceOrchestratorService,
+  ORCHESTRATE_STAGES,
+  type OrchestrateSummary,
+} from '../services/MaintenanceOrchestratorService';
 import {
   type PersonStubBackfillResult,
   PersonStubBackfillService,
@@ -262,6 +278,43 @@ const extractGraphSchema = z.object({
 
 type ExtractGraphRequest = z.infer<typeof extractGraphSchema>;
 
+// Body for POST /api/maintenance/orchestrate. `stages` is a subset of the
+// canonical ORCHESTRATE_STAGES vocabulary (unknown names 400 here); execution
+// order is ALWAYS canonical regardless of body order. Each `options.<leg>`
+// object is validated with the SAME schema as the leg's standalone endpoint,
+// then forwarded verbatim to the leg service.
+const orchestrateSchema = z.object({
+  stages: z.array(z.enum(ORCHESTRATE_STAGES)).min(1).optional(),
+  options: z
+    .object({
+      extractPeople: extractPeopleFromCommunicationsSchema.optional(),
+      linkCommunications: linkCommunicationsSchema.optional(),
+      linkEvents: linkEventsSchema.optional(),
+      extractGraph: extractGraphSchema.optional(),
+      geocode: geocodeLocationsSchema.optional(),
+      reverseGeocode: geocodeLocationsSchema.optional(),
+      estimateLocations: estimateLocationsSchema.optional(),
+      mediaDimensions: backfillMediaDimensionsSchema.optional(),
+      searchIndex: searchIndexBackfillSchema.optional(),
+    })
+    .optional(),
+  /** Stop the chain on the first leg error (default false: fail-soft, continue). */
+  abortOnError: z.boolean().optional(),
+  /** When present, the search_index leg polls the embedded count until drained or timeout. */
+  searchIndexDrain: z
+    .object({
+      timeoutMs: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(3 * 60 * 60 * 1000)
+        .optional(),
+    })
+    .optional(),
+});
+
+type OrchestrateRequest = z.infer<typeof orchestrateSchema>;
+
 interface GeocodeLocationsResponse {
   jobId: string | null;
   estimatedEventCount: number;
@@ -305,6 +358,7 @@ export class MaintenanceController {
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
     private readonly locationEstimateService: LocationEstimateService,
     private readonly ingestResetService: IngestResetService,
+    private readonly maintenanceOrchestratorService: MaintenanceOrchestratorService,
   ) {}
 
   @Post('geocode-locations')
@@ -751,6 +805,57 @@ export class MaintenanceController {
       maxEvents: body.maxEvents,
       model: body.model,
     });
+  }
+
+  /**
+   * One-shot enrichment orchestrator. Runs the requested maintenance legs (all
+   * nine by default) back-to-back in canonical order — extract_people →
+   * link_communications → link_events → extract_graph → geocode →
+   * reverse_geocode → estimate_locations → media_dimensions → search_index —
+   * calling the same leg services as the standalone endpoints, with per-leg
+   * option passthrough. Fail-soft by default (a leg error is reported and the
+   * chain continues); `abortOnError: true` stops the chain and reports the rest
+   * 'skipped'. With `?stream=1` (or Accept: application/x-ndjson) the response
+   * is an NDJSON stream of leg-start / leg-progress / leg-result / leg-error /
+   * tick / done lines; otherwise a single synchronous JSON summary. One
+   * orchestration per user at a time — a second call while one runs is a 409.
+   */
+  @Post('orchestrate')
+  async orchestrate(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(orchestrateSchema)) body: OrchestrateRequest,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('stream') stream?: string,
+    @Headers('accept') accept?: string,
+  ): Promise<OrchestrateSummary | void> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    const empty: OrchestrateSummary = { ok: false, legs: [], totalDurationMs: 0 };
+
+    // Overlap guard, checked BEFORE the stream headers are committed so the
+    // second caller gets a real 409 (inside streamNdjson the 200 has already
+    // been written). The service re-checks atomically when it acquires.
+    if (typeof userId === 'string' && this.maintenanceOrchestratorService.isRunning(userId)) {
+      throw new ConflictException({ error: 'orchestration already running' });
+    }
+
+    if (wantsStream(stream, accept)) {
+      return this.streamNdjson<OrchestrateSummary>(req, res, async (emit) => {
+        if (typeof userId !== 'string') {
+          return empty;
+        }
+
+        return this.maintenanceOrchestratorService.orchestrate(userId, body, emit);
+      });
+    }
+
+    if (typeof userId !== 'string') {
+      return empty;
+    }
+
+    return this.maintenanceOrchestratorService.orchestrate(userId, body);
   }
 
   /**

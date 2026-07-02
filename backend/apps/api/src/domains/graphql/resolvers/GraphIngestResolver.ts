@@ -35,6 +35,7 @@ export class GraphIngestResolver {
       entitiesProcessed: result.entitiesProcessed,
       relationshipsProcessed: result.relationshipsProcessed,
       errors: result.errors,
+      entities: result.entities,
     };
   }
 }

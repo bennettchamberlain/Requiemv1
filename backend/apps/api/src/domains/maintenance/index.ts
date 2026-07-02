@@ -24,6 +24,7 @@ import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { IngestResetService } from './services/IngestResetService';
 import { LocationEstimateService } from './services/LocationEstimateService';
+import { MaintenanceOrchestratorService } from './services/MaintenanceOrchestratorService';
 import { PersonStubBackfillService } from './services/PersonStubBackfillService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
 
@@ -51,6 +52,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     GraphEnrichmentService,
     SearchIndexBackfillService,
     LocationEstimateService,
+    MaintenanceOrchestratorService,
     EstimateLocationBatchListener,
     CommunicationParticipantLinkListener,
   ],
@@ -62,6 +64,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     GraphEnrichmentService,
     SearchIndexBackfillService,
     LocationEstimateService,
+    MaintenanceOrchestratorService,
   ],
 })
 export class MaintenanceModule {}
