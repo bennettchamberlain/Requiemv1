@@ -26,7 +26,6 @@ import {
   Save,
   Search,
   Share2,
-  SlidersHorizontal,
   Sparkles,
   Users,
   X,
@@ -1452,13 +1451,8 @@ export function AdvancedSearchToggle({
               className,
             )}
           >
-            <SlidersHorizontal className="h-4 w-4" />
             <ChevronDown
-              aria-hidden="true"
-              className={cn(
-                'pointer-events-none absolute bottom-0.5 right-0.5 h-3 w-3 opacity-70 transition-transform',
-                open && 'rotate-180',
-              )}
+              className={cn('h-4 w-4 transition-transform duration-100', open && 'rotate-180')}
             />
             {activeCount > 0 && (
               <Badge
