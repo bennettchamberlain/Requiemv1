@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { GlobalUID } from '@ci/common';
+import { GlobalUID, Portal } from '@ci/common';
 import { Clock, Search, X } from '@ci/shadcn/icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -315,6 +315,9 @@ export function GlobalSearchBox() {
       loading={loading}
       error={error}
       results={results}
+      // Inset tool target at the input's right edge; Memory portals its
+      // advanced-filter toggle here (empty — and hidden — on other pages).
+      toolsSlot={<Portal id="nav-tools" className="flex items-center empty:hidden" />}
     />
   );
 }

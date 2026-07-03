@@ -80,6 +80,11 @@ interface Props {
    */
   openOnFocus?: boolean;
   saveSupported?: boolean;
+  /**
+   * Extra controls rendered inset at the right edge of the input, after the
+   * clear button (e.g. the header slots Memory's advanced-filter toggle here).
+   */
+  toolsSlot?: ReactNode;
   onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   /**
    * Explicit submit (Enter with no result highlighted). Falls back to `onSearch`
@@ -107,6 +112,7 @@ function SearchBox(
     displayDropdown = false,
     openOnFocus = false,
     saveSupported = true,
+    toolsSlot,
     defaultQuery,
     onSearch,
     onSubmit,
@@ -565,6 +571,8 @@ function SearchBox(
                     <X className="h-4 w-4" />
                   </Button>
                 )}
+
+                {toolsSlot}
 
                 {displayDropdown && (
                   <Button

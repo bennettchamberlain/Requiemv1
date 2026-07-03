@@ -76,11 +76,10 @@ export function PrimaryNavigation() {
           <Portal id="breadcrumbs" />
         </div>
 
-        {/* Center: the unified search, stretched to fill the bar. Memory's advanced
-            filter toggle attaches here, followed by Memory's view switcher. */}
-        <div className="flex min-w-0 flex-1 items-stretch">
+        {/* Center: the unified search, stretched to fill the bar (Memory's advanced
+            filter toggle slots inside it), followed by Memory's view switcher. */}
+        <div className="flex min-w-0 flex-1 items-center">
           <div className="min-w-0 flex-1">{!isSharedView && <GlobalSearchBox />}</div>
-          <Portal id="nav-tools" className="flex flex-row items-stretch empty:hidden" />
           <Portal id="nav-views" className="ml-2 flex flex-row items-center empty:hidden" />
         </div>
 

@@ -286,13 +286,14 @@ export default function DesktopMemoryPage() {
         </Tabs>
       </Portal.Slot>
 
-      {/* The Advanced toggle sits in the header, right of the search; it controls
-          the toolbar drawer below via the lifted `advancedOpen` state. */}
+      {/* The Advanced toggle sits inset at the right edge of the header search box
+          (SearchBox's toolsSlot); it controls the toolbar drawer below via the
+          lifted `advancedOpen` state. Borderless h-8 to match the inset controls. */}
       <Portal.Slot id="nav-tools">
         <AdvancedSearchToggle
           open={advancedOpen}
           onToggle={() => setAdvancedOpen((open) => !open)}
-          className="rounded-l-none border-l-0"
+          className="h-8 w-8 rounded-md border-0 shadow-none"
         />
       </Portal.Slot>
 
