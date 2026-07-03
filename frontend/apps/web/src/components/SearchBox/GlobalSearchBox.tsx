@@ -45,6 +45,9 @@ export function GlobalSearchBox() {
 
   const onMemory = location.pathname === '/memory';
   const semantic = searchParams.get('semantic') === '1';
+  // Memory's advanced-filter drawer state lives in the URL so the explorer page
+  // (which owns the toggle and the filter content) and this box stay in sync.
+  const advancedOpen = onMemory && searchParams.get('advanced') === '1';
   // On /memory the input mirrors the live `?search` param; elsewhere it stays a
   // transient launcher value, so we don't seed it from the URL.
   const urlSearch = searchParams.get('search') ?? '';
@@ -318,6 +321,11 @@ export function GlobalSearchBox() {
       // Inset tool target at the input's right edge; Memory portals its
       // advanced-filter toggle here (empty — and hidden — on other pages).
       toolsSlot={<Portal id="nav-tools" className="flex items-center empty:hidden" />}
+      // Filters section pinned above the results while `?advanced=1`; Memory
+      // portals its filter row here. The trailing border only renders when
+      // results follow (the target is last-child otherwise).
+      panelHeader={<Portal id="nav-search-panel" className="empty:hidden [&:not(:last-child)]:border-b" />}
+      panelPinned={advancedOpen}
     />
   );
 }

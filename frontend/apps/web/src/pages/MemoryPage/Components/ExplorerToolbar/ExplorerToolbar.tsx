@@ -1227,7 +1227,7 @@ function WhereFilter() {
  * followed by semantic, sort, save, and right-aligned tags. `modal` is forwarded
  * to the portaled Radix dropdowns so they behave inside a modal Sheet/Dialog.
  */
-function AdvancedFilters({ modal }: { modal: boolean }) {
+export function AdvancedFilters({ modal }: { modal: boolean }) {
   const [{ tags }, { setTags }] = useDropdown();
 
   const { data: tagData } = useQuery(EXPLORER_TAGS);
@@ -1403,7 +1403,7 @@ function SaveSearchButton() {
   );
 }
 
-function ResultCount() {
+export function ResultCount() {
   const [{ data, hasNextPage, loading }] = useEntityService();
 
   return (
@@ -1522,15 +1522,7 @@ export function MemorySearchField() {
   );
 }
 
-function ExplorerToolbarInner({
-  open,
-  showResultCount,
-  attachedToHeader,
-}: {
-  open: boolean;
-  showResultCount: boolean;
-  attachedToHeader: boolean;
-}) {
+function ExplorerToolbarInner({ open, showResultCount }: { open: boolean; showResultCount: boolean }) {
   const [searchParams] = useSearchParams();
   const showSummaryRow = showResultCount || countActiveFilters(searchParams) > 0;
 
@@ -1540,10 +1532,7 @@ function ExplorerToolbarInner({
           semantic, sort, save, and right-aligned tags. Opened from the header toggle. */}
       {open && (
         <div
-          className={cn(
-            'flex flex-wrap items-center gap-2 border border-border/60 bg-muted/20 p-3 shadow-sm',
-            attachedToHeader ? 'rounded-b-lg rounded-t-none border-t-0 bg-secondary/20' : 'rounded-lg',
-          )}
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm"
         >
           <AdvancedFilters modal={false} />
         </div>
@@ -1575,19 +1564,13 @@ function ExplorerToolbarInner({
 export function ExplorerToolbar({
   open,
   showResultCount = true,
-  attachedToHeader = false,
 }: {
   open: boolean;
   showResultCount?: boolean;
-  attachedToHeader?: boolean;
 }) {
   return (
     <DropdownProvider args={[{ changeSearchParams: true }]}>
-      <ExplorerToolbarInner
-        open={open}
-        showResultCount={showResultCount}
-        attachedToHeader={attachedToHeader}
-      />
+      <ExplorerToolbarInner open={open} showResultCount={showResultCount} />
     </DropdownProvider>
   );
 }

@@ -8,14 +8,18 @@ import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
-import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
+import { AVAILABLE_ENTITY_TYPES, DropdownProvider } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components/EntityDetails';
-import { countActiveFilters } from './Components/ExplorerToolbar/ActiveFilterChips';
-import { AdvancedSearchToggle, ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
+import { ActiveFilterChips, countActiveFilters } from './Components/ExplorerToolbar/ActiveFilterChips';
+import {
+  AdvancedFilters,
+  AdvancedSearchToggle,
+  ResultCount,
+} from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -75,7 +79,25 @@ export default function DesktopMemoryPage() {
 
       return nextParams;
     });
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // The advanced-filter drawer state lives in the URL (`?advanced=1`) because it
+  // renders inside the header SearchBox's dropdown panel (GlobalSearchBox pins
+  // the panel open from the same param); this page owns the toggle + content.
+  const advancedOpen = searchParams.get('advanced') === '1';
+  const toggleAdvanced = () =>
+    setSearchParams(
+      (params) => {
+        const nextParams = new URLSearchParams(params);
+
+        if (advancedOpen) {
+          nextParams.delete('advanced');
+        } else {
+          nextParams.set('advanced', '1');
+        }
+
+        return nextParams;
+      },
+      { replace: true },
+    );
 
   // Make the default view explicit in the URL so the query is shareable and so
   // MemoryPage can derive the map's hasLocation scope from `?view=`.
@@ -238,7 +260,6 @@ export default function DesktopMemoryPage() {
   }, []);
 
   const activeFilterCount = countActiveFilters(searchParams);
-  const showExplorerToolbar = advancedOpen || activeTab !== 'map' || activeFilterCount > 0;
 
   return (
     <>
@@ -287,21 +308,41 @@ export default function DesktopMemoryPage() {
       </Portal.Slot>
 
       {/* The Advanced toggle sits inset at the right edge of the header search box
-          (SearchBox's toolsSlot); it controls the toolbar drawer below via the
-          lifted `advancedOpen` state. Borderless h-8 to match the inset controls. */}
+          (SearchBox's toolsSlot). Borderless h-8 to match the inset controls. */}
       <Portal.Slot id="nav-tools">
         <AdvancedSearchToggle
           open={advancedOpen}
-          onToggle={() => setAdvancedOpen((open) => !open)}
+          onToggle={toggleAdvanced}
           className="h-8 w-8 rounded-md border-0 shadow-none"
         />
       </Portal.Slot>
 
+      {/* The advanced filters and active-filter chips render as a pinned section
+          at the top of the header SearchBox's dropdown panel (its panelHeader
+          slot), above any live search suggestions — so typing never covers them.
+          Chips also surface (without the full controls) whenever the panel opens
+          with filters active; when it's closed, the toggle's count badge stands in. */}
+      <Portal.Slot id="nav-search-panel">
+        {(advancedOpen || activeFilterCount > 0) && (
+          <DropdownProvider args={[{ changeSearchParams: true }]}>
+            <div className="flex flex-col gap-2 p-3">
+              {advancedOpen && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <AdvancedFilters modal={false} />
+                </div>
+              )}
+              {activeFilterCount > 0 && <ActiveFilterChips />}
+            </div>
+          </DropdownProvider>
+        )}
+      </Portal.Slot>
+
       <PageContent className="p-0 gap-0">
-        {/* Advanced-search drawer (when open) + active-filter chips + result count. */}
-        {showExplorerToolbar && (
-          <div className={advancedOpen ? 'px-4 pt-0' : 'px-4 pt-3'}>
-            <ExplorerToolbar open={advancedOpen} showResultCount={activeTab !== 'map'} attachedToHeader />
+        {/* Result count only — filters and their chips live in the header search
+            panel. The map stays full-bleed. */}
+        {activeTab !== 'map' && (
+          <div className="flex justify-end px-4 pt-3">
+            <ResultCount />
           </div>
         )}
 

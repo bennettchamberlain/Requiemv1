@@ -85,6 +85,16 @@ interface Props {
    * clear button (e.g. the header slots Memory's advanced-filter toggle here).
    */
   toolsSlot?: ReactNode;
+  /**
+   * Caller-supplied section rendered at the top of the dropdown panel, above the
+   * results (e.g. Memory's advanced filters). Shown whenever the panel is open.
+   */
+  panelHeader?: ReactNode;
+  /**
+   * Hold the dropdown panel open regardless of focus/query — used with
+   * `panelHeader` so its content stays interactive (it survives input blur).
+   */
+  panelPinned?: boolean;
   onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   /**
    * Explicit submit (Enter with no result highlighted). Falls back to `onSearch`
@@ -113,6 +123,8 @@ function SearchBox(
     openOnFocus = false,
     saveSupported = true,
     toolsSlot,
+    panelHeader,
+    panelPinned = false,
     defaultQuery,
     onSearch,
     onSubmit,
@@ -477,6 +489,8 @@ function SearchBox(
     resultsNode = body;
   }
 
+  const panelVisible = resultsNode != null || panelPinned;
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleFormSubmit)}>
@@ -489,7 +503,7 @@ function SearchBox(
               'aria-[invalid=true]:ring-destructive/20 dark:aria-[invalid=true]:ring-destructive/40 aria-[invalid=true]:border-destructive',
               'transition-[color,box-shadow]',
               disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : '',
-              resultsNode ? 'rounded-b-none' : '',
+              panelVisible ? 'rounded-b-none' : '',
               variant === 'compact' ? 'py-0.5 pr-0.5' : '',
             )}
           >
@@ -606,8 +620,9 @@ function SearchBox(
             </div>
           </div>
 
-          {resultsNode && (
+          {panelVisible && (
             <div className="absolute top-full left-0 right-0 z-50 bg-background border border-t-0 rounded-b-md shadow-xs">
+              {panelHeader}
               {resultsNode}
             </div>
           )}
