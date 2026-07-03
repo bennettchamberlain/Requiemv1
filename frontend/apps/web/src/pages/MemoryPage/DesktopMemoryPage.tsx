@@ -309,15 +309,6 @@ export default function DesktopMemoryPage() {
 
       {/* The Advanced toggle sits inset at the right edge of the header search box
           (SearchBox's toolsSlot). Borderless h-8 to match the inset controls. */}
-      {/* Subtle active-filter count, inset left of the search box's clear-X. */}
-      <Portal.Slot id="nav-status">
-        {activeFilterCount > 0 && (
-          <span className="whitespace-nowrap text-xs text-muted-foreground">
-            {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
-          </span>
-        )}
-      </Portal.Slot>
-
       <Portal.Slot id="nav-tools">
         <AdvancedSearchToggle
           open={advancedOpen}

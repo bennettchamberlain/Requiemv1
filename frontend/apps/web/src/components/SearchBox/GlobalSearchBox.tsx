@@ -54,8 +54,11 @@ export function GlobalSearchBox() {
   // (which owns the toggle and the filter content) and this box stay in sync.
   const advancedOpen = onMemory && searchParams.get('advanced') === '1';
   // With filters active the clear-X must show even on an empty input — it
-  // resets the filters too.
-  const hasActiveFilters = onMemory && countActiveFilters(searchParams) > 0;
+  // resets the filters too. The count renders as subtle text beside the box in
+  // both states (statusSlot when expanded, left of the button when collapsed).
+  const activeFilterCount = onMemory ? countActiveFilters(searchParams) : 0;
+  const filterCountText =
+    activeFilterCount > 0 ? `${activeFilterCount} ${activeFilterCount === 1 ? 'filter' : 'filters'}` : null;
   // On /memory the input mirrors the live `?search` param; elsewhere it stays a
   // transient launcher value, so we don't seed it from the URL.
   const urlSearch = searchParams.get('search') ?? '';
@@ -401,11 +404,30 @@ export function GlobalSearchBox() {
     inputRef.current?.focus();
   });
 
+  // One Escape closes the whole expanded bar — pinned filters included — and
+  // nothing else: the typed text survives hidden, clearing stays on the X.
+  // Focus lands on the collapsed button so Enter/Space reopens.
+  const collapseBar = useCallback(() => {
+    setSearchParams(
+      (params) => {
+        params.delete('advanced');
+
+        return params;
+      },
+      { replace: true },
+    );
+    setExpanded(false);
+    buttonRef.current?.focus();
+  }, [setSearchParams]);
+
   return (
     <>
       {/* Collapsed state: a button dressed as a small search field. On /memory it
-          echoes the committed query so the collapsed bar still shows what's
-          filtering the page. */}
+          echoes the committed query — and the active-filter count beside it — so
+          the collapsed bar still shows what's filtering the page. */}
+      {filterCountText && (
+        <span className="mr-2 whitespace-nowrap text-xs text-muted-foreground">{filterCountText}</span>
+      )}
       <button
         ref={buttonRef}
         type="button"
@@ -428,6 +450,15 @@ export function GlobalSearchBox() {
       <div
         ref={overlayRef}
         className={cn('absolute inset-0 z-40 flex items-center bg-background', !expanded && 'hidden')}
+        // Escape from anywhere in the overlay — the input stops propagation and
+        // reports via SearchBox's onKeyDown instead, so this only catches ESC on
+        // the inset controls and filter triggers (focus lives there after a
+        // filter interaction).
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            collapseBar();
+          }
+        }}
         // Panel closed ⇒ collapsed: when focus leaves the overlay entirely the
         // dropdown is gone, so the box goes with it (suggestion clicks hold focus
         // via mousedown-preventDefault; the pinned filter panel is chevron-owned).
@@ -453,24 +484,8 @@ export function GlobalSearchBox() {
             onClear={handleClear}
             onResultSelect={handleResultSelect}
             onKeyDown={(_value, e) => {
-              // One Escape closes the whole expanded bar — pinned filters
-              // included — and nothing else: the typed text survives hidden,
-              // and clearing stays on the X button. Focus lands on the
-              // collapsed button so Enter/Space reopens.
               if (e.key === 'Escape') {
-                if (advancedOpen) {
-                  setSearchParams(
-                    (params) => {
-                      params.delete('advanced');
-
-                      return params;
-                    },
-                    { replace: true },
-                  );
-                }
-
-                setExpanded(false);
-                buttonRef.current?.focus();
+                collapseBar();
               }
             }}
             variant="compact"
@@ -484,10 +499,13 @@ export function GlobalSearchBox() {
             results={results}
             // Inset tool target at the input's right edge; Memory portals its
             // advanced-filter toggle here (empty — and hidden — on other pages).
-            // Passive status text before the clear-X; Memory portals its
-            // active-filter count here.
-            statusSlot={<Portal id="nav-status" className="flex items-center empty:hidden" />}
-            showClear={hasActiveFilters}
+            // Passive status text before the clear-X.
+            statusSlot={
+              filterCountText && (
+                <span className="whitespace-nowrap text-xs text-muted-foreground">{filterCountText}</span>
+              )
+            }
+            showClear={activeFilterCount > 0}
             toolsSlot={<Portal id="nav-tools" className="flex items-center empty:hidden" />}
             // Filters section pinned above the results while `?advanced=1`; Memory
             // portals its filter row here. The trailing border only renders when
