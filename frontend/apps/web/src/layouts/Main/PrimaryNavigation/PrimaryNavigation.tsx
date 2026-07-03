@@ -70,7 +70,7 @@ export function PrimaryNavigation() {
 
   return (
     <>
-      <header className="flex flex-row items-center gap-3 p-2 px-4">
+      <header className="flex flex-row items-center gap-2 p-2 px-4">
         {/* Left + center: breadcrumbs, Memory's view switcher, then the collapsed
             search button right-aligned next to the actions cluster. All share one
             relative region — the expanded search (GlobalSearchBox) overlays the
@@ -88,7 +88,7 @@ export function PrimaryNavigation() {
 
         {/* Right: page actions, tags, new, account */}
         <div className="flex shrink-0 flex-row items-center gap-2">
-          <Portal ref={actionsRef} id="actions" className="flex flex-row items-center" />
+          <Portal ref={actionsRef} id="actions" className="flex flex-row items-center empty:hidden" />
 
           {hasActions && <Separator orientation="vertical" className="data-[orientation=vertical]:h-6" />}
 
