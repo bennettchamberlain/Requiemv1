@@ -313,7 +313,7 @@ export default function DesktopMemoryPage() {
         <AdvancedSearchToggle
           open={advancedOpen}
           onToggle={toggleAdvanced}
-          className="h-8 w-8 rounded-md border-0 shadow-none"
+          className="h-7 w-7 rounded-md border-0 shadow-none"
         />
       </Portal.Slot>
 

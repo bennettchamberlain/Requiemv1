@@ -577,13 +577,14 @@ function SearchBox(
               'transition-[color,box-shadow]',
               disabled ? 'cursor-not-allowed opacity-50 pointer-events-none' : '',
               panelVisible ? 'rounded-b-none' : '',
-              variant === 'compact' ? 'py-0.5 pr-0.5' : '',
+              // Right inset matches the 3px of vertical slack around the h-7 controls.
+              variant === 'compact' ? 'pr-[3px]' : '',
             )}
           >
             <div className={cn('flex items-center justify-center', variant === 'compact' ? '' : 'pl-3')}>
               {variant === 'compact' && (
-                <div className={`p-2 ${disabled ? 'text-muted-foreground' : ''}`}>
-                  <Search className="h-5 w-5" strokeWidth={1.75} />
+                <div className={cn('pl-3 pr-2', disabled && 'text-muted-foreground')}>
+                  <Search className="h-4 w-4" strokeWidth={1.75} />
                 </div>
               )}
 
@@ -622,7 +623,8 @@ function SearchBox(
                       setIsFocused(false);
                       field.onBlur();
                     }}
-                    className="
+                    className={cn(
+                      `
                       !w-full
                       !flex-1
                       !bg-transparent
@@ -642,16 +644,20 @@ function SearchBox(
                       disabled:!bg-transparent
 
                       resize-none
-                      text-base
-                      md:text-base
                       leading-none
-                    "
+                    `,
+                      // Compact matches the collapsed header button (h-9, text-sm).
+                      variant === 'compact' ? 'text-sm md:text-sm' : 'text-base md:text-base',
+                    )}
                   />
                 )}
               />
 
               <div
-                className={cn('flex items-center gap-1 mr-1.5', variant === 'compact' ? 'h-full' : 'my-1.5')}
+                className={cn(
+                  'flex items-center gap-1',
+                  variant === 'compact' ? 'h-full' : 'my-1.5 mr-1.5',
+                )}
               >
                 {statusSlot}
 
@@ -661,7 +667,11 @@ function SearchBox(
                     disabled={disabled}
                     variant="ghost"
                     size="sm"
-                    className="cursor-pointer h-8 w-8 p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform -mr-1"
+                    className={cn(
+                      'cursor-pointer p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform -mr-1',
+                      // Leave visible slack inside compact's 34px content row.
+                      variant === 'compact' ? 'h-7 w-7' : 'h-8 w-8',
+                    )}
                     onClick={handleClear}
                     onMouseDown={(e) => e.preventDefault()}
                   >

@@ -434,7 +434,7 @@ export function GlobalSearchBox() {
         onClick={() => setExpanded(true)}
         aria-label="Search"
         aria-expanded={expanded}
-        className="flex h-9 w-64 max-w-full cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-base text-muted-foreground shadow-xs hover:bg-accent/50"
+        className="flex h-9 w-64 max-w-full cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-sm text-muted-foreground shadow-xs hover:bg-accent/50"
       >
         <Search className="h-4 w-4 shrink-0" strokeWidth={1.75} />
         <span className={cn('truncate', onMemory && urlSearch && 'text-foreground')}>
