@@ -129,6 +129,8 @@
     "insights.page": false,
     "chat.page": false,
     "jobs.page": false,
+    "stats.page": false,
+    "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,
     "shared.search": false

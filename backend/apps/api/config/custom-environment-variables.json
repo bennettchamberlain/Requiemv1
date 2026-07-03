@@ -109,6 +109,8 @@
     "insights.page": "ENABLE_INSIGHTS_PAGE",
     "chat.page": "ENABLE_CHAT_PAGE",
     "jobs.page": "ENABLE_JOBS_PAGE",
+    "stats.page": "ENABLE_STATS_PAGE",
+    "tags.page": "ENABLE_TAGS_PAGE",
     "hbpe": "ENABLE_HBPE",
     "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",
     "shared.search": "ENABLE_SHARED_SEARCH"

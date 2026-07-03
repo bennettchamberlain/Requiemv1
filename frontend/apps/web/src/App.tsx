@@ -42,6 +42,8 @@ const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const StatsPage = lazy(() => import('@/pages/StatsPage'));
+const TagsPage = lazy(() => import('@/pages/TagsPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
@@ -192,6 +194,28 @@ function AppRoutes() {
               element={
                 <ProtectedRoute>
                   <FilesPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
+
+          {isFeatureEnabled('stats.page') && (
+            <Route
+              path="/stats"
+              element={
+                <ProtectedRoute>
+                  <StatsPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
+
+          {isFeatureEnabled('tags.page') && (
+            <Route
+              path="/tags"
+              element={
+                <ProtectedRoute>
+                  <TagsPage />
                 </ProtectedRoute>
               }
             />

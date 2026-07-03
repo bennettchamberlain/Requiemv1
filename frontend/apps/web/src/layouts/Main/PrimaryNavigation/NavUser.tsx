@@ -11,6 +11,7 @@ import {
   Cable,
   Palette,
   ChartPie,
+  Tags,
 } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -78,6 +79,15 @@ export function NavUser() {
               Knowledge
             </Link>
           </DropdownMenu.Item>
+
+          {isFeatureEnabled('tags.page') && (
+            <DropdownMenu.Item asChild>
+              <Link to="/tags">
+                <Tags />
+                Tags
+              </Link>
+            </DropdownMenu.Item>
+          )}
 
           {isFeatureEnabled('insights.page') && isFeatureEnabled('new.insights.page') && (
             <DropdownMenu.Item asChild>
