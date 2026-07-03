@@ -81,6 +81,16 @@ interface Props {
   openOnFocus?: boolean;
   saveSupported?: boolean;
   /**
+   * Passive status content rendered inset just before the clear button (e.g.
+   * the header slots Memory's active-filter count here).
+   */
+  statusSlot?: ReactNode;
+  /**
+   * Show the clear button even when the input is empty — for callers whose
+   * onClear resets more than the query (e.g. active explorer filters).
+   */
+  showClear?: boolean;
+  /**
    * Extra controls rendered inset at the right edge of the input, after the
    * clear button (e.g. the header slots Memory's advanced-filter toggle here).
    */
@@ -128,6 +138,8 @@ function SearchBox(
     displayDropdown = false,
     openOnFocus = false,
     saveSupported = true,
+    statusSlot,
+    showClear = false,
     toolsSlot,
     panelHeader,
     panelPinned = false,
@@ -599,6 +611,13 @@ function SearchBox(
                       setPanelDismissed(false);
                     }}
                     onBlur={() => {
+                      // Window deactivation isn't a real focus change — keep the
+                      // panel so it's still open when the window comes back (the
+                      // browser restores focus to the input).
+                      if (!document.hasFocus()) {
+                        return;
+                      }
+
                       isFocusedRef.current = false;
                       setIsFocused(false);
                       field.onBlur();
@@ -634,7 +653,9 @@ function SearchBox(
               <div
                 className={cn('flex items-center gap-1 mr-1.5', variant === 'compact' ? 'h-full' : 'my-1.5')}
               >
-                {queryValue.length > 0 && (
+                {statusSlot}
+
+                {(queryValue.length > 0 || showClear) && (
                   <Button
                     type="button"
                     disabled={disabled}

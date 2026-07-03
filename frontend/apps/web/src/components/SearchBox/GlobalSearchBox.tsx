@@ -7,7 +7,10 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useRecentSearches } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
-import { FILTER_PARAMS } from '@/pages/MemoryPage/Components/ExplorerToolbar/ActiveFilterChips';
+import {
+  FILTER_PARAMS,
+  countActiveFilters,
+} from '@/pages/MemoryPage/Components/ExplorerToolbar/ActiveFilterChips';
 
 import { CommunicationResult } from './results/CommunicationResult';
 import { ConceptResult } from './results/ConceptResult';
@@ -50,6 +53,9 @@ export function GlobalSearchBox() {
   // Memory's advanced-filter drawer state lives in the URL so the explorer page
   // (which owns the toggle and the filter content) and this box stay in sync.
   const advancedOpen = onMemory && searchParams.get('advanced') === '1';
+  // With filters active the clear-X must show even on an empty input — it
+  // resets the filters too.
+  const hasActiveFilters = onMemory && countActiveFilters(searchParams) > 0;
   // On /memory the input mirrors the live `?search` param; elsewhere it stays a
   // transient launcher value, so we don't seed it from the URL.
   const urlSearch = searchParams.get('search') ?? '';
@@ -426,6 +432,12 @@ export function GlobalSearchBox() {
         // dropdown is gone, so the box goes with it (suggestion clicks hold focus
         // via mousedown-preventDefault; the pinned filter panel is chevron-owned).
         onBlur={(e) => {
+          // Window deactivation isn't a real focus change — stay expanded so
+          // everything is intact when the window comes back.
+          if (!document.hasFocus()) {
+            return;
+          }
+
           if (!advancedOpen && !overlayRef.current?.contains(e.relatedTarget as Node)) {
             setExpanded(false);
           }
@@ -472,6 +484,10 @@ export function GlobalSearchBox() {
             results={results}
             // Inset tool target at the input's right edge; Memory portals its
             // advanced-filter toggle here (empty — and hidden — on other pages).
+            // Passive status text before the clear-X; Memory portals its
+            // active-filter count here.
+            statusSlot={<Portal id="nav-status" className="flex items-center empty:hidden" />}
+            showClear={hasActiveFilters}
             toolsSlot={<Portal id="nav-tools" className="flex items-center empty:hidden" />}
             // Filters section pinned above the results while `?advanced=1`; Memory
             // portals its filter row here. The trailing border only renders when

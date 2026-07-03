@@ -1418,7 +1418,7 @@ export function ResultCount() {
 /**
  * The "Advanced" toggle. Lives in the global header (desktop) or above the mobile
  * tabs; it controls the toolbar drawer via the page's lifted `open` state and
- * surfaces the active-filter count with an up/down chevron.
+ * flips an up/down chevron; the caller surfaces the active-filter count.
  */
 export function AdvancedSearchToggle({
   open,
@@ -1429,8 +1429,6 @@ export function AdvancedSearchToggle({
   onToggle: () => void;
   className?: string;
 }) {
-  const [searchParams] = useSearchParams();
-  const activeCount = countActiveFilters(searchParams);
   const label = open ? 'Close advanced search' : 'Open advanced search';
 
   return (
@@ -1440,7 +1438,10 @@ export function AdvancedSearchToggle({
           <Button
             type="button"
             size="icon"
-            variant={open || activeCount > 0 ? 'secondary' : 'outline'}
+            // Open state is signalled by the rotated chevron alone, and the
+            // active-filter count by the caller's adjacent text — a filled
+            // button here visually fuses with the clear-X beside it.
+            variant="outline"
             onClick={onToggle}
             // Keep focus in the search input (the toggle sits inset in it) so the
             // suggestions panel doesn't blink out between mousedown and the toggle.
@@ -1448,23 +1449,11 @@ export function AdvancedSearchToggle({
             aria-label={label}
             aria-expanded={open}
             title={label}
-            className={cn(
-              'relative h-10 w-10 flex-shrink-0 overflow-visible',
-              open && 'rounded-b-none',
-              className,
-            )}
+            className={cn('h-10 w-10 flex-shrink-0', open && 'rounded-b-none', className)}
           >
             <ChevronDown
               className={cn('h-4 w-4 transition-transform duration-100', open && 'rotate-180')}
             />
-            {activeCount > 0 && (
-              <Badge
-                variant={open ? 'default' : 'secondary'}
-                className="absolute -right-1 -top-1 h-5 min-w-5 justify-center px-1 text-[10px]"
-              >
-                {activeCount}
-              </Badge>
-            )}
           </Button>
         </Tooltip.Trigger>
         <Tooltip.Content side="bottom">{label}</Tooltip.Content>
