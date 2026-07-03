@@ -142,6 +142,9 @@ function SearchBox(
 
   const isFocusedRef = useRef(false);
   const [isFocused, setIsFocused] = useState(false);
+  // Escape closes the results panel before it clears the query (two-stage);
+  // typing or refocusing reopens it.
+  const [panelDismissed, setPanelDismissed] = useState(false);
 
   // Reflect external query changes (e.g. URL `?search=` or saved-search restore)
   // into the input, but only while it isn't focused so it never clobbers typing.
@@ -232,7 +235,9 @@ function SearchBox(
 
   const handleClear = useCallback(() => {
     if (!disabled) {
-      form.reset();
+      // Reset to empty explicitly: bare reset() restores the mount-time
+      // defaultValues, which may be a non-empty seeded `defaultQuery`.
+      form.reset(EMPTY);
       setSelectedIndex(-1);
 
       if (debounceTimeoutRef.current) {
@@ -253,17 +258,26 @@ function SearchBox(
       }
 
       switch (e.key) {
-        case Keys.ESCAPE:
+        case Keys.ESCAPE: {
           e.preventDefault();
           e.stopPropagation();
 
+          const panelShowing =
+            displayResults &&
+            !panelDismissed &&
+            (openOnFocus ? isFocusedRef.current : queryValue.length > 0) &&
+            results.length > 0;
+
           if (selectedIndex !== -1) {
             setSelectedIndex(-1);
+          } else if (panelShowing) {
+            setPanelDismissed(true);
           } else {
             handleClear();
           }
 
           break;
+        }
 
         case Keys.ARROW_UP:
           if (results.length > 0) {
@@ -300,6 +314,7 @@ function SearchBox(
         default:
           if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
             setSelectedIndex(-1);
+            setPanelDismissed(false);
           }
 
           break;
@@ -310,7 +325,19 @@ function SearchBox(
         onKeyDown?.((e.target as HTMLInputElement).value, e);
       }, 0);
     },
-    [disabled, form, results, selectedIndex, onResultSelect, handleClear, onKeyDown],
+    [
+      disabled,
+      form,
+      results,
+      selectedIndex,
+      displayResults,
+      panelDismissed,
+      openOnFocus,
+      queryValue,
+      onResultSelect,
+      handleClear,
+      onKeyDown,
+    ],
   );
 
   const handleSaveSearch = useCallback(
@@ -425,7 +452,8 @@ function SearchBox(
   // Default: show the dropdown whenever there's a query. With `openOnFocus`, gate
   // it on focus instead — so it can surface recent searches before the user types
   // and won't auto-open just because the input reflects an external `?search` value.
-  const resultsPanelOpen = displayResults && !disabled && (openOnFocus ? isFocused : hasQuery);
+  const resultsPanelOpen =
+    displayResults && !disabled && !panelDismissed && (openOnFocus ? isFocused : hasQuery);
 
   let resultsNode: ReactNode | null = null;
 
@@ -535,6 +563,7 @@ function SearchBox(
                     onFocus={() => {
                       isFocusedRef.current = true;
                       setIsFocused(true);
+                      setPanelDismissed(false);
                     }}
                     onBlur={() => {
                       isFocusedRef.current = false;
