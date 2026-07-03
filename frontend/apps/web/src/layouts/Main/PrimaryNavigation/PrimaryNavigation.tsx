@@ -84,7 +84,7 @@ export function PrimaryNavigation() {
           <Portal id="nav-views" className="ml-2 flex flex-row items-center empty:hidden" />
         </div>
 
-        {/* Right: page actions, tags, new, account */}
+        {/* Right: page actions, new, account (Tags lives in the account menu) */}
         <div className="flex shrink-0 flex-row items-center gap-2">
           <Portal ref={actionsRef} id="actions" className="flex flex-row items-center" />
 

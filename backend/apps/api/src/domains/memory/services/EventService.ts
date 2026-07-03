@@ -636,4 +636,31 @@ export class EventService {
 
     return results.map((row: { event_type: string }) => row.event_type);
   }
+
+  /**
+   * Timeline totals for the stats page: how many events the user's timeline
+   * holds and the earliest/latest `start_time` across them (the span of
+   * remembered history).
+   */
+  async getTimelineStats(context: ServiceContext): Promise<{
+    totalEvents: number;
+    earliest: Date | null;
+    latest: Date | null;
+  }> {
+    const row: { total: string; earliest: Date | null; latest: Date | null } | undefined =
+      await this.dataSource
+        .getRepository(EventEntity)
+        .createQueryBuilder('event')
+        .select('COUNT(*)', 'total')
+        .addSelect('MIN(event.start_time)', 'earliest')
+        .addSelect('MAX(event.start_time)', 'latest')
+        .where('event.user_id = :userId', { userId: context.userId })
+        .getRawOne();
+
+    return {
+      totalEvents: row ? parseInt(row.total, 10) : 0,
+      earliest: row?.earliest ?? null,
+      latest: row?.latest ?? null,
+    };
+  }
 }
