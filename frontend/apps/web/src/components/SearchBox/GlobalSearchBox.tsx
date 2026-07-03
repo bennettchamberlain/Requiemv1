@@ -7,6 +7,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useRecentSearches } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
+import { FILTER_PARAMS } from '@/pages/MemoryPage/Components/ExplorerToolbar/ActiveFilterChips';
 
 import { CommunicationResult } from './results/CommunicationResult';
 import { ConceptResult } from './results/ConceptResult';
@@ -296,6 +297,8 @@ export function GlobalSearchBox() {
     [onMemory, setSearchParams],
   );
 
+  // The X is a full reset: the query, every explorer filter (the same set as
+  // the chips row's "Clear all"), the pinned-filters state, and the expansion.
   const handleClear = useCallback(() => {
     setQuery(null);
 
@@ -303,12 +306,19 @@ export function GlobalSearchBox() {
       setSearchParams(
         (params) => {
           params.delete('search');
+          params.delete('advanced');
+
+          for (const param of FILTER_PARAMS) {
+            params.delete(param);
+          }
 
           return params;
         },
         { replace: true },
       );
     }
+
+    setExpanded(false);
   }, [onMemory, setSearchParams]);
 
   const handleResultSelect = useCallback(
