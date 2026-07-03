@@ -71,16 +71,19 @@ export function PrimaryNavigation() {
   return (
     <>
       <header className="flex flex-row items-center gap-3 p-2 px-4">
-        {/* Left: breadcrumb */}
-        <div className="flex shrink-0 flex-row items-center gap-2">
-          <Portal id="breadcrumbs" />
-        </div>
-
-        {/* Center: the unified search, stretched to fill the bar (Memory's advanced
-            filter toggle slots inside it), followed by Memory's view switcher. */}
-        <div className="flex min-w-0 flex-1 items-center">
-          <div className="min-w-0 flex-1">{!isSharedView && <GlobalSearchBox />}</div>
-          <Portal id="nav-views" className="ml-2 flex flex-row items-center empty:hidden" />
+        {/* Left + center: breadcrumbs, Memory's view switcher, then the collapsed
+            search button right-aligned next to the actions cluster. All share one
+            relative region — the expanded search (GlobalSearchBox) overlays the
+            whole region, GitHub-style, instead of competing with them for width.
+            The right cluster stays visible. */}
+        <div className="relative flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex shrink-0 flex-row items-center gap-2">
+            <Portal id="breadcrumbs" />
+          </div>
+          <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
+          <div className="flex min-w-0 flex-1 items-center justify-end">
+            {!isSharedView && <GlobalSearchBox />}
+          </div>
         </div>
 
         {/* Right: page actions, tags, new, account */}
