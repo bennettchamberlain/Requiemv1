@@ -1442,6 +1442,9 @@ export function AdvancedSearchToggle({
             size="icon"
             variant={open || activeCount > 0 ? 'secondary' : 'outline'}
             onClick={onToggle}
+            // Keep focus in the search input (the toggle sits inset in it) so the
+            // suggestions panel doesn't blink out between mousedown and the toggle.
+            onMouseDown={(e) => e.preventDefault()}
             aria-label={label}
             aria-expanded={open}
             title={label}

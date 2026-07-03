@@ -95,6 +95,12 @@ interface Props {
    * `panelHeader` so its content stays interactive (it survives input blur).
    */
   panelPinned?: boolean;
+  /**
+   * Escape pressed while the panel is pinned (after the dismiss stage). The
+   * pin's owner decides what closing it means; without this, Escape on a
+   * pinned panel falls through to clearing the query.
+   */
+  onPanelUnpin?: () => void;
   onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   /**
    * Explicit submit (Enter with no result highlighted). Falls back to `onSearch`
@@ -125,6 +131,7 @@ function SearchBox(
     toolsSlot,
     panelHeader,
     panelPinned = false,
+    onPanelUnpin,
     defaultQuery,
     onSearch,
     onSubmit,
@@ -166,6 +173,9 @@ function SearchBox(
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const resultItemsRef = useRef<(HTMLDivElement | null)[]>([]);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Last value the auto-submit actually fired for; guards the effect against
+  // re-running on dependency identity churn rather than real query changes.
+  const lastAutoSubmittedRef = useRef<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
@@ -207,6 +217,8 @@ function SearchBox(
         if (success === true) {
           form.reset();
           setSelectedIndex(-1);
+          // Allow the same value to auto-submit again after the reset.
+          lastAutoSubmittedRef.current = null;
         }
       }
     },
@@ -239,6 +251,8 @@ function SearchBox(
       // defaultValues, which may be a non-empty seeded `defaultQuery`.
       form.reset(EMPTY);
       setSelectedIndex(-1);
+      // Allow the same value to auto-submit again after the clear.
+      lastAutoSubmittedRef.current = null;
 
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
@@ -272,6 +286,8 @@ function SearchBox(
             setSelectedIndex(-1);
           } else if (panelShowing) {
             setPanelDismissed(true);
+          } else if (panelPinned) {
+            onPanelUnpin?.();
           } else {
             handleClear();
           }
@@ -334,6 +350,8 @@ function SearchBox(
       panelDismissed,
       openOnFocus,
       queryValue,
+      panelPinned,
+      onPanelUnpin,
       onResultSelect,
       handleClear,
       onKeyDown,
@@ -359,6 +377,14 @@ function SearchBox(
       return;
     }
 
+    // The effect also re-runs when callback identities churn (e.g. the caller's
+    // onSearch closes over router state and any URL write remints it). Only an
+    // actual query change warrants a new debounce cycle — otherwise the spinner
+    // flashes and the same value is resubmitted.
+    if (queryValue === lastAutoSubmittedRef.current) {
+      return;
+    }
+
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
     }
@@ -366,6 +392,7 @@ function SearchBox(
     setIsAutoSubmitPending(true);
 
     debounceTimeoutRef.current = setTimeout(async () => {
+      lastAutoSubmittedRef.current = queryValue;
       await handleSubmit({ query: queryValue });
       setIsAutoSubmitPending(false);
     }, autoSubmitDelay);
@@ -452,8 +479,14 @@ function SearchBox(
   // Default: show the dropdown whenever there's a query. With `openOnFocus`, gate
   // it on focus instead — so it can surface recent searches before the user types
   // and won't auto-open just because the input reflects an external `?search` value.
+  // While the panel is pinned, a live query keeps its results visible even
+  // unfocused — interacting with panelHeader content (filter dropdowns steal
+  // focus) must not blank the suggestions below it.
   const resultsPanelOpen =
-    displayResults && !disabled && !panelDismissed && (openOnFocus ? isFocused : hasQuery);
+    displayResults &&
+    !disabled &&
+    !panelDismissed &&
+    (openOnFocus ? isFocused || (panelPinned && hasQuery) : hasQuery);
 
   let resultsNode: ReactNode | null = null;
 

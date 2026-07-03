@@ -68,12 +68,17 @@ export function GlobalSearchBox() {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
-  // The expanded box exists only while its dropdown panel does: `?advanced=1`
-  // implies expanded (the pinned filter panel hangs off it), and closing the
-  // filters via the chevron collapses back to the button. Runs only on
-  // `advancedOpen` transitions, so it never fights click-to-expand.
+  // `?advanced=1` implies the expanded box (the pinned filter panel hangs off
+  // it). Closing the filters keeps the wide bar and refocuses the input — the
+  // user is still mid-search — which re-arms the blur/Escape collapse rules.
+  // On a collapsed box the focus call is a no-op (hidden inputs can't focus),
+  // so the mount run and off-memory transitions change nothing.
   useEffect(() => {
-    setExpanded(advancedOpen);
+    if (advancedOpen) {
+      setExpanded(true);
+    } else {
+      inputRef.current?.focus();
+    }
   }, [advancedOpen]);
 
   // Focus once the overlay is visible (a display:none input can't take focus).
@@ -112,8 +117,27 @@ export function GlobalSearchBox() {
 
   const [recentSearches, { addRecentSearch, removeRecentSearch }] = useRecentSearches();
 
-  // Suggestions follow the explorer's semantic mode so the two stay consistent.
-  const { data, loading, error } = useSearchService({ searchQuery: query ?? '', semantic });
+  // Suggestions follow the explorer's semantic mode and its What (entity-type)
+  // filter so the dropdown agrees with the pinned filters above it. The other
+  // dimensions (who / when / where / tags / connectors) aren't part of the
+  // search API's input yet, so only the page results honor them.
+  const includeTypes = onMemory
+    ? searchParams.get('includedEntityTypes')?.split(',').filter(Boolean)
+    : undefined;
+  const userExcludedTypes = onMemory
+    ? (searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [])
+    : [];
+  // Keep the box's default exclusions on top of the explorer's (the service
+  // only applies its defaults when excludeTypes is omitted entirely).
+  const excludeTypes =
+    userExcludedTypes.length > 0 ? [...userExcludedTypes, 'answer', 'browser-activity'] : undefined;
+
+  const { data, loading, error } = useSearchService({
+    searchQuery: query ?? '',
+    semantic,
+    includeTypes,
+    excludeTypes,
+  });
 
   // Also collapses: it runs after a committed search / suggestion navigation,
   // where the expanded box has done its job (the collapsed button echoes the
@@ -370,14 +394,6 @@ export function GlobalSearchBox() {
         ref={buttonRef}
         type="button"
         onClick={() => setExpanded(true)}
-        // Second Escape (focus lands here when the expanded box collapses on the
-        // first): clear the search — both the URL param and the hidden input.
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            handleClear();
-            setResetKey((key) => key + 1);
-          }
-        }}
         aria-label="Search"
         aria-expanded={expanded}
         className="flex h-9 w-64 max-w-full cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-base text-muted-foreground shadow-xs hover:bg-accent/50"
@@ -415,11 +431,22 @@ export function GlobalSearchBox() {
             onClear={handleClear}
             onResultSelect={handleResultSelect}
             onKeyDown={(_value, e) => {
-              // Escape collapses outright (panel closed ⇒ collapsed); the typed
-              // text survives hidden and reappears on re-expand. Focus lands on
-              // the collapsed button, whose own Escape handler clears the search
-              // — restoring the double-Escape-to-clear flow.
-              if (e.key === 'Escape' && !advancedOpen) {
+              // One Escape closes the whole expanded bar — pinned filters
+              // included — and nothing else: the typed text survives hidden,
+              // and clearing stays on the X button. Focus lands on the
+              // collapsed button so Enter/Space reopens.
+              if (e.key === 'Escape') {
+                if (advancedOpen) {
+                  setSearchParams(
+                    (params) => {
+                      params.delete('advanced');
+
+                      return params;
+                    },
+                    { replace: true },
+                  );
+                }
+
                 setExpanded(false);
                 buttonRef.current?.focus();
               }
