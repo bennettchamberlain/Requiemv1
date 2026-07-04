@@ -665,7 +665,11 @@ function SearchBox(
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      'cursor-pointer p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform -mr-1',
+                      'cursor-pointer p-0 active:scale-90 transition-transform duration-200 ease-out will-change-transform',
+                      // Tuck against a following control (chevron/submit), but only
+                      // when one renders — the toolsSlot target sits empty otherwise
+                      // and the X must keep the box's right inset.
+                      '[&:has(+*:not(:empty))]:-mr-1',
                       // Leave visible slack inside compact's 34px content row.
                       variant === 'compact' ? 'h-7 w-7' : 'h-8 w-8',
                     )}
