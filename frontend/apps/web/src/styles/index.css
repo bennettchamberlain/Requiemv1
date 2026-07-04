@@ -65,6 +65,11 @@
   --color-teal-800: var(--teal-800);
   --color-teal-900: var(--teal-900);
   --color-teal-950: var(--teal-950);
+  /* CI brand-tinted elevation — map --shadow-sm/md/lg so the shadow utilities
+     render the teal-tinted brand shadow (inline keeps .dark overrides live). */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
 }
 
 :root {
