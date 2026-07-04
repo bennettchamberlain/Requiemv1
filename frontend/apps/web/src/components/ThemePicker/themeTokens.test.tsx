@@ -60,7 +60,9 @@ function dist(a: number[], b: number[]): number {
 
 /** Pull the `--primary` declaration out of a specific CSS selector block. */
 function primaryIn(css: string, selector: string): string {
-  const block = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([\\s\\S]*?)\\}`).exec(css);
+  const block = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([\\s\\S]*?)\\}`).exec(
+    css,
+  );
   if (!block) {
     throw new Error(`selector ${selector} not found in index.css`);
   }
