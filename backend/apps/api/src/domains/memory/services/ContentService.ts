@@ -76,7 +76,8 @@ export class ContentService {
    * EventService.create / ItemService.createMany — so a re-sync returns the
    * existing row instead of inserting a duplicate. Paired with the
    * content_source_triple_uniq partial unique index, which also catches a lost
-   * insert race (23505).
+   * insert race (23505). No fields are refreshed on a re-sync —
+   * INGEST_REFRESH_COLUMNS.content is intentionally empty (find-or-return).
    *
    * Event link: an explicit `event.id` (e.g. the id returned by createEvent)
    * wins. Otherwise, when the item carries a source triple, the matching event in

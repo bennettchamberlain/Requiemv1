@@ -58,10 +58,24 @@ export interface GraphRelationshipInputDto {
   toEntityType?: string;
 }
 
+export interface GraphEntityMappingDto {
+  /** The caller's entity `key`, echoed back verbatim. */
+  key: string;
+  /** The server-side ci.entities UUID the key resolved to or was created as. */
+  entityId: string;
+}
+
 export interface GraphIngestResult {
   entitiesProcessed: number;
   relationshipsProcessed: number;
   errors: string[];
+  /**
+   * key → ci.entities UUID for every input entity that upserted, covering both
+   * freshly created rows and keys that resolved to existing ones. Callers (the
+   * importer) cache this to attach later edges without re-sending entities.
+   * Entities that failed to upsert are absent here and reported in `errors`.
+   */
+  entities: GraphEntityMappingDto[];
 }
 
 /**
@@ -106,12 +120,17 @@ export class GraphIngestService {
     const keyToId = new Map<string, string>();
     const keyToType = new Map<string, string>();
 
+    // Echoed back to the caller so it can cache key -> UUID (resolved-existing
+    // rows included) and reference these entities in later batches.
+    const entities: GraphEntityMappingDto[] = [];
+
     let entitiesProcessed = 0;
     for (const e of input.entities) {
       try {
         const id = await this.upsertEntity(ownerId, e);
         keyToId.set(e.key, id);
         keyToType.set(e.key, e.entityType);
+        entities.push({ key: e.key, entityId: id });
 
         // People-linking: index this entity's email/phone identifiers so the
         // communications backfill can resolve raw participants to it. Idempotent
@@ -171,7 +190,7 @@ export class GraphIngestService {
       }
     }
 
-    return { entitiesProcessed, relationshipsProcessed, errors };
+    return { entitiesProcessed, relationshipsProcessed, errors, entities };
   }
 
   private async upsertEntity(ownerId: string, e: GraphEntityInputDto): Promise<string> {

@@ -66,6 +66,7 @@ export { EntityIdentifierEntity, NodeEntity, RelationshipEntity };
 export type { EntityIdentifier, IdentifierKey, Node, Relationship };
 export type {
   GraphEntityInputDto,
+  GraphEntityMappingDto,
   GraphRelationshipInputDto,
   GraphIngestResult,
 } from './services/GraphIngestService';

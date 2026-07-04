@@ -23,7 +23,9 @@ import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetry
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { IndexDeferralService } from './services/IndexDeferralService';
+import { IngestResetService } from './services/IngestResetService';
 import { LocationEstimateService } from './services/LocationEstimateService';
+import { MaintenanceOrchestratorService } from './services/MaintenanceOrchestratorService';
 import { PersonStubBackfillService } from './services/PersonStubBackfillService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
 
@@ -44,6 +46,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   controllers: [MaintenanceController],
   providers: [
     IndexDeferralService,
+    IngestResetService,
     CommunicationLinkBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
@@ -51,6 +54,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,
+    MaintenanceOrchestratorService,
     EstimateLocationBatchListener,
     CommunicationParticipantLinkListener,
   ],
@@ -63,6 +67,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,
+    MaintenanceOrchestratorService,
   ],
 })
 export class MaintenanceModule {}

@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -189,12 +190,11 @@ export class CommunicationService {
     };
 
     const canonicalByTriple = new Map<string, CanonicalRow>();
-    // Refreshable, source-derived columns. Same set as the previous
-    // ON CONFLICT DO UPDATE list: a re-sync of these via the canonical row
-    // self-heals e.g. the importer's corrected email `direction` or a
-    // newly-populated `participants_metadata`. Never extend this with
-    // server-mutable columns — a re-import would clobber local edits.
-    const selfHealColumns = ['direction', 'participants_metadata', 'content', 'preview', 'subject'] as const;
+    // Refreshable, source-derived columns (the centralized ingest refresh
+    // contract — see INGEST_REFRESH_COLUMNS for what may/may not be listed).
+    // The UPDATE ... FROM (VALUES ...) below binds parameters in the map
+    // entry's order, so the two must stay in lockstep.
+    const selfHealColumns = INGEST_REFRESH_COLUMNS.communication;
 
     await this.dataSource.transaction(async (manager) => {
       if (dedupableUnique.length > 0) {
