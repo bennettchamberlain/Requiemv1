@@ -527,7 +527,7 @@ function SearchBox(
             <div className="flex-1 p-4 overflow-hidden">{selectedResult.preview}</div>
           )}
           <ScrollArea className="flex-1/2" ref={scrollAreaRef}>
-            <div className="py-2">
+            <div className="py-1">
               {results.map((result, index) => (
                 <div
                   key={result.id}
@@ -535,7 +535,7 @@ function SearchBox(
                     resultItemsRef.current[index] = el;
                   }}
                   className={`
-                        p-2 cursor-pointer border-l-4
+                        px-2 py-1.5 cursor-pointer border-l-4
                         ${index === selectedIndex ? 'bg-accent text-accent-foreground border-blue-500' : 'hover:bg-muted/50 border-transparent'}
                       `}
                   // Keep the input focused so the focus-driven panel doesn't close before the click lands.
