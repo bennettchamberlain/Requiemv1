@@ -280,6 +280,10 @@ dbshell: ## Open a psql shell to the PostgreSQL database
 dburl: ## Print this worktree's PostgreSQL connection URL (for DataGrip, psql, etc.)
 	@yarn workspace @ci/be-api dburl
 
+.PHONY: url
+url: ## Print this worktree's stack URL
+	@echo "https://$(PROJECT_NAME).localhost"
+
 .PHONY: dev
 dev: ## Run the development environment locally
 	@printf "$(call task_icon,dev,🧑‍💻) Starting development environment...\n\n"
