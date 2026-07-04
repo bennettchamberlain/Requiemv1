@@ -131,6 +131,12 @@ export type BrowserActivityType = Node & Taggable & {
   url: Scalars['String']['output'];
 };
 
+export type BulkGraphEntityMapping = {
+  __typename?: 'BulkGraphEntityMapping';
+  entityId: Scalars['ID']['output'];
+  key: Scalars['String']['output'];
+};
+
 export type BulkGraphInput = {
   entities: Array<GraphEntityInput>;
   relationships?: InputMaybe<Array<GraphRelationshipInput>>;
@@ -138,6 +144,7 @@ export type BulkGraphInput = {
 
 export type BulkGraphPayload = {
   __typename?: 'BulkGraphPayload';
+  entities: Array<BulkGraphEntityMapping>;
   entitiesProcessed: Scalars['Int']['output'];
   errors: Array<Scalars['String']['output']>;
   relationshipsProcessed: Scalars['Int']['output'];

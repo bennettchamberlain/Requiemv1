@@ -24,7 +24,9 @@ function makeDataSource(pagesByType: Record<string, string[][]>) {
   const query = jest.fn(async (_sql: string, params?: unknown[]) => {
     // The pending-depth probe binds no params (reads pgboss.job); answer 0 so
     // sweeps proceed by default — guard tests override with mockImplementationOnce.
-    if (!params) {return [{ count: '0' }];}
+    if (!params) {
+      return [{ count: '0' }];
+    }
 
     // Time-paged (hypertable) types bind 4 params (type, afterTs, afterId, limit);
     // plain uuid keysets bind 3 (type, afterId, limit).
@@ -178,7 +180,9 @@ describe('SearchIndexBackfillService', () => {
 
     expect(ds.query.mock.calls.length).toBeGreaterThan(0);
     for (const [sql, params] of ds.query.mock.calls) {
-      if (!params) {continue;} // the pending-depth probe reads pgboss.job, not a source table
+      if (!params) {
+        continue;
+      } // the pending-depth probe reads pgboss.job, not a source table
 
       const flat = (sql as string).replace(/\s+/g, ' ');
       expect(flat).toContain('LEFT JOIN ci_search.index_skips k');
@@ -232,14 +236,25 @@ describe('SearchIndexBackfillService', () => {
     const { service, sendMany } = makeService({ communication: [['c1'], []] });
     // Hold the first sweep open mid-enqueue so the second call overlaps it.
     let release: (() => void) | undefined;
-    sendMany.mockImplementationOnce(() => new Promise<undefined>(res => { release = () => res(undefined); }));
+    sendMany.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((res) => {
+          release = () => res(undefined);
+        }),
+    );
 
     const first = service.backfill({ entityTypes: ['communication'], batchSize: 10, pendingThreshold: 0 });
     // Wait until the first sweep actually reaches the held sendMany (several
     // awaits deep); the lock itself is set synchronously at entry.
-    while (release === undefined) {await new Promise((r) => setTimeout(r, 0));}
+    while (release === undefined) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
 
-    const second = await service.backfill({ entityTypes: ['communication'], batchSize: 10, pendingThreshold: 0 });
+    const second = await service.backfill({
+      entityTypes: ['communication'],
+      batchSize: 10,
+      pendingThreshold: 0,
+    });
 
     expect(second).toEqual({ enqueued: 0, perType: {}, skipped: 'already_running' });
 
@@ -248,7 +263,11 @@ describe('SearchIndexBackfillService', () => {
     expect(firstResult.enqueued).toBe(1);
 
     // The lock is released after the sweep — a later run proceeds normally.
-    const third = await service.backfill({ entityTypes: ['communication'], batchSize: 10, pendingThreshold: 0 });
+    const third = await service.backfill({
+      entityTypes: ['communication'],
+      batchSize: 10,
+      pendingThreshold: 0,
+    });
     expect(third.skipped).toBeUndefined();
   });
 
