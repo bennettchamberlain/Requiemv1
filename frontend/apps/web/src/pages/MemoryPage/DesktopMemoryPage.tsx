@@ -3,8 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import { Breadcrumb, Tabs, Sheet } from '@ci/shadcn';
-import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
+import { Breadcrumb, cn, DropdownMenu, Sheet } from '@ci/shadcn';
+import { ChartNetwork, ChevronDown, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
 import { useSearchParams, Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -260,9 +260,13 @@ export default function DesktopMemoryPage() {
   }, []);
 
   const activeFilterCount = countActiveFilters(searchParams);
+  const activeView = VIEW_TABS.find((tab) => tab.value === activeTab) ?? VIEW_TABS[1];
 
   return (
     <>
+      {/* The view switcher is the last breadcrumb crumb: the current view's name
+          is the trigger, and the expansion mirrors the header plus-button's Add
+          panel (icon grid) so both header menus read as one pattern. */}
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
@@ -275,36 +279,38 @@ export default function DesktopMemoryPage() {
             <Breadcrumb.Item>
               <Breadcrumb.Page>Memory</Breadcrumb.Page>
             </Breadcrumb.Item>
+            <Breadcrumb.Separator />
+            <Breadcrumb.Item>
+              <DropdownMenu modal={false}>
+                <DropdownMenu.Trigger
+                  aria-label={`${activeView.title} — change view`}
+                  className="hover:text-foreground flex cursor-pointer items-center gap-1 text-sm transition-colors"
+                >
+                  {activeView.label}
+                  <ChevronDown className="size-3.5" />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="start" sideOffset={4}>
+                  <div className="grid grid-cols-4 gap-2">
+                    {VIEW_TABS.map(({ value, label, title, Icon }) => (
+                      <DropdownMenu.Item
+                        key={value}
+                        title={title}
+                        onSelect={() => setActiveTab(value)}
+                        className={cn(
+                          'h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1',
+                          activeTab === value && 'bg-accent text-accent-foreground',
+                        )}
+                      >
+                        <Icon className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs">{label}</span>
+                      </DropdownMenu.Item>
+                    ))}
+                  </div>
+                </DropdownMenu.Content>
+              </DropdownMenu>
+            </Breadcrumb.Item>
           </Breadcrumb.List>
         </Breadcrumb>
-      </Portal.Slot>
-
-      {/* View toggles sit in the unified header bar, right of the stretched search.
-          Native `title` for the hover label rather than a Radix Tooltip: wrapping
-          Tabs.Trigger in Tooltip.Trigger renders a button inside a button (invalid
-          HTML + hydration error), and merging them (asChild) makes the tooltip's
-          data-state clobber the tab's active/inactive state. */}
-      <Portal.Slot id="nav-views">
-        <Tabs defaultValue="map" onValueChange={setActiveTab} value={activeTab}>
-          <Tabs.List className="flex h-9 items-center border">
-            {VIEW_TABS.map(({ value, label, title, Icon }) => {
-              const active = activeTab === value;
-
-              return (
-                <Tabs.Trigger
-                  key={value}
-                  value={value}
-                  title={title}
-                  aria-label={title}
-                  className="flex h-7 w-8 flex-none items-center justify-center px-0 data-[state=active]:w-auto data-[state=active]:px-2.5"
-                >
-                  <Icon className="h-4 w-4" />
-                  {active && <span>{label}</span>}
-                </Tabs.Trigger>
-              );
-            })}
-          </Tabs.List>
-        </Tabs>
       </Portal.Slot>
 
       {/* The Advanced toggle sits inset at the right edge of the header search box
