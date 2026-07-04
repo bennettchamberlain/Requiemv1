@@ -654,10 +654,7 @@ function SearchBox(
               />
 
               <div
-                className={cn(
-                  'flex items-center gap-1',
-                  variant === 'compact' ? 'h-full' : 'my-1.5 mr-1.5',
-                )}
+                className={cn('flex items-center gap-1', variant === 'compact' ? 'h-full' : 'my-1.5 mr-1.5')}
               >
                 {statusSlot}
 

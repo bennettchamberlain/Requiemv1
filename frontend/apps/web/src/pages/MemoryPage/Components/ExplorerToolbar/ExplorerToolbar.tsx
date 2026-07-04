@@ -1451,9 +1451,7 @@ export function AdvancedSearchToggle({
             title={label}
             className={cn('h-10 w-10 flex-shrink-0', open && 'rounded-b-none', className)}
           >
-            <ChevronDown
-              className={cn('h-4 w-4 transition-transform duration-100', open && 'rotate-180')}
-            />
+            <ChevronDown className={cn('h-4 w-4 transition-transform duration-100', open && 'rotate-180')} />
           </Button>
         </Tooltip.Trigger>
         <Tooltip.Content side="bottom">{label}</Tooltip.Content>
@@ -1523,9 +1521,7 @@ function ExplorerToolbarInner({ open, showResultCount }: { open: boolean; showRe
       {/* The advanced-search drawer: plain Who / What / When / Where / How, then
           semantic, sort, save, and right-aligned tags. Opened from the header toggle. */}
       {open && (
-        <div
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm"
-        >
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
           <AdvancedFilters modal={false} />
         </div>
       )}
