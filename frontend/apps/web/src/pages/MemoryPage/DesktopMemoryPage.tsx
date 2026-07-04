@@ -15,11 +15,7 @@ import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components/EntityDetails';
 import { ActiveFilterChips, countActiveFilters } from './Components/ExplorerToolbar/ActiveFilterChips';
-import {
-  AdvancedFilters,
-  AdvancedSearchToggle,
-  ResultCount,
-} from './Components/ExplorerToolbar/ExplorerToolbar';
+import { AdvancedFilters, AdvancedSearchToggle } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -344,14 +340,6 @@ export default function DesktopMemoryPage() {
       </Portal.Slot>
 
       <PageContent className="p-0 gap-0">
-        {/* Result count only — filters and their chips live in the header search
-            panel. The map stays full-bleed. */}
-        {activeTab !== 'map' && (
-          <div className="flex justify-end px-4 pt-3">
-            <ResultCount />
-          </div>
-        )}
-
         <div className="flex min-h-0 flex-1 flex-col">
           {activeTab === 'list' && <ListView />}
           {activeTab === 'map' && <DesktopMapView />}

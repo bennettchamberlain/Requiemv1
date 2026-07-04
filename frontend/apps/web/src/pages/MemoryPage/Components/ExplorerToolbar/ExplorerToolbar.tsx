@@ -42,7 +42,6 @@ import { gql, type FragmentType } from '@/graphql';
 import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/SavedSearch';
 import { ShareSavedSearchModal } from '../../../SavedSearchesPage/ShareSavedSearchModal';
 import { buildSavedSearchFilters } from '../../savedSearchFilters';
-import { useEntityService } from '../../useEntityService';
 
 import { ActiveFilterChips, countActiveFilters } from './ActiveFilterChips';
 
@@ -1403,18 +1402,6 @@ function SaveSearchButton() {
   );
 }
 
-export function ResultCount() {
-  const [{ data, hasNextPage, loading }] = useEntityService();
-
-  return (
-    <span className="whitespace-nowrap text-xs text-muted-foreground">
-      {loading && data.length === 0
-        ? 'Searching…'
-        : `Showing ${data.length.toLocaleString()}${hasNextPage ? '+' : ''}`}
-    </span>
-  );
-}
-
 /**
  * The "Advanced" toggle. Lives in the global header (desktop) or above the mobile
  * tabs; it controls the toolbar drawer via the page's lifted `open` state and
@@ -1512,9 +1499,8 @@ export function MemorySearchField() {
   );
 }
 
-function ExplorerToolbarInner({ open, showResultCount }: { open: boolean; showResultCount: boolean }) {
+function ExplorerToolbarInner({ open }: { open: boolean }) {
   const [searchParams] = useSearchParams();
-  const showSummaryRow = showResultCount || countActiveFilters(searchParams) > 0;
 
   return (
     <div className="flex flex-col gap-2">
@@ -1526,16 +1512,9 @@ function ExplorerToolbarInner({ open, showResultCount }: { open: boolean; showRe
         </div>
       )}
 
-      {showSummaryRow && (
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <ActiveFilterChips />
-          </div>
-          {showResultCount && (
-            <div className="shrink-0">
-              <ResultCount />
-            </div>
-          )}
+      {countActiveFilters(searchParams) > 0 && (
+        <div className="min-w-0">
+          <ActiveFilterChips />
         </div>
       )}
     </div>
@@ -1545,20 +1524,14 @@ function ExplorerToolbarInner({ open, showResultCount }: { open: boolean; showRe
 /**
  * The explorer toolbar body that sits under the unified header bar: the
  * advanced-search drawer (Who / What / When / Where / How + tags, semantic, sort,
- * save) plus the active-filter chips and result count. `open` is controlled by
- * the page — the AdvancedSearchToggle that flips it lives in the header. Wrapped
- * in DropdownProvider so the useDropdown URL-param setters work.
+ * save) plus the active-filter chips. `open` is controlled by the page — the
+ * AdvancedSearchToggle that flips it lives in the header. Wrapped in
+ * DropdownProvider so the useDropdown URL-param setters work.
  */
-export function ExplorerToolbar({
-  open,
-  showResultCount = true,
-}: {
-  open: boolean;
-  showResultCount?: boolean;
-}) {
+export function ExplorerToolbar({ open }: { open: boolean }) {
   return (
     <DropdownProvider args={[{ changeSearchParams: true }]}>
-      <ExplorerToolbarInner open={open} showResultCount={showResultCount} />
+      <ExplorerToolbarInner open={open} />
     </DropdownProvider>
   );
 }

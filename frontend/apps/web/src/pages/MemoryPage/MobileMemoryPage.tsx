@@ -84,8 +84,8 @@ export default function MobileMemoryPage() {
         <div className="space-y-3">
           {/* The global header search isn't shown on mobile, so the search field
               lives here inline, next to the Advanced toggle; the advanced drawer
-              (Who/What/When/Where/How + tags, semantic, sort, save), chips and
-              result count render below via the shared ExplorerToolbar. */}
+              (Who/What/When/Where/How + tags, semantic, sort, save) and chips
+              render below via the shared ExplorerToolbar. */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <MemorySearchField />

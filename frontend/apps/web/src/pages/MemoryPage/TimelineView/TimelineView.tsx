@@ -92,11 +92,6 @@ export function TimelineView({
     });
   }, [activeEntityId]);
 
-  const resultLabel =
-    loading && data.length === 0
-      ? 'Searching...'
-      : `Showing ${data.length.toLocaleString()}${hasNextPage ? '+' : ''}`;
-
   const setRowRef = useCallback(
     (entityId: string) => (element: HTMLDivElement | null) => {
       if (element) {
@@ -192,10 +187,6 @@ export function TimelineView({
 
   return (
     <div className="relative py-2">
-      <div className="sticky top-0 z-30 flex items-center justify-start bg-background/90 px-3 py-3 backdrop-blur-sm">
-        <span className="whitespace-nowrap text-xs text-muted-foreground">{resultLabel}</span>
-      </div>
-
       <div className="relative">
         <div className="absolute bottom-0 left-[14px] top-0 w-0.5 bg-border" />
 
@@ -203,12 +194,7 @@ export function TimelineView({
           {groups ? (
             groups.map((group) => (
               <section key={group.key}>
-                <DateGroupHeader
-                  label={group.label}
-                  count={group.entities.length}
-                  align="right"
-                  className="top-10"
-                />
+                <DateGroupHeader label={group.label} count={group.entities.length} align="right" />
                 <div className="pl-8 pt-2">{renderTimelineRows(group.entities)}</div>
               </section>
             ))
