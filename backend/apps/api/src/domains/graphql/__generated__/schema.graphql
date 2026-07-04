@@ -802,6 +802,7 @@ type Mutation {
   updateConnection(input: UpdateConnectionInput!): UpdateConnectionPayload!
   updateConnectionSyncJob(input: UpdateConnectionSyncJobInput!): UpdateConnectionSyncJobPayload!
   updateContent(input: UpdateContentInput!): ContentType
+  updateCurrentUser(input: UpdateCurrentUserInput!): UserType
   updateEvent(input: UpdateEventInput!): EventType
   updateFile(input: UpdateFileInput!): FileType
   updateItem(input: UpdateItemInput!): UpdateItemPayload!
@@ -1332,6 +1333,10 @@ input UpdateContentInput {
   url: String
 }
 
+input UpdateCurrentUserInput {
+  timezone: String
+}
+
 input UpdateEventInput {
   category: String
   confidenceScore: Float
@@ -1471,4 +1476,5 @@ type UserType implements Node {
   id: ID!
   name: String!
   onboarded: Boolean!
+  timezone: String!
 }
