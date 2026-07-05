@@ -39,6 +39,29 @@ describe('SearchService.searchMessages', () => {
     expect(sql).toMatch(/\(embedding <=> \$2\) < \$3::double precision/);
   });
 
+  it('orders by the raw distance operator (HNSW-usable), not the derived score', async () => {
+    // HNSW (embeddings_embedding_hnsw_idx) only accelerates `ORDER BY col <=> const`
+    // ASC. Ordering by `1 - (embedding <=> $2) DESC` is equivalent but opaque to the
+    // planner and forces a full Seq Scan + Sort at corpus scale. Pin the index-usable
+    // shape so a refactor can't silently reintroduce the seq-scan.
+    const { service, query } = makeService();
+
+    await service.searchMessages(CONTEXT, 'where does priya live');
+
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/ORDER BY\s+embedding <=> \$2/);
+    expect(sql).not.toMatch(/ORDER BY\s+score DESC/);
+  });
+
+  it('constrains to embedding IS NOT NULL to match the partial HNSW index predicate', async () => {
+    const { service, query } = makeService();
+
+    await service.searchMessages(CONTEXT, 'where does priya live');
+
+    const [sql] = query.mock.calls[0];
+    expect(sql).toMatch(/embedding IS NOT NULL/);
+  });
+
   it('defaults the floor to 0.5 (matching semantic mode) and K to 10', async () => {
     const { service, query } = makeService();
 
