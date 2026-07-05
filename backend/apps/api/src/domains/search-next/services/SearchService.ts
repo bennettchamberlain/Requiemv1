@@ -154,13 +154,22 @@ export class SearchService {
   ): Promise<{ id: string; score: number }[]> {
     const vector = await this.embeddingGenerationService.generateEmbeddingString(query);
 
+    // ORDER BY the raw distance operator (ascending) — NOT `1 - (embedding <=> $2)
+    // DESC` — so the planner can use the HNSW index (embeddings_embedding_hnsw_idx,
+    // vector_cosine_ops). HNSW only accelerates `ORDER BY col <=> const ASC LIMIT k`;
+    // ordering by the derived `score DESC` is mathematically identical but opaque to
+    // the planner, forcing a full Seq Scan + Sort. `embedding IS NOT NULL` matches
+    // the index's partial predicate (the column is nullable). Nearest-distance-first
+    // == highest-similarity-first, so the returned order is unchanged. See the KNN
+    // index-usage finding: without this, semantic search full-scans at corpus scale.
     const sql = `
       SELECT entity_id, 1 - (embedding <=> $2) AS score
       FROM ci_search.embeddings
       WHERE user_id = $1
         AND entity_type = 'message'
+        AND embedding IS NOT NULL
         AND (embedding <=> $2) < $3::double precision
-      ORDER BY score DESC
+      ORDER BY embedding <=> $2
       LIMIT ${maxResults}
     `;
 
@@ -312,6 +321,10 @@ export class SearchService {
     // L2 distance is ~22 and never < 0.5 — the threshold made semantic search
     // return nothing, and 1 - L2 produced large-negative "scores". With <=>,
     // (embedding <=> $2) is cosine distance in [0,2] and 1 - it is cosine sim.
+    // ORDER BY the raw `embedding <=> $2` (ascending) rather than `score DESC` so the
+    // HNSW index serves the KNN; `embedding IS NOT NULL` matches its partial predicate.
+    // Nearest-first == highest-similarity-first, so results are unchanged but the query
+    // uses the index instead of a full Seq Scan + Sort at corpus scale.
     const sql = `
       SELECT
         entity_id,
@@ -320,9 +333,10 @@ export class SearchService {
       FROM
         ci_search.embeddings
       WHERE user_id = $1
+        AND embedding IS NOT NULL
         AND (embedding <=> $2) < $3::double precision
         ${typeFilter.clause}
-      ORDER BY score DESC
+      ORDER BY embedding <=> $2
       LIMIT ${maxResults}
     `;
 
