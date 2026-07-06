@@ -66,7 +66,9 @@ curl -sX POST https://<host>/api/graphql \
 ## GraphiQL IDE
 
 CI-Server ships the official [GraphiQL](https://github.com/graphql/graphiql) IDE for
-exploring the schema and running queries interactively.
+exploring the schema and running queries interactively, themed to the CI palette.
+
+![CI-themed GraphiQL IDE — the branded API-key bar above the schema explorer and editor, with a mint execute button](images/graphiql/graphiql-dark.jpg)
 
 **Open it:** Settings → **GraphiQL** (opens `/api/graphiql` in a new tab). It's a full-page
 IDE served by the API — [`GraphQLController`](../backend/apps/api/src/domains/graphql/controllers/GraphQLController.ts)
@@ -97,7 +99,9 @@ and toggles `body.graphiql-dark` / `body.graphiql-light`; `graphiql.html.ts` ove
 by mirroring GraphiQL's own theme selectors (so the declarations tie on specificity and win
 on source order), and defaults the IDE to CI's dark theme. To re-skin it, edit those variable
 blocks. Bumping `GRAPHIQL_VERSION` may change the internal theme selectors — re-check them if
-you upgrade.
+you upgrade. GraphiQL's own light/dark toggle still works — the branding carries across both:
+
+![CI-themed GraphiQL in light mode — the dark branded key bar over the light editor and a teal execute button](images/graphiql/graphiql-light.jpg)
 
 > **User-facing version:** the "API Playground (GraphiQL)" walkthrough for end users lives on
 > the **Companion Memory** page in CI-Docs
