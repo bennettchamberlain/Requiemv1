@@ -1,4 +1,7 @@
+import { Readable } from 'node:stream';
+
 import { BadRequestException } from '@nestjs/common';
+import type { Request } from 'express';
 
 import type { RequestContext } from '@ci/common/context';
 import { ValidationPipe } from '@ci/common/pipes';
@@ -16,6 +19,16 @@ import {
 import { BulkIngestController } from '../BulkIngestController';
 
 const ctx = { userId: 'user-1' } as RequestContext;
+
+/** Fake request for the JSON-envelope path (only headers are consulted). */
+const jsonReq = () => ({ headers: { 'content-type': 'application/json' } }) as unknown as Request;
+
+/** Fake request for the NDJSON path: a real byte stream + the switching header. */
+function ndjsonReq(body: string): Request {
+  const req = Readable.from([Buffer.from(body, 'utf8')], { objectMode: false });
+
+  return Object.assign(req, { headers: { 'content-type': 'application/x-ndjson' } }) as unknown as Request;
+}
 
 /** Mock every bulk service to echo one row per record it was handed. */
 function makeController() {
@@ -67,7 +80,7 @@ describe('BulkIngestController', () => {
     it('hands the whole batch to CommunicationService.createMany and reports it ingested', async () => {
       const { controller, communicationService } = makeController();
 
-      const res = await controller.ingestCommunications(ctx, {
+      const res = await controller.ingestCommunications(ctx, jsonReq(), {
         records: [communicationRecord('a'), communicationRecord('b')],
       });
 
@@ -81,7 +94,7 @@ describe('BulkIngestController', () => {
     it('coerces time to Date and defaults direction to inbound (mirroring the GraphQL resolver)', async () => {
       const { controller, communicationService } = makeController();
 
-      await controller.ingestCommunications(ctx, { records: [communicationRecord('a')] });
+      await controller.ingestCommunications(ctx, jsonReq(), { records: [communicationRecord('a')] });
 
       const dto = (communicationService.createMany as jest.Mock).mock.calls[0][1][0];
       expect(dto.time).toEqual(new Date('2026-01-01T00:00:00.000Z'));
@@ -97,7 +110,7 @@ describe('BulkIngestController', () => {
     it('keeps an explicit direction', async () => {
       const { controller, communicationService } = makeController();
 
-      await controller.ingestCommunications(ctx, {
+      await controller.ingestCommunications(ctx, jsonReq(), {
         records: [{ ...communicationRecord('a'), direction: 'outbound' as const }],
       });
 
@@ -110,7 +123,7 @@ describe('BulkIngestController', () => {
     it('maps event_id to the event relation and defers indexing (emitCreated: false)', async () => {
       const { controller, contentService } = makeController();
 
-      const res = await controller.ingestContents(ctx, {
+      const res = await controller.ingestContents(ctx, jsonReq(), {
         records: [
           {
             type: 'media',
@@ -137,7 +150,7 @@ describe('BulkIngestController', () => {
     it('hands the batch to ItemService.createMany, coercing acquiredAt to Date', async () => {
       const { controller, itemService } = makeController();
 
-      const res = await controller.ingestInventory(ctx, {
+      const res = await controller.ingestInventory(ctx, jsonReq(), {
         records: [
           {
             name: 'Laptop',
@@ -171,7 +184,7 @@ describe('BulkIngestController', () => {
         },
       ];
 
-      const res = await controller.ingestBrowserActivity(ctx, { records });
+      const res = await controller.ingestBrowserActivity(ctx, jsonReq(), { records });
 
       expect(res).toEqual({ ingested: 1, duplicate: 0, rejected: [] });
       expect((browserActivityService.createMany as jest.Mock).mock.calls[0][1]).toEqual(records);
@@ -185,12 +198,108 @@ describe('BulkIngestController', () => {
       (positionService.create as jest.Mock).mockResolvedValueOnce([{ id: 'p-1' }, { id: 'p-2' }]);
 
       const record = { time: '2026-01-01T00:00:00.000Z', source: 'gps' as const };
-      const res = await controller.ingestPositions(ctx, {
+      const res = await controller.ingestPositions(ctx, jsonReq(), {
         records: [record, record, { ...record, time: '2026-01-01T00:01:00.000Z' }],
       });
 
       expect(res).toEqual({ ingested: 2, duplicate: 1, rejected: [] });
       expect((positionService.create as jest.Mock).mock.calls[0][1]).toHaveLength(3);
+    });
+  });
+
+  describe('envelope validation inside the handler (moved off the @Body pipe for NDJSON)', () => {
+    it('rejects a bad envelope with the same ValidationPipe 400 shape', async () => {
+      const { controller, communicationService } = makeController();
+
+      let caught: BadRequestException | undefined;
+      try {
+        await controller.ingestCommunications(ctx, jsonReq(), { records: 'not-an-array' });
+      } catch (err) {
+        caught = err as BadRequestException;
+      }
+
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect((caught!.getResponse() as { message: string }).message).toBe('Validation failed');
+      expect(communicationService.createMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing body (e.g. no content-type, so no parser ran) with a 400', async () => {
+      const { controller, communicationService } = makeController();
+
+      await expect(
+        controller.ingestCommunications(ctx, { headers: {} } as never, undefined),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(communicationService.createMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('NDJSON streaming path (Content-Type: application/x-ndjson)', () => {
+    it('streams communications lines through the SAME mapping as the envelope path', async () => {
+      const { controller, communicationService } = makeController();
+
+      const body = [
+        JSON.stringify(communicationRecord('a')),
+        JSON.stringify({ ...communicationRecord('b'), direction: 'outbound' }),
+      ].join('\n');
+
+      const res = await controller.ingestCommunications(ctx, ndjsonReq(body), undefined);
+
+      expect(res).toEqual({ ingested: 2, duplicate: 0, rejected: [] });
+      const dtos = (communicationService.createMany as jest.Mock).mock.calls[0][1];
+      expect(dtos[0].time).toEqual(new Date('2026-01-01T00:00:00.000Z'));
+      expect(dtos[0].direction).toBe('inbound');
+      expect(dtos[1].direction).toBe('outbound');
+    });
+
+    it('streams contents lines with event_id mapping and emitCreated: false per batch', async () => {
+      const { controller, contentService } = makeController();
+
+      const body = [
+        JSON.stringify({ type: 'media', event_id: '01936b2a-0000-7000-8000-000000000001' }),
+        JSON.stringify({ type: 'note', text: 'plain' }),
+      ].join('\n');
+
+      const res = await controller.ingestContents(ctx, ndjsonReq(body), undefined);
+
+      expect(res).toEqual({ ingested: 2, duplicate: 0, rejected: [] });
+      const [, passedRecords, options] = (contentService.createMany as jest.Mock).mock.calls[0];
+      expect(passedRecords[0].event).toEqual({ id: '01936b2a-0000-7000-8000-000000000001' });
+      expect(passedRecords[0].event_id).toBeUndefined();
+      expect(options).toEqual({ emitCreated: false });
+    });
+
+    it('rejects invalid lines with 1-based line numbers and keeps streaming', async () => {
+      const { controller, itemService } = makeController();
+
+      const body = [
+        JSON.stringify({ name: 'Laptop' }),
+        'this is not json',
+        JSON.stringify({ description: 'missing required name' }),
+        JSON.stringify({ name: 'Desk' }),
+      ].join('\n');
+
+      const res = await controller.ingestInventory(ctx, ndjsonReq(body), undefined);
+
+      expect(res.ingested).toBe(2);
+      expect(res.rejected).toEqual([
+        { line: 2, reason: expect.stringContaining('invalid JSON') },
+        { line: 3, reason: expect.stringContaining('name') },
+      ]);
+      expect((itemService.createMany as jest.Mock).mock.calls[0][1]).toHaveLength(2);
+    });
+
+    it('reports service-collapsed rows as duplicate (positions, same as the envelope path)', async () => {
+      const { controller, positionService } = makeController();
+      (positionService.create as jest.Mock).mockResolvedValueOnce([{ id: 'p-1' }]);
+
+      const record = { time: '2026-01-01T00:00:00.000Z', source: 'gps' };
+      const res = await controller.ingestPositions(
+        ctx,
+        ndjsonReq(`${JSON.stringify(record)}\n${JSON.stringify(record)}\n`),
+        undefined,
+      );
+
+      expect(res).toEqual({ ingested: 1, duplicate: 1, rejected: [] });
     });
   });
 });

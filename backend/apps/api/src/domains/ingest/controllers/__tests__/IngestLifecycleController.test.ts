@@ -2,10 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 
 import type { RequestContext } from '@ci/common/context';
 import { ValidationPipe } from '@ci/common/pipes';
-import type {
-  MaintenanceOrchestratorService,
-  SearchIndexBackfillService,
-} from '@ci/domains/maintenance';
+import type { MaintenanceOrchestratorService, SearchIndexBackfillService } from '@ci/domains/maintenance';
 
 import type { IngestStatusService } from '../../services/IngestStatusService';
 import { ingestFinishSchema } from '../../types';
