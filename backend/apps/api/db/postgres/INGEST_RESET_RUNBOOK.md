@@ -1,8 +1,12 @@
 # Ingest reset runbook
 
 How to wipe all bulk-ingested data and re-import from scratch (e.g. to re-test
-an importer change against a clean database). Companion to
-`BULK_LOAD_RUNBOOK.md`.
+an importer change against a clean database). Companion to the
+[bulk load runbook](BULK_LOAD_RUNBOOK.md); the dedup-table mechanics referenced
+below are explained in
+[docs/architecture/Database.md](../../../../../docs/architecture/Database.md#idempotency--dedup-design),
+and the full `/api/maintenance/*` surface in
+[docs/api/rest.md](../../../../../docs/api/rest.md#maintenance--enrichment--apimaintenance--domainsmaintenancecontrollersmaintenancecontrollerts374).
 
 > **DESTRUCTIVE — all users' ingested data.** Never run this against a database
 > whose data you want to keep. There is no partial mode and no undo.
