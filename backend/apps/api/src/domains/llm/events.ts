@@ -60,7 +60,7 @@ export interface CvDetection {
   bboxNormalized?: CvBBoxNormalized;
   /** Originating pipeline, e.g. "cv-server", "omi", "maixcam". */
   source?: string;
-};
+}
 
 /**
  * Payload of {@link CvDetectionsCapturedEvent}.

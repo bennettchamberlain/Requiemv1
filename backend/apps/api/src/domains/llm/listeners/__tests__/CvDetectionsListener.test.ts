@@ -84,7 +84,11 @@ describe('CvDetectionsListener', () => {
 
     await listener.handleDetections(
       payload('file-2', [
-        person('det-x', { source: 'omi', score: 0.7, bboxNormalized: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 } }),
+        person('det-x', {
+          source: 'omi',
+          score: 0.7,
+          bboxNormalized: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+        }),
       ]),
     );
 
@@ -137,10 +141,7 @@ describe('CvDetectionsListener', () => {
     const { listener, personService } = makeListener();
 
     await listener.handleDetections(
-      payload('file-5', [
-        person('det-p'),
-        { detectionId: 'obj-2', kind: 'Thing', label: 'lamp' },
-      ]),
+      payload('file-5', [person('det-p'), { detectionId: 'obj-2', kind: 'Thing', label: 'lamp' }]),
     );
 
     expect(personService.create).toHaveBeenCalledTimes(1);

@@ -6,11 +6,7 @@ import { OnEvent } from '@ci/domains/events';
 import { FileService } from '@ci/domains/files';
 import { PersonService } from '@ci/domains/memory';
 
-import {
-  CvDetectionsCapturedEvent,
-  type CvDetection,
-  type CvDetectionsCapturedPayload,
-} from '../events';
+import { CvDetectionsCapturedEvent, type CvDetection, type CvDetectionsCapturedPayload } from '../events';
 
 /**
  * Table name recorded on entities materialized from a CV detection. Mirrors the
