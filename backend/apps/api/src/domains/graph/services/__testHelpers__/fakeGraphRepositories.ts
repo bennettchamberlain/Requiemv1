@@ -85,7 +85,9 @@ export function makeFakeNodeRepository(
     const qb: Record<string, unknown> = {};
     Object.assign(qb, {
       where: (_sql: string, params?: Record<string, unknown>) => {
-        if (params?.ownerId) {ownerId = params.ownerId as string;}
+        if (params?.ownerId) {
+          ownerId = params.ownerId as string;
+        }
 
         return qb;
       },
@@ -94,7 +96,9 @@ export function makeFakeNodeRepository(
         // et_/lt_/li_ params; replay it against a collector to recover coordinates.
         replayBrackets(arg, (params) => {
           for (let i = 0; ; i++) {
-            if (!(`et_${i}` in params)) {break;}
+            if (!(`et_${i}` in params)) {
+              break;
+            }
 
             wanted.push({
               entityType: params[`et_${i}`] as string,
@@ -107,12 +111,16 @@ export function makeFakeNodeRepository(
         return qb;
       },
       getMany: async (): Promise<StoredNode[]> => {
-        if (opts.failSelect) {throw new Error('db unavailable');}
+        if (opts.failSelect) {
+          throw new Error('db unavailable');
+        }
 
         const out: StoredNode[] = [];
         for (const w of wanted) {
           const hit = store.get(`${ownerId}||${w.entityType}||${w.linkedTable}||${w.linkedId}`);
-          if (hit) {out.push(hit);}
+          if (hit) {
+            out.push(hit);
+          }
         }
 
         return out;
@@ -128,12 +136,16 @@ export function makeFakeNodeRepository(
       onConflict: () => qb,
       returning: () => qb,
       execute: async () => {
-        if (opts.failInsert) {throw new Error('db unavailable');}
+        if (opts.failInsert) {
+          throw new Error('db unavailable');
+        }
 
         const raw: Array<Record<string, unknown>> = [];
         for (const row of insertRows ?? []) {
           const key = nodeCoord(row);
-          if (store.has(key)) {continue;} // ON CONFLICT DO NOTHING
+          if (store.has(key)) {
+            continue;
+          } // ON CONFLICT DO NOTHING
 
           store.set(key, row);
           inserted.push(row);
@@ -174,14 +186,18 @@ export function makeFakeRelationshipRepository(opts: { failSelect?: boolean; fai
     const qb: Record<string, unknown> = {};
     Object.assign(qb, {
       where: (_sql: string, params?: Record<string, unknown>) => {
-        if (params?.ownerId) {ownerId = params.ownerId as string;}
+        if (params?.ownerId) {
+          ownerId = params.ownerId as string;
+        }
 
         return qb;
       },
       andWhere: (arg: unknown) => {
         replayBrackets(arg, (params) => {
           for (let i = 0; ; i++) {
-            if (!(`rf_${i}` in params)) {break;}
+            if (!(`rf_${i}` in params)) {
+              break;
+            }
 
             wanted.push({
               fromNodeId: params[`rf_${i}`] as string,
@@ -194,12 +210,16 @@ export function makeFakeRelationshipRepository(opts: { failSelect?: boolean; fai
         return qb;
       },
       getMany: async (): Promise<StoredRel[]> => {
-        if (opts.failSelect) {throw new Error('db unavailable');}
+        if (opts.failSelect) {
+          throw new Error('db unavailable');
+        }
 
         const out: StoredRel[] = [];
         for (const w of wanted) {
           const hit = store.get(`${ownerId}||${w.fromNodeId}||${w.toNodeId}||${w.type}`);
-          if (hit) {out.push(hit);}
+          if (hit) {
+            out.push(hit);
+          }
         }
 
         return out;
@@ -214,11 +234,15 @@ export function makeFakeRelationshipRepository(opts: { failSelect?: boolean; fai
       },
       onConflict: () => qb,
       execute: async () => {
-        if (opts.failInsert) {throw new Error('db unavailable');}
+        if (opts.failInsert) {
+          throw new Error('db unavailable');
+        }
 
         for (const row of insertRows ?? []) {
           const key = relCoord(row);
-          if (store.has(key)) {continue;} // ON CONFLICT DO NOTHING
+          if (store.has(key)) {
+            continue;
+          } // ON CONFLICT DO NOTHING
 
           store.set(key, row);
           inserted.push(row);
@@ -242,12 +266,15 @@ export function makeFakeRelationshipRepository(opts: { failSelect?: boolean; fai
 function replayBrackets(arg: unknown, onParams: (params: Record<string, unknown>) => void): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const factory = (arg as any)?.whereFactory;
-  if (typeof factory !== 'function') {return;}
+  if (typeof factory !== 'function') {
+    return;
+  }
 
   const collector = {
-     
     orWhere: (_sql: string, params?: Record<string, unknown>) => {
-      if (params) {onParams(params);}
+      if (params) {
+        onParams(params);
+      }
 
       return collector;
     },
