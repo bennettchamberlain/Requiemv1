@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect } from 'react';
 
 import { LoadingPage, Portal, usePageTitle } from '@ci/common';
 import { Button, ScrollArea } from '@ci/shadcn';
-import { Globe, Key, KeyRound, Palette, X } from '@ci/shadcn/icons';
+import { Braces, ExternalLink, Globe, Key, KeyRound, Palette, X } from '@ci/shadcn/icons';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 const AppearanceSection = lazy(() =>
@@ -94,6 +94,20 @@ export function SettingsPage() {
                 <Key className="h-4 w-4" />
                 OAuth Credentials
               </NavLink>
+
+              {/* GraphiQL is a full-page IDE served by the API, so it opens in a
+                  new tab rather than inside the settings modal. Authenticate it
+                  with a key from the API Keys section above. */}
+              <a
+                href="/api/graphiql"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={navLinkClass({ isActive: false })}
+              >
+                <Braces className="h-4 w-4" />
+                GraphiQL
+                <ExternalLink className="ml-auto h-3.5 w-3.5 opacity-60" />
+              </a>
             </aside>
           </ScrollArea>
 
