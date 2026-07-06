@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
+import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -177,15 +178,22 @@ export class PlaceService {
       }),
     );
 
-    await this.placeRepository
-      .createQueryBuilder()
-      .insert()
-      // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
-      // of `.values()`; passing the entity class narrows to
-      // `_QueryDeepPartialEntity`, which rejects the jsonb `properties` column.
-      .into(this.placeRepository.metadata.target)
-      .values(entities)
-      .execute();
+    // Split into param-budget-bounded chunks so a large batch never exceeds
+    // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+    // bulkInsertIdempotent uses). Places have no dedup key, so every chunk is a
+    // plain multi-row INSERT.
+    const chunkSize = computeChunkSize(this.placeRepository.metadata.columns.length);
+    for (let offset = 0; offset < entities.length; offset += chunkSize) {
+      await this.placeRepository
+        .createQueryBuilder()
+        .insert()
+        // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
+        // of `.values()`; passing the entity class narrows to
+        // `_QueryDeepPartialEntity`, which rejects the jsonb `properties` column.
+        .into(this.placeRepository.metadata.target)
+        .values(entities.slice(offset, offset + chunkSize))
+        .execute();
+    }
 
     // Hydrate with the user relation so the returned rows match findById/findAll
     // fidelity (toEgressType reads entity.user).

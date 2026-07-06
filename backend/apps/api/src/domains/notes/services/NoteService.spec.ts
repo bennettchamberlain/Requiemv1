@@ -45,7 +45,9 @@ function makeService() {
     create,
     save,
     find,
-    metadata: { target: NoteEntity },
+    // 6 persisted columns, matching repository.metadata.columns.length; drives
+    // computeChunkSize in createMany.
+    metadata: { target: NoteEntity, columns: { length: 6 } },
     createQueryBuilder: jest.fn(() => makeInsertBuilder(insertRecord)),
   };
 

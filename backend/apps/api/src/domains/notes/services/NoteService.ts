@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -78,14 +79,21 @@ export class NoteService {
       }),
     );
 
-    await this.noteRepository
-      .createQueryBuilder()
-      .insert()
-      // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
-      // of `.values()` (matches the other bulk-ingest services).
-      .into(this.noteRepository.metadata.target)
-      .values(entities)
-      .execute();
+    // Split into param-budget-bounded chunks so a large batch never exceeds
+    // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+    // bulkInsertIdempotent uses). Notes have no dedup key, so every chunk is a
+    // plain multi-row INSERT.
+    const chunkSize = computeChunkSize(this.noteRepository.metadata.columns.length);
+    for (let offset = 0; offset < entities.length; offset += chunkSize) {
+      await this.noteRepository
+        .createQueryBuilder()
+        .insert()
+        // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
+        // of `.values()` (matches the other bulk-ingest services).
+        .into(this.noteRepository.metadata.target)
+        .values(entities.slice(offset, offset + chunkSize))
+        .execute();
+    }
 
     const ids = entities.map((entity) => entity.id);
     const rows = await this.noteRepository.find({ where: { id: In(ids) } });

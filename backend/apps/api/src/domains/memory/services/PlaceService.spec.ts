@@ -51,7 +51,9 @@ function makeService() {
     create,
     save,
     find,
-    metadata: { target: PlaceEntity },
+    // 7 scalar columns + the owner_user_id relation-join column = 8, matching
+    // repository.metadata.columns.length; drives computeChunkSize in createMany.
+    metadata: { target: PlaceEntity, columns: { length: 8 } },
     createQueryBuilder: jest.fn(() => makeInsertBuilder(insertRecord)),
   };
 
