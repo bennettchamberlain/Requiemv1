@@ -22,12 +22,13 @@ Grounded in source; every route cites `file:line`.
 
 | Route | JSON body limit | Source |
 |-------|-----------------|--------|
-| `POST /graphql` | **10 mb** | `BodyParserMiddleware.ts:19,56` (path-matched; importer bulk mutations) |
-| `POST /v1/events` (+ subpaths) | **10 mb** | `BodyParserMiddleware.ts:29,58` (CI-Applet perception snapshots ~1 MB+) |
-| Any route with `@BodyLimit('…')` | that value | `BodyParserMiddleware.ts:47` |
-| **Everything else (default)** | **100 kb** | `BodyParserMiddleware.ts:64` |
+| `POST /graphql` | **10 mb** | `BodyParserMiddleware.ts` (path-matched; importer bulk mutations) |
+| `/v1/*` (whole machine-ingest plane) | **10 mb** JSON | `BodyParserMiddleware.ts` (CI-Applet perception snapshots, `{records}` bulk envelopes) |
+| `/v1/*` with `Content-Type: application/x-ndjson` | **no overall cap** — middleware bypassed, raw stream handed to the route handler | `BodyParserMiddleware.ts` NDJSON bypass; per-line 1 MB ceiling enforced in `domains/ingest/ndjson.ts` |
+| Any route with `@BodyLimit('…')` | that value | `BodyParserMiddleware.ts` |
+| **Everything else (default)** | **100 kb** | `BodyParserMiddleware.ts` |
 
-`FilesController` `upload` bypasses this (multipart via Multer, own 10 GB per-file cap — see Files section).
+`FilesController` `upload` and `POST /v1/files` bypass this (multipart via Multer, own per-file caps — see Files section).
 
 ### Auth guards (`common/guards/`)
 
@@ -57,6 +58,64 @@ The unified capture-ingest surface (G1, event-ingest-spec) that every capture so
 **Request** (`domains/memory/types/captureEvent.ts`, validated by `ValidationPipe(ingestEventsSchema)`, `:32`): JSON object `{ events: CaptureEvent[] }`, **1–1000 events per request** (`captureEvent.ts:19-21`). Each `CaptureEvent`: `source_system` (str, req), `source_id` (str, req), `kind` (str, req; open text in v1), `occurred_at` (ISO datetime, req), `observed_at?` (ISO), `title?`, `description?`, `payload` (record, default `{}`), `confidence_score?` (0–1).
 The **request body is a single JSON envelope**, not newline-delimited; 10 mb limit applies. Content-Type `application/json`.
 **Response** `IngestEventsResponse` (`:33`): `{ ingested: number, duplicate: number, rejected: {index, reason}[] }`. Per-event failures are collected into `rejected` (the whole batch does not 500).
+
+### `BulkIngestController` — `v1/*` bulk kinds  ·  `domains/ingest/controllers/BulkIngestController.ts`
+
+The rest of the REST bulk-ingest plane: one batch route per bulk kind, all `JwtOrApiKeyAuthGuard`, all delegating to the existing chunk-safe, provenance-deduped bulk services with **deferred indexing** (no per-row enrichment fan-out — call `POST /v1/ingest/finish` after the load).
+
+| Verb | Path | Destination service |
+|------|------|---------------------|
+| POST | `/v1/communications` | `CommunicationService.createMany` |
+| POST | `/v1/contents` | `ContentService.createMany` |
+| POST | `/v1/inventory` | `ItemService.createMany` |
+| POST | `/v1/browser-activity` | `BrowserActivityService.createMany` |
+| POST | `/v1/positions` | `PositionService.create` (bulk) |
+
+Every route speaks **two encodings**, switched on `Content-Type`:
+
+**1. NDJSON — the default bulk contract** (`application/x-ndjson`). One JSON record per line (same per-kind record schema as the envelope, `domains/ingest/types.ts`). The raw stream is parsed incrementally and flushed to the service in **batches of 1,000 as it arrives** — no overall request-size cap, bounded memory, suitable for unbounded exports. Defensive limits: **1 MB per line** (oversized lines are rejected, stream continues), rejection detail list capped at 1,000 (`rejectedTruncated: true` past that). Malformed / schema-invalid lines and failed batches are rejected **without aborting the stream**; batch flushes are idempotent on the provenance triple, so retrying a broken stream is safe. Blank lines and CRLF are tolerated.
+
+```bash
+curl -sS http://ci-server.localhost/v1/communications \
+  -H 'x-api-key: <key>' \
+  -H 'content-type: application/x-ndjson' \
+  --data-binary @records.ndjson
+```
+
+**Response** (single JSON document once the stream ends): `{ ingested, duplicate, rejected: [{line, reason}] }` — `line` is **1-based**; `duplicate` counts records the service collapsed intra-request (same provenance triple / same position time); an idempotent re-send of already-stored rows counts as `ingested`.
+
+**2. JSON envelope** (`application/json`): `{ records: [...] }`, **1–10,000 records per request**, 10 mb body limit. **Response**: `{ ingested, duplicate, rejected: [{index, reason}] }` (rejected is always empty on 200 — a bad envelope is a 400, a failed batch an HTTP error).
+
+### `IngestLifecycleController` — `v1/ingest`  ·  `domains/ingest/controllers/IngestLifecycleController.ts`
+
+| Verb | Path | Purpose |
+|------|------|---------|
+| POST | `/v1/ingest/finish` | Run post-load enrichment: default = full orchestration; `{ stages: [...] }` for a subset; `{ searchIndexOnly: true }` for just the embed backfill. The two knobs are mutually exclusive (400). One orchestration per user at a time (409). |
+| GET | `/v1/ingest/status` | Ingest snapshot: table counts, search-index coverage, queue depth — poll until drained. |
+
+A complete bulk load is therefore: stream NDJSON batches → `POST /v1/ingest/finish` → poll `GET /v1/ingest/status`.
+
+### `BulkFilesController` — `v1/files`  ·  `domains/files/controllers/BulkFilesController.ts`
+
+Batch upload lane (the bulk counterpart to `POST /files/upload`, whose `[{id}]` response is ambiguous for multi-file batches).
+
+| Verb | Path | Auth | Purpose |
+|------|------|------|---------|
+| POST | `/v1/files` | `JwtOrApiKeyAuthGuard` | Multipart batch upload, field **`files`**, **max 50 files/request** (51st → 400), **1 GB per file** (single-file lane `/files/upload` allows 10 GB). Optional form fields `skipDescription` / `inventoryCapture` / `model` as on `/files/upload`. |
+
+Reuses the exact `/files/upload` pipeline (`FileService.uploadWithDedupInfo`: sha-256 hash-dedup, MinIO storage, preview/description fan-out). **Response — one entry per INPUT file, in input order**:
+
+```json
+[{ "filename": "a.jpg", "sha256": "…", "id": "…", "deduped": false }]
+```
+
+`deduped: true` = no new file was created: the input repeated earlier bytes within the batch (same `id` as the first occurrence) or the content was already stored server-side. A bulk client can therefore map every input to its id without guessing.
+
+```bash
+curl -sS http://ci-server.localhost/v1/files \
+  -H 'x-api-key: <key>' \
+  -F files=@a.jpg -F files=@b.jpg -F skipDescription=true
+```
 
 ### `BrowserActivityController` — `browser-activity`  ·  `domains/browser-activity/controllers/BrowserActivityController.ts:12`
 
@@ -92,6 +151,8 @@ The **request body is a single JSON envelope**, not newline-delimited; 10 mb lim
 
 **Upload request**: `multipart/form-data`, field name **`files`** (`FilesInterceptor('files', …)`, `:31`), **per-file limit 10 GB** (`limits.fileSize: 10*1024³`, `:33`), temp `dest: tmpdir()`. Optional form fields: `inventoryCapture` (`'true'`/bool), `skipDescription` (`'true'`/bool), `model` (str) (`:39-49`). Uploads are content-hash de-duplicated within the batch (`:54-72`); 400 if no files (`:43`). **Response**: `[{ id }]`, one per unique file (`:89-91`). Temp files always unlinked in `finally` (`:92-102`).
 **PATCH request**: `@Body` `title?`/`description?` (at least one required else 400, `:128-130`); 404 if file not found. **Response**: `{ id }`.
+
+> Bulk clients that need to map inputs → ids deterministically should use `POST /v1/files` (see the Ingest section), which returns one `{ filename, sha256, id, deduped }` entry per input file in input order.
 
 ---
 
