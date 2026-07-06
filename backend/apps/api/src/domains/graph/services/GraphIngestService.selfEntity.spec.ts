@@ -52,7 +52,7 @@ function makeService(opts: { selfExists: boolean }) {
     return Promise.resolve([]);
   }) as unknown as typeof node.repo.manager.query;
 
-  const entityIdentifierService = { upsertForEntity: jest.fn() };
+  const entityIdentifierService = { upsertForEntities: jest.fn() };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new GraphIngestService(

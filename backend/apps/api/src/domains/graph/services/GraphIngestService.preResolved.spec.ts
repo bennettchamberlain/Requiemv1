@@ -18,7 +18,7 @@ const B = '00000000-0000-0000-0000-0000000000b2';
 function makeService() {
   const node = makeFakeNodeRepository();
   const rel = makeFakeRelationshipRepository();
-  const entityIdentifierService = { upsertForEntity: jest.fn() };
+  const entityIdentifierService = { upsertForEntities: jest.fn() };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new GraphIngestService(
