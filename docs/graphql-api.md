@@ -90,6 +90,19 @@ returns the page from
 > so the proxy resolves `/api/graphql`; hitting the raw backend port directly won't have the
 > `/api` prefix.
 
+**Theming:** the page is themed to the CI palette (mint `#58ebbf` → teal `#409b9b` → aqua
+`#00a9a7` on the ink `#041620` ground). GraphiQL 2.x reads its colors from HSL-component
+custom properties (`--color-base` / `--color-neutral` / `--color-primary|secondary|tertiary`)
+and toggles `body.graphiql-dark` / `body.graphiql-light`; `graphiql.html.ts` overrides those
+by mirroring GraphiQL's own theme selectors (so the declarations tie on specificity and win
+on source order), and defaults the IDE to CI's dark theme. To re-skin it, edit those variable
+blocks. Bumping `GRAPHIQL_VERSION` may change the internal theme selectors — re-check them if
+you upgrade.
+
+> **User-facing version:** the "API Playground (GraphiQL)" walkthrough for end users lives on
+> the **Companion Memory** page in CI-Docs
+> (`src/content/docs/first-party-apps/digital-memory-server.mdx` → *API Access*).
+
 ## Schema & code generation
 
 The schema is **code-first**: it's assembled from NestJS resolver decorators, not
