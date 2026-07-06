@@ -68,7 +68,9 @@ export function makeFakeNodeRepository(
   const repo = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: (row: any) => ({ ...row }),
-    metadata: { target: 'NodeEntity' },
+    // NodeEntity has 10 persisted columns; drives computeChunkSize in the
+    // service's batched INSERT (columns.length).
+    metadata: { target: 'NodeEntity', columns: { length: 10 } },
     manager: { query: jest.fn().mockResolvedValue([]) },
     // The service calls this both with an alias (existence SELECT) and without
     // (batched INSERT); the alias is irrelevant to the in-memory store.
@@ -174,7 +176,9 @@ export function makeFakeRelationshipRepository(opts: { failSelect?: boolean; fai
   const repo = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     create: (row: any) => ({ ...row }),
-    metadata: { target: 'RelationshipEntity' },
+    // RelationshipEntity has 14 persisted columns; drives computeChunkSize in
+    // the service's batched INSERT (columns.length).
+    metadata: { target: 'RelationshipEntity', columns: { length: 14 } },
     createQueryBuilder: () => makeRelQb(),
   };
 

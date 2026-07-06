@@ -5,6 +5,7 @@ import { v5 as uuidv5, v7 as uuidv7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { computeChunkSize } from '@ci/common/persistence';
 
 import { NodeEntity } from '../entities/NodeEntity';
 import { RelationshipEntity } from '../entities/RelationshipEntity';
@@ -288,22 +289,31 @@ export class GraphIngestService {
         (p) => !idByCoord.has(coordKey(p.entityType, p.linkedTable, p.linkedId)),
       );
       if (toInsert.length > 0) {
-        const insertResult = await this.nodeRepository
-          .createQueryBuilder()
-          .insert()
-          .into(this.nodeRepository.metadata.target)
-          .values(toInsert.map((p) => p.row))
-          .onConflict(
-            '(owner_user_id, entity_type, linked_table, linked_id) WHERE linked_table IS NOT NULL DO NOTHING',
-          )
-          .returning(['entityId', 'entityType', 'linkedTable', 'linkedId'])
-          .execute();
+        // Split into param-budget-bounded chunks so a large batch never exceeds
+        // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+        // bulkInsertIdempotent uses). ON CONFLICT idempotency + RETURNING-based
+        // resolution are unchanged; the returned rows are accumulated across
+        // chunks.
+        const rows = toInsert.map((p) => p.row);
+        const chunkSize = computeChunkSize(this.nodeRepository.metadata.columns.length);
+        for (let offset = 0; offset < rows.length; offset += chunkSize) {
+          const insertResult = await this.nodeRepository
+            .createQueryBuilder()
+            .insert()
+            .into(this.nodeRepository.metadata.target)
+            .values(rows.slice(offset, offset + chunkSize))
+            .onConflict(
+              '(owner_user_id, entity_type, linked_table, linked_id) WHERE linked_table IS NOT NULL DO NOTHING',
+            )
+            .returning(['entityId', 'entityType', 'linkedTable', 'linkedId'])
+            .execute();
 
-        for (const raw of (insertResult.raw as Array<Record<string, unknown>>) ?? []) {
-          idByCoord.set(
-            coordKey(String(raw.entity_type), String(raw.linked_table), String(raw.linked_id)),
-            String(raw.entity_id),
-          );
+          for (const raw of (insertResult.raw as Array<Record<string, unknown>>) ?? []) {
+            idByCoord.set(
+              coordKey(String(raw.entity_type), String(raw.linked_table), String(raw.linked_id)),
+              String(raw.entity_id),
+            );
+          }
         }
       }
 
@@ -492,13 +502,20 @@ export class GraphIngestService {
       // race, so an edge inserted between our SELECT and INSERT is a no-op here.
       const toInsert = prepared.filter((p) => !existingKeys.has(p.key));
       if (toInsert.length > 0) {
-        await this.relationshipRepository
-          .createQueryBuilder()
-          .insert()
-          .into(this.relationshipRepository.metadata.target)
-          .values(toInsert.map((p) => p.row))
-          .onConflict('(from_entity_id, to_entity_id, relationship_type) WHERE is_active = TRUE DO NOTHING')
-          .execute();
+        // Split into param-budget-bounded chunks so a large batch never exceeds
+        // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+        // bulkInsertIdempotent uses). ON CONFLICT idempotency is unchanged.
+        const rows = toInsert.map((p) => p.row);
+        const chunkSize = computeChunkSize(this.relationshipRepository.metadata.columns.length);
+        for (let offset = 0; offset < rows.length; offset += chunkSize) {
+          await this.relationshipRepository
+            .createQueryBuilder()
+            .insert()
+            .into(this.relationshipRepository.metadata.target)
+            .values(rows.slice(offset, offset + chunkSize))
+            .onConflict('(from_entity_id, to_entity_id, relationship_type) WHERE is_active = TRUE DO NOTHING')
+            .execute();
+        }
       }
     } catch (err) {
       // A batch-level failure can't be pinned to one edge — report it against

@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
+import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { AnswerCreatedEvent, AnswerUpdatedEvent, AnswerRemovedEvent } from '@ci/domains/intelligence/events';
 
@@ -91,15 +92,22 @@ export class AnswerService {
       }),
     );
 
-    await this.answerRepository
-      .createQueryBuilder()
-      .insert()
-      // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
-      // of `.values()`; passing the entity class narrows to
-      // `_QueryDeepPartialEntity`, which rejects the jsonb `sessionContext` column.
-      .into(this.answerRepository.metadata.target)
-      .values(entities)
-      .execute();
+    // Split into param-budget-bounded chunks so a large batch never exceeds
+    // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+    // bulkInsertIdempotent uses). Answers have no dedup key, so every chunk is a
+    // plain multi-row INSERT.
+    const chunkSize = computeChunkSize(this.answerRepository.metadata.columns.length);
+    for (let offset = 0; offset < entities.length; offset += chunkSize) {
+      await this.answerRepository
+        .createQueryBuilder()
+        .insert()
+        // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
+        // of `.values()`; passing the entity class narrows to
+        // `_QueryDeepPartialEntity`, which rejects the jsonb `sessionContext` column.
+        .into(this.answerRepository.metadata.target)
+        .values(entities.slice(offset, offset + chunkSize))
+        .execute();
+    }
 
     // Batched feed-queue cleanup: drop every answered question from the feed in
     // one DELETE instead of N per-row removeFromFeedQueue calls.

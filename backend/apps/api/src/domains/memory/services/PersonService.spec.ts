@@ -9,15 +9,33 @@ const USER = '00000000-0000-0000-0000-0000000000aa';
 const CONTEXT: UserServiceContext = { userId: USER } as UserServiceContext;
 
 /**
- * A fake InsertQueryBuilder that records the ON CONFLICT clause and the values
- * passed, so tests can assert the bulk path issues ONE set-based insert.
+ * PersonEntity's persisted-column count as reported by
+ * repository.metadata.columns.length (12 scalar columns + the owner_user_id
+ * relation-join column). Drives computeChunkSize in the bulk insert.
  */
-function makeInsertBuilder(record: { values?: unknown[]; conflict?: string; inserted: boolean }) {
+const PERSON_COLUMN_COUNT = 13;
+
+interface InsertRecord {
+  values?: unknown[];
+  conflict?: string;
+  inserted: boolean;
+  /** Per-chunk row counts, in order, so tests can assert chunking. */
+  chunkSizes: number[];
+}
+
+/**
+ * A fake InsertQueryBuilder that records the ON CONFLICT clause and the values
+ * passed, so tests can assert the bulk path issues a set-based insert. Records
+ * one entry per chunk (per execute) so tests can assert large batches are split.
+ */
+function makeInsertBuilder(record: InsertRecord) {
   const qb: Record<string, unknown> = {};
+  let pending: unknown[] = [];
   qb.insert = jest.fn(() => qb);
   qb.into = jest.fn(() => qb);
   qb.values = jest.fn((v: unknown[]) => {
     record.values = v;
+    pending = v;
 
     return qb;
   });
@@ -28,6 +46,7 @@ function makeInsertBuilder(record: { values?: unknown[]; conflict?: string; inse
   });
   qb.execute = jest.fn(async () => {
     record.inserted = true;
+    record.chunkSizes.push(pending.length);
 
     return { raw: [] };
   });
@@ -51,13 +70,13 @@ function makeSelectBuilder(rows: PersonEntity[]) {
 interface Harness {
   service: PersonService;
   send: jest.Mock;
-  insert: { values?: unknown[]; conflict?: string; inserted: boolean };
+  insert: InsertRecord;
   save: jest.Mock;
   findOne: jest.Mock;
 }
 
 function makeService(existing: PersonEntity[] = []): Harness {
-  const insertRecord = { inserted: false } as { values?: unknown[]; conflict?: string; inserted: boolean };
+  const insertRecord: InsertRecord = { inserted: false, chunkSizes: [] };
 
   // create() echoes the built instance so hydration can find it by id.
   const created: PersonEntity[] = [];
@@ -86,7 +105,7 @@ function makeService(existing: PersonEntity[] = []): Harness {
     create,
     save,
     findOne,
-    metadata: { target: PersonEntity },
+    metadata: { target: PersonEntity, columns: { length: PERSON_COLUMN_COUNT } },
     createQueryBuilder: jest.fn((alias?: string) => {
       // Insert builder has no alias; select (hydration) is aliased.
       if (alias === undefined) {
@@ -179,6 +198,32 @@ describe('PersonService bulk createMany', () => {
     expect(result).toEqual([]);
     expect(insert.inserted).toBe(false);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('chunk-safe: a 6000-row bulk create succeeds, split into <=1000-row INSERT chunks (no 65535 bind-param crash)', async () => {
+    const { service, insert } = makeService();
+
+    const input = Array.from({ length: 6000 }, (_, i) => ({
+      id: `p-${i}`,
+      name: `Person ${i}`,
+      linkedTable: 'gmail',
+      linkedId: `p${i}@x.com`,
+    }));
+
+    const result = await service.createMany(CONTEXT, input);
+
+    // All 6000 rows resolved, in input order.
+    expect(result).toHaveLength(6000);
+    expect(result[0].id).toBe('p-0');
+    expect(result[5999].id).toBe('p-5999');
+
+    // Split into multiple INSERTs, each within the param-budget row cap. At 13
+    // columns the cap is computeChunkSize = 1000, so 6000 rows -> 6 chunks.
+    expect(insert.chunkSizes).toEqual([1000, 1000, 1000, 1000, 1000, 1000]);
+    // Every chunk's row count * columns stays under the 65535 bind-param limit.
+    for (const size of insert.chunkSizes) {
+      expect(size * PERSON_COLUMN_COUNT).toBeLessThan(65535);
+    }
   });
 });
 

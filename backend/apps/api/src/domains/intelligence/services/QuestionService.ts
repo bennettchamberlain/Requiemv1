@@ -4,6 +4,7 @@ import { DataSource, type FindOptionsWhere, In, IsNull, Repository } from 'typeo
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER } from '@ci/common/context';
+import { computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import {
   QuestionCreatedEvent,
@@ -107,14 +108,21 @@ export class QuestionService {
       }),
     );
 
-    await this.questionRepository
-      .createQueryBuilder()
-      .insert()
-      // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
-      // of `.values()` (matches the other bulk-ingest services).
-      .into(this.questionRepository.metadata.target)
-      .values(entities)
-      .execute();
+    // Split into param-budget-bounded chunks so a large batch never exceeds
+    // Postgres' 65535 bind-param limit (computeChunkSize is the same helper
+    // bulkInsertIdempotent uses). Questions have no dedup key, so every chunk is
+    // a plain multi-row INSERT.
+    const chunkSize = computeChunkSize(this.questionRepository.metadata.columns.length);
+    for (let offset = 0; offset < entities.length; offset += chunkSize) {
+      await this.questionRepository
+        .createQueryBuilder()
+        .insert()
+        // Route through `metadata.target` so TS picks the `ObjectLiteral` overload
+        // of `.values()` (matches the other bulk-ingest services).
+        .into(this.questionRepository.metadata.target)
+        .values(entities.slice(offset, offset + chunkSize))
+        .execute();
+    }
 
     const ids = entities.map((entity) => entity.id);
     const rows = await this.questionRepository.find({ where: { id: In(ids) } });

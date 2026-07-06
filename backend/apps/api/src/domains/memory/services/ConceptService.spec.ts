@@ -67,7 +67,9 @@ function makeService(existing: ConceptEntity[] = []) {
     create,
     save,
     findOne,
-    metadata: { target: ConceptEntity },
+    // 12 scalar columns + the owner_user_id relation-join column = 13, matching
+    // repository.metadata.columns.length; drives computeChunkSize in createMany.
+    metadata: { target: ConceptEntity, columns: { length: 13 } },
     createQueryBuilder: jest.fn((alias?: string) => {
       if (alias === undefined) {
         return makeInsertBuilder(insertRecord);
