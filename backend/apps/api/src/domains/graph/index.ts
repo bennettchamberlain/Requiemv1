@@ -16,7 +16,11 @@ import { type EntityIdentifier, EntityIdentifierEntity } from './entities/Entity
 import { type ItemRelationship, ItemRelationshipEntity } from './entities/ItemRelationshipEntity';
 import { type Node, NodeEntity } from './entities/NodeEntity';
 import { type Relationship, RelationshipEntity } from './entities/RelationshipEntity';
-import { EntityIdentifierService, type IdentifierKey } from './services/EntityIdentifierService';
+import {
+  type EntityIdentifierBatchEntry,
+  EntityIdentifierService,
+  type IdentifierKey,
+} from './services/EntityIdentifierService';
 import { GraphExpansionService } from './services/GraphExpansionService';
 import { GraphIngestService } from './services/GraphIngestService';
 import { GraphService } from './services/GraphService';
@@ -73,7 +77,14 @@ export {
   RelationshipService,
 };
 export { EntityIdentifierEntity, ItemRelationshipEntity, NodeEntity, RelationshipEntity };
-export type { EntityIdentifier, IdentifierKey, ItemRelationship, Node, Relationship };
+export type {
+  EntityIdentifier,
+  EntityIdentifierBatchEntry,
+  IdentifierKey,
+  ItemRelationship,
+  Node,
+  Relationship,
+};
 export type {
   GraphEntityInputDto,
   GraphEntityMappingDto,

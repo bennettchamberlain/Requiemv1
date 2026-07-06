@@ -30,7 +30,7 @@ function makeService(opts: { existingKeys?: string[]; failEntities?: boolean } =
 
   const node = makeFakeNodeRepository({ seed, failSelect: opts.failEntities, failInsert: opts.failEntities });
   const rel = makeFakeRelationshipRepository();
-  const entityIdentifierService = { upsertForEntity: jest.fn() };
+  const entityIdentifierService = { upsertForEntities: jest.fn() };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new GraphIngestService(

@@ -10,7 +10,7 @@ import { computeChunkSize } from '@ci/common/persistence';
 import { NodeEntity } from '../entities/NodeEntity';
 import { RelationshipEntity } from '../entities/RelationshipEntity';
 
-import { EntityIdentifierService } from './EntityIdentifierService';
+import { type EntityIdentifierBatchEntry, EntityIdentifierService } from './EntityIdentifierService';
 
 // Stable namespace so the importer and the server derive identical linked_id
 // UUIDs from the same natural key. Do not change — it is the idempotency anchor.
@@ -140,6 +140,11 @@ export class GraphIngestService {
     // key still maps a re-ingested key to its existing row.
     let entitiesProcessed = 0;
     const resolvedById = await this.upsertEntities(ownerId, input.entities, errors);
+    // People-linking: collect every resolved entity's email/phone/name
+    // identifiers and index them AFTER the loop in one set-based, chunked
+    // INSERT (see indexIdentifiers) — this was the last per-row write on the
+    // bulk ingest path (one statement per identifier-bearing entity).
+    const identifierBatch: EntityIdentifierBatchEntry[] = [];
     for (const e of input.entities) {
       const id = resolvedById.get(e);
       if (id === undefined) {
@@ -151,15 +156,19 @@ export class GraphIngestService {
       keyToType.set(e.key, e.entityType);
       entities.push({ key: e.key, entityId: id });
 
-      // People-linking: index this entity's email/phone identifiers so the
-      // communications backfill can resolve raw participants to it. Idempotent
-      // (ON CONFLICT DO NOTHING); only entities carrying emails/phones touch
-      // the table. Failure to index must not fail the ingest of the entity
-      // itself — indexIdentifiers logs and swallows its own errors.
-      await this.indexIdentifiers(ownerId, id, e);
+      const raw = rawIdentifiersOf(e);
+      if (raw != null) {
+        identifierBatch.push({ entityId: id, raw });
+      }
 
       entitiesProcessed += 1;
     }
+
+    // Idempotent (ON CONFLICT DO NOTHING); only entities carrying
+    // emails/phones/names contribute rows. Failure to index must not fail the
+    // ingest of the entities themselves — indexIdentifiers logs and swallows
+    // its own errors.
+    await this.indexIdentifiers(ownerId, identifierBatch);
 
     let relationshipsProcessed = 0;
     if (input.relationships.length > 0) {
@@ -381,32 +390,25 @@ export class GraphIngestService {
   }
 
   /**
-   * Register an ingested entity's contact identifiers (properties.emails /
+   * Register the batch's contact identifiers (each entity's properties.emails /
    * properties.phones / properties.names — display-name identifiers for chat
    * networks that export no email/phone) in ci.entity_identifiers for
-   * people-linking. No-op when none is present. Defensive: even though the importer pre-normalizes, the
-   * service re-applies the canonical rule. Swallows + logs its own errors so a
-   * bad identifier never aborts the entity ingest.
+   * people-linking, via ONE set-based chunked INSERT for the whole ingest call
+   * (formerly one statement per entity). No-op on an empty batch. Defensive:
+   * even though the importer pre-normalizes, the service re-applies the
+   * canonical rule. Swallows + logs its own errors so a bad identifier write
+   * never aborts the entity ingest.
    */
-  private async indexIdentifiers(ownerId: string, entityId: string, e: GraphEntityInputDto): Promise<void> {
-    const props = e.properties;
-    if (props == null) {
-      return;
-    }
-
-    const emails = props.emails;
-    const phones = props.phones;
-    const names = props.names;
-    if (emails == null && phones == null && names == null) {
+  private async indexIdentifiers(ownerId: string, batch: EntityIdentifierBatchEntry[]): Promise<void> {
+    if (batch.length === 0) {
       return;
     }
 
     try {
-      await this.entityIdentifierService.upsertForEntity(ownerId, entityId, { emails, phones, names });
+      await this.entityIdentifierService.upsertForEntities(ownerId, batch);
     } catch (err) {
       this.logger.warn('Failed to index entity identifiers', {
-        entityId,
-        key: e.key,
+        entities: batch.length,
         error: (err as Error).message,
       });
     }
@@ -614,4 +616,24 @@ export class GraphIngestService {
 
     return rows[0] ? { id: rows[0].entity_id, type: rows[0].entity_type } : null;
   }
+}
+
+/**
+ * An ingested entity's raw identifier payload (properties.emails / .phones /
+ * .names), or null when it carries none — the same "has anything to index"
+ * gate the former per-entity path applied, so identifier-less entities never
+ * enter the batch.
+ */
+function rawIdentifiersOf(e: GraphEntityInputDto): EntityIdentifierBatchEntry['raw'] | null {
+  const props = e.properties;
+  if (props == null) {
+    return null;
+  }
+
+  const { emails, phones, names } = props;
+  if (emails == null && phones == null && names == null) {
+    return null;
+  }
+
+  return { emails, phones, names };
 }
