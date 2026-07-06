@@ -46,7 +46,9 @@ function makeFakeRepo() {
           const raw: Array<{ id: string }> = [];
           for (const row of rows) {
             const k = key(row);
-            if (store.has(k)) {continue;} // ON CONFLICT DO NOTHING
+            if (store.has(k)) {
+              continue;
+            } // ON CONFLICT DO NOTHING
 
             store.add(k);
             raw.push({ id: row.id });
