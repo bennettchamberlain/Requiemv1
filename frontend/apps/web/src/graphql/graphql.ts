@@ -151,6 +151,12 @@ export type BulkGraphPayload = {
   success: Scalars['Boolean']['output'];
 };
 
+export type BulkItemRelationshipResult = {
+  __typename?: 'BulkItemRelationshipResult';
+  inserted: Scalars['Int']['output'];
+  skipped: Scalars['Int']['output'];
+};
+
 export type CommunicationConnection = Connection & {
   __typename?: 'CommunicationConnection';
   edges: Array<CommunicationEdge>;
@@ -739,6 +745,17 @@ export type ItemEdge = Edge & {
   node: ItemType;
 };
 
+export type ItemRelationshipInput = {
+  fromSourceId: Scalars['String']['input'];
+  fromSourceSystem: Scalars['String']['input'];
+  fromSourceType: Scalars['String']['input'];
+  metadata?: InputMaybe<Scalars['JSON']['input']>;
+  relation: Scalars['String']['input'];
+  toSourceId: Scalars['String']['input'];
+  toSourceSystem: Scalars['String']['input'];
+  toSourceType: Scalars['String']['input'];
+};
+
 export type ItemType = Node & Taggable & {
   __typename?: 'ItemType';
   acquiredAt?: Maybe<Scalars['DateTime']['output']>;
@@ -819,6 +836,7 @@ export type MessageType = Node & {
 export type Mutation = {
   __typename?: 'Mutation';
   bulkIngestGraph: BulkGraphPayload;
+  bulkIngestItemRelationships: BulkItemRelationshipResult;
   createAnswer: AnswerType;
   createAnswers: Array<AnswerType>;
   createBrowserActivities: Array<BrowserActivityType>;
@@ -895,6 +913,11 @@ export type Mutation = {
 
 export type MutationBulkIngestGraphArgs = {
   input: BulkGraphInput;
+};
+
+
+export type MutationBulkIngestItemRelationshipsArgs = {
+  input: Array<ItemRelationshipInput>;
 };
 
 
