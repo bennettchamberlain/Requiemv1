@@ -71,3 +71,16 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   ],
 })
 export class MaintenanceModule {}
+
+// Public surface for other domains (e.g. the /v1 bulk-ingest lifecycle
+// endpoints, which delegate finish/status to these services).
+export {
+  MaintenanceOrchestratorService,
+  ORCHESTRATE_STAGES,
+  type OrchestrateStage,
+  type OrchestrateSummary,
+} from './services/MaintenanceOrchestratorService';
+export {
+  SearchIndexBackfillService,
+  type SearchIndexBackfillResult,
+} from './services/SearchIndexBackfillService';
