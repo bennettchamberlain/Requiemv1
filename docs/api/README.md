@@ -4,7 +4,7 @@
 
 CI-Server is the **memory brain** of the Companion Intelligence appliance — a personal database, RAG/search engine, knowledge graph, and behavioral-prediction engine. This directory documents every way to talk to it.
 
-It is a single **NestJS 10** process (default `0.0.0.0:3030`) backed by PostgreSQL 15 + pgvector + TimescaleDB, Ollama (local LLM/embeddings), PGBoss (jobs), and MinIO (object store). All clients — the React/Vite web app, CI-Import-Tools, CI-Connect, mobile App Intents, and MCP agents (CI-Hermes, CI-OpenClaw) — reach it through the surfaces below.
+It is a single **NestJS 10** process (default `0.0.0.0:3030`) backed by PostgreSQL 18 + pgvector + TimescaleDB + PostGIS (see [Database.md](../architecture/Database.md)), Ollama (local LLM/embeddings), PGBoss (jobs), and MinIO (object store). All clients — the React/Vite web app, CI-Import-Tools, CI-Connect, mobile App Intents, and MCP agents (CI-Hermes, CI-OpenClaw) — reach it through the surfaces below.
 
 ## The three surfaces
 
@@ -22,7 +22,7 @@ Cross-cutting concerns — **authentication (session cookies / API keys / OIDC),
 
 2. **Three credentials, one guard.** Most routes accept **either** an access-token `Authorization: Bearer` JWT (the web app), an `x-api-key` header (programmatic clients), **or** a Portal OIDC bearer (migration path) — via `JwtOrApiKeyAuthGuard`. `userId` flows through an AsyncLocalStorage context and scopes every query. There is no global auth guard and no `@Public` decorator — a route is public simply by declaring no auth guard (`/health`, the login endpoints, `/_internal/features/global`).
 
-3. **Bulk ingest dedups on the provenance triple `(source_type, source_system, source_id)`.** Every high-volume write path (`createEvents`, `createCommunications`, `createContents`, `createInventoryItems`, `createBrowserActivities`, `/v1/events`) is set-based and idempotent on this triple — the importer can re-push the same records without creating duplicates. See [graphql.md §4.7](graphql.md#47-bulk-ingest-mutations-the-importer-surface-detailed).
+3. **Bulk ingest dedups on the provenance triple `(source_type, source_system, source_id)`.** Every high-volume write path (`createEvents`, `createCommunications`, `createContents`, `createInventoryItems`, `createBrowserActivities`, `/v1/events`) is set-based and idempotent on this triple — the importer can re-push the same records without creating duplicates. See [graphql.md §4.7](graphql.md#47-bulk-ingest-mutations-the-importer-surface--detailed).
 
 4. **Bulk load defers indexing.** The bulk paths pass `emitCreated:false` — they skip the per-row event fan-out, so search embedding is **deferred** to `POST /api/maintenance/search-index/backfill`. An import that pushes data but never runs the maintenance chain will have rows that are stored but not yet searchable.
 
@@ -59,6 +59,14 @@ curl -i -X POST https://ci-memory.example.com/api/mcp \
 - **[graphql.md](graphql.md)** — the GraphQL endpoint, auth/context, the full query & mutation catalog, the bulk-ingest contract (idempotency, deferred indexing, per-service arbiters), key types, and error semantics.
 - **[rest.md](rest.md)** — every REST controller (ingest, files, maintenance/enrichment, memory/graph, agent memory, connectors, LLM proxy, jobs, health) with per-route tables, plus what the importer drives.
 - **[auth-and-conventions.md](auth-and-conventions.md)** — the three auth mechanisms, guard model, CORS, body/validation/error conventions, the provenance-triple idempotency key, and the MCP surface.
+
+## See also
+
+- [docs index](../README.md) — everything documented in this repo
+- [Database.md](../architecture/Database.md) — schemas, the idempotency/dedup design behind §3–4 above, indexing, hypertables
+- [Bulk load runbook](../../backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md) / [ingest reset runbook](../../backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md) — operator procedures around the bulk path
+- [GraphiQL IDE & codegen workflow](../graphql-api.md) — exploring this API interactively; regenerating schema/types
+- [Backend developer guide](../../backend/apps/api/README.md)
 
 ---
 
