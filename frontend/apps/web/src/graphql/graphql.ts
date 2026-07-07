@@ -157,6 +157,33 @@ export type BulkItemRelationshipResult = {
   skipped: Scalars['Int']['output'];
 };
 
+/** One HBPE scoring run over a window of elapsed forecasts. Measures forecast self-consistency against pipeline-derived (Qwen-labeled) actuals — not ground-truth accuracy. */
+export type CalibrationScoreType = {
+  __typename?: 'CalibrationScoreType';
+  /** Multiclass Brier over the 8 L0 classes: 0 perfect, 0.875 uniform, 2 confidently wrong */
+  brier?: Maybe<Scalars['Float']['output']>;
+  /** Fraction of forecast buckets in the window that have a backfilled actual */
+  coverage?: Maybe<Scalars['Float']['output']>;
+  /** True when recent L0 top-1 accuracy dropped more than the drift threshold below the trailing baseline */
+  driftFlag: Scalars['Boolean']['output'];
+  /** Expected calibration error over the reliability bins */
+  ece?: Maybe<Scalars['Float']['output']>;
+  /** Fraction of buckets whose argmax L0 class matched the actual */
+  l0Top1Acc?: Maybe<Scalars['Float']['output']>;
+  /** Fraction of buckets whose actual L1 cluster was among the 3 highest-probability L1 predictions */
+  l1Top3Acc?: Maybe<Scalars['Float']['output']>;
+  /** Number of scored forecast buckets in the window */
+  nBuckets: Scalars['Int']['output'];
+  /** Reliability-diagram bins backing the ECE */
+  reliability: Array<ReliabilityBinType>;
+  /** ISO-8601 timestamp of the scoring run */
+  scoredAt: Scalars['String']['output'];
+  /** ISO-8601 end of the scored forecast window (exclusive) */
+  windowEnd: Scalars['String']['output'];
+  /** ISO-8601 start of the scored forecast window (inclusive) */
+  windowStart: Scalars['String']['output'];
+};
+
 export type CommunicationConnection = Connection & {
   __typename?: 'CommunicationConnection';
   edges: Array<CommunicationEdge>;
@@ -1343,6 +1370,17 @@ export type PlaceType = Node & Taggable & {
   uploaded?: Maybe<Scalars['Boolean']['output']>;
 };
 
+/** HBPE forecast calibration: the latest live-scoring run plus a short trend. IMPORTANT: these metrics measure forecast self-consistency against Qwen-derived behavior labels (see basis), not ground-truth accuracy. */
+export type PredictionCalibrationType = {
+  __typename?: 'PredictionCalibrationType';
+  /** What the metrics measure — always 'self-consistency-vs-qwen-labels': forecasts are scored against actuals the pipeline itself derived from Qwen-labeled events, not independently verified behavior. */
+  basis: Scalars['String']['output'];
+  /** Recent scoring runs, newest first (includes latest) */
+  history: Array<CalibrationScoreType>;
+  /** Most recent scoring run, if any */
+  latest?: Maybe<CalibrationScoreType>;
+};
+
 /** A single label→probability entry from the HBPE histogram */
 export type ProbabilityEntryType = {
   __typename?: 'ProbabilityEntryType';
@@ -1447,6 +1485,8 @@ export type Query = {
   person?: Maybe<PersonType>;
   place?: Maybe<PlaceType>;
   places: PlaceConnection;
+  /** HBPE forecast calibration: latest live-scoring run plus a short trend (newest first). Measures forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy. */
+  predictionCalibration?: Maybe<PredictionCalibrationType>;
   provider?: Maybe<ProviderType>;
   providers: ProviderConnection;
   question?: Maybe<QuestionType>;
@@ -1671,6 +1711,11 @@ export type QueryPlacesArgs = {
 };
 
 
+export type QueryPredictionCalibrationArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryProviderArgs = {
   id: Scalars['ID']['input'];
 };
@@ -1820,6 +1865,20 @@ export type RelationshipType = Node & {
   toNodeId: Scalars['ID']['output'];
   toNodeType: Scalars['String']['output'];
   type: Scalars['String']['output'];
+};
+
+/** One reliability-diagram confidence bin (empty bins have null stats) */
+export type ReliabilityBinType = {
+  __typename?: 'ReliabilityBinType';
+  accuracy?: Maybe<Scalars['Float']['output']>;
+  avgConfidence?: Maybe<Scalars['Float']['output']>;
+  bin: Scalars['Int']['output'];
+  /** Scored buckets that fell in this bin */
+  count: Scalars['Int']['output'];
+  /** Lower edge of the confidence bin (inclusive) */
+  lower: Scalars['Float']['output'];
+  /** Upper edge of the confidence bin */
+  upper: Scalars['Float']['output'];
 };
 
 export type SavedSearchConnection = Connection & {

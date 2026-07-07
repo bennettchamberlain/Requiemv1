@@ -126,6 +126,52 @@ type BulkItemRelationshipResult {
   skipped: Int!
 }
 
+"""
+One HBPE scoring run over a window of elapsed forecasts. Measures forecast self-consistency against pipeline-derived (Qwen-labeled) actuals — not ground-truth accuracy.
+"""
+type CalibrationScoreType {
+  """
+  Multiclass Brier over the 8 L0 classes: 0 perfect, 0.875 uniform, 2 confidently wrong
+  """
+  brier: Float
+
+  """
+  Fraction of forecast buckets in the window that have a backfilled actual
+  """
+  coverage: Float
+
+  """
+  True when recent L0 top-1 accuracy dropped more than the drift threshold below the trailing baseline
+  """
+  driftFlag: Boolean!
+
+  """Expected calibration error over the reliability bins"""
+  ece: Float
+
+  """Fraction of buckets whose argmax L0 class matched the actual"""
+  l0Top1Acc: Float
+
+  """
+  Fraction of buckets whose actual L1 cluster was among the 3 highest-probability L1 predictions
+  """
+  l1Top3Acc: Float
+
+  """Number of scored forecast buckets in the window"""
+  nBuckets: Int!
+
+  """Reliability-diagram bins backing the ECE"""
+  reliability: [ReliabilityBinType!]!
+
+  """ISO-8601 timestamp of the scoring run"""
+  scoredAt: String!
+
+  """ISO-8601 end of the scored forecast window (exclusive)"""
+  windowEnd: String!
+
+  """ISO-8601 start of the scored forecast window (inclusive)"""
+  windowStart: String!
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -920,6 +966,22 @@ type PlaceType implements Node & Taggable {
   uploaded: Boolean
 }
 
+"""
+HBPE forecast calibration: the latest live-scoring run plus a short trend. IMPORTANT: these metrics measure forecast self-consistency against Qwen-derived behavior labels (see basis), not ground-truth accuracy.
+"""
+type PredictionCalibrationType {
+  """
+  What the metrics measure — always 'self-consistency-vs-qwen-labels': forecasts are scored against actuals the pipeline itself derived from Qwen-labeled events, not independently verified behavior.
+  """
+  basis: String!
+
+  """Recent scoring runs, newest first (includes latest)"""
+  history: [CalibrationScoreType!]!
+
+  """Most recent scoring run, if any"""
+  latest: CalibrationScoreType
+}
+
 """A single label→probability entry from the HBPE histogram"""
 type ProbabilityEntryType {
   label: String!
@@ -1022,6 +1084,11 @@ type Query {
   person(id: ID!): PersonType
   place(id: ID!): PlaceType
   places(after: String, before: String, first: Int, last: Int): PlaceConnection!
+
+  """
+  HBPE forecast calibration: latest live-scoring run plus a short trend (newest first). Measures forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy.
+  """
+  predictionCalibration(limit: Int = 14): PredictionCalibrationType
   provider(id: ID!): ProviderType
   providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType
@@ -1083,6 +1150,22 @@ type RelationshipType implements Node {
   toNodeId: ID!
   toNodeType: String!
   type: String!
+}
+
+"""One reliability-diagram confidence bin (empty bins have null stats)"""
+type ReliabilityBinType {
+  accuracy: Float
+  avgConfidence: Float
+  bin: Int!
+
+  """Scored buckets that fell in this bin"""
+  count: Int!
+
+  """Lower edge of the confidence bin (inclusive)"""
+  lower: Float!
+
+  """Upper edge of the confidence bin"""
+  upper: Float!
 }
 
 type SavedSearchConnection implements Connection {
