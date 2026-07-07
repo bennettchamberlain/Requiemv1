@@ -35,24 +35,28 @@ Results are persisted to ``hbpe.prediction_score`` (one row per scoring run).
 
 Schema note
 -----------
-The canonical ``hbpe.*`` tables are created by the dbmate migration
-``backend/apps/api/db/postgres/migrations/20260227000001_hbpe_all_tables.sql``.
-This module intentionally does **not** add a dbmate migration for
-``hbpe.prediction_score`` — instead it self-bootstraps the table with an
-idempotent ``CREATE TABLE IF NOT EXISTS`` (``ensure_score_table``) on first use.
-A follow-up should fold this DDL into the squashed dbmate schema so the table is
-part of the canonical install (see PR body).
+``hbpe.prediction_score`` is created canonically by the dbmate migration
+``backend/apps/api/db/postgres/migrations/20260707054821_hbpe_prediction_score.sql``
+(the other ``hbpe.*`` tables live in ``20260227000001_hbpe_all_tables.sql``).
+This module keeps an idempotent ``CREATE TABLE IF NOT EXISTS`` self-bootstrap
+(``ensure_score_table``) as belt-and-braces for installs that run the sidecar
+before the migration; after the migration has run it is a no-op.  The two DDLs
+must stay in sync.  Follow-up: add the ``ci.users(id)`` FK once the
+self-bootstrap is retired (the sidecar DDL cannot assume the ``ci`` schema).
 
-L1 keying caveat
-----------------
+L1 keying note
+--------------
 ``prediction_log.actual_l1`` is backfilled as the L1 *cluster UUID*
-(``actuals_backfill.py``), whereas ``inference_engine.predict`` currently writes
-``l1_probs`` keyed by the cluster's *human-readable display name*
-(``inference_engine.py``).  L1 top-3 accuracy compares the actual against the
-``l1_probs`` keys verbatim, so until that keying is reconciled the L1 number can
-read low even when L0 is healthy.  This is surfaced (not silently hidden) via the
-separate ``n_l1`` count in the result and documented as a follow-up.  L0 metrics
-— the calibrated head and the primary target — are unaffected.
+(``actuals_backfill.py``), whereas ``inference_engine.predict`` writes
+``l1_probs`` keyed by the cluster's *display name* — derived in Python as
+``label.replace('_', ' ').title()`` from ``hbpe.l1_clusters.label`` (the
+``display_name`` column was dropped in migration ``20260413000003``), falling
+back to the UUID's first 8 chars when the cluster row cannot be resolved.  The
+fetch SQL therefore LEFT JOINs ``hbpe.l1_clusters`` to carry the actual's
+``label`` alongside the UUID, and ``l1_actual_keys`` translates the actual into
+the same display-name keying before the top-3 comparison (raw UUID and 8-char
+prefix are kept as fallback candidates for clusters with no surviving row).
+L0 metrics are unaffected by any of this.
 
 Spec: CI-HBPE-SPEC-001 §T5 (scoring / drift).
 """
@@ -154,6 +158,26 @@ def topk_keys(probs: dict[str, float], k: int = 3) -> list[str]:
     return [key for key, _ in sorted(probs.items(), key=lambda kv: kv[1], reverse=True)[:k]]
 
 
+def l1_actual_keys(actual_l1: Optional[str], actual_l1_label: Optional[str] = None) -> set[str]:
+    """Candidate ``l1_probs`` keys the backfilled L1 actual may appear under.
+
+    ``actual_l1`` is the raw cluster UUID (see ``actuals_backfill.py``), but
+    ``inference_engine.predict`` keys ``l1_probs`` by the cluster's display
+    name: ``hbpe.l1_clusters.label`` transformed as
+    ``label.replace('_', ' ').title()`` — falling back to the UUID's first
+    8 chars when the engine cannot resolve a name.  Translate the actual into
+    that keying (plus the raw-UUID / 8-char fallbacks, which cannot
+    false-positive against another cluster's keys) so top-3 membership is
+    compared display-name vs display-name.
+    """
+    if not actual_l1:
+        return set()
+    keys = {actual_l1, actual_l1[:8]}
+    if actual_l1_label:
+        keys.add(actual_l1_label.replace("_", " ").title())
+    return keys
+
+
 def reliability_bins(
     confidences: Sequence[float],
     correct: Sequence[bool],
@@ -240,8 +264,12 @@ def score_predictions(
     """Score an iterable of backfilled prediction rows.
 
     Each row must provide ``l0_probs`` (dict or JSON), ``actual_l0`` (class name),
-    and optionally ``l1_probs`` + ``actual_l1``.  Rows with no ``actual_l0`` are
-    skipped defensively (the caller's query already filters them).
+    and optionally ``l1_probs`` + ``actual_l1`` (cluster UUID) +
+    ``actual_l1_label`` (the cluster's ``hbpe.l1_clusters.label``, carried by the
+    fetch SQL's LEFT JOIN; may be absent/None when the cluster row is gone).  The
+    L1 actual is translated to the engine's display-name keying via
+    ``l1_actual_keys`` before the top-3 comparison.  Rows with no ``actual_l0``
+    are skipped defensively (the caller's query already filters them).
     """
     brier_sum = 0.0
     top1_correct = 0
@@ -272,7 +300,8 @@ def score_predictions(
         if actual_l1:
             l1_total += 1
             l1_probs = _as_prob_dict(row.get("l1_probs"))
-            if actual_l1 in topk_keys(l1_probs, 3):
+            candidates = l1_actual_keys(actual_l1, row.get("actual_l1_label"))
+            if candidates & set(topk_keys(l1_probs, 3)):
                 l1_correct += 1
 
     ece, bins = reliability_bins(confidences, correct_flags, n_bins)
@@ -310,6 +339,11 @@ def detect_drift(
 
 # ── DB layer ────────────────────────────────────────────────────────────────────
 
+# Canonical DDL lives in the dbmate migration
+# ``backend/apps/api/db/postgres/migrations/20260707054821_hbpe_prediction_score.sql``;
+# this copy is an idempotent belt-and-braces bootstrap (a no-op once the
+# migration has run) for installs where the sidecar starts first.  Keep the two
+# in sync — the migration mirrors this SQL exactly.
 _ENSURE_TABLE_SQL = """
     CREATE SCHEMA IF NOT EXISTS hbpe;
 
@@ -333,13 +367,20 @@ _ENSURE_TABLE_SQL = """
         ON hbpe.prediction_score (user_id, scored_at DESC);
 """
 
+# actual_l1 is a cluster UUID while l1_probs is keyed by display name, so carry
+# the cluster's label along (LEFT JOIN — the row may have been deleted) for the
+# display-name translation in ``l1_actual_keys``.  Text-cast join: actual_l1 is
+# TEXT and not guaranteed to parse as a UUID.
 _FETCH_ROWS_SQL = """
-    SELECT l0_probs, l1_probs, actual_l0, actual_l1
-    FROM hbpe.prediction_log
-    WHERE user_id = %(user_id)s
-      AND predicted_at >= %(start)s
-      AND predicted_at <  %(end)s
-      AND actual_l0 IS NOT NULL
+    SELECT p.l0_probs, p.l1_probs, p.actual_l0, p.actual_l1,
+           c.label AS actual_l1_label
+    FROM hbpe.prediction_log p
+    LEFT JOIN hbpe.l1_clusters c
+      ON c.cluster_id::text = p.actual_l1
+    WHERE p.user_id = %(user_id)s
+      AND p.predicted_at >= %(start)s
+      AND p.predicted_at <  %(end)s
+      AND p.actual_l0 IS NOT NULL
 """
 
 _COVERAGE_SQL = """
@@ -365,7 +406,11 @@ _INSERT_SCORE_SQL = """
 
 
 def ensure_score_table(conn) -> None:
-    """Idempotently create ``hbpe.prediction_score`` (self-bootstrap DDL)."""
+    """Idempotently create ``hbpe.prediction_score`` (belt-and-braces bootstrap).
+
+    The dbmate migration ``20260707054821_hbpe_prediction_score.sql`` is the
+    canonical DDL; on a migrated database every statement here is a no-op.
+    """
     with conn.cursor() as cur:
         cur.execute(_ENSURE_TABLE_SQL)
 

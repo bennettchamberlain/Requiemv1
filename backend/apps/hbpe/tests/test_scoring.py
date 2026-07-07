@@ -30,6 +30,7 @@ from ci.pipeline import scoring  # noqa: E402
 from ci.pipeline.scoring import (  # noqa: E402
     argmax_class,
     detect_drift,
+    l1_actual_keys,
     multiclass_brier,
     reliability_bins,
     score_predictions,
@@ -42,12 +43,13 @@ LEISURE = "LEISURE"
 UNIFORM = {c: 0.125 for c in scoring.L0_CLASSES}  # 8 classes → 1/8 each
 
 
-def _row(l0_probs, actual_l0, l1_probs=None, actual_l1=None):
+def _row(l0_probs, actual_l0, l1_probs=None, actual_l1=None, actual_l1_label=None):
     return {
         "l0_probs": l0_probs,
         "l1_probs": l1_probs or {},
         "actual_l0": actual_l0,
         "actual_l1": actual_l1,
+        "actual_l1_label": actual_l1_label,
     }
 
 
@@ -174,6 +176,84 @@ def test_score_l1_top3():
     assert r.l1_top3_acc == pytest.approx(0.5)
 
 
+# ── L1 UUID → display-name translation ───────────────────────────────────────
+
+
+CLUSTER_UUID = "3f2b1a9c-1111-2222-3333-444455556666"
+
+
+def test_l1_actual_keys_translates_label_to_display_name():
+    # engine keying: label.replace('_', ' ').title()
+    keys = l1_actual_keys(CLUSTER_UUID, "DEEP_FOCUS")
+    assert "Deep Focus" in keys
+    # raw UUID + 8-char engine fallback stay as candidates
+    assert CLUSTER_UUID in keys
+    assert CLUSTER_UUID[:8] in keys
+
+
+def test_l1_actual_keys_missing_cluster_row_falls_back_to_uuid():
+    keys = l1_actual_keys(CLUSTER_UUID, None)
+    assert keys == {CLUSTER_UUID, CLUSTER_UUID[:8]}
+
+
+def test_l1_actual_keys_null_actual_is_empty():
+    assert l1_actual_keys(None) == set()
+    assert l1_actual_keys("") == set()
+
+
+def test_score_l1_uuid_actual_matches_display_name_key():
+    # actuals_backfill writes the cluster UUID; the fetch SQL carries the
+    # cluster label; l1_probs is keyed by the titled display name.
+    l1 = {"Deep Focus": 0.6, "Meeting": 0.3, "Cycling": 0.1}
+    rows = [
+        _row({WORK: 1.0}, WORK, l1_probs=l1,
+             actual_l1=CLUSTER_UUID, actual_l1_label="DEEP_FOCUS"),
+    ]
+    r = score_predictions(rows)
+    assert r.n_l1 == 1
+    assert r.l1_top3_acc == pytest.approx(1.0)
+
+
+def test_score_l1_uuid_actual_display_name_not_in_top3_is_miss():
+    l1 = {"Deep Focus": 0.5, "Meeting": 0.3, "Cycling": 0.15, "Reading": 0.05}
+    rows = [
+        _row({WORK: 1.0}, WORK, l1_probs=l1,
+             actual_l1=CLUSTER_UUID, actual_l1_label="READING"),
+    ]
+    r = score_predictions(rows)
+    assert r.n_l1 == 1
+    assert r.l1_top3_acc == pytest.approx(0.0)
+
+
+def test_score_l1_missing_cluster_row_matches_engine_uuid_fallback():
+    # When the engine can't resolve a display name it keys by uuid[:8]; a
+    # deleted cluster row (label None from the LEFT JOIN) should still match.
+    l1 = {CLUSTER_UUID[:8]: 0.9, "Meeting": 0.1}
+    rows = [
+        _row({WORK: 1.0}, WORK, l1_probs=l1,
+             actual_l1=CLUSTER_UUID, actual_l1_label=None),
+    ]
+    r = score_predictions(rows)
+    assert r.n_l1 == 1
+    assert r.l1_top3_acc == pytest.approx(1.0)
+
+
+def test_score_l1_null_actual_not_counted():
+    rows = [
+        _row({WORK: 1.0}, WORK, l1_probs={"Deep Focus": 1.0},
+             actual_l1=None, actual_l1_label=None),
+    ]
+    r = score_predictions(rows)
+    assert r.n_l1 == 0
+    assert r.l1_top3_acc is None
+
+
+def test_fetch_sql_joins_l1_clusters_for_label():
+    # the UUID → display-name translation is driven by the fetch SQL's join
+    assert "LEFT JOIN hbpe.l1_clusters" in scoring._FETCH_ROWS_SQL
+    assert "actual_l1_label" in scoring._FETCH_ROWS_SQL
+
+
 def test_score_empty_is_all_none():
     r = score_predictions([])
     assert r.n_l0 == 0
@@ -227,7 +307,7 @@ class _FakeCursor:
     baseline window); a coverage tuple; and an INSERT ... RETURNING result.
     """
 
-    _DESC = [("l0_probs",), ("l1_probs",), ("actual_l0",), ("actual_l1",)]
+    _DESC = [("l0_probs",), ("l1_probs",), ("actual_l0",), ("actual_l1",), ("actual_l1_label",)]
 
     def __init__(self, row_batches, coverage):
         self._row_batches = list(row_batches)
@@ -252,7 +332,7 @@ class _FakeCursor:
             self.insert_params = params
         elif "COUNT(*)" in sql:
             self._last = "coverage"
-        elif "SELECT l0_probs" in sql:
+        elif "SELECT p.l0_probs" in sql:
             self._last = "rows"
             self.description = self._DESC
         else:
@@ -286,11 +366,11 @@ def _patch_conn(monkeypatch, cursor):
 
 
 def _correct_row():
-    return ({WORK: 0.9, LEISURE: 0.1}, {}, WORK, None)
+    return ({WORK: 0.9, LEISURE: 0.1}, {}, WORK, None, None)
 
 
 def _wrong_row():
-    return ({LEISURE: 0.9, WORK: 0.1}, {}, WORK, None)
+    return ({LEISURE: 0.9, WORK: 0.1}, {}, WORK, None, None)
 
 
 def test_score_and_store_persists_metrics(monkeypatch):
