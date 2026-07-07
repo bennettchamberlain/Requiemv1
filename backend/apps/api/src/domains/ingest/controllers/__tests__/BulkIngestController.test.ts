@@ -205,6 +205,30 @@ describe('BulkIngestController', () => {
       expect(res).toEqual({ ingested: 2, duplicate: 1, rejected: [] });
       expect((positionService.create as jest.Mock).mock.calls[0][1]).toHaveLength(3);
     });
+
+    it('suppresses per-row created events and forwards the provenance triple (#1672)', async () => {
+      const { controller, positionService } = makeController();
+      (positionService.create as jest.Mock).mockResolvedValueOnce([{ id: 'p-1' }]);
+
+      const record = {
+        time: '2026-01-01T00:00:00.000Z',
+        source: 'gps' as const,
+        source_type: 'ci-import-tools',
+        source_system: 'google_photos',
+        source_id: 'IMG_1.jpg',
+      };
+      await controller.ingestPositions(ctx, jsonReq(), { records: [record] });
+
+      const [, records, options] = (positionService.create as jest.Mock).mock.calls[0];
+      // The bulk plane must not fan out one PositionCreatedEvent per GPS fix.
+      expect(options).toEqual({ emitCreated: false });
+      // The triple survives validation instead of being stripped by zod.
+      expect(records[0]).toMatchObject({
+        source_type: 'ci-import-tools',
+        source_system: 'google_photos',
+        source_id: 'IMG_1.jpg',
+      });
+    });
   });
 
   describe('envelope validation inside the handler (moved off the @Body pipe for NDJSON)', () => {

@@ -47,11 +47,12 @@ export class IngestLifecycleController {
   ): Promise<OrchestrateSummary | SearchIndexBackfillResult> {
     const serviceContext = toServiceContext(context);
 
-    // Cheap path: just the search-index embed backfill sweep (service defaults:
-    // every backfillable type, no per-type cap), bypassing the orchestrator —
-    // same call POST /api/maintenance/search-index/backfill makes.
+    // Cheap path: just the search-index embed backfill sweep, bypassing the
+    // orchestrator — same call POST /api/maintenance/search-index/backfill
+    // makes. `entityTypes` scopes the sweep to the types the bulk load touched
+    // (#1671); omitted, it sweeps every backfillable type uncapped.
     if (body.searchIndexOnly === true) {
-      return this.searchIndexBackfillService.backfill();
+      return this.searchIndexBackfillService.backfill({ entityTypes: body.entityTypes });
     }
 
     // Full (or stage-subset) enrichment chain, canonical order — same call
