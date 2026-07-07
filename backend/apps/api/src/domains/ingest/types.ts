@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { MAX_BULK_INPUT_SIZE } from '@ci/common/pipes';
 import { createBrowserActivitySchemaRoot } from '@ci/domains/browser-activity';
-import { ORCHESTRATE_STAGES } from '@ci/domains/maintenance';
+import { BACKFILLABLE_ENTITIES, ORCHESTRATE_STAGES } from '@ci/domains/maintenance';
 import { createPositionSchemaRoot } from '@ci/domains/position';
 
 /**
@@ -211,18 +211,25 @@ export interface BulkIngestResponse {
  * legs, canonical order — see MaintenanceOrchestratorService). `stages` narrows
  * it to a subset of the canonical vocabulary. `searchIndexOnly: true` skips the
  * orchestrator entirely and runs just the search-index embed backfill sweep
- * (the cheapest "make my rows searchable" path). The two knobs are mutually
- * exclusive: `stages` with `searchIndexOnly` is a 400 (use
- * `stages: ["search_index"]` to orchestrate only that leg, or `searchIndexOnly`
- * to bypass the orchestrator).
+ * (the cheapest "make my rows searchable" path); `entityTypes` scopes that
+ * sweep to the types the bulk load actually touched, so a client that pushed
+ * only communications doesn't pay a full-table LEFT JOIN over every other
+ * backfillable type (#1671). The knobs compose as: `stages` XOR
+ * (`searchIndexOnly` [+ `entityTypes`]) — `stages` with either of the other
+ * two is a 400 (use `stages: ["search_index"]` to orchestrate only that leg,
+ * or `searchIndexOnly` to bypass the orchestrator).
  */
 export const ingestFinishSchema = z
   .object({
     stages: z.array(z.enum(ORCHESTRATE_STAGES)).min(1).optional(),
     searchIndexOnly: z.boolean().optional(),
+    entityTypes: z.array(z.enum(BACKFILLABLE_ENTITIES)).min(1).optional(),
   })
   .refine((body) => !(body.searchIndexOnly === true && body.stages !== undefined), {
     message: 'stages and searchIndexOnly are mutually exclusive',
+  })
+  .refine((body) => !(body.entityTypes !== undefined && body.searchIndexOnly !== true), {
+    message: 'entityTypes requires searchIndexOnly: true',
   });
 
 export type IngestFinishRequest = z.infer<typeof ingestFinishSchema>;

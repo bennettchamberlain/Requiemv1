@@ -82,5 +82,7 @@ export {
 } from './services/MaintenanceOrchestratorService';
 export {
   SearchIndexBackfillService,
+  BACKFILLABLE_ENTITIES,
+  type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';

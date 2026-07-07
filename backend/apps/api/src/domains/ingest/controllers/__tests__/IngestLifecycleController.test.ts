@@ -68,8 +68,21 @@ describe('IngestLifecycleController', () => {
       const res = await controller.finish(ctx, { searchIndexOnly: true });
 
       expect(res).toBe(backfillResult);
-      expect(backfill.backfill).toHaveBeenCalledTimes(1);
+      expect(backfill.backfill).toHaveBeenCalledWith({ entityTypes: undefined });
       expect(orchestrator.orchestrate).not.toHaveBeenCalled();
+    });
+
+    it('scopes the searchIndexOnly sweep to the given entityTypes (#1671)', async () => {
+      const { controller, backfill } = makeController();
+
+      await controller.finish(ctx, {
+        searchIndexOnly: true,
+        entityTypes: ['communication', 'content'],
+      });
+
+      expect(backfill.backfill).toHaveBeenCalledWith({
+        entityTypes: ['communication', 'content'],
+      });
     });
   });
 
@@ -105,5 +118,21 @@ describe('finish body validation', () => {
       stages: ['search_index'],
       searchIndexOnly: false,
     });
+  });
+
+  it('entityTypes rides searchIndexOnly only (#1671)', () => {
+    expect(pipe.transform({ searchIndexOnly: true, entityTypes: ['communication'] })).toEqual({
+      searchIndexOnly: true,
+      entityTypes: ['communication'],
+    });
+    // Without the sweep there is nothing to scope — reject rather than ignore.
+    expect(() => pipe.transform({ entityTypes: ['communication'] })).toThrow(BadRequestException);
+    expect(() => pipe.transform({ stages: ['search_index'], entityTypes: ['communication'] })).toThrow(
+      BadRequestException,
+    );
+    // Unknown types are a 400, same as the legacy maintenance route.
+    expect(() => pipe.transform({ searchIndexOnly: true, entityTypes: ['not_a_type'] })).toThrow(
+      BadRequestException,
+    );
   });
 });

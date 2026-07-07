@@ -264,8 +264,11 @@ export class BulkIngestController {
     // Same bulk path POST /position uses; CreatePositionDto keeps `time` as an
     // ISO string. PositionService collapses intra-batch same-time records and
     // returns existing + created rows, so `duplicate` counts the in-batch
-    // time collisions.
-    const rows = await this.positionService.create(serviceContext, records);
+    // time collisions. emitCreated:false (#1672): no per-row event fan-out on
+    // the bulk plane — clients close the loop via POST /v1/ingest/finish.
+    const rows = await this.positionService.create(serviceContext, records, {
+      emitCreated: false,
+    });
 
     return rows.length;
   }
