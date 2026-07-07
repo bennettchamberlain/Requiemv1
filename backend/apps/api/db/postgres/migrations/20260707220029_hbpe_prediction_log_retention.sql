@@ -1,5 +1,12 @@
 -- migrate:up
 --
+-- Reissued from 20260701000000, which collided with create_search_index_skips
+-- (both hand-stamped the same version; dbmate keys schema_migrations on it, so
+-- the duplicate broke `migrate` for everyone). DBs that migrated while this file
+-- held the old version will run it again — every statement below is guarded
+-- (add_retention_policy if_not_exists / remove_retention_policy if_exists), so
+-- the re-run is a no-op.
+--
 -- Bound the growth of the hbpe.prediction_log hypertable.
 --
 -- prediction_log records 48 rows per issued /histogram forecast, and the
