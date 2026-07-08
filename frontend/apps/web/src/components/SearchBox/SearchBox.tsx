@@ -207,6 +207,8 @@ function SearchBox(
   // re-running on dependency identity churn rather than real query changes.
   const lastAutoSubmittedRef = useRef<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Previous results list, for re-anchoring the highlight by id when it changes.
+  const prevResultsRef = useRef<SearchResultItem[]>(results);
 
   const selectedResult = selectedIndex >= 0 && selectedIndex < results.length ? results[selectedIndex] : null;
   const isLoading = loading || isAutoSubmitPending;
@@ -462,11 +464,20 @@ function SearchBox(
     };
   }, [queryValue, autoSubmit, autoSubmitEmpty, autoSubmitDelay, disabled, handleSubmit]);
 
-  // Reset selection when results change
+  // Results changed: keep the highlight on the same row — matched by id, since
+  // its index may have shifted and its content re-rendered (e.g. an action row
+  // whose label just toggled after Enter) — and drop it when the row is gone.
   useEffect(() => {
-    setSelectedIndex(-1);
+    const prevResults = prevResultsRef.current;
+    prevResultsRef.current = results;
     resultItemsRef.current = [];
     setIsAutoSubmitPending(false);
+
+    setSelectedIndex((prev) => {
+      const prevId = prev >= 0 && prev < prevResults.length ? prevResults[prev].id : null;
+
+      return prevId === null ? -1 : results.findIndex((result) => result.id === prevId);
+    });
   }, [results]);
 
   // Reset selection when query is cleared
