@@ -76,7 +76,9 @@ function makeController(opts: { captureInserted?: boolean[] } = {}) {
         const rows: Record<string, unknown>[] = [];
         for (let r = 0; r * 9 < params.length; r++) {
           const isNew = (opts.captureInserted ?? [])[r] ?? true;
-          if (!isNew) {continue;}
+          if (!isNew) {
+            continue;
+          }
 
           rows.push({
             capture_event_id: `cap-${r}`,

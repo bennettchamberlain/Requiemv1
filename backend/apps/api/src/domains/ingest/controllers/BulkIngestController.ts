@@ -39,7 +39,13 @@ import {
 } from '../types';
 
 /** Which table a capture materializes into; part of the raw-log idempotency key. */
-type CaptureDestination = 'events' | 'communications' | 'content' | 'inventory' | 'browser_activity' | 'position';
+type CaptureDestination =
+  | 'events'
+  | 'communications'
+  | 'content'
+  | 'inventory'
+  | 'browser_activity'
+  | 'position';
 
 /** Provenance triple as carried on a wire record or a materialized egress row. */
 interface CaptureTriple {
@@ -318,7 +324,11 @@ export class BulkIngestController {
         );
         for (const row of inserted) {
           captureIdByKey.set(
-            tripleKey({ sourceType: row.source_type, sourceSystem: row.source_system, sourceId: row.source_id }),
+            tripleKey({
+              sourceType: row.source_type,
+              sourceSystem: row.source_system,
+              sourceId: row.source_id,
+            }),
             row.capture_event_id,
           );
         }
@@ -354,11 +364,15 @@ export class BulkIngestController {
     const linkValues: string[] = [];
     for (const row of rows) {
       const triple = egressTriple(row);
-      if (!hasFullTriple(triple)) {continue;}
+      if (!hasFullTriple(triple)) {
+        continue;
+      }
 
       const captureId = captureIdByKey.get(tripleKey(triple));
       const id = (row as { id?: string }).id;
-      if (!captureId || !id) {continue;}
+      if (!captureId || !id) {
+        continue;
+      }
 
       linkParams.push(captureId, id);
       linkValues.push(`($${linkParams.length - 1}::uuid, $${linkParams.length}::uuid)`);
@@ -379,7 +393,9 @@ export class BulkIngestController {
 
   /** Best-effort undo of this request's raw-log inserts (see layer 2 failure). */
   private async compensateCaptures(captureIdByKey: Map<string, string>): Promise<void> {
-    if (captureIdByKey.size === 0) {return;}
+    if (captureIdByKey.size === 0) {
+      return;
+    }
 
     try {
       await this.dataSource.query(`DELETE FROM ci.capture_events WHERE capture_event_id = ANY($1)`, [
@@ -640,4 +656,3 @@ const contentsEnvelopePipe = new ValidationPipe(ingestContentsSchema);
 const inventoryEnvelopePipe = new ValidationPipe(ingestInventorySchema);
 const browserActivityEnvelopePipe = new ValidationPipe(ingestBrowserActivitySchema);
 const positionsEnvelopePipe = new ValidationPipe(ingestPositionsSchema);
-
