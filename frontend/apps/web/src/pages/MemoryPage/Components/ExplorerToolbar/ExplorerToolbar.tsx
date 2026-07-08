@@ -577,7 +577,7 @@ function DateControl() {
       <Popover.Trigger asChild>
         <Button variant="outline">
           <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-          When: {dateFrom || dateTo ? formatDateLabel(dateFrom, dateTo) : 'all'}
+          When
           <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
         </Button>
       </Popover.Trigger>
