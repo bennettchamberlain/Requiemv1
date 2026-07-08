@@ -732,7 +732,7 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
 }
 
 /**
- * "Save search" — captures a name and persists the current query + selected
+ * "Save" — captures a name and persists the current query + selected
  * entity types + tags as a SavedSearch (shown on the Saved Searches page).
  */
 function SaveSearchButton() {
@@ -811,7 +811,7 @@ function SaveSearchButton() {
       <Dialog.Trigger asChild>
         <Button>
           <Save className="mr-2 h-4 w-4" />
-          Save search
+          Save
         </Button>
       </Dialog.Trigger>
       <Dialog.Content className="sm:max-w-[420px]">
