@@ -11,6 +11,7 @@ import config from '@ci/configuration';
 import { ConnectController } from '../controllers/ConnectController';
 import { CsrfGuard } from '../guards/CsrfGuard';
 import { ConnectService } from '../services/ConnectService';
+import { CsrfService } from '../services/CsrfService';
 
 const SESSION_COOKIE = config.auth.cookies.sessionTokenName;
 const RETURN_URL = 'https://hub.example.com/apps/urn:app:x/memory-connect/callback';
@@ -24,12 +25,19 @@ const mockConnectService = {
   buildReturnUrl: jest.fn(),
 };
 
-const mockLogger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+const mockLogger = {
+  setContext: jest.fn(),
+  log: jest.fn(),
+  warn: jest.fn(),
+  debug: jest.fn(),
+  error: jest.fn(),
+};
 
 @Module({
   controllers: [ConnectController],
   providers: [
     { provide: ConnectService, useValue: mockConnectService },
+    { provide: CsrfService, useValue: { generateToken: jest.fn().mockReturnValue('csrf-token-value') } },
     { provide: LoggerService, useValue: mockLogger },
   ],
 })

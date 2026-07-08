@@ -29,7 +29,13 @@ function makeDeps() {
   const userService = { findById: jest.fn() };
   const apiKeyService = { createOrRotate: jest.fn(), findByName: jest.fn(), removeByName: jest.fn() };
   const connectCodeService = { issue: jest.fn() };
-  const logger = { setContext: jest.fn(), debug: jest.fn(), warn: jest.fn(), log: jest.fn(), error: jest.fn() };
+  const logger = {
+    setContext: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    log: jest.fn(),
+    error: jest.fn(),
+  };
 
   const service = new ConnectService(
     authService as never,

@@ -21,6 +21,7 @@ import config from '@ci/configuration';
 
 import { CsrfGuard } from '../guards/CsrfGuard';
 import { ConnectService } from '../services/ConnectService';
+import { CsrfService } from '../services/CsrfService';
 import { renderConnectConsentPage, renderConnectErrorPage } from '../utils/connectConsentPage';
 
 const SESSION_COOKIE = config.auth.cookies.sessionTokenName;
@@ -60,6 +61,7 @@ type RevokeDto = z.infer<typeof revokeSchema>;
 export class ConnectController {
   constructor(
     private readonly connectService: ConnectService,
+    private readonly csrfService: CsrfService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ConnectController.name);
@@ -79,7 +81,10 @@ export class ConnectController {
     @Res() res: Response,
   ): Promise<void> {
     if (!app || !state || !returnUrl) {
-      res.status(HttpStatus.BAD_REQUEST).type('html').send(renderConnectErrorPage('Missing required parameters.'));
+      res
+        .status(HttpStatus.BAD_REQUEST)
+        .type('html')
+        .send(renderConnectErrorPage('Missing required parameters.'));
 
       return;
     }
@@ -107,11 +112,25 @@ export class ConnectController {
       return;
     }
 
+    // The consent page's approve POST is CSRF-guarded (double-submit). A signed-in
+    // user who did NOT just bounce through OIDC has no CSRF cookie (it is a
+    // sameSite=strict session cookie that OIDC/login set), so mint one here —
+    // otherwise the approve POST sends an empty token and fails with a 403.
+    const csrfToken = this.csrfService.generateToken();
+    res.cookie(CSRF_COOKIE, csrfToken, {
+      httpOnly: false,
+      secure: req.secure,
+      sameSite: 'strict',
+      path: '/',
+    });
+
     res
       .type('html')
       .header('Content-Security-Policy', "frame-ancestors 'none'")
       .header('X-Frame-Options', 'DENY')
-      .send(renderConnectConsentPage({ appUrn: app, appName, state, returnUrl, csrfCookieName: CSRF_COOKIE }));
+      .send(
+        renderConnectConsentPage({ appUrn: app, appName, state, returnUrl, csrfCookieName: CSRF_COOKIE }),
+      );
   }
 
   /**
