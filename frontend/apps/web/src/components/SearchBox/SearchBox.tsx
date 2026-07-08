@@ -538,8 +538,21 @@ function SearchBox(
                         px-2 py-1.5 cursor-pointer border-l-4
                         ${index === selectedIndex ? 'bg-accent text-accent-foreground border-blue-500' : 'hover:bg-muted/50 border-transparent'}
                       `}
-                  // Keep the input focused so the focus-driven panel doesn't close before the click lands.
-                  onMouseDown={(e) => e.preventDefault()}
+                  // Keep the input focused so the focus-driven panel doesn't close
+                  // before the click lands — except on draggable rows while the
+                  // panel is pinned: preventing mousedown default cancels native
+                  // HTML5 drag, and a pinned panel stays visible unfocused anyway.
+                  onMouseDown={(e) => {
+                    if (
+                      panelPinned &&
+                      e.target instanceof Element &&
+                      e.target.closest('[draggable="true"]')
+                    ) {
+                      return;
+                    }
+
+                    e.preventDefault();
+                  }}
                   onClick={() => onResultSelect?.(result)}
                 >
                   {result.content}

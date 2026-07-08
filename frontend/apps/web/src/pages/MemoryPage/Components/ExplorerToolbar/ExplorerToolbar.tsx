@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { gql as apolloGql, useMutation, useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import {
   Badge,
@@ -19,11 +19,11 @@ import {
   ArrowUpDown,
   Calendar as CalendarIcon,
   ChevronDown,
-  Check,
   Clock,
+  Filter,
   MapPin,
-  Plus,
   Save,
+  Scan,
   Search,
   Share2,
   Sparkles,
@@ -35,6 +35,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useFeatures } from '@/common/feature';
 import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
+import { isFilterDrag, readFilterDrag, type FilterDragKind } from '@/components/SearchBox/filterDrag';
 import { DropdownProvider, useDropdown } from '@/components/SearchBox/useDropdown';
 import { TagInput } from '@/components/TagInput';
 import { gql, type FragmentType } from '@/graphql';
@@ -55,8 +56,6 @@ const SORT_OPTIONS = [
   { value: 'name-desc', label: 'Name (Z–A)', sortBy: 'name', sortOrder: 'desc' },
 ] as const;
 
-const MAX_PERSON_SUGGESTIONS = 8;
-const MAX_PLACE_SUGGESTIONS = 8;
 const START_OF_DAY_TIME = '00:00';
 const END_OF_DAY_TIME = '23:59';
 
@@ -73,76 +72,6 @@ const CREATE_SAVED_SEARCH = gql(`
     }
   }
 `);
-
-const EXPLORER_PEOPLE = apolloGql`
-  query ExplorerPeople {
-    people(first: 100) {
-      edges {
-        node {
-          id
-          name
-          description
-        }
-      }
-    }
-  }
-`;
-
-const EXPLORER_PLACES = apolloGql`
-  query ExplorerPlaces {
-    places(first: 100) {
-      edges {
-        node {
-          id
-          name
-          description
-          type
-          properties
-        }
-      }
-    }
-  }
-`;
-
-interface ExplorerPeopleQuery {
-  people?: {
-    edges: Array<{
-      node: {
-        id: string;
-        name?: string | null;
-        description?: string | null;
-      };
-    }>;
-  };
-}
-
-interface ExplorerPlacesQuery {
-  places?: {
-    edges: Array<{
-      node: {
-        id: string;
-        name?: string | null;
-        description?: string | null;
-        type?: string | null;
-        properties?: Record<string, unknown> | null;
-      };
-    }>;
-  };
-}
-
-interface PersonOption {
-  id: string;
-  name: string;
-  description?: string | null;
-}
-
-interface PlaceOption {
-  id: string;
-  name: string;
-  description?: string | null;
-  type?: string | null;
-  address?: string | null;
-}
 
 // The user's existing tags, used to autocomplete the drawer's tag filter — the
 // same vocabulary the Tags page browses, so the two stay unified.
@@ -327,90 +256,57 @@ function writeCsvFilterParam(params: URLSearchParams, key: string, next: string[
   }
 }
 
-function PeopleFilterPicker() {
+// One filter dimension the drop area can receive: which URL param it writes,
+// its chip icon, and the validator for a dropped name.
+const DROP_FILTER_KINDS: Record<
+  FilterDragKind,
+  { param: string; icon: typeof Users; validate: (value: string) => string | null }
+> = {
+  person: { param: 'people', icon: Users, validate: validatePersonFilterValue },
+  place: { param: 'places', icon: MapPin, validate: validatePlaceFilterValue },
+};
+
+/**
+ * The drag-and-drop filter area. Person and place rows in the header search
+ * box's live results are draggable (see SearchBox/results/*Result); dropping
+ * one here adds it to the matching filter (`people` / `places` URL param,
+ * unchanged). Selections render as removable chips inside the area.
+ */
+function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const people = useMemo(
-    () => searchParams.get('people')?.split(',').map(normalizeFilterValue).filter(Boolean) ?? [],
-    [searchParams],
-  );
-  const selectedKeys = useMemo(() => new Set(people.map(filterValueKey)), [people]);
-  const [draft, setDraft] = useState('');
+  const selections = useMemo(() => {
+    const read = (param: string) =>
+      searchParams.get(param)?.split(',').map(normalizeFilterValue).filter(Boolean) ?? [];
+
+    return { person: read('people'), place: read('places') };
+  }, [searchParams]);
+  const hasSelections = selections.person.length > 0 || selections.place.length > 0;
   const [error, setError] = useState<string | null>(null);
+  // Counts nested dragenter/dragleave pairs so the highlight doesn't flicker
+  // off while an entity is dragged across the chips inside the drop area.
+  const [dragDepth, setDragDepth] = useState(0);
+  const isDropTarget = dragDepth > 0;
 
-  const {
-    data,
-    loading,
-    error: peopleError,
-  } = useQuery<ExplorerPeopleQuery>(EXPLORER_PEOPLE, {
-    fetchPolicy: 'cache-and-network',
-  });
-
-  const knownPeople = useMemo<PersonOption[]>(() => {
-    const seen = new Set<string>();
-
-    return (data?.people?.edges ?? [])
-      .map(({ node }) => ({
-        id: node.id,
-        name: normalizeFilterValue(node.name ?? ''),
-        description: node.description,
-      }))
-      .filter((person) => {
-        const key = filterValueKey(person.name);
-
-        if (!key || seen.has(key)) {
-          return false;
-        }
-
-        seen.add(key);
-
-        return true;
-      });
-  }, [data]);
-
-  const query = filterValueKey(draft);
-  const exactMatch = useMemo(
-    () => knownPeople.find((person) => filterValueKey(person.name) === query),
-    [knownPeople, query],
-  );
-  const suggestions = useMemo(() => {
-    const matches = knownPeople.filter((person) => {
-      const nameKey = filterValueKey(person.name);
-      const description = person.description?.toLocaleLowerCase() ?? '';
-
-      return !selectedKeys.has(nameKey) && (!query || nameKey.includes(query) || description.includes(query));
-    });
-
-    return matches
-      .sort((a, b) => {
-        const aStarts = filterValueKey(a.name).startsWith(query);
-        const bStarts = filterValueKey(b.name).startsWith(query);
-
-        if (aStarts !== bStarts) {
-          return aStarts ? -1 : 1;
-        }
-
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, MAX_PERSON_SUGGESTIONS);
-  }, [knownPeople, query, selectedKeys]);
-
-  const writePeople = (next: string[]) => {
+  const write = (kind: FilterDragKind, next: string[]) => {
     setSearchParams((params) => {
-      writeCsvFilterParam(params, 'people', next);
+      writeCsvFilterParam(params, DROP_FILTER_KINDS[kind].param, next);
 
       return params;
     });
   };
 
-  const removePerson = (name: string) => {
+  const remove = (kind: FilterDragKind, name: string) => {
     const key = filterValueKey(name);
 
-    writePeople(people.filter((person) => filterValueKey(person) !== key));
+    write(
+      kind,
+      selections[kind].filter((value) => filterValueKey(value) !== key),
+    );
     setError(null);
   };
 
-  const addPerson = (rawName: string) => {
-    const validation = validatePersonFilterValue(rawName);
+  const add = (kind: FilterDragKind, rawName: string) => {
+    const validation = DROP_FILTER_KINDS[kind].validate(rawName);
 
     if (validation) {
       setError(validation);
@@ -419,503 +315,97 @@ function PeopleFilterPicker() {
     }
 
     const normalized = normalizeFilterValue(rawName);
-    const canonical =
-      knownPeople.find((person) => filterValueKey(person.name) === filterValueKey(normalized))?.name ??
-      normalized;
-    const key = filterValueKey(canonical);
 
-    if (selectedKeys.has(key)) {
-      setError(`${canonical} is already selected.`);
-      setDraft('');
+    if (selections[kind].some((value) => filterValueKey(value) === filterValueKey(normalized))) {
+      setError(`${normalized} is already selected.`);
 
       return;
     }
 
-    writePeople([...people, canonical]);
-    setDraft('');
+    write(kind, [...selections[kind], normalized]);
     setError(null);
   };
 
-  const commitDraft = () => {
-    const validation = validatePersonFilterValue(draft);
-
-    if (validation) {
-      setError(validation);
-
-      return;
-    }
-
-    if (exactMatch) {
-      addPerson(exactMatch.name);
-
-      return;
-    }
-
-    if (suggestions.length === 1) {
-      addPerson(suggestions[0].name);
-
-      return;
-    }
-
-    if (suggestions.length > 1) {
-      setError('Choose a matching person, or keep typing to narrow it.');
-
-      return;
-    }
-
-    addPerson(draft);
-  };
-
-  const canCommitDraft =
-    draft.trim().length > 0 &&
-    validatePersonFilterValue(draft) === null &&
-    (exactMatch || suggestions.length <= 1);
-  const showCustomAdd =
-    draft.trim().length > 0 &&
-    validatePersonFilterValue(draft) === null &&
-    !exactMatch &&
-    suggestions.length === 0 &&
-    !selectedKeys.has(filterValueKey(draft));
+  const DropIcon = isDropTarget ? Scan : Filter;
+  const dropText = isDropTarget
+    ? 'Drop to add'
+    : 'Drag a person or place from the search results here to filter';
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-medium text-muted-foreground">People involved</span>
-          {people.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-muted-foreground"
-              onClick={() => writePeople([])}
-            >
-              Clear
-            </Button>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                commitDraft();
-              }
+    <div className="flex flex-col gap-1.5">
+      <div
+        aria-label="Filter drop area"
+        onDragEnter={(event) => {
+          if (isFilterDrag(event)) {
+            event.preventDefault();
+            setDragDepth((depth) => depth + 1);
+          }
+        }}
+        onDragOver={(event) => {
+          if (isFilterDrag(event)) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+          }
+        }}
+        onDragLeave={(event) => {
+          if (isFilterDrag(event)) {
+            setDragDepth((depth) => Math.max(0, depth - 1));
+          }
+        }}
+        onDrop={(event) => {
+          if (!isFilterDrag(event)) {
+            return;
+          }
 
-              if (event.key === ',') {
-                event.preventDefault();
-                setError('Names cannot include commas.');
-              }
+          event.preventDefault();
+          setDragDepth(0);
 
-              if (event.key === 'Escape') {
-                if (draft) {
-                  setDraft('');
-                  setError(null);
-                } else {
-                  event.currentTarget.blur();
-                }
-              }
+          const payload = readFilterDrag(event);
 
-              if (event.key === 'Backspace' && !event.currentTarget.value && people.length > 0) {
-                removePerson(people[people.length - 1]);
-              }
-            }}
-            placeholder="Search people…"
-            autoComplete="off"
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? 'people-filter-error' : undefined}
-            className="h-9"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon"
-            className="h-9 w-9 shrink-0"
-            disabled={!canCommitDraft}
-            onClick={commitDraft}
-            aria-label="Add person filter"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-        {error && (
-          <p id="people-filter-error" className="text-xs text-destructive" role="alert">
-            {error}
-          </p>
+          if (payload) {
+            add(payload.kind, payload.name);
+          }
+        }}
+        className={cn(
+          'flex min-h-24 select-none rounded-lg border-8 p-2 transition-colors',
+          isDropTarget && 'border-primary/40 bg-accent/40',
+        )}
+      >
+        {hasSelections ? (
+          <div className="flex flex-wrap content-start gap-1.5">
+            {(Object.keys(DROP_FILTER_KINDS) as FilterDragKind[]).flatMap((kind) => {
+              const KindIcon = DROP_FILTER_KINDS[kind].icon;
+
+              return selections[kind].map((name) => (
+                <Badge key={`${kind}:${name}`} variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
+                  <KindIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="max-w-[180px] truncate">{name}</span>
+                  <button
+                    type="button"
+                    onClick={() => remove(kind, name)}
+                    aria-label={`Remove ${name}`}
+                    className="-mr-1 rounded p-0.5 hover:bg-background/60"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ));
+            })}
+          </div>
+        ) : (
+          // pointer-events-none keeps the icon swap from firing its own
+          // dragenter/dragleave and corrupting the depth counter mid-drag.
+          <div className="pointer-events-none flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+            <DropIcon className="h-6 w-6" strokeWidth={1.5} />
+            <div className="text-sm">{dropText}</div>
+          </div>
         )}
       </div>
-
-      {people.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {people.map((person) => (
-            <Badge key={person} variant="secondary" className="max-w-full gap-1.5 pl-2">
-              <span className="max-w-[180px] truncate">{person}</span>
-              <button
-                type="button"
-                onClick={() => removePerson(person)}
-                aria-label={`Remove ${person}`}
-                className="-mr-1 rounded p-0.5 hover:bg-background/60"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
+      {error && (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
       )}
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{query ? 'Matching people' : 'Suggested people'}</span>
-          {loading && <span>Loading…</span>}
-        </div>
-        <div className="max-h-56 overflow-y-auto rounded-md border bg-background p-1">
-          {showCustomAdd && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-accent"
-              onClick={() => addPerson(draft)}
-            >
-              <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">Add “{normalizeFilterValue(draft)}”</span>
-            </button>
-          )}
-          {suggestions.length > 0 ? (
-            suggestions.map((person) => (
-              <button
-                key={person.id}
-                type="button"
-                className="flex w-full items-start gap-2 rounded px-2 py-2 text-left hover:bg-accent"
-                onClick={() => addPerson(person.name)}
-              >
-                <Users className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{person.name}</span>
-                  {person.description && (
-                    <span className="block truncate text-xs text-muted-foreground">{person.description}</span>
-                  )}
-                </span>
-                {exactMatch?.id === person.id && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
-              </button>
-            ))
-          ) : (
-            <div className="px-2 py-3 text-sm text-muted-foreground">
-              {loading
-                ? 'Finding people…'
-                : peopleError
-                  ? 'Suggestions unavailable. Type a full name to add a custom filter.'
-                  : 'No matching people. Type a full name to add a custom filter.'}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function getPlaceAddress(properties: Record<string, unknown> | null | undefined): string | null {
-  const address = properties?.address;
-
-  return typeof address === 'string' ? normalizeFilterValue(address) : null;
-}
-
-function PlaceFilterPicker() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const places = useMemo(
-    () => searchParams.get('places')?.split(',').map(normalizeFilterValue).filter(Boolean) ?? [],
-    [searchParams],
-  );
-  const selectedKeys = useMemo(() => new Set(places.map(filterValueKey)), [places]);
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const {
-    data,
-    loading,
-    error: placesError,
-  } = useQuery<ExplorerPlacesQuery>(EXPLORER_PLACES, {
-    fetchPolicy: 'cache-and-network',
-  });
-
-  const knownPlaces = useMemo<PlaceOption[]>(() => {
-    const seen = new Set<string>();
-
-    return (data?.places?.edges ?? [])
-      .map(({ node }) => ({
-        id: node.id,
-        name: normalizeFilterValue(node.name ?? ''),
-        description: node.description,
-        type: node.type,
-        address: getPlaceAddress(node.properties),
-      }))
-      .filter((place) => {
-        const key = filterValueKey(place.name);
-
-        if (!key || seen.has(key)) {
-          return false;
-        }
-
-        seen.add(key);
-
-        return true;
-      });
-  }, [data]);
-
-  const query = filterValueKey(draft);
-  const exactMatch = useMemo(
-    () => knownPlaces.find((place) => filterValueKey(place.name) === query),
-    [knownPlaces, query],
-  );
-  const suggestions = useMemo(() => {
-    const matches = knownPlaces.filter((place) => {
-      const nameKey = filterValueKey(place.name);
-      const description = place.description?.toLocaleLowerCase() ?? '';
-      const address = place.address?.toLocaleLowerCase() ?? '';
-      const type = place.type?.toLocaleLowerCase() ?? '';
-
-      return (
-        !selectedKeys.has(nameKey) &&
-        (!query ||
-          nameKey.includes(query) ||
-          description.includes(query) ||
-          address.includes(query) ||
-          type.includes(query))
-      );
-    });
-
-    return matches
-      .sort((a, b) => {
-        const aStarts = filterValueKey(a.name).startsWith(query);
-        const bStarts = filterValueKey(b.name).startsWith(query);
-
-        if (aStarts !== bStarts) {
-          return aStarts ? -1 : 1;
-        }
-
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, MAX_PLACE_SUGGESTIONS);
-  }, [knownPlaces, query, selectedKeys]);
-
-  const writePlaces = (next: string[]) => {
-    setSearchParams((params) => {
-      writeCsvFilterParam(params, 'places', next);
-
-      return params;
-    });
-  };
-
-  const removePlace = (name: string) => {
-    const key = filterValueKey(name);
-
-    writePlaces(places.filter((place) => filterValueKey(place) !== key));
-    setError(null);
-  };
-
-  const addPlace = (rawName: string) => {
-    const validation = validatePlaceFilterValue(rawName);
-
-    if (validation) {
-      setError(validation);
-
-      return;
-    }
-
-    const normalized = normalizeFilterValue(rawName);
-    const canonical =
-      knownPlaces.find((place) => filterValueKey(place.name) === filterValueKey(normalized))?.name ??
-      normalized;
-    const key = filterValueKey(canonical);
-
-    if (selectedKeys.has(key)) {
-      setError(`${canonical} is already selected.`);
-      setDraft('');
-
-      return;
-    }
-
-    if (!knownPlaces.some((place) => filterValueKey(place.name) === key)) {
-      setError('Choose a saved place from the list.');
-
-      return;
-    }
-
-    writePlaces([...places, canonical]);
-    setDraft('');
-    setError(null);
-  };
-
-  const commitDraft = () => {
-    const validation = validatePlaceFilterValue(draft);
-
-    if (validation) {
-      setError(validation);
-
-      return;
-    }
-
-    if (exactMatch) {
-      addPlace(exactMatch.name);
-
-      return;
-    }
-
-    if (suggestions.length === 1) {
-      addPlace(suggestions[0].name);
-
-      return;
-    }
-
-    if (suggestions.length > 1) {
-      setError('Choose a matching place, or keep typing to narrow it.');
-
-      return;
-    }
-
-    setError('Choose a saved place from the list.');
-  };
-
-  const canCommitDraft =
-    draft.trim().length > 0 &&
-    validatePlaceFilterValue(draft) === null &&
-    Boolean(exactMatch || suggestions.length === 1);
-
-  return (
-    <div className="space-y-3">
-      <ToggleChip param="hasLocation" label="Has a location" icon={<MapPin className="h-4 w-4" />} />
-
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-medium text-muted-foreground">Places</span>
-          {places.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-muted-foreground"
-              onClick={() => writePlaces([])}
-            >
-              Clear
-            </Button>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                commitDraft();
-              }
-
-              if (event.key === ',') {
-                event.preventDefault();
-                setError('Place filters cannot include commas.');
-              }
-
-              if (event.key === 'Escape') {
-                if (draft) {
-                  setDraft('');
-                  setError(null);
-                } else {
-                  event.currentTarget.blur();
-                }
-              }
-
-              if (event.key === 'Backspace' && !event.currentTarget.value && places.length > 0) {
-                removePlace(places[places.length - 1]);
-              }
-            }}
-            placeholder="Search saved places..."
-            autoComplete="off"
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? 'place-filter-error' : undefined}
-            className="h-9"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon"
-            className="h-9 w-9 shrink-0"
-            disabled={!canCommitDraft}
-            onClick={commitDraft}
-            aria-label="Add place filter"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-        {error && (
-          <p id="place-filter-error" className="text-xs text-destructive" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-
-      {places.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {places.map((place) => (
-            <Badge key={place} variant="secondary" className="max-w-full gap-1.5 pl-2">
-              <span className="max-w-[180px] truncate">{place}</span>
-              <button
-                type="button"
-                onClick={() => removePlace(place)}
-                aria-label={`Remove ${place}`}
-                className="-mr-1 rounded p-0.5 hover:bg-background/60"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{query ? 'Matching places' : 'Saved places'}</span>
-          {loading && <span>Loading...</span>}
-        </div>
-        <div className="max-h-60 overflow-y-auto rounded-md border bg-background p-1">
-          {suggestions.length > 0 ? (
-            suggestions.map((place) => {
-              const secondary = [place.address, place.description, place.type].filter(Boolean).join(' - ');
-
-              return (
-                <button
-                  key={place.id}
-                  type="button"
-                  className="flex w-full items-start gap-2 rounded px-2 py-2 text-left hover:bg-accent"
-                  onClick={() => addPlace(place.name)}
-                >
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{place.name}</span>
-                    {secondary && (
-                      <span className="block truncate text-xs text-muted-foreground">{secondary}</span>
-                    )}
-                  </span>
-                  {exactMatch?.id === place.id && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
-                </button>
-              );
-            })
-          ) : (
-            <div className="px-2 py-3 text-sm text-muted-foreground">
-              {loading
-                ? 'Finding places...'
-                : placesError
-                  ? 'Saved places unavailable. Try again after the source data loads.'
-                  : 'No saved places match. Use a place already in your memory.'}
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -1169,63 +659,12 @@ function SortControl() {
   );
 }
 
-/** "Who" — the people dimension, as a plain "Who: …" dropdown over `people`. */
-function WhoFilter() {
-  const [searchParams] = useSearchParams();
-  const people = searchParams.get('people')?.split(',').filter(Boolean) ?? [];
-  const value = people.length === 0 ? 'all' : people.length === 1 ? people[0] : `${people.length} selected`;
-
-  return (
-    <Popover>
-      <Popover.Trigger asChild>
-        <Button variant="outline">
-          <Users className="mr-2 h-4 w-4 text-muted-foreground" />
-          Who: {value}
-          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
-        </Button>
-      </Popover.Trigger>
-      <Popover.Content align="start" className="w-96 p-3">
-        <PeopleFilterPicker />
-      </Popover.Content>
-    </Popover>
-  );
-}
-
-/** "Where" — the location dimension (located-only + place names) as a "Where: …" dropdown. */
-function WhereFilter() {
-  const [searchParams] = useSearchParams();
-  const located = searchParams.get('hasLocation') === '1';
-  const places = searchParams.get('places')?.split(',').filter(Boolean) ?? [];
-  const value =
-    places.length > 0
-      ? places.length === 1
-        ? places[0]
-        : `${places.length} places`
-      : located
-        ? 'located'
-        : 'all';
-
-  return (
-    <Popover>
-      <Popover.Trigger asChild>
-        <Button variant="outline">
-          <MapPin className="mr-2 h-4 w-4 text-muted-foreground" />
-          Where: {value}
-          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
-        </Button>
-      </Popover.Trigger>
-      <Popover.Content align="start" className="w-96 p-3">
-        <PlaceFilterPicker />
-      </Popover.Content>
-    </Popover>
-  );
-}
-
 /**
- * The advanced search controls in plain Who / What / When / Where / How order,
- * followed by semantic, sort, and right-aligned tags, with the save action on
- * its own bottom-right line. `modal` is forwarded to the portaled Radix
- * dropdowns so they behave inside a modal Sheet/Dialog.
+ * The advanced search controls: the What / When / How dropdowns and the
+ * located-only toggle followed by semantic, sort, and right-aligned tags, then
+ * the drag-and-drop filter area (people & places), with the save action on its
+ * own bottom-right line. `modal` is forwarded to the portaled Radix dropdowns
+ * so they behave inside a modal Sheet/Dialog.
  */
 export function AdvancedFilters({ modal }: { modal: boolean }) {
   const [{ tags }, { setTags }] = useDropdown();
@@ -1234,12 +673,14 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
   const tagSuggestions = useMemo(() => tagData?.tags.edges.map((edge) => edge.node.label) ?? [], [tagData]);
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2">
+    <div className="flex w-full min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <WhoFilter />
         <EntityTypeFilter modal={modal} label="What" />
         <DateControl />
-        <WhereFilter />
+        {/* Place-name filtering moved to the drag-and-drop filter area; the
+            located-only flag keeps its own toggle since no search result
+            represents "anything with coordinates". */}
+        <ToggleChip param="hasLocation" label="Has a location" icon={<MapPin className="h-4 w-4" />} />
         <ConnectorFilter modal={modal} label="How" />
 
         <span className="mx-1 h-6 w-px self-center bg-border" />
@@ -1266,6 +707,8 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
           />
         </div>
       </div>
+
+      <FilterDropArea />
 
       <div className="flex justify-end">
         <SaveSearchButton />
@@ -1508,9 +951,9 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* The advanced-search drawer: plain Who / What / When / Where / How, then
-          semantic, sort, and right-aligned tags, with save on its own bottom-right
-          line. Opened from the header toggle. */}
+      {/* The advanced-search drawer: What / When / How + located-only, semantic,
+          sort, and right-aligned tags, then the drag-and-drop filter area, with
+          save on its own bottom-right line. Opened from the header toggle. */}
       {open && (
         <div className="rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
           <AdvancedFilters modal={false} />
@@ -1528,10 +971,12 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
 
 /**
  * The explorer toolbar body that sits under the unified header bar: the
- * advanced-search drawer (Who / What / When / Where / How + tags, semantic, sort,
- * save) plus the active-filter chips. `open` is controlled by the page — the
- * AdvancedSearchToggle that flips it lives in the header. Wrapped in
- * DropdownProvider so the useDropdown URL-param setters work.
+ * advanced-search drawer (What / When / How + located-only, tags, semantic,
+ * sort, then the drag-and-drop filter area and save) plus the active-filter
+ * chips.
+ * `open` is controlled by the page — the AdvancedSearchToggle that flips it
+ * lives in the header. Wrapped in DropdownProvider so the useDropdown
+ * URL-param setters work.
  */
 export function ExplorerToolbar({ open }: { open: boolean }) {
   return (
