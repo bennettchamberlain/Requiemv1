@@ -14,7 +14,6 @@ import { gql } from '@/graphql';
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components/EntityDetails';
-import { ActiveFilterChips, countActiveFilters } from './Components/ExplorerToolbar/ActiveFilterChips';
 import { AdvancedFilters, AdvancedSearchToggle } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
@@ -255,7 +254,6 @@ export default function DesktopMemoryPage() {
     }
   }, []);
 
-  const activeFilterCount = countActiveFilters(searchParams);
   const activeView = VIEW_TABS.find((tab) => tab.value === activeTab) ?? VIEW_TABS[1];
 
   return (
@@ -319,20 +317,16 @@ export default function DesktopMemoryPage() {
         />
       </Portal.Slot>
 
-      {/* The advanced filters and active-filter chips render as a pinned section
-          at the top of the header SearchBox's dropdown panel (its panelHeader
-          slot), above any live search suggestions — so typing never covers them.
-          Chips also surface (without the full controls) whenever the panel opens
-          with filters active; when it's closed, the toggle's count badge stands in.
-          While the drawer is open its drop area already shows the type / who /
-          where / tag / date / located / semantic / map-area selections, so the
-          chips row omits those to avoid doubling up. */}
+      {/* The advanced filters render as a pinned section at the top of the
+          header SearchBox's dropdown panel (its panelHeader slot), above any
+          live search suggestions — so typing never covers them. Every applied
+          filter chips inside the drawer's drop area; while the drawer is
+          closed, the search box's "N filters" text stands in. */}
       <Portal.Slot id="nav-search-panel">
-        {(advancedOpen || activeFilterCount > 0) && (
+        {advancedOpen && (
           <DropdownProvider args={[{ changeSearchParams: true }]}>
-            <div className="flex flex-col gap-2 p-3">
-              {advancedOpen && <AdvancedFilters modal={false} />}
-              {activeFilterCount > 0 && <ActiveFilterChips omitDropAreaFilters={advancedOpen} />}
+            <div className="p-3">
+              <AdvancedFilters modal={false} />
             </div>
           </DropdownProvider>
         )}

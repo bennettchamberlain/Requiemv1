@@ -13,7 +13,7 @@ import {
   groupEntitiesByBucket,
   isChronologicalSort,
 } from '../Components';
-import { countActiveFilters } from '../Components/ExplorerToolbar/ActiveFilterChips';
+import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 
 // Only these entity types render as timeline cards (EntityCard returns null for
 // the rest), and all of them carry a domain timestamp — so filtering here keeps

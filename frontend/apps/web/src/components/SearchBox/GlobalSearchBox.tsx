@@ -10,7 +10,7 @@ import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
 import {
   FILTER_PARAMS,
   countActiveFilters,
-} from '@/pages/MemoryPage/Components/ExplorerToolbar/ActiveFilterChips';
+} from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
 
 import { CommunicationResult } from './results/CommunicationResult';
 import { ConceptResult } from './results/ConceptResult';
@@ -316,7 +316,7 @@ export function GlobalSearchBox() {
   );
 
   // The X is a full reset: the query, every explorer filter (the same set as
-  // the chips row's "Clear all"), the pinned-filters state, and the expansion.
+  // the drop area's "Clear all"), the pinned-filters state, and the expansion.
   const handleClear = useCallback(() => {
     setQuery(null);
 

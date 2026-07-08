@@ -16,10 +16,12 @@ import {
   useToast,
 } from '@ci/shadcn';
 import {
+  Activity,
   ArrowUpDown,
   Calendar as CalendarIcon,
   ChevronDown,
   Clock,
+  Database,
   Filter,
   Map as MapIcon,
   MapPin,
@@ -46,7 +48,7 @@ import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/Sav
 import { ShareSavedSearchModal } from '../../../SavedSearchesPage/ShareSavedSearchModal';
 import { buildSavedSearchFilters } from '../../savedSearchFilters';
 
-import { ActiveFilterChips, countActiveFilters, narrowedEntityTypes } from './ActiveFilterChips';
+import { FILTER_PARAMS, narrowedEntityTypes } from './filterParams';
 
 // Single-select sort presets that map to the backend's sortBy + sortOrder pair.
 const SORT_OPTIONS = [
@@ -261,6 +263,38 @@ function writeCsvFilterParam(params: URLSearchParams, key: string, next: string[
   }
 }
 
+function readCsvParam(params: URLSearchParams, key: string): string[] {
+  return params.get(key)?.split(',').map(normalizeFilterValue).filter(Boolean) ?? [];
+}
+
+/** One removable filter chip inside the drop area. */
+function FilterChip({
+  icon: Icon,
+  label,
+  removeLabel,
+  onRemove,
+}: {
+  icon: typeof Users;
+  label: string;
+  removeLabel: string;
+  onRemove: () => void;
+}) {
+  return (
+    <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
+      <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <span className="max-w-[220px] truncate">{label}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={removeLabel}
+        className="-mr-1 rounded p-0.5 hover:bg-background/60"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </Badge>
+  );
+}
+
 // One filter dimension the drop area can receive: which URL param it writes,
 // its chip icon, and the validator for a dropped name.
 const DROP_FILTER_KINDS: Record<
@@ -277,27 +311,33 @@ const DROP_FILTER_KINDS: Record<
  * search box's live results are draggable (see SearchBox/results/*Result);
  * dropping one here adds it to the matching filter (`people` / `places` /
  * `tags` URL param, unchanged). Selections render as removable chips inside
- * the area, joined by the What picker's type selection, the When picker's
- * date range, the Has a location / Semantic toggles, and the map's "Search
- * events in this area" viewport so every applied drawer filter reads from
- * one place.
+ * the area, joined by the What picker's type selection, the How picker's
+ * source and activity selections, the When picker's date range, the Has a
+ * location / Semantic toggles, and the map's "Search events in this area"
+ * viewport so every applied filter reads from one place. `Clear all` in the
+ * top-right corner resets the query and the full filter set — the same reset
+ * as the header search box's X.
  */
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const selections = useMemo(() => {
-    const read = (param: string) =>
-      searchParams.get(param)?.split(',').map(normalizeFilterValue).filter(Boolean) ?? [];
-
-    return { person: read('people'), place: read('places'), tag: read('tags') };
-  }, [searchParams]);
-  // The type selection, date range, located-only flag, semantic flag, and map
-  // viewport also render here as chips — the drop area is the single home for
-  // the drawer's applied filters — even though they're set via the What / When
-  // / Has a location / Semantic controls or the map's "Search events in this
-  // area" button rather than dragged in. Removing a chip clears its URL
-  // params, which unselects the matching control since both read the same
-  // params.
+  const selections = useMemo(
+    () => ({
+      person: readCsvParam(searchParams, 'people'),
+      place: readCsvParam(searchParams, 'places'),
+      tag: readCsvParam(searchParams, 'tags'),
+    }),
+    [searchParams],
+  );
+  // The type / source / activity selections, date range, located-only flag,
+  // semantic flag, and map viewport also render here as chips — the drop area
+  // is the single home for the applied filters — even though they're set via
+  // the What / How / When / Has a location / Semantic controls or the map's
+  // "Search events in this area" button rather than dragged in. Removing a
+  // chip clears its URL params, which unselects the matching control since
+  // both read the same params.
   const selectedTypes = narrowedEntityTypes(searchParams);
+  const sources = readCsvParam(searchParams, 'connectors');
+  const activities = readCsvParam(searchParams, 'eventTypes');
   const dateFrom = searchParams.get('from') ?? '';
   const dateTo = searchParams.get('to') ?? '';
   const hasDateRange = Boolean(dateFrom || dateTo);
@@ -306,6 +346,8 @@ function FilterDropArea() {
   const hasMapArea = Boolean(searchParams.get('bbox'));
   const hasSelections =
     selectedTypes !== null ||
+    sources.length > 0 ||
+    activities.length > 0 ||
     hasDateRange ||
     hasLocation ||
     semantic ||
@@ -316,6 +358,19 @@ function FilterDropArea() {
   // off while an entity is dragged across the chips inside the drop area.
   const [dragDepth, setDragDepth] = useState(0);
   const isDropTarget = dragDepth > 0;
+
+  const clearAll = () => {
+    setSearchParams((params) => {
+      params.delete('search');
+
+      for (const param of FILTER_PARAMS) {
+        params.delete(param);
+      }
+
+      return params;
+    });
+    setError(null);
+  };
 
   const write = (kind: FilterDragKind, next: string[]) => {
     setSearchParams((params) => {
@@ -333,6 +388,22 @@ function FilterDropArea() {
       selections[kind].filter((value) => filterValueKey(value) !== key),
     );
     setError(null);
+  };
+
+  // Removal for the How picker's CSV params (`connectors` / `eventTypes`),
+  // which aren't drag-in kinds but chip here all the same.
+  const removeCsvValue = (param: string, name: string) => {
+    const key = filterValueKey(name);
+
+    setSearchParams((params) => {
+      writeCsvFilterParam(
+        params,
+        param,
+        readCsvParam(params, param).filter((value) => filterValueKey(value) !== key),
+      );
+
+      return params;
+    });
   };
 
   const add = (kind: FilterDragKind, rawName: string) => {
@@ -399,135 +470,130 @@ function FilterDropArea() {
           }
         }}
         className={cn(
-          'flex min-h-24 select-none rounded-lg border-8 p-2 transition-colors',
+          'relative flex min-h-24 select-none rounded-lg border-8 p-2 transition-colors',
           isDropTarget && 'border-primary/40 bg-accent/40',
         )}
       >
+        {hasSelections && (
+          <Button
+            // Explicit: the drop area can render inside the header SearchBox's
+            // <form>, where a default (submit) button would commit the search
+            // right after clearing.
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="absolute right-1 top-1 h-6 px-2 text-xs text-muted-foreground"
+            onClick={clearAll}
+          >
+            Clear all
+          </Button>
+        )}
         {hasSelections ? (
-          <div className="flex flex-wrap content-start gap-1.5">
+          <div className="flex flex-wrap content-start gap-1.5 pr-16">
             {selectedTypes !== null && (
-              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
-                <Shapes className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span className="max-w-[220px] truncate">
-                  {selectedTypes.length === 1
+              <FilterChip
+                icon={Shapes}
+                label={
+                  selectedTypes.length === 1
                     ? selectedTypes[0]
-                    : `${selectedTypes.length} of ${AVAILABLE_ENTITY_TYPES.length} types`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearchParams((params) => {
-                      params.delete('includedEntityTypes');
-                      params.delete('excludedEntityTypes');
+                    : `${selectedTypes.length} of ${AVAILABLE_ENTITY_TYPES.length} types`
+                }
+                removeLabel="Remove entity types"
+                onRemove={() =>
+                  setSearchParams((params) => {
+                    params.delete('includedEntityTypes');
+                    params.delete('excludedEntityTypes');
 
-                      return params;
-                    })
-                  }
-                  aria-label="Remove entity types"
-                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
+                    return params;
+                  })
+                }
+              />
             )}
-            {(Object.keys(DROP_FILTER_KINDS) as FilterDragKind[]).flatMap((kind) => {
-              const KindIcon = DROP_FILTER_KINDS[kind].icon;
-
-              return selections[kind].map((name) => (
-                <Badge key={`${kind}:${name}`} variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
-                  <KindIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="max-w-[180px] truncate">{kind === 'tag' ? `#${name}` : name}</span>
-                  <button
-                    type="button"
-                    onClick={() => remove(kind, name)}
-                    aria-label={`Remove ${name}`}
-                    className="-mr-1 rounded p-0.5 hover:bg-background/60"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ));
-            })}
+            {(Object.keys(DROP_FILTER_KINDS) as FilterDragKind[]).flatMap((kind) =>
+              selections[kind].map((name) => (
+                <FilterChip
+                  key={`${kind}:${name}`}
+                  icon={DROP_FILTER_KINDS[kind].icon}
+                  label={kind === 'tag' ? `#${name}` : name}
+                  removeLabel={`Remove ${name}`}
+                  onRemove={() => remove(kind, name)}
+                />
+              )),
+            )}
+            {sources.map((name) => (
+              <FilterChip
+                key={`source:${name}`}
+                icon={Database}
+                label={name}
+                removeLabel={`Remove source ${name}`}
+                onRemove={() => removeCsvValue('connectors', name)}
+              />
+            ))}
+            {activities.map((name) => (
+              <FilterChip
+                key={`activity:${name}`}
+                icon={Activity}
+                label={name}
+                removeLabel={`Remove activity ${name}`}
+                onRemove={() => removeCsvValue('eventTypes', name)}
+              />
+            ))}
             {hasDateRange && (
-              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
-                <CalendarIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span className="max-w-[220px] truncate">{formatDateLabel(dateFrom, dateTo)}</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearchParams((params) => {
-                      params.delete('from');
-                      params.delete('to');
+              <FilterChip
+                icon={CalendarIcon}
+                label={formatDateLabel(dateFrom, dateTo)}
+                removeLabel="Remove date range"
+                onRemove={() =>
+                  setSearchParams((params) => {
+                    params.delete('from');
+                    params.delete('to');
 
-                      return params;
-                    })
-                  }
-                  aria-label="Remove date range"
-                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
+                    return params;
+                  })
+                }
+              />
             )}
             {hasLocation && (
-              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
-                <MapPin className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span>Has a location</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearchParams((params) => {
-                      params.delete('hasLocation');
+              <FilterChip
+                icon={MapPin}
+                label="Has a location"
+                removeLabel="Remove has a location"
+                onRemove={() =>
+                  setSearchParams((params) => {
+                    params.delete('hasLocation');
 
-                      return params;
-                    })
-                  }
-                  aria-label="Remove has a location"
-                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
+                    return params;
+                  })
+                }
+              />
             )}
             {semantic && (
-              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
-                <Sparkles className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span>Semantic</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearchParams((params) => {
-                      params.delete('semantic');
+              <FilterChip
+                icon={Sparkles}
+                label="Semantic"
+                removeLabel="Remove semantic"
+                onRemove={() =>
+                  setSearchParams((params) => {
+                    params.delete('semantic');
 
-                      return params;
-                    })
-                  }
-                  aria-label="Remove semantic"
-                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
+                    return params;
+                  })
+                }
+              />
             )}
             {hasMapArea && (
-              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
-                <MapIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span>Map area</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearchParams((params) => {
-                      params.delete('bbox');
+              <FilterChip
+                icon={MapIcon}
+                label="Map area"
+                removeLabel="Remove map area"
+                onRemove={() =>
+                  setSearchParams((params) => {
+                    params.delete('bbox');
 
-                      return params;
-                    })
-                  }
-                  aria-label="Remove map area"
-                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
+                    return params;
+                  })
+                }
+              />
             )}
           </div>
         ) : (
@@ -811,15 +877,18 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
 
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <EntityTypeFilter modal={modal} label="What" />
+
         <DateControl />
+
         {/* Place-name filtering moved to the drag-and-drop filter area; the
             located-only flag keeps its own toggle since no search result
             represents "anything with coordinates". */}
-        <ToggleChip param="hasLocation" label="Has a location" icon={<MapPin className="h-4 w-4" />} />
+
         <ConnectorFilter modal={modal} label="How" />
 
         <span className="mx-1 h-6 w-px self-center bg-border" />
 
+        <ToggleChip param="hasLocation" label="Has a location" icon={<MapPin className="h-4 w-4" />} />
         <ToggleChip param="semantic" label="Semantic" icon={<Sparkles className="h-4 w-4" />} />
 
         <span className="mx-1 h-6 w-px self-center bg-border" />
@@ -1063,45 +1132,25 @@ export function MemorySearchField() {
   );
 }
 
-function ExplorerToolbarInner({ open }: { open: boolean }) {
-  const [searchParams] = useSearchParams();
-
-  return (
-    <div className="flex flex-col gap-2">
-      {/* The advanced-search drawer: the drag-and-drop filter area (people,
-          places & tags), then What / When / How + located-only, semantic, and
-          sort with save right-aligned on the same row. Opened from the header
-          toggle. */}
-      {open && (
-        <div className="rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
-          <AdvancedFilters modal={false} />
-        </div>
-      )}
-
-      {countActiveFilters(searchParams) > 0 && (
-        <div className="min-w-0">
-          {/* While the drawer is open its drop area already shows the type /
-              who / where / tag / date / located selections; omit them here to
-              avoid doubling up. */}
-          <ActiveFilterChips omitDropAreaFilters={open} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
- * The explorer toolbar body that sits under the unified header bar: the
- * advanced-search drawer (the drag-and-drop filter area, then What / When /
- * How + located-only, semantic, sort, and save) plus the active-filter chips.
- * `open` is controlled by the page — the AdvancedSearchToggle that flips it
- * lives in the header. Wrapped in DropdownProvider so the useDropdown
- * URL-param setters work.
+ * The explorer toolbar body that sits under the unified header bar (mobile):
+ * the advanced-search drawer — the drag-and-drop filter area, then What /
+ * When / How + located-only, semantic, sort, and save. `open` is controlled
+ * by the page — the AdvancedSearchToggle that flips it lives beside the
+ * search field, and the caller surfaces the active-filter count while the
+ * drawer is closed. Wrapped in DropdownProvider so the useDropdown URL-param
+ * setters work.
  */
 export function ExplorerToolbar({ open }: { open: boolean }) {
+  if (!open) {
+    return null;
+  }
+
   return (
     <DropdownProvider args={[{ changeSearchParams: true }]}>
-      <ExplorerToolbarInner open={open} />
+      <div className="rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
+        <AdvancedFilters modal={false} />
+      </div>
     </DropdownProvider>
   );
 }
