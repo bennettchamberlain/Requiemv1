@@ -109,8 +109,16 @@ export class ConnectController {
 
     if (!session) {
       // Sign in, then return to this exact URL (same-origin path passes the OIDC
-      // controller's safeRelativePath guard) with the session cookie set.
-      const selfPath = `/api/connect?${new URLSearchParams({ app, state, return: returnUrl }).toString()}`;
+      // controller's safeRelativePath guard) with the session cookie set. Carry
+      // app_name through the bounce so the consent page can show the friendly
+      // name rather than falling back to the raw URN.
+      const selfParams = new URLSearchParams({ app, state, return: returnUrl });
+
+      if (appName) {
+        selfParams.set('app_name', appName);
+      }
+
+      const selfPath = `/api/connect?${selfParams.toString()}`;
 
       res.redirect(`/api/authenticate/oidc?redirect=${encodeURIComponent(selfPath)}`);
 

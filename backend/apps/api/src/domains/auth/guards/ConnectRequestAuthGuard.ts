@@ -47,8 +47,11 @@ export class ConnectRequestAuthGuard implements CanActivate {
     const result = verifyConnectRequest(
       cfg.secret,
       {
-        // originalUrl includes the full path (with the global /api prefix) the
-        // client signed; strip any query string, which is not part of the message.
+        // The path the client MUST sign is the one this API actually receives:
+        // the nginx gateway strips `/api` (`rewrite ^/api/(.*)$ /$1`) and there is
+        // no global route prefix, so this is server-relative (e.g.
+        // `/connect/exchange`, not `/api/connect/exchange`). Strip any query
+        // string, which is not part of the signed message.
         method: req.method,
         path: (req.originalUrl || req.url).split('?')[0],
         timestamp: header(CONNECT_TIMESTAMP_HEADER),
