@@ -66,45 +66,6 @@ describe('SearchBox', () => {
     expect(onResultSelect).toHaveBeenCalledWith(RESULTS[0]);
   });
 
-  it('ArrowDown with no results asks to pin the panel', () => {
-    const onPanelPin = vi.fn();
-    renderWithProviders(<SearchBox displayResults results={[]} onPanelPin={onPanelPin} />);
-
-    const input = screen.getByRole('textbox');
-    fireEvent.focus(input);
-    fireEvent.keyDown(input, { key: 'ArrowDown' });
-
-    expect(onPanelPin).toHaveBeenCalledTimes(1);
-  });
-
-  it('ArrowDown with results pages through them instead of pinning', () => {
-    const onPanelPin = vi.fn();
-    const onResultSelect = vi.fn();
-    renderWithProviders(
-      <SearchBox displayResults results={RESULTS} onPanelPin={onPanelPin} onResultSelect={onResultSelect} />,
-    );
-
-    const input = screen.getByRole('textbox');
-    fireEvent.focus(input);
-    fireEvent.change(input, { target: { value: 'r' } });
-
-    fireEvent.keyDown(input, { key: 'ArrowDown' });
-    fireEvent.keyDown(input, { key: 'ArrowDown' });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(onPanelPin).not.toHaveBeenCalled();
-    expect(onResultSelect).toHaveBeenCalledWith(RESULTS[1]);
-  });
-
-  it('ArrowDown while the panel is pinned does not re-request the pin', () => {
-    const onPanelPin = vi.fn();
-    renderWithProviders(<SearchBox displayResults results={[]} panelPinned onPanelPin={onPanelPin} />);
-
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowDown' });
-
-    expect(onPanelPin).not.toHaveBeenCalled();
-  });
-
   it('Escape unpins a pinned panel before anything else', () => {
     const onPanelUnpin = vi.fn();
     const onClear = vi.fn();

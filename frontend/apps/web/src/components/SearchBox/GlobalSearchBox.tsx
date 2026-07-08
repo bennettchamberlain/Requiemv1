@@ -11,7 +11,6 @@ import {
   FILTER_PARAMS,
   addEntityFilter,
   countActiveFilters,
-  removeEntityFilter,
 } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
 
 import type { FilterDragPayload } from './filterDrag';
@@ -289,8 +288,8 @@ export function GlobalSearchBox() {
             return { id: item.id, content: <NoteResult note={item} /> };
 
           // Person/place rows carry their drag payload (`filterName` is the
-          // query-level unmasked name) so the arrow keys can add/remove them
-          // as who/where filters without a drag.
+          // query-level unmasked name) so the right arrow can add them as
+          // who/where filters without a drag.
           case 'PersonType':
             return {
               id: item.id,
@@ -443,26 +442,15 @@ export function GlobalSearchBox() {
   }, [onMemory, setSearchParams]);
 
   // Arrow-key analogue of dragging a person/place/tag row onto the explorer's
-  // filter drop area: right adds the highlighted row's filter, left removes it.
-  // Same validation/dedupe as a drop; failures are silent no-ops here (the drop
+  // filter drop area: right adds the highlighted row's filter. Same
+  // validation/dedupe as a drop; failures are silent no-ops here (the drop
   // area owns the error surface). Only wired on /memory — matching the drag,
-  // whose drop target only exists there — so the arrows keep their native caret
-  // behavior everywhere else.
+  // whose drop target only exists there — so the arrow keeps its native caret
+  // behavior everywhere else. Removal stays on the drop area's chips.
   const handleFilterAdd = useCallback(
     (filter: FilterDragPayload) => {
       setSearchParams((params) => {
         addEntityFilter(params, filter.kind, filter.name);
-
-        return params;
-      });
-    },
-    [setSearchParams],
-  );
-
-  const handleFilterRemove = useCallback(
-    (filter: FilterDragPayload) => {
-      setSearchParams((params) => {
-        removeEntityFilter(params, filter.kind, filter.name);
 
         return params;
       });
@@ -665,14 +653,11 @@ export function GlobalSearchBox() {
             onClear={handleClear}
             onResultSelect={handleResultSelect}
             onFilterAdd={onMemory ? handleFilterAdd : undefined}
-            onFilterRemove={onMemory ? handleFilterRemove : undefined}
             // Escape stack, stage 1: an open advanced drawer closes via
             // SearchBox's unpin stage (which swallows that press here — this
             // handler captured advancedOpen before the unpin). Stage 2: the
             // bar collapses.
             onPanelUnpin={closeAdvanced}
-            // Down arrow with nothing to page through opens the drawer.
-            onPanelPin={openAdvanced}
             onKeyDown={(_value, e) => {
               if (e.key === 'Escape' && !advancedOpen) {
                 collapseBar();

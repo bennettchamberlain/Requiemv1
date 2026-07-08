@@ -121,12 +121,6 @@ interface Props {
    * through the rest of the stack.
    */
   onPanelUnpin?: () => void;
-  /**
-   * Down arrow with no results to page through. The pin's owner can open the
-   * pinned panel here (e.g. Memory's advanced filters); when there are
-   * results, the arrow keeps stepping through them instead.
-   */
-  onPanelPin?: () => void;
   onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   /**
    * Explicit submit (Enter with no result highlighted). Falls back to `onSearch`
@@ -137,12 +131,12 @@ interface Props {
   onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
   /**
-   * Right arrow on a highlighted result carrying a `filter` payload applies it;
-   * left arrow removes it. Rows without a payload — and boxes without these
-   * callbacks — keep the arrows' native caret movement.
+   * Right arrow on a highlighted result carrying a `filter` payload applies it —
+   * but only with the caret already at the end of the input, so mid-text caret
+   * movement stays native. Rows without a payload — and boxes without this
+   * callback — keep the arrow's native behavior everywhere.
    */
   onFilterAdd?: (filter: FilterDragPayload) => void;
-  onFilterRemove?: (filter: FilterDragPayload) => void;
   onSave?: (query: string, entityTypes: string[]) => void;
 }
 
@@ -167,7 +161,6 @@ function SearchBox(
     panelHeader,
     panelPinned = false,
     onPanelUnpin,
-    onPanelPin,
     defaultQuery,
     onSearch,
     onSubmit,
@@ -175,7 +168,6 @@ function SearchBox(
     onClear,
     onResultSelect,
     onFilterAdd,
-    onFilterRemove,
     onSave,
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
@@ -354,12 +346,6 @@ function SearchBox(
             e.stopPropagation();
 
             setSelectedIndex((prev) => (prev === -1 ? 0 : (prev + 1) % results.length));
-          } else if (onPanelPin && !panelPinned) {
-            // Nothing to page through — offer the pinned panel instead.
-            e.preventDefault();
-            e.stopPropagation();
-
-            onPanelPin();
           }
 
           break;
@@ -375,11 +361,16 @@ function SearchBox(
           break;
 
         // The keyboard analogue of dragging a filter-source row onto the drop
-        // area: right adds the highlighted row's filter, left removes it. Only
-        // hijacked when a filter payload is there to act on — otherwise the
-        // arrows keep moving the caret.
-        case Keys.ARROW_RIGHT:
-          if (onFilterAdd && selectedResult?.filter) {
+        // area: right adds the highlighted row's filter. Only hijacked when a
+        // filter payload is there to act on AND the caret already sits at the
+        // end of the input — anywhere earlier (or with a selection) the arrow
+        // keeps moving the caret.
+        case Keys.ARROW_RIGHT: {
+          const input = e.target as HTMLInputElement;
+          const caretAtEnd =
+            input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
+
+          if (onFilterAdd && selectedResult?.filter && caretAtEnd) {
             e.preventDefault();
             e.stopPropagation();
 
@@ -387,16 +378,7 @@ function SearchBox(
           }
 
           break;
-
-        case Keys.ARROW_LEFT:
-          if (onFilterRemove && selectedResult?.filter) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            onFilterRemove(selectedResult.filter);
-          }
-
-          break;
+        }
 
         default:
           if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
@@ -423,11 +405,9 @@ function SearchBox(
       queryValue,
       panelPinned,
       onPanelUnpin,
-      onPanelPin,
       onResultSelect,
       selectedResult,
       onFilterAdd,
-      onFilterRemove,
       handleClear,
       onKeyDown,
     ],
