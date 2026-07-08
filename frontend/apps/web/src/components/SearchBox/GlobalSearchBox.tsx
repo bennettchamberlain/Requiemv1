@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { GlobalUID, Portal } from '@ci/common';
 import { cn } from '@ci/shadcn';
-import { Clock, Search, X } from '@ci/shadcn/icons';
+import { Clock, Search, SlidersHorizontal, X } from '@ci/shadcn/icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useRecentSearches } from '@/hooks';
@@ -34,6 +34,7 @@ const RECENT_PREFIX = 'recent:';
 // the tag as an explorer filter rather than opening a detail route.
 const TAG_PREFIX = 'tagfilter:';
 const SEARCH_ACTION_ID = 'action:search';
+const ADVANCED_ACTION_ID = 'action:advanced';
 
 /**
  * The unified search in the primary navigation header — visible on every page
@@ -200,6 +201,52 @@ export function GlobalSearchBox() {
     [addRecentSearch, clearInput, navigate, onMemory, semantic, setSearchParams],
   );
 
+  // Open the advanced-filter drawer. On /memory that's the `?advanced=1` param
+  // (DesktopMemoryPage owns the toggle button and the drawer content); elsewhere
+  // the drawer doesn't exist, so go to the explorer with it open, carrying the
+  // typed query like a committed search.
+  const openAdvanced = useCallback(() => {
+    if (onMemory) {
+      setSearchParams(
+        (params) => {
+          params.set('advanced', '1');
+
+          return params;
+        },
+        { replace: true },
+      );
+
+      return;
+    }
+
+    const trimmed = (query ?? '').trim();
+    const params = new URLSearchParams();
+    params.set('advanced', '1');
+
+    if (trimmed) {
+      addRecentSearch(trimmed);
+      params.set('search', trimmed);
+    }
+
+    if (semantic) {
+      params.set('semantic', '1');
+    }
+
+    navigate(`/memory?${params.toString()}`);
+    clearInput();
+  }, [addRecentSearch, clearInput, navigate, onMemory, query, semantic, setSearchParams]);
+
+  const closeAdvanced = useCallback(() => {
+    setSearchParams(
+      (params) => {
+        params.delete('advanced');
+
+        return params;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   const suggestions = useMemo<SearchResultItem[]>(
     () =>
       data.map((item) => {
@@ -255,10 +302,22 @@ export function GlobalSearchBox() {
   const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
-    // Typing → a "search Memory" action, then matching tags (draggable filter
-    // rows, few and precise), then live entity suggestions.
+    // Typing → an advanced-search toggle, a "search Memory" action, then
+    // matching tags (draggable filter rows, few and precise), then live
+    // entity suggestions.
     if (trimmed) {
       return [
+        {
+          id: ADVANCED_ACTION_ID,
+          content: (
+            <div className="flex items-center gap-2 text-sm">
+              <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">
+                {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
+              </span>
+            </div>
+          ),
+        },
         {
           id: SEARCH_ACTION_ID,
           content: (
@@ -302,7 +361,7 @@ export function GlobalSearchBox() {
         </div>
       ),
     }));
-  }, [onMemory, query, recentSearches, removeRecentSearch, suggestions, tags]);
+  }, [advancedOpen, onMemory, query, recentSearches, removeRecentSearch, suggestions, tags]);
 
   // Live, debounced. Drives the suggestion query everywhere, and on /memory also
   // writes `?search` so the explorer filters as you type (replace: keep history clean).
@@ -384,6 +443,17 @@ export function GlobalSearchBox() {
 
   const handleResultSelect = useCallback(
     ({ id }: { id: string }) => {
+      // Toggles the drawer in place — the typed query and the dropdown stay.
+      if (id === ADVANCED_ACTION_ID) {
+        if (advancedOpen) {
+          closeAdvanced();
+        } else {
+          openAdvanced();
+        }
+
+        return;
+      }
+
       if (id === SEARCH_ACTION_ID) {
         commitSearch(query ?? '');
 
@@ -454,7 +524,7 @@ export function GlobalSearchBox() {
           break;
       }
     },
-    [addRecentSearch, clearInput, commitSearch, navigate, query],
+    [addRecentSearch, advancedOpen, clearInput, closeAdvanced, commitSearch, navigate, openAdvanced, query],
   );
 
   // Expand + focus. The focus call only lands when already expanded (a hidden
@@ -464,9 +534,10 @@ export function GlobalSearchBox() {
     inputRef.current?.focus();
   });
 
-  // One Escape closes the whole expanded bar — pinned filters included — and
-  // nothing else: the typed text survives hidden, clearing stays on the X.
-  // Focus lands on the collapsed button so Enter/Space reopens.
+  // Escape closes the expanded bar and nothing else: the typed text survives
+  // hidden, clearing stays on the X. Focus lands on the collapsed button so
+  // Enter/Space reopens. (Reached via handleEscape, so the advanced drawer is
+  // already closed; the param delete is belt-and-braces.)
   const collapseBar = useCallback(() => {
     setSearchParams(
       (params) => {
@@ -479,6 +550,19 @@ export function GlobalSearchBox() {
     setExpanded(false);
     buttonRef.current?.focus();
   }, [setSearchParams]);
+
+  // The Escape stack: an open advanced drawer closes first (the bar stays
+  // expanded and the input refocuses via the advancedOpen effect); the next
+  // Escape collapses the bar.
+  const handleEscape = useCallback(() => {
+    if (advancedOpen) {
+      closeAdvanced();
+
+      return;
+    }
+
+    collapseBar();
+  }, [advancedOpen, closeAdvanced, collapseBar]);
 
   return (
     <>
@@ -516,7 +600,7 @@ export function GlobalSearchBox() {
         // filter interaction).
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
-            collapseBar();
+            handleEscape();
           }
         }}
         // Panel closed ⇒ collapsed: when focus leaves the overlay entirely the
@@ -545,8 +629,15 @@ export function GlobalSearchBox() {
             onResultSelect={handleResultSelect}
             onFilterAdd={onMemory ? handleFilterAdd : undefined}
             onFilterRemove={onMemory ? handleFilterRemove : undefined}
+            // Escape stack, stage 1: an open advanced drawer closes via
+            // SearchBox's unpin stage (which swallows that press here — this
+            // handler captured advancedOpen before the unpin). Stage 2: the
+            // bar collapses.
+            onPanelUnpin={closeAdvanced}
+            // Down arrow with nothing to page through opens the drawer.
+            onPanelPin={openAdvanced}
             onKeyDown={(_value, e) => {
-              if (e.key === 'Escape') {
+              if (e.key === 'Escape' && !advancedOpen) {
                 collapseBar();
               }
             }}

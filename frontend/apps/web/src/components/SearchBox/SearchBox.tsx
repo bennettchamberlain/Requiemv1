@@ -115,11 +115,18 @@ interface Props {
    */
   panelPinned?: boolean;
   /**
-   * Escape pressed while the panel is pinned (after the dismiss stage). The
-   * pin's owner decides what closing it means; without this, Escape on a
-   * pinned panel falls through to clearing the query.
+   * Escape pressed while the panel is pinned — the first stage of the Escape
+   * stack, ahead of highlight-clear / dismiss / clear. The pin's owner decides
+   * what closing it means; without this, Escape on a pinned panel falls
+   * through the rest of the stack.
    */
   onPanelUnpin?: () => void;
+  /**
+   * Down arrow with no results to page through. The pin's owner can open the
+   * pinned panel here (e.g. Memory's advanced filters); when there are
+   * results, the arrow keeps stepping through them instead.
+   */
+  onPanelPin?: () => void;
   onSearch?: (data: FormData & { entityDropdowns?: string[] }) => boolean | void | Promise<boolean | void>;
   /**
    * Explicit submit (Enter with no result highlighted). Falls back to `onSearch`
@@ -160,6 +167,7 @@ function SearchBox(
     panelHeader,
     panelPinned = false,
     onPanelUnpin,
+    onPanelPin,
     defaultQuery,
     onSearch,
     onSubmit,
@@ -312,12 +320,15 @@ function SearchBox(
             (openOnFocus ? isFocusedRef.current : queryValue.length > 0) &&
             results.length > 0;
 
-          if (selectedIndex !== -1) {
+          // A pinned panel closes first — before the highlight or the results
+          // panel — so its owner's escape stack (e.g. close advanced filters,
+          // then collapse the bar) reads top-down.
+          if (panelPinned && onPanelUnpin) {
+            onPanelUnpin();
+          } else if (selectedIndex !== -1) {
             setSelectedIndex(-1);
           } else if (panelShowing) {
             setPanelDismissed(true);
-          } else if (panelPinned) {
-            onPanelUnpin?.();
           } else {
             handleClear();
           }
@@ -343,6 +354,12 @@ function SearchBox(
             e.stopPropagation();
 
             setSelectedIndex((prev) => (prev === -1 ? 0 : (prev + 1) % results.length));
+          } else if (onPanelPin && !panelPinned) {
+            // Nothing to page through — offer the pinned panel instead.
+            e.preventDefault();
+            e.stopPropagation();
+
+            onPanelPin();
           }
 
           break;
@@ -406,6 +423,7 @@ function SearchBox(
       queryValue,
       panelPinned,
       onPanelUnpin,
+      onPanelPin,
       onResultSelect,
       selectedResult,
       onFilterAdd,
