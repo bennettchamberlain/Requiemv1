@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { GlobalUID, Portal } from '@ci/common';
 import { cn } from '@ci/shadcn';
-import { Clock, Search, SlidersHorizontal, X } from '@ci/shadcn/icons';
+import { Clock, FilterX, Search, SlidersHorizontal, X } from '@ci/shadcn/icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useRecentSearches } from '@/hooks';
@@ -35,6 +35,7 @@ const RECENT_PREFIX = 'recent:';
 const TAG_PREFIX = 'tagfilter:';
 const SEARCH_ACTION_ID = 'action:search';
 const ADVANCED_ACTION_ID = 'action:advanced';
+const CLEAR_FILTERS_ACTION_ID = 'action:clear-filters';
 
 /**
  * The unified search in the primary navigation header — visible on every page
@@ -247,6 +248,21 @@ export function GlobalSearchBox() {
     );
   }, [setSearchParams]);
 
+  // Same reset as the drop area's `Clear all`: the filter set only. The query
+  // and the drawer state stay — the row acts in place, like the advanced toggle.
+  const clearFilters = useCallback(() => {
+    setSearchParams(
+      (params) => {
+        for (const param of FILTER_PARAMS) {
+          params.delete(param);
+        }
+
+        return params;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   const suggestions = useMemo<SearchResultItem[]>(
     () =>
       data.map((item) => {
@@ -302,11 +318,24 @@ export function GlobalSearchBox() {
   const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
-    // Typing → an advanced-search toggle, a "search Memory" action, then
-    // matching tags (draggable filter rows, few and precise), then live
-    // entity suggestions.
+    // Typing → a clear-filters action (only while filters are active), an
+    // advanced-search toggle, a "search Memory" action, then matching tags
+    // (draggable filter rows, few and precise), then live entity suggestions.
     if (trimmed) {
       return [
+        ...(activeFilterCount > 0
+          ? [
+              {
+                id: CLEAR_FILTERS_ACTION_ID,
+                content: (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FilterX className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Clear search filters</span>
+                  </div>
+                ),
+              },
+            ]
+          : []),
         {
           id: ADVANCED_ACTION_ID,
           content: (
@@ -361,7 +390,7 @@ export function GlobalSearchBox() {
         </div>
       ),
     }));
-  }, [advancedOpen, onMemory, query, recentSearches, removeRecentSearch, suggestions, tags]);
+  }, [activeFilterCount, advancedOpen, onMemory, query, recentSearches, removeRecentSearch, suggestions, tags]);
 
   // Live, debounced. Drives the suggestion query everywhere, and on /memory also
   // writes `?search` so the explorer filters as you type (replace: keep history clean).
@@ -443,6 +472,14 @@ export function GlobalSearchBox() {
 
   const handleResultSelect = useCallback(
     ({ id }: { id: string }) => {
+      // Acts in place — the typed query and the dropdown stay; the row itself
+      // disappears once the filter count hits zero.
+      if (id === CLEAR_FILTERS_ACTION_ID) {
+        clearFilters();
+
+        return;
+      }
+
       // Toggles the drawer in place — the typed query and the dropdown stay.
       if (id === ADVANCED_ACTION_ID) {
         if (advancedOpen) {
@@ -524,7 +561,7 @@ export function GlobalSearchBox() {
           break;
       }
     },
-    [addRecentSearch, advancedOpen, clearInput, closeAdvanced, commitSearch, navigate, openAdvanced, query],
+    [addRecentSearch, advancedOpen, clearFilters, clearInput, closeAdvanced, commitSearch, navigate, openAdvanced, query],
   );
 
   // Expand + focus. The focus call only lands when already expanded (a hidden
