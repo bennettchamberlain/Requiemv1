@@ -327,8 +327,8 @@ export function GlobalSearchBox() {
               {
                 id: CLEAR_FILTERS_ACTION_ID,
                 content: (
-                  <div className="flex items-center gap-2 text-sm">
-                    <FilterX className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-2">
+                    <FilterX className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
                     <span className="text-muted-foreground">Clear search filters</span>
                   </div>
                 ),
@@ -338,8 +338,8 @@ export function GlobalSearchBox() {
         {
           id: ADVANCED_ACTION_ID,
           content: (
-            <div className="flex items-center gap-2 text-sm">
-              <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
               <span className="text-muted-foreground">
                 {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
               </span>
@@ -349,8 +349,8 @@ export function GlobalSearchBox() {
         {
           id: SEARCH_ACTION_ID,
           content: (
-            <div className="flex items-center gap-2 text-sm">
-              <Search className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-2">
+              <Search className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
               <span className="text-muted-foreground">
                 {onMemory ? 'Search Memory for' : 'Search all of Memory for'}
               </span>
@@ -371,8 +371,8 @@ export function GlobalSearchBox() {
     return recentSearches.map((recent) => ({
       id: `${RECENT_PREFIX}${recent}`,
       content: (
-        <div className="flex items-center gap-2 text-sm">
-          <Clock className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-2">
+          <Clock className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
           <span className="flex-1 truncate">{recent}</span>
           <button
             type="button"
