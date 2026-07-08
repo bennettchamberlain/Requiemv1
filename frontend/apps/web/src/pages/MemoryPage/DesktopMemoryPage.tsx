@@ -328,11 +328,7 @@ export default function DesktopMemoryPage() {
         {(advancedOpen || activeFilterCount > 0) && (
           <DropdownProvider args={[{ changeSearchParams: true }]}>
             <div className="flex flex-col gap-2 p-3">
-              {advancedOpen && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <AdvancedFilters modal={false} />
-                </div>
-              )}
+              {advancedOpen && <AdvancedFilters modal={false} />}
               {activeFilterCount > 0 && <ActiveFilterChips />}
             </div>
           </DropdownProvider>

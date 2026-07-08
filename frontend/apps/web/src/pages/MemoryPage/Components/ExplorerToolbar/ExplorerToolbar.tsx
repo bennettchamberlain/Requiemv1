@@ -1223,8 +1223,9 @@ function WhereFilter() {
 
 /**
  * The advanced search controls in plain Who / What / When / Where / How order,
- * followed by semantic, sort, save, and right-aligned tags. `modal` is forwarded
- * to the portaled Radix dropdowns so they behave inside a modal Sheet/Dialog.
+ * followed by semantic, sort, and right-aligned tags, with the save action on
+ * its own bottom-right line. `modal` is forwarded to the portaled Radix
+ * dropdowns so they behave inside a modal Sheet/Dialog.
  */
 export function AdvancedFilters({ modal }: { modal: boolean }) {
   const [{ tags }, { setTags }] = useDropdown();
@@ -1233,8 +1234,8 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
   const tagSuggestions = useMemo(() => tagData?.tags.edges.map((edge) => edge.node.label) ?? [], [tagData]);
 
   return (
-    <>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <WhoFilter />
         <EntityTypeFilter modal={modal} label="What" />
         <DateControl />
@@ -1248,25 +1249,28 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
         <span className="mx-1 h-6 w-px self-center bg-border" />
 
         <SortControl />
+
+        <div className="ml-auto w-[220px] shrink-0">
+          <TagInput
+            tags={tags}
+            suggestions={tagSuggestions}
+            inputPlaceholder="Search tags"
+            singleLine
+            className="h-9 px-2 py-1"
+            onTagAdded={(tag) => {
+              setTags([...tags, tag]);
+
+              return true;
+            }}
+            onTagRemoved={(tag) => setTags(tags.filter((value) => value !== tag))}
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end">
         <SaveSearchButton />
       </div>
-
-      <div className="ml-auto w-[220px] shrink-0">
-        <TagInput
-          tags={tags}
-          suggestions={tagSuggestions}
-          inputPlaceholder="Search tags"
-          singleLine
-          className="h-9 px-2 py-1"
-          onTagAdded={(tag) => {
-            setTags([...tags, tag]);
-
-            return true;
-          }}
-          onTagRemoved={(tag) => setTags(tags.filter((value) => value !== tag))}
-        />
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -1348,7 +1352,7 @@ function SaveSearchButton() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <Button variant="outline">
+        <Button>
           <Save className="mr-2 h-4 w-4" />
           Save search
         </Button>
@@ -1505,9 +1509,10 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
   return (
     <div className="flex flex-col gap-2">
       {/* The advanced-search drawer: plain Who / What / When / Where / How, then
-          semantic, sort, save, and right-aligned tags. Opened from the header toggle. */}
+          semantic, sort, and right-aligned tags, with save on its own bottom-right
+          line. Opened from the header toggle. */}
       {open && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
           <AdvancedFilters modal={false} />
         </div>
       )}
