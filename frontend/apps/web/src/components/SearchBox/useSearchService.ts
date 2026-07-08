@@ -7,6 +7,11 @@ import { gql } from '@/graphql';
 const SEARCH_QUERY = gql(`
   query SearchBoxQuery($query: String!, $includeTypes: [String!], $excludeTypes: [String!], $semantic: Boolean) {
     search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes, semantic: $semantic }) {
+      matchingTags {
+        id
+        label
+      }
+
       edges {
         node {
           __typename
@@ -66,9 +71,12 @@ export function useSearchService({
   });
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);
+  // Tags whose label matches the query, surfaced as draggable filter rows.
+  const tags = useMemo(() => data?.search?.matchingTags ?? [], [data]);
 
   return {
     data: results,
+    tags,
     loading,
     error,
   };

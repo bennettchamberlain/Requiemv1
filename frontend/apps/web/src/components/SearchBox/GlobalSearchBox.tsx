@@ -21,11 +21,15 @@ import { ItemResult } from './results/ItemResult';
 import { NoteResult } from './results/NoteResult';
 import { PersonResult } from './results/PersonResult';
 import { PlaceResult } from './results/PlaceResult';
+import { TagResult } from './results/TagResult';
 import { ThreadResult } from './results/ThreadResult';
 import { SearchBox } from './SearchBox';
 import { useSearchService } from './useSearchService';
 
 const RECENT_PREFIX = 'recent:';
+// Tag suggestion ids carry the label, not a GlobalUID — selecting one applies
+// the tag as an explorer filter rather than opening a detail route.
+const TAG_PREFIX = 'tagfilter:';
 const SEARCH_ACTION_ID = 'action:search';
 
 /**
@@ -142,7 +146,7 @@ export function GlobalSearchBox() {
   const excludeTypes =
     userExcludedTypes.length > 0 ? [...userExcludedTypes, 'answer', 'browser-activity'] : undefined;
 
-  const { data, loading, error } = useSearchService({
+  const { data, tags, loading, error } = useSearchService({
     searchQuery: query ?? '',
     semantic,
     includeTypes,
@@ -237,7 +241,8 @@ export function GlobalSearchBox() {
   const results = useMemo(() => {
     const trimmed = (query ?? '').trim();
 
-    // Typing → a "search Memory" action followed by live entity suggestions.
+    // Typing → a "search Memory" action, then matching tags (draggable filter
+    // rows, few and precise), then live entity suggestions.
     if (trimmed) {
       return [
         {
@@ -252,6 +257,10 @@ export function GlobalSearchBox() {
             </div>
           ),
         },
+        ...tags.map((tag) => ({
+          id: `${TAG_PREFIX}${tag.label}`,
+          content: <TagResult label={tag.label} />,
+        })),
         ...suggestions,
       ];
     }
@@ -278,7 +287,7 @@ export function GlobalSearchBox() {
         </div>
       ),
     }));
-  }, [onMemory, query, recentSearches, removeRecentSearch, suggestions]);
+  }, [onMemory, query, recentSearches, removeRecentSearch, suggestions, tags]);
 
   // Live, debounced. Drives the suggestion query everywhere, and on /memory also
   // writes `?search` so the explorer filters as you type (replace: keep history clean).
@@ -350,6 +359,14 @@ export function GlobalSearchBox() {
       }
 
       clearInput();
+
+      // Tag suggestion → the explorer filtered to the tag (its de facto detail
+      // page); fresh params, like any other detail navigation.
+      if (id.startsWith(TAG_PREFIX)) {
+        navigate(`/memory?tags=${encodeURIComponent(id.slice(TAG_PREFIX.length))}`);
+
+        return;
+      }
 
       const { type, id: decodedId } = GlobalUID.decode(id);
 

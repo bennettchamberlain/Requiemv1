@@ -124,8 +124,15 @@ interface Chip {
   onRemove: (params: URLSearchParams) => void;
 }
 
-/** Always-visible row of removable chips summarising the applied filters. */
-export function ActiveFilterChips() {
+/**
+ * Row of removable chips summarising the applied filters.
+ *
+ * With `omitDropAreaFilters` the who / where / tag / date chips are skipped:
+ * the advanced drawer's drop area already renders those, so callers set it
+ * while the drawer is open to avoid showing every selection twice. `Clear all`
+ * still clears the full set either way.
+ */
+export function ActiveFilterChips({ omitDropAreaFilters = false }: { omitDropAreaFilters?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const removeFromCsv = (key: string, value: string) => (params: URLSearchParams) => {
@@ -160,8 +167,12 @@ export function ActiveFilterChips() {
   for (const { key, prefix } of [
     { key: 'connectors', prefix: 'Source' },
     { key: 'eventTypes', prefix: 'Activity' },
-    { key: 'people', prefix: 'Who' },
-    { key: 'places', prefix: 'Where' },
+    ...(omitDropAreaFilters
+      ? []
+      : [
+          { key: 'people', prefix: 'Who' },
+          { key: 'places', prefix: 'Where' },
+        ]),
   ]) {
     for (const value of searchParams.get(key)?.split(',').filter(Boolean) ?? []) {
       const labelValue = formatChipValue(value);
@@ -174,21 +185,23 @@ export function ActiveFilterChips() {
     }
   }
 
-  for (const value of searchParams.get('tags')?.split(',').filter(Boolean) ?? []) {
-    chips.push({ key: `tag:${value}`, label: `#${value}`, onRemove: removeFromCsv('tags', value) });
-  }
+  if (!omitDropAreaFilters) {
+    for (const value of searchParams.get('tags')?.split(',').filter(Boolean) ?? []) {
+      chips.push({ key: `tag:${value}`, label: `#${value}`, onRemove: removeFromCsv('tags', value) });
+    }
 
-  const from = searchParams.get('from');
-  const to = searchParams.get('to');
-  if (from || to) {
-    const includeTime = hasDetailedTime(from, to);
-    const label =
-      from && to
-        ? `${fmtDate(from, includeTime)} – ${fmtDate(to, includeTime)}`
-        : from
-          ? `After ${fmtDate(from, includeTime)}`
-          : `Before ${fmtDate(to as string, includeTime)}`;
-    chips.push({ key: 'date', label, onRemove: deleteKey('from', 'to') });
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    if (from || to) {
+      const includeTime = hasDetailedTime(from, to);
+      const label =
+        from && to
+          ? `${fmtDate(from, includeTime)} – ${fmtDate(to, includeTime)}`
+          : from
+            ? `After ${fmtDate(from, includeTime)}`
+            : `Before ${fmtDate(to as string, includeTime)}`;
+      chips.push({ key: 'date', label, onRemove: deleteKey('from', 'to') });
+    }
   }
 
   if (searchParams.get('hasLocation') === '1') {

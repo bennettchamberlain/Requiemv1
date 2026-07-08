@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { useMutation, useQuery } from '@apollo/client';
+import { useMutation } from '@apollo/client';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import {
   Badge,
@@ -27,6 +27,7 @@ import {
   Search,
   Share2,
   Sparkles,
+  Tag,
   Users,
   X,
 } from '@ci/shadcn/icons';
@@ -37,7 +38,6 @@ import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
 import { isFilterDrag, readFilterDrag, type FilterDragKind } from '@/components/SearchBox/filterDrag';
 import { DropdownProvider, useDropdown } from '@/components/SearchBox/useDropdown';
-import { TagInput } from '@/components/TagInput';
 import { gql, type FragmentType } from '@/graphql';
 
 import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/SavedSearch';
@@ -68,21 +68,6 @@ const CREATE_SAVED_SEARCH = gql(`
         # Full grid fragment (incl. isPublic/shareToken/filters) so the created
         # search can be handed straight to the share modal from "Save & share".
         ...SavedSearchGridItemFragment
-      }
-    }
-  }
-`);
-
-// The user's existing tags, used to autocomplete the drawer's tag filter — the
-// same vocabulary the Tags page browses, so the two stay unified.
-const EXPLORER_TAGS = gql(`
-  query ExplorerTags {
-    tags {
-      edges {
-        node {
-          id
-          label
-        }
       }
     }
   }
@@ -224,6 +209,24 @@ function validatePersonFilterValue(value: string): string | null {
   return null;
 }
 
+function validateTagFilterValue(value: string): string | null {
+  const normalized = normalizeFilterValue(value);
+
+  if (!normalized) {
+    return 'Drop a tag first.';
+  }
+
+  if (normalized.includes(',')) {
+    return 'Tags cannot include commas.';
+  }
+
+  if (normalized.length > 80) {
+    return 'Keep tags under 80 characters.';
+  }
+
+  return null;
+}
+
 function validatePlaceFilterValue(value: string): string | null {
   const normalized = normalizeFilterValue(value);
 
@@ -264,13 +267,16 @@ const DROP_FILTER_KINDS: Record<
 > = {
   person: { param: 'people', icon: Users, validate: validatePersonFilterValue },
   place: { param: 'places', icon: MapPin, validate: validatePlaceFilterValue },
+  tag: { param: 'tags', icon: Tag, validate: validateTagFilterValue },
 };
 
 /**
- * The drag-and-drop filter area. Person and place rows in the header search
- * box's live results are draggable (see SearchBox/results/*Result); dropping
- * one here adds it to the matching filter (`people` / `places` URL param,
- * unchanged). Selections render as removable chips inside the area.
+ * The drag-and-drop filter area. Person, place, and tag rows in the header
+ * search box's live results are draggable (see SearchBox/results/*Result);
+ * dropping one here adds it to the matching filter (`people` / `places` /
+ * `tags` URL param, unchanged). Selections render as removable chips inside
+ * the area, joined by the When picker's date range so every applied drawer
+ * filter reads from one place.
  */
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -278,9 +284,15 @@ function FilterDropArea() {
     const read = (param: string) =>
       searchParams.get(param)?.split(',').map(normalizeFilterValue).filter(Boolean) ?? [];
 
-    return { person: read('people'), place: read('places') };
+    return { person: read('people'), place: read('places'), tag: read('tags') };
   }, [searchParams]);
-  const hasSelections = selections.person.length > 0 || selections.place.length > 0;
+  // The date range also renders here as a chip — the drop area is the single
+  // home for the drawer's applied filters — even though it's set via the When
+  // picker rather than dragged in.
+  const dateFrom = searchParams.get('from') ?? '';
+  const dateTo = searchParams.get('to') ?? '';
+  const hasDateRange = Boolean(dateFrom || dateTo);
+  const hasSelections = hasDateRange || Object.values(selections).some((values) => values.length > 0);
   const [error, setError] = useState<string | null>(null);
   // Counts nested dragenter/dragleave pairs so the highlight doesn't flicker
   // off while an entity is dragged across the chips inside the drop area.
@@ -314,7 +326,9 @@ function FilterDropArea() {
       return;
     }
 
-    const normalized = normalizeFilterValue(rawName);
+    // Tag labels are canonically lowercase (the backend lowercases on create).
+    const normalized =
+      kind === 'tag' ? normalizeFilterValue(rawName).toLocaleLowerCase() : normalizeFilterValue(rawName);
 
     if (selections[kind].some((value) => filterValueKey(value) === filterValueKey(normalized))) {
       setError(`${normalized} is already selected.`);
@@ -329,7 +343,7 @@ function FilterDropArea() {
   const DropIcon = isDropTarget ? Scan : Filter;
   const dropText = isDropTarget
     ? 'Drop to add'
-    : 'Drag a person or place from the search results here to filter';
+    : 'Drag a person, place, or tag from the search results here to filter';
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -379,7 +393,7 @@ function FilterDropArea() {
               return selections[kind].map((name) => (
                 <Badge key={`${kind}:${name}`} variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
                   <KindIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="max-w-[180px] truncate">{name}</span>
+                  <span className="max-w-[180px] truncate">{kind === 'tag' ? `#${name}` : name}</span>
                   <button
                     type="button"
                     onClick={() => remove(kind, name)}
@@ -391,6 +405,27 @@ function FilterDropArea() {
                 </Badge>
               ));
             })}
+            {hasDateRange && (
+              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
+                <CalendarIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="max-w-[220px] truncate">{formatDateLabel(dateFrom, dateTo)}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSearchParams((params) => {
+                      params.delete('from');
+                      params.delete('to');
+
+                      return params;
+                    })
+                  }
+                  aria-label="Remove date range"
+                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
           </div>
         ) : (
           // pointer-events-none keeps the icon swap from firing its own
@@ -661,17 +696,12 @@ function SortControl() {
 
 /**
  * The advanced search controls: the What / When / How dropdowns and the
- * located-only toggle followed by semantic, sort, and right-aligned tags, then
- * the drag-and-drop filter area (people & places), with the save action on its
- * own bottom-right line. `modal` is forwarded to the portaled Radix dropdowns
- * so they behave inside a modal Sheet/Dialog.
+ * located-only toggle followed by semantic and sort, then the drag-and-drop
+ * filter area (people, places & tags), with the save action on its own
+ * bottom-right line. `modal` is forwarded to the portaled Radix dropdowns so
+ * they behave inside a modal Sheet/Dialog.
  */
 export function AdvancedFilters({ modal }: { modal: boolean }) {
-  const [{ tags }, { setTags }] = useDropdown();
-
-  const { data: tagData } = useQuery(EXPLORER_TAGS);
-  const tagSuggestions = useMemo(() => tagData?.tags.edges.map((edge) => edge.node.label) ?? [], [tagData]);
-
   return (
     <div className="flex w-full min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -690,22 +720,6 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
         <span className="mx-1 h-6 w-px self-center bg-border" />
 
         <SortControl />
-
-        <div className="ml-auto w-[220px] shrink-0">
-          <TagInput
-            tags={tags}
-            suggestions={tagSuggestions}
-            inputPlaceholder="Search tags"
-            singleLine
-            className="h-9 px-2 py-1"
-            onTagAdded={(tag) => {
-              setTags([...tags, tag]);
-
-              return true;
-            }}
-            onTagRemoved={(tag) => setTags(tags.filter((value) => value !== tag))}
-          />
-        </div>
       </div>
 
       <FilterDropArea />
@@ -952,8 +966,8 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
   return (
     <div className="flex flex-col gap-2">
       {/* The advanced-search drawer: What / When / How + located-only, semantic,
-          sort, and right-aligned tags, then the drag-and-drop filter area, with
-          save on its own bottom-right line. Opened from the header toggle. */}
+          and sort, then the drag-and-drop filter area (people, places & tags),
+          with save on its own bottom-right line. Opened from the header toggle. */}
       {open && (
         <div className="rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
           <AdvancedFilters modal={false} />
@@ -962,7 +976,9 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
 
       {countActiveFilters(searchParams) > 0 && (
         <div className="min-w-0">
-          <ActiveFilterChips />
+          {/* While the drawer is open its drop area already shows the who /
+              where / tag / date selections; omit them here to avoid doubling up. */}
+          <ActiveFilterChips omitDropAreaFilters={open} />
         </div>
       )}
     </div>
@@ -971,9 +987,8 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
 
 /**
  * The explorer toolbar body that sits under the unified header bar: the
- * advanced-search drawer (What / When / How + located-only, tags, semantic,
- * sort, then the drag-and-drop filter area and save) plus the active-filter
- * chips.
+ * advanced-search drawer (What / When / How + located-only, semantic, sort,
+ * then the drag-and-drop filter area and save) plus the active-filter chips.
  * `open` is controlled by the page — the AdvancedSearchToggle that flips it
  * lives in the header. Wrapped in DropdownProvider so the useDropdown
  * URL-param setters work.

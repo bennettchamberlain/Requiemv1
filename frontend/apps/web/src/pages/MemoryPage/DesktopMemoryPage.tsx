@@ -323,13 +323,15 @@ export default function DesktopMemoryPage() {
           at the top of the header SearchBox's dropdown panel (its panelHeader
           slot), above any live search suggestions — so typing never covers them.
           Chips also surface (without the full controls) whenever the panel opens
-          with filters active; when it's closed, the toggle's count badge stands in. */}
+          with filters active; when it's closed, the toggle's count badge stands in.
+          While the drawer is open its drop area already shows the who / where /
+          tag / date selections, so the chips row omits those to avoid doubling up. */}
       <Portal.Slot id="nav-search-panel">
         {(advancedOpen || activeFilterCount > 0) && (
           <DropdownProvider args={[{ changeSearchParams: true }]}>
             <div className="flex flex-col gap-2 p-3">
               {advancedOpen && <AdvancedFilters modal={false} />}
-              {activeFilterCount > 0 && <ActiveFilterChips />}
+              {activeFilterCount > 0 && <ActiveFilterChips omitDropAreaFilters={advancedOpen} />}
             </div>
           </DropdownProvider>
         )}
