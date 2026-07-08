@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Clock,
   Filter,
+  Map as MapIcon,
   MapPin,
   Save,
   Scan,
@@ -277,8 +278,9 @@ const DROP_FILTER_KINDS: Record<
  * dropping one here adds it to the matching filter (`people` / `places` /
  * `tags` URL param, unchanged). Selections render as removable chips inside
  * the area, joined by the What picker's type selection, the When picker's
- * date range, and the Has a location / Semantic toggles so every applied
- * drawer filter reads from one place.
+ * date range, the Has a location / Semantic toggles, and the map's "Search
+ * events in this area" viewport so every applied drawer filter reads from
+ * one place.
  */
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -288,23 +290,26 @@ function FilterDropArea() {
 
     return { person: read('people'), place: read('places'), tag: read('tags') };
   }, [searchParams]);
-  // The type selection, date range, located-only flag, and semantic flag also
-  // render here as chips — the drop area is the single home for the drawer's
-  // applied filters — even though they're set via the What / When / Has a
-  // location / Semantic controls rather than dragged in. Removing a chip
-  // clears its URL params, which unselects the matching control since both
-  // read the same params.
+  // The type selection, date range, located-only flag, semantic flag, and map
+  // viewport also render here as chips — the drop area is the single home for
+  // the drawer's applied filters — even though they're set via the What / When
+  // / Has a location / Semantic controls or the map's "Search events in this
+  // area" button rather than dragged in. Removing a chip clears its URL
+  // params, which unselects the matching control since both read the same
+  // params.
   const selectedTypes = narrowedEntityTypes(searchParams);
   const dateFrom = searchParams.get('from') ?? '';
   const dateTo = searchParams.get('to') ?? '';
   const hasDateRange = Boolean(dateFrom || dateTo);
   const hasLocation = searchParams.get('hasLocation') === '1';
   const semantic = searchParams.get('semantic') === '1';
+  const hasMapArea = Boolean(searchParams.get('bbox'));
   const hasSelections =
     selectedTypes !== null ||
     hasDateRange ||
     hasLocation ||
     semantic ||
+    hasMapArea ||
     Object.values(selections).some((values) => values.length > 0);
   const [error, setError] = useState<string | null>(null);
   // Counts nested dragenter/dragleave pairs so the highlight doesn't flicker
@@ -498,6 +503,26 @@ function FilterDropArea() {
                     })
                   }
                   aria-label="Remove semantic"
+                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {hasMapArea && (
+              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
+                <MapIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span>Map area</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSearchParams((params) => {
+                      params.delete('bbox');
+
+                      return params;
+                    })
+                  }
+                  aria-label="Remove map area"
                   className="-mr-1 rounded p-0.5 hover:bg-background/60"
                 >
                   <X className="h-3 w-3" />

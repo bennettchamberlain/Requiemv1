@@ -129,9 +129,10 @@ interface Chip {
  * Row of removable chips summarising the applied filters.
  *
  * With `omitDropAreaFilters` the type / who / where / tag / date / located /
- * semantic chips are skipped: the advanced drawer's drop area already renders those, so
- * callers set it while the drawer is open to avoid showing every selection
- * twice. `Clear all` still clears the full set either way.
+ * semantic / map-area chips are skipped: the advanced drawer's drop area
+ * already renders those, so callers set it while the drawer is open to avoid
+ * showing every selection twice. `Clear all` still clears the full set either
+ * way.
  */
 export function ActiveFilterChips({ omitDropAreaFilters = false }: { omitDropAreaFilters?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -211,11 +212,12 @@ export function ActiveFilterChips({ omitDropAreaFilters = false }: { omitDropAre
     if (searchParams.get('semantic') === '1') {
       chips.push({ key: 'semantic', label: 'Semantic', onRemove: deleteKey('semantic') });
     }
-  }
 
-  // The map's "Search this area" viewport filter (?bbox=...) — surface + clearable.
-  if (searchParams.get('bbox')) {
-    chips.push({ key: 'bbox', label: 'Map area', onRemove: deleteKey('bbox') });
+    // The map's "Search events in this area" viewport filter (?bbox=...) —
+    // surface + clearable.
+    if (searchParams.get('bbox')) {
+      chips.push({ key: 'bbox', label: 'Map area', onRemove: deleteKey('bbox') });
+    }
   }
 
   if (chips.length === 0) {
