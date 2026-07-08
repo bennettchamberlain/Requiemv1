@@ -68,30 +68,31 @@ function formatChipValue(value: string): string {
  * Entity types are filtered either by an exclude-list (the toolbar's own type
  * picker) or by an externally-applied include-list (e.g. a graph-explorer deep
  * link). The include-list takes precedence, mirroring the search dropdown's URL
- * sync. Returns the number of types still selected when a type filter narrows
- * the set, or null when no type filter is active.
+ * sync. Returns the types still selected when a type filter narrows the set,
+ * or null when no type filter is active. Exported for the drawer's drop area,
+ * which renders the same narrowed set as its What chip.
  */
-function selectedEntityTypeCount(params: URLSearchParams): number | null {
+export function narrowedEntityTypes(params: URLSearchParams): string[] | null {
   const total = AVAILABLE_ENTITY_TYPES.length;
   const included = params.get('includedEntityTypes')?.split(',').filter(Boolean) ?? [];
 
   if (included.length) {
-    const selected = AVAILABLE_ENTITY_TYPES.filter((type) => included.includes(type)).length;
+    const selected = AVAILABLE_ENTITY_TYPES.filter((type) => included.includes(type));
 
-    return selected < total ? selected : null;
+    return selected.length < total ? selected : null;
   }
 
   const excluded = params.get('excludedEntityTypes')?.split(',').filter(Boolean) ?? [];
-  const excludedSelected = AVAILABLE_ENTITY_TYPES.filter((type) => excluded.includes(type)).length;
+  const selected = AVAILABLE_ENTITY_TYPES.filter((type) => !excluded.includes(type));
 
-  return excludedSelected > 0 ? total - excludedSelected : null;
+  return selected.length < total ? selected : null;
 }
 
 /** Number of distinct active filter dimensions (for the "Filters (N)" badge). */
 export function countActiveFilters(params: URLSearchParams): number {
   let count = 0;
 
-  if (selectedEntityTypeCount(params) !== null) {
+  if (narrowedEntityTypes(params) !== null) {
     count += 1;
   }
 
@@ -127,10 +128,10 @@ interface Chip {
 /**
  * Row of removable chips summarising the applied filters.
  *
- * With `omitDropAreaFilters` the who / where / tag / date / located chips are
- * skipped: the advanced drawer's drop area already renders those, so callers
- * set it while the drawer is open to avoid showing every selection twice.
- * `Clear all` still clears the full set either way.
+ * With `omitDropAreaFilters` the type / who / where / tag / date / located
+ * chips are skipped: the advanced drawer's drop area already renders those, so
+ * callers set it while the drawer is open to avoid showing every selection
+ * twice. `Clear all` still clears the full set either way.
  */
 export function ActiveFilterChips({ omitDropAreaFilters = false }: { omitDropAreaFilters?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -155,11 +156,11 @@ export function ActiveFilterChips({ omitDropAreaFilters = false }: { omitDropAre
   // Entity types use either an exclude-list (the toolbar's picker) or an
   // externally-applied include-list; surface the count of still-selected types
   // whenever the active representation narrows the set below "all".
-  const selectedTypes = selectedEntityTypeCount(searchParams);
-  if (selectedTypes !== null) {
+  const selectedTypes = narrowedEntityTypes(searchParams);
+  if (selectedTypes !== null && !omitDropAreaFilters) {
     chips.push({
       key: 'types',
-      label: `Types: ${selectedTypes} of ${AVAILABLE_ENTITY_TYPES.length}`,
+      label: `Types: ${selectedTypes.length} of ${AVAILABLE_ENTITY_TYPES.length}`,
       onRemove: deleteKey('excludedEntityTypes', 'includedEntityTypes'),
     });
   }

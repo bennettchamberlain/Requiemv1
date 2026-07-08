@@ -25,6 +25,7 @@ import {
   Save,
   Scan,
   Search,
+  Shapes,
   Share2,
   Sparkles,
   Tag,
@@ -37,14 +38,14 @@ import { useFeatures } from '@/common/feature';
 import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
 import { isFilterDrag, readFilterDrag, type FilterDragKind } from '@/components/SearchBox/filterDrag';
-import { DropdownProvider, useDropdown } from '@/components/SearchBox/useDropdown';
+import { AVAILABLE_ENTITY_TYPES, DropdownProvider, useDropdown } from '@/components/SearchBox/useDropdown';
 import { gql, type FragmentType } from '@/graphql';
 
 import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/SavedSearch';
 import { ShareSavedSearchModal } from '../../../SavedSearchesPage/ShareSavedSearchModal';
 import { buildSavedSearchFilters } from '../../savedSearchFilters';
 
-import { ActiveFilterChips, countActiveFilters } from './ActiveFilterChips';
+import { ActiveFilterChips, countActiveFilters, narrowedEntityTypes } from './ActiveFilterChips';
 
 // Single-select sort presets that map to the backend's sortBy + sortOrder pair.
 const SORT_OPTIONS = [
@@ -275,8 +276,9 @@ const DROP_FILTER_KINDS: Record<
  * search box's live results are draggable (see SearchBox/results/*Result);
  * dropping one here adds it to the matching filter (`people` / `places` /
  * `tags` URL param, unchanged). Selections render as removable chips inside
- * the area, joined by the When picker's date range and the Has a location
- * toggle so every applied drawer filter reads from one place.
+ * the area, joined by the What picker's type selection, the When picker's
+ * date range, and the Has a location toggle so every applied drawer filter
+ * reads from one place.
  */
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -286,17 +288,21 @@ function FilterDropArea() {
 
     return { person: read('people'), place: read('places'), tag: read('tags') };
   }, [searchParams]);
-  // The date range and located-only flag also render here as chips — the drop
-  // area is the single home for the drawer's applied filters — even though
-  // they're set via the When picker and the Has a location toggle rather than
-  // dragged in. Removing a chip clears its URL param, which unselects the
-  // matching control since both read the same param.
+  // The type selection, date range, and located-only flag also render here as
+  // chips — the drop area is the single home for the drawer's applied filters —
+  // even though they're set via the What / When / Has a location controls
+  // rather than dragged in. Removing a chip clears its URL params, which
+  // unselects the matching control since both read the same params.
+  const selectedTypes = narrowedEntityTypes(searchParams);
   const dateFrom = searchParams.get('from') ?? '';
   const dateTo = searchParams.get('to') ?? '';
   const hasDateRange = Boolean(dateFrom || dateTo);
   const hasLocation = searchParams.get('hasLocation') === '1';
   const hasSelections =
-    hasDateRange || hasLocation || Object.values(selections).some((values) => values.length > 0);
+    selectedTypes !== null ||
+    hasDateRange ||
+    hasLocation ||
+    Object.values(selections).some((values) => values.length > 0);
   const [error, setError] = useState<string | null>(null);
   // Counts nested dragenter/dragleave pairs so the highlight doesn't flicker
   // off while an entity is dragged across the chips inside the drop area.
@@ -391,6 +397,31 @@ function FilterDropArea() {
       >
         {hasSelections ? (
           <div className="flex flex-wrap content-start gap-1.5">
+            {selectedTypes !== null && (
+              <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
+                <Shapes className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="max-w-[220px] truncate">
+                  {selectedTypes.length === 1
+                    ? selectedTypes[0]
+                    : `${selectedTypes.length} of ${AVAILABLE_ENTITY_TYPES.length} types`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSearchParams((params) => {
+                      params.delete('includedEntityTypes');
+                      params.delete('excludedEntityTypes');
+
+                      return params;
+                    })
+                  }
+                  aria-label="Remove entity types"
+                  className="-mr-1 rounded p-0.5 hover:bg-background/60"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
             {(Object.keys(DROP_FILTER_KINDS) as FilterDragKind[]).flatMap((kind) => {
               const KindIcon = DROP_FILTER_KINDS[kind].icon;
 
@@ -1001,9 +1032,9 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
 
       {countActiveFilters(searchParams) > 0 && (
         <div className="min-w-0">
-          {/* While the drawer is open its drop area already shows the who /
-              where / tag / date / located selections; omit them here to avoid
-              doubling up. */}
+          {/* While the drawer is open its drop area already shows the type /
+              who / where / tag / date / located selections; omit them here to
+              avoid doubling up. */}
           <ActiveFilterChips omitDropAreaFilters={open} />
         </div>
       )}
