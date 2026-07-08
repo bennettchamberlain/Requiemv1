@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { GlobalUID, Portal } from '@ci/common';
 import { cn } from '@ci/shadcn';
-import { Clock, FilterX, Search, SlidersHorizontal, X } from '@ci/shadcn/icons';
+import { Clock, FilterX, Search, SearchX, SlidersHorizontal, X } from '@ci/shadcn/icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useRecentSearches } from '@/hooks';
@@ -35,6 +35,7 @@ const TAG_PREFIX = 'tagfilter:';
 const SEARCH_ACTION_ID = 'action:search';
 const ADVANCED_ACTION_ID = 'action:advanced';
 const CLEAR_FILTERS_ACTION_ID = 'action:clear-filters';
+const CLEAR_QUERY_ACTION_ID = 'action:clear-query';
 
 /**
  * The unified search in the primary navigation header — visible on every page
@@ -247,6 +248,50 @@ export function GlobalSearchBox() {
     );
   }, [setSearchParams]);
 
+  // The query only — the counterpart to `clearFilters`. Remounting SearchBox
+  // empties the input; on /memory the live `?search` param goes with it. The
+  // filters, the drawer state, and the expanded bar all stay.
+  //
+  // The remount is deferred (via the pending flag) until the `?search` delete
+  // has landed in the router state: bumping resetKey in the same batch remounts
+  // SearchBox one render early, while urlSearch still holds the old query — the
+  // fresh instance seeds its input from it, the refocus below then blocks the
+  // defaultQuery sync (it yields to a focused input), and the fresh instance's
+  // auto-submit writes the stale query straight back to the URL.
+  const [clearQueryPending, setClearQueryPending] = useState(false);
+
+  const clearQuery = useCallback(() => {
+    setQuery(null);
+    setClearQueryPending(true);
+
+    if (onMemory) {
+      setSearchParams(
+        (params) => {
+          params.delete('search');
+
+          return params;
+        },
+        { replace: true },
+      );
+    }
+  }, [onMemory, setSearchParams]);
+
+  useEffect(() => {
+    if (!clearQueryPending || (onMemory && urlSearch)) {
+      return;
+    }
+
+    setClearQueryPending(false);
+    setResetKey((key) => key + 1);
+  }, [clearQueryPending, onMemory, urlSearch]);
+
+  // A remount replaces the input with a fresh, unfocused one. Refocus so an
+  // in-place reset (the clear-query row) keeps the user typing; when the bump
+  // came with a collapse (clearInput) the input is hidden, so this is a no-op.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [resetKey]);
+
   // Same reset as the drop area's `Clear all`: the filter set only. The query
   // and the drawer state stay — the row acts in place, like the advanced toggle.
   const clearFilters = useCallback(() => {
@@ -317,9 +362,10 @@ export function GlobalSearchBox() {
   const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
-    // Typing → an advanced-search toggle, a clear-filters action (only while
-    // filters are active), a "search Memory" action, then matching tags
-    // (draggable filter rows, few and precise), then live entity suggestions.
+    // Typing → an advanced-search toggle, a clear-query action, a clear-filters
+    // action (only while filters are active), a "search Memory" action, then
+    // matching tags (draggable filter rows, few and precise), then live entity
+    // suggestions.
     if (trimmed) {
       return [
         {
@@ -330,6 +376,15 @@ export function GlobalSearchBox() {
               <span className="text-muted-foreground">
                 {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
               </span>
+            </div>
+          ),
+        },
+        {
+          id: CLEAR_QUERY_ACTION_ID,
+          content: (
+            <div className="flex items-center gap-2">
+              <SearchX className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+              <span className="text-muted-foreground">Clear search query</span>
             </div>
           ),
         },
@@ -389,7 +444,16 @@ export function GlobalSearchBox() {
         </div>
       ),
     }));
-  }, [activeFilterCount, advancedOpen, onMemory, query, recentSearches, removeRecentSearch, suggestions, tags]);
+  }, [
+    activeFilterCount,
+    advancedOpen,
+    onMemory,
+    query,
+    recentSearches,
+    removeRecentSearch,
+    suggestions,
+    tags,
+  ]);
 
   // Live, debounced. Drives the suggestion query everywhere, and on /memory also
   // writes `?search` so the explorer filters as you type (replace: keep history clean).
@@ -464,6 +528,14 @@ export function GlobalSearchBox() {
       // disappears once the filter count hits zero.
       if (id === CLEAR_FILTERS_ACTION_ID) {
         clearFilters();
+
+        return;
+      }
+
+      // The box stays open and focused; with the query gone the dropdown
+      // falls back to recent searches.
+      if (id === CLEAR_QUERY_ACTION_ID) {
+        clearQuery();
 
         return;
       }
@@ -549,7 +621,18 @@ export function GlobalSearchBox() {
           break;
       }
     },
-    [addRecentSearch, advancedOpen, clearFilters, clearInput, closeAdvanced, commitSearch, navigate, openAdvanced, query],
+    [
+      addRecentSearch,
+      advancedOpen,
+      clearFilters,
+      clearInput,
+      clearQuery,
+      closeAdvanced,
+      commitSearch,
+      navigate,
+      openAdvanced,
+      query,
+    ],
   );
 
   // Expand + focus. The focus call only lands when already expanded (a hidden
