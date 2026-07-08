@@ -325,7 +325,8 @@ export default function DesktopMemoryPage() {
           Chips also surface (without the full controls) whenever the panel opens
           with filters active; when it's closed, the toggle's count badge stands in.
           While the drawer is open its drop area already shows the who / where /
-          tag / date selections, so the chips row omits those to avoid doubling up. */}
+          tag / date / located selections, so the chips row omits those to avoid
+          doubling up. */}
       <Portal.Slot id="nav-search-panel">
         {(advancedOpen || activeFilterCount > 0) && (
           <DropdownProvider args={[{ changeSearchParams: true }]}>

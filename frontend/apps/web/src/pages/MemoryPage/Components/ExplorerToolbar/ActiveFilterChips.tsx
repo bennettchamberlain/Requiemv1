@@ -127,10 +127,10 @@ interface Chip {
 /**
  * Row of removable chips summarising the applied filters.
  *
- * With `omitDropAreaFilters` the who / where / tag / date chips are skipped:
- * the advanced drawer's drop area already renders those, so callers set it
- * while the drawer is open to avoid showing every selection twice. `Clear all`
- * still clears the full set either way.
+ * With `omitDropAreaFilters` the who / where / tag / date / located chips are
+ * skipped: the advanced drawer's drop area already renders those, so callers
+ * set it while the drawer is open to avoid showing every selection twice.
+ * `Clear all` still clears the full set either way.
  */
 export function ActiveFilterChips({ omitDropAreaFilters = false }: { omitDropAreaFilters?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -202,10 +202,10 @@ export function ActiveFilterChips({ omitDropAreaFilters = false }: { omitDropAre
             : `Before ${fmtDate(to as string, includeTime)}`;
       chips.push({ key: 'date', label, onRemove: deleteKey('from', 'to') });
     }
-  }
 
-  if (searchParams.get('hasLocation') === '1') {
-    chips.push({ key: 'located', label: 'Located', onRemove: deleteKey('hasLocation') });
+    if (searchParams.get('hasLocation') === '1') {
+      chips.push({ key: 'located', label: 'Located', onRemove: deleteKey('hasLocation') });
+    }
   }
 
   if (searchParams.get('semantic') === '1') {
