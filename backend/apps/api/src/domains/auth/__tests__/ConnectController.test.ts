@@ -3,12 +3,12 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
-import { HubForwardAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { BodyParserMiddleware } from '@ci/common/middleware';
 import config from '@ci/configuration';
 
 import { ConnectController } from '../controllers/ConnectController';
+import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
 import { CsrfGuard } from '../guards/CsrfGuard';
 import { ConnectService } from '../services/ConnectService';
 import { CsrfService } from '../services/CsrfService';
@@ -22,6 +22,7 @@ const mockConnectService = {
   approve: jest.fn(),
   exchange: jest.fn(),
   revokeByApp: jest.fn(),
+  rotateByApp: jest.fn(),
   buildReturnUrl: jest.fn(),
 };
 
@@ -60,7 +61,7 @@ describe('ConnectController', () => {
     const module = await Test.createTestingModule({ imports: [TestModule] })
       .overrideGuard(CsrfGuard)
       .useValue({ canActivate: () => true })
-      .overrideGuard(HubForwardAuthGuard)
+      .overrideGuard(ConnectRequestAuthGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
@@ -189,6 +190,25 @@ describe('ConnectController', () => {
 
       expect(mockConnectService.revokeByApp).toHaveBeenCalledWith('urn:app:x');
       expect(res.body).toEqual({ revoked: 1 });
+    });
+  });
+
+  describe('POST /connect/rotate', () => {
+    it('rotates the app key and returns the new key', async () => {
+      mockConnectService.rotateByApp.mockResolvedValue({ appUrn: 'urn:app:x', key: 'new-key' });
+
+      const res = await request(app.getHttpServer())
+        .post('/connect/rotate')
+        .send({ app: 'urn:app:x' })
+        .expect(201);
+
+      expect(res.body).toEqual({ appUrn: 'urn:app:x', key: 'new-key' });
+    });
+
+    it('400s when there is no connected key to rotate', async () => {
+      mockConnectService.rotateByApp.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).post('/connect/rotate').send({ app: 'urn:app:x' }).expect(400);
     });
   });
 });

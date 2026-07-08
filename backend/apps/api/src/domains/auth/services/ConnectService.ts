@@ -147,6 +147,32 @@ export class ConnectService {
   }
 
   /**
+   * Rotate the memory key for `appUrn`: mint a fresh key (new TTL) for the same
+   * owning user, replacing the old one. Returns the new raw key, or null when no
+   * key is currently connected for the app. Called by the trusted Hub path (key
+   * rotation before expiry); no re-consent is needed because the user already
+   * consented to the connection — this only refreshes the same grant.
+   */
+  async rotateByApp(appUrn: string): Promise<ExchangedConnect | null> {
+    const name = this.keyName(appUrn);
+    const userId = await this.apiKeyService.findUserIdByName(name);
+
+    if (!userId) {
+      return null;
+    }
+
+    const expiresAt = new Date(Date.now() + CONNECT_KEY_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const minted = await this.apiKeyService.createOrRotate(
+      { userId },
+      { name, scopes: [CONNECT_KEY_SCOPE], expires_at: expiresAt },
+    );
+
+    this.logger.log(`Rotated memory key for app ${appUrn} (user ${userId})`);
+
+    return { appUrn, key: minted.key };
+  }
+
+  /**
    * Revoke the memory key minted for `appUrn`, by its stable name. Called by the
    * trusted Hub path (agent uninstall, user "Disconnect", ci-memory reset) which
    * identifies the app but not the owning user. Idempotent: returns the number

@@ -14,11 +14,11 @@ import {
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 
-import { HubForwardAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 
+import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
 import { CsrfGuard } from '../guards/CsrfGuard';
 import { ConnectService } from '../services/ConnectService';
 import { CsrfService } from '../services/CsrfService';
@@ -41,9 +41,14 @@ const revokeSchema = z.object({
   app: z.string().min(1),
 });
 
+const rotateSchema = z.object({
+  app: z.string().min(1),
+});
+
 type ApproveDto = z.infer<typeof approveSchema>;
 type ExchangeDto = z.infer<typeof exchangeSchema>;
 type RevokeDto = z.infer<typeof revokeSchema>;
+type RotateDto = z.infer<typeof rotateSchema>;
 
 /**
  * App-connect endpoints. CI-Hub brokers connecting an agent app (OpenClaw /
@@ -157,10 +162,10 @@ export class ConnectController {
   }
 
   /**
-   * Server-to-server code exchange. Authenticated by CI-Hub's signed forward-auth
-   * headers. Returns the raw scoped key exactly once.
+   * Server-to-server code exchange. Authenticated by CI-Hub's signed, replay-
+   * resistant request signature. Returns the raw scoped key exactly once.
    */
-  @UseGuards(HubForwardAuthGuard)
+  @UseGuards(ConnectRequestAuthGuard)
   @Post('exchange')
   async exchange(@Body(new ValidationPipe(exchangeSchema)) body: ExchangeDto) {
     const result = await this.connectService.exchange(body.code);
@@ -174,13 +179,30 @@ export class ConnectController {
 
   /**
    * Server-to-server revoke (agent uninstall, user disconnect, ci-memory reset).
-   * Authenticated by CI-Hub's signed forward-auth headers.
+   * Authenticated by CI-Hub's signed, replay-resistant request signature.
    */
-  @UseGuards(HubForwardAuthGuard)
+  @UseGuards(ConnectRequestAuthGuard)
   @Post('revoke')
   async revoke(@Body(new ValidationPipe(revokeSchema)) body: RevokeDto) {
     const revoked = await this.connectService.revokeByApp(body.app);
 
     return { revoked };
+  }
+
+  /**
+   * Server-to-server key rotation (refresh before expiry). Re-mints the app's
+   * memory key for the same user and returns the new raw key. Authenticated by
+   * CI-Hub's signed, replay-resistant request signature.
+   */
+  @UseGuards(ConnectRequestAuthGuard)
+  @Post('rotate')
+  async rotate(@Body(new ValidationPipe(rotateSchema)) body: RotateDto) {
+    const result = await this.connectService.rotateByApp(body.app);
+
+    if (!result) {
+      throw new BadRequestException('No connected key to rotate for this app');
+    }
+
+    return result;
   }
 }

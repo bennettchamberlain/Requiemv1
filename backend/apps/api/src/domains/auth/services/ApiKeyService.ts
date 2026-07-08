@@ -67,6 +67,20 @@ export class ApiKeyService {
   }
 
   /**
+   * Resolve the owning user id for a key by `name`, regardless of owner, or null
+   * if no such key exists. Used by the trusted connect-rotate path: CI-Hub asks
+   * to rotate "the key for app X" by its stable name without knowing the owning
+   * `ci.users` id; this recovers it so the fresh key is minted under the same
+   * user. Because `(user_id, name)` is unique for `app:%` names there is at most
+   * one such row.
+   */
+  async findUserIdByName(name: string): Promise<string | null> {
+    const key = await this.apiKeyRepository.findOne({ where: { name }, select: ['user_id'] });
+
+    return key?.user_id ?? null;
+  }
+
+  /**
    * Look up a single api key by its `(user, name)` pair, or null if none exists.
    * Used to detect whether an app has already been provisioned before deciding
    * to mint or rotate.

@@ -34,6 +34,7 @@ import { ApiKeyEntity } from './entities/ApiKeyEntity';
 import { ConnectCodeEntity } from './entities/ConnectCodeEntity';
 import { SessionEntity } from './entities/SessionEntity';
 import { SignupCodeEntity } from './entities/SignupCodeEntity';
+import { ConnectRequestAuthGuard } from './guards/ConnectRequestAuthGuard';
 import { CsrfGuard } from './guards/CsrfGuard';
 import { ApiKeyService } from './services/ApiKeyService';
 import { ApiKeyStrategy } from './services/ApiKeyStrategy';
@@ -69,6 +70,7 @@ import { SignupCodeService } from './services/SignupCodeService';
     ApiKeyStrategy,
     ConnectCodeService,
     ConnectService,
+    ConnectRequestAuthGuard,
   ],
   controllers: [SessionController, SignupController, ApiKeyController, OidcController, ConnectController],
   exports: [SignupCodeService, ApiKeyService],
