@@ -232,6 +232,9 @@ export function ActiveFilterChips() {
         </Badge>
       ))}
       <Button
+        // Explicit: this row renders inside the header SearchBox's <form>, where
+        // a default (submit) button would commit the search right after clearing.
+        type="button"
         variant="ghost"
         size="sm"
         className="h-6 px-2 text-xs text-muted-foreground"
