@@ -36,13 +36,15 @@ describe('Bulk ingest routes (/v1/*)', () => {
   const itemService = { createMany: jest.fn(echo) };
   const browserActivityService = { createMany: jest.fn(echo) };
   const positionService = { create: jest.fn(echo) };
-  const eventService = {
-    create: jest.fn(
-      async (_context: unknown, _data: unknown): Promise<Record<string, unknown>[]> => [
-        { id: 'event-x' },
-      ],
-    ),
-  };
+  const eventEcho = async (_context: unknown, data: unknown): Promise<Record<string, unknown>[]> =>
+    (Array.isArray(data) ? data : [data]).map((d, i) => ({
+      id: `event-${i}`,
+      sourceType: (d as Record<string, unknown>).source_type,
+      sourceSystem: (d as Record<string, unknown>).source_system,
+      sourceId: (d as Record<string, unknown>).source_id,
+    }));
+
+  const eventService = { create: jest.fn(eventEcho) };
   // Capture-log INSERT always "inserts" (new capture); the trailing UPDATE
   // returns nothing.
   // The capture-log INSERT is set-based; RETURNING echoes the triple so the
@@ -65,14 +67,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
     mockCanActivate.mockImplementation(() => true);
     communicationService.createMany.mockImplementation(echo);
     itemService.createMany.mockImplementation(echo);
-    eventService.create.mockImplementation(async (_context: unknown, data: unknown) =>
-      (Array.isArray(data) ? data : [data]).map((d, i) => ({
-        id: `event-${i}`,
-        sourceType: (d as Record<string, unknown>).source_type,
-        sourceSystem: (d as Record<string, unknown>).source_system,
-        sourceId: (d as Record<string, unknown>).source_id,
-      })),
-    );
+    eventService.create.mockImplementation(eventEcho);
     dataSourceQuery.mockImplementation(captureLogEcho);
   });
 
