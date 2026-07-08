@@ -20,6 +20,18 @@ const SEARCH_QUERY = gql(`
             id
           }
 
+          # Unmasked names so the header box can attach a who/where filter
+          # payload to person/place rows (arrow-key add/remove) without
+          # per-item useFragment. Aliased to stay clear of the result
+          # fragments' own selections.
+          ... on PersonType {
+            filterName: name
+          }
+
+          ... on PlaceType {
+            filterName: name
+          }
+
           ...SearchResultCommunicationData
           ...SearchResultConceptData
           ...SearchResultContentData

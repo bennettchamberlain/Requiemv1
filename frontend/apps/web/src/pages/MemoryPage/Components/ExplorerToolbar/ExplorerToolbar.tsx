@@ -48,7 +48,15 @@ import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/Sav
 import { ShareSavedSearchModal } from '../../../SavedSearchesPage/ShareSavedSearchModal';
 import { buildSavedSearchFilters } from '../../savedSearchFilters';
 
-import { FILTER_PARAMS, narrowedEntityTypes } from './filterParams';
+import {
+  FILTER_PARAMS,
+  addEntityFilter,
+  filterValueKey,
+  narrowedEntityTypes,
+  readCsvParam,
+  removeEntityFilter,
+  writeCsvFilterParam,
+} from './filterParams';
 
 // Single-select sort presets that map to the backend's sortBy + sortOrder pair.
 const SORT_OPTIONS = [
@@ -183,90 +191,6 @@ function formatDateLabel(dateFrom: string, dateTo: string): string {
   return 'Any time';
 }
 
-function normalizeFilterValue(value: string): string {
-  return value.trim().replace(/\s+/g, ' ');
-}
-
-function filterValueKey(value: string): string {
-  return normalizeFilterValue(value).toLocaleLowerCase();
-}
-
-function validatePersonFilterValue(value: string): string | null {
-  const normalized = normalizeFilterValue(value);
-
-  if (!normalized) {
-    return 'Enter a name first.';
-  }
-
-  if (normalized.includes(',')) {
-    return 'Names cannot include commas.';
-  }
-
-  if (normalized.length < 2) {
-    return 'Use at least 2 characters.';
-  }
-
-  if (normalized.length > 80) {
-    return 'Keep names under 80 characters.';
-  }
-
-  return null;
-}
-
-function validateTagFilterValue(value: string): string | null {
-  const normalized = normalizeFilterValue(value);
-
-  if (!normalized) {
-    return 'Drop a tag first.';
-  }
-
-  if (normalized.includes(',')) {
-    return 'Tags cannot include commas.';
-  }
-
-  if (normalized.length > 80) {
-    return 'Keep tags under 80 characters.';
-  }
-
-  return null;
-}
-
-function validatePlaceFilterValue(value: string): string | null {
-  const normalized = normalizeFilterValue(value);
-
-  if (!normalized) {
-    return 'Search for a place first.';
-  }
-
-  if (normalized.includes(',')) {
-    return 'Place filters cannot include commas.';
-  }
-
-  if (normalized.length < 2) {
-    return 'Use at least 2 characters.';
-  }
-
-  if (normalized.length > 120) {
-    return 'Keep place names under 120 characters.';
-  }
-
-  return null;
-}
-
-function writeCsvFilterParam(params: URLSearchParams, key: string, next: string[]) {
-  const normalized = next.map(normalizeFilterValue).filter(Boolean);
-
-  if (normalized.length === 0) {
-    params.delete(key);
-  } else {
-    params.set(key, normalized.join(','));
-  }
-}
-
-function readCsvParam(params: URLSearchParams, key: string): string[] {
-  return params.get(key)?.split(',').map(normalizeFilterValue).filter(Boolean) ?? [];
-}
-
 /** One removable filter chip inside the drop area. */
 function FilterChip({
   icon: Icon,
@@ -295,15 +219,12 @@ function FilterChip({
   );
 }
 
-// One filter dimension the drop area can receive: which URL param it writes,
-// its chip icon, and the validator for a dropped name.
-const DROP_FILTER_KINDS: Record<
-  FilterDragKind,
-  { param: string; icon: typeof Users; validate: (value: string) => string | null }
-> = {
-  person: { param: 'people', icon: Users, validate: validatePersonFilterValue },
-  place: { param: 'places', icon: MapPin, validate: validatePlaceFilterValue },
-  tag: { param: 'tags', icon: Tag, validate: validateTagFilterValue },
+// Chip icon per drag-in filter dimension; the URL param and validation live in
+// filterParams.ts (shared with the header search box's arrow-key add/remove).
+const DROP_FILTER_ICONS: Record<FilterDragKind, typeof Users> = {
+  person: Users,
+  place: MapPin,
+  tag: Tag,
 };
 
 /**
@@ -372,21 +293,12 @@ function FilterDropArea() {
     setError(null);
   };
 
-  const write = (kind: FilterDragKind, next: string[]) => {
+  const remove = (kind: FilterDragKind, name: string) => {
     setSearchParams((params) => {
-      writeCsvFilterParam(params, DROP_FILTER_KINDS[kind].param, next);
+      removeEntityFilter(params, kind, name);
 
       return params;
     });
-  };
-
-  const remove = (kind: FilterDragKind, name: string) => {
-    const key = filterValueKey(name);
-
-    write(
-      kind,
-      selections[kind].filter((value) => filterValueKey(value) !== key),
-    );
     setError(null);
   };
 
@@ -407,26 +319,14 @@ function FilterDropArea() {
   };
 
   const add = (kind: FilterDragKind, rawName: string) => {
-    const validation = DROP_FILTER_KINDS[kind].validate(rawName);
+    const next = new URLSearchParams(searchParams);
+    const validation = addEntityFilter(next, kind, rawName);
 
-    if (validation) {
-      setError(validation);
+    setError(validation);
 
-      return;
+    if (validation === null) {
+      setSearchParams(next);
     }
-
-    // Tag labels are canonically lowercase (the backend lowercases on create).
-    const normalized =
-      kind === 'tag' ? normalizeFilterValue(rawName).toLocaleLowerCase() : normalizeFilterValue(rawName);
-
-    if (selections[kind].some((value) => filterValueKey(value) === filterValueKey(normalized))) {
-      setError(`${normalized} is already selected.`);
-
-      return;
-    }
-
-    write(kind, [...selections[kind], normalized]);
-    setError(null);
   };
 
   const DropIcon = isDropTarget ? Scan : Filter;
@@ -509,11 +409,11 @@ function FilterDropArea() {
                 }
               />
             )}
-            {(Object.keys(DROP_FILTER_KINDS) as FilterDragKind[]).flatMap((kind) =>
+            {(Object.keys(DROP_FILTER_ICONS) as FilterDragKind[]).flatMap((kind) =>
               selections[kind].map((name) => (
                 <FilterChip
                   key={`${kind}:${name}`}
-                  icon={DROP_FILTER_KINDS[kind].icon}
+                  icon={DROP_FILTER_ICONS[kind]}
                   label={kind === 'tag' ? `#${name}` : name}
                   removeLabel={`Remove ${name}`}
                   onRemove={() => remove(kind, name)}

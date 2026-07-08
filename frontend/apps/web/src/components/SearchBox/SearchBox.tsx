@@ -25,6 +25,7 @@ import {
 import { ArrowDown, Search, X } from '@ci/shadcn/icons';
 
 import { DropdownContent } from './DropdownContent';
+import type { FilterDragPayload } from './filterDrag';
 import { DropdownProvider, useDropdown } from './useDropdown';
 
 const FormSchema = s.object({
@@ -43,12 +44,20 @@ const Keys = {
   ENTER: 'Enter',
   ARROW_UP: 'ArrowUp',
   ARROW_DOWN: 'ArrowDown',
+  ARROW_LEFT: 'ArrowLeft',
+  ARROW_RIGHT: 'ArrowRight',
 } as const;
 
 interface SearchResultItem {
   id: string;
   content: React.ReactNode;
   preview?: React.ReactNode;
+  /**
+   * The filter this row can apply, for rows that double as filter sources
+   * (person / place / tag). Same payload the row's drag carries — the arrow
+   * keys are the keyboard analogue of dragging it onto the filter drop area.
+   */
+  filter?: FilterDragPayload;
 }
 
 interface Props {
@@ -120,6 +129,13 @@ interface Props {
   onKeyDown?: (query: string, e: React.KeyboardEvent<HTMLInputElement>) => void;
   onClear?: () => void;
   onResultSelect?: (result: SearchResultItem) => void;
+  /**
+   * Right arrow on a highlighted result carrying a `filter` payload applies it;
+   * left arrow removes it. Rows without a payload — and boxes without these
+   * callbacks — keep the arrows' native caret movement.
+   */
+  onFilterAdd?: (filter: FilterDragPayload) => void;
+  onFilterRemove?: (filter: FilterDragPayload) => void;
   onSave?: (query: string, entityTypes: string[]) => void;
 }
 
@@ -150,6 +166,8 @@ function SearchBox(
     onKeyDown,
     onClear,
     onResultSelect,
+    onFilterAdd,
+    onFilterRemove,
     onSave,
   }: Props,
   forwardedRef: ForwardedRef<HTMLInputElement>,
@@ -339,6 +357,30 @@ function SearchBox(
 
           break;
 
+        // The keyboard analogue of dragging a filter-source row onto the drop
+        // area: right adds the highlighted row's filter, left removes it. Only
+        // hijacked when a filter payload is there to act on — otherwise the
+        // arrows keep moving the caret.
+        case Keys.ARROW_RIGHT:
+          if (onFilterAdd && selectedResult?.filter) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            onFilterAdd(selectedResult.filter);
+          }
+
+          break;
+
+        case Keys.ARROW_LEFT:
+          if (onFilterRemove && selectedResult?.filter) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            onFilterRemove(selectedResult.filter);
+          }
+
+          break;
+
         default:
           if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') {
             setSelectedIndex(-1);
@@ -365,6 +407,9 @@ function SearchBox(
       panelPinned,
       onPanelUnpin,
       onResultSelect,
+      selectedResult,
+      onFilterAdd,
+      onFilterRemove,
       handleClear,
       onKeyDown,
     ],

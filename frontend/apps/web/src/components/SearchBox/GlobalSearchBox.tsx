@@ -9,9 +9,12 @@ import { useRecentSearches } from '@/hooks';
 import { useKeyboardShortcut } from '@/hooks/useKeyboardShortcut';
 import {
   FILTER_PARAMS,
+  addEntityFilter,
   countActiveFilters,
+  removeEntityFilter,
 } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
 
+import type { FilterDragPayload } from './filterDrag';
 import { CommunicationResult } from './results/CommunicationResult';
 import { ConceptResult } from './results/ConceptResult';
 import { ContentResult } from './results/ContentResult';
@@ -23,7 +26,7 @@ import { PersonResult } from './results/PersonResult';
 import { PlaceResult } from './results/PlaceResult';
 import { TagResult } from './results/TagResult';
 import { ThreadResult } from './results/ThreadResult';
-import { SearchBox } from './SearchBox';
+import { SearchBox, type SearchResultItem } from './SearchBox';
 import { useSearchService } from './useSearchService';
 
 const RECENT_PREFIX = 'recent:';
@@ -197,7 +200,7 @@ export function GlobalSearchBox() {
     [addRecentSearch, clearInput, navigate, onMemory, semantic, setSearchParams],
   );
 
-  const suggestions = useMemo(
+  const suggestions = useMemo<SearchResultItem[]>(
     () =>
       data.map((item) => {
         switch (item.__typename) {
@@ -222,11 +225,22 @@ export function GlobalSearchBox() {
           case 'NoteType':
             return { id: item.id, content: <NoteResult note={item} /> };
 
+          // Person/place rows carry their drag payload (`filterName` is the
+          // query-level unmasked name) so the arrow keys can add/remove them
+          // as who/where filters without a drag.
           case 'PersonType':
-            return { id: item.id, content: <PersonResult person={item} /> };
+            return {
+              id: item.id,
+              content: <PersonResult person={item} />,
+              filter: item.filterName ? { kind: 'person', name: item.filterName } : undefined,
+            };
 
           case 'PlaceType':
-            return { id: item.id, content: <PlaceResult place={item} /> };
+            return {
+              id: item.id,
+              content: <PlaceResult place={item} />,
+              filter: item.filterName ? { kind: 'place', name: item.filterName } : undefined,
+            };
 
           case 'ThreadType':
             return { id: item.id, content: <ThreadResult thread={item} /> };
@@ -238,7 +252,7 @@ export function GlobalSearchBox() {
     [data],
   );
 
-  const results = useMemo(() => {
+  const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
     // Typing → a "search Memory" action, then matching tags (draggable filter
@@ -260,6 +274,7 @@ export function GlobalSearchBox() {
         ...tags.map((tag) => ({
           id: `${TAG_PREFIX}${tag.label}`,
           content: <TagResult label={tag.label} />,
+          filter: { kind: 'tag' as const, name: tag.label },
         })),
         ...suggestions,
       ];
@@ -338,6 +353,34 @@ export function GlobalSearchBox() {
 
     setExpanded(false);
   }, [onMemory, setSearchParams]);
+
+  // Arrow-key analogue of dragging a person/place/tag row onto the explorer's
+  // filter drop area: right adds the highlighted row's filter, left removes it.
+  // Same validation/dedupe as a drop; failures are silent no-ops here (the drop
+  // area owns the error surface). Only wired on /memory — matching the drag,
+  // whose drop target only exists there — so the arrows keep their native caret
+  // behavior everywhere else.
+  const handleFilterAdd = useCallback(
+    (filter: FilterDragPayload) => {
+      setSearchParams((params) => {
+        addEntityFilter(params, filter.kind, filter.name);
+
+        return params;
+      });
+    },
+    [setSearchParams],
+  );
+
+  const handleFilterRemove = useCallback(
+    (filter: FilterDragPayload) => {
+      setSearchParams((params) => {
+        removeEntityFilter(params, filter.kind, filter.name);
+
+        return params;
+      });
+    },
+    [setSearchParams],
+  );
 
   const handleResultSelect = useCallback(
     ({ id }: { id: string }) => {
@@ -500,6 +543,8 @@ export function GlobalSearchBox() {
             onSubmit={({ query: submitted }) => commitSearch(submitted)}
             onClear={handleClear}
             onResultSelect={handleResultSelect}
+            onFilterAdd={onMemory ? handleFilterAdd : undefined}
+            onFilterRemove={onMemory ? handleFilterRemove : undefined}
             onKeyDown={(_value, e) => {
               if (e.key === 'Escape') {
                 collapseBar();
