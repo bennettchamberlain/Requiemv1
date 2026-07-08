@@ -70,6 +70,11 @@ export class ApiKeyStrategy extends PassportStrategy(RequestStrategy, 'api-key')
       userId: user.id,
     });
 
+    // Expose the key's scopes so ScopesGuard can enforce @RequireScopes on the
+    // route. Absence of this field on the request means "not an api-key
+    // principal" (full authority); an empty array means a legacy full-access key.
+    (req as Request & { apiKeyScopes?: string[] }).apiKeyScopes = result.scopes;
+
     return user;
   }
 }

@@ -45,6 +45,40 @@ export class ApiKeyService {
     };
   }
 
+  /**
+   * Mint an api key idempotently for a `(user, name)` pair, rotating any
+   * existing key with the same name.
+   *
+   * The raw key is only ever revealed at creation time (it is stored hashed),
+   * so re-provisioning cannot return a previously-issued secret — instead the
+   * old key is deleted and a fresh one minted and returned. This keeps repeated
+   * provision calls (e.g. the Hub reconnecting an app, or key rotation) from
+   * accumulating dead rows while guaranteeing the caller always receives a
+   * usable secret. Callers that only need "a key exists" should check
+   * {@link findByName} first.
+   *
+   * @param context - the owning user
+   * @param data - key attributes; `name` doubles as the idempotency key
+   */
+  async createOrRotate(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
+    await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
+
+    return this.create(context, data);
+  }
+
+  /**
+   * Look up a single api key by its `(user, name)` pair, or null if none exists.
+   * Used to detect whether an app has already been provisioned before deciding
+   * to mint or rotate.
+   */
+  async findByName(context: UserServiceContext, name: string): Promise<ApiKey | null> {
+    const key = await this.apiKeyRepository.findOne({
+      where: { user_id: context.userId, name },
+    });
+
+    return key ? ApiKeyEntity.toEgressType(key) : null;
+  }
+
   async findAllByUser(context: ServiceContext): Promise<ApiKey[]> {
     const keys = await this.apiKeyRepository.find({
       where: {
@@ -101,7 +135,23 @@ export class ApiKeyService {
     return (result.affected ?? 0) > 0;
   }
 
-  async validateKey(rawKey: string): Promise<{ userId: string } | null> {
+  /**
+   * Delete every api key with the given `name`, regardless of owner, returning
+   * the number removed.
+   *
+   * This is a system-level revoke used by the trusted connect flow: CI-Hub (via
+   * signed forward-auth) revokes "the key for app X" by its stable name
+   * (`app:<urn>`) without knowing the owning `ci.users` id. Because
+   * `(user_id, name)` is unique there is at most one row per user; on the
+   * single-owner appliance that is exactly the app's key.
+   */
+  async removeByName(name: string): Promise<number> {
+    const result = await this.apiKeyRepository.delete({ name });
+
+    return result.affected ?? 0;
+  }
+
+  async validateKey(rawKey: string): Promise<{ userId: string; scopes: string[] } | null> {
     if (rawKey.length !== API_KEY_HEX_LENGTH || !API_KEY_HEX_REGEX.test(rawKey)) {
       return null;
     }
@@ -110,7 +160,7 @@ export class ApiKeyService {
 
     const key = await this.apiKeyRepository.findOne({
       where: { hashed_key: hashed },
-      select: ['id', 'user_id', 'expires_at'],
+      select: ['id', 'user_id', 'expires_at', 'scopes'],
     });
 
     if (!key) {
@@ -123,7 +173,9 @@ export class ApiKeyService {
 
     await this.apiKeyRepository.update(key.id, { last_used_at: new Date() });
 
-    return { userId: key.user_id };
+    // `scopes` drives least-privilege enforcement downstream (see ScopesGuard).
+    // An empty array is a legacy full-access key, preserved as-is.
+    return { userId: key.user_id, scopes: key.scopes ?? [] };
   }
 
   private hash(key: string): string {

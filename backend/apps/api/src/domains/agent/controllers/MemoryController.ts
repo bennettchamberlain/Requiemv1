@@ -3,7 +3,8 @@ import { createHash } from 'crypto';
 import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { RequireScopes } from '@ci/common/decorators';
+import { ApiKeyGuard, JwtOrApiKeyAuthGuard, ScopesGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { CommunicationService, CommunicationType, UserContextService } from '@ci/domains/memory';
@@ -65,7 +66,8 @@ export class MemoryController {
    * graph: name, relationships, preferences, and dossier. Intended to be
    * called once per session (system_prompt_block), not per turn.
    */
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('memory')
   @Get('context')
   async context(@Context() context: RequestContext) {
     const serviceContext = toServiceContext(context);
@@ -97,7 +99,8 @@ export class MemoryController {
    * Runs a keyword/semantic search using the query, then hydrates matched
    * entity IDs into readable names and content.
    */
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('memory')
   @Post('recall')
   async recall(@Context() context: RequestContext, @Body(new ValidationPipe(recallSchema)) input: RecallDto) {
     return this.recallService.recall(toServiceContext(context), {
@@ -114,7 +117,8 @@ export class MemoryController {
    * Invoked by:
    *   - Hermes 'on_memory_write'
    */
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('memory')
   @HttpCode(201)
   @Post('write')
   async write(
@@ -131,7 +135,8 @@ export class MemoryController {
    *   - OpenClaw 'afterTurn'
    *   - Hermes 'sync_turn'
    */
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @RequireScopes('memory')
   @HttpCode(201)
   @Post('turn')
   async turn(@Context() context: RequestContext, @Body(new ValidationPipe(turnSchema)) input: TurnDto) {
