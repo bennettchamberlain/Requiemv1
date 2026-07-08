@@ -37,9 +37,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
   const browserActivityService = { createMany: jest.fn(echo) };
   const positionService = { create: jest.fn(echo) };
   const eventService = {
-    create: jest.fn(async (_context: unknown, _data: unknown): Promise<Record<string, unknown>[]> => [
-      { id: 'event-x' },
-    ]),
+    create: jest.fn(async (): Promise<Record<string, unknown>[]> => [{ id: 'event-x' }]),
   };
   // Capture-log INSERT always "inserts" (new capture); the trailing UPDATE
   // returns nothing.

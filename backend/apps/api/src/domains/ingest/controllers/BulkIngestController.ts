@@ -269,12 +269,14 @@ export class BulkIngestController {
 
         return;
       }
+
       const key = tripleKey(triple);
       if (seen.has(key)) {
         duplicate++;
 
         return;
       }
+
       seen.add(key);
       candidates.push({ r, index, triple });
     });
@@ -352,13 +354,16 @@ export class BulkIngestController {
     const linkValues: string[] = [];
     for (const row of rows) {
       const triple = egressTriple(row);
-      if (!hasFullTriple(triple)) continue;
+      if (!hasFullTriple(triple)) {continue;}
+
       const captureId = captureIdByKey.get(tripleKey(triple));
       const id = (row as { id?: string }).id;
-      if (!captureId || !id) continue;
+      if (!captureId || !id) {continue;}
+
       linkParams.push(captureId, id);
       linkValues.push(`($${linkParams.length - 1}::uuid, $${linkParams.length}::uuid)`);
     }
+
     if (linkValues.length) {
       await this.dataSource.query(
         `UPDATE ci.capture_events AS c
@@ -374,7 +379,8 @@ export class BulkIngestController {
 
   /** Best-effort undo of this request's raw-log inserts (see layer 2 failure). */
   private async compensateCaptures(captureIdByKey: Map<string, string>): Promise<void> {
-    if (captureIdByKey.size === 0) return;
+    if (captureIdByKey.size === 0) {return;}
+
     try {
       await this.dataSource.query(`DELETE FROM ci.capture_events WHERE capture_event_id = ANY($1)`, [
         [...captureIdByKey.values()],
