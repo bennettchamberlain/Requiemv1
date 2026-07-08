@@ -317,11 +317,22 @@ export function GlobalSearchBox() {
   const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
-    // Typing → a clear-filters action (only while filters are active), an
-    // advanced-search toggle, a "search Memory" action, then matching tags
+    // Typing → an advanced-search toggle, a clear-filters action (only while
+    // filters are active), a "search Memory" action, then matching tags
     // (draggable filter rows, few and precise), then live entity suggestions.
     if (trimmed) {
       return [
+        {
+          id: ADVANCED_ACTION_ID,
+          content: (
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+              <span className="text-muted-foreground">
+                {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
+              </span>
+            </div>
+          ),
+        },
         ...(activeFilterCount > 0
           ? [
               {
@@ -335,17 +346,6 @@ export function GlobalSearchBox() {
               },
             ]
           : []),
-        {
-          id: ADVANCED_ACTION_ID,
-          content: (
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-              <span className="text-muted-foreground">
-                {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
-              </span>
-            </div>
-          ),
-        },
         {
           id: SEARCH_ACTION_ID,
           content: (
