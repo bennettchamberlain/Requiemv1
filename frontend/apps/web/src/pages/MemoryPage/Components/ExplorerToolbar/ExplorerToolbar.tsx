@@ -695,15 +695,17 @@ function SortControl() {
 }
 
 /**
- * The advanced search controls: the What / When / How dropdowns and the
- * located-only toggle followed by semantic and sort, then the drag-and-drop
- * filter area (people, places & tags), with the save action on its own
- * bottom-right line. `modal` is forwarded to the portaled Radix dropdowns so
- * they behave inside a modal Sheet/Dialog.
+ * The advanced search controls: the drag-and-drop filter area (people,
+ * places & tags) on top, then the What / When / How dropdowns and the
+ * located-only toggle followed by semantic and sort, with the save action
+ * right-aligned on the same row. `modal` is forwarded to the portaled Radix
+ * dropdowns so they behave inside a modal Sheet/Dialog.
  */
 export function AdvancedFilters({ modal }: { modal: boolean }) {
   return (
     <div className="flex w-full min-w-0 flex-col gap-3">
+      <FilterDropArea />
+
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <EntityTypeFilter modal={modal} label="What" />
         <DateControl />
@@ -720,12 +722,10 @@ export function AdvancedFilters({ modal }: { modal: boolean }) {
         <span className="mx-1 h-6 w-px self-center bg-border" />
 
         <SortControl />
-      </div>
 
-      <FilterDropArea />
-
-      <div className="flex justify-end">
-        <SaveSearchButton />
+        <div className="ml-auto">
+          <SaveSearchButton />
+        </div>
       </div>
     </div>
   );
@@ -965,9 +965,10 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* The advanced-search drawer: What / When / How + located-only, semantic,
-          and sort, then the drag-and-drop filter area (people, places & tags),
-          with save on its own bottom-right line. Opened from the header toggle. */}
+      {/* The advanced-search drawer: the drag-and-drop filter area (people,
+          places & tags), then What / When / How + located-only, semantic, and
+          sort with save right-aligned on the same row. Opened from the header
+          toggle. */}
       {open && (
         <div className="rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
           <AdvancedFilters modal={false} />
@@ -987,8 +988,8 @@ function ExplorerToolbarInner({ open }: { open: boolean }) {
 
 /**
  * The explorer toolbar body that sits under the unified header bar: the
- * advanced-search drawer (What / When / How + located-only, semantic, sort,
- * then the drag-and-drop filter area and save) plus the active-filter chips.
+ * advanced-search drawer (the drag-and-drop filter area, then What / When /
+ * How + located-only, semantic, sort, and save) plus the active-filter chips.
  * `open` is controlled by the page — the AdvancedSearchToggle that flips it
  * lives in the header. Wrapped in DropdownProvider so the useDropdown
  * URL-param setters work.
