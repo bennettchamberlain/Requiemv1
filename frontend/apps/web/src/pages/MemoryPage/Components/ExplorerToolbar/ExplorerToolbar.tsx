@@ -236,8 +236,8 @@ const DROP_FILTER_ICONS: Record<FilterDragKind, typeof Users> = {
  * source and activity selections, the When picker's date range, the Has a
  * location / Semantic toggles, and the map's "Search events in this area"
  * viewport so every applied filter reads from one place. `Clear all` in the
- * top-right corner resets the query and the full filter set — the same reset
- * as the header search box's X.
+ * top-right corner resets the full filter set but leaves the search query
+ * alone — the query lives in the header search box, whose X clears it.
  */
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -282,8 +282,6 @@ function FilterDropArea() {
 
   const clearAll = () => {
     setSearchParams((params) => {
-      params.delete('search');
-
       for (const param of FILTER_PARAMS) {
         params.delete(param);
       }
