@@ -14,12 +14,7 @@ import { gql } from '@/graphql';
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components/EntityDetails';
-import { ActiveFilterChips, countActiveFilters } from './Components/ExplorerToolbar/ActiveFilterChips';
-import {
-  AdvancedFilters,
-  AdvancedSearchToggle,
-  ResultCount,
-} from './Components/ExplorerToolbar/ExplorerToolbar';
+import { AdvancedFilters, AdvancedSearchToggle } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -259,7 +254,6 @@ export default function DesktopMemoryPage() {
     }
   }, []);
 
-  const activeFilterCount = countActiveFilters(searchParams);
   const activeView = VIEW_TABS.find((tab) => tab.value === activeTab) ?? VIEW_TABS[1];
 
   return (
@@ -323,35 +317,22 @@ export default function DesktopMemoryPage() {
         />
       </Portal.Slot>
 
-      {/* The advanced filters and active-filter chips render as a pinned section
-          at the top of the header SearchBox's dropdown panel (its panelHeader
-          slot), above any live search suggestions — so typing never covers them.
-          Chips also surface (without the full controls) whenever the panel opens
-          with filters active; when it's closed, the toggle's count badge stands in. */}
+      {/* The advanced filters render as a pinned section at the top of the
+          header SearchBox's dropdown panel (its panelHeader slot), above any
+          live search suggestions — so typing never covers them. Every applied
+          filter chips inside the drawer's drop area; while the drawer is
+          closed, the search box's "N filters" text stands in. */}
       <Portal.Slot id="nav-search-panel">
-        {(advancedOpen || activeFilterCount > 0) && (
+        {advancedOpen && (
           <DropdownProvider args={[{ changeSearchParams: true }]}>
-            <div className="flex flex-col gap-2 p-3">
-              {advancedOpen && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <AdvancedFilters modal={false} />
-                </div>
-              )}
-              {activeFilterCount > 0 && <ActiveFilterChips />}
+            <div className="p-3">
+              <AdvancedFilters modal={false} />
             </div>
           </DropdownProvider>
         )}
       </Portal.Slot>
 
       <PageContent className="p-0 gap-0">
-        {/* Result count only — filters and their chips live in the header search
-            panel. The map stays full-bleed. */}
-        {activeTab !== 'map' && (
-          <div className="flex justify-end px-4 pt-3">
-            <ResultCount />
-          </div>
-        )}
-
         <div className="flex min-h-0 flex-1 flex-col">
           {activeTab === 'list' && <ListView />}
           {activeTab === 'map' && <DesktopMapView />}
