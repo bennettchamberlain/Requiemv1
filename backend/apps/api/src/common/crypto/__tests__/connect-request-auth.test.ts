@@ -1,4 +1,4 @@
-import { canonicalizeBody } from '../connect-request-auth';
+import { canonicalizeBody, verifyConnectRequest } from '../connect-request-auth';
 
 /**
  * canonicalizeBody must produce byte-identical output to the CI-Hub signer for
@@ -26,5 +26,38 @@ describe('canonicalizeBody', () => {
 
     expect(() => canonicalizeBody(cyclic)).not.toThrow();
     expect(canonicalizeBody(cyclic)).toContain('"self":null');
+  });
+
+  it('throws (bounded) on a pathologically deep body rather than overflowing the stack', () => {
+    let deep: Record<string, unknown> = {};
+    for (let i = 0; i < 500; i++) {
+      deep = { nested: deep };
+    }
+
+    expect(() => canonicalizeBody(deep)).toThrow(/depth/i);
+  });
+});
+
+/**
+ * The body is canonicalized pre-auth (its hash is part of the signed message),
+ * so a hostile deeply-nested body must reject cleanly, not surface as a 500.
+ */
+describe('verifyConnectRequest deep-body handling', () => {
+  it('returns bad_body (not a thrown error) for an over-deep body', () => {
+    let deep: Record<string, unknown> = {};
+    for (let i = 0; i < 500; i++) {
+      deep = { nested: deep };
+    }
+
+    const result = verifyConnectRequest('secret', {
+      method: 'POST',
+      path: '/connect/exchange',
+      timestamp: String(Date.now()),
+      nonce: 'a-nonce',
+      signature: 'deadbeef',
+      body: deep,
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'bad_body' });
   });
 });

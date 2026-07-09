@@ -17,9 +17,19 @@ import config from '@ci/configuration';
  * so a captured request cannot be replayed (e.g. to revoke another app's key)
  * within the skew window.
  *
- * Reuses `auth.hubForwardAuth.{enabled,secret,maxSkewMs}` — the same dedicated
- * Hub<->CI-Server shared secret. Fails closed when disabled, matching
- * HubForwardAuthGuard.
+ * Uses `auth.hubForwardAuth.{enabled,secret}` (the dedicated Hub<->CI-Server
+ * shared secret) and fails closed when disabled, matching HubForwardAuthGuard.
+ * The replay/skew window, however, is the connect-specific DEFAULT_CONNECT_MAX_SKEW_MS
+ * (60s) — deliberately NOT the shared `hubForwardAuth.maxSkewMs` (which is a much
+ * larger identity-header tolerance): a connect call is a low-latency same-host S2S
+ * request, so a tight window minimises the interval in which a captured request
+ * could be replayed.
+ *
+ * Residual (accepted for the single-instance appliance): the nonce cache is
+ * in-memory and per-process, so single-use is not preserved across a CI-Server
+ * restart or a second replica. Exposure is bounded to the 60s window and requires
+ * an attacker already positioned to capture the internal S2S request; a shared/
+ * persistent nonce store would be needed to close it for multi-replica setups.
  */
 @Injectable()
 export class ConnectRequestAuthGuard implements CanActivate {
@@ -36,7 +46,10 @@ export class ConnectRequestAuthGuard implements CanActivate {
     }
 
     const req = context.switchToHttp().getRequest<Request>();
-    const maxSkewMs = cfg.maxSkewMs || DEFAULT_CONNECT_MAX_SKEW_MS;
+    // Connect-specific window (60s), decoupled from the larger shared
+    // hubForwardAuth.maxSkewMs so a captured connect request is replayable for at
+    // most ~60s rather than the identity-header tolerance.
+    const maxSkewMs = DEFAULT_CONNECT_MAX_SKEW_MS;
 
     const header = (name: string): string | null => {
       const raw = req.headers[name];

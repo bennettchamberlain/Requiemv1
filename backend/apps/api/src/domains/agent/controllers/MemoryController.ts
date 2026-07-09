@@ -201,7 +201,11 @@ export class MemoryController {
    * unprocessed fragments.  The LLM call runs in the background; the response
    * returns immediately with the number of queued fragments.
    */
-  @UseGuards(JwtOrApiKeyAuthGuard)
+  // JWT/session principals (the browser settings UI) pass ScopesGuard via its
+  // non-api-key bypass; an API key must carry the 'memory' scope, matching the
+  // other memory endpoints so an intentionally non-memory key can't compact.
+  @UseGuards(JwtOrApiKeyAuthGuard, ScopesGuard)
+  @RequireScopes('memory')
   @HttpCode(200)
   @Post('compact')
   async compact(@Context() context: RequestContext) {
