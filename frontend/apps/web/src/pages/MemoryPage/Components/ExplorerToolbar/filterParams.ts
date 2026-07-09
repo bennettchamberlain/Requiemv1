@@ -147,7 +147,11 @@ export const ENTITY_FILTER_KINDS: Record<
  * Validate and append one entity filter value to its CSV param. Mutates
  * `params` only on success; returns the validation/duplicate error otherwise.
  */
-export function addEntityFilter(params: URLSearchParams, kind: FilterDragKind, rawName: string): string | null {
+export function addEntityFilter(
+  params: URLSearchParams,
+  kind: FilterDragKind,
+  rawName: string,
+): string | null {
   const { param, validate } = ENTITY_FILTER_KINDS[kind];
   const validation = validate(rawName);
 
