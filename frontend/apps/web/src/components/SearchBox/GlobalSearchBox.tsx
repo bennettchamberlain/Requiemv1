@@ -362,23 +362,41 @@ export function GlobalSearchBox() {
   const results = useMemo<SearchResultItem[]>(() => {
     const trimmed = (query ?? '').trim();
 
-    // Typing → an advanced-search toggle, a clear-query action, a clear-filters
-    // action (only while filters are active), a "search Memory" action, then
-    // matching tags (draggable filter rows, few and precise), then live entity
-    // suggestions.
+    // In-place actions that don't depend on a typed query: the advanced-search
+    // toggle, and clear-filters while filters are active. They lead the dropdown
+    // in both states — with no query, active filters still need both handles.
+    const advancedRow: SearchResultItem = {
+      id: ADVANCED_ACTION_ID,
+      content: (
+        <div className="flex items-center gap-2">
+          <SlidersHorizontal className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+          <span className="text-muted-foreground">
+            {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
+          </span>
+        </div>
+      ),
+    };
+    const clearFiltersRows: SearchResultItem[] =
+      activeFilterCount > 0
+        ? [
+            {
+              id: CLEAR_FILTERS_ACTION_ID,
+              content: (
+                <div className="flex items-center gap-2">
+                  <FilterX className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+                  <span className="text-muted-foreground">Clear search filters</span>
+                </div>
+              ),
+            },
+          ]
+        : [];
+
+    // Typing → the in-place actions plus a clear-query action and a "search
+    // Memory" action, then matching tags (draggable filter rows, few and
+    // precise), then live entity suggestions.
     if (trimmed) {
       return [
-        {
-          id: ADVANCED_ACTION_ID,
-          content: (
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-              <span className="text-muted-foreground">
-                {advancedOpen ? 'Close advanced search' : 'Open advanced search'}
-              </span>
-            </div>
-          ),
-        },
+        advancedRow,
         {
           id: CLEAR_QUERY_ACTION_ID,
           content: (
@@ -388,19 +406,7 @@ export function GlobalSearchBox() {
             </div>
           ),
         },
-        ...(activeFilterCount > 0
-          ? [
-              {
-                id: CLEAR_FILTERS_ACTION_ID,
-                content: (
-                  <div className="flex items-center gap-2">
-                    <FilterX className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-                    <span className="text-muted-foreground">Clear search filters</span>
-                  </div>
-                ),
-              },
-            ]
-          : []),
+        ...clearFiltersRows,
         {
           id: SEARCH_ACTION_ID,
           content: (
@@ -422,28 +428,32 @@ export function GlobalSearchBox() {
       ];
     }
 
-    // Empty + focused → recent searches.
-    return recentSearches.map((recent) => ({
-      id: `${RECENT_PREFIX}${recent}`,
-      content: (
-        <div className="flex items-center gap-2">
-          <Clock className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-          <span className="flex-1 truncate">{recent}</span>
-          <button
-            type="button"
-            aria-label={`Remove "${recent}" from recent searches`}
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={(e) => {
-              e.stopPropagation();
-              removeRecentSearch(recent);
-            }}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ),
-    }));
+    // Empty + focused → the same in-place actions, then recent searches.
+    return [
+      advancedRow,
+      ...clearFiltersRows,
+      ...recentSearches.map((recent) => ({
+        id: `${RECENT_PREFIX}${recent}`,
+        content: (
+          <div className="flex items-center gap-2">
+            <Clock className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+            <span className="flex-1 truncate">{recent}</span>
+            <button
+              type="button"
+              aria-label={`Remove "${recent}" from recent searches`}
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeRecentSearch(recent);
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ),
+      })),
+    ];
   }, [
     activeFilterCount,
     advancedOpen,
