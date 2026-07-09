@@ -618,10 +618,10 @@ function DateControl() {
   return (
     <Popover>
       <Popover.Trigger asChild>
-        <Button variant="outline">
+        <Button variant="outline" className="group">
           <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
           When
-          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+          <ChevronDown className="ml-2 h-4 w-4 opacity-50 transition-transform group-data-[state=open]:rotate-180" />
         </Button>
       </Popover.Trigger>
       <Popover.Content className="w-auto p-0" align="start">
