@@ -58,6 +58,7 @@ type RotateDto = z.infer<typeof rotateSchema>;
  *   POST /api/connect/approve  → mint a scoped key, hand back a one-time code
  *   POST /api/connect/exchange → CI-Hub swaps the code for the raw key (S2S)
  *   POST /api/connect/revoke   → CI-Hub revokes the app's key (S2S)
+ *   POST /api/connect/rotate   → CI-Hub rotates the app's key before expiry (S2S)
  *
  * The browser-facing routes run on this origin so the session cookie is in
  * scope; the raw key only ever leaves via the forward-auth-protected exchange.

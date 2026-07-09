@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { Strategy } from 'passport';
 
 import { ContextService, SYSTEM_USER } from '@ci/common/context';
+import { type ApiKeyScopedRequest } from '@ci/common/guards';
 import { UserService } from '@ci/domains/user';
 
 import { ApiKeyService } from './ApiKeyService';
@@ -73,7 +74,7 @@ export class ApiKeyStrategy extends PassportStrategy(RequestStrategy, 'api-key')
     // Expose the key's scopes so ScopesGuard can enforce @RequireScopes on the
     // route. Absence of this field on the request means "not an api-key
     // principal" (full authority); an empty array means a legacy full-access key.
-    (req as Request & { apiKeyScopes?: string[] }).apiKeyScopes = result.scopes;
+    (req as ApiKeyScopedRequest).apiKeyScopes = result.scopes;
 
     return user;
   }

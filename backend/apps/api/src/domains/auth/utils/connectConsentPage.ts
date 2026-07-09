@@ -7,6 +7,12 @@
  * token (read from the JS-readable csrf cookie) and follows the one-time-code
  * redirect the server returns.
  *
+ * Kept as a typed template module (rather than a separate .html asset) so the
+ * markup, the context-specific escaping it depends on, and its only inputs stay
+ * co-located and bundle automatically — no runtime template loading / dist-asset
+ * copying. The two large static blocks (styles + client script) live in the
+ * constants below so the page skeleton in `renderConnectConsentPage` reads clearly.
+ *
  * NOTE (i18n): CI-Server's API has no i18n runtime, so these strings are
  * English-only. If richer/localised consent UX is needed, this page should move
  * into the CI-Server SPA (which has i18n) with the backend exposing the consent
@@ -44,28 +50,8 @@ function jsonForScript(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-/**
- * Render the consent page. The three request-derived values (`appName`,
- * `state`, `returnUrl`) are escaped for their respective contexts to prevent
- * injection; `returnUrl` has already been origin-allowlisted by the caller.
- */
-export function renderConnectConsentPage(params: ConnectConsentParams): string {
-  const displayName = escapeHtml(params.appName?.trim() || params.appUrn);
-
-  const bootstrap = jsonForScript({
-    appUrn: params.appUrn,
-    state: params.state,
-    returnUrl: params.returnUrl,
-    csrfCookieName: params.csrfCookieName,
-  });
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Connect to Companion Memory</title>
-  <style>
+/** Static page styles (no request-derived input). */
+const CONSENT_STYLES = `
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 0; display: grid;
       min-height: 100vh; place-items: center; background: #0b1220; color: #e6edf3; }
@@ -80,23 +66,17 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
     .allow { background: #2f9e8f; color: #fff; }
     .deny { background: transparent; color: #b6c2d4; border: 1px solid #33415c; }
     button[disabled] { opacity: .6; cursor: default; }
-    .error { color: #f2777a; margin-top: 1rem; min-height: 1.2rem; }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>Connect to Companion Memory</h1>
-    <p><span class="app">${displayName}</span> is requesting access to your Companion Memory,
-      so it can remember your context across sessions. It will be able to read and write your
-      long-term memory. You can disconnect it at any time.</p>
-    <div class="actions">
-      <button class="deny" id="deny" type="button">Not now</button>
-      <button class="allow" id="allow" type="button">Allow</button>
-    </div>
-    <div class="error" id="error" role="alert"></div>
-  </main>
-  <script>
-    (function () {
+    .error { color: #f2777a; margin-top: 1rem; min-height: 1.2rem; }`;
+
+/**
+ * The client bootstrap script. Its only server-injected value is `bootstrap` —
+ * the JSON config object (already `</script>`-safe via {@link jsonForScript}) it
+ * assigns to `P`; everything else is static. Handles the allow/deny buttons: deny
+ * bounces back to the return URL with `error`, allow POSTs to `/api/connect/approve`
+ * (with the CSRF header) and follows the one-time-code redirect.
+ */
+function consentScript(bootstrap: string): string {
+  return `(function () {
       var P = ${bootstrap};
 
       function readCookie(name) {
@@ -148,8 +128,45 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
             errEl.textContent = 'Something went wrong connecting. Please try again.';
           });
       });
-    })();
-  </script>
+    })();`;
+}
+
+/**
+ * Render the consent page. The three request-derived values (`appName`,
+ * `state`, `returnUrl`) are escaped for their respective contexts to prevent
+ * injection; `returnUrl` has already been origin-allowlisted by the caller.
+ */
+export function renderConnectConsentPage(params: ConnectConsentParams): string {
+  const displayName = escapeHtml(params.appName?.trim() || params.appUrn);
+
+  const bootstrap = jsonForScript({
+    appUrn: params.appUrn,
+    state: params.state,
+    returnUrl: params.returnUrl,
+    csrfCookieName: params.csrfCookieName,
+  });
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connect to Companion Memory</title>
+  <style>${CONSENT_STYLES}</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Connect to Companion Memory</h1>
+    <p><span class="app">${displayName}</span> is requesting access to your Companion Memory,
+      so it can remember your context across sessions. It will be able to read and write your
+      long-term memory. You can disconnect it at any time.</p>
+    <div class="actions">
+      <button class="deny" id="deny" type="button">Not now</button>
+      <button class="allow" id="allow" type="button">Allow</button>
+    </div>
+    <div class="error" id="error" role="alert"></div>
+  </main>
+  <script>${consentScript(bootstrap)}</script>
 </body>
 </html>`;
 }

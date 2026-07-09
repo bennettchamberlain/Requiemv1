@@ -11,6 +11,7 @@ import { Entity, Column, PrimaryColumn, CreateDateColumn } from 'typeorm';
  */
 @Entity({ schema: 'ci', name: 'connect_codes' })
 export class ConnectCodeEntity {
+  /** Primary key (UUID). */
   @PrimaryColumn('uuid')
   id!: string;
 
@@ -26,6 +27,7 @@ export class ConnectCodeEntity {
   @Column({ type: 'text' })
   app_urn!: string;
 
+  /** Absolute expiry; the code is rejected once this passes. */
   @Column({ type: 'timestamptz' })
   expires_at!: Date;
 
@@ -33,6 +35,7 @@ export class ConnectCodeEntity {
   @Column({ type: 'timestamptz', nullable: true })
   used_at!: Date | null;
 
+  /** Row creation timestamp (set by the database). */
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 }
