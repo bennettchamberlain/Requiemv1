@@ -6,6 +6,14 @@ import { SetMetadata } from '@nestjs/common';
 export const REQUIRE_SCOPES_KEY = 'require_scopes';
 
 /**
+ * Canonical name of the memory API-key scope. Defined once so the connect flow
+ * that MINTS memory-scoped keys (see ConnectService's `CONNECT_KEY_SCOPE`) and
+ * the routes that REQUIRE it via {@link RequireScopes} reference the same value
+ * and can never silently drift.
+ */
+export const MEMORY_SCOPE = 'memory';
+
+/**
  * Declares the API-key scopes a route requires.
  *
  * Enforced by {@link ScopesGuard}, which runs after an api-key strategy has

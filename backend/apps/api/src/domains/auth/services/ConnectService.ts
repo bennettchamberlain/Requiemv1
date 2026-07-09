@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { SYSTEM_USER } from '@ci/common/context';
+import { MEMORY_SCOPE } from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
@@ -10,7 +11,7 @@ import { AuthService } from './AuthService';
 import { ConnectCodeService } from './ConnectCodeService';
 
 /** Scope granted to keys minted through the connect flow — memory access only. */
-export const CONNECT_KEY_SCOPE = 'memory';
+export const CONNECT_KEY_SCOPE = MEMORY_SCOPE;
 /** Api-key name prefix; the app URN makes the name unique per app (idempotency key). */
 const CONNECT_KEY_NAME_PREFIX = 'app:';
 /** Minted keys expire after this many days; CI-Hub rotates well before expiry. */
@@ -48,6 +49,9 @@ export interface ExchangedConnect {
  */
 @Injectable()
 export class ConnectService {
+  /** Parsed, normalized `CI_HUB_ORIGINS` — cached on first use (static config). */
+  private cachedHubOrigins: string[] | null = null;
+
   constructor(
     private readonly authService: AuthService,
     private readonly userService: UserService,
@@ -219,19 +223,26 @@ export class ConnectService {
 
   /** Parse + normalise the configured CI-Hub origin allowlist. */
   private allowedHubOrigins(): string[] {
-    return config.auth.connect.hubOrigins
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .map((entry) => {
-        try {
-          return new URL(entry).origin;
-        } catch {
-          this.logger.warn(`Ignoring malformed CI_HUB_ORIGINS entry: ${entry}`);
+    // CI_HUB_ORIGINS is static process config, so parse it once and cache the
+    // normalized origins instead of re-splitting + re-parsing on every connect
+    // request (any malformed entry is warned about once, on first access).
+    if (this.cachedHubOrigins === null) {
+      this.cachedHubOrigins = config.auth.connect.hubOrigins
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .map((entry) => {
+          try {
+            return new URL(entry).origin;
+          } catch {
+            this.logger.warn(`Ignoring malformed CI_HUB_ORIGINS entry: ${entry}`);
 
-          return '';
-        }
-      })
-      .filter((origin) => origin.length > 0);
+            return '';
+          }
+        })
+        .filter((origin) => origin.length > 0);
+    }
+
+    return this.cachedHubOrigins;
   }
 }

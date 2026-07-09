@@ -61,9 +61,33 @@ export class ApiKeyService {
    * @param data - key attributes; `name` doubles as the idempotency key
    */
   async createOrRotate(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
-    await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
+    try {
+      await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
 
-    return this.create(context, data);
+      return await this.create(context, data);
+    } catch (err) {
+      // Two concurrent createOrRotate calls for the same (user, name) — e.g. a
+      // re-consent racing the Hub's rotation sweep — can interleave delete/insert
+      // so this insert trips the (user_id, name) unique index (idx_api_keys_user_id_app_name).
+      // Retry once: the racing winner's row now exists, so our delete removes it
+      // and the re-insert succeeds. Last-writer-wins is fine — both callers only
+      // need a valid key to exist — and it turns a 500 into idempotent rotation.
+      if (!this.isUniqueViolation(err)) {
+        throw err;
+      }
+
+      await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
+
+      return this.create(context, data);
+    }
+  }
+
+  /** Whether a caught error is a Postgres unique-violation (SQLSTATE 23505). */
+  private isUniqueViolation(err: unknown): boolean {
+    const code = (err as { code?: string; driverError?: { code?: string } } | null)?.code
+      ?? (err as { driverError?: { code?: string } } | null)?.driverError?.code;
+
+    return code === '23505';
   }
 
   /**

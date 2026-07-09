@@ -53,6 +53,31 @@ describe('ApiKeyService.createOrRotate', () => {
 
     expect(repo.create.mock.calls[0][0].expires_at).toBeNull();
   });
+
+  it('retries once and succeeds when a concurrent mint trips the unique index (23505)', async () => {
+    const repo = makeRepo();
+    // First insert loses the race on the (user, name) unique index; the retry wins.
+    repo.save
+      .mockRejectedValueOnce(Object.assign(new Error('duplicate key value'), { code: '23505' }))
+      .mockImplementationOnce(async (row: Record<string, unknown>) => row);
+    const service = new ApiKeyService(repo as never);
+
+    const result = await service.createOrRotate(ownerCtx, { name: 'app:urn:z', scopes: ['memory'] });
+
+    // Deleted again before the retry insert; a usable key is returned (no 500).
+    expect(repo.delete).toHaveBeenCalledTimes(2);
+    expect(repo.save).toHaveBeenCalledTimes(2);
+    expect(result.key).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('rethrows a non-unique-violation error without retrying', async () => {
+    const repo = makeRepo();
+    repo.save.mockRejectedValueOnce(Object.assign(new Error('connection reset'), { code: '08006' }));
+    const service = new ApiKeyService(repo as never);
+
+    await expect(service.createOrRotate(ownerCtx, { name: 'app:urn:w', scopes: ['memory'] })).rejects.toThrow('connection reset');
+    expect(repo.delete).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('ApiKeyService.removeByName', () => {
