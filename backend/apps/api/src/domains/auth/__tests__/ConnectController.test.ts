@@ -162,14 +162,22 @@ describe('ConnectController', () => {
 
   describe('POST /connect/exchange', () => {
     it('returns the raw key for a valid code', async () => {
-      mockConnectService.exchange.mockResolvedValue({ appUrn: 'urn:app:x', key: 'raw-key', expiresAt: '2026-10-07T00:00:00.000Z' });
+      mockConnectService.exchange.mockResolvedValue({
+        appUrn: 'urn:app:x',
+        key: 'raw-key',
+        expiresAt: '2026-10-07T00:00:00.000Z',
+      });
 
       const res = await request(app.getHttpServer())
         .post('/connect/exchange')
         .send({ code: 'the-code' })
         .expect(201);
 
-      expect(res.body).toEqual({ appUrn: 'urn:app:x', key: 'raw-key', expiresAt: '2026-10-07T00:00:00.000Z' });
+      expect(res.body).toEqual({
+        appUrn: 'urn:app:x',
+        key: 'raw-key',
+        expiresAt: '2026-10-07T00:00:00.000Z',
+      });
     });
 
     it('400s for an invalid/expired code', async () => {
@@ -195,14 +203,22 @@ describe('ConnectController', () => {
 
   describe('POST /connect/rotate', () => {
     it('rotates the app key and returns the new key', async () => {
-      mockConnectService.rotateByApp.mockResolvedValue({ appUrn: 'urn:app:x', key: 'new-key', expiresAt: '2026-10-07T00:00:00.000Z' });
+      mockConnectService.rotateByApp.mockResolvedValue({
+        appUrn: 'urn:app:x',
+        key: 'new-key',
+        expiresAt: '2026-10-07T00:00:00.000Z',
+      });
 
       const res = await request(app.getHttpServer())
         .post('/connect/rotate')
         .send({ app: 'urn:app:x' })
         .expect(201);
 
-      expect(res.body).toEqual({ appUrn: 'urn:app:x', key: 'new-key', expiresAt: '2026-10-07T00:00:00.000Z' });
+      expect(res.body).toEqual({
+        appUrn: 'urn:app:x',
+        key: 'new-key',
+        expiresAt: '2026-10-07T00:00:00.000Z',
+      });
     });
 
     it('400s when there is no connected key to rotate', async () => {
