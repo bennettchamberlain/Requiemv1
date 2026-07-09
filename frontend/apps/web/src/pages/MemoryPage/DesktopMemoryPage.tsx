@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
-import { Breadcrumb, cn, DropdownMenu, Sheet } from '@ci/shadcn';
+import { Breadcrumb, Button, cn, DropdownMenu, Sheet } from '@ci/shadcn';
 import { ChartNetwork, ChevronDown, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
 import { useSearchParams, Link } from 'react-router-dom';
 
@@ -258,9 +258,11 @@ export default function DesktopMemoryPage() {
 
   return (
     <>
-      {/* The view switcher is the last breadcrumb crumb: the current view's name
-          is the trigger, and the expansion mirrors the header plus-button's Add
-          panel (icon grid) so both header menus read as one pattern. */}
+      {/* The view switcher is the last breadcrumb crumb: a combo button showing
+          the current view's icon + name with a dropdown chevron, so it reads as
+          an interactive control rather than static breadcrumb text. The
+          expansion mirrors the header plus-button's Add panel (icon grid) so
+          both header menus read as one pattern. */}
       <Portal.Slot id="breadcrumbs">
         <Breadcrumb>
           <Breadcrumb.List>
@@ -276,14 +278,27 @@ export default function DesktopMemoryPage() {
             <Breadcrumb.Separator />
             <Breadcrumb.Item>
               <DropdownMenu modal={false}>
-                <DropdownMenu.Trigger
-                  aria-label={`${activeView.title} — change view`}
-                  className="hover:text-foreground flex cursor-pointer items-center gap-1 text-sm transition-colors"
-                >
-                  {activeView.label}
-                  <ChevronDown className="size-3.5" />
+                <DropdownMenu.Trigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`${activeView.title} — change view`}
+                    className="group font-normal"
+                  >
+                    <activeView.Icon strokeWidth={1.5} />
+                    {activeView.label}
+                    <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" />
+                  </Button>
                 </DropdownMenu.Trigger>
-                <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="start" sideOffset={4}>
+                <DropdownMenu.Content
+                  className="rounded-lg p-2"
+                  side="bottom"
+                  align="start"
+                  sideOffset={4}
+                  // Radix refocuses the trigger on close, which lights the
+                  // button's focus-visible ring even after a mouse click.
+                  onCloseAutoFocus={(event) => event.preventDefault()}
+                >
                   <div className="grid grid-cols-4 gap-2">
                     {VIEW_TABS.map(({ value, label, title, Icon }) => (
                       <DropdownMenu.Item
