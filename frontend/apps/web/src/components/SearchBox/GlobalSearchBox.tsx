@@ -90,12 +90,15 @@ export function GlobalSearchBox() {
   // `?advanced=1` implies the expanded box (the pinned filter panel hangs off
   // it). Closing the filters keeps the wide bar and refocuses the input — the
   // user is still mid-search — which re-arms the blur/Escape collapse rules.
-  // On a collapsed box the focus call is a no-op (hidden inputs can't focus),
-  // so the mount run and off-memory transitions change nothing.
+  // Only while focus is still in the overlay, though: when the close came from
+  // a window-level Escape after clicking out to the page, pulling focus back
+  // would pop the results dropdown open again (openOnFocus). That guard also
+  // covers the old no-op cases — the mount run and off-memory transitions run
+  // with focus elsewhere.
   useEffect(() => {
     if (advancedOpen) {
       setExpanded(true);
-    } else {
+    } else if (overlayRef.current?.contains(document.activeElement)) {
       inputRef.current?.focus();
     }
   }, [advancedOpen]);
@@ -670,8 +673,8 @@ export function GlobalSearchBox() {
   }, [setSearchParams]);
 
   // The Escape stack: an open advanced drawer closes first (the bar stays
-  // expanded and the input refocuses via the advancedOpen effect); the next
-  // Escape collapses the bar.
+  // expanded, and the input refocuses via the advancedOpen effect when focus
+  // was still in the overlay); the next Escape collapses the bar.
   const handleEscape = useCallback(() => {
     if (advancedOpen) {
       closeAdvanced();
@@ -681,6 +684,35 @@ export function GlobalSearchBox() {
 
     collapseBar();
   }, [advancedOpen, closeAdvanced, collapseBar]);
+
+  // The overlay's Escape handlers above are all focus-bound, and with the
+  // advanced drawer pinned a click on the page moves focus out without
+  // collapsing anything (by design) — leaving no handler to hear the key. This
+  // window-level listener keeps the Escape stack working from anywhere: events
+  // originating inside the overlay are skipped (the input and inset controls
+  // report through the handlers above), as are ones a Radix layer already
+  // dismissed on (it preventDefaults when it closes).
+  useEffect(() => {
+    if (!expanded) {
+      return;
+    }
+
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) {
+        return;
+      }
+
+      if (e.target instanceof Node && overlayRef.current?.contains(e.target)) {
+        return;
+      }
+
+      handleEscape();
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [expanded, handleEscape]);
 
   return (
     <>
