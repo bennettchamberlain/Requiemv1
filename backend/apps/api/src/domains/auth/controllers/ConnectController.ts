@@ -139,7 +139,15 @@ export class ConnectController {
 
     res
       .type('html')
-      .header('Content-Security-Policy', "frame-ancestors 'none'")
+      // Lock the consent page down to what it actually uses: inline script/style,
+      // a same-origin fetch to /api/connect/approve, and JS navigation. default-src
+      // 'none' + connect-src 'self' means even if attacker input ever slipped past
+      // the page's escaping, it could not load an external resource or exfiltrate
+      // over fetch/img/form; frame-ancestors/X-Frame-Options keep it un-framable.
+      .header(
+        'Content-Security-Policy',
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      )
       .header('X-Frame-Options', 'DENY')
       .send(
         renderConnectConsentPage({ appUrn: app, appName, state, returnUrl, csrfCookieName: CSRF_COOKIE }),
