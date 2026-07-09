@@ -68,6 +68,29 @@ describe('ConnectCodeService', () => {
     expect(consumed).toEqual({ userId: 'user-1', appUrn: 'urn:app:x', key: 'raw-api-key' });
   });
 
+  it('wipes the encrypted key on consume so a used row retains no recoverable key material', async () => {
+    const repo = makeRepo();
+    const service = new ConnectCodeService(repo as never, makeLogger() as never);
+
+    const code = await service.issue('user-1', 'urn:app:x', 'raw-api-key');
+    repo.findOne.mockResolvedValueOnce(repo.save.mock.calls[0][0]);
+
+    await service.consume(code);
+
+    const [, values] = repo.update.mock.calls[0] as [unknown, { used_at: Date; encrypted_key: string }];
+    expect(values.encrypted_key).toBe(''); // ciphertext cleared as part of the atomic claim
+    expect(values.used_at).toBeInstanceOf(Date);
+  });
+
+  it('opportunistically sweeps expired rows on issue (no dedicated scheduler)', async () => {
+    const repo = makeRepo();
+    const service = new ConnectCodeService(repo as never, makeLogger() as never);
+
+    await service.issue('user-1', 'urn:app:x', 'raw-api-key');
+
+    expect(repo.delete).toHaveBeenCalled(); // pruneExpired fired
+  });
+
   it('rejects an unknown code', async () => {
     const repo = makeRepo();
     repo.findOne.mockResolvedValueOnce(null);

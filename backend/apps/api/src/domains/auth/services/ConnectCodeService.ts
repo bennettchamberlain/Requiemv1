@@ -70,6 +70,10 @@ export class ConnectCodeService {
 
     await this.connectCodeRepository.save(entity);
 
+    // Opportunistic sweep so the table stays bounded without a dedicated
+    // scheduler; fire-and-forget so issuance never waits on (or fails over) it.
+    void this.pruneExpired().catch(() => undefined);
+
     this.logger.debug(`Issued connect code for app ${appUrn} (user ${userId})`);
 
     return rawCode;
@@ -103,10 +107,13 @@ export class ConnectCodeService {
     }
 
     // Atomically claim the code: only the first exchange flips used_at from NULL,
-    // so concurrent/replayed exchanges of the same code cannot both succeed.
+    // so concurrent/replayed exchanges of the same code cannot both succeed. The
+    // same update wipes the encrypted key so a consumed row retains no
+    // (recoverable) key material at rest — the plaintext is returned once below
+    // from the row we already loaded.
     const claim = await this.connectCodeRepository.update(
       { id: row.id, used_at: IsNull() },
-      { used_at: new Date() },
+      { used_at: new Date(), encrypted_key: '' },
     );
 
     if ((claim.affected ?? 0) === 0) {
