@@ -7,7 +7,9 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { HbpeService } from '@ci/domains/predictions';
 
+import { DueForecastType } from '../types/DueForecastType';
 import { ForecastType } from '../types/ForecastType';
+import { WeekForecastType } from '../types/WeekForecastType';
 
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => ForecastType)
@@ -35,6 +37,46 @@ export class ForecastResolver {
       return ForecastType.toType(response);
     } catch (err) {
       this.logger.error('Forecast query failed', err instanceof Error ? err : new Error(String(err)));
+
+      return null;
+    }
+  }
+
+  @Query(() => WeekForecastType, {
+    nullable: true,
+    description: 'Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities)',
+  })
+  async weekForecast(@Context() context: RequestContext): Promise<WeekForecastType | null> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return null;
+    }
+
+    try {
+      const response = await this.hbpeService.getWeekForecast(toServiceContext(context));
+
+      return WeekForecastType.toType(response);
+    } catch (err) {
+      this.logger.error('Week forecast query failed', err instanceof Error ? err : new Error(String(err)));
+
+      return null;
+    }
+  }
+
+  @Query(() => DueForecastType, {
+    nullable: true,
+    description: 'Fetch HBPE renewal predictions: periodic behaviors coming due or overdue',
+  })
+  async dueForecast(@Context() context: RequestContext): Promise<DueForecastType | null> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return null;
+    }
+
+    try {
+      const response = await this.hbpeService.getDueList(toServiceContext(context));
+
+      return DueForecastType.toType(response);
+    } catch (err) {
+      this.logger.error('Due forecast query failed', err instanceof Error ? err : new Error(String(err)));
 
       return null;
     }

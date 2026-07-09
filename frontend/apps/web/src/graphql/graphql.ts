@@ -565,6 +565,36 @@ export type DeleteByIdPayload = {
   success: Scalars['Boolean']['output'];
 };
 
+/** HBPE renewal predictions: periodic behaviors coming due or overdue */
+export type DueForecastType = {
+  __typename?: 'DueForecastType';
+  due: Array<DueItemType>;
+  /** ISO-8601 timestamp when this list was generated */
+  generatedAt: Scalars['String']['output'];
+};
+
+/** A periodic behavior and when it is next expected (renewal prediction) */
+export type DueItemType = {
+  __typename?: 'DueItemType';
+  clusterId: Scalars['String']['output'];
+  /** Periodicity confidence in [0,1] */
+  confidence: Scalars['Float']['output'];
+  daysSinceLast: Scalars['Int']['output'];
+  /** Days until due (negative = past the median interval) */
+  dueInDays: Scalars['Float']['output'];
+  /** Parent L0 behavioral class */
+  l0Class: Scalars['String']['output'];
+  /** ISO date of the last observed occurrence */
+  lastSeen: Scalars['String']['output'];
+  medianIntervalDays: Scalars['Float']['output'];
+  /** Human-readable cluster name */
+  name: Scalars['String']['output'];
+  /** True once the gap exceeds the p90 inter-arrival interval */
+  overdue: Scalars['Boolean']['output'];
+  /** Credible due window [earliest, latest] in days from now */
+  window: Array<Scalars['Float']['output']>;
+};
+
 export type Edge = {
   cursor: Scalars['String']['output'];
   node: Node;
@@ -1422,6 +1452,8 @@ export type Query = {
   connections: ConnectionConnection;
   content?: Maybe<ContentType>;
   contents: ContentConnection;
+  /** Fetch HBPE renewal predictions: periodic behaviors coming due or overdue */
+  dueForecast?: Maybe<DueForecastType>;
   event?: Maybe<EventType>;
   /** Distinct data sources / connectors (event.source_system) present for the user. */
   eventSources: Array<Scalars['String']['output']>;
@@ -1463,6 +1495,8 @@ export type Query = {
   tags: TagConnection;
   thread?: Maybe<ThreadType>;
   threads: ThreadConnection;
+  /** Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities) */
+  weekForecast?: Maybe<WeekForecastType>;
 };
 
 
@@ -2276,6 +2310,39 @@ export type UserType = Node & {
   timezone: Scalars['String']['output'];
 };
 
+/** One L1 cluster likely to occur on a forecast day */
+export type WeekForecastClusterType = {
+  __typename?: 'WeekForecastClusterType';
+  clusterId: Scalars['String']['output'];
+  /** Time-of-day tendency (night/morning/afternoon/evening shares) */
+  daypartProbs: Array<ProbabilityEntryType>;
+  /** Parent L0 behavioral class (WORK, EXERCISE, ...) */
+  l0Class: Scalars['String']['output'];
+  /** Human-readable cluster name (user-specific, discovered from behavior) */
+  name: Scalars['String']['output'];
+  /** Probability the cluster occurs at least once that day */
+  pOccur: Scalars['Float']['output'];
+};
+
+/** Occurrence forecast for a single day of the week horizon */
+export type WeekForecastDayType = {
+  __typename?: 'WeekForecastDayType';
+  clusters: Array<WeekForecastClusterType>;
+  /** ISO date (UTC calendar day) */
+  date: Scalars['String']['output'];
+  /** Day-of-week name */
+  dow: Scalars['String']['output'];
+};
+
+/** HBPE week-horizon occurrence forecast (event-level, not bucket occupancy) */
+export type WeekForecastType = {
+  __typename?: 'WeekForecastType';
+  days: Array<WeekForecastDayType>;
+  /** ISO-8601 timestamp when this forecast was generated */
+  generatedAt: Scalars['String']['output'];
+  horizon: Scalars['String']['output'];
+};
+
 export type GetFeedActionsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
 }>;
@@ -2348,6 +2415,11 @@ export type TriggerHbpeMutationVariables = Exact<{ [key: string]: never; }>;
 
 
 export type TriggerHbpeMutation = { __typename?: 'Mutation', triggerHbpe: string };
+
+export type GetWeekAheadQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type GetWeekAheadQuery = { __typename?: 'Query', weekForecast?: { __typename?: 'WeekForecastType', horizon: string, generatedAt: string, days: Array<{ __typename?: 'WeekForecastDayType', date: string, dow: string, clusters: Array<{ __typename?: 'WeekForecastClusterType', clusterId: string, name: string, l0Class: string, pOccur: number, daypartProbs: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }> }> }> } | null, dueForecast?: { __typename?: 'DueForecastType', generatedAt: string, due: Array<{ __typename?: 'DueItemType', clusterId: string, name: string, l0Class: string, lastSeen: string, daysSinceLast: number, medianIntervalDays: number, dueInDays: number, window: Array<number>, overdue: boolean, confidence: number }> } | null };
 
 export type EventSourcesQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -3055,6 +3127,7 @@ export const GetForecastDocument = {"kind":"Document","definitions":[{"kind":"Op
 export const TagEntitiesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"TagEntities"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TagEntitiesInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tagEntities"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Taggable"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]}}]} as unknown as DocumentNode<TagEntitiesMutation, TagEntitiesMutationVariables>;
 export const UntagEntitiesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UntagEntities"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TagEntitiesInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"untagEntities"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Taggable"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]}}]} as unknown as DocumentNode<UntagEntitiesMutation, UntagEntitiesMutationVariables>;
 export const TriggerHbpeDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"TriggerHbpe"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"triggerHbpe"}}]}}]} as unknown as DocumentNode<TriggerHbpeMutation, TriggerHbpeMutationVariables>;
+export const GetWeekAheadDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetWeekAhead"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"weekForecast"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"horizon"}},{"kind":"Field","name":{"kind":"Name","value":"generatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"days"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"dow"}},{"kind":"Field","name":{"kind":"Name","value":"clusters"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"clusterId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"l0Class"}},{"kind":"Field","name":{"kind":"Name","value":"pOccur"}},{"kind":"Field","name":{"kind":"Name","value":"daypartProbs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"dueForecast"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"generatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"due"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"clusterId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"l0Class"}},{"kind":"Field","name":{"kind":"Name","value":"lastSeen"}},{"kind":"Field","name":{"kind":"Name","value":"daysSinceLast"}},{"kind":"Field","name":{"kind":"Name","value":"medianIntervalDays"}},{"kind":"Field","name":{"kind":"Name","value":"dueInDays"}},{"kind":"Field","name":{"kind":"Name","value":"window"}},{"kind":"Field","name":{"kind":"Name","value":"overdue"}},{"kind":"Field","name":{"kind":"Name","value":"confidence"}}]}}]}}]}}]} as unknown as DocumentNode<GetWeekAheadQuery, GetWeekAheadQueryVariables>;
 export const EventSourcesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"EventSources"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventSources"}}]}}]} as unknown as DocumentNode<EventSourcesQuery, EventSourcesQueryVariables>;
 export const EventTypesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"EventTypes"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventTypes"}}]}}]} as unknown as DocumentNode<EventTypesQuery, EventTypesQueryVariables>;
 export const SearchBoxQueryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"SearchBoxQuery"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"query"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"includeTypes"}},"type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"excludeTypes"}},"type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"semantic"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"search"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"query"},"value":{"kind":"Variable","name":{"kind":"Name","value":"query"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"includeTypes"},"value":{"kind":"Variable","name":{"kind":"Name","value":"includeTypes"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"excludeTypes"},"value":{"kind":"Variable","name":{"kind":"Name","value":"excludeTypes"}}},{"kind":"ObjectField","name":{"kind":"Name","value":"semantic"},"value":{"kind":"Variable","name":{"kind":"Name","value":"semantic"}}}]}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"matchingTags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}},{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"__typename"}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"Node"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PersonType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","alias":{"kind":"Name","value":"filterName"},"name":{"kind":"Name","value":"name"}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaceType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","alias":{"kind":"Name","value":"filterName"},"name":{"kind":"Name","value":"name"}}]}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultCommunicationData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultConceptData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultContentData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultEventData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultFileData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultItemData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultNoteData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultPersonData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultPlaceData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"SearchResultThreadData"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultCommunicationData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"CommunicationType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"preview"}},{"kind":"Field","name":{"kind":"Name","value":"time"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultConceptData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ConceptType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultContentData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ContentType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultEventData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"EventType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultFileData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"FileType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"filename"}},{"kind":"Field","name":{"kind":"Name","value":"previewUrl"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultItemData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ItemType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultNoteData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"NoteType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultPersonData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PersonType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultPlaceData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaceType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"SearchResultThreadData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ThreadType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]} as unknown as DocumentNode<SearchBoxQueryQuery, SearchBoxQueryQueryVariables>;

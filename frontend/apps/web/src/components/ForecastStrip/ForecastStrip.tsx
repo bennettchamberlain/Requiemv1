@@ -12,7 +12,7 @@ const MINUTES_PER_DAY = 24 * 60;
 
 // ── Colour mapping ────────────────────────────────────────────────────────────
 
-const L0_BG: Record<string, string> = {
+export const L0_BG: Record<string, string> = {
   WORK: 'bg-blue-500',
   EXERCISE: 'bg-green-500',
   SOCIAL: 'bg-orange-500',

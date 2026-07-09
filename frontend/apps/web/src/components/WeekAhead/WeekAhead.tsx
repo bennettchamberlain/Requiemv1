@@ -1,0 +1,196 @@
+import { Fragment } from 'react';
+
+import { cn, Tooltip } from '@ci/shadcn';
+
+import type { DueForecast, DueItem, WeekForecast, WeekForecastCluster } from '@/api/useWeekAheadService';
+import { L0_BG } from '@/components/ForecastStrip/ForecastStrip';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/** Max cluster rows in the grid — rows are the user's own L1 clusters, ranked by peak probability. */
+const MAX_ROWS = 8;
+/** Max non-overdue items shown in the due list (overdue items always show). */
+const MAX_DUE = 5;
+/** Keep the grid readable: cells below this probability render near-invisible. */
+const MIN_CELL_OPACITY = 0.06;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Short weekday label for a UTC calendar date ("2026-07-10" → "Fri"). */
+function dowShort(isoDate: string): string {
+  return new Date(`${isoDate}T00:00:00Z`).toLocaleDateString([], { weekday: 'short', timeZone: 'UTC' });
+}
+
+interface GridRow {
+  clusterId: string;
+  name: string;
+  l0Class: string;
+  /** p_occur per day index; 0 when the cluster is absent from that day's forecast. */
+  probs: number[];
+}
+
+/**
+ * Pivot per-day cluster lists into rows. The row set is the union of clusters
+ * across the week — entirely organic, whatever behaviors HBPE has discovered
+ * for this user — ranked by peak probability and capped at MAX_ROWS.
+ */
+function buildRows(week: WeekForecast): GridRow[] {
+  const rows = new Map<string, GridRow>();
+
+  week.days.forEach((day, dayIdx) => {
+    for (const c of day.clusters) {
+      let row = rows.get(c.clusterId);
+      if (!row) {
+        row = { clusterId: c.clusterId, name: c.name, l0Class: c.l0Class, probs: week.days.map(() => 0) };
+        rows.set(c.clusterId, row);
+      }
+
+      row.probs[dayIdx] = c.pOccur;
+    }
+  });
+
+  return [...rows.values()]
+    .sort((a, b) => Math.max(...b.probs) - Math.max(...a.probs))
+    .slice(0, MAX_ROWS);
+}
+
+function daypartSummary(cluster: WeekForecastCluster | undefined): string | null {
+  if (!cluster?.daypartProbs.length) {
+    return null;
+  }
+
+  const top = cluster.daypartProbs.reduce((best, cur) => (cur.probability > best.probability ? cur : best));
+
+  return top.probability >= 0.5 ? `usually ${top.label}` : null;
+}
+
+function formatDue(item: DueItem): string {
+  if (item.overdue) {
+    return `${item.daysSinceLast} days since last · usually every ~${Math.round(item.medianIntervalDays)} days`;
+  }
+
+  if (item.dueInDays <= 0) {
+    return 'due now';
+  }
+
+  const [lo, hi] = item.window;
+  const range = lo != null && hi != null && hi > lo ? ` (${Math.max(0, Math.round(lo))}–${Math.round(hi)} days)` : '';
+
+  return `due in ~${Math.round(item.dueInDays)} days${range}`;
+}
+
+// ── Grid cell ─────────────────────────────────────────────────────────────────
+
+function GridCell({ row, day, prob }: { row: GridRow; day: WeekForecast['days'][number]; prob: number }) {
+  const cluster = day.clusters.find((c) => c.clusterId === row.clusterId);
+  const daypart = daypartSummary(cluster);
+
+  return (
+    <Tooltip>
+      <Tooltip.Trigger asChild>
+        <div
+          className={cn(
+            'h-6 rounded-sm cursor-default transition-transform duration-100 hover:scale-110 hover:z-10 relative',
+            L0_BG[row.l0Class] ?? 'bg-gray-400',
+          )}
+          style={{ opacity: Math.max(MIN_CELL_OPACITY, prob) }}
+        />
+      </Tooltip.Trigger>
+      <Tooltip.Content side="top" sideOffset={4}>
+        <p className="text-xs font-semibold">{row.name}</p>
+        <p className="text-[10px] opacity-75">
+          {dowShort(day.date)} · {Math.round(prob * 100)}% likely{daypart ? ` · ${daypart}` : ''}
+        </p>
+      </Tooltip.Content>
+    </Tooltip>
+  );
+}
+
+// ── Due list ──────────────────────────────────────────────────────────────────
+
+function DueRow({ item }: { item: DueItem }) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-2 rounded-md px-2 py-1',
+        item.overdue && 'bg-destructive/10 text-destructive',
+      )}
+    >
+      <div className={cn('w-2 h-2 shrink-0 rounded-sm', L0_BG[item.l0Class] ?? 'bg-gray-400')} />
+      <span className={cn('flex-1 truncate text-xs', item.overdue && 'font-medium')}>{item.name}</span>
+      <span className={cn('shrink-0 text-[10px]', item.overdue ? 'opacity-90' : 'text-muted-foreground')}>
+        {formatDue(item)}
+      </span>
+    </div>
+  );
+}
+
+// ── Public component ──────────────────────────────────────────────────────────
+
+interface WeekAheadProps {
+  week: WeekForecast | null;
+  due: DueForecast | null;
+  className?: string;
+}
+
+/**
+ * Week-horizon behavioral forecast card.
+ *
+ * Extends the ForecastStrip visual grammar (color = L0 class, opacity =
+ * probability) from 30-min occupancy out to day-level *occurrence*: rows are
+ * the user's own discovered L1 clusters, columns the next 7 days. Below the
+ * grid, renewal predictions surface what's coming due — and what's overdue,
+ * the "it's been 16 days since you saw friends" deviation signal.
+ *
+ * Renders nothing until at least one cluster clears the probability floor
+ * (recurrence profiles need ~2 weeks of history) — no spinner, no CTA.
+ */
+export function WeekAhead({ week, due, className }: WeekAheadProps) {
+  const rows = week ? buildRows(week) : [];
+
+  if (!week || rows.length === 0) {
+    return null;
+  }
+
+  const overdue = (due?.due ?? []).filter((d) => d.overdue);
+  const upcoming = (due?.due ?? []).filter((d) => !d.overdue).slice(0, MAX_DUE);
+
+  return (
+    <div className={cn('space-y-3', className)}>
+      <div
+        className="grid gap-0.5 items-center"
+        style={{ gridTemplateColumns: `minmax(0, 7rem) repeat(${week.days.length}, minmax(0, 1fr))` }}
+        role="img"
+        aria-label="Week-ahead behavioral forecast grid"
+      >
+        <div />
+        {week.days.map((day) => (
+          <div key={day.date} className="text-center text-[10px] text-muted-foreground">
+            {dowShort(day.date)}
+          </div>
+        ))}
+
+        {rows.map((row) => (
+          <Fragment key={row.clusterId}>
+            <div className="pr-2 text-[11px] text-muted-foreground truncate">{row.name}</div>
+            {week.days.map((day, dayIdx) => (
+              <GridCell key={day.date} row={row} day={day} prob={row.probs[dayIdx]} />
+            ))}
+          </Fragment>
+        ))}
+      </div>
+
+      {(overdue.length > 0 || upcoming.length > 0) && (
+        <div className="space-y-1 border-t border-border pt-2">
+          <p className="text-[11px] font-medium text-muted-foreground">Coming due</p>
+          {overdue.map((item) => (
+            <DueRow key={item.clusterId} item={item} />
+          ))}
+          {upcoming.map((item) => (
+            <DueRow key={item.clusterId} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

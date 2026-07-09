@@ -4,7 +4,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
-import type { ForecastResponse } from '../types';
+import type { DueResponse, ForecastResponse, WeekForecastResponse } from '../types';
 
 @Injectable()
 export class HbpeService {
@@ -15,7 +15,19 @@ export class HbpeService {
   }
 
   async getForecast(context: UserServiceContext, horizon = '24h'): Promise<ForecastResponse> {
-    const url = `${this.baseUrl}/histogram?horizon=${horizon}&user_id=${context.userId}`;
+    return this.get<ForecastResponse>(`/histogram?horizon=${horizon}&user_id=${context.userId}`);
+  }
+
+  async getWeekForecast(context: UserServiceContext): Promise<WeekForecastResponse> {
+    return this.get<WeekForecastResponse>(`/forecast?horizon=7d&user_id=${context.userId}`);
+  }
+
+  async getDueList(context: UserServiceContext): Promise<DueResponse> {
+    return this.get<DueResponse>(`/forecast/due?user_id=${context.userId}`);
+  }
+
+  private async get<T>(path: string): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
 
     let response: Response;
 
@@ -35,7 +47,7 @@ export class HbpeService {
       throw new ServiceUnavailableException('Forecast service error');
     }
 
-    return response.json() as Promise<ForecastResponse>;
+    return response.json() as Promise<T>;
   }
 
   async triggerPipeline(userId: string): Promise<string> {

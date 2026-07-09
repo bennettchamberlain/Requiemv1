@@ -507,6 +507,42 @@ type DeleteByIdPayload {
   success: Boolean!
 }
 
+"""HBPE renewal predictions: periodic behaviors coming due or overdue"""
+type DueForecastType {
+  due: [DueItemType!]!
+
+  """ISO-8601 timestamp when this list was generated"""
+  generatedAt: String!
+}
+
+"""A periodic behavior and when it is next expected (renewal prediction)"""
+type DueItemType {
+  clusterId: String!
+
+  """Periodicity confidence in [0,1]"""
+  confidence: Float!
+  daysSinceLast: Int!
+
+  """Days until due (negative = past the median interval)"""
+  dueInDays: Float!
+
+  """Parent L0 behavioral class"""
+  l0Class: String!
+
+  """ISO date of the last observed occurrence"""
+  lastSeen: String!
+  medianIntervalDays: Float!
+
+  """Human-readable cluster name"""
+  name: String!
+
+  """True once the gap exceeds the p90 inter-arrival interval"""
+  overdue: Boolean!
+
+  """Credible due window [earliest, latest] in days from now"""
+  window: [Float!]!
+}
+
 interface Edge {
   cursor: String!
   node: Node!
@@ -991,6 +1027,11 @@ type Query {
   connections(after: String, before: String, first: Int, last: Int): ConnectionConnection!
   content(id: ID!): ContentType
   contents(after: String, before: String, first: Int, last: Int): ContentConnection!
+
+  """
+  Fetch HBPE renewal predictions: periodic behaviors coming due or overdue
+  """
+  dueForecast: DueForecastType
   event(id: ID!): EventType
 
   """
@@ -1038,6 +1079,11 @@ type Query {
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
   thread(id: ID!): ThreadType
   threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
+
+  """
+  Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities)
+  """
+  weekForecast: WeekForecastType
 }
 
 type QuestionConnection implements Connection {
@@ -1495,4 +1541,43 @@ type UserType implements Node {
   name: String!
   onboarded: Boolean!
   timezone: String!
+}
+
+"""One L1 cluster likely to occur on a forecast day"""
+type WeekForecastClusterType {
+  clusterId: String!
+
+  """Time-of-day tendency (night/morning/afternoon/evening shares)"""
+  daypartProbs: [ProbabilityEntryType!]!
+
+  """Parent L0 behavioral class (WORK, EXERCISE, ...)"""
+  l0Class: String!
+
+  """Human-readable cluster name (user-specific, discovered from behavior)"""
+  name: String!
+
+  """Probability the cluster occurs at least once that day"""
+  pOccur: Float!
+}
+
+"""Occurrence forecast for a single day of the week horizon"""
+type WeekForecastDayType {
+  clusters: [WeekForecastClusterType!]!
+
+  """ISO date (UTC calendar day)"""
+  date: String!
+
+  """Day-of-week name"""
+  dow: String!
+}
+
+"""
+HBPE week-horizon occurrence forecast (event-level, not bucket occupancy)
+"""
+type WeekForecastType {
+  days: [WeekForecastDayType!]!
+
+  """ISO-8601 timestamp when this forecast was generated"""
+  generatedAt: String!
+  horizon: String!
 }

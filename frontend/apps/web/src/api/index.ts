@@ -9,5 +9,7 @@ export { useGraphOverview } from './useGraphOverview';
 export { useEntityEvolutionService } from './useEntityEvolutionService';
 export type { GraphNode, GraphLink } from './useGraphOverview';
 export { useTriggerHbpe } from './useTriggerHbpe';
+export { useWeekAheadService } from './useWeekAheadService';
+export type { DueForecast, DueItem, WeekForecast, WeekForecastDay } from './useWeekAheadService';
 
 export type { Action, Message, Thread } from './types';

@@ -1,0 +1,116 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+
+import type { DueForecast, WeekForecast } from '@/api/useWeekAheadService';
+
+import { WeekAhead } from './WeekAhead';
+
+const DAY_DATES = ['2026-07-10', '2026-07-11', '2026-07-12', '2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16'];
+
+function makeWeek(perDayProbs: Record<string, number[]>): WeekForecast {
+  return {
+    horizon: '7d',
+    generatedAt: '2026-07-09T09:41:00Z',
+    days: DAY_DATES.map((date, i) => ({
+      date,
+      dow: 'Friday',
+      clusters: Object.entries(perDayProbs)
+        .filter(([, probs]) => probs[i] > 0)
+        .map(([name, probs]) => ({
+          clusterId: `id-${name}`,
+          name,
+          l0Class: name === 'Gym Session' ? 'EXERCISE' : 'WORK',
+          pOccur: probs[i],
+          daypartProbs: [{ label: 'morning', probability: 0.7 }],
+        })),
+    })),
+  };
+}
+
+const DUE: DueForecast = {
+  generatedAt: '2026-07-09T09:41:00Z',
+  due: [
+    {
+      clusterId: 'id-friends',
+      name: 'See Friends',
+      l0Class: 'SOCIAL',
+      lastSeen: '2026-06-23',
+      daysSinceLast: 16,
+      medianIntervalDays: 7,
+      dueInDays: -9,
+      window: [-9, -7],
+      overdue: true,
+      confidence: 0.72,
+    },
+    {
+      clusterId: 'id-haircut',
+      name: 'Haircut',
+      l0Class: 'ERRAND',
+      lastSeen: '2026-06-10',
+      daysSinceLast: 29,
+      medianIntervalDays: 35,
+      dueInDays: 6,
+      window: [3, 9],
+      overdue: false,
+      confidence: 0.66,
+    },
+  ],
+};
+
+describe('WeekAhead', () => {
+  it('renders one organic row per discovered cluster with opacity ∝ probability', () => {
+    const week = makeWeek({
+      'Deep Focus': [0.9, 0.1, 0.1, 0.9, 0.9, 0.9, 0.8],
+      'Gym Session': [0.2, 0.5, 0.1, 0.1, 0.8, 0.1, 0.7],
+    });
+    const { container } = render(<WeekAhead week={week} due={null} />);
+
+    expect(screen.getByText('Deep Focus')).toBeInTheDocument();
+    expect(screen.getByText('Gym Session')).toBeInTheDocument();
+
+    // Cells carry the L0 class colour and probability as opacity
+    const workCells = container.querySelectorAll('.bg-blue-500');
+    expect(workCells).toHaveLength(7);
+    expect((workCells[0] as HTMLElement).style.opacity).toBe('0.9');
+    expect((workCells[1] as HTMLElement).style.opacity).toBe('0.1');
+  });
+
+  it('caps the grid at 8 rows ranked by peak probability', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => [`Cluster ${i}`, DAY_DATES.map(() => 0.1 + i * 0.05)]),
+    );
+    const { container } = render(<WeekAhead week={makeWeek(many)} due={null} />);
+
+    // 8 label cells + 8×7 grid cells; the lowest-probability clusters are dropped
+    expect(screen.queryByText('Cluster 11')).toBeInTheDocument();
+    expect(screen.queryByText('Cluster 0')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[class*="bg-"]').length).toBeGreaterThanOrEqual(56);
+  });
+
+  it('shows overdue items with the deviation message and upcoming items with a due window', () => {
+    const week = makeWeek({ 'Deep Focus': [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9] });
+    render(<WeekAhead week={week} due={DUE} />);
+
+    expect(screen.getByText('Coming due')).toBeInTheDocument();
+    expect(screen.getByText('See Friends')).toBeInTheDocument();
+    expect(screen.getByText('16 days since last · usually every ~7 days')).toBeInTheDocument();
+    expect(screen.getByText('due in ~6 days (3–9 days)')).toBeInTheDocument();
+  });
+
+  it('renders nothing when no cluster clears the floor', () => {
+    const empty: WeekForecast = {
+      horizon: '7d',
+      generatedAt: '2026-07-09T09:41:00Z',
+      days: DAY_DATES.map((date) => ({ date, dow: 'Friday', clusters: [] })),
+    };
+    const { container } = render(<WeekAhead week={empty} due={DUE} />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders nothing when week data is null', () => {
+    const { container } = render(<WeekAhead week={null} due={null} />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+});
