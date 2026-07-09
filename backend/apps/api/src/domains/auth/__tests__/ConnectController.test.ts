@@ -119,9 +119,18 @@ describe('ConnectController', () => {
         .set('Cookie', [`${SESSION_COOKIE}=tok`])
         .expect(200);
 
-      expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+      const csp = res.headers['content-security-policy'];
+      expect(csp).toContain("frame-ancestors 'none'");
       expect(res.headers['x-frame-options']).toBe('DENY');
       expect(res.text).toContain('Connect to Companion Memory');
+
+      // CSP is nonce-based (not 'unsafe-inline'), and the same nonce is stamped on
+      // the page's inline script so its own code runs while injected inline script
+      // (no nonce) is blocked.
+      expect(csp).not.toContain("'unsafe-inline'");
+      const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
+      expect(nonce).toBeTruthy();
+      expect(res.text).toContain(`<script nonce="${nonce}">`);
     });
   });
 

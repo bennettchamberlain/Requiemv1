@@ -1,3 +1,5 @@
+import { randomBytes } from 'crypto';
+
 import {
   BadRequestException,
   Body,
@@ -138,20 +140,25 @@ export class ConnectController {
       path: '/',
     });
 
+    // Per-request nonce: the page's own inline <style>/<script> carry it, so an
+    // injected inline script (which cannot guess the nonce) is refused by CSP.
+    const cspNonce = randomBytes(16).toString('base64');
+
     res
       .type('html')
-      // Lock the consent page down to what it actually uses: inline script/style,
-      // a same-origin fetch to /api/connect/approve, and JS navigation. default-src
-      // 'none' + connect-src 'self' means even if attacker input ever slipped past
-      // the page's escaping, it could not load an external resource or exfiltrate
-      // over fetch/img/form; frame-ancestors/X-Frame-Options keep it un-framable.
+      // Lock the consent page to exactly what it uses: the nonce'd inline
+      // script/style, a same-origin fetch to /api/connect/approve, and JS
+      // navigation. default-src 'none' + connect-src 'self' block external resource
+      // loads and fetch/img/form exfiltration; the nonce (not 'unsafe-inline')
+      // means injected inline script will not run; frame-ancestors / X-Frame-Options
+      // keep the page un-framable.
       .header(
         'Content-Security-Policy',
-        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        `default-src 'none'; script-src 'nonce-${cspNonce}'; style-src 'nonce-${cspNonce}'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
       )
       .header('X-Frame-Options', 'DENY')
       .send(
-        renderConnectConsentPage({ appUrn: app, appName, state, returnUrl, csrfCookieName: CSRF_COOKIE }),
+        renderConnectConsentPage({ appUrn: app, appName, state, returnUrl, csrfCookieName: CSRF_COOKIE, nonce: cspNonce }),
       );
   }
 

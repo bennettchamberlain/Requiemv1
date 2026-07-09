@@ -30,6 +30,9 @@ export interface ConnectConsentParams {
   returnUrl: string;
   /** Name of the JS-readable CSRF cookie the page must echo as a header. */
   csrfCookieName: string;
+  /** Per-request CSP nonce; stamped on the inline <style>/<script> so the page's
+   *  own inline code runs while an injected inline script (no nonce) is blocked. */
+  nonce: string;
 }
 
 /** Escape a string for safe interpolation into HTML text/attribute context. */
@@ -152,7 +155,7 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Connect to Companion Memory</title>
-  <style>${CONSENT_STYLES}</style>
+  <style nonce="${params.nonce}">${CONSENT_STYLES}</style>
 </head>
 <body>
   <main class="card">
@@ -166,7 +169,7 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
     </div>
     <div class="error" id="error" role="alert"></div>
   </main>
-  <script>${consentScript(bootstrap)}</script>
+  <script nonce="${params.nonce}">${consentScript(bootstrap)}</script>
 </body>
 </html>`;
 }
