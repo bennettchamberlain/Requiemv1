@@ -104,8 +104,8 @@ describe('splitPersonName', () => {
     expect(splitPersonName('Brian Paul')).not.toHaveProperty('middle_name');
   });
 
-  it('keeps a single token as first name only', () => {
-    expect(splitPersonName('Cher')).toEqual({ first_name: 'Cher' });
+  it('returns no parts for a single token (display name stays name-only)', () => {
+    expect(splitPersonName('Cher')).toBeNull();
   });
 
   it('routes everything between first and last into middle', () => {

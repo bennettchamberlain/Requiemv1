@@ -82,7 +82,8 @@ export function normalizeIdentifier(kind: IdentifierKind, raw: string | null | u
  * Structured name parts for a Person's `properties`, split from a display
  * name. snake_case keys mirror what PersonEntity.loadPropertiesFromJsonb reads
  * (properties.first_name / .last_name; middle_name rides along for when a
- * reader wants it). Rule: one token -> first only; two -> first + last; three
+ * reader wants it). Rule: one token -> no parts at all (a lone token is a
+ * display name/handle, not reliably a first name); two -> first + last; three
  * or more -> first token, last token, everything between as middle. Middle is
  * OMITTED (not empty) when absent.
  */
@@ -99,12 +100,8 @@ export function splitPersonName(fullName: string | null | undefined): PersonName
   }
 
   const tokens = fullName.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-  if (tokens.length === 0) {
+  if (tokens.length <= 1) {
     return null;
-  }
-
-  if (tokens.length === 1) {
-    return { first_name: tokens[0] };
   }
 
   if (tokens.length === 2) {
