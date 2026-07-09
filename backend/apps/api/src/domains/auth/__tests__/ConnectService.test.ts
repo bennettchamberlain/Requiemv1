@@ -150,7 +150,8 @@ describe('ConnectService.exchange', () => {
     const ttlDays = (new Date(data.expires_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
     expect(ttlDays).toBeGreaterThan(89);
     expect(ttlDays).toBeLessThan(91);
-    expect(result).toEqual({ appUrn: 'urn:app:x', key: 'raw-key' });
+    // The returned expiry is the same instant handed to the key mint.
+    expect(result).toEqual({ appUrn: 'urn:app:x', key: 'raw-key', expiresAt: data.expires_at });
   });
 
   it('returns null for an invalid/expired/used code without minting', async () => {

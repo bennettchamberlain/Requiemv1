@@ -270,6 +270,19 @@ export function ApiKeysSection() {
                       </Badge>
                     )}
                   </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {key.scopes.length === 0 ? (
+                      <Badge variant="secondary" className="text-xs">
+                        Full access
+                      </Badge>
+                    ) : (
+                      key.scopes.map((scope) => (
+                        <Badge key={scope} variant="outline" className="text-xs">
+                          {scope}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span>
                       Key: <code className="font-mono">{key.prefix}…</code>

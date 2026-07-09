@@ -32,6 +32,8 @@ export interface ExchangedConnect {
   appUrn: string;
   /** The raw memory-scoped api key (revealed exactly once). */
   key: string;
+  /** ISO-8601 instant the key expires; CI-Hub rotates well before this. */
+  expiresAt: string;
 }
 
 /**
@@ -151,7 +153,7 @@ export class ConnectService {
 
     this.logger.log(`Minted memory key on exchange for app ${consumed.appUrn} (user ${consumed.userId})`);
 
-    return { appUrn: consumed.appUrn, key: minted.key };
+    return { appUrn: consumed.appUrn, key: minted.key, expiresAt };
   }
 
   /**
@@ -177,7 +179,7 @@ export class ConnectService {
 
     this.logger.log(`Rotated memory key for app ${appUrn} (user ${userId})`);
 
-    return { appUrn, key: minted.key };
+    return { appUrn, key: minted.key, expiresAt };
   }
 
   /**
