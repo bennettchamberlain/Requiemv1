@@ -111,22 +111,13 @@ export class ConnectService {
   }
 
   /**
-   * Mint (or rotate) the memory-scoped key for `(userId, appUrn)` and issue a
-   * one-time code that CI-Hub can exchange for it.
+   * Issue a one-time code authorizing CI-Hub to mint the memory-scoped key for
+   * `(userId, appUrn)`. The key itself is NOT minted here — deferring the mint
+   * to {@link exchange} means an abandoned or failed flow never rotates (and so
+   * never destroys) an app's existing, still-injected key.
    */
   async approve(userId: string, appUrn: string): Promise<ApprovedConnect> {
-    const expiresAt = new Date(Date.now() + CONNECT_KEY_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
-
-    const minted = await this.apiKeyService.createOrRotate(
-      { userId },
-      {
-        name: this.keyName(appUrn),
-        scopes: [CONNECT_KEY_SCOPE],
-        expires_at: expiresAt,
-      },
-    );
-
-    const code = await this.connectCodeService.issue(userId, appUrn, minted.key);
+    const code = await this.connectCodeService.issue(userId, appUrn);
 
     this.logger.log(`Approved memory connect for app ${appUrn} (user ${userId})`);
 
@@ -134,7 +125,11 @@ export class ConnectService {
   }
 
   /**
-   * Exchange a one-time code for the raw minted key, or `null` if invalid.
+   * Redeem a one-time code and mint the memory-scoped key for the bound
+   * `(user, app)`, rotating any existing key for that app. Returns the raw key
+   * (revealed once), or `null` if the code is unknown/expired/already used.
+   * Minting here — only on a successful, single-use redemption — is what makes
+   * an interrupted re-consent safe for a currently-connected app.
    */
   async exchange(code: string): Promise<ExchangedConnect | null> {
     const consumed = await this.connectCodeService.consume(code);
@@ -143,7 +138,20 @@ export class ConnectService {
       return null;
     }
 
-    return { appUrn: consumed.appUrn, key: consumed.key };
+    const expiresAt = new Date(Date.now() + CONNECT_KEY_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+    const minted = await this.apiKeyService.createOrRotate(
+      { userId: consumed.userId },
+      {
+        name: this.keyName(consumed.appUrn),
+        scopes: [CONNECT_KEY_SCOPE],
+        expires_at: expiresAt,
+      },
+    );
+
+    this.logger.log(`Minted memory key on exchange for app ${consumed.appUrn} (user ${consumed.userId})`);
+
+    return { appUrn: consumed.appUrn, key: minted.key };
   }
 
   /**

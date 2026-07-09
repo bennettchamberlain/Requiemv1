@@ -2,19 +2,18 @@
 -- Short-lived, single-use authorization codes for the app-connect flow.
 --
 -- When a user consents (on ci-memory) to connect an app to their Companion
--- Memory, the server mints a scoped api key and hands the browser a one-time
--- `code`. CI-Hub then exchanges that code server-to-server for the raw key.
--- The raw key never transits the browser or a URL — it lives here encrypted
--- (AES-256-GCM, field-level) until the single exchange consumes the row.
+-- Memory, the server hands the browser a one-time `code`. CI-Hub then exchanges
+-- that code server-to-server, and the key is minted at that moment (never at
+-- consent time, so an abandoned flow can't destroy an app's existing key). The
+-- code is a pure authorization grant: it carries NO key material at rest — only
+-- the identity + app it authorizes minting for.
 CREATE TABLE ci.connect_codes (
     id UUID PRIMARY KEY,
 
     -- SHA-256 of the raw code; the raw code is only ever in the redirect URL.
     hashed_code TEXT NOT NULL,
-    -- The minted api key, field-encrypted (enc:v1:...). Returned once on exchange.
-    encrypted_key TEXT NOT NULL,
 
-    -- Binds the code to the identity + app it was minted for, so the exchange
+    -- Binds the code to the identity + app it authorizes, so the exchange
     -- (and any audit) can assert who/what it belongs to.
     user_id UUID NOT NULL REFERENCES ci.users(id) ON DELETE CASCADE,
     app_urn TEXT NOT NULL,

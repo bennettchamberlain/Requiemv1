@@ -28,7 +28,7 @@ function makeDeps() {
   const authService = { validateSessionToken: jest.fn() };
   const userService = { findById: jest.fn() };
   const apiKeyService = { createOrRotate: jest.fn(), findByName: jest.fn(), removeByName: jest.fn() };
-  const connectCodeService = { issue: jest.fn() };
+  const connectCodeService = { issue: jest.fn(), consume: jest.fn() };
   const logger = {
     setContext: jest.fn(),
     debug: jest.fn(),
@@ -119,12 +119,29 @@ describe('ConnectService.isReturnUrlAllowed', () => {
 describe('ConnectService.approve', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('mints a memory-scoped, ~90d-expiring key named app:<urn> and issues a code', async () => {
+  it('issues a one-time code WITHOUT minting a key (the mint is deferred to exchange)', async () => {
     const { service, apiKeyService, connectCodeService } = makeDeps();
-    apiKeyService.createOrRotate.mockResolvedValue({ key: 'raw-key' });
     connectCodeService.issue.mockResolvedValue('one-time-code');
 
     const result = await service.approve('user-1', 'urn:app:x');
+
+    expect(connectCodeService.issue).toHaveBeenCalledWith('user-1', 'urn:app:x');
+    // No key is minted at consent time — an abandoned flow must not rotate away
+    // (and destroy) an app's existing, still-injected key.
+    expect(apiKeyService.createOrRotate).not.toHaveBeenCalled();
+    expect(result).toEqual({ code: 'one-time-code' });
+  });
+});
+
+describe('ConnectService.exchange', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("mints a memory-scoped, ~90d-expiring key named app:<urn> under the code's bound user on redemption", async () => {
+    const { service, apiKeyService, connectCodeService } = makeDeps();
+    connectCodeService.consume.mockResolvedValue({ userId: 'user-1', appUrn: 'urn:app:x' });
+    apiKeyService.createOrRotate.mockResolvedValue({ key: 'raw-key' });
+
+    const result = await service.exchange('one-time-code');
 
     const [ctx, data] = apiKeyService.createOrRotate.mock.calls[0];
     expect(ctx).toEqual({ userId: 'user-1' });
@@ -133,9 +150,15 @@ describe('ConnectService.approve', () => {
     const ttlDays = (new Date(data.expires_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
     expect(ttlDays).toBeGreaterThan(89);
     expect(ttlDays).toBeLessThan(91);
+    expect(result).toEqual({ appUrn: 'urn:app:x', key: 'raw-key' });
+  });
 
-    expect(connectCodeService.issue).toHaveBeenCalledWith('user-1', 'urn:app:x', 'raw-key');
-    expect(result).toEqual({ code: 'one-time-code' });
+  it('returns null for an invalid/expired/used code without minting', async () => {
+    const { service, apiKeyService, connectCodeService } = makeDeps();
+    connectCodeService.consume.mockResolvedValue(null);
+
+    expect(await service.exchange('bad-code')).toBeNull();
+    expect(apiKeyService.createOrRotate).not.toHaveBeenCalled();
   });
 });
 

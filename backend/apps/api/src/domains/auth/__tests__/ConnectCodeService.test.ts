@@ -1,14 +1,12 @@
 import { createHash } from 'crypto';
 
-import { isEncrypted } from '@ci/common/crypto';
-
 import { ConnectCodeService } from '../services/ConnectCodeService';
 
 /**
- * Unit tests for ConnectCodeService — the single-use bridge between the
- * browser consent step and the Hub's server-to-server key exchange.
- * Repository is an in-memory jest mock; encryption uses the real field-crypto
- * (config test fieldKey), so issue→consume is a genuine encrypt/decrypt round-trip.
+ * Unit tests for ConnectCodeService — the single-use authorization grant that
+ * bridges the browser consent step and the Hub's server-to-server key exchange.
+ * The code carries NO key material (the key is minted at exchange time); it only
+ * authorizes minting for a (user, app) pair. Repository is an in-memory jest mock.
  */
 function makeRepo() {
   return {
@@ -31,62 +29,46 @@ function sha256(value: string): string {
 describe('ConnectCodeService', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('issues a hashed, encrypted, TTL-bounded code and returns the raw code once', async () => {
+  it('issues a hashed, TTL-bounded code carrying no key material, and returns the raw code once', async () => {
     const repo = makeRepo();
     const service = new ConnectCodeService(repo as never, makeLogger() as never);
 
-    const code = await service.issue('user-1', 'urn:app:x', 'raw-api-key');
+    const code = await service.issue('user-1', 'urn:app:x');
 
     expect(code).toMatch(/^[0-9a-f]{64}$/);
     const row = repo.create.mock.calls[0][0] as {
       hashed_code: string;
-      encrypted_key: string;
       user_id: string;
       app_urn: string;
       used_at: Date | null;
       expires_at: Date;
     };
     expect(row.hashed_code).toBe(sha256(code)); // raw code never stored
-    expect(isEncrypted(row.encrypted_key)).toBe(true); // key stored encrypted
+    expect(row).not.toHaveProperty('encrypted_key'); // no key material at rest
     expect(row.user_id).toBe('user-1');
     expect(row.app_urn).toBe('urn:app:x');
     expect(row.used_at).toBeNull();
     expect(row.expires_at.getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('round-trips: consume decrypts the key and binds it to (user, app)', async () => {
+  it('round-trips: consume returns the bound (user, app) for the caller to mint under', async () => {
     const repo = makeRepo();
     const service = new ConnectCodeService(repo as never, makeLogger() as never);
 
-    const code = await service.issue('user-1', 'urn:app:x', 'raw-api-key');
-    const saved = repo.save.mock.calls[0][0];
-    repo.findOne.mockResolvedValueOnce(saved);
+    const code = await service.issue('user-1', 'urn:app:x');
+    repo.findOne.mockResolvedValueOnce(repo.save.mock.calls[0][0]);
 
     const consumed = await service.consume(code);
 
     expect(repo.findOne).toHaveBeenCalledWith({ where: { hashed_code: sha256(code) } });
-    expect(consumed).toEqual({ userId: 'user-1', appUrn: 'urn:app:x', key: 'raw-api-key' });
-  });
-
-  it('wipes the encrypted key on consume so a used row retains no recoverable key material', async () => {
-    const repo = makeRepo();
-    const service = new ConnectCodeService(repo as never, makeLogger() as never);
-
-    const code = await service.issue('user-1', 'urn:app:x', 'raw-api-key');
-    repo.findOne.mockResolvedValueOnce(repo.save.mock.calls[0][0]);
-
-    await service.consume(code);
-
-    const [, values] = repo.update.mock.calls[0] as [unknown, { used_at: Date; encrypted_key: string }];
-    expect(values.encrypted_key).toBe(''); // ciphertext cleared as part of the atomic claim
-    expect(values.used_at).toBeInstanceOf(Date);
+    expect(consumed).toEqual({ userId: 'user-1', appUrn: 'urn:app:x' });
   });
 
   it('opportunistically sweeps expired rows on issue (no dedicated scheduler)', async () => {
     const repo = makeRepo();
     const service = new ConnectCodeService(repo as never, makeLogger() as never);
 
-    await service.issue('user-1', 'urn:app:x', 'raw-api-key');
+    await service.issue('user-1', 'urn:app:x');
 
     expect(repo.delete).toHaveBeenCalled(); // pruneExpired fired
   });
@@ -107,7 +89,6 @@ describe('ConnectCodeService', () => {
       user_id: 'user-1',
       used_at: new Date(),
       expires_at: new Date(Date.now() + 10_000),
-      encrypted_key: 'enc:v1:x',
     });
     const service = new ConnectCodeService(repo as never, makeLogger() as never);
 
@@ -123,7 +104,6 @@ describe('ConnectCodeService', () => {
       user_id: 'user-1',
       used_at: null,
       expires_at: new Date(Date.now() - 1),
-      encrypted_key: 'enc:v1:x',
     });
     const service = new ConnectCodeService(repo as never, makeLogger() as never);
 
@@ -135,9 +115,8 @@ describe('ConnectCodeService', () => {
     const repo = makeRepo();
     const service = new ConnectCodeService(repo as never, makeLogger() as never);
 
-    const code = await service.issue('user-1', 'urn:app:x', 'raw-api-key');
-    const saved = repo.save.mock.calls[0][0];
-    repo.findOne.mockResolvedValueOnce(saved);
+    const code = await service.issue('user-1', 'urn:app:x');
+    repo.findOne.mockResolvedValueOnce(repo.save.mock.calls[0][0]);
     repo.update.mockResolvedValueOnce({ affected: 0 }); // another exchange claimed it first
 
     expect(await service.consume(code)).toBeNull();

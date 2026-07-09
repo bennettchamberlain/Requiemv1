@@ -5,9 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThan, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
-import { decrypt, encrypt } from '@ci/common/crypto';
 import { LoggerService } from '@ci/common/logging';
-import config from '@ci/configuration';
 
 import { ConnectCodeEntity } from '../entities/ConnectCodeEntity';
 
@@ -17,15 +15,15 @@ const CODE_BYTE_LENGTH = 32;
 const CODE_TTL_MS = 60_000;
 
 /**
- * The payload recovered from a successfully-consumed connect code.
+ * The identity recovered from a successfully-consumed connect code. The key is
+ * minted by the caller ({@link ConnectService.exchange}) after redemption — the
+ * code itself never carries key material.
  */
 export interface ConsumedConnectCode {
-  /** The owning user the api key belongs to. */
+  /** The owning user the key is minted under. */
   userId: string;
-  /** The app URN the key was minted for. */
+  /** The app URN the key is minted for. */
   appUrn: string;
-  /** The raw (decrypted) api key — revealed exactly once, here. */
-  key: string;
 }
 
 /**
@@ -35,9 +33,11 @@ export interface ConsumedConnectCode {
  *
  * Security properties:
  * - The raw code is high-entropy (256-bit) and stored only as a SHA-256 hash.
- * - The minted api key is stored field-encrypted; a DB read cannot recover it.
+ * - The code carries NO key material; it only authorizes minting for a
+ *   `(user, app)` pair, so a DB read cannot recover a secret and an abandoned
+ *   consent never mints (or destroys) a key.
  * - Redemption is atomic and single-use (a conditional `used_at` update), so a
- *   replayed or concurrent exchange cannot mint two live sessions from one code.
+ *   replayed or concurrent exchange cannot mint two keys from one code.
  * - Codes expire quickly ({@link CODE_TTL_MS}); expired rows are swept lazily.
  */
 @Injectable()
@@ -51,17 +51,16 @@ export class ConnectCodeService {
   }
 
   /**
-   * Issue a one-time code that maps to `key` for `(userId, appUrn)`.
+   * Issue a one-time code authorizing a key mint for `(userId, appUrn)`.
    *
    * @returns the raw code to place in the redirect back to CI-Hub
    */
-  async issue(userId: string, appUrn: string, key: string): Promise<string> {
+  async issue(userId: string, appUrn: string): Promise<string> {
     const rawCode = randomBytes(CODE_BYTE_LENGTH).toString('hex');
 
     const entity = this.connectCodeRepository.create({
       id: uuidv7(),
       hashed_code: this.hash(rawCode),
-      encrypted_key: encrypt(key, config.auth.encryption.fieldKey),
       user_id: userId,
       app_urn: appUrn,
       expires_at: new Date(Date.now() + CODE_TTL_MS),
@@ -107,13 +106,10 @@ export class ConnectCodeService {
     }
 
     // Atomically claim the code: only the first exchange flips used_at from NULL,
-    // so concurrent/replayed exchanges of the same code cannot both succeed. The
-    // same update wipes the encrypted key so a consumed row retains no
-    // (recoverable) key material at rest — the plaintext is returned once below
-    // from the row we already loaded.
+    // so concurrent/replayed exchanges of the same code cannot both succeed.
     const claim = await this.connectCodeRepository.update(
       { id: row.id, used_at: IsNull() },
-      { used_at: new Date(), encrypted_key: '' },
+      { used_at: new Date() },
     );
 
     if ((claim.affected ?? 0) === 0) {
@@ -127,7 +123,6 @@ export class ConnectCodeService {
     return {
       userId: row.user_id,
       appUrn: row.app_urn,
-      key: decrypt(row.encrypted_key, config.auth.encryption.fieldKey),
     };
   }
 
