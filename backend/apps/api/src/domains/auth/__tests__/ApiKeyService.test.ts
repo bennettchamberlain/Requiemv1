@@ -75,7 +75,9 @@ describe('ApiKeyService.createOrRotate', () => {
     repo.save.mockRejectedValueOnce(Object.assign(new Error('connection reset'), { code: '08006' }));
     const service = new ApiKeyService(repo as never);
 
-    await expect(service.createOrRotate(ownerCtx, { name: 'app:urn:w', scopes: ['memory'] })).rejects.toThrow('connection reset');
+    await expect(service.createOrRotate(ownerCtx, { name: 'app:urn:w', scopes: ['memory'] })).rejects.toThrow(
+      'connection reset',
+    );
     expect(repo.delete).toHaveBeenCalledTimes(1);
   });
 });

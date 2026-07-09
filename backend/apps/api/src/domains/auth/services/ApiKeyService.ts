@@ -84,8 +84,9 @@ export class ApiKeyService {
 
   /** Whether a caught error is a Postgres unique-violation (SQLSTATE 23505). */
   private isUniqueViolation(err: unknown): boolean {
-    const code = (err as { code?: string; driverError?: { code?: string } } | null)?.code
-      ?? (err as { driverError?: { code?: string } } | null)?.driverError?.code;
+    const code =
+      (err as { code?: string; driverError?: { code?: string } } | null)?.code ??
+      (err as { driverError?: { code?: string } } | null)?.driverError?.code;
 
     return code === '23505';
   }

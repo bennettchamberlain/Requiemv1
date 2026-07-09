@@ -158,7 +158,14 @@ export class ConnectController {
       )
       .header('X-Frame-Options', 'DENY')
       .send(
-        renderConnectConsentPage({ appUrn: app, appName, state, returnUrl, csrfCookieName: CSRF_COOKIE, nonce: cspNonce }),
+        renderConnectConsentPage({
+          appUrn: app,
+          appName,
+          state,
+          returnUrl,
+          csrfCookieName: CSRF_COOKIE,
+          nonce: cspNonce,
+        }),
       );
   }
 
