@@ -165,8 +165,10 @@ describe('ConnectController', () => {
       expect(res.text).toContain('src="data:image/webp;base64,');
       expect(res.text).toContain('>Allow</button>');
       // The signed-in account is surfaced so it's never ambiguous which memory
-      // the app is being granted access to.
-      expect(res.text).toContain('Signed in as <strong>owner@example.com</strong>');
+      // the app is being granted access to. The address is wrapped in Cloudflare
+      // `email_off` markers so the zone's email obfuscation doesn't turn it into a
+      // dead "/cdn-cgi/l/email-protection" link (its decoder script is CSP-blocked).
+      expect(res.text).toContain('Signed in as <strong><!--email_off-->owner@example.com<!--/email_off--></strong>');
       // The href is HTML-attribute-escaped (& → &amp;).
       expect(res.text).toContain(`href="${RETURN_URL}?error=access_denied&amp;state=s"`);
     });

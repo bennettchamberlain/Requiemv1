@@ -65,7 +65,7 @@ export function renderSignupConfirmPage(params: SignupConfirmParams): string {
 <body>
   <main class="card">
     <h1>Create your Companion Memory account?</h1>
-    <p>You signed in with Companion Intelligence as <span class="email">${email}</span>.
+    <p>You signed in with Companion Intelligence as <span class="email"><!--email_off-->${email}<!--/email_off--></span>.
       No Companion Memory account exists here yet — create one to continue.</p>
     <div class="actions">
       <a class="btn secondary" href="${cancelUrl}">Cancel</a>

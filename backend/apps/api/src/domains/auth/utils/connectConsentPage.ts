@@ -106,6 +106,11 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
   const returnUrl = escapeHtml(params.returnUrl);
   const denyUrl = escapeHtml(params.denyUrl);
   const csrfToken = escapeHtml(params.csrfToken);
+  // The email is wrapped in Cloudflare `email_off` markers at the render site:
+  // the zone has Email Address Obfuscation on, which would otherwise rewrite the
+  // address into a `/cdn-cgi/l/email-protection` link + a decoder script — and
+  // that script is blocked by this page's nonce-only CSP, leaving a dead
+  // "[email protected]" link. `email_off` opts the address out at the edge.
   const signedInEmail = params.userEmail?.trim() ? escapeHtml(params.userEmail.trim()) : '';
 
   return /* html */ `<!doctype html>
@@ -125,7 +130,7 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
     <p><span class="app">${displayName}</span> is requesting access to your Companion Memory,
       so it can remember your context across sessions. It will be able to read and write your
       long-term memory. You can disconnect it at any time.</p>
-    ${signedInEmail ? `<p class="signed-in">Signed in as <strong>${signedInEmail}</strong></p>` : ''}
+    ${signedInEmail ? `<p class="signed-in">Signed in as <strong><!--email_off-->${signedInEmail}<!--/email_off--></strong></p>` : ''}
     <div class="actions">
       <a class="btn secondary" href="${denyUrl}">Not now</a>
       <form method="POST" action="/api/connect/approve">
