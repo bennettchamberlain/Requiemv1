@@ -77,12 +77,15 @@ const CONSENT_STYLES = /* css */ `
     h1{font-size:20px;font-weight:700;margin:0 0 8px}
     p{line-height:1.5;color:var(--fg-dim);font-size:14px;margin:0 0 24px}
     .app{color:var(--fg);font-weight:600}
-    .actions{display:flex;gap:12px}
-    .actions form{margin:0;flex:1}
+    /* Two equal-width columns so "Not now" and "Allow" match exactly. A flex
+       layout sizes each item to its text (flex-basis resolves to content here),
+       which made "Not now" wider than "Allow"; grid 1fr/1fr ignores content. */
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .actions form{margin:0}
     .btn{display:block;width:100%;padding:12px 20px;border-radius:999px;border:0;font-size:15px;font-weight:600;line-height:1.2;cursor:pointer;text-align:center;text-decoration:none;font-family:inherit}
     .primary{background:var(--brand-grad);color:var(--on-accent)}
     .primary:hover{filter:brightness(1.06)}
-    .secondary{flex:1;background:transparent;color:var(--fg-dim);border:1px solid var(--border)}
+    .secondary{background:transparent;color:var(--fg-dim);border:1px solid var(--border)}
     .secondary:hover{color:var(--fg);border-color:var(--fg-dim)}`;
 
 /**
@@ -158,15 +161,28 @@ export function renderConnectRedirectPage(hubUrl: string): string {
   <title>Connecting…</title>
   <style>
     :root { color-scheme: dark light; }
+    * { box-sizing: border-box; }
     body { font-family: "Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif;
       margin: 0; min-height: 100vh; display: grid; place-items: center;
-      background: #041620; color: #9bb2b7; }
-    @media (prefers-color-scheme: light) { body { background: #f3f3f3; color: #4f6168; } }
-    a { color: inherit; }
+      background: #041620; color: #f5f8fa; padding: 40px 20px; }
+    @media (prefers-color-scheme: light) { body { background: #f3f3f3; color: #010f16; } }
+    .wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+    .spinner { width: 34px; height: 34px; border-radius: 50%;
+      border: 3px solid rgba(155, 178, 183, .25); border-top-color: #079d99;
+      animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+    .msg { margin: 0; font-size: 15px; font-weight: 600; }
+    .link { font-size: 13px; color: #9bb2b7; text-decoration: underline; text-underline-offset: 3px; }
+    .link:hover { color: inherit; }
   </style>
 </head>
 <body>
-  <p>Connecting to Companion Memory… <a href="${url}">Continue</a></p>
+  <main class="wrap">
+    <div class="spinner" aria-hidden="true"></div>
+    <p class="msg">Connecting to Companion Memory…</p>
+    <a class="link" href="${url}">Continue</a>
+  </main>
 </body>
 </html>`;
 }
