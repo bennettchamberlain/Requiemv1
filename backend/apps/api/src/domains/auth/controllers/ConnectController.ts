@@ -10,7 +10,6 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -21,7 +20,6 @@ import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 
 import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
-import { CsrfGuard } from '../guards/CsrfGuard';
 import { ConnectService } from '../services/ConnectService';
 import { CsrfService } from '../services/CsrfService';
 import { renderConnectConsentPage, renderConnectErrorPage } from '../utils/connectConsentPage';
@@ -33,6 +31,9 @@ const approveSchema = z.object({
   app: z.string().min(1),
   state: z.string().min(1),
   return: z.string().url(),
+  // CSRF token, submitted as a hidden form field (the consent page has no JS to
+  // set a header) and checked against the csrf cookie — signed double-submit.
+  csrf: z.string().min(1),
 });
 
 const exchangeSchema = z.object({
@@ -128,10 +129,12 @@ export class ConnectController {
       return;
     }
 
-    // The consent page's approve POST is CSRF-guarded (double-submit). A signed-in
-    // user who did NOT just bounce through OIDC has no CSRF cookie (it is a
-    // sameSite=strict session cookie that OIDC/login set), so mint one here —
-    // otherwise the approve POST sends an empty token and fails with a 403.
+    // The consent page's Allow POST is CSRF-protected (signed double-submit): the
+    // same token is set as the csrf cookie AND injected into the form's hidden
+    // field, and /approve checks they match. Mint it here — a signed-in user who
+    // did NOT just bounce through OIDC has no csrf cookie (it is a sameSite=strict
+    // cookie that OIDC/login set), so without this the POST would submit against
+    // an absent cookie and 403.
     const csrfToken = this.csrfService.generateToken();
     res.cookie(CSRF_COOKIE, csrfToken, {
       httpOnly: false,
@@ -140,21 +143,25 @@ export class ConnectController {
       path: '/',
     });
 
-    // Per-request nonce: the page's own inline <style>/<script> carry it, so an
-    // injected inline script (which cannot guess the nonce) is refused by CSP.
+    // Per-request nonce: the page's own inline <style> carries it, so an injected
+    // inline <style> (which cannot guess the nonce) is refused by CSP.
     const cspNonce = randomBytes(16).toString('base64');
 
     res
       .type('html')
-      // Lock the consent page to exactly what it uses: the nonce'd inline
-      // script/style, a same-origin fetch to /api/connect/approve, and JS
-      // navigation. default-src 'none' + connect-src 'self' block external resource
-      // loads and fetch/img/form exfiltration; the nonce (not 'unsafe-inline')
-      // means injected inline script will not run; frame-ancestors / X-Frame-Options
-      // keep the page un-framable.
+      // Lock the consent page to exactly what it uses. The page runs NO
+      // JavaScript (the nginx gateway stamps `script-src 'self'` on every
+      // response, so a nonce'd inline script could never satisfy the enforced
+      // intersection anyway), hence no script-src — it falls back to
+      // `default-src 'none'`, blocking all script. It needs: its own nonce'd
+      // inline <style>, the inlined `data:` memory logo, and a same-origin form
+      // POST to /api/connect/approve. `form-action 'self'` permits that POST (the
+      // 302 it returns to CI-Hub is a redirect, not re-checked); the "Not now"
+      // link is a top-level navigation, not restricted here. frame-ancestors /
+      // X-Frame-Options keep the page un-framable.
       .header(
         'Content-Security-Policy',
-        `default-src 'none'; script-src 'nonce-${cspNonce}'; style-src 'nonce-${cspNonce}'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+        `default-src 'none'; style-src 'nonce-${cspNonce}'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`,
       )
       .header('X-Frame-Options', 'DENY')
       .send(
@@ -163,33 +170,55 @@ export class ConnectController {
           appName,
           state,
           returnUrl,
-          csrfCookieName: CSRF_COOKIE,
+          denyUrl: this.connectService.buildDenyUrl(returnUrl, state),
+          csrfToken,
           nonce: cspNonce,
         }),
       );
   }
 
   /**
-   * Consent approval. CSRF-guarded and re-checks the session and return origin,
-   * then mints the scoped key and returns the CI-Hub redirect URL (carrying the
-   * one-time code) for the consent page to navigate to.
+   * Consent approval — the target of the consent page's "Allow" form (no JS, so
+   * a plain same-origin POST). Validates the return origin and the double-submit
+   * CSRF token (hidden field vs cookie), re-checks the session, mints the scoped
+   * key, and 302-redirects the browser back to CI-Hub carrying the one-time code.
+   *
+   * Failure modes all redirect back to CI-Hub with an `error` (rather than
+   * rendering a dead-end JSON error) so the user lands back on the originating
+   * app's interstitial: a lost session → `login_required`, a minting failure →
+   * `server_error`. A bad return origin (can't safely redirect anywhere) and a
+   * bad/absent CSRF token (validateToken throws 403) are the only hard failures.
    */
-  @UseGuards(CsrfGuard)
   @Post('approve')
-  async approve(@Body(new ValidationPipe(approveSchema)) body: ApproveDto, @Req() req: Request) {
-    const session = await this.connectService.resolveSessionUser(req.cookies?.[SESSION_COOKIE]);
-
-    if (!session) {
-      throw new UnauthorizedException('Not signed in');
-    }
-
+  async approve(
+    @Body(new ValidationPipe(approveSchema)) body: ApproveDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
     if (!this.connectService.isReturnUrlAllowed(body.return)) {
       throw new BadRequestException('Return URL origin is not allowlisted');
     }
 
-    const { code } = await this.connectService.approve(session.userId, body.app);
+    // Signed double-submit: the hidden `csrf` field must match the csrf cookie.
+    // Throws ForbiddenException (403) on mismatch/absence.
+    this.csrfService.validateToken(req.cookies?.[CSRF_COOKIE], body.csrf);
 
-    return { redirectUrl: this.connectService.buildReturnUrl(body.return, code, body.state) };
+    const session = await this.connectService.resolveSessionUser(req.cookies?.[SESSION_COOKIE]);
+
+    if (!session) {
+      res.redirect(this.connectService.buildDenyUrl(body.return, body.state, 'login_required'));
+
+      return;
+    }
+
+    try {
+      const { code } = await this.connectService.approve(session.userId, body.app);
+
+      res.redirect(this.connectService.buildReturnUrl(body.return, code, body.state));
+    } catch (err) {
+      this.logger.error(`[Connect] approve failed for app ${body.app}`, err as Error);
+      res.redirect(this.connectService.buildDenyUrl(body.return, body.state, 'server_error'));
+    }
   }
 
   /**

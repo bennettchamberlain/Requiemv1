@@ -216,6 +216,21 @@ export class ConnectService {
     return url.toString();
   }
 
+  /**
+   * Build the redirect URL back to CI-Hub for a declined/failed consent: no code
+   * is minted, an `error` is carried instead, and CI-Hub's callback returns the
+   * user to the app they started from (its interstitial). Caller must have
+   * validated `returnUrl` via {@link isReturnUrlAllowed} first.
+   */
+  buildDenyUrl(returnUrl: string, state: string, error = 'access_denied'): string {
+    const url = new URL(returnUrl);
+
+    url.searchParams.set('error', error);
+    url.searchParams.set('state', state);
+
+    return url.toString();
+  }
+
   /** The idempotent api-key name for an app URN. */
   private keyName(appUrn: string): string {
     return `${CONNECT_KEY_NAME_PREFIX}${appUrn}`;

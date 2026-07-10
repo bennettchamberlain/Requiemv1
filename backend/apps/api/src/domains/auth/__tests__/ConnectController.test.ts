@@ -1,4 +1,10 @@
-import { type INestApplication, type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import {
+  ForbiddenException,
+  type INestApplication,
+  type MiddlewareConsumer,
+  Module,
+  type NestModule,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -24,6 +30,14 @@ const mockConnectService = {
   revokeByApp: jest.fn(),
   rotateByApp: jest.fn(),
   buildReturnUrl: jest.fn(),
+  buildDenyUrl: jest.fn(),
+};
+
+const mockCsrfService = {
+  generateToken: jest.fn().mockReturnValue('csrf-token-value'),
+  // No-op by default (valid). Individual tests override to throw for the
+  // mismatch case.
+  validateToken: jest.fn(),
 };
 
 const mockLogger = {
@@ -38,7 +52,7 @@ const mockLogger = {
   controllers: [ConnectController],
   providers: [
     { provide: ConnectService, useValue: mockConnectService },
-    { provide: CsrfService, useValue: { generateToken: jest.fn().mockReturnValue('csrf-token-value') } },
+    { provide: CsrfService, useValue: mockCsrfService },
     { provide: LoggerService, useValue: mockLogger },
   ],
 })
@@ -49,10 +63,11 @@ class TestModule implements NestModule {
 }
 
 /**
- * HTTP-level tests for the connect endpoints. ConnectService is mocked (its
- * logic is unit-tested separately); CSRF and forward-auth guards are overridden
- * to true so these tests focus on the controller's routing, validation, session
- * gating, and redirect behaviour.
+ * HTTP-level tests for the connect endpoints. ConnectService and CsrfService are
+ * mocked (their logic is unit-tested separately) and the forward-auth guard is
+ * overridden to true, so these tests focus on the controller's routing,
+ * validation, session gating, CSRF check, and redirect behaviour. The consent
+ * "Allow" flow is a no-JS form POST that 302-redirects back to CI-Hub.
  */
 describe('ConnectController', () => {
   let app: INestApplication;
@@ -80,6 +95,12 @@ describe('ConnectController', () => {
     mockConnectService.buildReturnUrl.mockImplementation(
       (url: string, code: string, state: string) => `${url}?code=${code}&state=${state}`,
     );
+    mockConnectService.buildDenyUrl.mockImplementation(
+      (url: string, state: string, error = 'access_denied') => `${url}?error=${error}&state=${state}`,
+    );
+    // Valid CSRF by default; the mismatch test overrides this to throw.
+    mockCsrfService.generateToken.mockReturnValue('csrf-token-value');
+    mockCsrfService.validateToken.mockImplementation(() => undefined);
   });
 
   describe('GET /connect', () => {
@@ -110,7 +131,7 @@ describe('ConnectController', () => {
       expect(decodeURIComponent(res.headers.location)).toContain('/api/connect?');
     });
 
-    it('renders the consent page with anti-framing headers when signed in', async () => {
+    it('renders the no-JS consent page with anti-framing headers when signed in', async () => {
       mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
 
       const res = await request(app.getHttpServer())
@@ -124,39 +145,73 @@ describe('ConnectController', () => {
       expect(res.headers['x-frame-options']).toBe('DENY');
       expect(res.text).toContain('Connect to Companion Memory');
 
-      // CSP is nonce-based (not 'unsafe-inline'), and the same nonce is stamped on
-      // the page's inline script so its own code runs while injected inline script
-      // (no nonce) is blocked.
+      // No client JavaScript: no script-src (falls back to default-src 'none'),
+      // and the page carries no <script> at all. Styles are nonce'd inline; the
+      // memory logo is an inlined data: image; the Allow form posts same-origin.
+      expect(csp).not.toContain('script-src');
+      expect(res.text).not.toContain('<script');
+      expect(csp).toContain('img-src data:');
+      expect(csp).toContain("form-action 'self'");
       expect(csp).not.toContain("'unsafe-inline'");
-      const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
-      expect(nonce).toBeTruthy();
-      expect(res.text).toContain(`<script nonce="${nonce}">`);
+
+      const styleNonce = /style-src 'nonce-([^']+)'/.exec(csp)?.[1];
+      expect(styleNonce).toBeTruthy();
+      expect(res.text).toContain(`<style nonce="${styleNonce}">`);
+
+      // Allow = same-origin form with the CSRF token + hidden state; Not now =
+      // a link to the CI-Hub deny URL; the Companion Memory logo is inlined.
+      expect(res.text).toContain('action="/api/connect/approve"');
+      expect(res.text).toContain('name="csrf"');
+      expect(res.text).toContain('src="data:image/webp;base64,');
+      expect(res.text).toContain('>Allow</button>');
+      // The href is HTML-attribute-escaped (& → &amp;).
+      expect(res.text).toContain(`href="${RETURN_URL}?error=access_denied&amp;state=s"`);
     });
   });
 
   describe('POST /connect/approve', () => {
-    it('mints and returns the Hub redirect URL when signed in', async () => {
+    const approveBody = { app: 'urn:app:x', state: 's', return: RETURN_URL, csrf: 'csrf-token-value' };
+
+    it('mints and 302-redirects back to CI-Hub with the code when signed in', async () => {
       mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
       mockConnectService.approve.mockResolvedValue({ code: 'the-code' });
 
-      const res = await request(app.getHttpServer())
-        .post('/connect/approve')
-        .send({ app: 'urn:app:x', state: 's', return: RETURN_URL })
-        .expect(201);
+      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(302);
 
+      expect(mockCsrfService.validateToken).toHaveBeenCalledWith(undefined, 'csrf-token-value');
       expect(mockConnectService.approve).toHaveBeenCalledWith('user-1', 'urn:app:x');
-      expect(res.body.redirectUrl).toBe(`${RETURN_URL}?code=the-code&state=s`);
+      expect(res.headers.location).toBe(`${RETURN_URL}?code=the-code&state=s`);
     });
 
-    it('401s when there is no session', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue(null);
+    it('403s when the CSRF token is missing/mismatched', async () => {
+      mockCsrfService.validateToken.mockImplementation(() => {
+        throw new ForbiddenException('CSRF token mismatch');
+      });
 
       await request(app.getHttpServer())
         .post('/connect/approve')
-        .send({ app: 'urn:app:x', state: 's', return: RETURN_URL })
-        .expect(401);
+        .send({ ...approveBody, csrf: 'wrong' })
+        .expect(403);
 
       expect(mockConnectService.approve).not.toHaveBeenCalled();
+    });
+
+    it('redirects back to CI-Hub with error=login_required when there is no session', async () => {
+      mockConnectService.resolveSessionUser.mockResolvedValue(null);
+
+      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(302);
+
+      expect(res.headers.location).toBe(`${RETURN_URL}?error=login_required&state=s`);
+      expect(mockConnectService.approve).not.toHaveBeenCalled();
+    });
+
+    it('redirects back to CI-Hub with error=server_error when minting fails', async () => {
+      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
+      mockConnectService.approve.mockRejectedValue(new Error('mint boom'));
+
+      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(302);
+
+      expect(res.headers.location).toBe(`${RETURN_URL}?error=server_error&state=s`);
     });
 
     it('400s when the return URL is not a valid URL (validation)', async () => {
@@ -164,7 +219,7 @@ describe('ConnectController', () => {
 
       await request(app.getHttpServer())
         .post('/connect/approve')
-        .send({ app: 'urn:app:x', state: 's', return: 'not-a-url' })
+        .send({ ...approveBody, return: 'not-a-url' })
         .expect(400);
     });
   });
