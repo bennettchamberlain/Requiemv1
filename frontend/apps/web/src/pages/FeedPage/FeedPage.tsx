@@ -392,13 +392,6 @@ export function FeedPage() {
           </>
         )}
 
-        {hbpeEnabled && weekForecast && (
-          <>
-            <h2 className="text-2xl font-bold text-foreground">Week Ahead</h2>
-            <WeekAhead week={weekForecast} due={dueForecast} />
-          </>
-        )}
-
         <h2 className="text-2xl font-bold text-foreground">Actions</h2>
 
         {isActionsRowEmpty ? (
@@ -477,6 +470,13 @@ export function FeedPage() {
             </Carousel>
           )}
         </div>
+
+        {hbpeEnabled && weekForecast && (
+          <>
+            <h2 className="text-2xl font-bold text-foreground">Week Ahead</h2>
+            <WeekAhead week={weekForecast} due={dueForecast} />
+          </>
+        )}
       </PageContent>
 
       {isModalOpen && <FeedModal onClose={handleModalClose} />}
