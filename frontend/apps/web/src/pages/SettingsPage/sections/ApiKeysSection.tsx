@@ -442,9 +442,9 @@ export function ApiKeysSection() {
           </Dialog.Header>
           {deleteKey && isHubManagedKey(deleteKey) && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-              This key is managed by Companion Hub for a connected app. Deleting it here will break that
-              app's memory connection — to disconnect cleanly, use <strong>Disconnect Memory</strong> on the
-              app's page in Hub instead.
+              This key is managed by Companion Hub for a connected app. Deleting it here will break that app's
+              memory connection — to disconnect cleanly, use <strong>Disconnect Memory</strong> on the app's
+              page in Hub instead.
             </div>
           )}
           <Dialog.Footer>

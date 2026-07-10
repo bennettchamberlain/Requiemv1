@@ -132,7 +132,10 @@ describe('ConnectController', () => {
     });
 
     it('renders the no-JS consent page with anti-framing headers when signed in', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
 
       const res = await request(app.getHttpServer())
         .get('/connect')
@@ -168,7 +171,9 @@ describe('ConnectController', () => {
       // the app is being granted access to. The address is wrapped in Cloudflare
       // `email_off` markers so the zone's email obfuscation doesn't turn it into a
       // dead "/cdn-cgi/l/email-protection" link (its decoder script is CSP-blocked).
-      expect(res.text).toContain('Signed in as <strong><!--email_off-->owner@example.com<!--/email_off--></strong>');
+      expect(res.text).toContain(
+        'Signed in as <strong><!--email_off-->owner@example.com<!--/email_off--></strong>',
+      );
       // The href is HTML-attribute-escaped (& → &amp;).
       expect(res.text).toContain(`href="${RETURN_URL}?error=access_denied&amp;state=s"`);
     });
@@ -178,7 +183,10 @@ describe('ConnectController', () => {
     const approveBody = { app: 'urn:app:x', state: 's', return: RETURN_URL, csrf: 'csrf-token-value' };
 
     it('mints and returns a meta-refresh page back to CI-Hub with the code when signed in', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
       mockConnectService.approve.mockResolvedValue({ code: 'the-code' });
 
       // 200 HTML meta-refresh (not a 302): the gateway's `form-action 'self'`
@@ -217,7 +225,10 @@ describe('ConnectController', () => {
     });
 
     it('sends the user back to CI-Hub with error=server_error when minting fails', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
       mockConnectService.approve.mockRejectedValue(new Error('mint boom'));
 
       const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(200);
@@ -226,7 +237,10 @@ describe('ConnectController', () => {
     });
 
     it('400s when the return URL is not a valid URL (validation)', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
 
       await request(app.getHttpServer())
         .post('/connect/approve')
