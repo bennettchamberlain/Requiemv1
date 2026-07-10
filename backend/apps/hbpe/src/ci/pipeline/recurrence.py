@@ -80,6 +80,9 @@ _OCCURRENCES_SQL = """
     WHERE ts.user_id = %(user_id)s
       AND ts.level = 'L1'
       AND ts.date >= (NOW() AT TIME ZONE 'UTC')::date - %(history)s::int
+      -- future-dated rows (bad imports / test data) would make days_since_last
+      -- negative and poison the interval stats
+      AND ts.date <= (NOW() AT TIME ZONE 'UTC')::date
     GROUP BY ts.token_id, ts.date
     ORDER BY ts.token_id, ts.date
 """
@@ -212,7 +215,7 @@ def build_recurrence_profiles(user_id: str, history_days: int = HISTORY_DAYS) ->
 # ── Forecasting ────────────────────────────────────────────────────────────────
 
 _LOAD_PROFILES_SQL = """
-    SELECT p.l1_cluster_id::text, c.display_name, c.l0_class,
+    SELECT p.l1_cluster_id::text, c.label, c.l0_class,
            p.n_occurrence_days, p.first_seen, p.last_seen,
            p.dow_counts, p.daypart_counts, p.intervals_days,
            p.interval_median, p.interval_p25, p.interval_p75, p.interval_p90,
@@ -227,7 +230,13 @@ def _load_profiles(user_id: str) -> list[dict]:
     with get_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(_LOAD_PROFILES_SQL, (user_id,))
-            return [dict(r) for r in cur.fetchall()]
+            rows = [dict(r) for r in cur.fetchall()]
+    # Human-readable name from the label slug, matching
+    # InferenceEngine._load_l1_display_names (display_name column was dropped
+    # in 20260413000003).
+    for r in rows:
+        r["display_name"] = (r.pop("label") or "").replace("_", " ").title()
+    return rows
 
 
 def _hazard(gaps: list[int]) -> np.ndarray:
