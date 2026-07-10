@@ -108,42 +108,16 @@ function GridCell({ row, day, prob }: { row: GridRow; day: WeekForecast['days'][
 
 // ── Due list ──────────────────────────────────────────────────────────────────
 
-/**
- * Placeholder shown in the empty state so the panel's visual language is
- * inspectable before the recurrence profiler has enough history to emit real
- * items. Rendered dimmed with an "example" tag — never mistakable for data.
- */
-const EXAMPLE_DUE: DueItem = {
-  clusterId: 'example',
-  name: 'Call a friend',
-  l0Class: 'SOCIAL',
-  lastSeen: '',
-  daysSinceLast: 12,
-  medianIntervalDays: 14,
-  dueInDays: 2,
-  window: [1, 4],
-  overdue: false,
-  confidence: 0.8,
-};
-
-function DueRow({ item, example = false }: { item: DueItem; example?: boolean }) {
+function DueRow({ item }: { item: DueItem }) {
   return (
     <div
       className={cn(
         'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2 py-1',
         item.overdue && 'bg-destructive/10 text-destructive',
-        example && 'opacity-60',
       )}
     >
       <div className={cn('w-2 h-2 shrink-0 rounded-sm', L0_BG[item.l0Class] ?? 'bg-gray-400')} />
-      <span className={cn('truncate text-xs', item.overdue && 'font-medium')}>
-        {item.name}
-        {example && (
-          <span className="ml-2 rounded-sm border border-border px-1 text-[9px] uppercase tracking-wide text-muted-foreground">
-            example
-          </span>
-        )}
-      </span>
+      <span className={cn('truncate text-xs', item.overdue && 'font-medium')}>{item.name}</span>
       <span
         className={cn('col-start-2 text-[10px]', item.overdue ? 'opacity-90' : 'text-muted-foreground')}
       >
@@ -222,10 +196,7 @@ export function WeekAhead({ week, due, className }: WeekAheadProps) {
             ))}
           </>
         ) : (
-          <>
-            <p className="px-2 py-1 text-xs text-muted-foreground">All caught up — take a break!</p>
-            <DueRow item={EXAMPLE_DUE} example />
-          </>
+          <p className="px-2 py-1 text-xs text-muted-foreground">All caught up — take a break!</p>
         )}
       </div>
     </div>

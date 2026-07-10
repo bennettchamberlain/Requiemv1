@@ -97,14 +97,16 @@ describe('WeekAhead', () => {
     expect(screen.getByText('due in ~6 days (3–9 days)')).toBeInTheDocument();
   });
 
-  it('shows the all-caught-up empty state with a tagged example row when nothing is due', () => {
+  it('shows only the all-caught-up empty state when nothing is due', () => {
     const week = makeWeek({ 'Deep Focus': [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9] });
-    render(<WeekAhead week={week} due={{ generatedAt: '2026-07-09T09:41:00Z', due: [] }} />);
+    const { container } = render(
+      <WeekAhead week={week} due={{ generatedAt: '2026-07-09T09:41:00Z', due: [] }} />,
+    );
 
     expect(screen.getByText('Coming due')).toBeInTheDocument();
     expect(screen.getByText('All caught up — take a break!')).toBeInTheDocument();
-    expect(screen.getByText('Call a friend')).toBeInTheDocument();
-    expect(screen.getByText('example')).toBeInTheDocument();
+    // No due rows render alongside the empty-state message
+    expect(container.querySelectorAll('.grid.grid-cols-\\[auto_minmax\\(0\\,1fr\\)\\]')).toHaveLength(0);
   });
 
   it('renders nothing when no cluster clears the floor', () => {
