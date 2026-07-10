@@ -1,3 +1,5 @@
+import { ForbiddenException } from '@nestjs/common';
+
 import { type UserServiceContext } from '@ci/common/context';
 
 import { ApiKeyService } from '../services/ApiKeyService';
@@ -135,6 +137,88 @@ describe('ApiKeyService.findByName', () => {
     const service = new ApiKeyService(repo as never);
 
     expect(await service.findByName(ownerCtx, 'missing')).toBeNull();
+  });
+});
+
+describe('ApiKeyService.update', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const managedKey = {
+    id: 'k-managed',
+    name: 'app:ci-openclaw:ci-marketplace',
+    prefix: 'abcde',
+    scopes: ['memory'],
+    expires_at: null,
+    last_used_at: null,
+    user_id: 'owner-1',
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+
+  it('refuses to rename a Hub-managed connection key (would orphan the Hub revoke)', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({ ...managedKey });
+    const service = new ApiKeyService(repo as never);
+
+    await expect(service.update(ownerCtx, 'k-managed', { name: 'stolen' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('refuses to re-scope a Hub-managed connection key', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({ ...managedKey });
+    const service = new ApiKeyService(repo as never);
+
+    await expect(service.update(ownerCtx, 'k-managed', { scopes: [] })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('tolerates a no-op submit that echoes the managed key name and scopes', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({ ...managedKey });
+    const service = new ApiKeyService(repo as never);
+
+    const result = await service.update(ownerCtx, 'k-managed', {
+      name: 'app:ci-openclaw:ci-marketplace',
+      scopes: ['memory'],
+    });
+
+    expect(repo.save).toHaveBeenCalledTimes(1);
+    expect(result?.name).toBe('app:ci-openclaw:ci-marketplace');
+  });
+
+  it('renames an ordinary (non-managed) key', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-user', name: 'My key', scopes: [] });
+    const service = new ApiKeyService(repo as never);
+
+    const result = await service.update(ownerCtx, 'k-user', { name: 'Renamed' });
+
+    expect(repo.save).toHaveBeenCalledTimes(1);
+    expect(result?.name).toBe('Renamed');
+  });
+
+  it('treats an app:-named key WITHOUT the memory scope as ordinary (renamable)', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-appish', scopes: [] });
+    const service = new ApiKeyService(repo as never);
+
+    const result = await service.update(ownerCtx, 'k-appish', { name: 'renamed' });
+
+    expect(repo.save).toHaveBeenCalledTimes(1);
+    expect(result?.name).toBe('renamed');
+  });
+
+  it('returns null when the key does not exist', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce(null);
+    const service = new ApiKeyService(repo as never);
+
+    expect(await service.update(ownerCtx, 'missing', { name: 'x' })).toBeNull();
   });
 });
 

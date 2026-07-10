@@ -1,11 +1,12 @@
 import { createHash, randomBytes } from 'crypto';
 
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
+import { MEMORY_SCOPE } from '@ci/common/decorators';
 
 import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
 import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto } from '../types';
@@ -152,6 +153,23 @@ export class ApiKeyService {
       return null;
     }
 
+    // Hub-managed connection keys are revoked by the Hub via their stable
+    // `app:<urn>` name (see removeByName). Renaming or re-scoping one out-of-band
+    // would orphan that revoke and strand the key, so refuse those mutations here
+    // — not just in the UI, which only hides the control. Deleting is still
+    // allowed (a user may deliberately force-revoke). A no-op submit that echoes
+    // the current name/scopes is tolerated so idempotent clients don't 403.
+    if (this.isHubManagedKey(key)) {
+      const renaming = data.name !== undefined && data.name !== key.name;
+      const rescoping = data.scopes !== undefined && !this.sameScopes(data.scopes, key.scopes ?? []);
+
+      if (renaming || rescoping) {
+        throw new ForbiddenException(
+          'This key is managed by Companion Hub and cannot be renamed or re-scoped. Disconnect the app from Hub instead.',
+        );
+      }
+    }
+
     if (data.name !== undefined) {
       key.name = data.name;
     }
@@ -163,6 +181,26 @@ export class ApiKeyService {
     const saved = await this.apiKeyRepository.save(key);
 
     return ApiKeyEntity.toEgressType(saved);
+  }
+
+  /**
+   * A Hub-managed connection key: minted by the connect flow, named `app:<urn>`
+   * with the `memory` scope, and lifecycle-owned by CI-Hub (which revokes it by
+   * that exact name). Mirrors the discriminator used in the API-keys UI.
+   */
+  private isHubManagedKey(key: Pick<ApiKeyEntity, 'name' | 'scopes'>): boolean {
+    return key.name.startsWith('app:') && (key.scopes ?? []).includes(MEMORY_SCOPE);
+  }
+
+  /** Order-insensitive scope-set equality (scope lists are small). */
+  private sameScopes(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    const other = new Set(b);
+
+    return a.every((scope) => other.has(scope));
   }
 
   async remove(context: ServiceContext, keyId: string): Promise<boolean> {

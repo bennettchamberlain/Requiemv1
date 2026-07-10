@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
 import { Badge, Button, Calendar, Card, Dialog, Input, Label, Popover } from '@ci/shadcn';
-import { CalendarIcon, Check, ClipboardCopy, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
+import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
 
 import { useAuth } from '@/hooks';
 
@@ -282,11 +282,16 @@ export function ApiKeysSection() {
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {isHubManagedKey(key) ? (
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-600 dark:text-emerald-400"
+                      >
+                        <Lock />
                         Managed by Companion Hub
                       </Badge>
                     ) : key.scopes.length === 0 ? (
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge variant="outline" className="text-xs">
+                        <KeyRound />
                         Full access
                       </Badge>
                     ) : (
