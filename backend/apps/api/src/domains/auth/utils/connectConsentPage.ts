@@ -132,6 +132,46 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
 }
 
 /**
+ * Render the page that carries the browser back to CI-Hub after the Allow POST.
+ *
+ * Why not just `res.redirect(hubUrl)`? The nginx gateway stamps `form-action
+ * 'self'` on every response, and Chrome enforces form-action on the *redirect*
+ * of a form submission — so a 302 from the Allow form to the cross-origin CI-Hub
+ * URL is silently refused (the POST completes, then nothing happens). A
+ * `<meta http-equiv="refresh">` is a top-level navigation, NOT a form submission,
+ * so form-action does not apply — the same navigation kind the "Not now" <a> link
+ * uses, which reaches CI-Hub fine. The <a> is a no-JS manual fallback. The dark
+ * background matches the consent page so there's no white flash on the hop.
+ *
+ * `hubUrl` is an already-origin-allowlisted CI-Hub URL; it is HTML-escaped here
+ * for the meta content and href attributes.
+ */
+export function renderConnectRedirectPage(hubUrl: string): string {
+  const url = escapeHtml(hubUrl);
+
+  return /* html */ `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="0; url=${url}" />
+  <title>Connecting…</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body { font-family: "Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif;
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #041620; color: #9bb2b7; }
+    @media (prefers-color-scheme: light) { body { background: #f3f3f3; color: #4f6168; } }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <p>Connecting to Companion Memory… <a href="${url}">Continue</a></p>
+</body>
+</html>`;
+}
+
+/**
  * Render a minimal error page for connect failures that cannot proceed to the
  * consent step (e.g. a missing or disallowed return URL).
  */

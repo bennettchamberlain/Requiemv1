@@ -172,15 +172,21 @@ describe('ConnectController', () => {
   describe('POST /connect/approve', () => {
     const approveBody = { app: 'urn:app:x', state: 's', return: RETURN_URL, csrf: 'csrf-token-value' };
 
-    it('mints and 302-redirects back to CI-Hub with the code when signed in', async () => {
+    it('mints and returns a meta-refresh page back to CI-Hub with the code when signed in', async () => {
       mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
       mockConnectService.approve.mockResolvedValue({ code: 'the-code' });
 
-      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(302);
+      // 200 HTML meta-refresh (not a 302): the gateway's `form-action 'self'`
+      // would block a cross-origin redirect from this form POST.
+      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(200);
 
       expect(mockCsrfService.validateToken).toHaveBeenCalledWith(undefined, 'csrf-token-value');
       expect(mockConnectService.approve).toHaveBeenCalledWith('user-1', 'urn:app:x');
-      expect(res.headers.location).toBe(`${RETURN_URL}?code=the-code&state=s`);
+      // URL is HTML-escaped (& → &amp;) in the meta content + href.
+      expect(res.text).toContain(
+        `<meta http-equiv="refresh" content="0; url=${RETURN_URL}?code=the-code&amp;state=s"`,
+      );
+      expect(res.text).toContain(`href="${RETURN_URL}?code=the-code&amp;state=s"`);
     });
 
     it('403s when the CSRF token is missing/mismatched', async () => {
@@ -196,22 +202,22 @@ describe('ConnectController', () => {
       expect(mockConnectService.approve).not.toHaveBeenCalled();
     });
 
-    it('redirects back to CI-Hub with error=login_required when there is no session', async () => {
+    it('sends the user back to CI-Hub with error=login_required when there is no session', async () => {
       mockConnectService.resolveSessionUser.mockResolvedValue(null);
 
-      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(302);
+      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(200);
 
-      expect(res.headers.location).toBe(`${RETURN_URL}?error=login_required&state=s`);
+      expect(res.text).toContain(`url=${RETURN_URL}?error=login_required&amp;state=s"`);
       expect(mockConnectService.approve).not.toHaveBeenCalled();
     });
 
-    it('redirects back to CI-Hub with error=server_error when minting fails', async () => {
+    it('sends the user back to CI-Hub with error=server_error when minting fails', async () => {
       mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
       mockConnectService.approve.mockRejectedValue(new Error('mint boom'));
 
-      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(302);
+      const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(200);
 
-      expect(res.headers.location).toBe(`${RETURN_URL}?error=server_error&state=s`);
+      expect(res.text).toContain(`url=${RETURN_URL}?error=server_error&amp;state=s"`);
     });
 
     it('400s when the return URL is not a valid URL (validation)', async () => {

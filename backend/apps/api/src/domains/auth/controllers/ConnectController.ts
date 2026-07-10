@@ -22,7 +22,11 @@ import config from '@ci/configuration';
 import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
 import { ConnectService } from '../services/ConnectService';
 import { CsrfService } from '../services/CsrfService';
-import { renderConnectConsentPage, renderConnectErrorPage } from '../utils/connectConsentPage';
+import {
+  renderConnectConsentPage,
+  renderConnectErrorPage,
+  renderConnectRedirectPage,
+} from '../utils/connectConsentPage';
 
 const SESSION_COOKIE = config.auth.cookies.sessionTokenName;
 const CSRF_COOKIE = config.auth.cookies.csrfTokenName;
@@ -183,11 +187,16 @@ export class ConnectController {
    * CSRF token (hidden field vs cookie), re-checks the session, mints the scoped
    * key, and 302-redirects the browser back to CI-Hub carrying the one-time code.
    *
-   * Failure modes all redirect back to CI-Hub with an `error` (rather than
-   * rendering a dead-end JSON error) so the user lands back on the originating
-   * app's interstitial: a lost session → `login_required`, a minting failure →
+   * Failure modes all send the user back to CI-Hub with an `error` (rather than
+   * rendering a dead-end JSON error) so they land back on the originating app's
+   * interstitial: a lost session → `login_required`, a minting failure →
    * `server_error`. A bad return origin (can't safely redirect anywhere) and a
    * bad/absent CSRF token (validateToken throws 403) are the only hard failures.
+   *
+   * The hop back to CI-Hub is a rendered meta-refresh page, NOT `res.redirect`:
+   * the nginx gateway's `form-action 'self'` would make Chrome refuse to follow
+   * a 302 from this form POST to the cross-origin CI-Hub URL. See
+   * {@link renderConnectRedirectPage}.
    */
   @Post('approve')
   async approve(
@@ -203,10 +212,13 @@ export class ConnectController {
     // Throws ForbiddenException (403) on mismatch/absence.
     this.csrfService.validateToken(req.cookies?.[CSRF_COOKIE], body.csrf);
 
+    const sendToHub = (url: string) =>
+      res.status(HttpStatus.OK).type('html').send(renderConnectRedirectPage(url));
+
     const session = await this.connectService.resolveSessionUser(req.cookies?.[SESSION_COOKIE]);
 
     if (!session) {
-      res.redirect(this.connectService.buildDenyUrl(body.return, body.state, 'login_required'));
+      sendToHub(this.connectService.buildDenyUrl(body.return, body.state, 'login_required'));
 
       return;
     }
@@ -214,10 +226,10 @@ export class ConnectController {
     try {
       const { code } = await this.connectService.approve(session.userId, body.app);
 
-      res.redirect(this.connectService.buildReturnUrl(body.return, code, body.state));
+      sendToHub(this.connectService.buildReturnUrl(body.return, code, body.state));
     } catch (err) {
       this.logger.error(`[Connect] approve failed for app ${body.app}`, err as Error);
-      res.redirect(this.connectService.buildDenyUrl(body.return, body.state, 'server_error'));
+      sendToHub(this.connectService.buildDenyUrl(body.return, body.state, 'server_error'));
     }
   }
 
