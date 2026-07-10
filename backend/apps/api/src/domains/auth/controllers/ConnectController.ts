@@ -176,6 +176,7 @@ export class ConnectController {
           returnUrl,
           denyUrl: this.connectService.buildDenyUrl(returnUrl, state),
           csrfToken,
+          userEmail: session.email,
           nonce: cspNonce,
         }),
       );

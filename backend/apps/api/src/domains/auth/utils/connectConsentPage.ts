@@ -44,6 +44,9 @@ export interface ConnectConsentParams {
   denyUrl: string;
   /** CSRF token to echo in the form's hidden field; matches the csrf cookie. */
   csrfToken: string;
+  /** Email of the signed-in Companion Memory user, shown so the account the app
+   *  is being granted access to is never ambiguous. */
+  userEmail?: string;
   /** Per-request CSP nonce; stamped on the inline <style> so the page's own
    *  styles apply while any injected inline style (no nonce) is blocked. */
   nonce: string;
@@ -77,6 +80,8 @@ const CONSENT_STYLES = /* css */ `
     h1{font-size:20px;font-weight:700;margin:0 0 8px}
     p{line-height:1.5;color:var(--fg-dim);font-size:14px;margin:0 0 24px}
     .app{color:var(--fg);font-weight:600}
+    .signed-in{font-size:12px;color:var(--fg-dim);margin:-8px 0 20px}
+    .signed-in strong{color:var(--fg);font-weight:600}
     /* Two equal-width columns so "Not now" and "Allow" match exactly. A flex
        layout sizes each item to its text (flex-basis resolves to content here),
        which made "Not now" wider than "Allow"; grid 1fr/1fr ignores content. */
@@ -101,6 +106,7 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
   const returnUrl = escapeHtml(params.returnUrl);
   const denyUrl = escapeHtml(params.denyUrl);
   const csrfToken = escapeHtml(params.csrfToken);
+  const signedInEmail = params.userEmail?.trim() ? escapeHtml(params.userEmail.trim()) : '';
 
   return /* html */ `<!doctype html>
 <html lang="en">
@@ -119,6 +125,7 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
     <p><span class="app">${displayName}</span> is requesting access to your Companion Memory,
       so it can remember your context across sessions. It will be able to read and write your
       long-term memory. You can disconnect it at any time.</p>
+    ${signedInEmail ? `<p class="signed-in">Signed in as <strong>${signedInEmail}</strong></p>` : ''}
     <div class="actions">
       <a class="btn secondary" href="${denyUrl}">Not now</a>
       <form method="POST" action="/api/connect/approve">

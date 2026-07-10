@@ -132,7 +132,7 @@ describe('ConnectController', () => {
     });
 
     it('renders the no-JS consent page with anti-framing headers when signed in', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
 
       const res = await request(app.getHttpServer())
         .get('/connect')
@@ -164,6 +164,9 @@ describe('ConnectController', () => {
       expect(res.text).toContain('name="csrf"');
       expect(res.text).toContain('src="data:image/webp;base64,');
       expect(res.text).toContain('>Allow</button>');
+      // The signed-in account is surfaced so it's never ambiguous which memory
+      // the app is being granted access to.
+      expect(res.text).toContain('Signed in as <strong>owner@example.com</strong>');
       // The href is HTML-attribute-escaped (& → &amp;).
       expect(res.text).toContain(`href="${RETURN_URL}?error=access_denied&amp;state=s"`);
     });
@@ -173,7 +176,7 @@ describe('ConnectController', () => {
     const approveBody = { app: 'urn:app:x', state: 's', return: RETURN_URL, csrf: 'csrf-token-value' };
 
     it('mints and returns a meta-refresh page back to CI-Hub with the code when signed in', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
       mockConnectService.approve.mockResolvedValue({ code: 'the-code' });
 
       // 200 HTML meta-refresh (not a 302): the gateway's `form-action 'self'`
@@ -212,7 +215,7 @@ describe('ConnectController', () => {
     });
 
     it('sends the user back to CI-Hub with error=server_error when minting fails', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
       mockConnectService.approve.mockRejectedValue(new Error('mint boom'));
 
       const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(200);
@@ -221,7 +224,7 @@ describe('ConnectController', () => {
     });
 
     it('400s when the return URL is not a valid URL (validation)', async () => {
-      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1' });
+      mockConnectService.resolveSessionUser.mockResolvedValue({ userId: 'user-1', email: 'owner@example.com' });
 
       await request(app.getHttpServer())
         .post('/connect/approve')

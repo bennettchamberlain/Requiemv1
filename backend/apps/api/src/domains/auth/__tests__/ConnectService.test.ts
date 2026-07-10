@@ -59,9 +59,9 @@ describe('ConnectService.resolveSessionUser', () => {
   it('resolves the user when the session token is valid and the user exists', async () => {
     const { service, authService, userService } = makeDeps();
     authService.validateSessionToken.mockReturnValue({ sub: 'user-1' });
-    userService.findById.mockResolvedValue({ id: 'user-1' });
+    userService.findById.mockResolvedValue({ id: 'user-1', email: 'owner@example.com' });
 
-    expect(await service.resolveSessionUser('tok')).toEqual({ userId: 'user-1' });
+    expect(await service.resolveSessionUser('tok')).toEqual({ userId: 'user-1', email: 'owner@example.com' });
   });
 
   it('returns null when the session token fails verification', async () => {

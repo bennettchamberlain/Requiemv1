@@ -71,7 +71,9 @@ export class ConnectService {
    * is a short, top-level, user-initiated navigation, and the minted key is the
    * durable credential, not this session.)
    */
-  async resolveSessionUser(sessionToken: string | undefined): Promise<{ userId: string } | null> {
+  async resolveSessionUser(
+    sessionToken: string | undefined,
+  ): Promise<{ userId: string; email: string } | null> {
     if (!sessionToken) {
       return null;
     }
@@ -90,7 +92,7 @@ export class ConnectService {
       return null;
     }
 
-    return { userId: user.id };
+    return { userId: user.id, email: user.email };
   }
 
   /**
