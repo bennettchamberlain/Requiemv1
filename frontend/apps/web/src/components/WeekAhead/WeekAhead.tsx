@@ -112,13 +112,15 @@ function DueRow({ item }: { item: DueItem }) {
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-md px-2 py-1',
+        'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2 py-1',
         item.overdue && 'bg-destructive/10 text-destructive',
       )}
     >
       <div className={cn('w-2 h-2 shrink-0 rounded-sm', L0_BG[item.l0Class] ?? 'bg-gray-400')} />
-      <span className={cn('flex-1 truncate text-xs', item.overdue && 'font-medium')}>{item.name}</span>
-      <span className={cn('shrink-0 text-[10px]', item.overdue ? 'opacity-90' : 'text-muted-foreground')}>
+      <span className={cn('truncate text-xs', item.overdue && 'font-medium')}>{item.name}</span>
+      <span
+        className={cn('col-start-2 text-[10px]', item.overdue ? 'opacity-90' : 'text-muted-foreground')}
+      >
         {formatDue(item)}
       </span>
     </div>
@@ -138,9 +140,10 @@ interface WeekAheadProps {
  *
  * Extends the ForecastStrip visual grammar (color = L0 class, opacity =
  * probability) from 30-min occupancy out to day-level *occurrence*: rows are
- * the user's own discovered L1 clusters, columns the next 7 days. Below the
- * grid, renewal predictions surface what's coming due — and what's overdue,
- * the "it's been 16 days since you saw friends" deviation signal.
+ * the user's own discovered L1 clusters, columns the next 7 days. Beside the
+ * grid (below it on mobile), renewal predictions surface what's coming due —
+ * and what's overdue, the "it's been 16 days since you saw friends" deviation
+ * signal.
  *
  * Renders nothing until at least one cluster clears the probability floor
  * (recurrence profiles need ~2 weeks of history) — no spinner, no CTA.
@@ -154,11 +157,12 @@ export function WeekAhead({ week, due, className }: WeekAheadProps) {
 
   const overdue = (due?.due ?? []).filter((d) => d.overdue);
   const upcoming = (due?.due ?? []).filter((d) => !d.overdue).slice(0, MAX_DUE);
+  const hasDue = overdue.length > 0 || upcoming.length > 0;
 
   return (
-    <div className={cn('space-y-3', className)}>
+    <div className={cn('flex flex-col gap-3 md:flex-row md:gap-6', className)}>
       <div
-        className="grid gap-0.5 items-center"
+        className="grid gap-0.5 items-center min-w-0 flex-1 md:self-start"
         style={{ gridTemplateColumns: `minmax(0, 7rem) repeat(${week.days.length}, minmax(0, 1fr))` }}
         role="img"
         aria-label="Week-ahead behavioral forecast grid"
@@ -180,8 +184,8 @@ export function WeekAhead({ week, due, className }: WeekAheadProps) {
         ))}
       </div>
 
-      {(overdue.length > 0 || upcoming.length > 0) && (
-        <div className="space-y-1 border-t border-border pt-2">
+      {hasDue && (
+        <div className="space-y-1 border-t border-border pt-2 md:w-80 md:shrink-0 md:border-t-0 md:border-l md:pt-0 md:pl-6">
           <p className="text-[11px] font-medium text-muted-foreground">Coming due</p>
           {overdue.map((item) => (
             <DueRow key={item.clusterId} item={item} />
