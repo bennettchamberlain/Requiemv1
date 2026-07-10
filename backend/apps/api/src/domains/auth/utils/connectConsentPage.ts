@@ -54,7 +54,7 @@ function jsonForScript(value: unknown): string {
 }
 
 /** Static page styles (no request-derived input). */
-const CONSENT_STYLES = `
+const CONSENT_STYLES = /* css */ `
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, sans-serif; margin: 0; display: grid;
       min-height: 100vh; place-items: center; background: #0b1220; color: #e6edf3; }
@@ -79,7 +79,7 @@ const CONSENT_STYLES = `
  * (with the CSRF header) and follows the one-time-code redirect.
  */
 function consentScript(bootstrap: string): string {
-  return `(function () {
+  return /* js */ `(function () {
       var P = ${bootstrap};
 
       function readCookie(name) {
@@ -149,7 +149,7 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
     csrfCookieName: params.csrfCookieName,
   });
 
-  return `<!doctype html>
+  return /* html */ `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -179,7 +179,7 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
  * consent step (e.g. a missing or disallowed return URL).
  */
 export function renderConnectErrorPage(message: string): string {
-  return `<!doctype html>
+  return /* html */ `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8" /><title>Connect error</title>
   <style>body{font-family:system-ui,sans-serif;margin:3rem;color:#333}</style></head>
