@@ -515,18 +515,22 @@ production: health init ## Run the production deployment
 smoke-api: ## Verify the API image can run `migrate` with production-only dependencies
 	@printf "$(call task_icon,smoke-api,🔍) Smoke-testing API image...\n\n"
 
-# `migrate` runs check:migrations before dbmate up, and both must resolve inside
-# the image, which installs dependencies only — a devDependency here exits 127
-# and fails every app install. entrypoint.sh is bypassed because it demands the
-# runtime secrets; this check only reads migration filenames, so it needs no
-# database. An absent image is skipped rather than failed, matching how
-# publish.sh treats images that were never built.
-	@if docker image inspect $(API_REPO):latest >/dev/null 2>&1; then \
-		docker run --rm --entrypoint sh $(API_REPO):latest -c 'yarn check:migrations' && \
-		printf "\nAPI image can migrate. ✅\n\n"; \
-	else \
-		printf "  ⚠ $(API_REPO):latest not found locally — skipping\n\n"; \
-	fi
+# migrate-database runs `yarn migrate`, so both halves of it must resolve inside
+# the image, which installs dependencies only: a devDependency in either exits
+# non-zero at startup and rolls back every app install. Neither half needs a
+# database here — check:migrations only reads migration filenames, and dbmate's
+# --help resolves bin/dbmate.js's imports without connecting. entrypoint.sh is
+# bypassed because it demands the eight runtime secrets. A missing image is an
+# error, not a pass: a gate that verified nothing must not report green.
+	@docker image inspect $(API_REPO):latest >/dev/null 2>&1 || { \
+		printf "  ✗ $(API_REPO):latest not found — run 'make build' first.\n\n"; \
+		exit 1; \
+	}
+
+	@docker run --rm --entrypoint sh $(API_REPO):latest -c \
+		'yarn check:migrations && node bin/dbmate.js --help >/dev/null'
+
+	@printf "\nAPI image can migrate. ✅\n\n"
 
 .PHONY: publish
 publish: init ## Publish CI-Server images and metadata to the CI-Portal store
@@ -542,8 +546,6 @@ publish: init ## Publish CI-Server images and metadata to the CI-Portal store
 
 .PHONY: publish-quiet
 publish-quiet: ## Publish to CI-Portal store (quiet mode)
-	@$(MAKE) smoke-api
-
 	@scripts/publish/publish.sh -q
 
 .PHONY: seed
