@@ -511,9 +511,24 @@ production: health init ## Run the production deployment
 
 	@printf "\n"
 
+.PHONY: smoke-api
+smoke-api: ## Verify the API image can run `migrate` with production-only dependencies
+	@printf "$(call task_icon,smoke-api,🔍) Smoke-testing API image...\n\n"
+
+# `migrate` runs check:migrations before dbmate. Both must resolve inside the
+# image, which installs dependencies only — a devDependency here exits 127 and
+# fails every app install. entrypoint.sh is bypassed: it demands the runtime
+# secrets, and this check only reads migration filenames, so it needs no
+# database.
+	@docker run --rm --entrypoint sh $(API_REPO):latest -c 'yarn check:migrations'
+
+	@printf "\nAPI image can migrate. ✅\n\n"
+
 .PHONY: publish
 publish: init ## Publish CI-Server images and metadata to the CI-Portal store
 	@$(MAKE) build ENV=production GPU=$(GPU)
+
+	@$(MAKE) smoke-api
 
 	@printf "$(call task_icon,publish,📦) Publishing to CI-Portal registry...\n\n"
 
@@ -523,6 +538,8 @@ publish: init ## Publish CI-Server images and metadata to the CI-Portal store
 
 .PHONY: publish-quiet
 publish-quiet: ## Publish to CI-Portal store (quiet mode)
+	@$(MAKE) smoke-api
+
 	@scripts/publish/publish.sh -q
 
 .PHONY: seed
