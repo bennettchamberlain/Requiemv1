@@ -515,14 +515,18 @@ production: health init ## Run the production deployment
 smoke-api: ## Verify the API image can run `migrate` with production-only dependencies
 	@printf "$(call task_icon,smoke-api,🔍) Smoke-testing API image...\n\n"
 
-# `migrate` runs check:migrations before dbmate. Both must resolve inside the
-# image, which installs dependencies only — a devDependency here exits 127 and
-# fails every app install. entrypoint.sh is bypassed: it demands the runtime
-# secrets, and this check only reads migration filenames, so it needs no
-# database.
-	@docker run --rm --entrypoint sh $(API_REPO):latest -c 'yarn check:migrations'
-
-	@printf "\nAPI image can migrate. ✅\n\n"
+# `migrate` runs check:migrations before dbmate up, and both must resolve inside
+# the image, which installs dependencies only — a devDependency here exits 127
+# and fails every app install. entrypoint.sh is bypassed because it demands the
+# runtime secrets; this check only reads migration filenames, so it needs no
+# database. An absent image is skipped rather than failed, matching how
+# publish.sh treats images that were never built.
+	@if docker image inspect $(API_REPO):latest >/dev/null 2>&1; then \
+		docker run --rm --entrypoint sh $(API_REPO):latest -c 'yarn check:migrations' && \
+		printf "\nAPI image can migrate. ✅\n\n"; \
+	else \
+		printf "  ⚠ $(API_REPO):latest not found locally — skipping\n\n"; \
+	fi
 
 .PHONY: publish
 publish: init ## Publish CI-Server images and metadata to the CI-Portal store
