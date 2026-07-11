@@ -6,7 +6,7 @@ import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
-import { MEMORY_SCOPE } from '@ci/common/decorators';
+import { LoggerService } from '@ci/common/logging';
 
 import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
 import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto } from '../types';
@@ -21,7 +21,10 @@ export class ApiKeyService {
   constructor(
     @InjectRepository(ApiKeyEntity)
     private readonly apiKeyRepository: Repository<ApiKeyEntity>,
-  ) {}
+    private readonly logger: LoggerService,
+  ) {
+    this.logger.setContext(ApiKeyService.name);
+  }
 
   async create(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
     const rawKey = randomBytes(API_KEY_BYTE_LENGTH).toString('hex');
@@ -97,13 +100,30 @@ export class ApiKeyService {
    * if no such key exists. Used by the trusted connect-rotate path: CI-Hub asks
    * to rotate "the key for app X" by its stable name without knowing the owning
    * `ci.users` id; this recovers it so the fresh key is minted under the same
-   * user. Because `(user_id, name)` is unique for `app:%` names there is at most
-   * one such row.
+   * user.
+   *
+   * Single-owner-appliance invariant: `(user_id, name)` is unique for `app:%`
+   * names (migration 20260708115547), so on the appliance there is at most one
+   * such row. On a hypothetical multi-user server several users could each hold
+   * `app:<same-urn>`; the by-name rotate can't tell them apart, so we refuse
+   * (log + return null) rather than rotate an arbitrary owner's key.
    */
   async findUserIdByName(name: string): Promise<string | null> {
-    const key = await this.apiKeyRepository.findOne({ where: { name }, select: ['user_id'] });
+    const keys = await this.apiKeyRepository.find({ where: { name }, select: ['user_id'] });
 
-    return key?.user_id ?? null;
+    if (keys.length === 0) {
+      return null;
+    }
+
+    if (keys.length > 1) {
+      this.logger.error(
+        `findUserIdByName: ${keys.length} keys named "${name}" across owners — ambiguous rotate refused (single-owner invariant violated)`,
+      );
+
+      return null;
+    }
+
+    return keys[0].user_id;
   }
 
   /**
@@ -184,12 +204,15 @@ export class ApiKeyService {
   }
 
   /**
-   * A Hub-managed connection key: minted by the connect flow, named `app:<urn>`
-   * with the `memory` scope, and lifecycle-owned by CI-Hub (which revokes it by
-   * that exact name). Mirrors the discriminator used in the API-keys UI.
+   * A Hub-managed connection key: minted by the connect flow, named `app:<urn>`,
+   * and lifecycle-owned by CI-Hub (which revokes it by that exact name). Keyed on
+   * the `app:` name prefix alone — connect keys now carry per-app scope sets
+   * (including an EMPTY set for broad-access apps like the bulk importer), so a
+   * scope check would miss some connect keys and let a rename orphan the Hub's
+   * revoke-by-name.
    */
-  private isHubManagedKey(key: Pick<ApiKeyEntity, 'name' | 'scopes'>): boolean {
-    return key.name.startsWith('app:') && (key.scopes ?? []).includes(MEMORY_SCOPE);
+  private isHubManagedKey(key: Pick<ApiKeyEntity, 'name'>): boolean {
+    return key.name.startsWith('app:');
   }
 
   /** Order-insensitive scope-set equality (scope lists are small). */
@@ -218,14 +241,26 @@ export class ApiKeyService {
    *
    * This is a system-level revoke used by the trusted connect flow: CI-Hub (via
    * signed forward-auth) revokes "the key for app X" by its stable name
-   * (`app:<urn>`) without knowing the owning `ci.users` id. Because
-   * `(user_id, name)` is unique there is at most one row per user; on the
-   * single-owner appliance that is exactly the app's key.
+   * (`app:<urn>`) without knowing the owning `ci.users` id.
+   *
+   * Single-owner-appliance invariant: `(user_id, name)` is unique for `app:%`
+   * names (migration 20260708115547), so exactly one row matches and this
+   * removes precisely the app's key. If more than one owner ever holds the same
+   * `app:<urn>` name (only possible on a multi-user server), we log it — a
+   * by-name revoke would then delete every owner's key for that app. Deletion is
+   * kept (revoke must stay idempotent), but the violation is surfaced.
    */
   async removeByName(name: string): Promise<number> {
     const result = await this.apiKeyRepository.delete({ name });
+    const removed = result.affected ?? 0;
 
-    return result.affected ?? 0;
+    if (removed > 1) {
+      this.logger.error(
+        `removeByName: deleted ${removed} keys named "${name}" across owners (single-owner invariant violated)`,
+      );
+    }
+
+    return removed;
   }
 
   async validateKey(rawKey: string): Promise<{ userId: string; scopes: string[] } | null> {

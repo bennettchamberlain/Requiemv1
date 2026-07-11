@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { SYSTEM_USER } from '@ci/common/context';
-import { MEMORY_SCOPE } from '@ci/common/decorators';
+import { INTENTS_SCOPE, MCP_SCOPE, MEMORY_SCOPE } from '@ci/common/decorators';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
@@ -10,12 +10,44 @@ import { ApiKeyService } from './ApiKeyService';
 import { AuthService } from './AuthService';
 import { ConnectCodeService } from './ConnectCodeService';
 
-/** Scope granted to keys minted through the connect flow — memory access only. */
-export const CONNECT_KEY_SCOPE = MEMORY_SCOPE;
 /** Api-key name prefix; the app URN makes the name unique per app (idempotency key). */
 const CONNECT_KEY_NAME_PREFIX = 'app:';
 /** Minted keys expire after this many days; CI-Hub rotates well before expiry. */
 const CONNECT_KEY_TTL_DAYS = 90;
+
+/**
+ * The least-privilege scope set a connect key is minted with, per app.
+ *
+ * This is the SINGLE source of truth for both what the key can do (enforced
+ * deny-by-default by the api-key guards) and what the consent page tells the
+ * user it will do — they read this same function so they can never drift.
+ *
+ * App URNs are `<appName>:<store>` (e.g. `ci-openclaw:ci-marketplace`); we key
+ * on the app name. The chat agents are confined to exactly what they use; the
+ * bulk importer and any app we haven't explicitly narrowed get an EMPTY scope
+ * set = full access (grandfathered), so enforcement never breaks an app whose
+ * real needs we didn't enumerate.
+ */
+export function scopesForApp(appUrn: string): string[] {
+  const appName = appUrn.split(':')[0];
+
+  switch (appName) {
+    case 'ci-openclaw':
+    case 'ci-hermes':
+      // Chat-agent tier: the three capabilities these agents use — long-term
+      // memory (`/memory/*`), the agent intent catalog (`/api/intents`), and the
+      // MCP endpoint (`/mcp`). Deliberately confined OFF the raw data plane
+      // (GraphQL, `/files`, `/v1` bulk ingest, `/maintenance`) — that confinement
+      // is the whole point of scoping these apps. Kept as a single tier (rather
+      // than per-agent) so it can't break whichever of intents/mcp each agent
+      // actually exercises.
+      return [MEMORY_SCOPE, INTENTS_SCOPE, MCP_SCOPE];
+    default:
+      // e.g. ci-import-tools (a bulk importer needing graphql/ingest/files/
+      // maintenance) and any unknown consumer → full access.
+      return [];
+  }
+}
 
 /**
  * The result of an approved connect: a one-time code for CI-Hub to exchange.
@@ -152,22 +184,26 @@ export class ConnectService {
       { userId: consumed.userId },
       {
         name: this.keyName(consumed.appUrn),
-        scopes: [CONNECT_KEY_SCOPE],
+        scopes: scopesForApp(consumed.appUrn),
         expires_at: expiresAt,
       },
     );
 
-    this.logger.log(`Minted memory key on exchange for app ${consumed.appUrn} (user ${consumed.userId})`);
+    this.logger.log(`Minted connect key on exchange for app ${consumed.appUrn} (user ${consumed.userId})`);
 
     return { appUrn: consumed.appUrn, key: minted.key, expiresAt };
   }
 
   /**
-   * Rotate the memory key for `appUrn`: mint a fresh key (new TTL) for the same
+   * Rotate the connect key for `appUrn`: mint a fresh key (new TTL) for the same
    * owning user, replacing the old one. Returns the new raw key, or null when no
    * key is currently connected for the app. Called by the trusted Hub path (key
    * rotation before expiry); no re-consent is needed because the user already
-   * consented to the connection — this only refreshes the same grant.
+   * consented to the connection — this only refreshes the same grant. The fresh
+   * key's scopes are re-derived from {@link scopesForApp}, so a rotate also
+   * heals a key minted under a previous scope policy. Assumes the single-owner
+   * appliance; {@link ApiKeyService.findUserIdByName} returns null (no rotate)
+   * if multiple owners hold the same `app:<urn>` name.
    */
   async rotateByApp(appUrn: string): Promise<ExchangedConnect | null> {
     const name = this.keyName(appUrn);
@@ -180,19 +216,21 @@ export class ConnectService {
     const expiresAt = new Date(Date.now() + CONNECT_KEY_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const minted = await this.apiKeyService.createOrRotate(
       { userId },
-      { name, scopes: [CONNECT_KEY_SCOPE], expires_at: expiresAt },
+      { name, scopes: scopesForApp(appUrn), expires_at: expiresAt },
     );
 
-    this.logger.log(`Rotated memory key for app ${appUrn} (user ${userId})`);
+    this.logger.log(`Rotated connect key for app ${appUrn} (user ${userId})`);
 
     return { appUrn, key: minted.key, expiresAt };
   }
 
   /**
-   * Revoke the memory key minted for `appUrn`, by its stable name. Called by the
+   * Revoke the connect key minted for `appUrn`, by its stable name. Called by the
    * trusted Hub path (agent uninstall, user "Disconnect", ci-memory reset) which
    * identifies the app but not the owning user. Idempotent: returns the number
-   * of keys removed (0 when nothing was connected).
+   * of keys removed (0 when nothing was connected). Assumes the single-owner
+   * appliance (one `app:<urn>` key); {@link ApiKeyService.removeByName} logs if
+   * that invariant is ever violated.
    */
   async revokeByApp(appUrn: string): Promise<number> {
     const removed = await this.apiKeyService.removeByName(this.keyName(appUrn));

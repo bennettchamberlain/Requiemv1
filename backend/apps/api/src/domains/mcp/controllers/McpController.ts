@@ -19,6 +19,7 @@ import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 
 import { Context, type RequestContext } from '@ci/common/context';
+import { MCP_SCOPE, RequireScopes } from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 
@@ -33,8 +34,11 @@ interface SessionEntry {
   userId: string;
 }
 
+// Scope-limited connect keys need the `mcp` scope to reach MCP (CI-Hermes's key
+// carries it); session/JWT and empty-scope keys are unaffected.
 @Controller('mcp')
 @UseGuards(JwtOrApiKeyAuthGuard)
+@RequireScopes(MCP_SCOPE)
 export class McpController {
   private sessions = new Map<string, SessionEntry>();
 

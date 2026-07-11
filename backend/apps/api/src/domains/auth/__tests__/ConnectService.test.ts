@@ -17,7 +17,7 @@ jest.mock('@ci/configuration', () => {
   };
 });
 
-import { CONNECT_KEY_SCOPE, ConnectService } from '../services/ConnectService';
+import { ConnectService, scopesForApp } from '../services/ConnectService';
 
 /**
  * Unit tests for ConnectService — the connect-flow orchestration and its
@@ -27,7 +27,12 @@ import { CONNECT_KEY_SCOPE, ConnectService } from '../services/ConnectService';
 function makeDeps() {
   const authService = { validateSessionToken: jest.fn() };
   const userService = { findById: jest.fn() };
-  const apiKeyService = { createOrRotate: jest.fn(), findByName: jest.fn(), removeByName: jest.fn() };
+  const apiKeyService = {
+    createOrRotate: jest.fn(),
+    findByName: jest.fn(),
+    removeByName: jest.fn(),
+    findUserIdByName: jest.fn(),
+  };
   const connectCodeService = { issue: jest.fn(), consume: jest.fn() };
   const logger = {
     setContext: jest.fn(),
@@ -136,22 +141,41 @@ describe('ConnectService.approve', () => {
 describe('ConnectService.exchange', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("mints a memory-scoped, ~90d-expiring key named app:<urn> under the code's bound user on redemption", async () => {
+  it("mints a per-app-scoped, ~90d-expiring key named app:<urn> under the code's bound user on redemption", async () => {
     const { service, apiKeyService, connectCodeService } = makeDeps();
-    connectCodeService.consume.mockResolvedValue({ userId: 'user-1', appUrn: 'urn:app:x' });
+    connectCodeService.consume.mockResolvedValue({ userId: 'user-1', appUrn: 'ci-openclaw:ci-marketplace' });
     apiKeyService.createOrRotate.mockResolvedValue({ key: 'raw-key' });
 
     const result = await service.exchange('one-time-code');
 
     const [ctx, data] = apiKeyService.createOrRotate.mock.calls[0];
     expect(ctx).toEqual({ userId: 'user-1' });
-    expect(data.name).toBe('app:urn:app:x');
-    expect(data.scopes).toEqual([CONNECT_KEY_SCOPE]);
+    expect(data.name).toBe('app:ci-openclaw:ci-marketplace');
+    // Scopes come from scopesForApp (the same source the consent page reads).
+    expect(data.scopes).toEqual(['memory', 'intents', 'mcp']);
     const ttlDays = (new Date(data.expires_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
     expect(ttlDays).toBeGreaterThan(89);
     expect(ttlDays).toBeLessThan(91);
     // The returned expiry is the same instant handed to the key mint.
-    expect(result).toEqual({ appUrn: 'urn:app:x', key: 'raw-key', expiresAt: data.expires_at });
+    expect(result).toEqual({
+      appUrn: 'ci-openclaw:ci-marketplace',
+      key: 'raw-key',
+      expiresAt: data.expires_at,
+    });
+  });
+
+  it('mints an empty-scope (full-access) key for the bulk importer', async () => {
+    const { service, apiKeyService, connectCodeService } = makeDeps();
+    connectCodeService.consume.mockResolvedValue({
+      userId: 'user-1',
+      appUrn: 'ci-import-tools:ci-marketplace',
+    });
+    apiKeyService.createOrRotate.mockResolvedValue({ key: 'raw-key' });
+
+    await service.exchange('one-time-code');
+
+    const [, data] = apiKeyService.createOrRotate.mock.calls[0];
+    expect(data.scopes).toEqual([]);
   });
 
   it('returns null for an invalid/expired/used code without minting', async () => {
@@ -184,5 +208,51 @@ describe('ConnectService.revokeByApp', () => {
 
     expect(apiKeyService.removeByName).toHaveBeenCalledWith('app:urn:app:x');
     expect(removed).toBe(1);
+  });
+});
+
+describe('ConnectService.rotateByApp', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('re-mints under the same owner with freshly-derived per-app scopes', async () => {
+    const { service, apiKeyService } = makeDeps();
+    apiKeyService.findUserIdByName.mockResolvedValue('user-1');
+    apiKeyService.createOrRotate.mockResolvedValue({ key: 'rotated-key' });
+
+    const result = await service.rotateByApp('ci-openclaw:ci-marketplace');
+
+    expect(apiKeyService.findUserIdByName).toHaveBeenCalledWith('app:ci-openclaw:ci-marketplace');
+    const [ctx, data] = apiKeyService.createOrRotate.mock.calls[0];
+    expect(ctx).toEqual({ userId: 'user-1' });
+    // A rotate re-derives scopes, so it also heals a key minted under an older policy.
+    expect(data.scopes).toEqual(['memory', 'intents', 'mcp']);
+    expect(result?.key).toBe('rotated-key');
+  });
+
+  it('returns null (no rotate) when the owner is unresolvable (unknown or multi-owner)', async () => {
+    const { service, apiKeyService } = makeDeps();
+    apiKeyService.findUserIdByName.mockResolvedValue(null);
+
+    expect(await service.rotateByApp('ci-hermes:ci-marketplace')).toBeNull();
+    expect(apiKeyService.createOrRotate).not.toHaveBeenCalled();
+  });
+});
+
+describe('scopesForApp (two-tier least-privilege)', () => {
+  it('confines the chat agents to the memory/intents/mcp tier', () => {
+    expect(scopesForApp('ci-openclaw:ci-marketplace')).toEqual(['memory', 'intents', 'mcp']);
+    expect(scopesForApp('ci-hermes:ci-marketplace')).toEqual(['memory', 'intents', 'mcp']);
+  });
+
+  it('gives the bulk importer full access (empty scopes)', () => {
+    expect(scopesForApp('ci-import-tools:ci-marketplace')).toEqual([]);
+  });
+
+  it('defaults any unknown app to full access (never breaks an un-analyzed app)', () => {
+    expect(scopesForApp('some-third-party-app:ci-marketplace')).toEqual([]);
+  });
+
+  it('keys on the app name segment, ignoring the store', () => {
+    expect(scopesForApp('ci-openclaw:some-other-store')).toEqual(['memory', 'intents', 'mcp']);
   });
 });

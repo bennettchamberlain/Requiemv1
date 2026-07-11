@@ -44,6 +44,10 @@ export interface ConnectConsentParams {
   denyUrl: string;
   /** CSRF token to echo in the form's hidden field; matches the csrf cookie. */
   csrfToken: string;
+  /** The scopes the key will be minted with (from `scopesForApp`). Drives the
+   *  capability list shown to the user so consent reflects the actual grant. An
+   *  empty array means full access. */
+  scopes: string[];
   /** Email of the signed-in Companion Memory user, shown so the account the app
    *  is being granted access to is never ambiguous. */
   userEmail?: string;
@@ -60,6 +64,26 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Human-readable capabilities the minted key will grant, from its scopes. Kept
+ * in step with `scopesForApp` (the same scopes are what the key is minted with),
+ * so what the user consents to is exactly what the app receives. An empty scope
+ * set means a full-access key, disclosed as such rather than mislabeled.
+ */
+function capabilityLinesForScopes(scopes: string[]): string[] {
+  if (scopes.length === 0) {
+    return ['Full access to your Companion data — memory, files, imports, and knowledge graph'];
+  }
+
+  const KNOWN: Record<string, string> = {
+    memory: 'Read and write your long-term memory',
+    intents: 'Read your intent catalog',
+    mcp: 'Use your memory tools (MCP)',
+  };
+
+  return scopes.map((scope) => KNOWN[scope] ?? `Access "${scope}"`);
 }
 
 /**
@@ -80,6 +104,11 @@ const CONSENT_STYLES = /* css */ `
     h1{font-size:20px;font-weight:700;margin:0 0 8px}
     p{line-height:1.5;color:var(--fg-dim);font-size:14px;margin:0 0 24px}
     .app{color:var(--fg);font-weight:600}
+    .lead{margin:0 0 14px}
+    .caps{list-style:none;margin:0 0 20px;padding:0;text-align:left;display:flex;flex-direction:column;gap:8px}
+    .caps li{position:relative;padding:10px 12px 10px 34px;background:rgba(7,157,153,.08);border:1px solid var(--border);border-radius:8px;color:var(--fg);font-size:13px;line-height:1.4}
+    .caps li::before{content:"";position:absolute;left:13px;top:15px;width:9px;height:9px;border-radius:3px;background:var(--brand-grad)}
+    .disconnect-note{font-size:12px;margin:0 0 24px}
     .signed-in{font-size:12px;color:var(--fg-dim);margin:-8px 0 20px}
     .signed-in strong{color:var(--fg);font-weight:600}
     /* Two equal-width columns so "Not now" and "Allow" match exactly. A flex
@@ -106,6 +135,9 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
   const returnUrl = escapeHtml(params.returnUrl);
   const denyUrl = escapeHtml(params.denyUrl);
   const csrfToken = escapeHtml(params.csrfToken);
+  const capabilityItems = capabilityLinesForScopes(params.scopes)
+    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .join('\n      ');
   // The email is wrapped in Cloudflare `email_off` markers at the render site:
   // the zone has Email Address Obfuscation on, which would otherwise rewrite the
   // address into a `/cdn-cgi/l/email-protection` link + a decoder script — and
@@ -127,9 +159,13 @@ export function renderConnectConsentPage(params: ConnectConsentParams): string {
       <img class="cm" src="${MEMORY_LOGO_DATA_URI}" alt="Companion Memory" width="56" height="56" />
     </div>
     <h1>Connect to Companion Memory</h1>
-    <p><span class="app">${displayName}</span> is requesting access to your Companion Memory,
-      so it can remember your context across sessions. It will be able to read and write your
-      long-term memory. You can disconnect it at any time.</p>
+    <p class="lead"><span class="app">${displayName}</span> is requesting access to your
+      Companion Memory, so it can remember your context across sessions. If you allow, it will
+      be able to:</p>
+    <ul class="caps">
+      ${capabilityItems}
+    </ul>
+    <p class="disconnect-note">You can disconnect it at any time.</p>
     ${signedInEmail ? `<p class="signed-in">Signed in as <strong><!--email_off-->${signedInEmail}<!--/email_off--></strong></p>` : ''}
     <div class="actions">
       <a class="btn secondary" href="${denyUrl}">Not now</a>

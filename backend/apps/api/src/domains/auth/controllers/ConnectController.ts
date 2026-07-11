@@ -20,7 +20,7 @@ import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 
 import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
-import { ConnectService } from '../services/ConnectService';
+import { ConnectService, scopesForApp } from '../services/ConnectService';
 import { CsrfService } from '../services/CsrfService';
 import {
   renderConnectConsentPage,
@@ -176,6 +176,8 @@ export class ConnectController {
           returnUrl,
           denyUrl: this.connectService.buildDenyUrl(returnUrl, state),
           csrfToken,
+          // Same source of truth as the key mint, so consent matches the grant.
+          scopes: scopesForApp(app),
           userEmail: session.email,
           nonce: cspNonce,
         }),
@@ -264,8 +266,9 @@ export class ConnectController {
 
   /**
    * Server-to-server key rotation (refresh before expiry). Re-mints the app's
-   * memory key for the same user and returns the new raw key. Authenticated by
-   * CI-Hub's signed, replay-resistant request signature.
+   * connect key (with freshly-derived per-app scopes) for the same user and
+   * returns the new raw key. Authenticated by CI-Hub's signed, replay-resistant
+   * request signature.
    */
   @UseGuards(ConnectRequestAuthGuard)
   @Post('rotate')
