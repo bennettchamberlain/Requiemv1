@@ -285,8 +285,9 @@ export class ApiKeyService {
 
     await this.apiKeyRepository.update(key.id, { last_used_at: new Date() });
 
-    // `scopes` drives least-privilege enforcement downstream (see ScopesGuard).
-    // An empty array is a legacy full-access key, preserved as-is.
+    // `scopes` drives least-privilege enforcement downstream (see
+    // enforceApiKeyScopes). An empty array is a legacy full-access key,
+    // preserved as-is.
     return { userId: key.user_id, scopes: key.scopes ?? [] };
   }
 

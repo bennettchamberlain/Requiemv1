@@ -2,12 +2,13 @@ import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 
 import { enforceApiKeyScopes } from '../apiKeyScopeEnforcement';
-import type { ApiKeyScopedRequest } from '../ScopesGuard';
+import type { ApiKeyScopedRequest } from '../apiKeyScopeEnforcement';
 
 /**
  * Unit tests for the deny-by-default scope enforcement run inside the api-key
- * guards. Unlike ScopesGuard (allow unless a required scope is missing), this
- * DENIES a scope-limited key on any route that doesn't grant one of its scopes.
+ * guards. Unlike the old opt-in model (allow unless a required scope is
+ * missing), this DENIES a scope-limited key on any route that doesn't grant one
+ * of its scopes.
  */
 function setup(required: string[] | undefined, apiKeyScopes: string[] | undefined) {
   const reflector = {

@@ -1,9 +1,17 @@
 import { type ExecutionContext, ForbiddenException } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
+import type { Request } from 'express';
 
 import { REQUIRE_SCOPES_KEY } from '@ci/common/decorators';
 
-import type { ApiKeyScopedRequest } from './ScopesGuard';
+/**
+ * Request augmentation set by {@link ApiKeyStrategy} once an api-key has been
+ * validated. `undefined` means the caller did not authenticate with an api-key
+ * (e.g. a session/JWT/Portal principal), which carries full authority.
+ */
+export interface ApiKeyScopedRequest extends Request {
+  apiKeyScopes?: string[];
+}
 
 /**
  * Deny-by-default scope enforcement for api-key principals.
@@ -13,9 +21,9 @@ import type { ApiKeyScopedRequest } from './ScopesGuard';
  * `req.apiKeyScopes` — it MUST NOT be a global `APP_GUARD`, which would run
  * before authentication sets the scopes.
  *
- * This is the inverse of {@link ScopesGuard}: instead of only restricting the
- * handful of routes that opt in with `@RequireScopes`, a **scope-limited** key
- * is confined to routes that explicitly grant one of its scopes. Precedence:
+ * This inverts the old opt-in model (enforce only on routes that pair a guard
+ * with `@RequireScopes`): instead, a **scope-limited** key is confined to routes
+ * that explicitly grant one of its scopes. Precedence:
  *
  * - `apiKeyScopes === undefined` — not an api-key principal (session/JWT/Portal)
  *   → full authority, unaffected.

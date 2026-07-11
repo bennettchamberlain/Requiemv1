@@ -4,7 +4,7 @@ import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { MEMORY_SCOPE, RequireScopes } from '@ci/common/decorators';
-import { ApiKeyGuard, JwtOrApiKeyAuthGuard, ScopesGuard } from '@ci/common/guards';
+import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
 import { CommunicationService, CommunicationType, UserContextService } from '@ci/domains/memory';
@@ -66,7 +66,7 @@ export class MemoryController {
    * graph: name, relationships, preferences, and dossier. Intended to be
    * called once per session (system_prompt_block), not per turn.
    */
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(ApiKeyGuard)
   @RequireScopes(MEMORY_SCOPE)
   @Get('context')
   async context(@Context() context: RequestContext) {
@@ -99,7 +99,7 @@ export class MemoryController {
    * Runs a keyword/semantic search using the query, then hydrates matched
    * entity IDs into readable names and content.
    */
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(ApiKeyGuard)
   @RequireScopes(MEMORY_SCOPE)
   @Post('recall')
   async recall(@Context() context: RequestContext, @Body(new ValidationPipe(recallSchema)) input: RecallDto) {
@@ -117,7 +117,7 @@ export class MemoryController {
    * Invoked by:
    *   - Hermes 'on_memory_write'
    */
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(ApiKeyGuard)
   @RequireScopes(MEMORY_SCOPE)
   @HttpCode(201)
   @Post('write')
@@ -135,7 +135,7 @@ export class MemoryController {
    *   - OpenClaw 'afterTurn'
    *   - Hermes 'sync_turn'
    */
-  @UseGuards(ApiKeyGuard, ScopesGuard)
+  @UseGuards(ApiKeyGuard)
   @RequireScopes(MEMORY_SCOPE)
   @HttpCode(201)
   @Post('turn')
@@ -201,10 +201,11 @@ export class MemoryController {
    * unprocessed fragments.  The LLM call runs in the background; the response
    * returns immediately with the number of queued fragments.
    */
-  // JWT/session principals (the browser settings UI) pass ScopesGuard via its
-  // non-api-key bypass; an API key must carry the 'memory' scope, matching the
-  // other memory endpoints so an intentionally non-memory key can't compact.
-  @UseGuards(JwtOrApiKeyAuthGuard, ScopesGuard)
+  // JWT/session principals (the browser settings UI) are unaffected by scope
+  // enforcement (no api-key scopes); an API key must carry the 'memory' scope,
+  // matching the other memory endpoints so an intentionally non-memory key
+  // can't compact.
+  @UseGuards(JwtOrApiKeyAuthGuard)
   @RequireScopes(MEMORY_SCOPE)
   @HttpCode(200)
   @Post('compact')
