@@ -1,5 +1,5 @@
 import { type ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import type { Reflector } from '@nestjs/core';
 
 import { REQUIRE_SCOPES_KEY } from '@ci/common/decorators';
 
