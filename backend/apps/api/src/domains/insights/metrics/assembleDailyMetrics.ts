@@ -1,14 +1,22 @@
 import type { MetricCoverage, MetricValues } from '../types';
+
 import type { RawDailyAggregates } from './dailyAggregateSql';
 
 function round(value: number, dp: number): number {
   const factor = 10 ** dp;
+
   return Math.round(value * factor) / factor;
 }
 
 function clamp01(value: number): number {
-  if (value < 0) return 0;
-  if (value > 1) return 1;
+  if (value < 0) {
+    return 0;
+  }
+
+  if (value > 1) {
+    return 1;
+  }
+
   return value;
 }
 

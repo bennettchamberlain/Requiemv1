@@ -6,6 +6,7 @@ import { shiftIso, todayIso } from '../dateUtil';
 import { DailyMetricsService } from '../services/DailyMetricsService';
 import type { DailyMetrics, MetricKey } from '../types';
 import { METRIC_SOURCES } from '../types';
+
 import { aggregate, applyScale, formatValue, type DaySample } from './answerMath';
 import { NARRATOR, type AnswerProvenance, type Narrator } from './Narrator';
 import { QUESTION_CATALOG, type QuestionSpec } from './questionCatalog';
@@ -110,6 +111,7 @@ export class DescriptiveQuestionService {
     for (const spec of QUESTION_CATALOG) {
       answers.push(await this.answer(context, spec, options));
     }
+
     return answers;
   }
 
@@ -121,8 +123,10 @@ export class DescriptiveQuestionService {
       if (value === null || value === undefined) {
         continue;
       }
+
       samples.push({ date: row.date, value, coverage: row.coverage?.[metric] ?? 0 });
     }
+
     return samples;
   }
 }

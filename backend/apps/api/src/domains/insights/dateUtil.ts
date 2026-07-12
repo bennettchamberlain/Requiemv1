@@ -9,6 +9,7 @@ export function isoDate(date: Date): string {
 export function shiftIso(iso: string, deltaDays: number): string {
   const date = new Date(`${iso}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + deltaDays);
+
   return isoDate(date);
 }
 

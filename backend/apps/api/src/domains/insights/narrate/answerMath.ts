@@ -33,6 +33,7 @@ export function aggregate(mode: Aggregate, samples: DaySample[]): AggregateResul
       value = latest.value;
       break;
     }
+
     case 'sum':
       value = samples.reduce((acc, s) => acc + s.value, 0);
       break;

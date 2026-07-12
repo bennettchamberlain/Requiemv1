@@ -57,6 +57,7 @@ export class TemplateNarrator implements Narrator {
     if (input.value === null) {
       return `I don't have enough data yet to answer: "${input.question}"`;
     }
+
     return interpolateTemplate(input.template, input.fields);
   }
 }
@@ -83,8 +84,10 @@ export class OllamaNarrator implements Narrator {
     if (input.value === null) {
       return deterministic;
     }
+
     try {
       const text = (await this.generator.generate(this.buildPrompt(input, deterministic))).trim();
+
       return text.length > 0 ? text : deterministic;
     } catch {
       return deterministic;

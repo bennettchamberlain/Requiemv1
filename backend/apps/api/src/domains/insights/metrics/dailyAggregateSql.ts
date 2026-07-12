@@ -121,14 +121,22 @@ export interface RawDailyAggregates {
 }
 
 function num(value: unknown): number {
-  if (value === null || value === undefined) return 0;
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
   const n = typeof value === 'number' ? value : Number(value);
+
   return Number.isFinite(n) ? n : 0;
 }
 
 function numOrNull(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
+  if (value === null || value === undefined) {
+    return null;
+  }
+
   const n = typeof value === 'number' ? value : Number(value);
+
   return Number.isFinite(n) ? n : null;
 }
 

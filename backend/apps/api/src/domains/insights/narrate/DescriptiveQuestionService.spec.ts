@@ -4,7 +4,7 @@ import type { DailyMetrics, MetricCoverage, MetricKey, MetricValues } from '../t
 import { METRIC_KEYS } from '../types';
 
 import { DescriptiveQuestionService } from './DescriptiveQuestionService';
-import { TemplateNarrator, type NarrationInput, type Narrator } from './Narrator';
+import { TemplateNarrator, type Narrator } from './Narrator';
 import { QUESTION_CATALOG, type QuestionSpec } from './questionCatalog';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
@@ -19,12 +19,13 @@ function day(date: string, metric: MetricKey, value: number, coverage = 1): Dail
   metrics[metric] = value;
   const cov = Object.fromEntries(METRIC_KEYS.map((k) => [k, 0])) as MetricCoverage;
   cov[metric] = coverage;
+
   return { userId: USER, date, timezone: 'UTC', metrics, coverage: cov, computedAt: new Date() };
 }
 
 function makeMetricsService(rows: DailyMetrics[]) {
   return {
-    getRange: jest.fn(async (_ctx: unknown, _from: string, _to: string) => rows),
+    getRange: jest.fn(async () => rows),
   };
 }
 
@@ -32,6 +33,7 @@ function makeService(rows: DailyMetrics[], narrator: Narrator = new TemplateNarr
   const metricsService = makeMetricsService(rows);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const service = new DescriptiveQuestionService(metricsService as any, narrator);
+
   return { service, metricsService };
 }
 
@@ -120,7 +122,7 @@ describe('DescriptiveQuestionService.answer', () => {
 
   it('never lets the narrator change the computed number', async () => {
     const liarNarrator: Narrator = {
-      async narrate(_input: NarrationInput) {
+      async narrate() {
         return 'the answer is 999999';
       },
     };

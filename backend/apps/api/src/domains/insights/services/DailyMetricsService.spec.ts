@@ -49,6 +49,7 @@ function entityFor(date: string, metrics: Partial<MetricValues> = {}): DailyMetr
     coverage: Object.fromEntries(Object.keys(FULL_METRICS).map((k) => [k, 1])) as MetricCoverage,
     computedAt: new Date('2026-07-07T00:00:00Z'),
   };
+
   return DailyMetricEntity.fromDailyMetrics(dm);
 }
 

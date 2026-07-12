@@ -74,6 +74,7 @@ export class DailyMetricsService {
     for (let offset = days - 1; offset >= 0; offset--) {
       out.push(await this.computeAndStore(context, shiftIso(endDate, -offset), timezone));
     }
+
     return out;
   }
 
@@ -81,6 +82,7 @@ export class DailyMetricsService {
     const entity = await this.repository.findOne({
       where: { ...this.userScope(context), date },
     });
+
     return entity ? DailyMetricEntity.toEgressType(entity) : null;
   }
 
@@ -90,6 +92,7 @@ export class DailyMetricsService {
       where: { ...this.userScope(context), date: Between(fromDate, toDate) },
       order: { date: 'ASC' },
     });
+
     return rows.map((entity) => DailyMetricEntity.toEgressType(entity));
   }
 

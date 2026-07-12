@@ -108,6 +108,7 @@ export class DailyMetricEntity {
     entity.spendTotal = dm.metrics.spend_total;
     entity.coverage = dm.coverage;
     entity.computedAt = dm.computedAt;
+
     return entity;
   }
 }
