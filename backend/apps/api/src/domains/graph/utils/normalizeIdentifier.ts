@@ -169,11 +169,7 @@ export function classifyParticipant(raw: string | null): ClassifiedIdentifier | 
     return null;
   }
 
-  const kind: IdentifierKind = trimmed.includes('@')
-    ? 'email'
-    : isPhoneShaped(trimmed)
-      ? 'phone'
-      : 'name';
+  const kind: IdentifierKind = trimmed.includes('@') ? 'email' : isPhoneShaped(trimmed) ? 'phone' : 'name';
   const valueNormalized = normalizeIdentifier(kind, trimmed);
   if (valueNormalized == null) {
     return null;
