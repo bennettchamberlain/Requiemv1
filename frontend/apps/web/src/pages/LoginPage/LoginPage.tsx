@@ -43,7 +43,7 @@ export function LoginPage() {
             <p className="text-destructive mb-4 text-center text-sm">Sign in failed. Please try again.</p>
           )}
 
-          <OidcButton label="Sign in with CI Portal" redirect={from} />
+          <OidcButton label="Sign in with Companion account" redirect={from} />
 
           {showPasswordForm ? (
             <>
