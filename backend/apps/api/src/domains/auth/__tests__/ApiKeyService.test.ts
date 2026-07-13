@@ -251,7 +251,13 @@ describe('ApiKeyService.update', () => {
 
   it('renames an ordinary (non-managed) key', async () => {
     const repo = makeRepo();
-    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-user', name: 'My key', scopes: [], managed_by: null });
+    repo.findOne.mockResolvedValueOnce({
+      ...managedKey,
+      id: 'k-user',
+      name: 'My key',
+      scopes: [],
+      managed_by: null,
+    });
     const service = makeService(repo);
 
     const result = await service.update(ownerCtx, 'k-user', { name: 'Renamed' });
@@ -266,7 +272,12 @@ describe('ApiKeyService.update', () => {
     // their own `app:home-assistant`, while the Hub's revoke/rotate happily
     // operated on it.
     const repo = makeRepo();
-    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-user', name: 'app:home-assistant', managed_by: null });
+    repo.findOne.mockResolvedValueOnce({
+      ...managedKey,
+      id: 'k-user',
+      name: 'app:home-assistant',
+      managed_by: null,
+    });
     repo.save.mockImplementation(async (k: Record<string, unknown>) => k);
     const service = makeService(repo);
 

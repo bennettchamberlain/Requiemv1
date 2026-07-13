@@ -41,16 +41,13 @@ describe('McpToolService — scope-limited callers', () => {
       executeTool: jest.fn().mockResolvedValue({ success: true, data: { ok: true } }),
     };
 
-    const executor = { executeTool: jest.fn().mockResolvedValue({ ok: true }) } as unknown as McpExecutorService;
+    const executor = {
+      executeTool: jest.fn().mockResolvedValue({ ok: true }),
+    } as unknown as McpExecutorService;
 
     const logger = { setContext: jest.fn(), log: jest.fn(), debug: jest.fn(), error: jest.fn() };
 
-    const service = new McpToolService(
-      adapter,
-      registry as never,
-      executor,
-      logger as never,
-    );
+    const service = new McpToolService(adapter, registry as never, executor, logger as never);
 
     service.onModuleInit();
 

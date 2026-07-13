@@ -1,8 +1,4 @@
-import {
-  OIDC_ORIGIN_BOUNCE_PARAM,
-  resolveOidcCallbackUrl,
-  resolveOidcOriginBounce,
-} from './oidcCallbackUrl';
+import { OIDC_ORIGIN_BOUNCE_PARAM, resolveOidcCallbackUrl, resolveOidcOriginBounce } from './oidcCallbackUrl';
 
 const CALLBACK_PATH = '/api/authenticate/oidc/callback';
 const INITIATE_PATH = '/api/authenticate/oidc';
@@ -102,14 +98,24 @@ describe('resolveOidcOriginBounce', () => {
 
   it('carries the redirect destination across the bounce', () => {
     expect(
-      resolveOidcOriginBounce({ host: '192.168.1.50:8642', secure: false }, PUBLIC_BASE, '/api/connect?app=x'),
-    ).toBe(`${PUBLIC_BASE}${INITIATE_PATH}?redirect=%2Fapi%2Fconnect%3Fapp%3Dx&${OIDC_ORIGIN_BOUNCE_PARAM}=1`);
+      resolveOidcOriginBounce(
+        { host: '192.168.1.50:8642', secure: false },
+        PUBLIC_BASE,
+        '/api/connect?app=x',
+      ),
+    ).toBe(
+      `${PUBLIC_BASE}${INITIATE_PATH}?redirect=%2Fapi%2Fconnect%3Fapp%3Dx&${OIDC_ORIGIN_BOUNCE_PARAM}=1`,
+    );
   });
 
   it('does not bounce when the browser is already on the public origin', () => {
     expect(
       resolveOidcOriginBounce(
-        { forwardedProto: 'https', forwardedHost: 'ci-memory-core-2-hanz-corp.companionintelligence.com', secure: false },
+        {
+          forwardedProto: 'https',
+          forwardedHost: 'ci-memory-core-2-hanz-corp.companionintelligence.com',
+          secure: false,
+        },
         PUBLIC_BASE,
       ),
     ).toBeNull();
@@ -142,9 +148,9 @@ describe('resolveOidcOriginBounce', () => {
   });
 
   it('compares the port too, so a LAN host on the app port still bounces', () => {
-    expect(resolveOidcOriginBounce({ host: '192.168.1.50:8642', secure: false }, 'http://192.168.1.50:9999')).toBe(
-      `http://192.168.1.50:9999${INITIATE_PATH}?${OIDC_ORIGIN_BOUNCE_PARAM}=1`,
-    );
+    expect(
+      resolveOidcOriginBounce({ host: '192.168.1.50:8642', secure: false }, 'http://192.168.1.50:9999'),
+    ).toBe(`http://192.168.1.50:9999${INITIATE_PATH}?${OIDC_ORIGIN_BOUNCE_PARAM}=1`);
   });
 
   it('never bounces twice — the marker breaks any residual loop', () => {
