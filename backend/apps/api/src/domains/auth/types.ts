@@ -31,6 +31,14 @@ export interface RotationResult {
   sessionToken: string | null;
 }
 
+/**
+ * Who owns an api key's lifecycle. `null` = user-created (theirs to rename and
+ * re-scope); `'connect'` = minted by the Companion Memory consent flow, so CI-Hub
+ * rotates and revokes it. Recorded explicitly — the `app:` name prefix is
+ * user-settable and so is not proof of provenance.
+ */
+export type ApiKeyProvenance = 'connect';
+
 export interface CreateApiKeyDto {
   name: string;
   scopes?: string[];

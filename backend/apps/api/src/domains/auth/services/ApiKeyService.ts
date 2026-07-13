@@ -9,7 +9,14 @@ import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/c
 import { LoggerService } from '@ci/common/logging';
 
 import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
-import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto } from '../types';
+import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto, ApiKeyProvenance } from '../types';
+
+/**
+ * Marks a key minted by the Companion Memory consent flow. CI-Hub owns its
+ * lifecycle (rotate, revoke on disconnect/uninstall), so revoke/rotate resolve
+ * ONLY these — a user's own key can never be caught by them, whatever it is named.
+ */
+const CONNECT_PROVENANCE = 'connect' as const;
 
 const API_KEY_BYTE_LENGTH = 32;
 const API_KEY_HEX_LENGTH = API_KEY_BYTE_LENGTH * 2;
@@ -26,7 +33,11 @@ export class ApiKeyService {
     this.logger.setContext(ApiKeyService.name);
   }
 
-  async create(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
+  async create(
+    context: UserServiceContext,
+    data: CreateApiKeyDto,
+    managedBy: ApiKeyProvenance | null = null,
+  ): Promise<CreateApiKeyResponse> {
     const rawKey = randomBytes(API_KEY_BYTE_LENGTH).toString('hex');
     const prefix = rawKey.substring(0, PREFIX_LENGTH);
     const hashedKey = this.hash(rawKey);
@@ -39,6 +50,10 @@ export class ApiKeyService {
       scopes: data.scopes ?? [],
       expires_at: data.expires_at ? new Date(data.expires_at) : null,
       user_id: context.userId,
+      // Defaults to null — a key created through the REST API is the user's own.
+      // Only the connect flow passes a provenance, and it is never accepted from
+      // request input.
+      managed_by: managedBy,
     });
 
     const saved = await this.apiKeyRepository.save(entity);
@@ -64,11 +79,15 @@ export class ApiKeyService {
    * @param context - the owning user
    * @param data - key attributes; `name` doubles as the idempotency key
    */
-  async createOrRotate(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
+  async createOrRotate(
+    context: UserServiceContext,
+    data: CreateApiKeyDto,
+    managedBy: ApiKeyProvenance | null = null,
+  ): Promise<CreateApiKeyResponse> {
     try {
       await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
 
-      return await this.create(context, data);
+      return await this.create(context, data, managedBy);
     } catch (err) {
       // Two concurrent createOrRotate calls for the same (user, name) — e.g. a
       // re-consent racing the Hub's rotation sweep — can interleave delete/insert
@@ -82,7 +101,7 @@ export class ApiKeyService {
 
       await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
 
-      return this.create(context, data);
+      return this.create(context, data, managedBy);
     }
   }
 
@@ -102,6 +121,9 @@ export class ApiKeyService {
    * `ci.users` id; this recovers it so the fresh key is minted under the same
    * user.
    *
+   * Scoped to `managed_by = 'connect'`, so a user's own key can never be rotated
+   * by this path no matter what they named it.
+   *
    * Single-owner-appliance invariant: `(user_id, name)` is unique for `app:%`
    * names (migration 20260708115547), so on the appliance there is at most one
    * such row. On a hypothetical multi-user server several users could each hold
@@ -109,7 +131,10 @@ export class ApiKeyService {
    * (log + return null) rather than rotate an arbitrary owner's key.
    */
   async findUserIdByName(name: string): Promise<string | null> {
-    const keys = await this.apiKeyRepository.find({ where: { name }, select: ['user_id'] });
+    const keys = await this.apiKeyRepository.find({
+      where: { name, managed_by: CONNECT_PROVENANCE },
+      select: ['user_id'],
+    });
 
     if (keys.length === 0) {
       return null;
@@ -204,15 +229,16 @@ export class ApiKeyService {
   }
 
   /**
-   * A Hub-managed connection key: minted by the connect flow, named `app:<urn>`,
-   * and lifecycle-owned by CI-Hub (which revokes it by that exact name). Keyed on
-   * the `app:` name prefix alone — connect keys now carry per-app scope sets
-   * (including an EMPTY set for broad-access apps like the bulk importer), so a
-   * scope check would miss some connect keys and let a rename orphan the Hub's
-   * revoke-by-name.
+   * A Hub-managed connection key: minted by the connect flow and lifecycle-owned by
+   * CI-Hub, so the user may not rename or re-scope it out from under the app.
+   *
+   * Read from recorded provenance, NOT the `app:` name prefix: names are free-form,
+   * so prefix-matching also caught a user's own `app:home-assistant` key and refused
+   * to let them edit it — while the connect flow's revoke/rotate happily operated on
+   * it. Scopes are no discriminator either (a connect key may hold an EMPTY set).
    */
-  private isHubManagedKey(key: Pick<ApiKeyEntity, 'name'>): boolean {
-    return key.name.startsWith('app:');
+  private isHubManagedKey(key: Pick<ApiKeyEntity, 'managed_by'>): boolean {
+    return key.managed_by === CONNECT_PROVENANCE;
   }
 
   /** Order-insensitive scope-set equality (scope lists are small). */
@@ -241,7 +267,9 @@ export class ApiKeyService {
    *
    * This is a system-level revoke used by the trusted connect flow: CI-Hub (via
    * signed forward-auth) revokes "the key for app X" by its stable name
-   * (`app:<urn>`) without knowing the owning `ci.users` id.
+   * (`app:<urn>`) without knowing the owning `ci.users` id. Scoped to
+   * `managed_by = 'connect'`, so it can only ever delete keys the connect flow
+   * minted — a user's hand-made `app:...` key is untouchable here.
    *
    * Single-owner-appliance invariant: `(user_id, name)` is unique for `app:%`
    * names (migration 20260708115547), so exactly one row matches and this
@@ -251,7 +279,7 @@ export class ApiKeyService {
    * kept (revoke must stay idempotent), but the violation is surfaced.
    */
   async removeByName(name: string): Promise<number> {
-    const result = await this.apiKeyRepository.delete({ name });
+    const result = await this.apiKeyRepository.delete({ name, managed_by: CONNECT_PROVENANCE });
     const removed = result.affected ?? 0;
 
     if (removed > 1) {

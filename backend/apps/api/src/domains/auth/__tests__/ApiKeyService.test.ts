@@ -103,7 +103,7 @@ describe('ApiKeyService.removeByName', () => {
 
     const removed = await service.removeByName('app:urn:x');
 
-    expect(repo.delete).toHaveBeenCalledWith({ name: 'app:urn:x' });
+    expect(repo.delete).toHaveBeenCalledWith({ name: 'app:urn:x', managed_by: 'connect' });
     expect(removed).toBe(1);
     expect(logger.error).not.toHaveBeenCalled();
   });
@@ -139,7 +139,7 @@ describe('ApiKeyService.findUserIdByName', () => {
 
     expect(await service.findUserIdByName('app:ci-openclaw:ci-marketplace')).toBe('owner-1');
     expect(repo.find).toHaveBeenCalledWith({
-      where: { name: 'app:ci-openclaw:ci-marketplace' },
+      where: { name: 'app:ci-openclaw:ci-marketplace', managed_by: 'connect' },
       select: ['user_id'],
     });
   });
@@ -209,6 +209,8 @@ describe('ApiKeyService.update', () => {
     user_id: 'owner-1',
     created_at: new Date(),
     updated_at: new Date(),
+    // Recorded at mint time by the connect flow — NOT inferred from the name.
+    managed_by: 'connect' as const,
   };
 
   it('refuses to rename a Hub-managed connection key (would orphan the Hub revoke)', async () => {
@@ -249,7 +251,7 @@ describe('ApiKeyService.update', () => {
 
   it('renames an ordinary (non-managed) key', async () => {
     const repo = makeRepo();
-    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-user', name: 'My key', scopes: [] });
+    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-user', name: 'My key', scopes: [], managed_by: null });
     const service = makeService(repo);
 
     const result = await service.update(ownerCtx, 'k-user', { name: 'Renamed' });
@@ -258,7 +260,21 @@ describe('ApiKeyService.update', () => {
     expect(result?.name).toBe('Renamed');
   });
 
-  it('treats an app:-named key WITHOUT the memory scope as Hub-managed (e.g. the bulk importer; rename refused)', async () => {
+  it('leaves a user-created key alone even when it is named like a connect key', async () => {
+    // Key names are free-form. Before provenance was recorded, an `app:`-prefixed
+    // name was treated as proof the Hub owned the key — so a user could not edit
+    // their own `app:home-assistant`, while the Hub's revoke/rotate happily
+    // operated on it.
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-user', name: 'app:home-assistant', managed_by: null });
+    repo.save.mockImplementation(async (k: Record<string, unknown>) => k);
+    const service = makeService(repo);
+
+    await expect(service.update(ownerCtx, 'k-user', { scopes: ['memory'] })).resolves.toBeDefined();
+    expect(repo.save).toHaveBeenCalled();
+  });
+
+  it('refuses to re-scope a connect-minted key regardless of the scopes it holds', async () => {
     // Connect keys now carry per-app scope sets, incl. an EMPTY set for
     // broad-access apps like ci-import-tools. The `app:` name prefix alone marks
     // a key Hub-managed, so a rename that would orphan the Hub's revoke-by-name
