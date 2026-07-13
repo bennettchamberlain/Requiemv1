@@ -20,14 +20,32 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { ApiKeyService } from '../services/ApiKeyService';
 import type { CreateApiKeyDto, UpdateApiKeyDto } from '../types';
 
+/**
+ * `app:` is reserved for connection keys minted by the consent flow
+ * (`app:<appName>:<store>`). CI-Hub owns their lifecycle and revokes them by that
+ * exact name, and `isHubManagedKey` classifies them by this prefix — so a
+ * user-created key sharing it would be rotated, re-scoped, or deleted out from
+ * under its owner by machinery meant for a different key. Reject it at the door
+ * rather than let the two namespaces collide.
+ */
+const RESERVED_NAME_PREFIX = 'app:';
+
+const apiKeyName = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((name) => !name.startsWith(RESERVED_NAME_PREFIX), {
+    message: `Key names starting with "${RESERVED_NAME_PREFIX}" are reserved for connected apps`,
+  });
+
 const createApiKeySchema = z.object({
-  name: z.string().min(1).max(255),
+  name: apiKeyName,
   scopes: z.array(z.string()).optional(),
   expires_at: z.string().datetime().optional(),
 });
 
 const updateApiKeySchema = z.object({
-  name: z.string().min(1).max(255).optional(),
+  name: apiKeyName.optional(),
   scopes: z.array(z.string()).optional(),
 });
 

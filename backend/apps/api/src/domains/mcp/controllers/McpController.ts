@@ -20,7 +20,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { Context, type RequestContext } from '@ci/common/context';
 import { MCP_SCOPE, RequireScopes } from '@ci/common/decorators';
-import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { type ApiKeyScopedRequest, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 
 import { McpServerService } from '../services/McpServerService';
@@ -32,6 +32,34 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   lastActivity: number;
   userId: string;
+  /** The authority the session was built for — see {@link apiKeyScopeSignature}. */
+  scopeSignature: string;
+}
+
+/**
+ * A stable identity for the caller's api-key authority.
+ *
+ * The MCP server — its tool list AND every tool handler's captured request — is
+ * built once, at `initialize`. A session is therefore frozen to the authority of
+ * whoever opened it. Matching on `userId` alone is not enough: on a single-owner
+ * appliance the owner's browser session (full authority) and an agent's
+ * scope-limited connect key are the SAME user, so the agent could present the
+ * owner's `Mcp-Session-Id` and inherit a transport whose GraphQL tools were
+ * registered for a full-authority principal — with the handlers' captured request
+ * carrying that authority into the resolvers. Binding the session to the scope set
+ * as well means a session can only ever be resumed by the same authority that
+ * opened it.
+ */
+function apiKeyScopeSignature(req: ApiKeyScopedRequest): string {
+  const scopes = req.apiKeyScopes;
+
+  // Distinct sentinels: a session/JWT principal is not the same authority as an
+  // empty-scope (legacy full-access) key, even though both carry full authority.
+  if (scopes === undefined) {
+    return 'principal:non-api-key';
+  }
+
+  return `scopes:${[...scopes].sort().join(',')}`;
 }
 
 // Scope-limited connect keys need the `mcp` scope to reach MCP (CI-Hermes's key
@@ -68,6 +96,12 @@ export class McpController {
       }
 
       if (entry.userId !== context.userId) {
+        throw new UnauthorizedException();
+      }
+
+      // The session's tools were registered for the authority that opened it, so it
+      // may only be resumed by that same authority (see apiKeyScopeSignature).
+      if (entry.scopeSignature !== apiKeyScopeSignature(req)) {
         throw new UnauthorizedException();
       }
 
@@ -111,6 +145,7 @@ export class McpController {
         transport,
         lastActivity: Date.now(),
         userId,
+        scopeSignature: apiKeyScopeSignature(req),
       });
 
       this.logger.log('MCP session created', {
@@ -148,6 +183,12 @@ export class McpController {
       return;
     }
 
+    if (entry.scopeSignature !== apiKeyScopeSignature(req)) {
+      res.status(403).json({ error: 'Session belongs to a different authority' });
+
+      return;
+    }
+
     entry.lastActivity = Date.now();
 
     await entry.transport.handleRequest(req, res);
@@ -159,6 +200,7 @@ export class McpController {
   @Delete()
   async handleDelete(
     @Context() context: RequestContext,
+    @Req() req: Request,
     @Headers('mcp-session-id') sessionId: string | undefined,
   ) {
     if (!sessionId) {
@@ -173,6 +215,10 @@ export class McpController {
 
     if (entry.userId !== context.userId) {
       throw new ForbiddenException('Session belongs to a different user');
+    }
+
+    if (entry.scopeSignature !== apiKeyScopeSignature(req)) {
+      throw new ForbiddenException('Session belongs to a different authority');
     }
 
     await entry.transport.close();

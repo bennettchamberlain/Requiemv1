@@ -35,17 +35,32 @@ export interface ApiKeyScopedRequest extends Request {
  *   is denied (this is what confines e.g. a memory-scoped chat-agent key to the
  *   memory endpoints and off `/graphql`, `/files`, `/v1`, …).
  */
+/**
+ * Whether the caller is a **scope-limited** api-key principal — i.e. one confined
+ * by {@link enforceApiKeyScopes} to the routes its scopes name.
+ *
+ * The single source of truth for that question, so surfaces which decide what a
+ * caller may *see* (e.g. the MCP tool/resource catalog) stay in lockstep with the
+ * guard that decides what it may *do*. Session/JWT/Portal principals and
+ * empty-scope (legacy/full-access) keys are NOT scope-limited.
+ */
+export function isScopeLimitedApiKey(request: ApiKeyScopedRequest): boolean {
+  const scopes = request.apiKeyScopes;
+
+  return scopes !== undefined && scopes.length > 0;
+}
+
 export function enforceApiKeyScopes(
   reflector: Reflector,
   context: ExecutionContext,
   request: ApiKeyScopedRequest,
 ): void {
-  const scopes = request.apiKeyScopes;
-
   // Non-api-key principal, or an empty-scope (full-access) key → nothing to enforce.
-  if (scopes === undefined || scopes.length === 0) {
+  if (!isScopeLimitedApiKey(request)) {
     return;
   }
+
+  const scopes = request.apiKeyScopes as string[];
 
   const required = reflector.getAllAndOverride<string[] | undefined>(REQUIRE_SCOPES_KEY, [
     context.getHandler(),

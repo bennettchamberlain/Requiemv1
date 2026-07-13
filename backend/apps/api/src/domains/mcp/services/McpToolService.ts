@@ -1,7 +1,8 @@
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, type OnModuleInit } from '@nestjs/common';
 import { z, type ZodTypeAny } from 'zod';
 
 import type { RequestContext } from '@ci/common/context';
+import { type ApiKeyScopedRequest, isScopeLimitedApiKey } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
 
@@ -38,6 +39,28 @@ export class McpToolService implements OnModuleInit {
     return [...this.tools.values()];
   }
 
+  /**
+   * The tools this caller can actually execute.
+   *
+   * GraphQL-derived tools run against the same Nest-wrapped resolvers that serve
+   * `/graphql`. Those resolvers declare no `@RequireScopes`, so deny-by-default
+   * enforcement rejects a **scope-limited** key on every one of them — which is
+   * the confinement a chat-agent connect key exists to have. Advertising them
+   * anyway would hand the model a catalog where each call fails with an opaque
+   * `Forbidden resource`, so filter them out instead. Native intents execute
+   * through the ToolRegistry and remain available.
+   *
+   * Full-authority principals (sessions/JWT, and empty-scope keys such as the
+   * bulk importer's) are unaffected and still see every tool.
+   */
+  getToolsForRequest(req: ApiKeyScopedRequest): McpRegisteredTool[] {
+    if (!isScopeLimitedApiKey(req)) {
+      return this.getTools();
+    }
+
+    return this.getTools().filter((tool) => tool.source !== 'graphql');
+  }
+
   getSchemaSDL(): string {
     return this.graphqlAdapter.getSchemaSDL();
   }
@@ -53,6 +76,15 @@ export class McpToolService implements OnModuleInit {
     }
 
     if (tool.source === 'graphql') {
+      // Belt-and-braces: getToolsForRequest already hides these from a scope-limited
+      // caller, but a client may still name one directly. Fail with the reason rather
+      // than letting the resolver guard raise a bare `Forbidden resource`.
+      if (isScopeLimitedApiKey(context.req)) {
+        throw new ForbiddenException(
+          `Tool "${name}" reads the knowledge graph directly, which this scope-limited API key cannot access`,
+        );
+      }
+
       const graphqlTool = this.graphqlAdapter.getTools().find((t) => t.name === name);
 
       if (!graphqlTool) {

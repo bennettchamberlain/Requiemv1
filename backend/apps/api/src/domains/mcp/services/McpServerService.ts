@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { isScopeLimitedApiKey } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { IntentCatalogService } from '@ci/domains/tools';
 
@@ -24,28 +25,34 @@ export class McpServerService {
     });
 
     this.registerTools(server, req);
-    this.registerResources(server);
+    this.registerResources(server, req);
 
     return server;
   }
 
-  private registerResources(server: McpServer) {
-    server.registerResource(
-      'graphql-schema',
-      'schema://graphql',
-      {
-        description: 'The full GraphQL SDL schema describing all available types, queries, and mutations',
-      },
-      (uri) => ({
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'text/plain',
-            text: this.toolService.getSchemaSDL(),
-          },
-        ],
-      }),
-    );
+  private registerResources(server: McpServer, req: Request) {
+    // The SDL describes the whole personal knowledge graph. A scope-limited key is
+    // confined off that data plane and cannot call any of it, so handing over the
+    // schema would leak the shape of the user's data for no usable purpose — keep
+    // the resource in lockstep with the tools it documents.
+    if (!isScopeLimitedApiKey(req)) {
+      server.registerResource(
+        'graphql-schema',
+        'schema://graphql',
+        {
+          description: 'The full GraphQL SDL schema describing all available types, queries, and mutations',
+        },
+        (uri) => ({
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'text/plain',
+              text: this.toolService.getSchemaSDL(),
+            },
+          ],
+        }),
+      );
+    }
 
     // The curated CI Intent catalog: a typed, domain-organized, privacy-labelled
     // declaration of the semantic actions an agent should prefer over raw CRUD.
@@ -72,7 +79,9 @@ export class McpServerService {
   }
 
   private registerTools(server: McpServer, req: Request) {
-    const tools = this.toolService.getTools();
+    // Advertise only what this key can execute — a scope-limited connect key is
+    // confined off the GraphQL data plane, so those tools must not appear.
+    const tools = this.toolService.getToolsForRequest(req);
 
     for (const tool of tools) {
       const handler = async (args: Record<string, unknown>) => {
