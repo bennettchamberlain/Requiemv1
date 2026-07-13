@@ -6,15 +6,12 @@ import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { UserService } from '@ci/domains/user';
 
+import { CONNECT_KEY_NAME_PREFIX, CONNECT_PROVENANCE } from '../types';
+
 import { ApiKeyService } from './ApiKeyService';
 import { AuthService } from './AuthService';
 import { ConnectCodeService } from './ConnectCodeService';
 
-/** Api-key name prefix; the app URN makes the name unique per app (idempotency key). */
-const CONNECT_KEY_NAME_PREFIX = 'app:';
-/** Stamped on every key this flow mints, so the Hub's revoke/rotate never has to
- *  guess ownership from the (user-settable) key name. */
-const CONNECT_KEY_PROVENANCE = 'connect' as const;
 /** Minted keys expire after this many days; CI-Hub rotates well before expiry. */
 const CONNECT_KEY_TTL_DAYS = 90;
 
@@ -193,7 +190,7 @@ export class ConnectService {
       // Records that CI-Hub owns this key's lifecycle, so revoke/rotate can find it
       // and the user cannot re-scope it. Never inferred from the name, which a user
       // could otherwise collide with.
-      CONNECT_KEY_PROVENANCE,
+      CONNECT_PROVENANCE,
     );
 
     this.logger.log(`Minted connect key on exchange for app ${consumed.appUrn} (user ${consumed.userId})`);
@@ -224,7 +221,7 @@ export class ConnectService {
     const minted = await this.apiKeyService.createOrRotate(
       { userId },
       { name, scopes: scopesForApp(appUrn), expires_at: expiresAt },
-      CONNECT_KEY_PROVENANCE,
+      CONNECT_PROVENANCE,
     );
 
     this.logger.log(`Rotated connect key for app ${appUrn} (user ${userId})`);

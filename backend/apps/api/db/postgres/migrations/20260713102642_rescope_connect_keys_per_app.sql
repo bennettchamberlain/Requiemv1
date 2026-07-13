@@ -9,8 +9,12 @@
 -- is the opposite of the intent, so no database should ever run it.
 --
 -- This version keys off `managed_by` (added in 20260713101410), which the connect
--- flow records at mint time. It therefore cannot touch a user's key at all, by
--- construction rather than by pattern-matching a string the user chose.
+-- flow records at mint time. It therefore cannot touch a user's key at all: for keys
+-- minted from this release on, provenance is recorded at the source and is not
+-- inferable from anything the user controls; for keys that predate the column,
+-- 20260713101410's backfill adopts only the `app:<appName>:<store>` names whose
+-- <appName> is a real memory consumer, so a hand-made `app:home-assistant:kitchen`
+-- is never stamped and never lands in the UPDATEs below.
 --
 -- Why re-scope at all: before this release every connect key was minted with the
 -- single `memory` scope, and scopes were enforced only on the memory endpoints.

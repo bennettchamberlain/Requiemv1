@@ -23,13 +23,30 @@ ALTER TABLE ci.api_keys ADD COLUMN IF NOT EXISTS managed_by TEXT;
 COMMENT ON COLUMN ci.api_keys.managed_by IS
   'Who owns this key''s lifecycle: NULL = user-created; ''connect'' = minted by the Companion Memory consent flow.';
 
--- Backfill. The consent flow is the only producer of the full `app:<appName>:<store>`
--- shape — three colon-separated parts, since an AppUrn is `<appName>:<store>` — so
--- that, and only that, identifies an existing connect key. A hand-made `app:foo` has
--- two parts and is deliberately left NULL: that keeps it out of the Hub's
--- revoke/rotate paths and restores its owner's ability to re-scope it.
+-- Backfill.
+--
+-- There is no unforgeable record of provenance for keys minted BEFORE this column
+-- existed, so the backfill has to infer it — and inference is exactly what this
+-- change exists to abolish. Keep it as narrow as the facts allow: adopt only the
+-- names the consent flow could actually have produced by this release, i.e. the
+-- full `app:<appName>:<store>` shape (three colon-separated parts, since an AppUrn
+-- is `<appName>:<store>`) AND an <appName> that is a real memory consumer.
+--
+-- The app-name list is what makes this safe. Matching the name SHAPE alone would
+-- adopt a hand-made `app:home-assistant:kitchen` — free-form names were legal until
+-- this release — and the re-scope migration that follows would then widen that
+-- user's deliberately-confined key to full access and lock them out of repairing it.
+-- Anything not matched is left NULL: it stays the user's own, editable key, outside
+-- the Hub's revoke/rotate paths.
+--
+-- Failure mode if a consumer is missing from this list: its pre-existing connect key
+-- stays NULL, so the Hub cannot revoke or rotate it and the user sees it as their own
+-- key. That fails CLOSED (no silent privilege widening) and self-heals the moment the
+-- app reconnects, which re-mints the key with `managed_by` stamped at the source.
 UPDATE ci.api_keys SET managed_by = 'connect'
-  WHERE name LIKE 'app:%' AND split_part(name, ':', 3) <> '';
+  WHERE name LIKE 'app:%'
+    AND split_part(name, ':', 2) IN ('ci-openclaw', 'ci-hermes', 'ci-import-tools')
+    AND split_part(name, ':', 3) <> '';
 
 -- Revoke and rotate look a connect key up by name; this is the access path for both.
 CREATE INDEX IF NOT EXISTS idx_api_keys_managed_by_name

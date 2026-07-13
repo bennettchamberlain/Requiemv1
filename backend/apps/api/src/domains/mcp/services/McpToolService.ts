@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, type OnModuleInit } from '@nestjs/commo
 import { z, type ZodTypeAny } from 'zod';
 
 import type { RequestContext } from '@ci/common/context';
+import { INTENTS_SCOPE } from '@ci/common/decorators';
 import { type ApiKeyScopedRequest, isScopeLimitedApiKey } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { type JSONSchema, ToolRegistry, intentToolName } from '@ci/domains/tools';
@@ -42,23 +43,48 @@ export class McpToolService implements OnModuleInit {
   /**
    * The tools this caller can actually execute.
    *
-   * GraphQL-derived tools run against the same Nest-wrapped resolvers that serve
-   * `/graphql`. Those resolvers declare no `@RequireScopes`, so deny-by-default
-   * enforcement rejects a **scope-limited** key on every one of them — which is
-   * the confinement a chat-agent connect key exists to have. Advertising them
-   * anyway would hand the model a catalog where each call fails with an opaque
-   * `Forbidden resource`, so filter them out instead. Native intents execute
-   * through the ToolRegistry and remain available.
+   * A scope-limited key reaches MCP with the `mcp` scope alone, but the tools behind
+   * this endpoint are not one undifferentiated capability — they are the same two data
+   * planes the REST routes gate separately, so MCP gates them the same way rather than
+   * letting the transport become a way around the scopes:
    *
-   * Full-authority principals (sessions/JWT, and empty-scope keys such as the
-   * bulk importer's) are unaffected and still see every tool.
+   * - GraphQL-derived tools run against the resolvers that serve `/graphql`, which
+   *   declare no `@RequireScopes` — deny-by-default already rejects a scope-limited key
+   *   on every one of them. Advertising them anyway would hand the model a catalog where
+   *   each call fails with an opaque `Forbidden resource`.
+   * - Native intents execute through the ToolRegistry, which performs NO authorization of
+   *   its own; `knowledge.search` alone reads across the whole personal graph. They are
+   *   the MCP face of the intent catalog, so they require the same {@link INTENTS_SCOPE}
+   *   the REST catalog does — otherwise an `mcp`-only key, 403'd on `/api/intents`, would
+   *   execute those very intents here.
+   *
+   * Both chat-agent connect keys already carry `intents` (see `scopesForApp`), so this
+   * confines the hole without narrowing any key in the field. Full-authority principals
+   * (sessions/JWT, and empty-scope keys such as the bulk importer's) still see every tool.
    */
   getToolsForRequest(req: ApiKeyScopedRequest): McpRegisteredTool[] {
     if (!isScopeLimitedApiKey(req)) {
       return this.getTools();
     }
 
-    return this.getTools().filter((tool) => tool.source !== 'graphql');
+    const mayRunIntents = this.mayRunIntents(req);
+
+    return this.getTools().filter((tool) => tool.source !== 'graphql' && mayRunIntents);
+  }
+
+  /**
+   * Whether this caller may execute native intents — i.e. it is a full-authority
+   * principal, or a scope-limited key carrying {@link INTENTS_SCOPE}.
+   *
+   * The single source of truth for that question, so the tools, the executor, and the
+   * intent-catalog resource cannot disagree about who gets the intent plane.
+   */
+  mayRunIntents(req: ApiKeyScopedRequest): boolean {
+    if (!isScopeLimitedApiKey(req)) {
+      return true;
+    }
+
+    return req.apiKeyScopes?.includes(INTENTS_SCOPE) ?? false;
   }
 
   getSchemaSDL(): string {
@@ -75,11 +101,15 @@ export class McpToolService implements OnModuleInit {
       throw new Error(`Tool not found: ${name}`);
     }
 
+    // Belt-and-braces: getToolsForRequest already hides what this caller may not run,
+    // but a client can name any tool directly, and the layers below do not re-check —
+    // the GraphQL resolvers raise a bare `Forbidden resource`, and ToolRegistry performs
+    // no authorization at all. This is the enforcement point; the catalog filter is only
+    // the courtesy of not advertising what would fail.
+    const scopeLimited = isScopeLimitedApiKey(context.req);
+
     if (tool.source === 'graphql') {
-      // Belt-and-braces: getToolsForRequest already hides these from a scope-limited
-      // caller, but a client may still name one directly. Fail with the reason rather
-      // than letting the resolver guard raise a bare `Forbidden resource`.
-      if (isScopeLimitedApiKey(context.req)) {
+      if (scopeLimited) {
         throw new ForbiddenException(
           `Tool "${name}" reads the knowledge graph directly, which this scope-limited API key cannot access`,
         );
@@ -92,6 +122,12 @@ export class McpToolService implements OnModuleInit {
       }
 
       return this.executorService.executeTool(graphqlTool, args, context);
+    }
+
+    if (!this.mayRunIntents(context.req)) {
+      throw new ForbiddenException(
+        `Tool "${name}" runs a CI intent, which requires the "${INTENTS_SCOPE}" scope this API key does not carry`,
+      );
     }
 
     // Native tool execution

@@ -98,12 +98,36 @@ describe('McpToolService — scope-limited callers', () => {
     expect(executor.executeTool).toHaveBeenCalled();
   });
 
-  it('executes native intents for a scope-limited key', async () => {
+  it('executes native intents for a scope-limited key that carries `intents`', async () => {
     const { service, registry } = buildService();
 
-    await service.executeTool('memory_search', {}, { req: requestWithScopes(['memory']) as Request });
+    await service.executeTool(
+      'memory_search',
+      {},
+      { req: requestWithScopes(['memory', 'intents', 'mcp']) as Request },
+    );
 
     expect(registry.executeTool).toHaveBeenCalled();
+  });
+
+  // The intent plane is not a free rider on the `mcp` scope. ToolRegistry performs no
+  // authorization of its own, so without this check a key holding `mcp` alone — 403'd by
+  // deny-by-default on `/api/intents` — could execute those very intents over MCP,
+  // including the ones that read across the whole personal graph.
+  it('refuses to execute a native intent for a key without the `intents` scope', async () => {
+    const { service, registry } = buildService();
+
+    await expect(
+      service.executeTool('memory_search', {}, { req: requestWithScopes(['mcp']) as Request }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(registry.executeTool).not.toHaveBeenCalled();
+  });
+
+  it('advertises no tools to a key without the `intents` scope', () => {
+    const { service } = buildService();
+
+    expect(service.getToolsForRequest(requestWithScopes(['mcp'])).map((tool) => tool.name)).toEqual([]);
   });
 });
 

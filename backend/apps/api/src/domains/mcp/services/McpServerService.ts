@@ -58,24 +58,30 @@ export class McpServerService {
     // declaration of the semantic actions an agent should prefer over raw CRUD.
     // Discoverable here so any MCP client reads one catalog instead of
     // re-implementing per-harness integration glue.
-    server.registerResource(
-      'intent-catalog',
-      'intents://catalog',
-      {
-        description:
-          'The CI Intent catalog: schema domains, entity types, and curated semantic intents with privacy labels',
-        mimeType: 'application/json',
-      },
-      (uri) => ({
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'application/json',
-            text: JSON.stringify(this.intentCatalog.getManifest(), null, 2),
-          },
-        ],
-      }),
-    );
+    //
+    // Gated on the same scope as the intents themselves (see McpToolService), so a key
+    // that cannot execute an intent is not handed the catalog describing them — the
+    // resource and the tools it documents stay in lockstep.
+    if (this.toolService.mayRunIntents(req)) {
+      server.registerResource(
+        'intent-catalog',
+        'intents://catalog',
+        {
+          description:
+            'The CI Intent catalog: schema domains, entity types, and curated semantic intents with privacy labels',
+          mimeType: 'application/json',
+        },
+        (uri) => ({
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: 'application/json',
+              text: JSON.stringify(this.intentCatalog.getManifest(), null, 2),
+            },
+          ],
+        }),
+      );
+    }
   }
 
   private registerTools(server: McpServer, req: Request) {

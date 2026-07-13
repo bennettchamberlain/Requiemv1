@@ -62,14 +62,22 @@ function normalizePublicBaseUrl(publicBaseUrl?: string): string | undefined {
 export const OIDC_ORIGIN_BOUNCE_PARAM = 'origin_bounced';
 
 /**
+ * The raw host[:port] the browser addressed, as sent. The single place that derives it,
+ * so the bounce comparison and the callback fallback can never disagree about which
+ * host the browser actually used.
+ */
+function rawRequestHost(origin: OidcCallbackRequestOrigin): string {
+  return firstForwardedValue(origin.forwardedHost) || origin.host?.trim() || 'localhost';
+}
+
+/**
  * The host[:port] the browser used, canonicalised the same way `new URL().host`
  * canonicalises the public base — lower-cased, trailing dot removed, and the
  * scheme's default port dropped — so that benign spelling differences do not read
  * as a different host.
  */
 function resolveRequestHost(origin: OidcCallbackRequestOrigin, scheme: string): string {
-  const raw = firstForwardedValue(origin.forwardedHost) || origin.host?.trim() || 'localhost';
-  const host = raw.toLowerCase();
+  const host = rawRequestHost(origin).toLowerCase();
 
   // Split off the port without tripping over an IPv6 literal's own colons.
   const portMatch = /^(\[[^\]]*\]|[^:]*)(?::(\d+))?$/.exec(host);
@@ -92,9 +100,8 @@ function resolveRequestHost(origin: OidcCallbackRequestOrigin, scheme: string): 
  */
 function resolveRequestOrigin(origin: OidcCallbackRequestOrigin): string {
   const proto = firstForwardedValue(origin.forwardedProto) || (origin.secure ? 'https' : 'http');
-  const host = firstForwardedValue(origin.forwardedHost) || origin.host?.trim() || 'localhost';
 
-  return `${proto}://${host}`;
+  return `${proto}://${rawRequestHost(origin)}`;
 }
 
 /**

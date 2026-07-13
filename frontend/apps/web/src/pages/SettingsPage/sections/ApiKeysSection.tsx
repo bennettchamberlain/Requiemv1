@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
+import { API_KEY_PROVENANCE_CONNECT } from '@ci/common/src/constants';
 import { Badge, Button, Calendar, Card, Dialog, Input, Label, Popover } from '@ci/shadcn';
 import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
 
@@ -34,7 +35,7 @@ interface CreateApiKeyResponse extends ApiKeyResponse {
 // missed — so the UI offered an Edit button the API then rejected — and a user's
 // own key named `app:...` was wrongly badged as the Hub's.
 function isHubManagedKey(key: { managed_by?: string | null }): boolean {
-  return key.managed_by === 'connect';
+  return key.managed_by === API_KEY_PROVENANCE_CONNECT;
 }
 
 export function ApiKeysSection() {

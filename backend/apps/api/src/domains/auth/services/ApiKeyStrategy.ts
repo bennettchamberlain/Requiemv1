@@ -75,7 +75,13 @@ export class ApiKeyStrategy extends PassportStrategy(RequestStrategy, 'api-key')
     // guards) can enforce @RequireScopes on the route. Absence of this field on
     // the request means "not an api-key principal" (full authority); an empty
     // array means a legacy full-access key.
-    (req as ApiKeyScopedRequest).apiKeyScopes = result.scopes;
+    const scopedRequest = req as ApiKeyScopedRequest;
+
+    scopedRequest.apiKeyScopes = result.scopes;
+    // WHICH key authenticated, for surfaces that bind state to one caller's authority
+    // (the MCP session map). Scopes alone cannot tell two keys apart — both chat-agent
+    // connect keys carry an identical set on a single-owner appliance.
+    scopedRequest.apiKeyId = result.keyId;
 
     return user;
   }

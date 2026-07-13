@@ -18,24 +18,22 @@ import { JwtAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 
 import { ApiKeyService } from '../services/ApiKeyService';
-import type { CreateApiKeyDto, UpdateApiKeyDto } from '../types';
+import { CONNECT_KEY_NAME_PREFIX, type CreateApiKeyDto, type UpdateApiKeyDto } from '../types';
 
 /**
  * `app:` is reserved for connection keys minted by the consent flow
- * (`app:<appName>:<store>`). CI-Hub owns their lifecycle and revokes them by that
- * exact name, and `isHubManagedKey` classifies them by this prefix — so a
- * user-created key sharing it would be rotated, re-scoped, or deleted out from
- * under its owner by machinery meant for a different key. Reject it at the door
- * rather than let the two namespaces collide.
+ * (`app:<appName>:<store>`). Hub ownership is carried by recorded provenance, not by
+ * this prefix, so a colliding name no longer hands a user's key to Hub machinery —
+ * but keeping the namespaces distinct still matters: the settings UI badges connect
+ * keys as Hub-managed, and a user-created `app:ci-hermes:ci-marketplace` would read as
+ * one while behaving as a normal key. Reject the name at the door instead.
  */
-const RESERVED_NAME_PREFIX = 'app:';
-
 const apiKeyName = z
   .string()
   .min(1)
   .max(255)
-  .refine((name) => !name.startsWith(RESERVED_NAME_PREFIX), {
-    message: `Key names starting with "${RESERVED_NAME_PREFIX}" are reserved for connected apps`,
+  .refine((name) => !name.startsWith(CONNECT_KEY_NAME_PREFIX), {
+    message: `Key names starting with "${CONNECT_KEY_NAME_PREFIX}" are reserved for connected apps`,
   });
 
 const createApiKeySchema = z.object({
@@ -44,8 +42,13 @@ const createApiKeySchema = z.object({
   expires_at: z.string().datetime().optional(),
 });
 
+// The name here is NOT refined: rejecting `app:` on the request body would also 400 a
+// client echoing a key's own unchanged name (which the settings dialog always submits),
+// making the grandfathered `app:`-named user keys this release unlocks impossible to
+// edit. ApiKeyService.update enforces the reservation on an actual RENAME, where it
+// can compare against the key's current name.
 const updateApiKeySchema = z.object({
-  name: apiKeyName.optional(),
+  name: z.string().min(1).max(255).optional(),
   scopes: z.array(z.string()).optional(),
 });
 

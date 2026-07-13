@@ -1,4 +1,5 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { IsNull } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 
@@ -42,8 +43,11 @@ describe('ApiKeyService.createOrRotate', () => {
 
     const result = await service.createOrRotate(ownerCtx, { name: 'app:urn:x', scopes: ['memory'] });
 
-    // Rotation: prior key for this (user, name) is removed before minting.
-    expect(repo.delete).toHaveBeenCalledWith({ user_id: 'owner-1', name: 'app:urn:x' });
+    // Rotation: prior key for this (user, name) is removed before minting — matched on
+    // provenance too, so a rotate can only ever replace a key of its OWN kind (a connect
+    // mint cannot silently delete a same-named user key; the unique index makes that
+    // collision fail loudly instead).
+    expect(repo.delete).toHaveBeenCalledWith({ user_id: 'owner-1', name: 'app:urn:x', managed_by: IsNull() });
     expect(repo.delete.mock.invocationCallOrder[0]).toBeLessThan(repo.save.mock.invocationCallOrder[0]);
 
     // Minted row is owner-scoped, carries the requested scopes, and the raw key
@@ -53,6 +57,40 @@ describe('ApiKeyService.createOrRotate', () => {
     expect(row.name).toBe('app:urn:x');
     expect(row.scopes).toEqual(['memory']);
     expect(result.key).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('scopes the rotate-delete to the connect namespace when minting a connect key', async () => {
+    // Without the provenance filter, the consent flow's mint would delete ANY key of the
+    // user that happened to share the connect name — silently revoking a credential the
+    // Hub never issued, which is the same cross-namespace clobbering removeByName and
+    // update already refuse.
+    const repo = makeRepo();
+    const service = makeService(repo);
+
+    await service.createOrRotate(ownerCtx, { name: 'app:urn:x', scopes: [] }, 'connect');
+
+    expect(repo.delete).toHaveBeenCalledWith({
+      user_id: 'owner-1',
+      name: 'app:urn:x',
+      managed_by: 'connect',
+    });
+  });
+
+  it('reports a name collision with a user-owned key instead of retrying forever', async () => {
+    // The provenance-scoped delete refuses to remove a key it did not mint, so if a
+    // user's own key holds the connect name the insert can never win the unique index.
+    // Retrying to exhaustion would 500 the consent flow with nothing actionable in it.
+    const repo = makeRepo();
+    const uniqueViolation = Object.assign(new Error('duplicate key'), { code: '23505' });
+    repo.save.mockRejectedValue(uniqueViolation);
+    const service = makeService(repo);
+
+    await expect(
+      service.createOrRotate(ownerCtx, { name: 'app:urn:x', scopes: [] }, 'connect'),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    // Tried once, retried once, then gave up — no unbounded loop.
+    expect(repo.save).toHaveBeenCalledTimes(2);
   });
 
   it('mints a non-expiring key when no expires_at is given', async () => {
@@ -300,6 +338,41 @@ describe('ApiKeyService.update', () => {
     expect(repo.save).not.toHaveBeenCalled();
   });
 
+  it('lets the owner of a legacy `app:`-named key save it without renaming it', async () => {
+    // The settings dialog always submits the name field, pre-filled with the key's
+    // current name. Rejecting the reserved prefix on the request body would 400 that
+    // no-op echo — leaving the grandfathered `app:`-named user keys this release hands
+    // back to their owners uneditable, which is the opposite of the intent.
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({
+      ...managedKey,
+      id: 'k-user',
+      name: 'app:home-assistant',
+      managed_by: null,
+    });
+    repo.save.mockImplementation(async (k: Record<string, unknown>) => k);
+    const service = makeService(repo);
+
+    const result = await service.update(ownerCtx, 'k-user', {
+      name: 'app:home-assistant',
+      scopes: ['memory'],
+    });
+
+    expect(result?.scopes).toEqual(['memory']);
+    expect(repo.save).toHaveBeenCalled();
+  });
+
+  it('refuses to RENAME any key INTO the reserved `app:` namespace', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValueOnce({ ...managedKey, id: 'k-user', name: 'My key', managed_by: null });
+    const service = makeService(repo);
+
+    await expect(
+      service.update(ownerCtx, 'k-user', { name: 'app:ci-hermes:ci-marketplace' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
   it('returns null when the key does not exist', async () => {
     const repo = makeRepo();
     repo.findOne.mockResolvedValueOnce(null);
@@ -324,7 +397,11 @@ describe('ApiKeyService.validateKey', () => {
     });
     const service = makeService(repo);
 
-    expect(await service.validateKey(validRaw)).toEqual({ userId: 'owner-1', scopes: ['memory'] });
+    expect(await service.validateKey(validRaw)).toEqual({
+      keyId: 'k1',
+      userId: 'owner-1',
+      scopes: ['memory'],
+    });
   });
 
   it('defaults a null scopes column to empty (legacy full-access)', async () => {
@@ -332,7 +409,7 @@ describe('ApiKeyService.validateKey', () => {
     repo.findOne.mockResolvedValueOnce({ id: 'k1', user_id: 'owner-1', expires_at: null, scopes: null });
     const service = makeService(repo);
 
-    expect(await service.validateKey(validRaw)).toEqual({ userId: 'owner-1', scopes: [] });
+    expect(await service.validateKey(validRaw)).toEqual({ keyId: 'k1', userId: 'owner-1', scopes: [] });
   });
 
   it('rejects an expired key', async () => {

@@ -4,14 +4,12 @@ import {
   BadRequestException,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Headers,
   NotFoundException,
   Post,
   Req,
   Res,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -32,8 +30,8 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   lastActivity: number;
   userId: string;
-  /** The authority the session was built for — see {@link apiKeyScopeSignature}. */
-  scopeSignature: string;
+  /** The authority the session was built for — see {@link apiKeyAuthoritySignature}. */
+  authoritySignature: string;
 }
 
 /**
@@ -46,20 +44,27 @@ interface SessionEntry {
  * scope-limited connect key are the SAME user, so the agent could present the
  * owner's `Mcp-Session-Id` and inherit a transport whose GraphQL tools were
  * registered for a full-authority principal — with the handlers' captured request
- * carrying that authority into the resolvers. Binding the session to the scope set
- * as well means a session can only ever be resumed by the same authority that
- * opened it.
+ * carrying that authority into the resolvers.
+ *
+ * Keyed on the KEY ID, not just its scopes: both chat agents' connect keys hold an
+ * identical scope set under the same owner, so a scopes-only signature would let
+ * CI-OpenClaw resume, drive, or terminate CI-Hermes's session. Scopes stay in the
+ * signature so that re-scoping a key also retires the sessions it opened.
+ *
+ * JSON-encoded rather than delimiter-joined: scope strings are free-form, so a naive
+ * `join(',')` collides `['a,b']` with `['a','b']` — two different authorities, one
+ * signature.
  */
-function apiKeyScopeSignature(req: ApiKeyScopedRequest): string {
+function apiKeyAuthoritySignature(req: ApiKeyScopedRequest): string {
   const scopes = req.apiKeyScopes;
 
-  // Distinct sentinels: a session/JWT principal is not the same authority as an
+  // Distinct sentinel: a session/JWT principal is not the same authority as an
   // empty-scope (legacy full-access) key, even though both carry full authority.
   if (scopes === undefined) {
-    return 'principal:non-api-key';
+    return JSON.stringify({ principal: 'non-api-key' });
   }
 
-  return `scopes:${[...scopes].sort().join(',')}`;
+  return JSON.stringify({ keyId: req.apiKeyId ?? null, scopes: [...scopes].sort() });
 }
 
 // Scope-limited connect keys need the `mcp` scope to reach MCP (CI-Hermes's key
@@ -89,21 +94,7 @@ export class McpController {
     let transport: StreamableHTTPServerTransport | undefined;
 
     if (sessionId) {
-      const entry = this.sessions.get(sessionId);
-
-      if (!entry) {
-        throw new NotFoundException();
-      }
-
-      if (entry.userId !== context.userId) {
-        throw new UnauthorizedException();
-      }
-
-      // The session's tools were registered for the authority that opened it, so it
-      // may only be resumed by that same authority (see apiKeyScopeSignature).
-      if (entry.scopeSignature !== apiKeyScopeSignature(req)) {
-        throw new UnauthorizedException();
-      }
+      const entry = this.resolveSession(sessionId, context, req);
 
       transport = entry.transport;
       entry.lastActivity = Date.now();
@@ -145,7 +136,7 @@ export class McpController {
         transport,
         lastActivity: Date.now(),
         userId,
-        scopeSignature: apiKeyScopeSignature(req),
+        authoritySignature: apiKeyAuthoritySignature(req),
       });
 
       this.logger.log('MCP session created', {
@@ -169,25 +160,7 @@ export class McpController {
       return;
     }
 
-    const entry = this.sessions.get(sessionId);
-
-    if (!entry) {
-      res.status(404).json({ error: 'Session not found' });
-
-      return;
-    }
-
-    if (entry.userId !== context.userId) {
-      res.status(403).json({ error: 'Session belongs to a different user' });
-
-      return;
-    }
-
-    if (entry.scopeSignature !== apiKeyScopeSignature(req)) {
-      res.status(403).json({ error: 'Session belongs to a different authority' });
-
-      return;
-    }
+    const entry = this.resolveSession(sessionId, context, req);
 
     entry.lastActivity = Date.now();
 
@@ -207,19 +180,7 @@ export class McpController {
       throw new BadRequestException('Missing Mcp-Session-Id header');
     }
 
-    const entry = this.sessions.get(sessionId);
-
-    if (!entry) {
-      throw new NotFoundException('Session not found');
-    }
-
-    if (entry.userId !== context.userId) {
-      throw new ForbiddenException('Session belongs to a different user');
-    }
-
-    if (entry.scopeSignature !== apiKeyScopeSignature(req)) {
-      throw new ForbiddenException('Session belongs to a different authority');
-    }
+    const entry = this.resolveSession(sessionId, context, req);
 
     await entry.transport.close();
     this.sessions.delete(sessionId);
@@ -227,6 +188,34 @@ export class McpController {
     this.logger.log('MCP session terminated by client', { sessionId });
 
     return { success: true };
+  }
+
+  /**
+   * The session named by `sessionId`, if this caller is the one that opened it.
+   *
+   * The single authority check for every verb, so POST, GET and DELETE cannot drift
+   * into disagreeing about who owns a session — one verb accepting a caller the others
+   * refuse is exactly the kind of asymmetry that reads as fine in isolation.
+   *
+   * A caller who is not the opener gets 404, not 403: MCP's Streamable HTTP transport
+   * treats 404 as "session is gone, re-initialize" and 401/403 as an auth failure to
+   * retry. A key whose scopes were legitimately edited mid-session would otherwise be
+   * wedged — unable to resume the old session, unable to DELETE it, and given no signal
+   * to open a new one. 404 also declines to confirm that someone else's session id
+   * exists.
+   */
+  private resolveSession(sessionId: string, context: RequestContext, req: Request): SessionEntry {
+    const entry = this.sessions.get(sessionId);
+
+    if (
+      !entry ||
+      entry.userId !== context.userId ||
+      entry.authoritySignature !== apiKeyAuthoritySignature(req)
+    ) {
+      throw new NotFoundException('Session not found');
+    }
+
+    return entry;
   }
 
   @Cron(CronExpression.EVERY_5_MINUTES)

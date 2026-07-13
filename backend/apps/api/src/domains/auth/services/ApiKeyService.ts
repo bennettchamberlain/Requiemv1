@@ -1,22 +1,22 @@
 import { createHash, randomBytes } from 'crypto';
 
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
 import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
-import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto, ApiKeyProvenance } from '../types';
-
-/**
- * Marks a key minted by the Companion Memory consent flow. CI-Hub owns its
- * lifecycle (rotate, revoke on disconnect/uninstall), so revoke/rotate resolve
- * ONLY these — a user's own key can never be caught by them, whatever it is named.
- */
-const CONNECT_PROVENANCE = 'connect' as const;
+import {
+  CONNECT_KEY_NAME_PREFIX,
+  CONNECT_PROVENANCE,
+  type ApiKeyProvenance,
+  type CreateApiKeyDto,
+  type CreateApiKeyResponse,
+  type UpdateApiKeyDto,
+} from '../types';
 
 const API_KEY_BYTE_LENGTH = 32;
 const API_KEY_HEX_LENGTH = API_KEY_BYTE_LENGTH * 2;
@@ -85,7 +85,7 @@ export class ApiKeyService {
     managedBy: ApiKeyProvenance | null = null,
   ): Promise<CreateApiKeyResponse> {
     try {
-      await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
+      await this.deleteForRotate(context.userId, data.name, managedBy);
 
       return await this.create(context, data, managedBy);
     } catch (err) {
@@ -99,10 +99,47 @@ export class ApiKeyService {
         throw err;
       }
 
-      await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
+      await this.deleteForRotate(context.userId, data.name, managedBy);
 
-      return this.create(context, data, managedBy);
+      try {
+        return await this.create(context, data, managedBy);
+      } catch (retryErr) {
+        if (!this.isUniqueViolation(retryErr)) {
+          throw retryErr;
+        }
+
+        // The name is held by a key of a DIFFERENT provenance — a user's own key named
+        // like a connect key. deleteForRotate deliberately will not remove it (deleting
+        // a credential we did not mint is the clobbering this filter exists to prevent),
+        // so the insert can never win and retrying forever would just 500 the consent
+        // flow with nothing actionable in it. Name the collision instead.
+        throw new ConflictException(
+          `An API key named "${data.name}" already exists and is not managed by Companion Hub. Rename or delete it, then connect the app again.`,
+        );
+      }
     }
+  }
+
+  /**
+   * The rotate half of {@link createOrRotate}: drop the key this caller is replacing.
+   *
+   * Matched on provenance as well as `(user, name)`, so the connect flow can only ever
+   * rotate a key the connect flow minted. A same-named key of a DIFFERENT provenance is
+   * left alone: the unique index on `(user_id, name) WHERE name LIKE 'app:%'` then makes
+   * the insert fail loudly (23505) instead of silently deleting the user's own key —
+   * which is the same cross-namespace clobbering `removeByName` and `update` refuse.
+   */
+  private async deleteForRotate(
+    userId: string,
+    name: string,
+    managedBy: ApiKeyProvenance | null,
+  ): Promise<void> {
+    await this.apiKeyRepository.delete({
+      user_id: userId,
+      name,
+      // TypeORM equality criteria never match NULL — an explicit IsNull() is required.
+      managed_by: managedBy ?? IsNull(),
+    });
   }
 
   /** Whether a caught error is a Postgres unique-violation (SQLSTATE 23505). */
@@ -204,8 +241,9 @@ export class ApiKeyService {
     // — not just in the UI, which only hides the control. Deleting is still
     // allowed (a user may deliberately force-revoke). A no-op submit that echoes
     // the current name/scopes is tolerated so idempotent clients don't 403.
+    const renaming = data.name !== undefined && data.name !== key.name;
+
     if (this.isHubManagedKey(key)) {
-      const renaming = data.name !== undefined && data.name !== key.name;
       const rescoping = data.scopes !== undefined && !this.sameScopes(data.scopes, key.scopes ?? []);
 
       if (renaming || rescoping) {
@@ -213,6 +251,18 @@ export class ApiKeyService {
           'This key is managed by Companion Hub and cannot be renamed or re-scoped. Disconnect the app from Hub instead.',
         );
       }
+    }
+
+    // The `app:` namespace is reserved (see CONNECT_KEY_NAME_PREFIX), but only for
+    // names being newly CHOSEN. Enforcing it on the request body instead would 400 a
+    // client that merely echoes a key's own current `app:` name — which is what the
+    // settings dialog submits — and would therefore leave the grandfathered
+    // `app:`-named user keys this release hands back to their owners uneditable, the
+    // opposite of the intent. An unchanged name is not a naming choice, so let it pass.
+    if (renaming && data.name?.startsWith(CONNECT_KEY_NAME_PREFIX)) {
+      throw new ForbiddenException(
+        `Key names starting with "${CONNECT_KEY_NAME_PREFIX}" are reserved for connected apps`,
+      );
     }
 
     if (data.name !== undefined) {
@@ -291,7 +341,7 @@ export class ApiKeyService {
     return removed;
   }
 
-  async validateKey(rawKey: string): Promise<{ userId: string; scopes: string[] } | null> {
+  async validateKey(rawKey: string): Promise<{ keyId: string; userId: string; scopes: string[] } | null> {
     if (rawKey.length !== API_KEY_HEX_LENGTH || !API_KEY_HEX_REGEX.test(rawKey)) {
       return null;
     }
@@ -315,8 +365,10 @@ export class ApiKeyService {
 
     // `scopes` drives least-privilege enforcement downstream (see
     // enforceApiKeyScopes). An empty array is a legacy full-access key,
-    // preserved as-is.
-    return { userId: key.user_id, scopes: key.scopes ?? [] };
+    // preserved as-is. `keyId` identifies WHICH key authenticated: two keys of the
+    // same user can hold identical scopes (both chat agents do), so anything binding
+    // state to a caller's authority needs the key itself, not just its powers.
+    return { keyId: key.id, userId: key.user_id, scopes: key.scopes ?? [] };
   }
 
   private hash(key: string): string {
