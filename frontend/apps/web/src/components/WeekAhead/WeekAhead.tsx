@@ -49,9 +49,7 @@ function buildRows(week: WeekForecast): GridRow[] {
     }
   });
 
-  return [...rows.values()]
-    .sort((a, b) => Math.max(...b.probs) - Math.max(...a.probs))
-    .slice(0, MAX_ROWS);
+  return [...rows.values()].sort((a, b) => Math.max(...b.probs) - Math.max(...a.probs)).slice(0, MAX_ROWS);
 }
 
 function daypartSummary(cluster: WeekForecastCluster | undefined): string | null {
@@ -74,7 +72,8 @@ function formatDue(item: DueItem): string {
   }
 
   const [lo, hi] = item.window;
-  const range = lo != null && hi != null && hi > lo ? ` (${Math.max(0, Math.round(lo))}–${Math.round(hi)} days)` : '';
+  const range =
+    lo != null && hi != null && hi > lo ? ` (${Math.max(0, Math.round(lo))}–${Math.round(hi)} days)` : '';
 
   return `due in ~${Math.round(item.dueInDays)} days${range}`;
 }
@@ -118,9 +117,7 @@ function DueRow({ item }: { item: DueItem }) {
     >
       <div className={cn('w-2 h-2 shrink-0 rounded-sm', L0_BG[item.l0Class] ?? 'bg-gray-400')} />
       <span className={cn('truncate text-xs', item.overdue && 'font-medium')}>{item.name}</span>
-      <span
-        className={cn('col-start-2 text-[10px]', item.overdue ? 'opacity-90' : 'text-muted-foreground')}
-      >
+      <span className={cn('col-start-2 text-[10px]', item.overdue ? 'opacity-90' : 'text-muted-foreground')}>
         {formatDue(item)}
       </span>
     </div>

@@ -9,7 +9,9 @@ export class WeekForecastClusterType {
   @Field(() => String)
   clusterId!: string;
 
-  @Field(() => String, { description: 'Human-readable cluster name (user-specific, discovered from behavior)' })
+  @Field(() => String, {
+    description: 'Human-readable cluster name (user-specific, discovered from behavior)',
+  })
   name!: string;
 
   @Field(() => String, { description: 'Parent L0 behavioral class (WORK, EXERCISE, ...)' })
@@ -29,7 +31,10 @@ export class WeekForecastClusterType {
       name: source.name,
       l0Class: source.l0_class,
       pOccur: source.p_occur,
-      daypartProbs: Object.entries(source.daypart_probs).map(([label, probability]) => ({ label, probability })),
+      daypartProbs: Object.entries(source.daypart_probs).map(([label, probability]) => ({
+        label,
+        probability,
+      })),
     };
   }
 }

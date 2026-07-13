@@ -5,7 +5,15 @@ import type { DueForecast, WeekForecast } from '@/api/useWeekAheadService';
 
 import { WeekAhead } from './WeekAhead';
 
-const DAY_DATES = ['2026-07-10', '2026-07-11', '2026-07-12', '2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16'];
+const DAY_DATES = [
+  '2026-07-10',
+  '2026-07-11',
+  '2026-07-12',
+  '2026-07-13',
+  '2026-07-14',
+  '2026-07-15',
+  '2026-07-16',
+];
 
 function makeWeek(perDayProbs: Record<string, number[]>): WeekForecast {
   return {
