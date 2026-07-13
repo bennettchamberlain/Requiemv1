@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
+import { API_KEY_PROVENANCE_CONNECT } from '@ci/common/src/constants';
 import { Badge, Button, Calendar, Card, Dialog, Input, Label, Popover } from '@ci/shadcn';
 import { CalendarIcon, Check, ClipboardCopy, KeyRound, Lock, Pencil, Plus, Trash, X } from '@ci/shadcn/icons';
 
@@ -15,6 +16,8 @@ interface ApiKeyResponse {
   last_used_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Who owns the key's lifecycle: null = the user's own; 'connect' = CI-Hub's. */
+  managed_by: string | null;
 }
 
 interface CreateApiKeyResponse extends ApiKeyResponse {
@@ -22,13 +25,17 @@ interface CreateApiKeyResponse extends ApiKeyResponse {
 }
 
 // Companion Hub mints one key per connected app when you "Connect Memory" from
-// the Hub: named `app:<urn>` with the `memory` scope. These are lifecycle-owned
-// by the Hub — it revokes them by that exact name — so the UI badges them and
-// blocks renaming (a rename would orphan the Hub's revoke and strand the key).
-const MEMORY_SCOPE = 'memory';
-
-function isHubManagedKey(key: { name: string; scopes: string[] }): boolean {
-  return key.name.startsWith('app:') && key.scopes.includes(MEMORY_SCOPE);
+// the Hub. These are lifecycle-owned by the Hub — it rotates and revokes them —
+// so the UI badges them and blocks renaming (a rename would orphan the Hub's
+// revoke and strand the key).
+//
+// Read the server's recorded provenance rather than re-deriving it from the name
+// and scopes. Those drift from the truth in both directions: a connect key can
+// hold an EMPTY scope set (the bulk importer's does), which the old scope check
+// missed — so the UI offered an Edit button the API then rejected — and a user's
+// own key named `app:...` was wrongly badged as the Hub's.
+function isHubManagedKey(key: { managed_by?: string | null }): boolean {
+  return key.managed_by === API_KEY_PROVENANCE_CONNECT;
 }
 
 export function ApiKeysSection() {

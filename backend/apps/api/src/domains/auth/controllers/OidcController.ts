@@ -13,7 +13,12 @@ import { UserService } from '@ci/domains/user';
 
 import { AuthService } from '../services/AuthService';
 import { CsrfService } from '../services/CsrfService';
-import { resolveOidcCallbackUrl } from '../utils/oidcCallbackUrl';
+import {
+  OIDC_ORIGIN_BOUNCE_PARAM,
+  type OidcCallbackRequestOrigin,
+  resolveOidcCallbackUrl,
+  resolveOidcOriginBounce,
+} from '../utils/oidcCallbackUrl';
 import { renderSignupConfirmPage } from '../utils/signupConfirmPage';
 
 const COOKIE_MAX_AGE = parseDuration(config.auth.jwt.refreshTokenExpiration) ?? 0;
@@ -106,15 +111,17 @@ export class OidcController {
    * resulting localhost callback is unreachable for CI-Portal.
    */
   private getCallbackUrl(req: Request) {
-    return resolveOidcCallbackUrl(
-      {
-        forwardedProto: req.headers['x-forwarded-proto'],
-        forwardedHost: req.headers['x-forwarded-host'],
-        host: req.headers.host,
-        secure: req.secure,
-      },
-      config.auth.oidc.publicBaseUrl,
-    );
+    return resolveOidcCallbackUrl(this.requestOrigin(req), config.auth.oidc.publicBaseUrl);
+  }
+
+  /** The origin the browser used to reach this app, honouring the reverse proxy. */
+  private requestOrigin(req: Request): OidcCallbackRequestOrigin {
+    return {
+      forwardedProto: req.headers['x-forwarded-proto'],
+      forwardedHost: req.headers['x-forwarded-host'],
+      host: req.headers.host,
+      secure: req.secure,
+    };
   }
 
   /**
@@ -123,7 +130,7 @@ export class OidcController {
   @Get()
   @HttpCode(302)
   initiate(@Query('redirect') redirectParam: string | undefined, @Req() req: Request, @Res() res: Response) {
-    const { issuerUrl } = config.auth.oidc;
+    const { issuerUrl, publicBaseUrl } = config.auth.oidc;
 
     if (!issuerUrl) {
       // Redirect to the login page with an error rather than dead-ending the
@@ -132,6 +139,26 @@ export class OidcController {
       this.logger.error('OIDC initiate blocked: OIDC_ISSUER_URL is not configured');
 
       return res.redirect('/login?error=oidc_not_configured');
+    }
+
+    // Remember a safe same-origin destination (e.g. a /shared/<token> deep link,
+    // or the /api/connect consent page) so the callback can return there.
+    const redirect = safeRelativePath(redirectParam);
+
+    // The cookies below are set on the origin the browser used, but redirect_uri
+    // is always the public base URL. If those differ, the callback lands on an
+    // origin holding neither cookie and sign-in fails with `invalid_state`, so
+    // move onto the public origin before minting any of them.
+    const bounceUrl = resolveOidcOriginBounce(
+      this.requestOrigin(req),
+      publicBaseUrl,
+      redirect ?? undefined,
+      // Already bounced once — proceed here rather than risk a redirect loop.
+      req.query[OIDC_ORIGIN_BOUNCE_PARAM] !== undefined,
+    );
+
+    if (bounceUrl) {
+      return res.redirect(bounceUrl);
     }
 
     const callbackUrl = this.getCallbackUrl(req);
@@ -154,11 +181,8 @@ export class OidcController {
       maxAge: 10 * 60 * 1000,
     });
 
-    // Remember a safe same-origin destination (e.g. a /shared/<token> deep link)
-    // so the callback can return there; clear any stale value otherwise so a
-    // plain sign-in never inherits a previous attempt's redirect.
-    const redirect = safeRelativePath(redirectParam);
-
+    // Clear any stale value when there is no redirect, so a plain sign-in never
+    // inherits a previous attempt's destination.
     if (redirect) {
       res.cookie(REDIRECT_COOKIE, redirect, {
         httpOnly: true,

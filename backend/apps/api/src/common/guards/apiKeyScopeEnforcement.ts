@@ -11,6 +11,28 @@ import { REQUIRE_SCOPES_KEY } from '@ci/common/decorators';
  */
 export interface ApiKeyScopedRequest extends Request {
   apiKeyScopes?: string[];
+  /**
+   * The id of the key that authenticated. Identifies WHICH key, where
+   * {@link ApiKeyScopedRequest.apiKeyScopes} only describes what it may do — two keys
+   * can hold identical scopes, so state bound to a single caller's authority (the MCP
+   * session map) must key on this.
+   */
+  apiKeyId?: string;
+}
+
+/**
+ * Whether the caller is a **scope-limited** api-key principal — i.e. one confined
+ * by {@link enforceApiKeyScopes} to the routes its scopes name.
+ *
+ * The single source of truth for that question, so surfaces which decide what a
+ * caller may *see* (e.g. the MCP tool/resource catalog) stay in lockstep with the
+ * guard that decides what it may *do*. Session/JWT/Portal principals and
+ * empty-scope (legacy/full-access) keys are NOT scope-limited.
+ */
+export function isScopeLimitedApiKey(request: ApiKeyScopedRequest): boolean {
+  const scopes = request.apiKeyScopes;
+
+  return scopes !== undefined && scopes.length > 0;
 }
 
 /**
@@ -43,7 +65,9 @@ export function enforceApiKeyScopes(
   const scopes = request.apiKeyScopes;
 
   // Non-api-key principal, or an empty-scope (full-access) key → nothing to enforce.
-  if (scopes === undefined || scopes.length === 0) {
+  // Narrowing on `scopes` (rather than re-testing the request) keeps the compiler,
+  // not a cast, guaranteeing it is defined below.
+  if (!isScopeLimitedApiKey(request) || !scopes) {
     return;
   }
 

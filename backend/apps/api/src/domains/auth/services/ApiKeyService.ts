@@ -1,15 +1,22 @@
 import { createHash, randomBytes } from 'crypto';
 
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
 import { ApiKey, ApiKeyEntity } from '../entities/ApiKeyEntity';
-import type { CreateApiKeyDto, CreateApiKeyResponse, UpdateApiKeyDto } from '../types';
+import {
+  CONNECT_KEY_NAME_PREFIX,
+  CONNECT_PROVENANCE,
+  type ApiKeyProvenance,
+  type CreateApiKeyDto,
+  type CreateApiKeyResponse,
+  type UpdateApiKeyDto,
+} from '../types';
 
 const API_KEY_BYTE_LENGTH = 32;
 const API_KEY_HEX_LENGTH = API_KEY_BYTE_LENGTH * 2;
@@ -26,7 +33,11 @@ export class ApiKeyService {
     this.logger.setContext(ApiKeyService.name);
   }
 
-  async create(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
+  async create(
+    context: UserServiceContext,
+    data: CreateApiKeyDto,
+    managedBy: ApiKeyProvenance | null = null,
+  ): Promise<CreateApiKeyResponse> {
     const rawKey = randomBytes(API_KEY_BYTE_LENGTH).toString('hex');
     const prefix = rawKey.substring(0, PREFIX_LENGTH);
     const hashedKey = this.hash(rawKey);
@@ -39,6 +50,10 @@ export class ApiKeyService {
       scopes: data.scopes ?? [],
       expires_at: data.expires_at ? new Date(data.expires_at) : null,
       user_id: context.userId,
+      // Defaults to null — a key created through the REST API is the user's own.
+      // Only the connect flow passes a provenance, and it is never accepted from
+      // request input.
+      managed_by: managedBy,
     });
 
     const saved = await this.apiKeyRepository.save(entity);
@@ -64,11 +79,15 @@ export class ApiKeyService {
    * @param context - the owning user
    * @param data - key attributes; `name` doubles as the idempotency key
    */
-  async createOrRotate(context: UserServiceContext, data: CreateApiKeyDto): Promise<CreateApiKeyResponse> {
+  async createOrRotate(
+    context: UserServiceContext,
+    data: CreateApiKeyDto,
+    managedBy: ApiKeyProvenance | null = null,
+  ): Promise<CreateApiKeyResponse> {
     try {
-      await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
+      await this.deleteForRotate(context.userId, data.name, managedBy);
 
-      return await this.create(context, data);
+      return await this.create(context, data, managedBy);
     } catch (err) {
       // Two concurrent createOrRotate calls for the same (user, name) — e.g. a
       // re-consent racing the Hub's rotation sweep — can interleave delete/insert
@@ -80,10 +99,47 @@ export class ApiKeyService {
         throw err;
       }
 
-      await this.apiKeyRepository.delete({ user_id: context.userId, name: data.name });
+      await this.deleteForRotate(context.userId, data.name, managedBy);
 
-      return this.create(context, data);
+      try {
+        return await this.create(context, data, managedBy);
+      } catch (retryErr) {
+        if (!this.isUniqueViolation(retryErr)) {
+          throw retryErr;
+        }
+
+        // The name is held by a key of a DIFFERENT provenance — a user's own key named
+        // like a connect key. deleteForRotate deliberately will not remove it (deleting
+        // a credential we did not mint is the clobbering this filter exists to prevent),
+        // so the insert can never win and retrying forever would just 500 the consent
+        // flow with nothing actionable in it. Name the collision instead.
+        throw new ConflictException(
+          `An API key named "${data.name}" already exists and is not managed by Companion Hub. Rename or delete it, then connect the app again.`,
+        );
+      }
     }
+  }
+
+  /**
+   * The rotate half of {@link createOrRotate}: drop the key this caller is replacing.
+   *
+   * Matched on provenance as well as `(user, name)`, so the connect flow can only ever
+   * rotate a key the connect flow minted. A same-named key of a DIFFERENT provenance is
+   * left alone: the unique index on `(user_id, name) WHERE name LIKE 'app:%'` then makes
+   * the insert fail loudly (23505) instead of silently deleting the user's own key —
+   * which is the same cross-namespace clobbering `removeByName` and `update` refuse.
+   */
+  private async deleteForRotate(
+    userId: string,
+    name: string,
+    managedBy: ApiKeyProvenance | null,
+  ): Promise<void> {
+    await this.apiKeyRepository.delete({
+      user_id: userId,
+      name,
+      // TypeORM equality criteria never match NULL — an explicit IsNull() is required.
+      managed_by: managedBy ?? IsNull(),
+    });
   }
 
   /** Whether a caught error is a Postgres unique-violation (SQLSTATE 23505). */
@@ -102,6 +158,9 @@ export class ApiKeyService {
    * `ci.users` id; this recovers it so the fresh key is minted under the same
    * user.
    *
+   * Scoped to `managed_by = 'connect'`, so a user's own key can never be rotated
+   * by this path no matter what they named it.
+   *
    * Single-owner-appliance invariant: `(user_id, name)` is unique for `app:%`
    * names (migration 20260708115547), so on the appliance there is at most one
    * such row. On a hypothetical multi-user server several users could each hold
@@ -109,7 +168,10 @@ export class ApiKeyService {
    * (log + return null) rather than rotate an arbitrary owner's key.
    */
   async findUserIdByName(name: string): Promise<string | null> {
-    const keys = await this.apiKeyRepository.find({ where: { name }, select: ['user_id'] });
+    const keys = await this.apiKeyRepository.find({
+      where: { name, managed_by: CONNECT_PROVENANCE },
+      select: ['user_id'],
+    });
 
     if (keys.length === 0) {
       return null;
@@ -179,8 +241,9 @@ export class ApiKeyService {
     // — not just in the UI, which only hides the control. Deleting is still
     // allowed (a user may deliberately force-revoke). A no-op submit that echoes
     // the current name/scopes is tolerated so idempotent clients don't 403.
+    const renaming = data.name !== undefined && data.name !== key.name;
+
     if (this.isHubManagedKey(key)) {
-      const renaming = data.name !== undefined && data.name !== key.name;
       const rescoping = data.scopes !== undefined && !this.sameScopes(data.scopes, key.scopes ?? []);
 
       if (renaming || rescoping) {
@@ -188,6 +251,18 @@ export class ApiKeyService {
           'This key is managed by Companion Hub and cannot be renamed or re-scoped. Disconnect the app from Hub instead.',
         );
       }
+    }
+
+    // The `app:` namespace is reserved (see CONNECT_KEY_NAME_PREFIX), but only for
+    // names being newly CHOSEN. Enforcing it on the request body instead would 400 a
+    // client that merely echoes a key's own current `app:` name — which is what the
+    // settings dialog submits — and would therefore leave the grandfathered
+    // `app:`-named user keys this release hands back to their owners uneditable, the
+    // opposite of the intent. An unchanged name is not a naming choice, so let it pass.
+    if (renaming && data.name?.startsWith(CONNECT_KEY_NAME_PREFIX)) {
+      throw new ForbiddenException(
+        `Key names starting with "${CONNECT_KEY_NAME_PREFIX}" are reserved for connected apps`,
+      );
     }
 
     if (data.name !== undefined) {
@@ -204,15 +279,16 @@ export class ApiKeyService {
   }
 
   /**
-   * A Hub-managed connection key: minted by the connect flow, named `app:<urn>`,
-   * and lifecycle-owned by CI-Hub (which revokes it by that exact name). Keyed on
-   * the `app:` name prefix alone — connect keys now carry per-app scope sets
-   * (including an EMPTY set for broad-access apps like the bulk importer), so a
-   * scope check would miss some connect keys and let a rename orphan the Hub's
-   * revoke-by-name.
+   * A Hub-managed connection key: minted by the connect flow and lifecycle-owned by
+   * CI-Hub, so the user may not rename or re-scope it out from under the app.
+   *
+   * Read from recorded provenance, NOT the `app:` name prefix: names are free-form,
+   * so prefix-matching also caught a user's own `app:home-assistant` key and refused
+   * to let them edit it — while the connect flow's revoke/rotate happily operated on
+   * it. Scopes are no discriminator either (a connect key may hold an EMPTY set).
    */
-  private isHubManagedKey(key: Pick<ApiKeyEntity, 'name'>): boolean {
-    return key.name.startsWith('app:');
+  private isHubManagedKey(key: Pick<ApiKeyEntity, 'managed_by'>): boolean {
+    return key.managed_by === CONNECT_PROVENANCE;
   }
 
   /** Order-insensitive scope-set equality (scope lists are small). */
@@ -241,7 +317,9 @@ export class ApiKeyService {
    *
    * This is a system-level revoke used by the trusted connect flow: CI-Hub (via
    * signed forward-auth) revokes "the key for app X" by its stable name
-   * (`app:<urn>`) without knowing the owning `ci.users` id.
+   * (`app:<urn>`) without knowing the owning `ci.users` id. Scoped to
+   * `managed_by = 'connect'`, so it can only ever delete keys the connect flow
+   * minted — a user's hand-made `app:...` key is untouchable here.
    *
    * Single-owner-appliance invariant: `(user_id, name)` is unique for `app:%`
    * names (migration 20260708115547), so exactly one row matches and this
@@ -251,7 +329,7 @@ export class ApiKeyService {
    * kept (revoke must stay idempotent), but the violation is surfaced.
    */
   async removeByName(name: string): Promise<number> {
-    const result = await this.apiKeyRepository.delete({ name });
+    const result = await this.apiKeyRepository.delete({ name, managed_by: CONNECT_PROVENANCE });
     const removed = result.affected ?? 0;
 
     if (removed > 1) {
@@ -263,7 +341,7 @@ export class ApiKeyService {
     return removed;
   }
 
-  async validateKey(rawKey: string): Promise<{ userId: string; scopes: string[] } | null> {
+  async validateKey(rawKey: string): Promise<{ keyId: string; userId: string; scopes: string[] } | null> {
     if (rawKey.length !== API_KEY_HEX_LENGTH || !API_KEY_HEX_REGEX.test(rawKey)) {
       return null;
     }
@@ -287,8 +365,10 @@ export class ApiKeyService {
 
     // `scopes` drives least-privilege enforcement downstream (see
     // enforceApiKeyScopes). An empty array is a legacy full-access key,
-    // preserved as-is.
-    return { userId: key.user_id, scopes: key.scopes ?? [] };
+    // preserved as-is. `keyId` identifies WHICH key authenticated: two keys of the
+    // same user can hold identical scopes (both chat agents do), so anything binding
+    // state to a caller's authority needs the key itself, not just its powers.
+    return { keyId: key.id, userId: key.user_id, scopes: key.scopes ?? [] };
   }
 
   private hash(key: string): string {
