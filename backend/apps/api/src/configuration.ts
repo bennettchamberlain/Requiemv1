@@ -272,4 +272,19 @@ if (!parsed.geocoding.apiKey) {
   );
 }
 
+// The field-encryption key protects OAuth access/refresh tokens and provider
+// client secrets at rest. The config default is 64 hex zeros — valid by format
+// but cryptographically useless. Surface it loudly (like the geocode key) so it
+// is never silently run in a real deployment. Refuse to boot outside dev.
+if (/^0{64}$/i.test(parsed.auth.encryption.fieldKey)) {
+  const msg =
+    '[configuration] FIELD_ENCRYPTION_KEY is the all-zero default — OAuth tokens and ' +
+    'provider client secrets would be encrypted with a well-known key. Set a real 256-bit key.';
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(msg);
+  }
+
+  console.warn(msg);
+}
+
 export default parsed;

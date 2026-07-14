@@ -22,7 +22,14 @@ export function normalizeEmail(raw: string | null | undefined): string | null {
     return null;
   }
 
-  const normalized = raw.trim().toLowerCase();
+  // Many sources hand us the full RFC 5322 mailbox ("Display Name <addr@x>",
+  // or "<addr@x>") rather than a bare address. Extract the angle-bracketed
+  // address first — otherwise the display name is folded into the identifier
+  // and the same mailbox fragments across many Person entities.
+  const angle = raw.match(/<([^>]+)>/);
+  const candidate = angle ? angle[1] : raw;
+
+  const normalized = candidate.trim().toLowerCase();
 
   return normalized.length > 0 ? normalized : null;
 }

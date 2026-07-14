@@ -302,7 +302,14 @@ export class PGBossEventService extends EventService implements OnModuleInit, On
               `Failed to complete job in queue ${queueName}`,
               err instanceof Error ? err : new Error(String(err)),
             );
-            await this.boss.fail(queueName, job.id);
+            // Persist the failure reason in the job's output so it survives in
+            // pgboss.job — without this arg the error is lost and a failed job
+            // is undiagnosable after the fact.
+            await this.boss.fail(queueName, job.id, {
+              message: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined,
+              failedAt: new Date().toISOString(),
+            });
           }
         });
       }

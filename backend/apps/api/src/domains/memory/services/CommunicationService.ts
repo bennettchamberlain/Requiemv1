@@ -501,8 +501,6 @@ export class CommunicationService {
   ): Promise<Communication | null> {
     const updateData: Partial<CommunicationEntity> = {};
 
-    console.log('update', data);
-
     if (data.device_id) {
       updateData.deviceId = data.device_id;
     }
@@ -588,11 +586,8 @@ export class CommunicationService {
       },
     });
 
-    console.log('existing communnication', communication);
-
     if (communication) {
       Object.assign(communication, updateData);
-      console.log('communication update', communication);
       await this.communicationRepository.save(communication);
     } else {
       return null;
