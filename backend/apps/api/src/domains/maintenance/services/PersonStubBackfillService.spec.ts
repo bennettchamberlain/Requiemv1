@@ -135,7 +135,10 @@ describe('PersonStubBackfillService.backfill', () => {
       }
     }
 
-    expect(emails.sort()).toEqual(['alice <alice@example.com>', 'bcc@example.com', 'cc@example.com'].sort());
+    // 'Alice <alice@Example.com>' normalizes to the bare, lowercased address —
+    // the display name is stripped so the same mailbox does not fragment across
+    // Person entities (see normalizeEmail).
+    expect(emails.sort()).toEqual(['alice@example.com', 'bcc@example.com', 'cc@example.com'].sort());
     expect(phones).toEqual(['4155550100']);
     expect(payload.entities.every((e) => e.entityType === 'Person')).toBe(true);
   });
