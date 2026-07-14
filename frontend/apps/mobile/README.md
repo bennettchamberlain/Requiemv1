@@ -88,6 +88,52 @@ adb shell am start -n com.companionintelligence.app/.MainActivity
 (Simulator builds need **no code signing**. List iOS sims with
 `xcrun simctl list devices available`; Android AVDs with `emulator -list-avds`.)
 
+## CI builds (GitHub Actions)
+
+`.github/workflows/mobile-build.yml` builds both apps in CI (modelled on CI-Hub's
+`desktop-build.yml`). Trigger it from **Actions → Mobile Build → Run workflow**, or by
+pushing a `mobile-v*` tag:
+
+```bash
+git tag mobile-v0.1.0 && git push origin mobile-v0.1.0
+```
+
+Two jobs run in parallel and upload their output as run artifacts:
+
+| Job | Runner | Artifact | Installable on |
+|-----|--------|----------|----------------|
+| **Android (APK)** | `ubuntu-latest` | `companion-android-apk` (debug APK) | any device via `adb install` / sideload |
+| **iOS (Simulator .app)** | `macos-latest` | `companion-ios-simulator-app` (zipped `.app`) | iOS Simulator only |
+
+Each job runs: root `yarn install` → `yarn workspace @ci/fe-web build` (PWA disabled via
+the `VITE_DISABLE_PWA` env) → mobile `yarn install` → `cap sync` → native build
+(`gradlew assembleDebug` / `xcodebuild -sdk iphonesimulator`) → `upload-artifact`.
+Download the artifacts from the run's summary page, then:
+
+```bash
+# Android — unzip the artifact, then:
+adb install -r app-debug.apk
+
+# iOS Simulator — unzip companion-ios-simulator.app.zip, then:
+xcrun simctl install booted App.app
+xcrun simctl launch booted com.companionintelligence.app
+```
+
+### Signed / store-ready builds (needs secrets)
+
+The default jobs are **unsigned** so they run with no credentials. For device- and
+store-ready artifacts, add signing and swap the build step:
+
+- **Android release** — add repo secrets `ANDROID_KEYSTORE_BASE64` (base64 of your `.jks`),
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`; decode the
+  keystore in a step, wire it into `android/app/build.gradle`'s `signingConfigs`, and run
+  `./gradlew assembleRelease` (or `bundleRelease` for the Play Store).
+- **Signed iOS `.ipa`** — import an Apple Developer cert + provisioning profile (e.g.
+  `apple-actions/import-codesign-certs`), then replace the Simulator build with
+  `xcodebuild archive … -exportArchive -exportOptionsPlist …`. CI's default Xcode builds
+  the Simulator target fine; a device archive should use an Xcode matching the **iOS-26 SDK
+  fixes** the project carries (see below).
+
 ## On-device live reload
 
 Run the web dev server (`yarn workspace @ci/fe-web dev`, bound to `0.0.0.0`), then:
