@@ -31,13 +31,15 @@ export class BrowserActivityResolver {
   ): Promise<BrowserActivityConnection> {
     const serviceContext = toServiceContext(context);
 
-    const { entities, hasNextPage, hasPreviousPage, totalCount } =
-      await this.browserActivityService.findPage(serviceContext, {
+    const { entities, hasNextPage, hasPreviousPage, totalCount } = await this.browserActivityService.findPage(
+      serviceContext,
+      {
         first: pagination.first,
         last: pagination.last,
         afterId: pagination.after ? GlobalUID.decode(pagination.after).id : null,
         beforeId: pagination.before ? GlobalUID.decode(pagination.before).id : null,
-      });
+      },
+    );
 
     const edges: BrowserActivityEdge[] = entities.map((entity) => {
       const node = BrowserActivityType.toType(entity);
