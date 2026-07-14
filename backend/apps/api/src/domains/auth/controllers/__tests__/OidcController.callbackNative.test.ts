@@ -31,13 +31,13 @@ function makeController() {
 }
 
 function makeRes() {
-  const res = {
-    clearCookie: jest.fn(() => res),
-    cookie: jest.fn(() => res),
-    redirect: jest.fn(() => res),
+  // Plain spies (no `return res` chaining) — the callback never chains these, and a
+  // self-referential initializer would give `res` an inferred circular `any` type (TS7022).
+  return {
+    clearCookie: jest.fn(),
+    cookie: jest.fn(),
+    redirect: jest.fn(),
   };
-
-  return res;
 }
 
 // A request carrying the native client marker plus whatever state/pkce cookies the case needs.
