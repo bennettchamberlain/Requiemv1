@@ -26,12 +26,14 @@ function cluster(
   l0Class: string,
   pOccur: number,
   dayparts: [string, number][],
+  scheduled = false,
 ) {
   return {
     clusterId,
     name,
     l0Class,
     pOccur,
+    scheduled,
     daypartProbs: dayparts.map(([label, probability]) => ({ label, probability })),
   };
 }
@@ -46,9 +48,15 @@ const week: WeekForecast = {
       cluster('c-focus', 'Deep Focus', 'WORK', [0.85, 0.12, 0.1, 0.9, 0.88, 0.9, 0.82][i], [
         ['morning', 0.7],
       ]),
-      cluster('c-gym', 'Gym Session', 'EXERCISE', [0.15, 0.55, 0.12, 0.08, 0.78, 0.1, 0.72][i], [
-        ['evening', 0.8],
-      ]),
+      // Tuesday gym is on the calendar → pinned + ringed (known, not predicted).
+      cluster(
+        'c-gym',
+        'Gym Session',
+        'EXERCISE',
+        i === 4 ? 1.0 : [0.15, 0.55, 0.12, 0.08, 0.78, 0.1, 0.72][i],
+        [['evening', 0.8]],
+        i === 4,
+      ),
       cluster('c-groceries', 'Groceries', 'ERRAND', [0.2, 0.74, 0.3, 0.08, 0.06, 0.1, 0.14][i], [
         ['afternoon', 0.6],
       ]),
@@ -58,6 +66,9 @@ const week: WeekForecast = {
       cluster('c-family', 'Family Call', 'SOCIAL', [0.1, 0.18, 0.7, 0.12, 0.06, 0.08, 0.1][i], [
         ['evening', 0.55],
       ]),
+      // A calendar-only cluster with no statistical history — appears solely on
+      // its booked day (Wed) via the Layer 2 overlay.
+      cluster('c-dentist', 'Dentist', 'ERRAND', i === 3 ? 1.0 : 0, [['afternoon', 1]], i === 3),
     ].filter((c) => c.pOccur >= 0.05),
   })),
 };
@@ -75,9 +86,11 @@ const due: DueForecast = {
       dueInDays: -9,
       window: [-9, -7],
       overdue: true,
+      scheduledDate: null,
       confidence: 0.72,
     },
     {
+      // Reconciled: a booked catch-up on Sunday → shown as "scheduled Sun", not overdue.
       clusterId: 'c-family',
       name: 'Family Call',
       l0Class: 'SOCIAL',
@@ -87,6 +100,7 @@ const due: DueForecast = {
       dueInDays: 2,
       window: [1, 4],
       overdue: false,
+      scheduledDate: '2026-07-12',
       confidence: 0.81,
     },
     {
@@ -99,6 +113,7 @@ const due: DueForecast = {
       dueInDays: 6,
       window: [3, 9],
       overdue: false,
+      scheduledDate: null,
       confidence: 0.66,
     },
   ],

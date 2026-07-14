@@ -22,6 +22,8 @@ export interface WeekForecastCluster {
   l0_class: string;
   p_occur: number;
   daypart_probs: Record<string, number>;
+  /** True when a confirmed/tentative calendar event pins this cell (Layer 2). */
+  scheduled?: boolean;
 }
 
 export interface WeekForecastDay {
@@ -46,6 +48,8 @@ export interface DueItem {
   due_in_days: number;
   window: [number, number];
   overdue: boolean;
+  /** ISO date of the next matching booked event, or null (Layer 1 reconciliation). */
+  scheduled_date: string | null;
   confidence: number;
 }
 

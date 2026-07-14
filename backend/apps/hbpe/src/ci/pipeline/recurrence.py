@@ -64,6 +64,18 @@ BUCKETS_PER_DAY   = 48
 BUCKETS_PER_PART  = 12      # 4 dayparts × 12 half-hour buckets
 DAYPART_NAMES     = ("night", "morning", "afternoon", "evening")
 
+# ── Schedule reconciliation (future ci.events × recurrence) ─────────────────────
+# The profiler is retrospective (statistical expectation from token_stream). The
+# calendar is prospective ground truth. Reconciliation lets ground truth override
+# expectation: a booked haircut is not "due", and a booked catch-up is not the
+# "16 days since friends" deviation. Both forecasts join events → clusters via
+# hbpe.l1_event_cluster (future events are labeled by the nightly Qwen pass just
+# like past ones), so the link already exists — we just consume it here.
+RECON_HORIZON_DAYS = 45           # lookahead for a booked instance in the due list
+SCHED_P_CONFIRMED  = 1.0          # a confirmed calendar event ≈ certain occurrence
+SCHED_P_TENTATIVE  = 0.9          # tentative: very likely, not certain
+_WEEKDAY_IDX = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
+
 
 # ── Profile building ───────────────────────────────────────────────────────────
 
@@ -287,6 +299,163 @@ def _renewal_probs(gaps: list[int], days_since_last: int, horizon: int) -> list[
     return probs
 
 
+# ── Calendar-declared recurrence (RRULE) ───────────────────────────────────────
+
+def parse_recurrence(pattern) -> dict | None:
+    """
+    Normalize ci.events.recurrence_pattern into {freq, interval, byday}.
+
+    Accepts the shapes importers emit: a structured dict
+    (``{"freq": "WEEKLY", "interval": 2, "byday": ["MO", "WE"]}``) or an
+    iCalendar RRULE string (``"FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE"``, with or
+    without a leading ``"RRULE:"``). ``byday`` is returned as sorted weekday
+    ints (Mon=0). Returns None for anything unparseable — callers fall back to
+    the statistical estimate, so a weird pattern degrades to "no calendar hint"
+    rather than an error.
+    """
+    if not pattern:
+        return None
+
+    if isinstance(pattern, str):
+        s = pattern.strip()
+        if s.upper().startswith("RRULE:"):
+            s = s[6:]
+        parts = {k.upper(): v for k, v in (kv.split("=", 1) for kv in s.split(";") if "=" in kv)}
+    elif isinstance(pattern, dict):
+        parts = {str(k).upper(): v for k, v in pattern.items()}
+    else:
+        return None
+
+    freq = str(parts.get("FREQ", "")).upper() or None
+    if freq not in ("DAILY", "WEEKLY", "MONTHLY"):
+        return None
+
+    try:
+        interval = max(int(parts.get("INTERVAL", 1) or 1), 1)
+    except (TypeError, ValueError):
+        interval = 1
+
+    raw = parts.get("BYDAY", parts.get("BYWEEKDAY", []))
+    if isinstance(raw, str):
+        raw = [d for d in raw.split(",") if d]
+    byday = sorted({_WEEKDAY_IDX[c] for c in
+                    (str(d).strip().upper()[-2:] for d in (raw or []))
+                    if c in _WEEKDAY_IDX})
+    return {"freq": freq, "interval": interval, "byday": byday}
+
+
+def expand_occurrences(rule: dict | None, series_start: datetime.date,
+                       win_start: datetime.date, win_end: datetime.date) -> list[datetime.date]:
+    """
+    Concrete occurrence dates of a parsed rule within [win_start, win_end].
+
+    Day-by-day membership test over the (short) forecast window — no calendar
+    arithmetic beyond weekday / day-of-month, which keeps DST and month-length
+    edge cases out of a spike.
+    """
+    if not rule or win_end < win_start:
+        return []
+    freq, interval, byday = rule["freq"], rule["interval"], rule["byday"]
+    out: list[datetime.date] = []
+    d = max(win_start, series_start)
+    while d <= win_end:
+        delta = (d - series_start).days
+        hit = False
+        if delta >= 0:
+            if freq == "DAILY":
+                hit = delta % interval == 0
+            elif freq == "WEEKLY":
+                weekday_ok = (d.weekday() in byday) if byday else (d.weekday() == series_start.weekday())
+                hit = weekday_ok and (delta // 7) % interval == 0
+            elif freq == "MONTHLY":
+                months = (d.year - series_start.year) * 12 + (d.month - series_start.month)
+                hit = d.day == series_start.day and months % interval == 0
+        if hit:
+            out.append(d)
+        d += datetime.timedelta(days=1)
+    return out
+
+
+def _rrule_cadence_days(rule: dict | None) -> float | None:
+    """Effective inter-arrival gap (days) implied by a recurrence rule, or None."""
+    if not rule:
+        return None
+    base = {"DAILY": 1, "WEEKLY": 7, "MONTHLY": 30}.get(rule["freq"])
+    if base is None:
+        return None
+    if rule["freq"] == "WEEKLY" and rule["byday"]:
+        # N weekdays per cycle → occurs N times per `interval` weeks
+        return round(7.0 * rule["interval"] / len(rule["byday"]), 1)
+    return float(base * rule["interval"])
+
+
+# ── Upcoming-event loading + reconciliation ─────────────────────────────────────
+
+# Future (or recurring) events that carry an L1 cluster assignment. Recurring
+# rows are pulled regardless of start_time (their series_start is usually in the
+# past); one-off rows are bounded to the lookahead window. cancelled / no_show /
+# completed are excluded — a fallen-through booking must NOT suppress a due item.
+_UPCOMING_EVENTS_SQL = """
+    SELECT ec.cluster_id::text AS cluster_id,
+           c.label, c.l0_class,
+           e.start_time, e.status, e.is_recurring, e.recurrence_pattern
+    FROM hbpe.l1_event_cluster ec
+    JOIN ci.events e      ON e.event_id  = ec.event_id
+    JOIN hbpe.l1_clusters c ON c.cluster_id = ec.cluster_id AND c.is_active
+    WHERE e.user_id     = %(user_id)s
+      AND e.is_deleted  = FALSE
+      AND e.status IN ('confirmed', 'tentative')
+      AND (
+            e.is_recurring = TRUE
+         OR (e.start_time >= (NOW() AT TIME ZONE 'UTC')::date
+             AND e.start_time <  (NOW() AT TIME ZONE 'UTC')::date + %(horizon)s::int)
+      )
+"""
+
+
+def _load_upcoming_events(user_id: str, horizon_days: int) -> list[dict]:
+    """Rows for reconciliation: one per (labeled, active) upcoming/recurring event."""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(_UPCOMING_EVENTS_SQL,
+                        {"user_id": user_id, "horizon": horizon_days})
+            rows = [dict(r) for r in cur.fetchall()]
+    for r in rows:
+        r["display_name"] = (r.pop("label") or "").replace("_", " ").title()
+    return rows
+
+
+def _scheduled_by_cluster(events: list[dict], win_start: datetime.date,
+                          win_end: datetime.date) -> dict[str, list[dict]]:
+    """
+    Map cluster_id → date-sorted [{date, status, name, l0_class}] of the concrete
+    occurrences landing in [win_start, win_end].
+
+    Non-recurring events contribute their own day; recurring events are expanded
+    from recurrence_pattern, falling back to their single start day when the rule
+    is absent/unparseable so a recurring-but-opaque event still reconciles once.
+    """
+    out: dict[str, list[dict]] = {}
+    for e in events:
+        st = e["start_time"]
+        start_date = st.date() if hasattr(st, "date") else st
+        if e.get("is_recurring"):
+            occ = expand_occurrences(parse_recurrence(e.get("recurrence_pattern")),
+                                     start_date, win_start, win_end)
+            if not occ and win_start <= start_date <= win_end:
+                occ = [start_date]
+        else:
+            occ = [start_date] if win_start <= start_date <= win_end else []
+        for d in occ:
+            out.setdefault(e["cluster_id"], []).append({
+                "date": d, "status": e["status"],
+                "name": e["display_name"], "l0_class": e["l0_class"],
+            })
+    for occ in out.values():
+        occ.sort(key=lambda o: o["date"])
+    return out
+
+
 def week_forecast(
     user_id: str,
     days: int = 7,
@@ -339,6 +508,34 @@ def week_forecast(
                     "l0_class":      p["l0_class"],
                     "p_occur":       round(p_occur, 4),
                     "daypart_probs": daypart_probs,
+                    "scheduled":     False,
+                })
+
+    # Layer 2 — overlay booked calendar events as near-certain occurrences. A
+    # confirmed event pins its cell to ~1.0 and flags it `scheduled`; a
+    # calendar-only cluster with no statistical profile still appears.
+    upcoming = _load_upcoming_events(user_id, days + 2)
+    scheduled = _scheduled_by_cluster(upcoming, start, start + datetime.timedelta(days=days - 1))
+    for i in range(days):
+        d = start + datetime.timedelta(days=i)
+        by_cid = {c["cluster_id"]: c for c in day_cluster_probs[i]}
+        for cid, occs in scheduled.items():
+            match = next((o for o in occs if o["date"] == d), None)
+            if not match:
+                continue
+            sched_p = SCHED_P_CONFIRMED if match["status"] == "confirmed" else SCHED_P_TENTATIVE
+            cell = by_cid.get(cid)
+            if cell:
+                cell["p_occur"] = max(cell["p_occur"], sched_p)
+                cell["scheduled"] = True
+            else:
+                day_cluster_probs[i].append({
+                    "cluster_id":    cid,
+                    "name":          match["name"],
+                    "l0_class":      match["l0_class"],
+                    "p_occur":       sched_p,
+                    "daypart_probs": {},
+                    "scheduled":     True,
                 })
 
     out = []
@@ -365,29 +562,68 @@ def due_list(user_id: str) -> list[dict]:
     ``due_in_days`` may be negative (past the median but not yet past p90);
     ``overdue`` flips once days_since_last exceeds the p90 gap — the deviation
     signal ("you usually do this every ~7 days; it's been 16").
+
+    Reconciliation (Layer 1): a cluster with a matching confirmed/tentative
+    event in the lookahead window is annotated with ``scheduled_date`` and
+    never flagged overdue — a booked catch-up is handled, not neglected.
+
+    Calendar-declared recurrence (Layer 3): a cluster that lacks the ≥3
+    statistical intervals but carries an RRULE (weekly standup, monthly rent)
+    still gets a due prediction, using the RRULE cadence as its interval.
     Sorted: overdue first, then soonest due.
     """
     today = datetime.datetime.utcnow().date()
+    win_end = today + datetime.timedelta(days=RECON_HORIZON_DAYS)
+    upcoming = _load_upcoming_events(user_id, RECON_HORIZON_DAYS)
+    scheduled = _scheduled_by_cluster(upcoming, today, win_end)
+
+    # Shortest RRULE-implied cadence per cluster (Layer 3 seeding source).
+    cadence: dict[str, float] = {}
+    for e in upcoming:
+        if e.get("is_recurring"):
+            c = _rrule_cadence_days(parse_recurrence(e.get("recurrence_pattern")))
+            if c and c < cadence.get(e["cluster_id"], float("inf")):
+                cadence[e["cluster_id"]] = c
+
     out = []
     for p in _load_profiles(user_id):
+        cid = p["l1_cluster_id"]
         conf = float(p["periodicity_confidence"] or 0.0)
         gaps = list(p["intervals_days"] or [])
-        if conf < DUE_CONFIDENCE_MIN or len(gaps) < 3:
+        calendar_recurring = cid in cadence
+
+        periodic = conf >= DUE_CONFIDENCE_MIN and len(gaps) >= 3
+        # Layer 3: accept a calendar-recurring cluster with even one observed gap
+        # (we still need last_seen from the profile to know how overdue it is).
+        if not periodic and not (calendar_recurring and len(gaps) >= 1):
             continue
+
         since = (today - p["last_seen"]).days
-        median = float(p["interval_median"])
+        if periodic:
+            median = float(p["interval_median"])
+            p25, p75, p90 = (float(p["interval_p25"]),
+                             float(p["interval_p75"]),
+                             float(p["interval_p90"]))
+        else:
+            # RRULE cadence has no empirical spread — keep the window tight and
+            # push the overdue threshold out by half a cycle.
+            median = cadence[cid]
+            p25, p75, p90 = median, median, median * 1.5
+
+        occ = scheduled.get(cid)
+        scheduled_date = occ[0]["date"].isoformat() if occ else None
         out.append({
-            "cluster_id":           p["l1_cluster_id"],
+            "cluster_id":           cid,
             "name":                 p["display_name"],
             "l0_class":             p["l0_class"],
             "last_seen":            p["last_seen"].isoformat(),
             "days_since_last":      since,
-            "median_interval_days": median,
+            "median_interval_days": round(median, 1),
             "due_in_days":          round(median - since, 1),
-            "window":               [round(float(p["interval_p25"]) - since, 1),
-                                     round(float(p["interval_p75"]) - since, 1)],
-            "overdue":              since > float(p["interval_p90"]),
-            "confidence":           round(conf, 3),
+            "window":               [round(p25 - since, 1), round(p75 - since, 1)],
+            "overdue":              since > p90 and scheduled_date is None,
+            "scheduled_date":       scheduled_date,
+            "confidence":           round(max(conf, DUE_CONFIDENCE_MIN if calendar_recurring else conf), 3),
         })
     return sorted(out, key=lambda r: (not r["overdue"], r["due_in_days"]))
 

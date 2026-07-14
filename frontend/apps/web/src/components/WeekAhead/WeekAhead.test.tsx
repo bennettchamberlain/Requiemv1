@@ -15,7 +15,10 @@ const DAY_DATES = [
   '2026-07-16',
 ];
 
-function makeWeek(perDayProbs: Record<string, number[]>): WeekForecast {
+function makeWeek(
+  perDayProbs: Record<string, number[]>,
+  scheduledOn: Record<string, number[]> = {},
+): WeekForecast {
   return {
     horizon: '7d',
     generatedAt: '2026-07-09T09:41:00Z',
@@ -29,6 +32,7 @@ function makeWeek(perDayProbs: Record<string, number[]>): WeekForecast {
           name,
           l0Class: name === 'Gym Session' ? 'EXERCISE' : 'WORK',
           pOccur: probs[i],
+          scheduled: (scheduledOn[name] ?? []).includes(i),
           daypartProbs: [{ label: 'morning', probability: 0.7 }],
         })),
     })),
@@ -48,6 +52,7 @@ const DUE: DueForecast = {
       dueInDays: -9,
       window: [-9, -7],
       overdue: true,
+      scheduledDate: null,
       confidence: 0.72,
     },
     {
@@ -60,6 +65,7 @@ const DUE: DueForecast = {
       dueInDays: 6,
       window: [3, 9],
       overdue: false,
+      scheduledDate: null,
       confidence: 0.66,
     },
   ],
@@ -115,6 +121,38 @@ describe('WeekAhead', () => {
     expect(screen.getByText('All caught up — take a break!')).toBeInTheDocument();
     // No due rows render alongside the empty-state message
     expect(container.querySelectorAll('.grid.grid-cols-\\[auto_minmax\\(0\\,1fr\\)\\]')).toHaveLength(0);
+  });
+
+  it('rings scheduled grid cells and reframes booked due items as scheduled', () => {
+    const week = makeWeek(
+      { 'Gym Session': [0.2, 0.5, 0.1, 0.1, 1.0, 0.1, 0.7] },
+      { 'Gym Session': [4] }, // day index 4 is on the calendar
+    );
+    const due: DueForecast = {
+      generatedAt: '2026-07-09T09:41:00Z',
+      due: [
+        {
+          clusterId: 'id-family',
+          name: 'Family Call',
+          l0Class: 'SOCIAL',
+          lastSeen: '2026-06-27',
+          daysSinceLast: 12,
+          medianIntervalDays: 14,
+          dueInDays: 2,
+          window: [1, 4],
+          overdue: false,
+          scheduledDate: '2026-07-12',
+          confidence: 0.8,
+        },
+      ],
+    };
+    const { container } = render(<WeekAhead week={week} due={due} />);
+
+    // Exactly one grid cell carries the scheduled ring
+    expect(container.querySelectorAll('.ring-2')).toHaveLength(1);
+    // The booked due item is reframed, not shown as a countdown
+    expect(screen.getByText(/scheduled \w+/)).toBeInTheDocument();
+    expect(screen.getByLabelText('on your calendar')).toBeInTheDocument();
   });
 
   it('renders nothing when no cluster clears the floor', () => {

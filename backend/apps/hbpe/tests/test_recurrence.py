@@ -119,6 +119,7 @@ def _weekly_profile(**overrides) -> dict:
 
 
 def test_week_forecast_shape_and_sorting(monkeypatch):
+    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [
         _weekly_profile(),
         _weekly_profile(l1_cluster_id="c2", display_name="Groceries",
@@ -148,6 +149,7 @@ def test_week_forecast_shape_and_sorting(monkeypatch):
 
 
 def test_week_forecast_skips_single_occurrence_clusters(monkeypatch):
+    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
     monkeypatch.setattr(rec, "_load_profiles", lambda uid: [
         _weekly_profile(n_occurrence_days=1, intervals_days=[]),
     ])
@@ -162,6 +164,7 @@ def test_due_list_flags_overdue_and_sorts_first(monkeypatch):
                               l0_class="SOCIAL",
                               last_seen=today - datetime.timedelta(days=16))
     low_conf = _weekly_profile(l1_cluster_id="c3", periodicity_confidence=0.1)
+    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
     monkeypatch.setattr(rec, "_load_profiles",
                         lambda uid: [fresh, overdue, low_conf])
 
@@ -171,6 +174,131 @@ def test_due_list_flags_overdue_and_sorts_first(monkeypatch):
     assert due[0]["overdue"] is True
     assert due[0]["days_since_last"] == 16
     assert due[0]["due_in_days"] == 7.0 - 16
+    assert due[0]["scheduled_date"] is None
     assert due[1]["overdue"] is False
     assert due[1]["due_in_days"] == 5.0
     assert due[1]["window"] == [5.0, 5.0]
+
+
+# ── RRULE parse / expand / cadence (Layer 3) ────────────────────────────────────
+
+
+def test_parse_recurrence_accepts_string_and_dict():
+    assert rec.parse_recurrence("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE") == {
+        "freq": "WEEKLY", "interval": 2, "byday": [0, 2]}
+    assert rec.parse_recurrence("RRULE:FREQ=DAILY") == {
+        "freq": "DAILY", "interval": 1, "byday": []}
+    assert rec.parse_recurrence({"freq": "monthly", "interval": 1}) == {
+        "freq": "MONTHLY", "interval": 1, "byday": []}
+
+
+def test_parse_recurrence_rejects_junk():
+    assert rec.parse_recurrence(None) is None
+    assert rec.parse_recurrence("") is None
+    assert rec.parse_recurrence("FREQ=HOURLY") is None
+    assert rec.parse_recurrence({"nope": 1}) is None
+
+
+def test_expand_occurrences_weekly_byday():
+    rule = rec.parse_recurrence("FREQ=WEEKLY;BYDAY=TU")
+    occ = rec.expand_occurrences(rule, datetime.date(2026, 1, 6),      # a Tuesday
+                                 datetime.date(2026, 1, 5), datetime.date(2026, 1, 27))
+    assert occ == [datetime.date(2026, 1, 6), datetime.date(2026, 1, 13),
+                   datetime.date(2026, 1, 20), datetime.date(2026, 1, 27)]
+
+
+def test_expand_occurrences_biweekly_skips_alternate_weeks():
+    rule = rec.parse_recurrence("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO")
+    occ = rec.expand_occurrences(rule, datetime.date(2026, 1, 5),      # a Monday
+                                 datetime.date(2026, 1, 5), datetime.date(2026, 2, 2))
+    assert occ == [datetime.date(2026, 1, 5), datetime.date(2026, 1, 19),
+                   datetime.date(2026, 2, 2)]
+
+
+def test_rrule_cadence_days():
+    assert rec._rrule_cadence_days(rec.parse_recurrence("FREQ=WEEKLY")) == 7.0
+    assert rec._rrule_cadence_days(rec.parse_recurrence("FREQ=MONTHLY")) == 30.0
+    assert rec._rrule_cadence_days(rec.parse_recurrence("FREQ=WEEKLY;BYDAY=MO,WE,FR")) == round(7 / 3, 1)
+
+
+# ── Reconciliation: due_list (Layer 1) + week_forecast (Layer 2) ────────────────
+
+
+def _event(cluster_id, days_ahead, status="confirmed", **kw):
+    st = datetime.datetime.utcnow() + datetime.timedelta(days=days_ahead)
+    return {"cluster_id": cluster_id, "display_name": "X", "l0_class": "SOCIAL",
+            "start_time": st, "status": status, "is_recurring": False,
+            "recurrence_pattern": None, **kw}
+
+
+def test_due_list_suppresses_overdue_when_booked(monkeypatch):
+    today = datetime.datetime.utcnow().date()
+    overdue = _weekly_profile(l1_cluster_id="c9", display_name="See Friends",
+                              l0_class="SOCIAL",
+                              last_seen=today - datetime.timedelta(days=16))
+    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [overdue])
+    # A confirmed catch-up two days out: no longer "neglected".
+    monkeypatch.setattr(rec, "_load_upcoming_events",
+                        lambda uid, h: [_event("c9", 2)])
+
+    due = rec.due_list("user")
+    assert len(due) == 1
+    assert due[0]["overdue"] is False
+    assert due[0]["scheduled_date"] == (today + datetime.timedelta(days=2)).isoformat()
+
+
+def test_due_list_cancelled_event_does_not_suppress(monkeypatch):
+    # cancelled/no_show are filtered out at the SQL layer, so the loader returns
+    # nothing and the overdue flag stands.
+    today = datetime.datetime.utcnow().date()
+    overdue = _weekly_profile(l1_cluster_id="c9",
+                              last_seen=today - datetime.timedelta(days=16))
+    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [overdue])
+    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [])
+
+    due = rec.due_list("user")
+    assert due[0]["overdue"] is True
+    assert due[0]["scheduled_date"] is None
+
+
+def test_due_list_seeds_from_calendar_recurrence(monkeypatch):
+    # Only 2 statistical intervals (< 3, normally excluded) but a weekly RRULE.
+    today = datetime.datetime.utcnow().date()
+    thin = _weekly_profile(l1_cluster_id="c5", display_name="Team Standup",
+                           l0_class="WORK", intervals_days=[7, 7],
+                           periodicity_confidence=0.0,
+                           last_seen=today - datetime.timedelta(days=3))
+    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [thin])
+    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [
+        {"cluster_id": "c5", "display_name": "Team Standup", "l0_class": "WORK",
+         "start_time": datetime.datetime.utcnow() + datetime.timedelta(days=4),
+         "status": "confirmed", "is_recurring": True,
+         "recurrence_pattern": "FREQ=WEEKLY"},
+    ])
+
+    due = rec.due_list("user")
+    assert len(due) == 1                       # seeded despite <3 intervals
+    assert due[0]["median_interval_days"] == 7.0
+    assert due[0]["scheduled_date"] is not None
+
+
+def test_week_forecast_overlays_booked_event(monkeypatch):
+    start = datetime.date(2026, 3, 17)
+    monkeypatch.setattr(rec, "_load_profiles", lambda uid: [
+        _weekly_profile(l1_cluster_id="c1", last_seen=datetime.date(2026, 3, 16)),
+    ])
+    # A confirmed event on day index 2 for a cluster with no profile at all.
+    ev_dt = datetime.datetime(2026, 3, 19, 15, 0)
+    monkeypatch.setattr(rec, "_load_upcoming_events", lambda uid, h: [
+        {"cluster_id": "cX", "display_name": "Dentist", "l0_class": "ERRAND",
+         "start_time": ev_dt, "status": "confirmed", "is_recurring": False,
+         "recurrence_pattern": None},
+    ])
+
+    days = rec.week_forecast("user", days=7, start=start)
+    dentist = next(c for c in days[2]["clusters"] if c["cluster_id"] == "cX")
+    assert dentist["p_occur"] == 1.0
+    assert dentist["scheduled"] is True
+    # statistical cells remain flagged not-scheduled
+    gym = next(c for c in days[0]["clusters"] if c["cluster_id"] == "c1")
+    assert gym["scheduled"] is False

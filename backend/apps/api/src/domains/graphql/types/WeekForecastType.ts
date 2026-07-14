@@ -25,6 +25,11 @@ export class WeekForecastClusterType {
   })
   daypartProbs!: ProbabilityEntryType[];
 
+  @Field(() => Boolean, {
+    description: 'True when a booked calendar event pins this cell (known, not predicted)',
+  })
+  scheduled!: boolean;
+
   static toType(source: WeekForecastCluster): WeekForecastClusterType {
     return {
       clusterId: source.cluster_id,
@@ -35,6 +40,7 @@ export class WeekForecastClusterType {
         label,
         probability,
       })),
+      scheduled: source.scheduled ?? false,
     };
   }
 }

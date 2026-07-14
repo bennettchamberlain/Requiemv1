@@ -31,6 +31,12 @@ export class DueItemType {
   @Field(() => Boolean, { description: 'True once the gap exceeds the p90 inter-arrival interval' })
   overdue!: boolean;
 
+  @Field(() => String, {
+    nullable: true,
+    description: 'ISO date of the next matching booked calendar event, or null if none',
+  })
+  scheduledDate!: string | null;
+
   @Field(() => Float, { description: 'Periodicity confidence in [0,1]' })
   confidence!: number;
 
@@ -45,6 +51,7 @@ export class DueItemType {
       dueInDays: source.due_in_days,
       window: source.window,
       overdue: source.overdue,
+      scheduledDate: source.scheduled_date ?? null,
       confidence: source.confidence,
     };
   }

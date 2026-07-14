@@ -20,6 +20,7 @@ const GET_WEEK_AHEAD = gql(`
           name
           l0Class
           pOccur
+          scheduled
           daypartProbs { label probability }
         }
       }
@@ -36,6 +37,7 @@ const GET_WEEK_AHEAD = gql(`
         dueInDays
         window
         overdue
+        scheduledDate
         confidence
       }
     }
@@ -47,6 +49,7 @@ export interface WeekForecastCluster {
   name: string;
   l0Class: string;
   pOccur: number;
+  scheduled: boolean;
   daypartProbs: ProbabilityEntry[];
 }
 
@@ -72,6 +75,7 @@ export interface DueItem {
   dueInDays: number;
   window: number[];
   overdue: boolean;
+  scheduledDate: string | null;
   confidence: number;
 }
 

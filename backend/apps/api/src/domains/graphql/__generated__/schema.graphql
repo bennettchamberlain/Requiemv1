@@ -539,6 +539,9 @@ type DueItemType {
   """True once the gap exceeds the p90 inter-arrival interval"""
   overdue: Boolean!
 
+  """ISO date of the next matching booked calendar event, or null if none"""
+  scheduledDate: String
+
   """Credible due window [earliest, latest] in days from now"""
   window: [Float!]!
 }
@@ -1558,6 +1561,11 @@ type WeekForecastClusterType {
 
   """Probability the cluster occurs at least once that day"""
   pOccur: Float!
+
+  """
+  True when a booked calendar event pins this cell (known, not predicted)
+  """
+  scheduled: Boolean!
 }
 
 """Occurrence forecast for a single day of the week horizon"""
