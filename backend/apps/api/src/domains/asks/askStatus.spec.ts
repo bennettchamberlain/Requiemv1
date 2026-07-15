@@ -24,6 +24,7 @@ describe('ask state machine', () => {
     expect(canTransitionAsk('delivered', 'answering')).toBe(true); // standing pre-auth
     expect(canTransitionAsk('under_review', 'answering')).toBe(true); // owner approves
     expect(canTransitionAsk('under_review', 'declined')).toBe(true);
+    expect(canTransitionAsk('delivered', 'declined')).toBe(true); // auto-deny (block grant)
     expect(canTransitionAsk('answering', 'answered')).toBe(true);
     expect(canTransitionAsk('delivered', 'expired')).toBe(true);
     expect(canTransitionAsk('under_review', 'expired')).toBe(true);

@@ -11,7 +11,9 @@ import type { AskStatus } from './types';
  */
 export const ASK_TRANSITIONS: Readonly<Record<AskStatus, readonly AskStatus[]>> = {
   sent: ['delivered'],
-  delivered: ['under_review', 'answering', 'expired'],
+  // `delivered → declined` is the auto-deny edge: a matching `block` grant
+  // refuses the ask on delivery without owner review.
+  delivered: ['under_review', 'answering', 'declined', 'expired'],
   under_review: ['answering', 'declined', 'expired'],
   answering: ['answered'],
   answered: [],

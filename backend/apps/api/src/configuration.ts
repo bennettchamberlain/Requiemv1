@@ -227,6 +227,14 @@ export const ConfigSchema = z.object({
      * enabled.
      */
     'shared.search': booleanStringSchema,
+
+    /**
+     * Interpersonal "ask" feature (epic #1712): questions directed at another
+     * user's memory, gated by consent. Off by default while the surface and the
+     * disclosure filter are built; the whole ask GraphQL surface stays dark
+     * (mutations report failure, queries return empty) until enabled.
+     */
+    ask: booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

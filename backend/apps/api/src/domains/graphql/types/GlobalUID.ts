@@ -1,6 +1,9 @@
 type ResourceType =
   | 'action'
   | 'answer'
+  | 'ask'
+  | 'ask-grant'
+  | 'ask-audit'
   | 'browser-activity'
   | 'communication'
   | 'concept'
