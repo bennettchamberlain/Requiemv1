@@ -116,7 +116,8 @@
   },
   "queues": {
     "concurrency": 10,
-    "fetchBatchSize": 10
+    "fetchBatchSize": 10,
+    "perQueueConcurrency": 6
   },
   "features": {
     "scheduled.answer.inferencing": true,
