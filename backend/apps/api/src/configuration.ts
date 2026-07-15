@@ -181,16 +181,18 @@ export const ConfigSchema = z.object({
       return val;
     }, z.array(z.string()).default([])),
   }),
-  // PGBoss worker tuning. concurrency is the global in-flight job ceiling across
-  // all queues; fetchBatchSize caps how many jobs a single fetch pulls. This
-  // global pool is shared by every queue, so the search-index (embedding) workers
-  // only fill the Ollama coalescing buffer as fast as they get slots — the
-  // default is sized so a post-import backfill drains in hours, not days. Raise
-  // CI_QUEUE_CONCURRENCY / CI_EMBED_CONCURRENCY further (and CI_QUEUE_SUPPRESS the
-  // enrichment queues) to push a large import harder.
+  // PGBoss worker tuning. concurrency is the GLOBAL in-flight job ceiling across
+  // all queues; fetchBatchSize caps how many jobs a single fetch pulls;
+  // perQueueConcurrency caps how many jobs any ONE queue may run at once. The
+  // per-queue cap is sized below the global ceiling so a burst of slow jobs on
+  // one queue (image-description / embedding on the shared Ollama host) can no
+  // longer monopolize the global pool and starve another queue — the observed
+  // search-index backlog stall. Raise CI_QUEUE_CONCURRENCY / CI_EMBED_CONCURRENCY
+  // (and CI_QUEUE_SUPPRESS the enrichment queues) to push a large import harder.
   queues: z.object({
     concurrency: z.coerce.number().int().positive().default(32),
     fetchBatchSize: z.coerce.number().int().positive().default(20),
+    perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
