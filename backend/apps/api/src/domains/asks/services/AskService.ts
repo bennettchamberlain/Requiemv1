@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
@@ -29,6 +29,10 @@ export class AskService {
 
   /** Create an ask (asker = caller) and mark it delivered to the responder. */
   async create(context: UserServiceContext, data: CreateAskDto): Promise<Ask> {
+    if (data.responderUserId === context.userId) {
+      throw new BadRequestException('An ask must be directed at another user');
+    }
+
     const record = this.askRepository.create({
       id: data.id ?? uuidv7(),
       askerUserId: context.userId,

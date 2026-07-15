@@ -25,14 +25,22 @@ export function evaluateGrant(
   grants: readonly AskGrant[],
   now: Date = new Date(),
 ): GrantEvaluation {
-  const matches = grants.filter(
-    (grant) => isActive(grant, now) && grantMatchesQuery(grant, query),
-  );
+  const active = grants.filter((grant) => isActive(grant, now));
 
-  const block = matches.find((grant) => grant.mode === 'block');
+  // Blocks are evaluated CONSERVATIVELY (see blockCoversQuery): an ask that
+  // omits its data class cannot be proven to fall outside a class-scoped block,
+  // so it is treated as covered. This closes the bypass where an asker evades a
+  // narrow block by simply not naming the class it targets, then rides a broad
+  // `auto` grant. A matching block always wins → deny.
+  const block = active.find((grant) => grant.mode === 'block' && blockCoversQuery(grant, query));
   if (block) {
     return { decision: 'deny', grantId: block.id };
   }
+
+  // Positive grants (auto / review) match strictly on the declared class.
+  const matches = active.filter(
+    (grant) => grant.mode !== 'block' && grantMatchesQuery(grant, query),
+  );
 
   const auto = matches.find((grant) => grant.mode === 'auto');
   if (auto) {
@@ -51,6 +59,11 @@ function isActive(grant: AskGrant, now: Date): boolean {
   return grant.revokedAt == null || grant.revokedAt > now;
 }
 
+/**
+ * Whether a positive (auto/review) grant covers a query. Strict on class: a
+ * grant pinned to (or scoped to a set of) data classes only covers asks whose
+ * declared class is that class / in that set.
+ */
 function grantMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
   if (grant.queryType !== query.queryType) {
     return false;
@@ -61,13 +74,33 @@ function grantMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
     return false;
   }
 
-  // A grant whose scope enumerates data classes requires membership.
+  // A grant whose scope enumerates data classes requires membership. An empty
+  // list means "no classes permitted" — it matches nothing (an unscoped grant
+  // omits the `dataClasses` key entirely, leaving `scopedClasses` undefined).
   const scopedClasses = grant.scope?.dataClasses;
-  if (scopedClasses != null && scopedClasses.length > 0) {
+  if (scopedClasses != null) {
     if (query.dataClass == null || !scopedClasses.includes(query.dataClass)) {
       return false;
     }
   }
 
   return true;
+}
+
+/**
+ * Whether a `block` grant covers a query. Same as {@link grantMatchesQuery} for
+ * a concrete class, but deny-biased for under-specified asks: a block on the
+ * queryType covers an ask that omits its data class, so a scoped block cannot be
+ * evaded by omission.
+ */
+function blockCoversQuery(grant: AskGrant, query: AskQuery): boolean {
+  if (grant.queryType !== query.queryType) {
+    return false;
+  }
+
+  if (query.dataClass == null) {
+    return true;
+  }
+
+  return grantMatchesQuery(grant, query);
 }

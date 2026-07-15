@@ -13,8 +13,10 @@ export class AskAuditEntity {
   @PrimaryColumn({ type: 'uuid', name: 'id' })
   id!: string;
 
-  @Column({ type: 'uuid', name: 'ask_id' })
-  askId!: string;
+  // Soft reference: nulled (not cascade-deleted) if the ask is ever removed, so
+  // the audit row outlives the ask it records.
+  @Column({ type: 'uuid', name: 'ask_id', nullable: true })
+  askId!: string | null;
 
   @Column({ type: 'uuid', name: 'asker_user_id' })
   askerUserId!: string;

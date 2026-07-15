@@ -4,9 +4,14 @@
 -- terminal outcome (answered / auto_answered / declined / expired). Declines are
 -- logged too — the gate working is the point. Feeds Disclosure History (UX.md)
 -- and, later, ISO 27560 consent receipts (ECOSYSTEM.md Δ1). CI-Server #1711 → #1712.
+-- This is a DURABLE record: it must survive deletion of the ask and of either
+-- party. asker_user_id / responder_user_id are therefore denormalized UUIDs with
+-- NO foreign key, and ask_id is a soft reference (ON DELETE SET NULL, nullable)
+-- rather than CASCADE — otherwise deleting a user would cascade users → asks →
+-- ask_audit and erase the very consent history this table exists to keep.
 CREATE TABLE ci.ask_audit (
     id UUID PRIMARY KEY DEFAULT gen_uuid_v7(),
-    ask_id UUID NOT NULL REFERENCES ci.asks(id) ON DELETE CASCADE,
+    ask_id UUID REFERENCES ci.asks(id) ON DELETE SET NULL,
     asker_user_id UUID NOT NULL,
     responder_user_id UUID NOT NULL,
     query JSONB NOT NULL,

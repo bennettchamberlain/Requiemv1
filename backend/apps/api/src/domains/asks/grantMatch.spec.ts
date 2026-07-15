@@ -61,6 +61,37 @@ describe('evaluateGrant', () => {
     expect(evaluateGrant(ask(), grants, NOW)).toEqual({ decision: 'deny', grantId: 'b' });
   });
 
+  it('a class-scoped block cannot be bypassed by an ask that omits its data class', () => {
+    // Owner blocks a specific class but broadly auto-answers the query type.
+    const grants = [
+      grant({ id: 'block-medical', mode: 'block', queryType: 'health', dataClass: 'medical' }),
+      grant({ id: 'auto-health', mode: 'auto', queryType: 'health', dataClass: null }),
+    ];
+    // An ask that names the blocked class is denied...
+    expect(evaluateGrant(ask({ queryType: 'health', dataClass: 'medical' }), grants, NOW)).toEqual({
+      decision: 'deny',
+      grantId: 'block-medical',
+    });
+    // ...and an ask that OMITS the class must not slip through to auto.
+    expect(evaluateGrant(ask({ queryType: 'health' }), grants, NOW)).toEqual({
+      decision: 'deny',
+      grantId: 'block-medical',
+    });
+    // A concrete ask in a different class is unaffected by the medical block.
+    expect(evaluateGrant(ask({ queryType: 'health', dataClass: 'fitness' }), grants, NOW)).toEqual({
+      decision: 'auto',
+      grantId: 'auto-health',
+    });
+  });
+
+  it('treats an empty scope.dataClasses as "no classes permitted" (matches nothing)', () => {
+    const emptyScoped = grant({ mode: 'auto', scope: { dataClasses: [] } });
+    expect(evaluateGrant(ask({ dataClass: 'beach' }), [emptyScoped], NOW)).toEqual({
+      decision: 'review',
+    });
+    expect(evaluateGrant(ask(), [emptyScoped], NOW)).toEqual({ decision: 'review' });
+  });
+
   it('ignores a revoked grant', () => {
     const revoked = grant({ mode: 'auto', revokedAt: new Date('2026-07-14T00:00:00Z') });
     expect(evaluateGrant(ask(), [revoked], NOW)).toEqual({ decision: 'review' });
