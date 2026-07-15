@@ -35,21 +35,23 @@ function makeResolver(enabled: boolean) {
     listForOwner: jest.fn().mockResolvedValue([]),
   };
   const auditService = { listForResponder: jest.fn().mockResolvedValue([]) };
+  const rateLimitService = { consume: jest.fn() };
   const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(enabled) };
 
   const resolver = new AskResolver(
     askService as never,
     grantService as never,
     auditService as never,
+    rateLimitService as never,
     featureService as never,
   );
 
-  return { resolver, askService, grantService, featureService };
+  return { resolver, askService, grantService, rateLimitService, featureService };
 }
 
 describe('AskResolver — feature-flag gating', () => {
   it('is dark when `ask` is disabled: mutations report failure, queries are empty, services untouched', async () => {
-    const { resolver, askService, grantService } = makeResolver(false);
+    const { resolver, askService, grantService, rateLimitService } = makeResolver(false);
 
     const created = await resolver.createAsk(CTX, {
       responderId: GlobalUID.encode('user', 'responder-1'),
@@ -57,6 +59,7 @@ describe('AskResolver — feature-flag gating', () => {
     });
     expect(created).toEqual({ success: false });
     expect(askService.submit).not.toHaveBeenCalled();
+    expect(rateLimitService.consume).not.toHaveBeenCalled(); // no rate budget spent while dark
 
     expect(await resolver.askInbox(CTX)).toEqual([]);
     expect(askService.listInbox).not.toHaveBeenCalled();
@@ -66,14 +69,15 @@ describe('AskResolver — feature-flag gating', () => {
 });
 
 describe('AskResolver — enabled', () => {
-  it('createAsk decodes the responder id, submits, and surfaces the decision', async () => {
-    const { resolver, askService } = makeResolver(true);
+  it('createAsk rate-limits, decodes the responder id, submits, and surfaces the decision', async () => {
+    const { resolver, askService, rateLimitService } = makeResolver(true);
 
     const result = await resolver.createAsk(CTX, {
       responderId: GlobalUID.encode('user', 'responder-1'),
       query: { queryType: 'photos', dataClass: 'beach', prompt: 'beach photos?' },
     });
 
+    expect(rateLimitService.consume).toHaveBeenCalledWith('user-1');
     expect(askService.submit).toHaveBeenCalledWith(
       { userId: 'user-1' },
       {

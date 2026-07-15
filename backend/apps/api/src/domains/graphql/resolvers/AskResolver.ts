@@ -4,7 +4,13 @@ import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
-import { AskAuditService, AskService, GrantService, type GrantMode } from '@ci/domains/asks';
+import {
+  AskAuditService,
+  AskRateLimitService,
+  AskService,
+  GrantService,
+  type GrantMode,
+} from '@ci/domains/asks';
 
 import { CreateAskGrantInput, CreateAskInput } from '../types/AskInputs';
 import { AskGrantPayload, AskPayload, CreateAskPayload } from '../types/AskPayloads';
@@ -30,6 +36,7 @@ export class AskResolver {
     private readonly askService: AskService,
     private readonly grantService: GrantService,
     private readonly auditService: AskAuditService,
+    private readonly rateLimitService: AskRateLimitService,
     private readonly featureService: FeatureService,
   ) {}
 
@@ -43,6 +50,7 @@ export class AskResolver {
     }
 
     const serviceContext = toServiceContext(context);
+    this.rateLimitService.consume(serviceContext.userId);
     const responderUserId = GlobalUID.parse('user', input.responderId);
 
     const { ask, decision } = await this.askService.submit(serviceContext, {

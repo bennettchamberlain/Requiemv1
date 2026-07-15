@@ -23,6 +23,7 @@ import { AskAuditEntity } from './entities/AskAuditEntity';
 import { AskEntity } from './entities/AskEntity';
 import { AskGrantEntity } from './entities/AskGrantEntity';
 import { AskAuditService } from './services/AskAuditService';
+import { AskRateLimitService } from './services/AskRateLimitService';
 import { AskService } from './services/AskService';
 import { GrantService } from './services/GrantService';
 
@@ -31,13 +32,13 @@ import { GrantService } from './services/GrantService';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([AskEntity, AskGrantEntity, AskAuditEntity])],
-  providers: [AskService, GrantService, AskAuditService],
-  exports: [AskService, GrantService, AskAuditService],
+  providers: [AskService, GrantService, AskAuditService, AskRateLimitService],
+  exports: [AskService, GrantService, AskAuditService, AskRateLimitService],
 })
 export class AsksModule {}
 
 export { AskEntity, AskGrantEntity, AskAuditEntity };
-export { AskService, GrantService, AskAuditService };
+export { AskService, GrantService, AskAuditService, AskRateLimitService };
 export { evaluateGrant } from './grantMatch';
 export {
   ASK_TRANSITIONS,
