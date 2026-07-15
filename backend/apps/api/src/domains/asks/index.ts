@@ -19,10 +19,13 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { SearchNextModule } from '@ci/domains/search-next';
+
 import { AskAuditEntity } from './entities/AskAuditEntity';
 import { AskEntity } from './entities/AskEntity';
 import { AskGrantEntity } from './entities/AskGrantEntity';
 import { AskAuditService } from './services/AskAuditService';
+import { AskExecutorService } from './services/AskExecutorService';
 import { AskRateLimitService } from './services/AskRateLimitService';
 import { AskService } from './services/AskService';
 import { GrantService } from './services/GrantService';
@@ -31,14 +34,14 @@ import { GrantService } from './services/GrantService';
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([AskEntity, AskGrantEntity, AskAuditEntity])],
-  providers: [AskService, GrantService, AskAuditService, AskRateLimitService],
-  exports: [AskService, GrantService, AskAuditService, AskRateLimitService],
+  imports: [TypeOrmModule.forFeature([AskEntity, AskGrantEntity, AskAuditEntity]), SearchNextModule],
+  providers: [AskService, GrantService, AskAuditService, AskRateLimitService, AskExecutorService],
+  exports: [AskService, GrantService, AskAuditService, AskRateLimitService, AskExecutorService],
 })
 export class AsksModule {}
 
 export { AskEntity, AskGrantEntity, AskAuditEntity };
-export { AskService, GrantService, AskAuditService, AskRateLimitService };
+export { AskService, GrantService, AskAuditService, AskRateLimitService, AskExecutorService };
 export { evaluateGrant } from './grantMatch';
 export {
   ASK_TRANSITIONS,

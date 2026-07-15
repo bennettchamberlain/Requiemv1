@@ -126,6 +126,46 @@ export class AskService {
     return declined;
   }
 
+  /**
+   * Finalize an answerable ask (owner-approved `answering`, or auto-authorized
+   * `delivered` with a consent basis) into `answered`, recording the terminal
+   * audit with the disclosed entity ids. Responder-scoped. An auto-authorized
+   * ask is first advanced `delivered → answering` so the lifecycle is honored.
+   */
+  async complete(
+    context: UserServiceContext,
+    id: string,
+    disclosedEntityIds: string[],
+  ): Promise<Ask> {
+    const entity = await this.responderOwned(context, id);
+
+    const isAuto = entity.status === 'delivered' && entity.consentBasis != null;
+    if (entity.status !== 'answering' && !isAuto) {
+      throw new BadRequestException(
+        `Ask ${id} is not ready to answer (status: ${entity.status})`,
+      );
+    }
+
+    if (entity.status === 'delivered') {
+      entity.status = assertAskTransition(entity.status, 'answering');
+    }
+
+    entity.status = assertAskTransition(entity.status, 'answered');
+    const saved = await this.askRepository.save(entity);
+
+    await this.auditService.record({
+      askId: saved.id,
+      askerUserId: saved.askerUserId,
+      responderUserId: saved.responderUserId,
+      query: saved.query,
+      consentBasis: saved.consentBasis,
+      outcome: isAuto ? 'auto_answered' : 'answered',
+      disclosedEntities: disclosedEntityIds,
+    });
+
+    return AskEntity.toEgressType(saved);
+  }
+
   /** An ask is visible to its asker and its responder only. */
   async findById(context: UserServiceContext, id: string): Promise<Ask | null> {
     const entity = await this.forParticipant(context, id);

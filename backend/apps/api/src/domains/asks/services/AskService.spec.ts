@@ -88,3 +88,67 @@ describe('AskService.submit — grant decision wiring', () => {
     expect(result).toEqual({ ask: inboxed, decision: 'review' });
   });
 });
+
+function mutableEntity(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'ask-1',
+    askerUserId: 'asker-1',
+    responderUserId: 'responder-1',
+    query: DTO.query,
+    status: 'answering',
+    consentBasis: null,
+    createdAt: new Date('2026-07-15T00:00:00Z'),
+    updatedAt: new Date('2026-07-15T00:00:00Z'),
+    expiresAt: null,
+    ...overrides,
+  };
+}
+
+function makeServiceWithRepo(entity: Record<string, unknown>) {
+  const repo = {
+    findOne: jest.fn().mockResolvedValue(entity),
+    save: jest.fn().mockImplementation((e: unknown) => Promise.resolve(e)),
+  };
+  const grantService = { evaluate: jest.fn() };
+  const auditService = { record: jest.fn().mockResolvedValue(undefined) };
+  const logger = { setContext: jest.fn() };
+  const service = new AskService(repo as never, grantService as never, auditService as never, logger as never);
+
+  return { service, repo, auditService };
+}
+
+const OWNER: UserServiceContext = { userId: 'responder-1' };
+
+describe('AskService.complete', () => {
+  it('finalizes an owner-approved ask to answered and audits it', async () => {
+    const entity = mutableEntity({ status: 'answering' });
+    const { service, auditService } = makeServiceWithRepo(entity);
+
+    const result = await service.complete(OWNER, 'ask-1', ['e1', 'e2']);
+
+    expect(result.status).toBe('answered');
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'answered', disclosedEntities: ['e1', 'e2'] }),
+    );
+  });
+
+  it('finalizes an auto-authorized (delivered + consent) ask as auto_answered', async () => {
+    const entity = mutableEntity({ status: 'delivered', consentBasis: 'grant-auto' });
+    const { service, auditService } = makeServiceWithRepo(entity);
+
+    const result = await service.complete(OWNER, 'ask-1', []);
+
+    expect(result.status).toBe('answered'); // delivered → answering → answered
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'auto_answered' }),
+    );
+  });
+
+  it('refuses to complete an ask that is not yet answerable', async () => {
+    const entity = mutableEntity({ status: 'under_review' });
+    const { service, auditService } = makeServiceWithRepo(entity);
+
+    await expect(service.complete(OWNER, 'ask-1', [])).rejects.toThrow();
+    expect(auditService.record).not.toHaveBeenCalled();
+  });
+});

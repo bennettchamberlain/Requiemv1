@@ -26,6 +26,7 @@ function makeResolver(enabled: boolean) {
     approve: jest.fn(),
     decline: jest.fn(),
     findById: jest.fn(),
+    complete: jest.fn(),
     listInbox: jest.fn().mockResolvedValue([fakeAsk()]),
     listOutbox: jest.fn().mockResolvedValue([]),
   };
@@ -36,6 +37,7 @@ function makeResolver(enabled: boolean) {
   };
   const auditService = { listForResponder: jest.fn().mockResolvedValue([]) };
   const rateLimitService = { consume: jest.fn() };
+  const executorService = { execute: jest.fn().mockResolvedValue([{ id: 'e1', type: 'file' }]) };
   const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(enabled) };
 
   const resolver = new AskResolver(
@@ -43,10 +45,11 @@ function makeResolver(enabled: boolean) {
     grantService as never,
     auditService as never,
     rateLimitService as never,
+    executorService as never,
     featureService as never,
   );
 
-  return { resolver, askService, grantService, rateLimitService, featureService };
+  return { resolver, askService, grantService, rateLimitService, executorService, featureService };
 }
 
 describe('AskResolver — feature-flag gating', () => {
@@ -97,5 +100,34 @@ describe('AskResolver — enabled', () => {
     expect(inbox).toHaveLength(1);
     // ids are re-encoded as opaque global ids
     expect(GlobalUID.parse('ask', inbox[0].id)).toBe('ask-1');
+  });
+
+  it('runAsk executes as the responder, completes the ask, and returns the match count', async () => {
+    const { resolver, askService, executorService } = makeResolver(true);
+    // caller (user-1) IS the responder of this ask
+    const ownAsk = { ...fakeAsk(), responderUserId: 'user-1', status: 'answering' } as Ask;
+    askService.findById = jest.fn().mockResolvedValue(ownAsk);
+    askService.complete = jest
+      .fn()
+      .mockResolvedValue({ ...ownAsk, status: 'answered' });
+
+    const result = await resolver.runAsk(CTX, GlobalUID.encode('ask', 'ask-1'));
+
+    expect(executorService.execute).toHaveBeenCalledWith(ownAsk);
+    expect(askService.complete).toHaveBeenCalledWith({ userId: 'user-1' }, 'ask-1', ['e1']);
+    expect(result.success).toBe(true);
+    expect(result.disclosedCount).toBe(1);
+    expect(result.ask?.status).toBe('answered');
+  });
+
+  it('runAsk refuses when the caller is not the responder', async () => {
+    const { resolver, askService, executorService } = makeResolver(true);
+    // ask is directed at someone else — caller user-1 is the ASKER, not responder
+    askService.findById = jest
+      .fn()
+      .mockResolvedValue({ ...fakeAsk(), askerUserId: 'user-1', responderUserId: 'someone-else' });
+
+    await expect(resolver.runAsk(CTX, GlobalUID.encode('ask', 'ask-1'))).rejects.toThrow();
+    expect(executorService.execute).not.toHaveBeenCalled();
   });
 });

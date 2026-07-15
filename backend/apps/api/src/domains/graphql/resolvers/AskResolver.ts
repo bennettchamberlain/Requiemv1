@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
@@ -6,6 +6,7 @@ import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import {
   AskAuditService,
+  AskExecutorService,
   AskRateLimitService,
   AskService,
   GrantService,
@@ -13,7 +14,7 @@ import {
 } from '@ci/domains/asks';
 
 import { CreateAskGrantInput, CreateAskInput } from '../types/AskInputs';
-import { AskGrantPayload, AskPayload, CreateAskPayload } from '../types/AskPayloads';
+import { AskGrantPayload, AskPayload, CreateAskPayload, RunAskPayload } from '../types/AskPayloads';
 import { AskAuditType, AskGrantType, AskType } from '../types/AskType';
 import { GlobalUID } from '../types/GlobalUID';
 
@@ -37,6 +38,7 @@ export class AskResolver {
     private readonly grantService: GrantService,
     private readonly auditService: AskAuditService,
     private readonly rateLimitService: AskRateLimitService,
+    private readonly executorService: AskExecutorService,
     private readonly featureService: FeatureService,
   ) {}
 
@@ -95,6 +97,42 @@ export class AskResolver {
     const ask = await this.askService.decline(serviceContext, id);
 
     return { success: true, ask: AskType.toType(ask) };
+  }
+
+  /**
+   * Run an answerable ask (owner-approved, or auto-authorized) as the responder,
+   * finalizing it to `answered`. Only the responder may run their own asks; the
+   * query executes in the responder's memory scope. Phase 0 returns the matched
+   * entity count for the owner's dogfood preview — the disclosure-filtered answer
+   * delivered to the asker is Phase 1.
+   */
+  @Mutation(() => RunAskPayload)
+  async runAsk(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<RunAskPayload> {
+    if (!(await this.enabled())) {
+      return { success: false };
+    }
+
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('ask', gid);
+
+    const ask = await this.askService.findById(serviceContext, id);
+    if (ask == null) {
+      throw new NotFoundException(`Ask ${gid} not found`);
+    }
+
+    // Only the responder (memory owner) may produce the answer for their ask.
+    if (ask.responderUserId !== serviceContext.userId) {
+      throw new ForbiddenException('Only the responder may run this ask');
+    }
+
+    const identifiers = await this.executorService.execute(ask);
+    const disclosedIds = identifiers.map((identifier) => identifier.id);
+    const completed = await this.askService.complete(serviceContext, id, disclosedIds);
+
+    return { success: true, ask: AskType.toType(completed), disclosedCount: disclosedIds.length };
   }
 
   @Mutation(() => AskGrantPayload)
