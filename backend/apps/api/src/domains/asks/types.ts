@@ -31,6 +31,43 @@ export type GrantMode = 'auto' | 'review' | 'block';
 export type GrantDecision = 'auto' | 'review' | 'deny';
 
 /**
+ * The shape of an answer, which drives disclosure minimization (see
+ * {@link inferAnswerForm}). Only `retrieval` returns item references; the rest
+ * disclose a yes-no / count / synthesized value only.
+ */
+export type AnswerForm = 'boolean' | 'existence' | 'attribute' | 'retrieval' | 'identity';
+
+/** Where an answer originated relative to the recipient's memory. */
+export type AnswerSource = 'self' | 'peer';
+
+/** A disclosed entity reference — id + type only, NEVER raw content. */
+export interface DisclosedItem {
+  id: string;
+  type: string;
+}
+
+/** The disclosure-filtered answer produced for an ask. */
+export interface DisclosedAnswer {
+  form: AnswerForm;
+  /** Item references (retrieval form only); empty for other forms. */
+  items: DisclosedItem[];
+  /** Count of matched items disclosed after the owner's redaction. */
+  disclosedCount: number;
+  /** Count of matched items the owner withheld (never itemized to the asker). */
+  withheldCount: number;
+  /** Templated, non-leaking natural-language summary. */
+  summary: string;
+  consentBasis: string | null;
+}
+
+export interface CreateAskAnswerDto {
+  id?: string;
+  askId: string;
+  answer: DisclosedAnswer;
+  answerSource?: AnswerSource;
+}
+
+/**
  * The bounded, asker-supplied request. Phase 0 keeps this a light structured
  * shape; Phase 2 formalizes it as a DCQL subset (ROADMAP Epic 2). It is treated
  * as **hostile input** — validated and bounded before it ever executes in the

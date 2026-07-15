@@ -38,6 +38,19 @@ function makeResolver(enabled: boolean) {
   const auditService = { listForResponder: jest.fn().mockResolvedValue([]) };
   const rateLimitService = { consume: jest.fn() };
   const executorService = { execute: jest.fn().mockResolvedValue([{ id: 'e1', type: 'file' }]) };
+  const answerService = {
+    create: jest.fn().mockImplementation((dto: { answer: unknown }) =>
+      Promise.resolve({
+        id: 'answer-1',
+        askId: 'ask-1',
+        answerSource: 'peer',
+        createdAt: new Date('2026-07-15T00:00:00Z'),
+        ...(dto.answer as object),
+        disclosedEntities: (dto.answer as { items: unknown[] }).items,
+      }),
+    ),
+    findByAskId: jest.fn(),
+  };
   const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(enabled) };
 
   const resolver = new AskResolver(
@@ -46,10 +59,11 @@ function makeResolver(enabled: boolean) {
     auditService as never,
     rateLimitService as never,
     executorService as never,
+    answerService as never,
     featureService as never,
   );
 
-  return { resolver, askService, grantService, rateLimitService, executorService, featureService };
+  return { resolver, askService, grantService, rateLimitService, executorService, answerService, featureService };
 }
 
 describe('AskResolver — feature-flag gating', () => {
@@ -102,22 +116,56 @@ describe('AskResolver — enabled', () => {
     expect(GlobalUID.parse('ask', inbox[0].id)).toBe('ask-1');
   });
 
-  it('runAsk executes as the responder, completes the ask, and returns the match count', async () => {
-    const { resolver, askService, executorService } = makeResolver(true);
+  it('runAsk executes as the responder, produces a disclosure-filtered answer, and completes', async () => {
+    const { resolver, askService, executorService, answerService } = makeResolver(true);
     // caller (user-1) IS the responder of this ask
     const ownAsk = { ...fakeAsk(), responderUserId: 'user-1', status: 'answering' } as Ask;
     askService.findById = jest.fn().mockResolvedValue(ownAsk);
-    askService.complete = jest
-      .fn()
-      .mockResolvedValue({ ...ownAsk, status: 'answered' });
+    askService.complete = jest.fn().mockResolvedValue({ ...ownAsk, status: 'answered' });
 
     const result = await resolver.runAsk(CTX, GlobalUID.encode('ask', 'ask-1'));
 
     expect(executorService.execute).toHaveBeenCalledWith(ownAsk);
+    // a 'photos' query is retrieval-form → the one match is disclosed as a reference
+    expect(answerService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        askId: 'ask-1',
+        answer: expect.objectContaining({ form: 'retrieval', disclosedCount: 1, withheldCount: 0 }),
+      }),
+    );
+    // the audit records the backing entity ids (post-redaction)
     expect(askService.complete).toHaveBeenCalledWith({ userId: 'user-1' }, 'ask-1', ['e1']);
     expect(result.success).toBe(true);
     expect(result.disclosedCount).toBe(1);
+    expect(result.answer?.form).toBe('retrieval');
     expect(result.ask?.status).toBe('answered');
+  });
+
+  it('runAsk withholds redacted items ("deny all but X") — counted, never itemized, never audited', async () => {
+    const { resolver, askService, executorService, answerService } = makeResolver(true);
+    const ownAsk = { ...fakeAsk(), responderUserId: 'user-1', status: 'answering' } as Ask;
+    askService.findById = jest.fn().mockResolvedValue(ownAsk);
+    askService.complete = jest.fn().mockResolvedValue({ ...ownAsk, status: 'answered' });
+    // three matches; owner keeps only e1
+    executorService.execute = jest
+      .fn()
+      .mockResolvedValue([
+        { id: 'e1', type: 'file' },
+        { id: 'e2', type: 'file' },
+        { id: 'e3', type: 'file' },
+      ]);
+
+    const result = await resolver.runAsk(CTX, GlobalUID.encode('ask', 'ask-1'), ['e2', 'e3']);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answer: expect.objectContaining({ disclosedCount: 1, withheldCount: 2 }),
+      }),
+    );
+    // only the kept (non-redacted) entity is audited as backing the disclosure
+    expect(askService.complete).toHaveBeenCalledWith({ userId: 'user-1' }, 'ask-1', ['e1']);
+    expect(result.disclosedCount).toBe(1);
+    expect(result.withheldCount).toBe(2);
   });
 
   it('runAsk refuses when the caller is not the responder', async () => {

@@ -1,5 +1,6 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
 
+import { AskAnswerType } from './AskAnswerType';
 import { AskGrantType, AskType } from './AskType';
 import { MutationPayload } from './MutationPayload';
 
@@ -24,12 +25,16 @@ export class RunAskPayload extends MutationPayload {
   @Field(() => AskType, { nullable: true })
   ask?: AskType;
 
-  /**
-   * Number of the responder's entities the ask matched (Phase 0 dogfood signal).
-   * The disclosure-filtered answer that reaches the asker is Phase 1.
-   */
+  /** The disclosure-filtered answer produced for the ask (Phase 1). */
+  @Field(() => AskAnswerType, { nullable: true })
+  answer?: AskAnswerType;
+
+  /** Convenience mirrors of the answer's counts. */
   @Field(() => Int, { nullable: true })
   disclosedCount?: number;
+
+  @Field(() => Int, { nullable: true })
+  withheldCount?: number;
 }
 
 @ObjectType()

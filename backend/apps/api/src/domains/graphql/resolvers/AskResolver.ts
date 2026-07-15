@@ -5,14 +5,18 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import {
+  AskAnswerService,
   AskAuditService,
   AskExecutorService,
   AskRateLimitService,
   AskService,
   GrantService,
+  buildDisclosedAnswer,
+  inferAnswerForm,
   type GrantMode,
 } from '@ci/domains/asks';
 
+import { AskAnswerType } from '../types/AskAnswerType';
 import { CreateAskGrantInput, CreateAskInput } from '../types/AskInputs';
 import { AskGrantPayload, AskPayload, CreateAskPayload, RunAskPayload } from '../types/AskPayloads';
 import { AskAuditType, AskGrantType, AskType } from '../types/AskType';
@@ -39,6 +43,7 @@ export class AskResolver {
     private readonly auditService: AskAuditService,
     private readonly rateLimitService: AskRateLimitService,
     private readonly executorService: AskExecutorService,
+    private readonly answerService: AskAnswerService,
     private readonly featureService: FeatureService,
   ) {}
 
@@ -101,15 +106,19 @@ export class AskResolver {
 
   /**
    * Run an answerable ask (owner-approved, or auto-authorized) as the responder,
-   * finalizing it to `answered`. Only the responder may run their own asks; the
-   * query executes in the responder's memory scope. Phase 0 returns the matched
-   * entity count for the owner's dogfood preview — the disclosure-filtered answer
-   * delivered to the asker is Phase 1.
+   * producing the disclosure-filtered answer and finalizing the ask to
+   * `answered`. Only the responder may run their own asks; the query executes in
+   * the responder's memory scope. `redactItemIds` is the owner's "deny all but X"
+   * set — matched entity ids to withhold (counted, never itemized to the asker).
+   *
+   * The answer carries entity id+type REFERENCES and a templated summary only —
+   * never raw node content or forwardable signed media URLs.
    */
   @Mutation(() => RunAskPayload)
   async runAsk(
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
+    @Args('redactItemIds', { type: () => [String], nullable: true }) redactItemIds?: string[],
   ): Promise<RunAskPayload> {
     if (!(await this.enabled())) {
       return { success: false };
@@ -129,10 +138,52 @@ export class AskResolver {
     }
 
     const identifiers = await this.executorService.execute(ask);
-    const disclosedIds = identifiers.map((identifier) => identifier.id);
-    const completed = await this.askService.complete(serviceContext, id, disclosedIds);
+    const matches = identifiers.map((identifier) => ({ id: identifier.id, type: identifier.type }));
 
-    return { success: true, ask: AskType.toType(completed), disclosedCount: disclosedIds.length };
+    const redacted = new Set(redactItemIds ?? []);
+    // Entities that back the disclosure (post-redaction) — recorded in the audit
+    // for accountability regardless of whether they are itemized to the asker.
+    const backingIds = matches.filter((match) => !redacted.has(match.id)).map((match) => match.id);
+
+    const answer = buildDisclosedAnswer({
+      form: inferAnswerForm(ask.query),
+      matches,
+      redactedIds: redactItemIds,
+      consentBasis: ask.consentBasis,
+    });
+
+    const savedAnswer = await this.answerService.create({ askId: id, answer });
+    const completed = await this.askService.complete(serviceContext, id, backingIds);
+
+    return {
+      success: true,
+      ask: AskType.toType(completed),
+      answer: AskAnswerType.toType(savedAnswer),
+      disclosedCount: answer.disclosedCount,
+      withheldCount: answer.withheldCount,
+    };
+  }
+
+  /** The disclosure-filtered answer for an ask (visible to asker or responder). */
+  @Query(() => AskAnswerType, { nullable: true })
+  async askAnswer(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<AskAnswerType | null> {
+    if (!(await this.enabled())) {
+      return null;
+    }
+
+    const id = GlobalUID.parse('ask', gid);
+    // Enforce visibility via the parent ask (asker or responder only).
+    const ask = await this.askService.findById(toServiceContext(context), id);
+    if (ask == null) {
+      return null;
+    }
+
+    const answer = await this.answerService.findByAskId(id);
+
+    return answer ? AskAnswerType.toType(answer) : null;
   }
 
   @Mutation(() => AskGrantPayload)

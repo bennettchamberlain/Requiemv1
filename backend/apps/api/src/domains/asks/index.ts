@@ -21,9 +21,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { SearchNextModule } from '@ci/domains/search-next';
 
+import { AskAnswerEntity } from './entities/AskAnswerEntity';
 import { AskAuditEntity } from './entities/AskAuditEntity';
 import { AskEntity } from './entities/AskEntity';
 import { AskGrantEntity } from './entities/AskGrantEntity';
+import { AskAnswerService } from './services/AskAnswerService';
 import { AskAuditService } from './services/AskAuditService';
 import { AskExecutorService } from './services/AskExecutorService';
 import { AskRateLimitService } from './services/AskRateLimitService';
@@ -34,15 +36,40 @@ import { GrantService } from './services/GrantService';
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([AskEntity, AskGrantEntity, AskAuditEntity]), SearchNextModule],
-  providers: [AskService, GrantService, AskAuditService, AskRateLimitService, AskExecutorService],
-  exports: [AskService, GrantService, AskAuditService, AskRateLimitService, AskExecutorService],
+  imports: [
+    TypeOrmModule.forFeature([AskEntity, AskGrantEntity, AskAuditEntity, AskAnswerEntity]),
+    SearchNextModule,
+  ],
+  providers: [
+    AskService,
+    GrantService,
+    AskAuditService,
+    AskRateLimitService,
+    AskExecutorService,
+    AskAnswerService,
+  ],
+  exports: [
+    AskService,
+    GrantService,
+    AskAuditService,
+    AskRateLimitService,
+    AskExecutorService,
+    AskAnswerService,
+  ],
 })
 export class AsksModule {}
 
-export { AskEntity, AskGrantEntity, AskAuditEntity };
-export { AskService, GrantService, AskAuditService, AskRateLimitService, AskExecutorService };
+export { AskEntity, AskGrantEntity, AskAuditEntity, AskAnswerEntity };
+export {
+  AskService,
+  GrantService,
+  AskAuditService,
+  AskRateLimitService,
+  AskExecutorService,
+  AskAnswerService,
+};
 export { evaluateGrant } from './grantMatch';
+export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems } from './disclosure';
 export {
   ASK_TRANSITIONS,
   TERMINAL_ASK_STATUSES,
@@ -55,6 +82,7 @@ export {
 export type { Ask } from './entities/AskEntity';
 export type { AskGrant } from './entities/AskGrantEntity';
 export type { AskAudit } from './entities/AskAuditEntity';
+export type { AskAnswer } from './entities/AskAnswerEntity';
 export type {
   AskStatus,
   AskAuditOutcome,
@@ -66,4 +94,9 @@ export type {
   CreateAskDto,
   CreateAskGrantDto,
   RecordAskAuditDto,
+  AnswerForm,
+  AnswerSource,
+  DisclosedItem,
+  DisclosedAnswer,
+  CreateAskAnswerDto,
 } from './types';
