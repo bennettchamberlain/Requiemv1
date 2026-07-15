@@ -96,6 +96,10 @@
     "fetchBatchSize": {
       "__name": "CI_QUEUE_FETCH_BATCH_SIZE",
       "__format": "json"
+    },
+    "perQueueConcurrency": {
+      "__name": "CI_QUEUE_PER_QUEUE_CONCURRENCY",
+      "__format": "json"
     }
   },
   "features": {
