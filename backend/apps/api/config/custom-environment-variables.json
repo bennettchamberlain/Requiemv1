@@ -116,7 +116,8 @@
     "tags.page": "ENABLE_TAGS_PAGE",
     "hbpe": "ENABLE_HBPE",
     "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",
-    "shared.search": "ENABLE_SHARED_SEARCH"
+    "shared.search": "ENABLE_SHARED_SEARCH",
+    "ask": "ENABLE_ASK"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

@@ -22,6 +22,7 @@ import { LoggingModule, LoggerService, RequestLoggerMiddleware } from '@ci/commo
 import { BodyParserMiddleware } from '@ci/common/middleware';
 import config from '@ci/configuration';
 import { AgentModule } from '@ci/domains/agent';
+import { AsksModule } from '@ci/domains/asks';
 import { AuditModule } from '@ci/domains/audit';
 import { AuthModule } from '@ci/domains/auth';
 import { PortalAuthModule } from '@ci/domains/auth/PortalAuthModule';
@@ -72,6 +73,7 @@ import { UserModule } from '@ci/domains/user';
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     AgentModule,
+    AsksModule,
     AuditModule,
     AuthModule,
     PortalAuthModule,
