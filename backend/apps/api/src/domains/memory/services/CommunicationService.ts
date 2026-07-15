@@ -5,7 +5,13 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { INGEST_REFRESH_COLUMNS, computeChunkSize } from '@ci/common/persistence';
+import {
+  INGEST_REFRESH_COLUMNS,
+  computeChunkSize,
+  keysetPaginate,
+  type KeysetPageArgs,
+  type KeysetPage,
+} from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -464,6 +470,24 @@ export class CommunicationService {
     });
 
     return result.map((entity) => CommunicationEntity.toEgressType(entity));
+  }
+
+  /**
+   * Keyset-paginated page for the GraphQL connection — ordered by (time, id)
+   * DESC, only one page (+1 sentinel) is read from Postgres via the
+   * (user_id, time) index instead of loading every row into memory.
+   */
+  async findPage(context: UserServiceContext, args: KeysetPageArgs): Promise<KeysetPage<Communication>> {
+    const page = await keysetPaginate(this.communicationRepository, args, {
+      alias: 'communication',
+      timeProp: 'time',
+      userId: context.userId,
+    });
+
+    return {
+      ...page,
+      entities: page.entities.map((entity) => CommunicationEntity.toEgressType(entity)),
+    };
   }
 
   async findById(context: ServiceContext, id: string): Promise<Communication | null> {
