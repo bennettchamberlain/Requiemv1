@@ -22,6 +22,11 @@ ALTER TABLE ci.capture_events ADD COLUMN IF NOT EXISTS source_type text NOT NULL
 ALTER TABLE ci.capture_events ALTER COLUMN destination DROP DEFAULT;
 ALTER TABLE ci.capture_events ALTER COLUMN source_type DROP DEFAULT;
 
+-- The materialize→link step stamps the destination row's id back onto its
+-- capture row (UPDATE … SET materialized_id, BulkIngestController). Nullable:
+-- a capture row is unlinked until its record materializes.
+ALTER TABLE ci.capture_events ADD COLUMN IF NOT EXISTS materialized_id uuid;
+
 -- Replace the v1 unique key with the capture key the ON CONFLICT targets.
 ALTER TABLE ci.capture_events
   DROP CONSTRAINT IF EXISTS capture_events_user_id_source_system_source_id_key;
@@ -36,3 +41,4 @@ ALTER TABLE ci.capture_events
   UNIQUE (user_id, source_system, source_id);
 ALTER TABLE ci.capture_events DROP COLUMN IF EXISTS destination;
 ALTER TABLE ci.capture_events DROP COLUMN IF EXISTS source_type;
+ALTER TABLE ci.capture_events DROP COLUMN IF EXISTS materialized_id;
