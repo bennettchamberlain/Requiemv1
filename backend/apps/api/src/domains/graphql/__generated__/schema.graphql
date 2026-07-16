@@ -798,6 +798,29 @@ type MessageType implements Node {
   threadId: ID!
 }
 
+"""One forecast day with its q10/q50/q90 band"""
+type MetricForecastPointType {
+  """YYYY-MM-DD"""
+  date: String!
+  q10: Float!
+  q50: Float!
+  q90: Float!
+}
+
+"""Seasonal-naive + EWMA forecast of a Daily Feature Store metric"""
+type MetricForecastType {
+  """Fraction of the history window that had a value (0..1)"""
+  coverage: Float!
+  horizonDays: Int!
+
+  """ci_derived.daily_metrics metric key"""
+  metric: String!
+  points: [MetricForecastPointType!]!
+
+  """OK, NOT_ENOUGH_SIGNAL, or UNKNOWN_METRIC"""
+  status: String!
+}
+
 type Mutation {
   bulkIngestGraph(input: BulkGraphInput!): BulkGraphPayload!
   bulkIngestItemRelationships(input: [ItemRelationshipInput!]!): BulkItemRelationshipResult!
@@ -847,6 +870,11 @@ type Mutation {
 
   """Mark a summary as seen"""
   markSummaryAsSeen(id: ID!): SummaryType
+
+  """
+  Rebuild place clusters + transitions from ci.position for the current user
+  """
+  rebuildPlaces: String!
   removeAnswer(id: String!): Boolean!
   removeContent(id: String!): Boolean!
   removeEvent(id: String!): Boolean!
@@ -948,6 +976,45 @@ type PlaceConnection implements Connection {
 type PlaceEdge implements Edge {
   cursor: String!
   node: PlaceType!
+}
+
+"""Top-k next-place forecast from the place transition model"""
+type PlaceForecastType {
+  """
+  Which backoff level produced the distribution (FROM_HOUR_DOW, FROM_HOUR_ADJACENT, FROM_ANY, GLOBAL_PRIOR)
+  """
+  backoffLevel: String
+  heatGrid: [PlaceHeatCellType!]!
+  horizonHours: Int!
+  k: Int!
+
+  """ISO-8601 timestamp the prediction was made at"""
+  predictedAt: String!
+  predictions: [PlacePredictionType!]!
+
+  """OK, or NO_HISTORY when no place clusters exist yet"""
+  status: String!
+}
+
+"""One coarse heat-grid cell (~1 km) weighted by predicted probability"""
+type PlaceHeatCellType {
+  lat: Float!
+  lng: Float!
+  weight: Float!
+}
+
+"""One candidate next place with its probability"""
+type PlacePredictionType {
+  """ci_derived.place_clusters id"""
+  clusterId: String!
+
+  """Reverse-geocoded place name, when cached"""
+  label: String
+  lat: Float!
+  lng: Float!
+
+  """Probability in [0, 1]; the top-k sums to <= 1"""
+  probability: Float!
 }
 
 type PlaceType implements Node & Taggable {
@@ -1076,6 +1143,11 @@ type Query {
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
+
+  """
+  q10/q50/q90 forecast of a Daily Feature Store metric (NOT_ENOUGH_SIGNAL when history is too thin)
+  """
+  metricForecast(days: Int = 3, metric: String!): MetricForecastType!
   node(id: ID!): Node
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
@@ -1083,6 +1155,11 @@ type Query {
   people(after: String, before: String, first: Int, last: Int): PersonConnection!
   person(id: ID!): PersonType
   place(id: ID!): PlaceType
+
+  """
+  Top-k next-place forecast from the transition model (logged for later scoring)
+  """
+  placeForecast(horizonHours: Int = 4, k: Int = 5): PlaceForecastType!
   places(after: String, before: String, first: Int, last: Int): PlaceConnection!
 
   """

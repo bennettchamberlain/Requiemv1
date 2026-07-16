@@ -11,6 +11,7 @@ import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
+import { InsightsModule } from '@ci/domains/insights';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
@@ -50,9 +51,11 @@ import { GraphIngestResolver } from './resolvers/GraphIngestResolver';
 import { ItemRelationshipResolver } from './resolvers/ItemRelationshipResolver';
 import { ItemResolver } from './resolvers/ItemResolver';
 import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
+import { MetricForecastResolver } from './resolvers/MetricForecastResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
+import { PlaceForecastResolver } from './resolvers/PlaceForecastResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { PredictionCalibrationResolver } from './resolvers/PredictionCalibrationResolver';
 import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
@@ -84,6 +87,7 @@ import { UserResolver } from './resolvers/UserResolver';
     EtlModule,
     FilesModule,
     GraphModule,
+    InsightsModule,
     IntelligenceModule,
     MemoryModule,
     NotesModule,
@@ -115,8 +119,10 @@ import { UserResolver } from './resolvers/UserResolver';
     ItemRelationshipResolver,
     ItemResolver,
     KnownPlacesResolver,
+    MetricForecastResolver,
     PersonLoader,
     PersonResolver,
+    PlaceForecastResolver,
     PlaceLoader,
     PlaceResolver,
     PredictionCalibrationResolver,
