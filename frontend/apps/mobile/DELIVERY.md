@@ -18,14 +18,18 @@ backend has an unusual submission profile: the load-bearing unlock is a **seeded
 HTTPS-only demo server** the reviewer can actually use — every review-based channel
 needs it. Nothing ships to either store until the 🔴 P0 items below are done.
 
-**Fixed in this pass (in-repo, no accounts needed):**
+**Landed so far (in-repo, no accounts needed):**
 
-| Fix | File |
+| Fix | Where |
 |---|---|
 | ✅ Apple **Privacy Manifest** (`PrivacyInfo.xcprivacy`) authored + wired into the Xcode target | `ios/App/App/PrivacyInfo.xcprivacy` (+ `project.pbxproj`) |
 | ✅ Export-compliance key `ITSAppUsesNonExemptEncryption=false` (skips the per-upload prompt) | `ios/App/App/Info.plist` |
 | ✅ `UIRequiredDeviceCapabilities` `armv7` → `arm64` (stale 32-bit template value) | `ios/App/App/Info.plist` |
 | ✅ Android `allowBackup="false"` (keep the private-memory app's local state out of cloud/adb backup) | `android/app/src/main/AndroidManifest.xml` |
+| ✅ **In-app account deletion** — `DELETE /account` (soft-delete + access revocation) and Settings → Account | `backend/.../auth/controllers/AccountController.ts`, `frontend/apps/web/src/pages/SettingsPage/sections/AccountSection.tsx` |
+
+Both native builds (iOS + Android) were verified green on a `mobile-v*` tag after the
+native changes; the backend/frontend work is green on PR CI.
 
 ---
 
@@ -36,13 +40,17 @@ Owner: **[code]** = doable in-repo · **[acct]** = needs an Apple/Google/Sentry 
 
 ### 1a. Code / config (in-repo)
 
-- [x] 🔴 **[code]** iOS Privacy Manifest — *done this pass.*
-- [x] 🟠 **[code]** `ITSAppUsesNonExemptEncryption`, `arm64`, Android `allowBackup=false` — *done this pass.*
-- [ ] 🔴 **[code]** **In-app account deletion** (Apple Guideline 5.1.1(v) + Google Play Data Deletion). **Not exempt** — `SignupPage.tsx` is a real in-app registration flow, so the *initiation* path must live in the app even though data resides on the user's appliance. Needs: a backend delete endpoint + an in-app "Delete account" flow + a public web deletion URL for Play. **Biggest remaining code P0.**
+- [x] 🔴 **[code]** iOS Privacy Manifest — *done.*
+- [x] 🟠 **[code]** `ITSAppUsesNonExemptEncryption`, `arm64`, Android `allowBackup=false` — *done.*
+- [x] 🔴 **[code]** **In-app account deletion** (Apple 5.1.1(v) + Google Play Data Deletion) — *done: `DELETE /account` + Settings → Account, both CI-green.* **Not exempt** — `SignupPage.tsx` is a real in-app registration flow, so the *initiation* path must live in the app even though data resides on the user's appliance.
+  - ⚠️ **What this uncovered:** a hard delete is impossible today. **33 tables** reference `users(id)` with **no `ON DELETE` clause** (→ `NO ACTION`): `events`, `content`, `files`, `threads`, `messages`, `notes`, `embeddings`, `tags`, `sessions`, `questions`, `answers`, all of `hbpe.*`. `DELETE FROM ci.users` raises a foreign-key violation for any account with data — `UserService.remove()` has always had this bug and survives only because nothing calls it. Several user-scoped tables are also TimescaleDB hypertables (~1M+ rows), so even with cascades a synchronous delete would lock for a long time.
+  - **Chosen strategy: soft-delete + background purge.** `deleted_at` is a TypeORM `@DeleteDateColumn`, so every read on the user repository skips the row — all three auth entry points (`findById` for JWT *and* API-key, `validatePassword`, `findByEmail`) inherit the gate for free and no future auth path can forget it. `purge_after` is pinned at request time so config changes can't rewrite a promise already made.
+  - [ ] 🔴 **[code]** **Remaining: the background purge job** that consumes `purge_after` (batched + hypertable-aware). Until it exists, `purge_after` is a promise with nothing honouring it — deletion revokes access but does not yet delete data, which the privacy policy and Data Safety answers must not overstate.
+  - [ ] 🔴 **[acct]** **Remaining: the public web deletion URL** Google requires (in addition to the in-app path).
 - [ ] 🔴 **[code]** **Signed release CI lanes** — `mobile-build.yml` only produces an unsigned debug APK + a Simulator `.app`. Add: iOS `xcodebuild archive → -exportArchive` (app-store method) → `.ipa`; Android `./gradlew bundleRelease` → signed `.aab`. Gate both on the signing secrets (§2). *(Code is in-repo; the certs/keystore behind it are [acct].)*
 - [ ] 🟠 **[code]** **Scope Android cleartext** — replace app-wide `usesCleartextTraffic="true"` with an `android:networkSecurityConfig`. ⚠️ **Deferred deliberately:** the appliance can be *any* user-entered LAN/tailnet http host, so a scoped config still has to permit cleartext broadly; changing it risks regressing the hard-won LAN-http connectivity. Do this only with an on-device Android retest. Keep the iOS `NSAllowsArbitraryLoadsInWebContent` scoping as the model. Reconcile with the Data Safety "encrypted in transit" answer (see C3 below).
 - [ ] 🟠 **[code]** **Version/build automation** — everything is pinned at `1` / `1.0` / `0.0.0`. Derive iOS `CURRENT_PROJECT_VERSION`, Android `versionCode`, and a web build id from CI (tag + run number) so the *second* upload isn't rejected as a duplicate build.
-- [ ] 🟠 **[code]** **iPad decision** — `Info.plist` declares all iPad orientations, so a universal binary **will be reviewed on iPad**, where the phone-shaped webview risks a 4.2/2.1 rejection. Cheapest path to first approval: set `TARGETED_DEVICE_FAMILY = 1` (iPhone-only); revisit iPad layout later.
+- [ ] 🟠 **[code]** **iPad — DECIDED: ship universal (iPhone + iPad).** `Info.plist` already declares all iPad orientations, so the binary **will be reviewed on iPad**. Since we are keeping iPad in scope rather than setting `TARGETED_DEVICE_FAMILY = 1`, the adaptive iPad/split-view layout in `@ci/fe-web` becomes **pre-submission work, not roadmap work**: a phone-shaped webview stretched to iPad is a live 4.2/2.1 rejection risk, and iPad screenshots become mandatory for the listing.
 - [ ] 🟢 **[code]** `CODE_SIGN_IDENTITY = "iPhone Developer"` is the pre-Xcode-9 name → resolves during signing setup (§2); use `Apple Development` / let distribution resolve `Apple Distribution`.
 - [ ] 🟢 **[code]** Verify Android 15 **edge-to-edge** (targetSdk 35 forces it) + **16 KB page size** (likely a no-op — no native libs) on an API-35 device.
 
@@ -110,7 +118,7 @@ Phased **Now** (next release train) / **Next** (following quarter) / **Later**. 
 | **Android App Actions / dynamic Shortcuts** | L | Zero equivalent of the 4 iOS intents today. `ShortcutManager` + App Actions (Ask/Search/Remember/Capture) + a keystore config bridge (Android analogue of `CompanionConfig.swift`). |
 | **Universal Links + Android App Links** | L | Real `https` links open specific memories/threads. `AppDelegate` already forwards `NSUserActivity`; needs an entitlements file + hosted AASA/`assetlinks.json` + the deep-link router. Also lets OIDC migrate off the hijackable custom scheme. |
 | **Offline read cache** (interim before PowerSync) | M | Cache last-viewed memories so the app is usable when the appliance is unreachable — a real failure mode for a self-hosted backend. |
-| **iPad / tablet adaptive layout** | M | Needed if going universal; otherwise ship iPhone-only first (§1a). |
+| **Account-data purge job** | L | Consumes `purge_after`: batched, hypertable-aware hard deletion of a soft-deleted account's data across the 33 FK-blocking tables. Promoted from roadmap to **pre-submission** — until it runs, deletion revokes access without deleting data, and the privacy policy / Data Safety answers must say only what is true. |
 | **Accessibility pass** (VoiceOver/TalkBack, Dynamic Type, contrast) | M | Also an EU legal obligation — the **European Accessibility Act** (in force June 2025) reaches consumer apps sold into the EU, not just UX polish. |
 | **Low-end Android WebGL / 3D-graph degradation** | L | The 3D knowledge-graph can stutter/crash the webview on low-GPU devices; detect tier and fall back to 2D / capped nodes. |
 
