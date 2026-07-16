@@ -27,7 +27,9 @@ import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
+import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
+import { SummariesModule } from '@ci/domains/summaries';
 
 import { IntentCatalogService } from './catalog/IntentCatalogService';
 import { ToolInvokedListener } from './listeners/ToolInvokedListener';
@@ -41,9 +43,12 @@ import { GetEntertainmentPreferencesTool } from './tools/GetEntertainmentPrefere
 import { GetFamilyMembersTool } from './tools/GetFamilyMembersTool';
 import { GetStreamingAvailabilityTool } from './tools/GetStreamingAvailabilityTool';
 import { GetUserPreferencesTool } from './tools/GetUserPreferencesTool';
+import { InsightsListTool } from './tools/InsightsListTool';
 import { MediaFindPhotosTool } from './tools/MediaFindPhotosTool';
 import { PeopleFindTool } from './tools/PeopleFindTool';
 import { PlacesFindTool } from './tools/PlacesFindTool';
+import { PredictionsCalibrationTool } from './tools/PredictionsCalibrationTool';
+import { PredictionsForecastTool } from './tools/PredictionsForecastTool';
 import { ReadKnowledgeTool } from './tools/ReadKnowledgeTool';
 import { WriteKnowledgeTool } from './tools/WriteKnowledgeTool';
 
@@ -62,6 +67,9 @@ const nativeToolInstances = [
   PlacesFindTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
+  PredictionsForecastTool,
+  PredictionsCalibrationTool,
+  InsightsListTool,
 ];
 
 /**
@@ -74,7 +82,9 @@ const nativeToolInstances = [
     FilesModule,
     MemoryModule,
     IntelligenceModule,
+    PredictionsModule,
     SearchNextModule,
+    SummariesModule,
   ],
   providers: [
     ToolRegistry,

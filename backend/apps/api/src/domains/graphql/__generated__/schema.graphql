@@ -650,6 +650,36 @@ type ForecastBucketType {
   startTime: String!
 }
 
+"""
+One 30-minute bucket of a past-day forecast: the latest prediction issued for the bucket joined with the observed (backfilled) actual L0 class
+"""
+type ForecastHistoryBucketType {
+  """
+  Observed L0 class for the bucket, null when the actual has not been backfilled
+  """
+  actualL0: String
+  bucketIndex: Int!
+
+  """Predicted L0 class distribution (highest probability first)"""
+  predictedL0: [ProbabilityEntryType!]!
+
+  """ISO-8601 start time for this bucket"""
+  startTime: String!
+}
+
+"""
+Past-day forecast history: for each 30-minute bucket of the requested date, the latest prediction issued for that bucket joined with its backfilled actual. Powers the past-day heatmap rows and the predicted-vs-actual timeline overlay.
+"""
+type ForecastHistoryType {
+  """
+  48 buckets when a forecast was issued for the date; only logged buckets are returned
+  """
+  buckets: [ForecastHistoryBucketType!]!
+
+  """The requested forecast date (YYYY-MM-DD)"""
+  date: String!
+}
+
 """48-bucket HBPE day-ahead forecast"""
 type ForecastType {
   buckets: [ForecastBucketType!]!
@@ -1110,6 +1140,11 @@ type Query {
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
   browserActivity(id: ID!): BrowserActivityType
+
+  """
+  HBPE forecast calibration over a trailing window of days: latest live-scoring run plus the trend (newest first). Measures forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy.
+  """
+  calibration(windowDays: Int = 30): PredictionCalibrationType
   communication(id: ID!): CommunicationType
   communications(after: String, before: String, first: Int, last: Int): CommunicationConnection!
   concept(id: ID!): ConceptType
@@ -1138,6 +1173,14 @@ type Query {
 
   """Fetch the HBPE day-ahead forecast histogram"""
   forecast(horizon: String = "24h"): ForecastType
+
+  """
+  Per-bucket forecast history for a past local date (YYYY-MM-DD): the latest prediction issued for each 30-minute bucket joined with its backfilled actual L0 class.
+  """
+  forecastHistory(
+    """Calendar date, formatted YYYY-MM-DD"""
+    date: String!
+  ): ForecastHistoryType
   item(id: ID!): ItemType
   items(after: String, before: String, first: Int, last: Int): ItemConnection!
   knownPlaceCandidates: [KnownPlaceCandidateType!]!

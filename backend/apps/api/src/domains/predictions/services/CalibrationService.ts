@@ -9,6 +9,8 @@ import type { PredictionScoreRow } from '../types';
 
 export const DEFAULT_CALIBRATION_LIMIT = 14;
 export const MAX_CALIBRATION_LIMIT = 90;
+export const DEFAULT_CALIBRATION_WINDOW_DAYS = 30;
+export const MAX_CALIBRATION_WINDOW_DAYS = 365;
 
 /**
  * Reads the HBPE live-scoring results from hbpe.prediction_score (written
@@ -57,6 +59,43 @@ export class CalibrationService {
          ORDER BY scored_at DESC
          LIMIT $2`,
         [context.userId, capped],
+      )) as PredictionScoreRow[];
+    } catch (err) {
+      if (this.isMissingRelation(err)) {
+        this.logger.debug('hbpe.prediction_score does not exist yet — returning no calibration scores');
+
+        return [];
+      }
+
+      throw err;
+    }
+  }
+
+  /**
+   * Scoring runs whose scored_at falls within the trailing windowDays, newest
+   * first (row 0 = latest; the rest form the trend). The same missing-table
+   * tolerance as getScores applies; the row count is additionally capped at
+   * MAX_CALIBRATION_LIMIT so a pathological window cannot balloon the payload.
+   */
+  async getScoresSince(
+    context: UserServiceContext,
+    windowDays = DEFAULT_CALIBRATION_WINDOW_DAYS,
+  ): Promise<PredictionScoreRow[]> {
+    const days = Math.min(
+      Math.max(Math.trunc(windowDays) || DEFAULT_CALIBRATION_WINDOW_DAYS, 1),
+      MAX_CALIBRATION_WINDOW_DAYS,
+    );
+
+    try {
+      return (await this.dataSource.query(
+        `SELECT scored_at, window_start, window_end, brier, l0_top1_acc, l1_top3_acc,
+                ece, coverage, reliability_json, drift_flag, n_buckets
+         FROM hbpe.prediction_score
+         WHERE user_id = $1
+           AND scored_at >= NOW() - make_interval(days => $2::int)
+         ORDER BY scored_at DESC
+         LIMIT $3`,
+        [context.userId, days, MAX_CALIBRATION_LIMIT],
       )) as PredictionScoreRow[];
     } catch (err) {
       if (this.isMissingRelation(err)) {

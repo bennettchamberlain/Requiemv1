@@ -5,7 +5,11 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
-import { CalibrationService, DEFAULT_CALIBRATION_LIMIT } from '@ci/domains/predictions';
+import {
+  CalibrationService,
+  DEFAULT_CALIBRATION_LIMIT,
+  DEFAULT_CALIBRATION_WINDOW_DAYS,
+} from '@ci/domains/predictions';
 
 import { PredictionCalibrationType } from '../types/PredictionCalibrationType';
 
@@ -52,6 +56,33 @@ export class PredictionCalibrationResolver {
         'Prediction calibration query failed',
         err instanceof Error ? err : new Error(String(err)),
       );
+
+      return null;
+    }
+  }
+
+  @Query(() => PredictionCalibrationType, {
+    nullable: true,
+    description:
+      'HBPE forecast calibration over a trailing window of days: latest live-scoring run plus the trend ' +
+      '(newest first). Measures forecast self-consistency against Qwen-derived behavior labels — not ' +
+      'ground-truth accuracy.',
+  })
+  async calibration(
+    @Context() context: RequestContext,
+    @Args('windowDays', { type: () => Int, nullable: true, defaultValue: DEFAULT_CALIBRATION_WINDOW_DAYS })
+    windowDays: number,
+  ): Promise<PredictionCalibrationType | null> {
+    if (!(await this.featureService.isFeatureEnabled('hbpe'))) {
+      return null;
+    }
+
+    try {
+      const rows = await this.calibrationService.getScoresSince(toServiceContext(context), windowDays);
+
+      return PredictionCalibrationType.toType(rows);
+    } catch (err) {
+      this.logger.error('Calibration query failed', err instanceof Error ? err : new Error(String(err)));
 
       return null;
     }

@@ -46,6 +46,7 @@ import { ConnectionSyncJobResolver } from './resolvers/ConnectionSyncJobResolver
 import { ContentResolver } from './resolvers/ContentResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
+import { ForecastHistoryResolver } from './resolvers/ForecastHistoryResolver';
 import { ForecastResolver } from './resolvers/ForecastResolver';
 import { GraphIngestResolver } from './resolvers/GraphIngestResolver';
 import { ItemRelationshipResolver } from './resolvers/ItemRelationshipResolver';
@@ -97,6 +98,7 @@ import { UserResolver } from './resolvers/UserResolver';
   ],
   providers: [
     ActionResolver,
+    ForecastHistoryResolver,
     ForecastResolver,
     BrowserActivityResolver,
     CommunicationResolver,
