@@ -25,6 +25,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import config from '@ci/configuration';
 import { UserModule } from '@ci/domains/user';
 
+import { AccountController } from './controllers/AccountController';
 import { ApiKeyController } from './controllers/ApiKeyController';
 import { ConnectController } from './controllers/ConnectController';
 import { OidcController } from './controllers/OidcController';
@@ -74,7 +75,14 @@ import { SignupCodeService } from './services/SignupCodeService';
     ConnectService,
     ConnectRequestAuthGuard,
   ],
-  controllers: [SessionController, SignupController, ApiKeyController, OidcController, ConnectController],
+  controllers: [
+    SessionController,
+    SignupController,
+    AccountController,
+    ApiKeyController,
+    OidcController,
+    ConnectController,
+  ],
   exports: [SignupCodeService, ApiKeyService],
 })
 export class AuthModule {}
