@@ -13,7 +13,13 @@ Job order:
   4b. backfill_actuals    < 30 sec    — fill prediction_log.actual_* for elapsed
                                         forecast buckets from observed token_stream
                                         labels (Phase 5a / T5.1).
-  5. drift_detection                  [Phase 5 stub]
+  5. score_forecasts      < 30 sec    — score elapsed forecast buckets against
+                                        the actuals backfilled in 4b: multiclass
+                                        Brier (8 L0 classes), L0 top-1 / L1 top-3
+                                        accuracy, ECE + reliability bins,
+                                        coverage, and a rolling-window drift
+                                        flag. Persists to hbpe.prediction_score
+                                        (Phase 5b / T5.2).
   6. cache_invalidation               [Phase 5 stub]
 
 Each step is a separate Temporal activity with fail-continue semantics:
@@ -333,15 +339,36 @@ async def backfill_actuals(user_id: str) -> dict:
     return await asyncio.get_event_loop().run_in_executor(None, _run)
 
 
-# ── Phase 5 stubs ──────────────────────────────────────────────────────────────
+# ── Step 5 — Forecast scoring & drift (Phase 5b / T5.2) ─────────────────────────
 
 
 @activity.defn(name="drift_detection")
-async def drift_detection(user_id: str) -> str:
-    log.info("drift_detection: stub — Phase 5 (user=%s)", user_id)
-    return "skipped"
+async def drift_detection(user_id: str) -> dict:
+    """
+    Step 5: Score the user's elapsed forecasts against the actuals backfilled
+    in step 4b and persist the run to ``hbpe.prediction_score``.
+
+    Computes the multiclass Brier score over the 8 L0 classes, L0 top-1 and
+    L1 top-3 accuracy, ECE with a reliability-diagram table, coverage, and a
+    rolling-window drift flag (recent L0 top-1 accuracy vs. an equal-length
+    trailing baseline). DB-bound, so it runs on the default executor off the
+    event loop like the other query steps. Metric definitions live in
+    ``ci.pipeline.scoring``.
+
+    Retained the activity name ``drift_detection`` (Step 5) so the Temporal
+    registration and workflow wiring are unchanged; the drift signal is one of
+    the metrics this step now produces.
+    """
+    import asyncio
+
+    def _run() -> dict:
+        from ci.pipeline.scoring import score_and_store
+        return score_and_store(user_id)
+
+    return await asyncio.get_event_loop().run_in_executor(None, _run)
 
 
+# ── Step 6 — cache invalidation (Phase 5 stub) ──────────────────────────────────
 @activity.defn(name="cache_invalidation")
 async def cache_invalidation(user_id: str) -> str:
     log.info("cache_invalidation: stub — Phase 5 (user=%s)", user_id)
@@ -486,9 +513,9 @@ class NightlyHBPEWorkflow:
             "step4b_backfill_actuals",
         )
 
-        # Step 5 — drift detection (stub)
-        self._step = "drift"
-        results["steps"]["step5_drift"] = await _safe_execute(
+        # Step 5 — score elapsed forecasts vs. actuals (Brier/accuracy/ECE) + drift
+        self._step = "score"
+        results["steps"]["step5_scoring"] = await _safe_execute(
             workflow.execute_activity(
                 drift_detection, user_id,
                 start_to_close_timeout=_ACTIVITY_TIMEOUT,

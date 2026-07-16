@@ -54,6 +54,7 @@ import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
+import { PredictionCalibrationResolver } from './resolvers/PredictionCalibrationResolver';
 import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
 import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
@@ -118,6 +119,7 @@ import { UserResolver } from './resolvers/UserResolver';
     PersonResolver,
     PlaceLoader,
     PlaceResolver,
+    PredictionCalibrationResolver,
     PreviewLoader,
     ProviderResolver,
     ProviderKeyLoader,
