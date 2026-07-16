@@ -9,9 +9,9 @@
 |---|---|---|
 | HBPE live scoring loop — Brier/ECE/accuracy/drift from `hbpe.prediction_log` actuals → `hbpe.prediction_score` | PR #1675 (`backend/apps/hbpe/src/ci/pipeline/scoring.py`) | merged into spike, CI-green |
 | Daily Feature Store — `ci_derived.daily_metrics` (10 metrics, coverage-aware) + compute-then-narrate descriptive question slice (20 questions) | PR #1700 (`backend/apps/api/src/domains/insights/`) | merged into spike, CI-green |
-| Place clusters + next-place transition model (`ci_derived.place_clusters` / `place_transitions`) + metric forecasters (q10/50/90) | built on-spike (epic #58) | in progress |
-| Calibration/forecast-history GraphQL egress + curated `predictions.*`/`insights.*` intents | built on-spike (epic #59) | in progress |
-| `/predictions` dashboard — week heatmap, Next-Up differential, metric strips, calibration panel | built on-spike (epic #57) | in progress |
+| Place clusters + next-place transition model (`ci_derived.place_clusters` / `place_transitions`) + metric forecasters (q10/50/90) + `rebuildPlaces` mutation | built on-spike (epic #58) | ✅ merged (72 tests; SQL validated on live PostGIS) |
+| Calibration/forecast-history/placeForecast/metricForecast GraphQL egress + curated `predictions.forecast` / `predictions.calibration` / `insights.list` intents (new `predictions`/`insights` domains → auto-exposed via `/api/intents` + MCP) | built on-spike (epic #59) | ✅ merged (58 tool tests) |
+| `/predictions` dashboard — 7×48 week heatmap (actual\|forecast seam, divergence rings), Next-Up differential, metric strips (q10–q90 bands), calibration/trust panel, next-places list; gated on `hbpe` flag | built on-spike (epic #57) | ✅ merged (329 fe tests incl. 31 new) |
 
 Design docs: `CI-Engineering/architecture/ai-roadmap.md`, `ai-strategy.md`, ADRs 0006–0008 + HBPE-0009 (CI-Engineering PR #56).
 
