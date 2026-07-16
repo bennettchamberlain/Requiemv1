@@ -5,6 +5,10 @@ points it at a remote, self-hosted **CI-Server**. The server stays the brain; th
 is a thin client. **Both iOS and Android build and run today** (verified in the iOS
 Simulator and an Android emulator).
 
+> 📦 **Shipping to the stores?** See **[`DELIVERY.md`](./DELIVERY.md)** — the
+> App Store / Play Store pre-submission checklist (what's done vs. still blocking) and
+> the phased roadmap (Sentry, push notifications, deep links, Apple Intents, offline).
+
 ## How it works
 
 - `capacitor.config.ts` sets `webDir: '../web/dist'` — the app ships the `@ci/fe-web`
