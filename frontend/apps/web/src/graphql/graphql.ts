@@ -712,6 +712,27 @@ export type ForecastBucketType = {
   startTime: Scalars['String']['output'];
 };
 
+/** One 30-minute bucket of a past-day forecast: the latest prediction issued for the bucket joined with the observed (backfilled) actual L0 class */
+export type ForecastHistoryBucketType = {
+  __typename?: 'ForecastHistoryBucketType';
+  /** Observed L0 class for the bucket, null when the actual has not been backfilled */
+  actualL0?: Maybe<Scalars['String']['output']>;
+  bucketIndex: Scalars['Int']['output'];
+  /** Predicted L0 class distribution (highest probability first) */
+  predictedL0: Array<ProbabilityEntryType>;
+  /** ISO-8601 start time for this bucket */
+  startTime: Scalars['String']['output'];
+};
+
+/** Past-day forecast history: for each 30-minute bucket of the requested date, the latest prediction issued for that bucket joined with its backfilled actual. Powers the past-day heatmap rows and the predicted-vs-actual timeline overlay. */
+export type ForecastHistoryType = {
+  __typename?: 'ForecastHistoryType';
+  /** 48 buckets when a forecast was issued for the date; only logged buckets are returned */
+  buckets: Array<ForecastHistoryBucketType>;
+  /** The requested forecast date (YYYY-MM-DD) */
+  date: Scalars['String']['output'];
+};
+
 /** 48-bucket HBPE day-ahead forecast */
 export type ForecastType = {
   __typename?: 'ForecastType';
@@ -860,6 +881,29 @@ export type MessageType = Node & {
   threadId: Scalars['ID']['output'];
 };
 
+/** One forecast day with its q10/q50/q90 band */
+export type MetricForecastPointType = {
+  __typename?: 'MetricForecastPointType';
+  /** YYYY-MM-DD */
+  date: Scalars['String']['output'];
+  q10: Scalars['Float']['output'];
+  q50: Scalars['Float']['output'];
+  q90: Scalars['Float']['output'];
+};
+
+/** Seasonal-naive + EWMA forecast of a Daily Feature Store metric */
+export type MetricForecastType = {
+  __typename?: 'MetricForecastType';
+  /** Fraction of the history window that had a value (0..1) */
+  coverage: Scalars['Float']['output'];
+  horizonDays: Scalars['Int']['output'];
+  /** ci_derived.daily_metrics metric key */
+  metric: Scalars['String']['output'];
+  points: Array<MetricForecastPointType>;
+  /** OK, NOT_ENOUGH_SIGNAL, or UNKNOWN_METRIC */
+  status: Scalars['String']['output'];
+};
+
 export type Mutation = {
   __typename?: 'Mutation';
   bulkIngestGraph: BulkGraphPayload;
@@ -906,6 +950,8 @@ export type Mutation = {
   markSummaryAsDismissed?: Maybe<SummaryType>;
   /** Mark a summary as seen */
   markSummaryAsSeen?: Maybe<SummaryType>;
+  /** Rebuild place clusters + transitions from ci.position for the current user */
+  rebuildPlaces: Scalars['String']['output'];
   removeAnswer: Scalars['Boolean']['output'];
   removeContent: Scalars['Boolean']['output'];
   removeEvent: Scalars['Boolean']['output'];
@@ -1353,6 +1399,42 @@ export type PlaceEdge = Edge & {
   node: PlaceType;
 };
 
+/** Top-k next-place forecast from the place transition model */
+export type PlaceForecastType = {
+  __typename?: 'PlaceForecastType';
+  /** Which backoff level produced the distribution (FROM_HOUR_DOW, FROM_HOUR_ADJACENT, FROM_ANY, GLOBAL_PRIOR) */
+  backoffLevel?: Maybe<Scalars['String']['output']>;
+  heatGrid: Array<PlaceHeatCellType>;
+  horizonHours: Scalars['Int']['output'];
+  k: Scalars['Int']['output'];
+  /** ISO-8601 timestamp the prediction was made at */
+  predictedAt: Scalars['String']['output'];
+  predictions: Array<PlacePredictionType>;
+  /** OK, or NO_HISTORY when no place clusters exist yet */
+  status: Scalars['String']['output'];
+};
+
+/** One coarse heat-grid cell (~1 km) weighted by predicted probability */
+export type PlaceHeatCellType = {
+  __typename?: 'PlaceHeatCellType';
+  lat: Scalars['Float']['output'];
+  lng: Scalars['Float']['output'];
+  weight: Scalars['Float']['output'];
+};
+
+/** One candidate next place with its probability */
+export type PlacePredictionType = {
+  __typename?: 'PlacePredictionType';
+  /** ci_derived.place_clusters id */
+  clusterId: Scalars['String']['output'];
+  /** Reverse-geocoded place name, when cached */
+  label?: Maybe<Scalars['String']['output']>;
+  lat: Scalars['Float']['output'];
+  lng: Scalars['Float']['output'];
+  /** Probability in [0, 1]; the top-k sums to <= 1 */
+  probability: Scalars['Float']['output'];
+};
+
 export type PlaceType = Node & Taggable & {
   __typename?: 'PlaceType';
   description?: Maybe<Scalars['String']['output']>;
@@ -1450,6 +1532,8 @@ export type Query = {
   answers: AnswerConnection;
   browserActivities: BrowserActivityConnection;
   browserActivity?: Maybe<BrowserActivityType>;
+  /** HBPE forecast calibration over a trailing window of days: latest live-scoring run plus the trend (newest first). Measures forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy. */
+  calibration?: Maybe<PredictionCalibrationType>;
   communication?: Maybe<CommunicationType>;
   communications: CommunicationConnection;
   concept?: Maybe<ConceptType>;
@@ -1472,11 +1556,15 @@ export type Query = {
   files: FileConnection;
   /** Fetch the HBPE day-ahead forecast histogram */
   forecast?: Maybe<ForecastType>;
+  /** Per-bucket forecast history for a past local date (YYYY-MM-DD): the latest prediction issued for each 30-minute bucket joined with its backfilled actual L0 class. */
+  forecastHistory?: Maybe<ForecastHistoryType>;
   item?: Maybe<ItemType>;
   items: ItemConnection;
   knownPlaceCandidates: Array<KnownPlaceCandidateType>;
   knownPlaces: Array<KnownPlaceType>;
   me?: Maybe<UserType>;
+  /** q10/q50/q90 forecast of a Daily Feature Store metric (NOT_ENOUGH_SIGNAL when history is too thin) */
+  metricForecast: MetricForecastType;
   node?: Maybe<Node>;
   note?: Maybe<NoteType>;
   notes: NoteConnection;
@@ -1484,6 +1572,8 @@ export type Query = {
   people: PersonConnection;
   person?: Maybe<PersonType>;
   place?: Maybe<PlaceType>;
+  /** Top-k next-place forecast from the transition model (logged for later scoring) */
+  placeForecast: PlaceForecastType;
   places: PlaceConnection;
   /** HBPE forecast calibration: latest live-scoring run plus a short trend (newest first). Measures forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy. */
   predictionCalibration?: Maybe<PredictionCalibrationType>;
@@ -1542,6 +1632,11 @@ export type QueryBrowserActivitiesArgs = {
 
 export type QueryBrowserActivityArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryCalibrationArgs = {
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -1649,6 +1744,11 @@ export type QueryForecastArgs = {
 };
 
 
+export type QueryForecastHistoryArgs = {
+  date: Scalars['String']['input'];
+};
+
+
 export type QueryItemArgs = {
   id: Scalars['ID']['input'];
 };
@@ -1664,6 +1764,12 @@ export type QueryItemsArgs = {
 
 export type QueryKnownPlacesArgs = {
   kind?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type QueryMetricForecastArgs = {
+  days?: InputMaybe<Scalars['Int']['input']>;
+  metric: Scalars['String']['input'];
 };
 
 
@@ -1700,6 +1806,12 @@ export type QueryPersonArgs = {
 
 export type QueryPlaceArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryPlaceForecastArgs = {
+  horizonHours?: InputMaybe<Scalars['Int']['input']>;
+  k?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -2952,6 +3064,40 @@ export type GetPlaceQueryVariables = Exact<{
 
 export type GetPlaceQuery = { __typename?: 'Query', place?: { __typename?: 'PlaceType', id: string, name?: string | null, description?: string | null, properties: any, tags: Array<{ __typename?: 'EntityTagType', id: string, label: string }> } | null };
 
+export type GetForecastWeekHistoryQueryVariables = Exact<{
+  d0: Scalars['String']['input'];
+  d1: Scalars['String']['input'];
+  d2: Scalars['String']['input'];
+  d3: Scalars['String']['input'];
+  d4: Scalars['String']['input'];
+}>;
+
+
+export type GetForecastWeekHistoryQuery = { __typename?: 'Query', d0?: { __typename?: 'ForecastHistoryType', date: string, buckets: Array<{ __typename?: 'ForecastHistoryBucketType', bucketIndex: number, startTime: string, actualL0?: string | null, predictedL0: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }> }> } | null, d1?: { __typename?: 'ForecastHistoryType', date: string, buckets: Array<{ __typename?: 'ForecastHistoryBucketType', bucketIndex: number, startTime: string, actualL0?: string | null, predictedL0: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }> }> } | null, d2?: { __typename?: 'ForecastHistoryType', date: string, buckets: Array<{ __typename?: 'ForecastHistoryBucketType', bucketIndex: number, startTime: string, actualL0?: string | null, predictedL0: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }> }> } | null, d3?: { __typename?: 'ForecastHistoryType', date: string, buckets: Array<{ __typename?: 'ForecastHistoryBucketType', bucketIndex: number, startTime: string, actualL0?: string | null, predictedL0: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }> }> } | null, d4?: { __typename?: 'ForecastHistoryType', date: string, buckets: Array<{ __typename?: 'ForecastHistoryBucketType', bucketIndex: number, startTime: string, actualL0?: string | null, predictedL0: Array<{ __typename?: 'ProbabilityEntryType', label: string, probability: number }> }> } | null };
+
+export type GetCalibrationQueryVariables = Exact<{
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type GetCalibrationQuery = { __typename?: 'Query', calibration?: { __typename?: 'PredictionCalibrationType', basis: string, latest?: { __typename?: 'CalibrationScoreType', scoredAt: string, windowStart: string, windowEnd: string, nBuckets: number, coverage?: number | null, brier?: number | null, l0Top1Acc?: number | null, l1Top3Acc?: number | null, ece?: number | null, driftFlag: boolean, reliability: Array<{ __typename?: 'ReliabilityBinType', bin: number, lower: number, upper: number, avgConfidence?: number | null, accuracy?: number | null, count: number }> } | null, history: Array<{ __typename?: 'CalibrationScoreType', scoredAt: string, brier?: number | null, l0Top1Acc?: number | null, coverage?: number | null, driftFlag: boolean, nBuckets: number }> } | null };
+
+export type GetMetricForecastQueryVariables = Exact<{
+  metric: Scalars['String']['input'];
+  days?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type GetMetricForecastQuery = { __typename?: 'Query', metricForecast: { __typename?: 'MetricForecastType', metric: string, status: string, coverage: number, horizonDays: number, points: Array<{ __typename?: 'MetricForecastPointType', date: string, q10: number, q50: number, q90: number }> } };
+
+export type GetPlaceForecastQueryVariables = Exact<{
+  horizonHours?: InputMaybe<Scalars['Int']['input']>;
+  k?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type GetPlaceForecastQuery = { __typename?: 'Query', placeForecast: { __typename?: 'PlaceForecastType', status: string, horizonHours: number, k: number, predictedAt: string, backoffLevel?: string | null, predictions: Array<{ __typename?: 'PlacePredictionType', clusterId: string, label?: string | null, lat: number, lng: number, probability: number }> } };
+
 export type ProviderEndpointsFragmentFragment = { __typename?: 'ProviderType', endpoints: Array<{ __typename?: 'ProviderEndpointType', name: string, description: string }> } & { ' $fragmentName'?: 'ProviderEndpointsFragmentFragment' };
 
 export type GetProviderQueryVariables = Exact<{
@@ -3161,6 +3307,10 @@ export const DeleteNoteDocument = {"kind":"Document","definitions":[{"kind":"Ope
 export const GetNotesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetNotes"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"first"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"after"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"notes"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"first"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"after"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"NoteGridItemFragment"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"NoteGridItemFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"NoteType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"content"}}]}}]} as unknown as DocumentNode<GetNotesQuery, GetNotesQueryVariables>;
 export const GetPersonDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPerson"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"person"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]} as unknown as DocumentNode<GetPersonQuery, GetPersonQueryVariables>;
 export const GetPlaceDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlace"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"place"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"properties"}},{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]} as unknown as DocumentNode<GetPlaceQuery, GetPlaceQueryVariables>;
+export const GetForecastWeekHistoryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetForecastWeekHistory"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"d0"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"d1"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"d2"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"d3"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"d4"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","alias":{"kind":"Name","value":"d0"},"name":{"kind":"Name","value":"forecastHistory"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"date"},"value":{"kind":"Variable","name":{"kind":"Name","value":"d0"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"buckets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bucketIndex"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"actualL0"}},{"kind":"Field","name":{"kind":"Name","value":"predictedL0"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}},{"kind":"Field","alias":{"kind":"Name","value":"d1"},"name":{"kind":"Name","value":"forecastHistory"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"date"},"value":{"kind":"Variable","name":{"kind":"Name","value":"d1"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"buckets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bucketIndex"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"actualL0"}},{"kind":"Field","name":{"kind":"Name","value":"predictedL0"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}},{"kind":"Field","alias":{"kind":"Name","value":"d2"},"name":{"kind":"Name","value":"forecastHistory"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"date"},"value":{"kind":"Variable","name":{"kind":"Name","value":"d2"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"buckets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bucketIndex"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"actualL0"}},{"kind":"Field","name":{"kind":"Name","value":"predictedL0"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}},{"kind":"Field","alias":{"kind":"Name","value":"d3"},"name":{"kind":"Name","value":"forecastHistory"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"date"},"value":{"kind":"Variable","name":{"kind":"Name","value":"d3"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"buckets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bucketIndex"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"actualL0"}},{"kind":"Field","name":{"kind":"Name","value":"predictedL0"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}},{"kind":"Field","alias":{"kind":"Name","value":"d4"},"name":{"kind":"Name","value":"forecastHistory"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"date"},"value":{"kind":"Variable","name":{"kind":"Name","value":"d4"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"buckets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bucketIndex"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"actualL0"}},{"kind":"Field","name":{"kind":"Name","value":"predictedL0"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetForecastWeekHistoryQuery, GetForecastWeekHistoryQueryVariables>;
+export const GetCalibrationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetCalibration"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"windowDays"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"calibration"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"windowDays"},"value":{"kind":"Variable","name":{"kind":"Name","value":"windowDays"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"basis"}},{"kind":"Field","name":{"kind":"Name","value":"latest"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"scoredAt"}},{"kind":"Field","name":{"kind":"Name","value":"windowStart"}},{"kind":"Field","name":{"kind":"Name","value":"windowEnd"}},{"kind":"Field","name":{"kind":"Name","value":"nBuckets"}},{"kind":"Field","name":{"kind":"Name","value":"coverage"}},{"kind":"Field","name":{"kind":"Name","value":"brier"}},{"kind":"Field","name":{"kind":"Name","value":"l0Top1Acc"}},{"kind":"Field","name":{"kind":"Name","value":"l1Top3Acc"}},{"kind":"Field","name":{"kind":"Name","value":"ece"}},{"kind":"Field","name":{"kind":"Name","value":"driftFlag"}},{"kind":"Field","name":{"kind":"Name","value":"reliability"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bin"}},{"kind":"Field","name":{"kind":"Name","value":"lower"}},{"kind":"Field","name":{"kind":"Name","value":"upper"}},{"kind":"Field","name":{"kind":"Name","value":"avgConfidence"}},{"kind":"Field","name":{"kind":"Name","value":"accuracy"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"history"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"scoredAt"}},{"kind":"Field","name":{"kind":"Name","value":"brier"}},{"kind":"Field","name":{"kind":"Name","value":"l0Top1Acc"}},{"kind":"Field","name":{"kind":"Name","value":"coverage"}},{"kind":"Field","name":{"kind":"Name","value":"driftFlag"}},{"kind":"Field","name":{"kind":"Name","value":"nBuckets"}}]}}]}}]}}]} as unknown as DocumentNode<GetCalibrationQuery, GetCalibrationQueryVariables>;
+export const GetMetricForecastDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetMetricForecast"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"metric"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"days"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"metricForecast"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"metric"},"value":{"kind":"Variable","name":{"kind":"Name","value":"metric"}}},{"kind":"Argument","name":{"kind":"Name","value":"days"},"value":{"kind":"Variable","name":{"kind":"Name","value":"days"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"metric"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"coverage"}},{"kind":"Field","name":{"kind":"Name","value":"horizonDays"}},{"kind":"Field","name":{"kind":"Name","value":"points"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"date"}},{"kind":"Field","name":{"kind":"Name","value":"q10"}},{"kind":"Field","name":{"kind":"Name","value":"q50"}},{"kind":"Field","name":{"kind":"Name","value":"q90"}}]}}]}}]}}]} as unknown as DocumentNode<GetMetricForecastQuery, GetMetricForecastQueryVariables>;
+export const GetPlaceForecastDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaceForecast"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"horizonHours"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"k"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"placeForecast"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"horizonHours"},"value":{"kind":"Variable","name":{"kind":"Name","value":"horizonHours"}}},{"kind":"Argument","name":{"kind":"Name","value":"k"},"value":{"kind":"Variable","name":{"kind":"Name","value":"k"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"horizonHours"}},{"kind":"Field","name":{"kind":"Name","value":"k"}},{"kind":"Field","name":{"kind":"Name","value":"predictedAt"}},{"kind":"Field","name":{"kind":"Name","value":"backoffLevel"}},{"kind":"Field","name":{"kind":"Name","value":"predictions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"clusterId"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"lat"}},{"kind":"Field","name":{"kind":"Name","value":"lng"}},{"kind":"Field","name":{"kind":"Name","value":"probability"}}]}}]}}]}}]} as unknown as DocumentNode<GetPlaceForecastQuery, GetPlaceForecastQueryVariables>;
 export const GetProviderDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetProvider"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"provider"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"logoUrl"}},{"kind":"Field","name":{"kind":"Name","value":"authType"}},{"kind":"Field","name":{"kind":"Name","value":"localOnly"}},{"kind":"Field","name":{"kind":"Name","value":"appSetupUrl"}},{"kind":"Field","name":{"kind":"Name","value":"openidKeyLink"}},{"kind":"Field","name":{"kind":"Name","value":"theme"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"backgroundColor"}},{"kind":"Field","name":{"kind":"Name","value":"borderColor"}}]}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"ProviderEndpointsFragment"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"ProviderEndpointsFragment"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ProviderType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"endpoints"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]} as unknown as DocumentNode<GetProviderQuery, GetProviderQueryVariables>;
 export const DeleteSavedSearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteSavedSearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteByIdInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteSavedSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"deletedId"}}]}}]}}]} as unknown as DocumentNode<DeleteSavedSearchMutation, DeleteSavedSearchMutationVariables>;
 export const UpdateSavedSearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateSavedSearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateSavedSearchInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateSavedSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"savedSearch"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"query"}},{"kind":"Field","name":{"kind":"Name","value":"entityTypes"}},{"kind":"Field","name":{"kind":"Name","value":"tags"}},{"kind":"Field","name":{"kind":"Name","value":"filters"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"eventTypes"}},{"kind":"Field","name":{"kind":"Name","value":"startTime"}},{"kind":"Field","name":{"kind":"Name","value":"endTime"}},{"kind":"Field","name":{"kind":"Name","value":"sortBy"}},{"kind":"Field","name":{"kind":"Name","value":"sortOrder"}},{"kind":"Field","name":{"kind":"Name","value":"connectors"}},{"kind":"Field","name":{"kind":"Name","value":"people"}},{"kind":"Field","name":{"kind":"Name","value":"places"}},{"kind":"Field","name":{"kind":"Name","value":"hasLocation"}},{"kind":"Field","name":{"kind":"Name","value":"semantic"}}]}}]}}]}}]}}]} as unknown as DocumentNode<UpdateSavedSearchMutation, UpdateSavedSearchMutationVariables>;

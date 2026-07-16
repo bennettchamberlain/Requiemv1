@@ -13,6 +13,7 @@ import {
   HardDrive,
   NotebookPen,
   FolderSearch2,
+  Telescope,
 } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
@@ -64,6 +65,12 @@ export function SecondaryNavigation() {
           {isFeatureEnabled('insights.page') && (
             <NavLink to="/insights" label="Insights">
               <Lightbulb className="h-6 w-6" strokeWidth={1.25} />
+            </NavLink>
+          )}
+
+          {isFeatureEnabled('hbpe') && (
+            <NavLink to="/predictions" label="Predictions">
+              <Telescope className="h-6 w-6" strokeWidth={1.25} />
             </NavLink>
           )}
 

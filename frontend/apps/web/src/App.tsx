@@ -36,6 +36,7 @@ const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'));
 const OpenIDCallbackPage = lazy(() => import('@/pages/OpenIDCallbackPage'));
 const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
+const PredictionsPage = lazy(() => import('@/pages/PredictionsPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
@@ -164,6 +165,17 @@ function AppRoutes() {
               }
             />
           )}
+
+          {/* The page itself renders an "enable hbpe" empty state when the flag
+              is off, so the route stays registered for direct visits. */}
+          <Route
+            path="/predictions"
+            element={
+              <ProtectedRoute>
+                <PredictionsPage />
+              </ProtectedRoute>
+            }
+          />
 
           {isFeatureEnabled('insights.page') && (
             <>

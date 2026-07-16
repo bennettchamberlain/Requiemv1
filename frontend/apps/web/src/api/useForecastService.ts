@@ -9,7 +9,8 @@ import { gql, useQuery } from '@apollo/client';
 const COLD_START_POLL_LIMIT_MS = 3 * 60_000; // stuck on COLD_START → likely no data / nothing running
 const PROGRESS_POLL_LIMIT_MS = 30 * 60_000; // a BOOTSTRAP/NIGHTLY step that never advances
 
-const GET_FORECAST = gql(`
+// Exported so tests (and the predictions dashboard spec) can mock the exact document.
+export const GET_FORECAST = gql(`
   query GetForecast($horizon: String) {
     forecast(horizon: $horizon) {
       horizon
