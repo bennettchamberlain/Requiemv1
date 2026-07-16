@@ -41,6 +41,16 @@ export const INTENT_DOMAINS: readonly IntentDomain[] = [
     title: 'Media',
     description: 'Find photos and videos, and resolve entertainment availability.',
   },
+  {
+    key: 'predictions',
+    title: 'Predictions',
+    description: 'Forecast likely upcoming behavior from the HBPE engine and report forecast quality.',
+  },
+  {
+    key: 'insights',
+    title: 'Insights',
+    description: 'Read derived insights, anomalies, and suggested actions from the intelligence layer.',
+  },
 ] as const;
 
 const DOMAIN_KEYS = new Set<string>(INTENT_DOMAINS.map((d) => d.key));

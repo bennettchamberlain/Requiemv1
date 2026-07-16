@@ -4,7 +4,13 @@ import type { LoggerService } from '@ci/common/logging';
 
 import type { PredictionScoreRow } from '../types';
 
-import { CalibrationService, DEFAULT_CALIBRATION_LIMIT, MAX_CALIBRATION_LIMIT } from './CalibrationService';
+import {
+  CalibrationService,
+  DEFAULT_CALIBRATION_LIMIT,
+  DEFAULT_CALIBRATION_WINDOW_DAYS,
+  MAX_CALIBRATION_LIMIT,
+  MAX_CALIBRATION_WINDOW_DAYS,
+} from './CalibrationService';
 
 const USER_ID = '00000000-0000-0000-0000-0000000000aa';
 const CONTEXT = { userId: USER_ID };
@@ -106,5 +112,57 @@ describe('CalibrationService', () => {
     const service = makeService(jest.fn().mockRejectedValue(err));
 
     await expect(service.getScores(CONTEXT)).rejects.toThrow('connection refused');
+  });
+});
+
+describe('CalibrationService.getScoresSince', () => {
+  it('runs a window-bounded user-scoped query, newest first, row-capped', async () => {
+    const rows = [makeRow()];
+    const query = jest.fn().mockResolvedValue(rows);
+    const service = makeService(query);
+
+    const result = await service.getScoresSince(CONTEXT, 30);
+
+    expect(result).toBe(rows);
+    expect(query).toHaveBeenCalledTimes(1);
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('FROM hbpe.prediction_score');
+    expect(sql).toContain('WHERE user_id = $1');
+    expect(sql).toContain('scored_at >= NOW() - make_interval(days => $2::int)');
+    expect(sql).toContain('ORDER BY scored_at DESC');
+    expect(sql).toContain('LIMIT $3');
+    expect(params).toEqual([USER_ID, 30, MAX_CALIBRATION_LIMIT]);
+  });
+
+  it('defaults and clamps the window to [1, MAX_CALIBRATION_WINDOW_DAYS]', async () => {
+    const query = jest.fn().mockResolvedValue([]);
+    const service = makeService(query);
+
+    await service.getScoresSince(CONTEXT);
+    await service.getScoresSince(CONTEXT, 100000);
+    await service.getScoresSince(CONTEXT, -5);
+    await service.getScoresSince(CONTEXT, 0);
+
+    expect(query.mock.calls[0][1][1]).toBe(DEFAULT_CALIBRATION_WINDOW_DAYS);
+    expect(query.mock.calls[1][1][1]).toBe(MAX_CALIBRATION_WINDOW_DAYS);
+    expect(query.mock.calls[2][1][1]).toBe(1);
+    // 0 is falsy → falls back to the default window
+    expect(query.mock.calls[3][1][1]).toBe(DEFAULT_CALIBRATION_WINDOW_DAYS);
+  });
+
+  it('returns [] when the table does not exist (42P01 — fresh install)', async () => {
+    const err = Object.assign(new Error('relation "hbpe.prediction_score" does not exist'), {
+      code: '42P01',
+    });
+    const service = makeService(jest.fn().mockRejectedValue(err));
+
+    await expect(service.getScoresSince(CONTEXT)).resolves.toEqual([]);
+  });
+
+  it('rethrows unrelated query errors', async () => {
+    const err = Object.assign(new Error('connection refused'), { code: 'ECONNREFUSED' });
+    const service = makeService(jest.fn().mockRejectedValue(err));
+
+    await expect(service.getScoresSince(CONTEXT)).rejects.toThrow('connection refused');
   });
 });

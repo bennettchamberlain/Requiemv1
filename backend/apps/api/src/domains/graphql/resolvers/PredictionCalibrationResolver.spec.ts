@@ -41,14 +41,18 @@ function makeResolver(opts: { featureEnabled?: boolean; scores?: PredictionScore
     opts.scores instanceof Error
       ? jest.fn().mockRejectedValue(opts.scores)
       : jest.fn().mockResolvedValue(opts.scores ?? []);
-  const calibrationService = { getScores } as unknown as CalibrationService;
+  const getScoresSince =
+    opts.scores instanceof Error
+      ? jest.fn().mockRejectedValue(opts.scores)
+      : jest.fn().mockResolvedValue(opts.scores ?? []);
+  const calibrationService = { getScores, getScoresSince } as unknown as CalibrationService;
   const featureService = {
     isFeatureEnabled: jest.fn().mockResolvedValue(opts.featureEnabled ?? true),
   } as unknown as FeatureService;
   const logger = makeLogger();
   const resolver = new PredictionCalibrationResolver(calibrationService, featureService, logger);
 
-  return { resolver, getScores, featureService, logger };
+  return { resolver, getScores, getScoresSince, featureService, logger };
 }
 
 const context = { userId: USER_ID } as RequestContext;
@@ -118,5 +122,34 @@ describe('PredictionCalibrationResolver', () => {
 
     await expect(resolver.predictionCalibration(context, 14)).resolves.toBeNull();
     expect(logger.error).toHaveBeenCalled();
+  });
+
+  describe('calibration (windowDays variant)', () => {
+    it('returns null when the hbpe feature flag is disabled', async () => {
+      const { resolver, getScoresSince } = makeResolver({ featureEnabled: false });
+
+      await expect(resolver.calibration(context, 30)).resolves.toBeNull();
+      expect(getScoresSince).not.toHaveBeenCalled();
+    });
+
+    it('reads the trailing window and maps rows through the same typed shape', async () => {
+      const { resolver, getScoresSince } = makeResolver({ scores: [makeRow()] });
+
+      const result = await resolver.calibration(context, 30);
+
+      expect(getScoresSince).toHaveBeenCalledWith({ userId: USER_ID }, 30);
+      expect(result).not.toBeNull();
+      expect(result!.basis).toBe(CALIBRATION_BASIS);
+      expect(result!.latest!.brier).toBeCloseTo(0.42);
+      expect(result!.latest!.driftFlag).toBe(true);
+      expect(result!.history).toHaveLength(1);
+    });
+
+    it('returns null (and logs) when the service throws', async () => {
+      const { resolver, logger } = makeResolver({ scores: new Error('boom') });
+
+      await expect(resolver.calibration(context, 30)).resolves.toBeNull();
+      expect(logger.error).toHaveBeenCalled();
+    });
   });
 });
