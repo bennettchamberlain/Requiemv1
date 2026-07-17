@@ -7,8 +7,9 @@ import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityEntity, BrowserActivityService } from '@ci/domains/browser-activity';
 import { EntityResolutionService, type ResolvedEntity } from '@ci/domains/entity-resolution';
-import { SavedSearchService } from '@ci/domains/files';
+import { FileService, SavedSearchService } from '@ci/domains/files';
 import { CommunicationService, EventService, EventEntity, CommunicationEntity } from '@ci/domains/memory';
+import { FileChunkService } from '@ci/domains/parsing';
 import {
   SearchService,
   TagService,
@@ -128,6 +129,8 @@ export class SearchResolver {
     private readonly communicationService: CommunicationService,
     private readonly entityResolutionService: EntityResolutionService,
     private readonly eventService: EventService,
+    private readonly fileService: FileService,
+    private readonly fileChunkService: FileChunkService,
     private readonly savedSearchService: SavedSearchService,
     private readonly searchService: SearchService,
     private readonly tagService: TagService,
@@ -523,16 +526,47 @@ export class SearchResolver {
       order: { time: 'DESC' },
     };
 
+    // Files and document chunks order by created_at (their only timestamp) and
+    // take a plain 'DESC' rather than the FindOptionsOrder shape the memory
+    // services use — see their getEntitiesFor* signatures.
+    const fileOptions: {
+      limit: number;
+      order: 'ASC' | 'DESC';
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+    } = {
+      limit,
+      order: 'DESC',
+    };
+
+    const fileChunkOptions: {
+      limit: number;
+      order: 'ASC' | 'DESC';
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+    } = {
+      limit,
+      order: 'DESC',
+    };
+
     if (startTime) {
       eventOptions.startTime = startTime;
       browserActivityOptions.startTime = startTime;
       communicationOptions.startTime = startTime;
+      fileOptions.startTime = startTime;
+      fileChunkOptions.startTime = startTime;
     }
 
     if (endTime) {
       eventOptions.endTime = endTime;
       browserActivityOptions.endTime = endTime;
       communicationOptions.endTime = endTime;
+      fileOptions.endTime = endTime;
+      fileChunkOptions.endTime = endTime;
     }
 
     if (afterTime && afterId) {
@@ -542,19 +576,32 @@ export class SearchResolver {
       browserActivityOptions.afterId = afterId;
       communicationOptions.afterTime = afterTime;
       communicationOptions.afterId = afterId;
+      fileOptions.afterTime = afterTime;
+      fileOptions.afterId = afterId;
+      fileChunkOptions.afterTime = afterTime;
+      fileChunkOptions.afterId = afterId;
     }
 
-    const [eventResults, browserActivityResults, communicationResults] = await Promise.all([
-      wants('event') ? this.eventService.getEntitiesForEvents(context, eventOptions) : [],
-      wants('browser-activity')
-        ? this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions)
-        : [],
-      wants('communication')
-        ? this.communicationService.getEntitiesForCommunications(context, communicationOptions)
-        : [],
-    ]);
+    const [eventResults, browserActivityResults, communicationResults, fileResults, fileChunkResults] =
+      await Promise.all([
+        wants('event') ? this.eventService.getEntitiesForEvents(context, eventOptions) : [],
+        wants('browser-activity')
+          ? this.browserActivityService.getEntitiesForBrowserActivities(context, browserActivityOptions)
+          : [],
+        wants('communication')
+          ? this.communicationService.getEntitiesForCommunications(context, communicationOptions)
+          : [],
+        wants('file') ? this.fileService.getEntitiesForFiles(context, fileOptions) : [],
+        wants('file-chunk') ? this.fileChunkService.getEntitiesForFileChunks(context, fileChunkOptions) : [],
+      ]);
 
-    return [...eventResults, ...browserActivityResults, ...communicationResults];
+    return [
+      ...eventResults,
+      ...browserActivityResults,
+      ...communicationResults,
+      ...fileResults,
+      ...fileChunkResults,
+    ];
   }
 
   /** Resolves raw identifiers to full entities, preserving candidate order and dropping misses. */
