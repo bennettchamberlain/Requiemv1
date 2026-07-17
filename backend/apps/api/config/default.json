@@ -104,6 +104,9 @@
     },
     "hbpe": {
       "host": "http://hbpe-service:8002"
+    },
+    "parser": {
+      "host": "http://summary-service:8002"
     }
   },
   "embedding": {
